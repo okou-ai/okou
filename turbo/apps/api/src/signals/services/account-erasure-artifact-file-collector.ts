@@ -24,7 +24,7 @@ import {
   buildFileUrlFromKey,
   OKOU_CDN_ARTIFACTS_ORIGIN,
   OKOU_SHORT_ARTIFACTS_ORIGIN,
-  publicArtifactsBaseUrlForBrand,
+  publicArtifactsBaseUrl,
 } from "../../lib/file-url";
 import { nowDate } from "../../lib/time";
 import {
@@ -138,8 +138,8 @@ function firstPartyPublicUrl(value: string): boolean {
   return [
     OKOU_SHORT_ARTIFACTS_ORIGIN,
     OKOU_CDN_ARTIFACTS_ORIGIN,
-    new URL(publicArtifactsBaseUrlForBrand("vm0")).origin,
-    new URL(publicArtifactsBaseUrlForBrand("okou")).origin,
+    new URL(publicArtifactsBaseUrl("legacy")).origin,
+    new URL(publicArtifactsBaseUrl("current")).origin,
   ].includes(url.origin);
 }
 
@@ -251,7 +251,7 @@ async function rowLocators(
       resolveOwnedPublicArtifactKey$,
       {
         userId: row.userId,
-        url: buildFileUrlFromKey(row.storageKey, "vm0"),
+        url: buildFileUrlFromKey(row.storageKey, "legacy"),
       },
       signal,
     );

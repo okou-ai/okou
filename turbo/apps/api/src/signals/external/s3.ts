@@ -1,6 +1,9 @@
 import { command, computed, type Computed } from "ccstate";
 import { Readable } from "node:stream";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  CURRENT_LINK_LAYOUT,
+  linkLayoutSegment,
+} from "@okouai/api-contracts/contracts/link-layout";
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
@@ -62,12 +65,13 @@ async function registerLegacyArtifactWrite(
       "Private artifacts cannot use public delivery registration",
     );
   }
-  // Historical public writers without brand/filename metadata use the same
-  // interpretation as migration 014; #32492 owns this persisted-data boundary.
+  // Historical public writers without layout/filename metadata stored legacy
+  // links, matching migration 014; #32492 owns this persisted-data boundary.
   const record = artifactDeliveryRecordSchema.parse({
     version: 1,
     kind: "legacy-file",
-    publicBrand: write.metadata?.["public-brand"] ?? "vm0",
+    publicBrand:
+      write.metadata?.["public-brand"] ?? linkLayoutSegment("legacy"),
     audience: "public",
     key: write.key,
     filename: decodeURIComponent(
@@ -1416,7 +1420,6 @@ export const copyPublicArtifactObject$ = command(
       readonly filename: string;
       readonly contentType: string;
       readonly size: number;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1433,7 +1436,7 @@ export const copyPublicArtifactObject$ = command(
     }
     const metadata = {
       filename: encodeURIComponent(args.filename),
-      "public-brand": args.publicBrand,
+      "public-brand": linkLayoutSegment(CURRENT_LINK_LAYOUT),
     };
     await get(
       publicArtifactWriteRegistration(

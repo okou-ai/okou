@@ -1769,7 +1769,6 @@ const persistTeamsChatMessage$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: args.publicBrand,
         files: teamsInputFiles(
           args.activity,
           args.installation,

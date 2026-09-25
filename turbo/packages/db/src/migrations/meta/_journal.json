@@ -1058,6 +1058,13 @@
       "when": 1790294466981,
       "tag": "1228_drop_agentphone_public_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 1229,
+      "version": "7",
+      "when": 1790297740074,
+      "tag": "1229_hosted_artifact_link_layout_okou_default",
+      "breakpoints": true
     }
   ]
 }

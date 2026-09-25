@@ -1963,7 +1963,6 @@ const persistTelegramChatMessage$ = command(
         userId: args.source.userLink.userId,
         orgId: args.source.orgId,
         chatThreadId: binding.chatThreadId,
-        publicBrand: args.source.publicBrand,
         files: telegramInputFiles(args.source, args.chatId, file),
       },
       signal,

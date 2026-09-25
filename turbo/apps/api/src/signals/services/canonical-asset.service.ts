@@ -1,6 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  linkLayoutFromSegment,
+  linkLayoutSegment,
+  type LinkLayout,
+} from "@okouai/api-contracts/contracts/link-layout";
 import type {
   CanonicalAssetProvenance,
   RunUploadedFileMetadata,
@@ -69,7 +73,6 @@ const allocateCanonicalArtifact$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly filename: string;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<CanonicalArtifactLocation> => {
@@ -83,13 +86,16 @@ const allocateCanonicalArtifact$ = command(
         {
           id: randomUUID(),
           filename: args.filename,
-          publicBrand: args.publicBrand,
         },
         signal,
       );
     }
     const location = await set(allocateArtifactObject$, args, signal);
-    return { ...location, storageMetadata: { publicBrand: args.publicBrand } };
+    // Persisted link-layout marker; stored assets without it are legacy.
+    return {
+      ...location,
+      storageMetadata: { publicBrand: linkLayoutSegment(location.layout) },
+    };
   },
 );
 
@@ -101,7 +107,7 @@ function canonicalAssetUrl(asset: CanonicalAssetRow): string {
   return asset.metadata.storage === undefined
     ? buildFileUrlFromKey(
         asset.storageKey,
-        canonicalAssetPublicBrand(asset.metadata),
+        canonicalAssetLinkLayout(asset.metadata),
       )
     : privateArtifactUrl(asset.id, asset.filename, asset.metadata);
 }
@@ -155,7 +161,6 @@ interface CanonicalInputFileArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly chatThreadId: string;
-  readonly publicBrand: PublicBrand;
   readonly source: RunUploadedFileSource;
   readonly scope: string;
   readonly key: string;
@@ -173,7 +178,6 @@ interface CanonicalSlackInputFileArgs {
   readonly workspaceId: string;
   readonly channelId: string;
   readonly messageTs: string;
-  readonly publicBrand: PublicBrand;
   readonly botToken?: string;
   readonly file: SlackFile;
 }
@@ -195,22 +199,19 @@ interface CanonicalAssetRow {
   readonly metadata: RunUploadedFileMetadata;
 }
 
-function canonicalAssetPublicBrand(
+function canonicalAssetLinkLayout(
   metadata: RunUploadedFileMetadata,
-): PublicBrand {
-  const publicBrand: unknown = metadata.publicBrand;
-  if (publicBrand === undefined) {
-    // Old API writers can omit the field during the observed ~102-minute
-    // DB/API rollout window, and their persisted rows remain reachable until
-    // expiry or backfill. Remove after both conditions hold; tracked by #28449.
-    return "vm0";
+): LinkLayout {
+  const segment: unknown = metadata.publicBrand;
+  // Public assets stored before the layout marker keep their legacy links for
+  // the persisted row's lifetime; tracked by #28449.
+  if (segment === undefined) {
+    return "legacy";
   }
-  if (publicBrand === "vm0" || publicBrand === "okou") {
-    return publicBrand;
+  if (typeof segment !== "string") {
+    throw new Error("Invalid canonical asset link layout");
   }
-  throw new Error(
-    `Invalid canonical asset public brand: ${String(publicBrand)}`,
-  );
+  return linkLayoutFromSegment(segment);
 }
 
 function slackFileFilename(file: SlackFile): string {
@@ -751,7 +752,7 @@ const importCanonicalInputFile$ = command(
                       args.userId,
                       args.asset.id,
                       args.asset.filename ?? args.asset.id,
-                      canonicalAssetPublicBrand(args.asset.metadata),
+                      canonicalAssetLinkLayout(args.asset.metadata),
                     ),
             },
           ),
@@ -813,7 +814,6 @@ const materializeCanonicalSlackInputFile$ = command(
           userId: args.userId,
           orgId: args.orgId,
           filename,
-          publicBrand: args.publicBrand,
         },
         signal,
       );
@@ -1068,7 +1068,10 @@ export async function registerCanonicalWebInputAssets(
         filename: file.filename,
         contentType: file.contentType,
         sizeBytes: file.size,
-        url: buildFileUrlFromKey(file.objectKey, file.publicBrand),
+        url: buildFileUrlFromKey(
+          file.objectKey,
+          linkLayoutFromSegment(file.publicBrand),
+        ),
         metadata: { publicBrand: file.publicBrand },
         assetVersion: CANONICAL_ASSET_VERSION,
         classification: "input",
@@ -1102,7 +1105,6 @@ interface PrepareCanonicalPublishedAssetArgs {
   readonly contentType: string;
   readonly size: number;
   readonly checksumSha256: string;
-  readonly publicBrand: PublicBrand;
   readonly destination: {
     readonly channelId: string;
     readonly threadTs?: string;
@@ -1259,7 +1261,6 @@ export const prepareCanonicalPublishedAsset$ = command(
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
-          publicBrand: args.publicBrand,
         },
         signal,
       );
@@ -1313,7 +1314,7 @@ export const prepareCanonicalPublishedAsset$ = command(
               args.userId,
               asset.id,
               args.filename,
-              canonicalAssetPublicBrand(asset.metadata),
+              canonicalAssetLinkLayout(asset.metadata),
             )
           : undefined;
     const uploadHeaders = metadata ? s3MetadataHeaders(metadata) : undefined;

@@ -444,7 +444,6 @@ const persistCanonicalFeishuIngress$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: args.installation.publicBrand,
         files: feishuInputFiles(args.db, args.message, args.ingress.platform),
       },
       signal,

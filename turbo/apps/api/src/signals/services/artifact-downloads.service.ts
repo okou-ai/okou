@@ -83,7 +83,7 @@ const resolveSharedThreadArtifactDownload$ = command(
       signSharedThreadHostedDownload$,
       {
         publicSlug: reference.publicToken,
-        publicBrand: reference.publicBrand,
+        layoutSegment: reference.publicBrand,
         target,
       },
       signal,

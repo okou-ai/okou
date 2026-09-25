@@ -10,6 +10,7 @@ import {
   artifactFilenameExtension,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { artifactSharePolicySchema } from "@okouai/api-contracts/contracts/artifact-shares";
+import { storedLinkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
   renewErasureLease,
   type EncryptedErasureSelector,
@@ -258,7 +259,7 @@ async function shareItems(
         alias,
         {
           shareId: row.id,
-          publicBrand: row.publicBrand,
+          publicBrand: storedLinkLayoutSegment(row.publicBrand),
           targetKind: row.targetKind,
         },
         signal,
@@ -302,7 +303,7 @@ async function shareItems(
         shareId: row.id,
         targetKind: row.targetKind,
         targetId: row.targetId,
-        publicBrand: row.publicBrand,
+        publicBrand: storedLinkLayoutSegment(row.publicBrand),
         keys,
         ...(policy.target.kind === "file"
           ? { privateKey: policy.target.key }

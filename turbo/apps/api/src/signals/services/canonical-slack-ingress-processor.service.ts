@@ -691,7 +691,6 @@ const persistClaimedCanonicalSlackIngress$ = command(
         workspaceId: ingress.workspaceId,
         channelId: ingress.channelId,
         messageTs: event.ts,
-        publicBrand: ingress.publicBrand,
         botToken,
         files: event.files ?? [],
       },

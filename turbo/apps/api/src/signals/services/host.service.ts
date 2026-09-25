@@ -4,7 +4,6 @@ import type {
 } from "@okouai/db/jsonb-contracts/hosted-site";
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   hostedSiteAssetContentError,
   hostedSiteAssetNameError,
@@ -15,7 +14,13 @@ import {
   type HostedSitePrepareRequest,
 } from "@okouai/api-contracts/contracts/host";
 import { z } from "zod";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  CURRENT_LINK_LAYOUT,
+  hostedSitePointerNamespace,
+  linkLayoutFromSegment,
+  linkLayoutSegment,
+  type LinkLayout,
+} from "@okouai/api-contracts/contracts/link-layout";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   hostedDeployments,
@@ -25,6 +30,7 @@ import {
 import type { HostedDeploymentStatus } from "@okouai/db/schema/hosted-site";
 import { and, desc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
+import { hostedLinkDomain, hostedLinkOrigin } from "../../lib/link-layout";
 import { publicSlugCandidate } from "../../lib/hosted-site-slug";
 import {
   legacyHostedDeploymentVersion,
@@ -80,7 +86,6 @@ interface PrepareDeploymentArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly runId?: string;
-  readonly publicBrand: PublicBrand;
   readonly body: HostedSitePrepareRequest;
 }
 
@@ -245,39 +250,24 @@ function hostedR2Config(): HostedR2ConfigResult {
   return { status: "ok", config: { bucket } };
 }
 
-function publicHostDomain(publicBrand: PublicBrand): string {
-  return publicBrand === "okou"
-    ? env("OKOU_PUBLIC_HOST_DOMAIN")
-    : env("ZERO_HOST_DOMAIN");
+/** Stored layout of a site or deployment row; legacy rows keep their links. */
+function rowLinkLayout(row: { readonly publicBrand: string }): LinkLayout {
+  return linkLayoutFromSegment(row.publicBrand);
 }
 
-function publicHostScheme(publicBrand: PublicBrand): string {
-  return publicBrand === "okou"
-    ? env("OKOU_HOST_SCHEME")
-    : env("ZERO_HOST_SCHEME");
-}
-
-function publicUrl(publicBrand: PublicBrand, publicSlug: string): string {
-  return `${publicHostScheme(publicBrand)}://${publicSlug}.${publicHostDomain(publicBrand)}`;
-}
-
-function deploymentUrl(publicBrand: PublicBrand, deploymentId: string): string {
-  return publicUrl(publicBrand, `dpl-${deploymentId}`);
-}
-
-function pointerNamespace(publicBrand: PublicBrand): string {
-  return publicBrand === "okou" ? "sites/brands/okou" : "sites";
+function deploymentUrl(layout: LinkLayout, deploymentId: string): string {
+  return hostedLinkOrigin(layout, `dpl-${deploymentId}`);
 }
 
 function immutableDeploymentPointerKey(
-  publicBrand: PublicBrand,
+  layout: LinkLayout,
   deploymentId: string,
 ): string {
-  return `${pointerNamespace(publicBrand)}/deployments/${deploymentId}.json`;
+  return `${hostedSitePointerNamespace(layout)}/deployments/${deploymentId}.json`;
 }
 
-function deploymentPrefix(publicBrand: PublicBrand, deploymentId: string) {
-  return `${pointerNamespace(publicBrand)}/publications/${deploymentId}`;
+function deploymentPrefix(layout: LinkLayout, deploymentId: string) {
+  return `${hostedSitePointerNamespace(layout)}/publications/${deploymentId}`;
 }
 
 function hostedSiteScopeKey(args: ScopedPrepareDeploymentArgs): string {
@@ -304,9 +294,10 @@ async function findScopedHostedSite(
       and(
         eq(hostedSites.orgId, args.orgId),
         eq(hostedSites.requestedSlug, args.body.site),
-        // A publication brand is part of the site's identity; a name reserved
-        // under another brand stays reserved rather than being redeployed.
-        eq(hostedSites.publicBrand, args.publicBrand),
+        // New publications use only the current layout. A legacy-layout site
+        // keeps serving its issued links and keeps its name reserved; it is
+        // never redeployed.
+        eq(hostedSites.publicBrand, linkLayoutSegment(CURRENT_LINK_LAYOUT)),
         scopeCondition,
         isNull(hostedSites.deletedAt),
       ),
@@ -552,7 +543,7 @@ function buildManifest(args: {
   readonly spaFallback: boolean;
   readonly files: readonly HostedSiteFile[];
   readonly createdAt: Date;
-  readonly publicBrand: PublicBrand;
+  readonly layout: LinkLayout;
 }): HostedSiteManifest {
   const manifestFiles: Record<string, HostedSiteManifestFile> = {};
   for (const file of args.files) {
@@ -567,7 +558,8 @@ function buildManifest(args: {
   return {
     version: 1,
     immutableContent: true,
-    publicBrand: args.publicBrand,
+    // Deployed host Workers treat a manifest without this marker as legacy.
+    publicBrand: linkLayoutSegment(args.layout),
     deploymentId: args.deploymentId,
     siteId: args.siteId,
     site: args.site,
@@ -599,7 +591,7 @@ function artifactPreviewArgs(
     orgId: deployment.orgId,
     url: deployment.artifactUrl ?? deployment.url,
     contentType: "text/html",
-    publicBrand: deployment.publicBrand,
+    layout: rowLinkLayout(deployment),
     deploymentId: deployment.id,
   };
 }
@@ -624,7 +616,7 @@ function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
     sizeBytes: deployment.sizeBytes,
     entrypoint: deployment.entrypoint,
     spaFallback: deployment.spaFallback,
-    publicBrand: deployment.publicBrand,
+    layout: rowLinkLayout(deployment),
   };
 }
 
@@ -652,7 +644,7 @@ async function findScopedHostedSiteBySlug(
       and(
         eq(hostedSites.orgId, args.orgId),
         eq(hostedSites.slug, publicSlug),
-        eq(hostedSites.publicBrand, args.publicBrand),
+        eq(hostedSites.publicBrand, linkLayoutSegment(CURRENT_LINK_LAYOUT)),
         args.chatThreadId === null
           ? isNull(hostedSites.chatThreadId)
           : eq(hostedSites.chatThreadId, args.chatThreadId),
@@ -699,7 +691,6 @@ async function findOrCreateHostedSite(
         userId: args.userId,
         slug: publicSlug,
         ...scope,
-        publicBrand: args.publicBrand,
         publicSlug,
         createdFromRunId: args.runId,
         updatedAt: now,
@@ -839,9 +830,11 @@ async function insertHostedDeployment(
   const { deploymentVersion, site } = allocation;
   const { deploymentId } = context;
   // Every publication owns its bytes; only the site's alias is reused.
-  const artifactUrl = deploymentUrl(site.publicBrand, deploymentId);
-  const aliasUrl = publicUrl(site.publicBrand, site.publicSlug);
-  const prefix = deploymentPrefix(site.publicBrand, deploymentId);
+  // Only current-layout sites are allocated for new publications.
+  const layout = rowLinkLayout(site);
+  const artifactUrl = deploymentUrl(layout, deploymentId);
+  const aliasUrl = hostedLinkOrigin(layout, site.publicSlug);
+  const prefix = deploymentPrefix(layout, deploymentId);
   const manifest: HostedSiteManifest = buildManifest({
     deploymentId,
     siteId: site.id,
@@ -852,7 +845,7 @@ async function insertHostedDeployment(
     spaFallback: args.body.spaFallback,
     files: args.body.files,
     createdAt: context.now,
-    publicBrand: site.publicBrand,
+    layout,
   });
   const files = Object.values(manifest.files);
   await assertHostedDeploymentScope(db, {
@@ -868,7 +861,6 @@ async function insertHostedDeployment(
       orgId: args.orgId,
       userId: args.userId,
       runId: args.runId,
-      publicBrand: site.publicBrand,
       status: "uploading",
       artifactUrl,
       r2Prefix: prefix,
@@ -1051,7 +1043,8 @@ function activeSitePointerForDeployment(
   const deploymentVersion = legacyHostedDeploymentVersion(deployment.manifest);
   return {
     version: 1,
-    publicBrand: deployment.publicBrand,
+    // Persisted layout marker; deployed Workers treat its absence as legacy.
+    publicBrand: linkLayoutSegment(rowLinkLayout(deployment)),
     publicSlug: deployment.manifest.publicSlug,
     siteId: deployment.siteId,
     deploymentId: deployment.id,
@@ -1250,7 +1243,7 @@ const publishHostedSiteDeploymentPointers$ = command(
       !deployment.manifest.access
     ) {
       const pointerKey = immutableDeploymentPointerKey(
-        deployment.publicBrand,
+        rowLinkLayout(deployment),
         deployment.id,
       );
       await get(
@@ -1267,7 +1260,7 @@ const publishHostedSiteDeploymentPointers$ = command(
         registerLegacyHostedSite$,
         {
           alias: `dpl-${deployment.id}`,
-          publicBrand: deployment.publicBrand,
+          layout: rowLinkLayout(deployment),
           pointerKey,
         },
         signal,
@@ -1484,7 +1477,7 @@ async function loadAliasedHostedSiteFilesTarget(
   if (!site) {
     return { status: "not_found", message: "Hosted site not found" };
   }
-  if (args.hostname && hostedDownloadBrand(args) !== site.publicBrand) {
+  if (args.hostname && hostedDownloadLayout(args) !== rowLinkLayout(site)) {
     return { status: "not_found", message: "Hosted site not found" };
   }
   let deployment: HostedDeploymentRow | undefined;
@@ -1675,16 +1668,17 @@ function matchesHostedSiteVersion(
   return version === undefined || version === site.deploymentVersion;
 }
 
-function hostedDownloadBrand(args: GetHostedSiteFilesArgs): PublicBrand | null {
+/** A site hostname selects the layout its link was issued in. */
+function hostedDownloadLayout(args: GetHostedSiteFilesArgs): LinkLayout | null {
   if (!args.hostname) {
-    return PUBLIC_BRAND;
+    return CURRENT_LINK_LAYOUT;
   }
-  for (const brand of ["okou", "vm0"] as const) {
+  for (const layout of ["current", "legacy"] as const) {
     if (
       args.hostname.toLowerCase() ===
-      `${args.publicSlug}.${publicHostDomain(brand)}`.toLowerCase()
+      `${args.publicSlug}.${hostedLinkDomain(layout)}`.toLowerCase()
     ) {
-      return brand;
+      return layout;
     }
   }
   return null;
@@ -1708,8 +1702,10 @@ export const getHostedSiteFiles$ = command(
     const deploymentId = IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(
       args.publicSlug,
     )?.[1];
-    const publicBrand = deploymentId ? PUBLIC_BRAND : hostedDownloadBrand(args);
-    if (!publicBrand) {
+    const layout = deploymentId
+      ? CURRENT_LINK_LAYOUT
+      : hostedDownloadLayout(args);
+    if (!layout) {
       return {
         status: "bad_request",
         message:
@@ -1727,7 +1723,7 @@ export const getHostedSiteFiles$ = command(
         ? null
         : await set(
             resolveHostedSitePublicationDownload$,
-            { ...args, publicBrand },
+            { ...args, layout },
             signal,
           );
     if (publication?.kind === "unavailable") {
@@ -1883,7 +1879,7 @@ export const getHostedSiteDeployments$ = command(
         publicSlug: site.publicSlug,
         aliasUrl:
           site.activeDeploymentId || deployments.length > 0
-            ? publicUrl(site.publicBrand, site.publicSlug)
+            ? hostedLinkOrigin(rowLinkLayout(site), site.publicSlug)
             : null,
         activeDeploymentId: site.activeDeploymentId,
         activeDeploymentVersion: activeDeployment

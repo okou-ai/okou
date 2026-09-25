@@ -524,7 +524,6 @@ const materializeIngressAttachment$ = command(
         userId: accessArgs.userId,
         orgId: accessArgs.orgId,
         chatThreadId,
-        publicBrand: "okou",
         source: "discord",
         scope: "discord-input",
         key: `${accessArgs.connectionId}:${message.channel_id}:${message.id}:${attachment.id}`,
