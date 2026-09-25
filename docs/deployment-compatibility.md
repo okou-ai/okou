@@ -1,5 +1,24 @@
 # Deployment Compatibility
 
+## Computer Use audit approval column: reader cutover (2026-09-25)
+
+`computer_use_command_audit_events.approval_outcome` belongs to the retired
+approval flow. No current writer sets it or response exposes it; a masked
+production census on 2026-09-25 found 0 non-null values across 11,258 audit
+rows. The audit-list API now selects only the fields it returns instead of the
+full table row; other audit reads already select individual columns. The
+physical Drizzle schema and database still declare `approval_outcome`, so this
+release does **not** drop or migrate the column. The HTTP response is unchanged.
+
+Drop the column in a follow-up release **after** this reader cutover has shipped
+to production, outgoing API instances have drained, and the enforced production
+API rollback floor is at or above this reader-cutover commit. Otherwise an
+older API's unqualified Drizzle `SELECT` would name the dropped column and fail
+with `42703` between database migration and API promotion (or after rollback).
+Reconfirm zero non-null rows before the DROP, remove the physical schema
+mapping in that same follow-up, and validate the old/new API/DB combinations.
+The column drop is not authorized by this preparatory release alone.
+
 ## Discord file deliveries become fire and forget (2026-09-25)
 
 `POST /api/integrations/discord/files/complete` sends each upload operation to
