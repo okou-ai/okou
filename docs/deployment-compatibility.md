@@ -1,5 +1,29 @@
 # Deployment Compatibility
 
+## Chat thread archived rollout fallbacks removed (2026-09-25)
+
+Issue #36551 removes the bounded rollout fallbacks added with #36480. The
+`archived` field is now required in `chatThreadSnapshotProjectionSchema` and
+`chatThreadMetadataSchema`, and the `?? false` normalizations in chat thread
+event replay and the Platform metadata projection are gone.
+
+Evidence for each gate:
+
+- Web clients: the force-upgrade floor is 0.963.3; #36480 first shipped in
+  App 0.955.0.
+- API rollback: the production rollback floor is `32e48c76` (#36885), which
+  contains #36480, so no API from before archiving is serving or retained as a
+  rollback target.
+- Snapshots: a MaskDB census found all 5536 `chat_thread_snapshots` rows were
+  updated after the first production API containing #36480 was deployed
+  (2026-09-24T06:12Z; oldest row updated 2026-09-24T13:00Z).
+
+IndexedDB caches are intentionally **not** reset (`CHAT_IDB_VERSION` is
+unchanged). A Web snapshot cache row last written by a pre-0.955.0 build now
+fails schema parsing and takes the existing degraded read path, which refetches
+from the API. The CLI chat thread cache likewise treats such a row as invalid
+and rebuilds it. No database migration is included.
+
 ## Morning Brief expired admission containment (2026-09-25)
 
 This is a partial, fail-closed incident slice, **not** the recovery of stalled

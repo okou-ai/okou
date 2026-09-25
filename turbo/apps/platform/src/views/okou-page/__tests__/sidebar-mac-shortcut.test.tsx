@@ -70,6 +70,7 @@ function mockSidebarThreadStory(threads: readonly SidebarThread[]): void {
           createdAt: thread.createdAt,
           updatedAt: thread.updatedAt,
           pinnedAt: thread.pinnedAt ?? null,
+          archived: false,
           renamedAt: thread.renamedAt ?? null,
           selectedModel: null,
           serviceTier: null,
