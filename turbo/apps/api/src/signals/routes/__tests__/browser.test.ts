@@ -890,6 +890,7 @@ describe("Browser user-action route", () => {
     );
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
       { value: { kind: "checkbox", checked: false, observedChecked: true } },
+      { value: 0 },
     ]);
     expect(
       JSON.stringify(browserSelectWrites().at(-1)?.[0].params.arguments),
@@ -901,6 +902,7 @@ describe("Browser user-action route", () => {
     ).toBe("succeeded");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
       { value: { kind: "checkbox", checked: null, observedChecked: true } },
+      { value: 0 },
     ]);
     const drifted = await createCheckbox();
     const driftedToken = drifted.body.action.requestToken;
@@ -1121,6 +1123,10 @@ describe("Browser user-action route", () => {
     ).toBe("succeeded");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
       { value: { kind: "radio", index: 1, selectedIndex: 0, memberCount: 3 } },
+      { value: 0 },
+      { objectId: "radio-0" },
+      { objectId: "radio-1" },
+      { objectId: "radio-2" },
     ]);
     const clear = await create();
     const clearToken = clear.body.action.requestToken;
@@ -1400,6 +1406,7 @@ describe("Browser user-action route", () => {
     const write = browserSelectWrites().at(-1)?.[0];
     expect(write?.params.arguments).toMatchObject([
       { value: { kind: "select", mode: "select-one", indices: [3] } },
+      { value: 0 },
     ]);
     expect(JSON.stringify(write?.params.arguments)).not.toContain(
       "native-select-object",
@@ -1420,6 +1427,7 @@ describe("Browser user-action route", () => {
     expect(chosenMulti.body.state).toBe("succeeded");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
       { value: { mode: "select-multiple", indices: [2, 3] } },
+      { value: 0 },
     ]);
     const clear = await createSelect();
     const clearToken = clear.body.action.requestToken;
@@ -1433,6 +1441,7 @@ describe("Browser user-action route", () => {
     ).toBe("succeeded");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
       { value: { indices: [] } },
+      { value: 0 },
     ]);
 
     const required = await createSelect(true);
@@ -1521,6 +1530,7 @@ describe("Browser user-action route", () => {
       expect(appliedMixed.body.state).toBe("succeeded");
       expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
         { value: { kind: "select", indices: [3] } },
+        { value: 1 },
         { objectId: "native-scalar-object" },
         { value: { kind: "scalar", value: "A short note" } },
       ]);
@@ -1541,6 +1551,7 @@ describe("Browser user-action route", () => {
       ).toBe("succeeded");
       expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
         { value: { kind: "select", indices: null } },
+        { value: 1 },
         { objectId: "native-scalar-object" },
         { value: { kind: "scalar", value: "Only the note" } },
       ]);
