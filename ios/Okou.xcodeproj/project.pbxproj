@@ -211,6 +211,7 @@
 				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)", "@executable_path/Frameworks",);
 				"PRODUCT_BUNDLE_IDENTIFIER" = "ai.okou.ios";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
+				"PROVISIONING_PROFILE_SPECIFIER" = "$(OKOU_RELEASE_PROFILE_UUID)";
 				"SWIFT_EMIT_LOC_STRINGS" = "YES";
 			};
 			"name" = "Release";

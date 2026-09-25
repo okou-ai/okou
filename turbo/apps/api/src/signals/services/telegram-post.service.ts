@@ -4,12 +4,10 @@ import type { Tx } from "../../lib/db-types";
 import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { command, computed } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   DEFAULT_AGENT_DISPLAY_NAME,
   PUBLIC_BRAND_PRESENTATION,
   agentDisplayName,
-  PUBLIC_BRAND,
 } from "@okouai/core/public-brand";
 import { v5 as uuidv5 } from "uuid";
 import {
@@ -546,7 +544,6 @@ function buildStatusResponse(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly botId: string;
-  readonly publicBrand: PublicBrand;
 }) {
   return computed(async (get) => {
     const status = await get(
@@ -554,7 +551,6 @@ function buildStatusResponse(args: {
         orgId: args.orgId,
         userId: args.userId,
         botId: args.botId,
-        publicBrand: args.publicBrand,
       }),
     );
     return status
@@ -576,7 +572,6 @@ const handleExistingInstallation$ = command(
       };
       readonly botInfo: { readonly username: string };
       readonly auth: OrganizationAuth;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ) => {
@@ -645,7 +640,6 @@ const handleExistingInstallation$ = command(
         ),
         webhookSecret,
         defaultAgentId: resolvedAgent.agentId,
-        publicBrand: args.publicBrand,
         updatedAt: nowDate(),
       })
       .where(
@@ -662,7 +656,6 @@ const handleExistingInstallation$ = command(
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         botId: updated?.telegramBotId ?? args.existing.telegramBotId,
-        publicBrand: args.publicBrand,
       }),
     );
   },
@@ -681,7 +674,6 @@ export const registerTelegramBot$ = command(
     { get, set },
     args: {
       readonly auth: OrganizationAuth;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ) => {
@@ -729,7 +721,6 @@ export const registerTelegramBot$ = command(
           body: bodyResult.data,
           botInfo,
           auth,
-          publicBrand: args.publicBrand,
         },
         signal,
       );
@@ -768,7 +759,6 @@ export const registerTelegramBot$ = command(
         defaultAgentId: resolvedAgent.agentId,
         ownerUserId: auth.userId,
         orgId: auth.orgId,
-        publicBrand: args.publicBrand,
       })
       .returning();
     signal.throwIfAborted();
@@ -806,7 +796,6 @@ export const registerTelegramBot$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         botId: installation.telegramBotId,
-        publicBrand: args.publicBrand,
       }),
     );
     signal.throwIfAborted();
@@ -1262,7 +1251,6 @@ function buildConnectUrl(args: {
   readonly botToken: string;
   readonly telegramUsername?: string | null;
   readonly telegramDisplayName?: string | null;
-  readonly publicBrand: PublicBrand;
 }): string {
   const timestamp = Math.floor(now() / 1000);
   const params = new URLSearchParams({
@@ -1496,7 +1484,6 @@ const resolveOfficialUserLink$ = command(
         telegramDisplayName: args.telegramDisplayName,
         userId: direct.userId,
         orgId: direct.orgId,
-        publicBrand: direct.publicBrand,
       },
       signal,
     );
@@ -1515,7 +1502,6 @@ async function sendConnectPrompt(args: {
   readonly telegramUsername?: string | null;
   readonly telegramDisplayName?: string | null;
   readonly agentName: string;
-  readonly publicBrand: PublicBrand;
   readonly replyToMessageId?: number;
 }): Promise<void> {
   if (args.chatType !== "private") {
@@ -1538,7 +1524,6 @@ async function sendConnectPrompt(args: {
     botToken: args.botToken,
     telegramUsername: args.telegramUsername,
     telegramDisplayName: args.telegramDisplayName,
-    publicBrand: args.publicBrand,
   });
   await postTelegramMessage({
     botToken: args.botToken,
@@ -1759,7 +1744,6 @@ interface TelegramAgentMessageArgs {
   readonly orgId: string;
   readonly userLink: TelegramUserLink | OfficialTelegramUserLink;
   readonly userLinkKind: "custom" | "official";
-  readonly publicBrand: PublicBrand;
   readonly composeId: string;
   readonly message: TelegramMessage;
   readonly isDM: boolean;
@@ -1815,7 +1799,6 @@ function telegramLaunchContext(args: {
     threadContext: args.context,
     rootMessageId: args.rootMessageId ?? null,
     thinkingMessageId: null,
-    publicBrand: args.source.publicBrand,
     userLinkId: args.source.userLink.id,
     userLinkKind: args.source.userLinkKind,
     chatType: args.source.message.chat.type,
@@ -2456,7 +2439,6 @@ interface CustomCommandArgs {
   readonly botToken: string;
   readonly command: string;
   readonly message: TelegramMessage;
-  readonly publicBrand: PublicBrand;
 }
 
 const handleCustomCommand$ = command(
@@ -2509,7 +2491,6 @@ const handleCustomCommand$ = command(
         displayName,
         fromUserId,
         agentName,
-        publicBrand: args.publicBrand,
         replyToMessageId,
       });
     };
@@ -2635,7 +2616,6 @@ const handleOfficialCommand$ = command(
       readonly botUsername: string | null;
       readonly command: string;
       readonly message: TelegramMessage;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -2680,7 +2660,6 @@ const handleOfficialCommand$ = command(
         telegramUsername: args.message.from?.username ?? null,
         telegramDisplayName: displayName,
         agentName: assistantName,
-        publicBrand: args.publicBrand,
         replyToMessageId,
       });
     };
@@ -2764,7 +2743,6 @@ interface CustomWebhookContext {
   readonly botToken: string;
   readonly message: TelegramMessage;
   readonly apiStartTime: number;
-  readonly publicBrand: PublicBrand;
 }
 
 const resolveCustomMessageUserLink$ = command(
@@ -2808,7 +2786,6 @@ async function sendCustomConnectPrompt(args: {
   readonly displayName: string | null;
   readonly fromUserId: string;
   readonly agentName?: string;
-  readonly publicBrand: PublicBrand;
   readonly replyToMessageId?: number;
 }): Promise<void> {
   const agentName =
@@ -2827,7 +2804,6 @@ async function sendCustomConnectPrompt(args: {
     telegramUsername: args.message.from?.username ?? null,
     telegramDisplayName: args.displayName,
     agentName,
-    publicBrand: args.publicBrand,
     replyToMessageId: args.replyToMessageId,
   });
 }
@@ -2863,7 +2839,6 @@ const handleCustomPrivateWebhookMessage$ = command(
         orgId: args.installation.orgId,
         userLink: resolved.userLink,
         userLinkKind: "custom",
-        publicBrand: args.publicBrand,
         composeId: args.installation.defaultAgentId,
         message: args.message,
         isDM: true,
@@ -2921,7 +2896,6 @@ const handleCustomAddressedGroupWebhookMessage$ = command(
         orgId: args.installation.orgId,
         userLink: resolved.userLink,
         userLinkKind: "custom",
-        publicBrand: args.publicBrand,
         composeId: args.installation.defaultAgentId,
         message: args.message,
         isDM: false,
@@ -2939,7 +2913,6 @@ const processCustomWebhookMessage$ = command(
       readonly telegramBotId: string;
       readonly message: TelegramMessage;
       readonly apiStartTime: number;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -2988,7 +2961,6 @@ const processCustomWebhookMessage$ = command(
           botToken,
           command: commandName,
           message: args.message,
-          publicBrand: args.publicBrand,
         },
         signal,
       );
@@ -3005,7 +2977,6 @@ const processCustomWebhookMessage$ = command(
           botToken,
           message: args.message,
           apiStartTime: args.apiStartTime,
-          publicBrand: args.publicBrand,
         },
         signal,
       );
@@ -3027,7 +2998,6 @@ const processCustomWebhookMessage$ = command(
           botToken,
           message: args.message,
           apiStartTime: args.apiStartTime,
-          publicBrand: args.publicBrand,
         },
         signal,
       );
@@ -3088,7 +3058,6 @@ const processOfficialWebhookMessage$ = command(
     args: {
       readonly message: TelegramMessage;
       readonly apiStartTime: number;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -3110,7 +3079,6 @@ const processOfficialWebhookMessage$ = command(
           botUsername: config.botUsername,
           command: commandName,
           message: args.message,
-          publicBrand: args.publicBrand,
         },
         signal,
       );
@@ -3160,7 +3128,6 @@ const processOfficialWebhookMessage$ = command(
         telegramUsername: args.message.from?.username ?? null,
         telegramDisplayName: displayName,
         agentName: PUBLIC_BRAND_PRESENTATION.assistantName,
-        publicBrand: args.publicBrand,
         replyToMessageId:
           args.message.chat.type === "private"
             ? undefined
@@ -3196,7 +3163,6 @@ const processOfficialWebhookMessage$ = command(
         orgId: userLink.orgId,
         userLink,
         userLinkKind: "official",
-        publicBrand: args.publicBrand,
         composeId,
         message: args.message,
         isDM: args.message.chat.type === "private",
@@ -3211,7 +3177,6 @@ export const telegramWebhook$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const apiStartTime = now();
     const request = get(request$).raw;
-    const publicBrand = PUBLIC_BRAND;
     const { telegramBotId } = get(
       pathParamsOf(integrationsTelegramContract.webhook),
     );
@@ -3237,7 +3202,7 @@ export const telegramWebhook$ = command(
         tapError(
           set(
             processOfficialWebhookMessage$,
-            { message, apiStartTime, publicBrand },
+            { message, apiStartTime },
             signal,
           ),
           (error) => {
@@ -3280,7 +3245,7 @@ export const telegramWebhook$ = command(
       tapError(
         set(
           processCustomWebhookMessage$,
-          { telegramBotId, message, apiStartTime, publicBrand },
+          { telegramBotId, message, apiStartTime },
           signal,
         ),
         (error) => {

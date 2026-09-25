@@ -23,6 +23,7 @@ import {
   findPendingChatEventByPromptFixture,
   findTelegramChatEventByPromptFixture,
   readChatEventContextFixture,
+  setTelegramContextLegacyBrandFixture,
   setTelegramThinkingMessageIdFixture,
 } from "../../../test-fixtures/chat-events";
 import { withSplitChatEventDatabase } from "../../../test-fixtures/chat-terminal-retry";
@@ -964,7 +965,6 @@ describe("POST /api/telegram/register", () => {
     expect(installation).toMatchObject({
       telegramBotId,
       botUsername: "owner_named_bot",
-      publicBrand: "okou",
     });
   });
 
@@ -1314,10 +1314,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
     await seedNativeFablePolicies(fixture);
     const telegramMocks = telegramApiMocks();
-    expect(
-      stateRecord((await readTelegramState(fixture.telegramBotId)).installation)
-        ?.publicBrand,
-    ).toBe("okou");
 
     const response = await postWebhook({
       telegramBotId: fixture.telegramBotId,
@@ -1388,7 +1384,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramThreadContext: "",
       telegramRootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
       telegramThinkingMessageId: null,
-      telegramPublicBrand: "okou",
       telegramUserLinkId: expect.any(String),
       telegramUserLinkKind: "custom",
       telegramChatType: "private",
@@ -1631,6 +1626,94 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       message_id: 701,
     });
   });
+
+  it.each([
+    { caseName: "a null", storedBrand: null },
+    { caseName: "a vm0", storedBrand: "vm0" },
+  ])(
+    "launches a queued Telegram context stored with $caseName brand",
+    async ({ storedBrand }) => {
+      const runnerGroup = configureCanonicalTelegramRunner();
+      const fixture = await trackFixture(
+        seedTelegramPostFixture({ linkTelegramUser: true }),
+      );
+      await seedNativeFablePolicies(fixture);
+      telegramApiMocks();
+      const chatId = 77_003;
+      const privateMessage = (messageId: number, text: string) => {
+        return {
+          update_id: messageId,
+          message: {
+            message_id: messageId,
+            chat: { id: chatId, type: "private" },
+            from: {
+              id: Number(fixture.telegramUserId),
+              username: "alice",
+              first_name: "Alice",
+            },
+            text,
+          },
+        };
+      };
+
+      const firstPrompt = "hold the legacy Telegram queue";
+      expect(
+        (
+          await postWebhook({
+            telegramBotId: fixture.telegramBotId,
+            secret: fixture.webhookSecret,
+            body: privateMessage(2301, firstPrompt),
+          })
+        ).status,
+      ).toBe(200);
+      await flushWaitUntilForTest();
+      const firstRunId = (await telegramPostRunState(fixture, firstPrompt)).run
+        ?.id;
+      if (!firstRunId) {
+        throw new Error("Expected the first Telegram run");
+      }
+      const firstClaim = await claimTelegramRun(firstRunId, runnerGroup);
+
+      const queuedPrompt = "launch the legacy Telegram context";
+      expect(
+        (
+          await postWebhook({
+            telegramBotId: fixture.telegramBotId,
+            secret: fixture.webhookSecret,
+            body: privateMessage(2302, queuedPrompt),
+          })
+        ).status,
+      ).toBe(200);
+      await flushWaitUntilForTest();
+      const queued = await findPendingChatEventByPromptFixture({
+        userId: fixture.userId,
+        prompt: queuedPrompt,
+      });
+      if (!queued) {
+        throw new Error("Expected queued Telegram event");
+      }
+      await setTelegramContextLegacyBrandFixture(queued.eventId, storedBrand);
+
+      await completeCanonicalChatRun({
+        runId: firstRunId,
+        sandboxToken: firstClaim.sandboxToken,
+      });
+      let queuedRunId: string | null = null;
+      await expect
+        .poll(async () => {
+          queuedRunId =
+            (await telegramPostRunState(fixture, queuedPrompt)).run?.id ?? null;
+          return queuedRunId;
+        })
+        .toStrictEqual(expect.any(String));
+      if (!queuedRunId) {
+        throw new Error("Expected the queued Telegram run");
+      }
+      const queuedClaim = await claimTelegramRun(queuedRunId, runnerGroup);
+      expect(queuedClaim.prompt).toBe(queuedPrompt);
+      expect(queuedClaim.appendSystemPrompt).toContain("Message ID: 2302");
+    },
+  );
 
   it("shares one canonical DM session with web and keeps the legacy cursor monotonic", async () => {
     const runnerGroup = configureCanonicalTelegramRunner();
@@ -2120,7 +2203,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramMessageText: firstPrompt,
       telegramThreadContext: "",
       telegramRootMessageId: null,
-      telegramPublicBrand: "okou",
       telegramUserLinkKind: "custom",
       telegramChatType: "supergroup",
     });
@@ -2763,7 +2845,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       contextType: "telegram",
       telegramMessageText: "run through official bot",
       telegramRootMessageId: `direct-message:${fixture.composeId}:claude-fable-5-1`,
-      telegramPublicBrand: "okou",
       telegramUserLinkId: expect.any(String),
       telegramUserLinkKind: "official",
       telegramChatType: "private",

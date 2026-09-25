@@ -6,6 +6,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -336,6 +337,25 @@ describe("builtin MCP automatic authentication", () => {
     expect(
       (await accept(receipt(f, reconnect.oauthAttemptId), [200])).body,
     ).toStrictEqual(completed.body);
+    expect(provider.registrationBodies).toHaveLength(1);
+  });
+
+  it("connects and reuses a DCR client with millisecond issuance and expiry", async () => {
+    const f = await fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      dcrClientIdIssuedAt: now() - 1000,
+      dcrClientSecretExpiresAt: now() + 60 * 60 * 1000,
+    });
+    const first = await beginOAuth(f);
+    expect((await callback(first.state, provider.issuer)).body.status).toBe(
+      "success",
+    );
+    const completed = await accept(receipt(f, first.oauthAttemptId), [200]);
+    const second = await beginOAuth(f, completed.body.connectionId);
+    expect((await callback(second.state, provider.issuer)).body.status).toBe(
+      "success",
+    );
     expect(provider.registrationBodies).toHaveLength(1);
   });
 
