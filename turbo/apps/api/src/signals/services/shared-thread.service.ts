@@ -50,6 +50,7 @@ import { privateArtifactCreationEnabled } from "./private-artifact-storage.servi
 import {
   type SharedThreadArtifactPlan,
   prepareSharedThreadArtifacts$,
+  SHARED_THREAD_LINK_LAYOUT_SEGMENT,
   SharedThreadArtifactUnavailable,
 } from "./shared-thread-artifact-snapshot.service";
 import {
@@ -326,7 +327,6 @@ const prepareSharedThreadMessages$ = command(
         {
           userId: args.userId,
           orgId: args.orgId,
-          publicBrand: args.publicBrand,
           shareId,
           document: row.eventType === "output.message" ? null : row.userMessage,
           copies: attachmentCopies,
@@ -392,7 +392,7 @@ const persistSharedThread$ = command(
             sourceChatThreadId: args.threadId,
             title: initialTitle,
             ...sharedThreadMessageColumns(plan?.messages ?? messages),
-            publicBrand: args.publicBrand,
+            publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
             createdAt,
           })
           .returning({ id: sharedThreads.id });
@@ -450,7 +450,7 @@ const persistSharedThread$ = command(
               id,
               userId: args.userId,
               orgId: args.orgId,
-              publicBrand: args.publicBrand,
+              publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
               hasArtifactSnapshot: true,
             },
             cleanupSignal,

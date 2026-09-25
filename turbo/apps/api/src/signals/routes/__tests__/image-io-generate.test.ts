@@ -1639,7 +1639,7 @@ describe("POST /api/image-io/generate", () => {
       creditsCharged: 50,
       billingCategory: "output_image.medium.standard",
       billingQuantity: 1,
-      url: expect.stringMatching(/^https:\/\/cdn\.vm7\.io\/artifacts\//u),
+      url: expect.stringMatching(/^https:\/\/a\.okou\.io\//u),
     });
     mocks.clerk.session(fixture.userId, fixture.orgId);
     const billingStatus = await accept(

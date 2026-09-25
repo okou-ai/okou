@@ -46,10 +46,11 @@ video poster request always uses the current `files.` host, which the Worker
 accepts for both domains.
 
 Migration `1229_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
-on the four `public_brand` columns. The API stops writing the column for new
-hosted sites and deployments; an older API still writes it explicitly, and new
-rows read `okou`, so old API/new DB and rollback remain compatible. Artifact
-shares still write the inherited segment. The columns, the
+on the four `public_brand` columns, so any writer that omits the column
+records the current layout. The API still writes the segment explicitly on
+hosted sites, deployments, shares and shared threads, using the same layout that
+selects their URLs and keys, so rows do not depend on the migration having run.
+Old API/new DB and rollback remain compatible. The columns, the
 `(site_id, public_brand)` foreign keys and their unique key stay: they are the
 per-row layout marker for roughly 13.4k sites and 22.5k deployments. Phase 2
 may replace the marker with a neutral column (for example a `legacy_link_layout`

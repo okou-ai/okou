@@ -189,8 +189,13 @@ interface SnapshotOwner {
   readonly orgId: string;
 }
 
-// New conversation snapshots are written only in the current layout.
-const SNAPSHOT_LAYOUT_SEGMENT = linkLayoutSegment(CURRENT_LINK_LAYOUT);
+/**
+ * New shared conversations and their artifact snapshots are written only in
+ * the current layout. The shared thread row stores this same segment, which
+ * addresses the snapshot's policy and copies.
+ */
+export const SHARED_THREAD_LINK_LAYOUT_SEGMENT =
+  linkLayoutSegment(CURRENT_LINK_LAYOUT);
 
 const allocateSnapshotReference$ = command(
   async (
@@ -227,7 +232,7 @@ const allocateSnapshotReference$ = command(
             record: {
               version: 1,
               kind: "thread-resource",
-              publicBrand: SNAPSHOT_LAYOUT_SEGMENT,
+              publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
               threadId: args.threadId,
               publicToken: token,
               targetKind: args.kind,
@@ -243,7 +248,7 @@ const allocateSnapshotReference$ = command(
           allocateSharedThreadArtifactReference$,
           {
             threadId: args.threadId,
-            publicBrand: SNAPSHOT_LAYOUT_SEGMENT,
+            publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
             publicToken: token,
             target: { kind: args.kind, id: args.id },
           },
@@ -418,7 +423,7 @@ function snapshotPolicy(
     threadId: args.threadId,
     ownerId: args.userId,
     orgId: args.orgId,
-    publicBrand: SNAPSHOT_LAYOUT_SEGMENT,
+    publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
     status: "preparing",
     resources: Object.fromEntries(
       [...resources.values()].map((resource) => {
