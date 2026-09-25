@@ -1516,9 +1516,14 @@ describe("Morning Brief collection ownership lifetime", () => {
       // The owner is refused without reading another Slack source, even while
       // user deletion remains blocked at its required remote capture boundary.
       const traffic = scriptSlack({});
-      const refused = await accept(collect(f), [409]);
+      const refused = await accept(
+        collect(f),
+        type === "user.deleted" ? [403] : [409],
+      );
       expect(refused.body.error.code).toBe(
-        "MORNING_BRIEF_COLLECTION_OWNER_REVOKED",
+        type === "user.deleted"
+          ? "FORBIDDEN"
+          : "MORNING_BRIEF_COLLECTION_OWNER_REVOKED",
       );
       expect(traffic.requests).toStrictEqual([]);
 

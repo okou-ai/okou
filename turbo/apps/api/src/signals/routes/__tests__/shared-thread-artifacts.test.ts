@@ -1159,11 +1159,12 @@ test.each(["organization", "user"] as const)(
       [404],
     );
     await flushWaitUntilForTest();
-    expect(
-      [...f.objects.keys()].filter((key) => {
-        return key.includes("/thread-shares/");
-      }),
-    ).toStrictEqual([]);
+    const materializedCopies = [...f.objects.keys()].filter((key) => {
+      return key.includes("/thread-shares/");
+    });
+    // User deletion revokes the public manifest immediately but holds the
+    // underlying data; organization deletion still removes its copies.
+    expect(materializedCopies).toHaveLength(kind === "user" ? 1 : 0);
   },
 );
 

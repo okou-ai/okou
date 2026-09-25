@@ -6692,7 +6692,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     );
   });
 
-  it("cancels trialing Stripe subscriptions and deletes an empty org after a verified user.deleted event", async () => {
+  it("holds billing and the last-member org after a verified user.deleted event", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     api.configureClerkWebhookSecret();
@@ -6742,49 +6742,16 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     expect(response.body).toBe("OK");
 
     await flushWaitUntilForTest();
-    await waitForExpectation(() => {
-      expect(context.mocks.stripe.subscriptions.list).toHaveBeenNthCalledWith(
-        1,
-        {
-          customer: granted.customerId,
-          status: "all",
-          limit: 100,
-        },
-      );
-      expect(context.mocks.stripe.subscriptions.list).toHaveBeenNthCalledWith(
-        2,
-        {
-          customer: granted.customerId,
-          status: "all",
-          limit: 100,
-          starting_after: nonRenewingSubscriptionId,
-        },
-      );
-      expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(context.mocks.stripe.subscriptions.update).toHaveBeenNthCalledWith(
-        1,
-        granted.subscriptionId,
-        { cancel_at_period_end: true },
-      );
-      expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
-        extraSubscriptionId,
-      );
-    });
-    // Once the empty org is deleted, its billing metadata is gone: the
-    // billing status read falls back to the unprovisioned defaults instead
-    // of the previously granted pro subscription.
-    const billing = createBillingMediaApi(context);
-    await expect
-      .poll(async () => {
-        const status = await billing.readBillingStatus(actor);
-        return [status.tier, status.subscriptionStatus, status.hasSubscription];
-      })
-      .toStrictEqual(["limited-free-1", null, false]);
+    expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
+    // Rejoin the still-existing org as a new admin: the deleted user's old
+    // session is denied, but last-member deletion did not erase billing.
+    const replacement = bdd.user({ orgId: orgOf(actor), orgRole: "org:admin" });
+    const billing =
+      await createBillingMediaApi(context).readBillingStatus(replacement);
+    expect(billing.tier).toBe("pro");
+    expect(billing.hasSubscription).toBeTruthy();
   });
 
   it("preserves org data when a deleted user leaves an uncached Clerk member", async () => {
@@ -6818,15 +6785,11 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     expect(response.body).toBe("OK");
 
     await flushWaitUntilForTest();
-    await waitForExpectation(() => {
-      expect(
-        context.mocks.clerk.organizations.getOrganizationMembershipList,
-      ).toHaveBeenCalledWith({
-        organizationId: orgId,
-        limit: 100,
-        offset: 0,
-      });
-    });
+    // The user hold never enters last-member organization cleanup or its
+    // external membership lookup, regardless of cached membership state.
+    expect(
+      context.mocks.clerk.organizations.getOrganizationMembershipList,
+    ).not.toHaveBeenCalled();
     expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
     expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
     expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
@@ -6870,24 +6833,14 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     expect(response.body).toBe("OK");
 
     await flushWaitUntilForTest();
-    await waitForExpectation(() => {
-      expect(context.mocks.stripe.subscriptions.list).toHaveBeenCalledWith({
-        customer: granted.customerId,
-        status: "all",
-        limit: 100,
-      });
-      expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
-      expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
-    });
-    // The empty org is still deleted: billing status falls back to the
-    // unprovisioned defaults once the org metadata is cleaned up.
-    const billing = createBillingMediaApi(context);
-    await expect
-      .poll(async () => {
-        const status = await billing.readBillingStatus(actor);
-        return [status.tier, status.subscriptionStatus, status.hasSubscription];
-      })
-      .toStrictEqual(["limited-free-1", null, false]);
+    expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
+    const replacement = bdd.user({ orgId: orgOf(actor), orgRole: "org:admin" });
+    const billing =
+      await createBillingMediaApi(context).readBillingStatus(replacement);
+    expect(billing.tier).toBe("pro");
+    expect(billing.hasSubscription).toBeTruthy();
   });
 
   describe("verified user.deleted cleanup", () => {
@@ -6939,14 +6892,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       fixture: Awaited<ReturnType<typeof prepareUserErasure>>,
       s3CallCountBeforeCleanup: number,
     ) {
-      const firstCleanupS3Prefix = commandInput(
-        context.mocks.s3.send.mock.calls[s3CallCountBeforeCleanup]?.[0],
-      ).Prefix;
-      expect(
-        typeof firstCleanupS3Prefix === "string" &&
-          firstCleanupS3Prefix.startsWith(`${orgOf(fixture.doomed)}/`) &&
-          firstCleanupS3Prefix.endsWith("/"),
-      ).toBeTruthy();
+      expect(context.mocks.s3.send.mock.calls).toHaveLength(
+        s3CallCountBeforeCleanup,
+      );
       expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
@@ -6957,7 +6905,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       expect(preserved.hasSubscription).toBeTruthy();
     }
 
-    it("waits for usage compaction before deleting a user's runs and runner token", async () => {
+    it("cancels only the deleted user's run and revokes its runner token while retaining usage", async () => {
       const fixture = await prepareUserErasure();
       const { runs, runnerGroup, doomed, sharedAgent } = fixture;
       const doomedKey = await runs.createCliToken(doomed);
@@ -6974,7 +6922,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         modelProvider: "anthropic-api-key",
       });
       expect(run.status).toBe("pending");
-      await runs.claimRunnerJob(run.runId);
       await store.set(
         insertUsageEvent$,
         {
@@ -7018,35 +6965,30 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         ),
       ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
 
-      const compactionLock = await holdUsageEventCompactionLockFixture(
-        context.signal,
-      );
-      onTestFinished(async () => {
-        compactionLock.release();
-        await compactionLock.done;
-        await flushWaitUntilForTest();
-      });
-      context.mocks.ably.publish.mockClear();
-      const s3CallCountBeforeCleanup =
-        await compactionLock.withAcquisitionAttemptTracking(() => {
-          return startUserDeletion(fixture);
-        });
-      await compactionLock.acquisitionAttempted;
-      await expect.poll(compactionLock.waiterCount).toBeGreaterThanOrEqual(1);
-      await expect(
-        store.set(
-          readUsageStorageCounts$,
-          { scope: "user", id: doomed.userId },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-      compactionLock.release();
-      await compactionLock.done;
+      const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
       await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
-        runId: run.runId,
-        mode: "hard",
+      const deniedRun = await runs.requestReadRun(doomed, run.runId, [401]);
+      expect(deniedRun.body).toMatchObject({
+        error: { code: "UNAUTHORIZED" },
       });
+      await api.requestAgentUsageEvent(
+        {
+          runId: run.runId,
+          events: [
+            {
+              idempotencyKey: randomUUID(),
+              kind: "connector",
+              provider: "x",
+              category: "posts.read",
+              quantity: 1,
+            },
+          ],
+        },
+        {
+          authorization: `Bearer ${runs.sandboxTokenForRun(doomed, run.runId)}`,
+        },
+        [404],
+      );
 
       let revokedPoll:
         | Awaited<ReturnType<typeof runs.requestPollRunnerAs>>
@@ -7065,18 +7007,17 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         throw new Error("Expected deleted user's runner token to be revoked");
       }
       expectApiError(revokedPoll.body);
-      await runs.requestReadRun(doomed, run.runId, [404]);
       await expect(
         store.set(
           readUsageStorageCounts$,
           { scope: "user", id: doomed.userId },
           context.signal,
         ),
-      ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
+      ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
       await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
     });
 
-    it("deletes a user's connector state while preserving peer accounts and grants", async () => {
+    it("retains both users' connector state and grants during the hold", async () => {
       const fixture = await prepareUserErasure();
       const { runs, doomed, peer, sharedAgent, doomedAgent } = fixture;
       const connectors = createConnectorBddApi(context);
@@ -7149,19 +7090,21 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
       const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
       await flushWaitUntilForTest();
-      await waitForExpectation(async () => {
-        const listed = await connectors.listBuiltinConnectors(doomed);
-        expect(listed.connectors).not.toContainEqual(
-          expect.objectContaining({
-            type: "openai",
-            connectionStatus: "connected",
-          }),
-        );
+      const deniedConnectors = await connectors.requestListConnectors(
+        doomed,
+        [401],
+      );
+      expect(deniedConnectors.body).toMatchObject({
+        error: { code: "UNAUTHORIZED" },
       });
-      await waitForExpectation(async () => {
-        await expect(
-          runs.listUserPermissionGrants(doomed, sharedAgent.agentId),
-        ).resolves.toStrictEqual([]);
+      await expect(
+        readCustomConnectorCredentialStorageParent(context, {
+          orgId: orgOf(doomed),
+          userId: doomed.userId,
+          customConnectorId: customManual.id,
+        }),
+      ).resolves.toMatchObject({
+        connector: { id: customManualMemberConnectorId },
       });
       const peerGrants = await runs.listUserPermissionGrants(
         peer,
@@ -7173,29 +7116,17 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         action: "deny",
       });
       await expect(
-        userConfig.readUserConnectors(doomed, sharedAgent.agentId),
-      ).resolves.toStrictEqual({ enabledConnectorSlugs: [] });
-      await expect(
         userConfig.readUserConnectors(peer, sharedAgent.agentId),
       ).resolves.toMatchObject({ enabledConnectorSlugs: ["openai"] });
       await expect(
-        connectors.readAgentCustomConnectors(doomed, sharedAgent.agentId),
-      ).resolves.toStrictEqual([]);
-      await expect(
         connectors.readAgentCustomConnectors(peer, sharedAgent.agentId),
       ).resolves.toStrictEqual([customManual.id]);
-      await expect(
-        connectors.readCustomConnector(doomed, customManual.id),
-      ).resolves.toMatchObject({
-        connected: false,
-        configuredFieldKeys: [],
-      });
       await expect(
         readThreadConnectorSelectionState(context, {
           chatThreadId: connectorSelectionThread.id,
           connectorId: customManualMemberConnectorId,
         }),
-      ).resolves.toBeFalsy();
+      ).resolves.toBeTruthy();
       await expect(
         connectors.readCustomConnector(peer, customManual.id),
       ).resolves.toMatchObject({ connected: true });
@@ -7337,7 +7268,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       await connectors.requestReadConnectorBySlug(
         fixture.doomed,
         "slack",
-        [404],
+        [401],
       );
     });
 
@@ -7392,8 +7323,12 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         },
       });
       await expect(
-        connectors.readCustomConnector(fixture.doomed, custom.id),
-      ).resolves.toMatchObject({ connected: false });
+        readCustomConnectorCredentialStorageParent(context, {
+          orgId: orgOf(fixture.doomed),
+          userId: fixture.doomed.userId,
+          customConnectorId: custom.id,
+        }),
+      ).resolves.toMatchObject({ connector: null });
     });
 
     it("invalidates only the deleted user's pending builtin and custom OAuth states", async () => {
@@ -7480,9 +7415,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
     });
 
-    it("removes deleted-user integration links while preserving the shared organization", async () => {
+    it("retains organization integrations while holding user deletion", async () => {
       const fixture = await prepareUserErasure();
-      const { doomed, sharedAgent, doomedAgent } = fixture;
+      const { doomed, peer, sharedAgent, doomedAgent } = fixture;
       const gh = createGithubBddApi(context);
       acceptGithubGrantRevocations();
       // The peer's compose remains the installation's default agent; only the
@@ -7493,17 +7428,30 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           githubUserId: newGithubUserId(),
         },
       });
-      expect((await gh.readInstallation(doomed)).isConnected).toBeTruthy();
+      const originalInstallation = await gh.readInstallation(doomed);
+      expect(originalInstallation.isConnected).toBeTruthy();
       const botToken = await registerTelegramBot(doomed, doomedAgent.agentId);
 
       const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
       await flushWaitUntilForTest();
-      await waitForExpectation(() => {
-        expect(context.mocks.telegram.deleteWebhook).toHaveBeenCalledWith(
-          botToken,
-        );
+      expect(context.mocks.telegram.deleteWebhook).not.toHaveBeenCalledWith(
+        botToken,
+      );
+      const deniedInstallation = await gh.requestReadInstallation(
+        doomed,
+        [401],
+      );
+      expect(deniedInstallation.body).toMatchObject({
+        error: { code: "UNAUTHORIZED" },
       });
-      expect((await gh.readInstallation(doomed)).isConnected).toBeFalsy();
+      const peerInstallation = await gh.readInstallation(peer);
+      expect(peerInstallation.installation.id).toBe(
+        originalInstallation.installation.id,
+      );
+      expect(peerInstallation.installation.status).toBe(
+        originalInstallation.installation.status,
+      );
+      expect(peerInstallation.isConnected).toBeFalsy();
       await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
     });
   });

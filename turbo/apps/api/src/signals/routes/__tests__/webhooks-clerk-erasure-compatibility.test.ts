@@ -15,15 +15,13 @@ import {
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { testClerkUserDeletionJobContract } from "@okouai/api-contracts/contracts/test-clerk-user-deletion-job";
-import { sql } from "drizzle-orm";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { nowDate } from "../../../lib/time";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, joinAll, onRejection } from "../../utils";
+import { createDeferredPromise, onRejection } from "../../utils";
 import {
-  assertStableContextStorageWriteLockUnavailableFixture,
   countAgentStableContextPublicationsFixture,
   countUserStableContextGenerationsFixture,
   deleteExpiredOwnedPiStableContextArtifactFixture,
@@ -31,20 +29,16 @@ import {
   removePiStableContextHeadFixture,
   seedAgentInstructionsStorageWithIdFixture,
   seedPiStableContextStorageDemandFixture,
-  stableContextBackendBlockedByFixture,
 } from "../../../test-fixtures/pi-stable-context";
 import { holdUserConnectorMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-connectors";
 import { holdUserPermissionGrantMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-permission-grants";
 import {
   holdChatThreadConnectorSelectionBeforeAgentLockFixture,
   holdChatThreadConnectorSelectionBeforeErasureAdmissionFixture,
-  holdClerkAgentLifecycleAfterInstructionsStorageLocksFixture,
   holdWorkflowCopyBeforeErasureAdmissionFixture,
   holdWorkflowCreationBeforeErasureAdmissionFixture,
   holdWorkflowDeleteBeforeErasureAdmissionFixture,
   holdWorkflowUpdateAfterMetadataMutationFixture,
-  observeClerkAgentLifecycleBeforeAgentLockFixture,
-  observeClerkAgentLifecycleBeforeInstructionsStorageLocksFixture,
   holdWorkflowUpdateBeforeErasureAdmissionFixture,
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { agentsRoutes } from "../agents";
@@ -205,7 +199,7 @@ test("keeps the current signed Clerk deletion ACK and preserves another owner's 
 });
 
 test.each(["list", "delete"] as const)(
-  "preserves a user Storage locator when S3 %s fails",
+  "retains user Storage without attempting S3 %s during the hold",
   async (failure) => {
     const userId = `synthetic_deleted_${randomUUID()}`;
     const orgId = `synthetic_org_${randomUUID()}`;
@@ -255,7 +249,7 @@ test.each(["list", "delete"] as const)(
     });
 
     await deleteUserWithSignedWebhook(userId, `preserve-locators-${failure}`);
-    expect(failed).toBeTruthy();
+    expect(failed).toBeFalsy();
     await expect(storages.listStorages(actor, "user")).resolves.toContainEqual(
       expect.objectContaining({ name: storageName }),
     );
@@ -270,16 +264,14 @@ test.each(["list", "delete"] as const)(
       [200],
     );
     expect(resumed.body.processed).toBe(1);
-    expect(deleteCount).toBeGreaterThan(0);
-    await expect(
-      storages.listStorages(actor, "user"),
-    ).resolves.not.toContainEqual(
+    expect(failed).toBeFalsy();
+    expect(deleteCount).toBe(0);
+    await expect(storages.listStorages(actor, "user")).resolves.toContainEqual(
       expect.objectContaining({ name: storageName }),
     );
 
-    const successfulDeletionCount = deleteCount;
     await deleteUserWithSignedWebhook(userId, `duplicate-${failure}`);
-    expect(deleteCount).toBe(successfulDeletionCount);
+    expect(deleteCount).toBe(0);
   },
 );
 
@@ -561,7 +553,7 @@ test("does not recreate erased generation metadata from Workflow Copy", async ()
 });
 
 test.each(["update", "delete"] as const)(
-  "does not recreate erased generation metadata from private Workflow %s",
+  "does not add generation metadata after holding private Workflow %s",
   async (operation) => {
     const orgId = `synthetic_org_${randomUUID()}`;
     const survivingUserId = `synthetic_survivor_${randomUUID()}`;
@@ -594,6 +586,10 @@ test.each(["update", "delete"] as const)(
       [201],
     );
 
+    const generationsBefore = await countUserStableContextGenerationsFixture({
+      agentId: agent.body.agentId,
+      userId: deletedUserId,
+    });
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
     const hold = async () => {
@@ -638,7 +634,7 @@ test.each(["update", "delete"] as const)(
         agentId: agent.body.agentId,
         userId: deletedUserId,
       }),
-    ).resolves.toBe(0);
+    ).resolves.toBe(generationsBefore);
     await expect(
       countAgentStableContextPublicationsFixture(agent.body.agentId),
     ).resolves.toBe(0);
@@ -687,7 +683,7 @@ test("does not recreate erased generation metadata when clearing a thread connec
   ).resolves.toBe(0);
 });
 
-test("retries signed Agent-owner erasure after a surviving Workflow update holds its lock", async () => {
+test("holds owner deletion while another member finishes updating a Workflow", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;
   const ownerUserId = `synthetic_owner_${randomUUID()}`;
   const survivingUserId = `synthetic_survivor_${randomUUID()}`;
@@ -725,19 +721,10 @@ test("retries signed Agent-owner erasure after a surviving Workflow update holds
   ).resolves.toBeGreaterThan(0);
 
   const writerEntered = createDeferredPromise<void>(context.signal);
-  const cleanupEntered = createDeferredPromise<void>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
   holdWorkflowUpdateAfterMetadataMutationFixture(async () => {
     writerEntered.resolve();
     await release.promise;
-  });
-  let cleanupObserved = false;
-  observeClerkAgentLifecycleBeforeAgentLockFixture((_tx, agentId) => {
-    if (agentId === agent.body.agentId && !cleanupObserved) {
-      cleanupObserved = true;
-      cleanupEntered.resolve();
-    }
-    return Promise.resolve();
   });
   const client = setupApp({ context, routes: workflowsRoutes })(
     workflowsDetailContract,
@@ -753,9 +740,7 @@ test("retries signed Agent-owner erasure after a surviving Workflow update holds
     "workflow-update-agent-owner-erasure",
     { flush: false },
   );
-  await cleanupEntered.promise;
-  // The first deletion attempt cannot take the Agent lock while the Workflow
-  // transaction holds it. Wait for its durable retry before releasing the writer.
+  // Holding user erasure does not wait for or delete the other member's work.
   await flushWaitUntilForTest();
   release.resolve();
   await accept(update, [200]);
@@ -779,17 +764,14 @@ test("retries signed Agent-owner erasure after a surviving Workflow update holds
       agentId: agent.body.agentId,
       userId: survivingUserId,
     }),
-  ).resolves.toBe(0);
-  await expect(
-    countAgentStableContextPublicationsFixture(agent.body.agentId),
-  ).resolves.toBe(0);
+  ).resolves.toBeGreaterThan(0);
   await accept(
     client.get({ headers, params: { workflowId: workflow.body.id } }),
-    [404],
+    [200],
   );
 });
 
-test("rejects a Workflow update when Agent-owner erasure completes during upload", async () => {
+test("allows another member's Workflow update to finish after the Agent owner's deletion", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;
   const ownerUserId = `synthetic_owner_${randomUUID()}`;
   const survivingUserId = `synthetic_survivor_${randomUUID()}`;
@@ -850,17 +832,17 @@ test("rejects a Workflow update when Agent-owner erasure completes during upload
   );
 
   releaseUpload.resolve();
-  const blocked = await accept(update, [409]);
-  expect(blocked.body.error.message).toBe(
-    "Workflow changed during update; retry the request",
+  const committed = await accept(update, [200]);
+  expect(committed.body.instruction).toBe(
+    "# cannot publish after owner erasure",
   );
   await accept(
     client.get({ headers, params: { workflowId: workflow.body.id } }),
-    [404],
+    [200],
   );
 });
 
-test("completes signed Agent-owner erasure after proving scoped artifact GC conflict", async () => {
+test("holds Agent-owner erasure while independent scoped artifact GC finishes", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;
   const ownerUserId = `synthetic_owner_${randomUUID()}`;
   const survivingUserId = `synthetic_survivor_${randomUUID()}`;
@@ -913,42 +895,28 @@ test("completes signed Agent-owner erasure after proving scoped artifact GC conf
       }
     },
   );
-  const erasure = onRejection(
-    (async () => {
-      await gcEntered.promise;
-      observeClerkAgentLifecycleBeforeInstructionsStorageLocksFixture(
-        async (tx) => {
-          // Prove this exact cleanup transaction conflicts with GC's retained
-          // Storage lock without spending its 100 ms production lock deadline
-          // on JavaScript scheduling. The savepoint contains the expected
-          // NOWAIT refusal before the real lock acquisition proceeds.
-          await assertStableContextStorageWriteLockUnavailableFixture(
-            tx,
-            instructions.storageId,
-          );
-          releaseGc.resolve();
-          await gc;
-        },
-      );
-      await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure");
-    })(),
+  await gcEntered.promise;
+  await onRejection(
+    deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure"),
     () => {
-      if (!releaseGc.settled()) {
-        releaseGc.resolve();
-      }
+      releaseGc.resolve();
     },
   );
-  const [deleted] = await joinAll([gc, erasure]);
-  expect(deleted).toStrictEqual([{ digest: artifactDigest }]);
+  releaseGc.resolve();
+  await expect(gc).resolves.toStrictEqual([{ digest: artifactDigest }]);
+  const retained = await readAgentInstructionsStorageFixture(
+    agent.body.agentId,
+  );
+  expect(retained.storageId).toBe(instructions.storageId);
   await expect(
     countUserStableContextGenerationsFixture({
       agentId: agent.body.agentId,
       userId: survivingUserId,
     }),
-  ).resolves.toBe(0);
+  ).resolves.toBeGreaterThan(0);
 });
 
-test("orders multi-Agent instruction Storage cleanup before scoped artifact GC", async () => {
+test("retains two Agents' instruction Storage and another member's generations", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;
   const ownerUserId = `synthetic_owner_${randomUUID()}`;
   const survivingUserId = `synthetic_survivor_${randomUUID()}`;
@@ -970,10 +938,7 @@ test("orders multi-Agent instruction Storage cleanup before scoped artifact GC",
   const orderedAgents = [...createdAgents].sort((left, right) => {
     return left.body.agentId.localeCompare(right.body.agentId);
   });
-  const storageIds = [
-    "ffffffff-ffff-4fff-bfff-ffffffffffff",
-    "00000000-0000-4000-8000-000000000001",
-  ] as const;
+  const storageIds = [randomUUID(), randomUUID()] as const;
   const instructions = await Promise.all(
     orderedAgents.map(async (agent, index) => {
       return await seedAgentInstructionsStorageWithIdFixture({
@@ -982,10 +947,10 @@ test("orders multi-Agent instruction Storage cleanup before scoped artifact GC",
       });
     }),
   );
-  const artifactDigests = await Promise.all(
+  await Promise.all(
     orderedAgents.map(async (agent, index) => {
       const storage = instructions[index]!;
-      const headId = await seedPiStableContextStorageDemandFixture({
+      await seedPiStableContextStorageDemandFixture({
         orgId,
         userId: survivingUserId,
         agentId: agent.body.agentId,
@@ -996,71 +961,24 @@ test("orders multi-Agent instruction Storage cleanup before scoped artifact GC",
         resourceUserId: storage.resourceUserId,
         ready: true,
       });
-      return await removePiStableContextHeadFixture(headId);
     }),
   );
-
-  const cleanupLocked = createDeferredPromise<{
-    readonly pid: number;
-    readonly storageIds: readonly string[];
-  }>(context.signal);
-  const releaseCleanup = createDeferredPromise<void>(context.signal);
-  holdClerkAgentLifecycleAfterInstructionsStorageLocksFixture(
-    async (tx, lockedStorageIds) => {
-      const result = await tx.execute(
-        sql`SELECT pg_backend_pid()::int AS "pid"`,
-      );
-      cleanupLocked.resolve({
-        pid: Number(result.rows[0]?.pid),
-        storageIds: lockedStorageIds,
-      });
-      await releaseCleanup.promise;
-    },
-  );
-  await deleteUserWithSignedWebhook(ownerUserId, "multi-storage-gc-erasure", {
-    flush: false,
-  });
-  const cleanup = await cleanupLocked.promise;
-  expect(cleanup.storageIds).toStrictEqual([storageIds[1], storageIds[0]]);
-
-  const gcEntered = createDeferredPromise<number>(context.signal);
-  const gc = deleteExpiredOwnedPiStableContextArtifactFixture({
-    artifactDigests,
-    cutoff: new Date("2099-01-01T00:00:00.000Z"),
-    beforeStorageLocks: async (tx) => {
-      const result = await tx.execute(
-        sql`SELECT pg_backend_pid()::int AS "pid"`,
-      );
-      gcEntered.resolve(Number(result.rows[0]?.pid));
-    },
-  });
-  const gcPid = await gcEntered.promise;
-  await expect
-    .poll(
-      async () => {
-        return await stableContextBackendBlockedByFixture({
-          blockedPid: gcPid,
-          blockerPid: cleanup.pid,
-        });
-      },
-      { interval: 5, timeout: 500 },
-    )
-    .toBe(true);
-
-  releaseCleanup.resolve();
-  await flushWaitUntilForTest();
-  await expect(gc).resolves.toStrictEqual([]);
-  for (const agent of orderedAgents) {
+  await deleteUserWithSignedWebhook(ownerUserId, "multi-storage-held");
+  for (const [index, agent] of orderedAgents.entries()) {
+    const retained = await readAgentInstructionsStorageFixture(
+      agent.body.agentId,
+    );
+    expect(retained.storageId).toBe(instructions[index]!.storageId);
     await expect(
       countUserStableContextGenerationsFixture({
         agentId: agent.body.agentId,
         userId: survivingUserId,
       }),
-    ).resolves.toBe(0);
+    ).resolves.toBeGreaterThan(0);
   }
 });
 
-test("does not recreate stable state after the public Agent owner is erased", async () => {
+test("preserves another member's thread and stable state when the public Agent owner is deleted", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;
   const ownerUserId = `synthetic_owner_${randomUUID()}`;
   const threadUserId = `synthetic_thread_user_${randomUUID()}`;
@@ -1093,11 +1011,11 @@ test("does not recreate stable state after the public Agent owner is erased", as
   );
 
   release.resolve();
-  await accept(clear, [404]);
+  await accept(clear, [204]);
   await expect(
     countUserStableContextGenerationsFixture({
       agentId: fixture.agentId,
       userId: threadUserId,
     }),
-  ).resolves.toBe(0);
+  ).resolves.toBeGreaterThan(0);
 });

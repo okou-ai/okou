@@ -9,10 +9,6 @@ import {
   setAgentDeletionHooksForTest,
 } from "../signals/services/agent-deletion.service";
 import {
-  clearClerkAgentLifecycleHooksForTest,
-  setClerkAgentLifecycleHooksForTest,
-} from "../signals/services/agent-lifecycle.service";
-import {
   clearChatThreadConnectorSelectionMutationHooksForTest,
   setChatThreadConnectorSelectionMutationHooksForTest,
 } from "../signals/services/chat-thread-connector-selection.service";
@@ -89,47 +85,6 @@ export function holdAgentDeletionAfterStableContextCleanupFixture(
   });
   onTestFinished(() => {
     clearAgentDeletionHooksForTest();
-  });
-}
-
-export function observeClerkAgentLifecycleBeforeAgentLockFixture(
-  observe: NonNullable<
-    Parameters<typeof setClerkAgentLifecycleHooksForTest>[0]["beforeAgentLock"]
-  >,
-): void {
-  setClerkAgentLifecycleHooksForTest({ beforeAgentLock: observe });
-  onTestFinished(() => {
-    clearClerkAgentLifecycleHooksForTest();
-  });
-}
-
-export function observeClerkAgentLifecycleBeforeInstructionsStorageLocksFixture(
-  observe: NonNullable<
-    Parameters<
-      typeof setClerkAgentLifecycleHooksForTest
-    >[0]["beforeInstructionsStorageLocks"]
-  >,
-): void {
-  setClerkAgentLifecycleHooksForTest({
-    beforeInstructionsStorageLocks: observe,
-  });
-  onTestFinished(() => {
-    clearClerkAgentLifecycleHooksForTest();
-  });
-}
-
-export function holdClerkAgentLifecycleAfterInstructionsStorageLocksFixture(
-  hold: NonNullable<
-    Parameters<
-      typeof setClerkAgentLifecycleHooksForTest
-    >[0]["afterInstructionsStorageLocks"]
-  >,
-): void {
-  setClerkAgentLifecycleHooksForTest({
-    afterInstructionsStorageLocks: hold,
-  });
-  onTestFinished(() => {
-    clearClerkAgentLifecycleHooksForTest();
   });
 }
 

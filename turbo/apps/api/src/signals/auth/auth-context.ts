@@ -3,6 +3,8 @@ import { command, computed, state, type Computed } from "ccstate";
 import { providerUnavailable } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { clerkReadUnavailable } from "../external/clerk";
+import { db$ } from "../external/db";
+import { hasHeldClerkUserDeletion } from "../services/x-resource-usage-lifecycle";
 import { settle } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import {
@@ -374,6 +376,21 @@ export const requiredAuthContext$ = command(
 
     const authContext = resolved.value;
     if (authContext) {
+      // Clerk may still authenticate an already issued session while its
+      // deletion webhook is pending. A held job is the durable local fence:
+      // retained personal data must not remain readable through that session
+      // or a sandbox token, even when an organization role was once valid.
+      if (await hasHeldClerkUserDeletion(get(db$), authContext.userId)) {
+        signal.throwIfAborted();
+        set(setResHeader$, "Cache-Control", "no-store");
+        return {
+          status: 401,
+          body: {
+            error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+          },
+        };
+      }
+      signal.throwIfAborted();
       if (options.requireOrganization && !authContext.orgId) {
         return missingOrganizationError(
           options.missingOrganizationStatus ?? 400,
