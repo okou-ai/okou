@@ -10,6 +10,7 @@ import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { badRequestMessage, notFound } from "../../lib/error";
+import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
 import { updateOwnedChatThreadWithEvent } from "../services/chat-thread-owned-update.service";
 import type { RouteEntry } from "../route-entry";
 
