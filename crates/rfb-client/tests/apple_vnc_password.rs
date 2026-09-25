@@ -99,6 +99,28 @@ async fn absent_type_two_cannot_select_an_offered_fallback() {
 }
 
 #[tokio::test]
+async fn maximum_offer_count_is_bounded_and_selects_only_type_two() {
+    let (client, mut server) = duplex(1024);
+    let peer = tokio::spawn(async move {
+        let mut offered = [30u8; u8::MAX as usize];
+        offered[offered.len() - 1] = 2;
+        negotiate(&mut server, &offered).await;
+        assert_eq!(server.read_u8().await.unwrap(), 2);
+        server.write_all(CHALLENGE).await.unwrap();
+        let mut response = [0; 16];
+        server.read_exact(&mut response).await.unwrap();
+        assert_eq!(&response, RESPONSE);
+        server.write_u32(0).await.unwrap();
+    });
+    assert!(
+        authenticate_apple_vnc_password(client, password(), deadline())
+            .await
+            .is_ok()
+    );
+    peer.await.unwrap();
+}
+
+#[tokio::test]
 async fn rejects_incorrect_and_incomplete_apple_banner_without_a_reply() {
     for banner in [b"RFB 003.008\n".as_slice(), b"RFB 003.88".as_slice()] {
         let (client, mut server) = duplex(64);
@@ -205,7 +227,7 @@ async fn short_challenge_never_produces_a_password_response() {
     peer.await.unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn deadlines_identify_the_current_stage_and_close_owned_stream() {
     let (client, mut server) = duplex(128);
     assert!(matches!(
@@ -218,48 +240,40 @@ async fn deadlines_identify_the_current_stage_and_close_owned_stream() {
     assert_eq!(server.read(&mut byte).await.unwrap(), 0);
 
     let (client, mut server) = duplex(128);
-    server.write_all(BANNER).await.unwrap();
-    let result = authenticate_apple_vnc_password(
+    let caller = tokio::spawn(authenticate_apple_vnc_password(
         client,
         password(),
-        Instant::now() + Duration::from_millis(25),
-    )
-    .await;
+        Instant::now() + Duration::from_secs(2),
+    ));
+    server.write_all(BANNER).await.unwrap();
+    let mut version = [0; 12];
+    server.read_exact(&mut version).await.unwrap();
+    assert_eq!(&version, REPLY);
+    tokio::time::advance(Duration::from_secs(3)).await;
     assert!(matches!(
-        result,
+        caller.await.unwrap(),
         Err(Error::AuthenticationDeadlineExceeded {
             stage: AuthenticationStage::SecurityNegotiation
         })
     ));
-    let mut version = [0; 12];
-    server.read_exact(&mut version).await.unwrap();
-    assert_eq!(&version, REPLY);
     assert_eq!(server.read(&mut byte).await.unwrap(), 0);
 
     let (client, mut server) = duplex(128);
-    let peer = tokio::spawn(async move {
-        negotiate(&mut server, &[2]).await;
-        assert_eq!(server.read_u8().await.unwrap(), 2);
-        timeout(Duration::from_secs(1), async {
-            let mut byte = [0; 1];
-            assert_eq!(server.read(&mut byte).await.unwrap(), 0);
-        })
-        .await
-        .unwrap();
-    });
-    let result = authenticate_apple_vnc_password(
+    let caller = tokio::spawn(authenticate_apple_vnc_password(
         client,
         password(),
-        Instant::now() + Duration::from_millis(25),
-    )
-    .await;
+        Instant::now() + Duration::from_secs(2),
+    ));
+    negotiate(&mut server, &[2]).await;
+    assert_eq!(server.read_u8().await.unwrap(), 2);
+    tokio::time::advance(Duration::from_secs(3)).await;
     assert!(matches!(
-        result,
+        caller.await.unwrap(),
         Err(Error::AuthenticationDeadlineExceeded {
             stage: AuthenticationStage::VncAuthentication
         })
     ));
-    peer.await.unwrap();
+    assert_eq!(server.read(&mut byte).await.unwrap(), 0);
 }
 
 #[tokio::test]
