@@ -2094,6 +2094,65 @@ export const getComputerUseCommandPluginContent$ = command(
 );
 
 /**
+ * Whether this host still has a running command. A running command past its
+ * timeout is failed here with a single-row compare-and-set; only the poll
+ * that wins it writes the audit event, and a loser still reports busy.
+ */
+async function hostHasRunningComputerUseCommand(
+  db: Db,
+  hostId: string,
+  now: Date,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const [runningCommand] = await db
+    .select()
+    .from(computerUseCommands)
+    .where(
+      and(
+        eq(computerUseCommands.hostId, hostId),
+        eq(computerUseCommands.status, "running"),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (!runningCommand) {
+    return false;
+  }
+  if (!runningCommandHasTimedOut(runningCommand, now)) {
+    return true;
+  }
+  const error = timeoutErrorForCommand(runningCommand);
+  const [timedOut] = await db
+    .update(computerUseCommands)
+    .set({
+      status: "failed",
+      result: { error },
+      error: error.code,
+      completedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(computerUseCommands.id, runningCommand.id),
+        eq(computerUseCommands.status, "running"),
+      ),
+    )
+    .returning();
+  signal.throwIfAborted();
+  if (!timedOut) {
+    return true;
+  }
+  await insertComputerUseCommandAuditEvent(db, {
+    command: timedOut,
+    event: "completed",
+    error,
+    createdAt: now,
+  });
+  signal.throwIfAborted();
+  return false;
+}
+
+/**
  * Claim polls run every 0.5–5s per host, so they hold no transaction and no
  * lock. Everything is read up front with plain bounded queries, then each
  * write is one single-row conditional UPDATE used as a compare-and-set. A
@@ -2151,49 +2210,8 @@ export const claimNextComputerUseHostCommand$ = command(
       signal.throwIfAborted();
     }
 
-    const [runningCommand] = await db
-      .select()
-      .from(computerUseCommands)
-      .where(
-        and(
-          eq(computerUseCommands.hostId, host.id),
-          eq(computerUseCommands.status, "running"),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (runningCommand) {
-      if (!runningCommandHasTimedOut(runningCommand, now)) {
-        return { status: "idle" };
-      }
-      const error = timeoutErrorForCommand(runningCommand);
-      const [timedOut] = await db
-        .update(computerUseCommands)
-        .set({
-          status: "failed",
-          result: { error },
-          error: error.code,
-          completedAt: now,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(computerUseCommands.id, runningCommand.id),
-            eq(computerUseCommands.status, "running"),
-          ),
-        )
-        .returning();
-      signal.throwIfAborted();
-      if (!timedOut) {
-        return { status: "idle" };
-      }
-      await insertComputerUseCommandAuditEvent(db, {
-        command: timedOut,
-        event: "completed",
-        error,
-        createdAt: now,
-      });
-      signal.throwIfAborted();
+    if (await hostHasRunningComputerUseCommand(db, host.id, now, signal)) {
+      return { status: "idle" };
     }
 
     const effectiveCapabilities =
