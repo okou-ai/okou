@@ -1097,8 +1097,15 @@
     {
       "idx": 1234,
       "version": "7",
-      "when": 1790306718539,
-      "tag": "1234_contract_chat_event_sequence_bridge",
+      "when": 1790306049217,
+      "tag": "1234_teams_telegram_public_brand_okou_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 1235,
+      "version": "7",
+      "when": 1790307896473,
+      "tag": "1235_contract_chat_event_sequence_bridge",
       "breakpoints": true
     }
   ]

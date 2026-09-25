@@ -3,8 +3,10 @@ import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import {
+  PUBLIC_BRAND,
+  PUBLIC_BRAND_PRESENTATION,
+} from "@okouai/core/public-brand";
 import { v5 as uuidv5 } from "uuid";
 import {
   getBuiltInVisibleModels,
@@ -1587,7 +1589,6 @@ interface CanonicalTeamsLaunchContext {
   readonly activityId: string | null;
   readonly serviceUrl: string;
   readonly teamsAppId: string | null;
-  readonly publicBrand: PublicBrand;
   readonly senderUserId: string;
   readonly senderDisplayName: string | null;
   readonly senderPrincipalName: string | null;
@@ -1599,7 +1600,6 @@ interface CanonicalTeamsLaunchContext {
 
 function canonicalTeamsLaunchContext(args: {
   readonly activity: TeamsMessageActivity;
-  readonly publicBrand: PublicBrand;
   readonly connectionId: string;
   readonly threadId: string;
   readonly threadContext: string;
@@ -1617,7 +1617,6 @@ function canonicalTeamsLaunchContext(args: {
     activityId: args.activity.activityId,
     serviceUrl: args.activity.serviceUrl,
     teamsAppId: args.activity.teamsAppId,
-    publicBrand: args.publicBrand,
     senderUserId: args.activity.sender.id,
     senderDisplayName: args.activity.sender.name,
     senderPrincipalName: args.activity.sender.userPrincipalName,
@@ -1729,7 +1728,6 @@ const persistTeamsChatMessage$ = command(
     args: {
       readonly db: Db;
       readonly activity: TeamsMessageActivity;
-      readonly publicBrand: PublicBrand;
       readonly installation: BoundTeamsInstallation;
       readonly connection: TeamsConnection;
       readonly composeId: string;
@@ -1767,7 +1765,7 @@ const persistTeamsChatMessage$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: args.publicBrand,
+        publicBrand: PUBLIC_BRAND,
         files: teamsInputFiles(
           args.activity,
           args.installation,
@@ -1779,7 +1777,6 @@ const persistTeamsChatMessage$ = command(
 
     const launchContext = canonicalTeamsLaunchContext({
       activity: args.activity,
-      publicBrand: args.publicBrand,
       connectionId: args.connection.id,
       threadId,
       threadContext: args.promptContext.text,
@@ -1903,7 +1900,6 @@ const runAgentForTeams$ = command(
     { set },
     args: {
       readonly activity: TeamsMessageActivity;
-      readonly publicBrand: PublicBrand;
       readonly installation: BoundTeamsInstallation;
       readonly connection: TeamsConnection;
       readonly composeId: string;
@@ -1926,7 +1922,6 @@ const runAgentForTeams$ = command(
       {
         db,
         activity: args.activity,
-        publicBrand: args.publicBrand,
         installation: args.installation,
         connection: args.connection,
         composeId: args.composeId,
@@ -2318,7 +2313,6 @@ const runResolvedTeamsAgentForActivity$ = command(
       readonly prompt: string;
       readonly promptFiles: readonly TeamsPromptFile[];
       readonly activity: TeamsMessageActivity;
-      readonly publicBrand: PublicBrand;
       readonly installation: BoundTeamsInstallation;
       readonly connection: TeamsConnection;
       readonly effectiveCompose: ResolvedEffectiveCompose;
@@ -2377,7 +2371,6 @@ const runResolvedTeamsAgentForActivity$ = command(
       runAgentForTeams$,
       {
         activity: { ...args.activity, text: args.prompt },
-        publicBrand: args.publicBrand,
         installation: args.installation,
         connection: args.connection,
         composeId: args.effectiveCompose.composeId,
@@ -2405,7 +2398,6 @@ export const dispatchTeamsMessageToAgent$ = command(
     { set },
     args: {
       readonly activity: TeamsInboundActivity;
-      readonly publicBrand: PublicBrand;
       readonly installation?: TeamsInstallation | null;
       readonly apiStartTime: number;
       readonly timing: ApiDispatchTimingCollector;
@@ -2526,7 +2518,6 @@ export const dispatchTeamsMessageToAgent$ = command(
         prompt,
         promptFiles,
         activity,
-        publicBrand: args.publicBrand,
         installation: boundInstallation,
         connection,
         effectiveCompose,

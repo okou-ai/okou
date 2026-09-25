@@ -1395,7 +1395,6 @@ async function insertTelegramChatDeliveryCallback(args: {
   readonly sourceCallbackId: string;
   readonly target: TelegramDeliveryTarget;
   readonly chatEventId: string;
-  readonly publicBrand: PublicBrand;
 }): Promise<string> {
   return await insertChatDeliveryCallback({
     db: args.db,
@@ -1406,7 +1405,9 @@ async function insertTelegramChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: args.publicBrand,
+      // Rollback shim (#36766): API builds before brand retirement require
+      // this key. Remove after older API deployments drain.
+      publicBrand: "okou",
     },
   });
 }
@@ -1577,7 +1578,6 @@ async function insertAssistantErrorEventTransaction(
         sourceCallbackId: input.sourceCallbackId,
         target: input.telegramDelivery,
         chatEventId: event.id,
-        publicBrand: input.publicBrand,
       })
     : undefined;
   const agentphoneDeliveryCallbackId = input.agentphoneDelivery
@@ -1870,7 +1870,6 @@ async function registerRunLifecycleDeliveryCallbacks(
           sourceCallbackId: input.sourceCallbackId,
           target: input.telegramDelivery,
           chatEventId: deliveryEvent.id,
-          publicBrand: input.publicBrand,
         })
       : undefined;
   const agentphoneDeliveryCallbackId =

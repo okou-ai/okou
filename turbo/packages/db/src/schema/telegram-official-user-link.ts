@@ -8,7 +8,6 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 /**
  * Official Telegram bot user links.
@@ -26,10 +25,11 @@ export const telegramOfficialUserLinks = pgTable(
     telegramDisplayName: varchar("telegram_display_name", { length: 255 }),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    publicBrand: text("public_brand")
-      .$type<PublicBrand>()
-      .default("vm0")
-      .notNull(),
+    /**
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
+     */
+    publicBrand: text("public_brand").default("okou").notNull(),
     dmWelcomeSent: boolean("dm_welcome_sent").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
