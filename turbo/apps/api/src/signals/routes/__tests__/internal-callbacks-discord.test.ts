@@ -421,7 +421,7 @@ describe("canonical Discord terminal replies", () => {
         sandboxToken: claim.sandboxToken,
         text: "The locked-thread task is complete.",
       });
-
+      expect(started.provider.sentMessages).toHaveLength(delivered);
       const events = await readProjectedChatEvents(context, {
         threadId: started.threadId,
         headers: { authorization: "Bearer clerk-session" },
