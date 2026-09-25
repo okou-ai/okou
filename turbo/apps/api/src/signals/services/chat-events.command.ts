@@ -129,7 +129,6 @@ import { appendQueuedRunAssistantMarker } from "./chat-queue-marker.service";
 import {
   discardUnclaimedUserMessage,
   loadNextUnclaimedQueuedUserMessage,
-  lockUserMessageQueueThread,
   resolveWebChatQueueFirstDispatchPreflight,
   type QueuedUserMessage,
 } from "./chat-queued-event.service";
@@ -2418,7 +2417,6 @@ function appendRecallChatEvent(params: {
   readonly clientEventId: string | undefined;
 }): Promise<AppendEventResult> {
   return params.db.transaction(async (tx) => {
-    await lockUserMessageQueueThread(tx, params.threadId);
     const pendingTarget = await loadPendingChatQueueEvent(tx, {
       chatThreadId: params.threadId,
       eventId: params.revokesEventId,
@@ -3544,7 +3542,6 @@ async function appendQueueFirstInsufficientCreditsEvents(params: {
   // replacement is the atomic claim that makes it non-runnable.
   const userCreatedAt = nowDate();
   const createdAt = await params.prepared.db.transaction(async (tx) => {
-    await lockUserMessageQueueThread(tx, params.prepared.thread.threadId);
     const pending = await loadPendingChatQueueEvent(tx, {
       chatThreadId: params.prepared.thread.threadId,
       eventId: params.eventId,
@@ -3566,7 +3563,6 @@ async function appendQueueFirstInsufficientCreditsEvents(params: {
           isNull(chatEvents.runId),
         ),
       )
-      .for("update", { of: chatEvents })
       .limit(1);
     if (!queuedMessage) {
       throw new Error("Queue-first message is no longer available");

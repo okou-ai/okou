@@ -7,7 +7,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
-import { lockChatQueueThread } from "./chat-event-queue.service";
 import { notifyRunningChatRunOfPendingInput } from "./chat-thread-queue-drain.service";
 import { insertChatEvent } from "./chat-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
@@ -74,9 +73,8 @@ async function persistRunTimeBudgetInput(
   },
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    if (!(await lockChatQueueThread(tx, args.candidate.chatThreadId))) {
-      return false;
-    }
+    // The run row lock and running recheck serialize against completion and
+    // timeout, which expire pending budget input before the run ends.
     const [run] = await tx
       .select({
         chatThreadId: agentRuns.chatThreadId,
@@ -94,7 +92,7 @@ async function persistRunTimeBudgetInput(
           isNotNull(agentRuns.triggerSource),
         ),
       )
-      .for("update")
+      .for("update", { of: agentRuns })
       .limit(1);
     if (!run?.chatThreadId) {
       return false;
