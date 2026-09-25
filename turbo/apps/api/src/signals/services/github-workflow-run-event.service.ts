@@ -5,7 +5,6 @@ import {
   type GithubWorkflowRunCompletedEventConfig,
   type GithubWorkflowRunConclusion,
 } from "@okouai/api-contracts/contracts/workflows";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import {
   workflowUserAutomationThreads,
@@ -351,7 +350,6 @@ const startGithubWorkflowRunAutomation$ = command(
       readonly deliveryId: string;
       readonly payload: GithubWorkflowRunEventPayload;
       readonly apiStartTime: number;
-      readonly publicBrand: PublicBrand;
       readonly timing: AutomationEventRunTiming;
     },
     signal: AbortSignal,
@@ -366,7 +364,6 @@ const startGithubWorkflowRunAutomation$ = command(
           chatThreadId: args.automation.chatThreadId,
         },
         automationContext: context,
-        publicBrand: args.publicBrand,
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",
         dispatchFailedCallbacks: dispatchFailedRunCallbacks,
@@ -386,7 +383,6 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
       readonly deliveryId: string;
       readonly payload: GithubWorkflowRunEventPayload;
       readonly apiStartTime: number;
-      readonly publicBrand: PublicBrand;
       readonly backgroundScheduledAt?: number;
     },
     signal: AbortSignal,
@@ -488,7 +484,6 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
           deliveryId: args.deliveryId,
           payload: args.payload,
           apiStartTime: args.apiStartTime,
-          publicBrand: args.publicBrand,
           timing: runTiming,
         },
         signal,

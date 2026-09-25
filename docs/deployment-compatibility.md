@@ -1,5 +1,21 @@
 # Deployment Compatibility
 
+## Account deletion local-data cleanup retirement (2026-09-25)
+
+Okou no longer deletes a deleted account's browser or Desktop local data. The
+API removes `POST /api/account-erasure/status-capability` and
+`GET /api/account-erasure/status`; the App no longer issues or stores status
+capabilities, polls deletion status, or purges account-scoped IndexedDB,
+voice-draft or onboarding bytes. Server-side account erasure is unchanged.
+
+An older App bundle or Desktop renderer keeps its detached lifecycle: its
+capability request and status polls now receive 404. Both calls already
+suppress error toasts; the capability failure is settled and a status 404 is
+skipped, so the old client simply stops purging. Its saved
+`account-erasure-status-capability:*` localStorage entries remain inert and
+are not migrated. A new App against an older API makes no such calls. Rollback
+is safe; an older API resumes serving the routes with the same signing key.
+
 ## Artifact and hosted-site link layouts (2026-09-25)
 
 The retired VM0 brand survives only as the read-only _legacy link layout_
@@ -45,7 +61,7 @@ poster transform still runs on the source artifact's CDN origin. The private
 video poster request always uses the current `files.` host, which the Worker
 accepts for both domains.
 
-Migration `1230_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
+Migration `1231_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
 on the four `public_brand` columns, so any writer that omits the column
 records the current layout. The API still writes the segment explicitly on
 hosted sites, deployments, shares and shared threads, using the same layout that
@@ -67,22 +83,6 @@ Environment names are unchanged because renaming deployed secrets is not safe
 in one release: `OKOU_*` configures the current layout and
 `PUBLIC_ARTIFACTS_BASE_URL` / `ZERO_HOST_*` configure only legacy-link
 reconstruction.
-
-## Account deletion local-data cleanup retirement (2026-09-25)
-
-Okou no longer deletes a deleted account's browser or Desktop local data. The
-API removes `POST /api/account-erasure/status-capability` and
-`GET /api/account-erasure/status`; the App no longer issues or stores status
-capabilities, polls deletion status, or purges account-scoped IndexedDB,
-voice-draft or onboarding bytes. Server-side account erasure is unchanged.
-
-An older App bundle or Desktop renderer keeps its detached lifecycle: its
-capability request and status polls now receive 404. Both calls already
-suppress error toasts; the capability failure is settled and a status 404 is
-skipped, so the old client simply stops purging. Its saved
-`account-erasure-status-capability:*` localStorage entries remain inert and
-are not migrated. A new App against an older API makes no such calls. Rollback
-is safe; an older API resumes serving the routes with the same signing key.
 
 ## Host-worker storage layouts replace public brand (2026-09-25)
 
@@ -109,6 +109,46 @@ ordering requirement against the API, and a Worker rollback is safe in either
 direction. The API writers of these objects are retired separately; they must
 keep writing the same key layout and stored segment values until a planned
 storage migration replaces both sides.
+
+## GitHub and workflow automation public brand retirement (2026-09-25)
+
+Okou is the only product brand (#36766). The API no longer reads or writes
+`github_installations.public_brand`, `github_installations.setup_public_brand`,
+`chat_github_context.public_brand` or `chat_automation_context.public_brand`.
+Every value the API wrote there was already `okou`, and no reader changed
+behavior based on it: the setup brand selected by
+`findGithubInstallationByInstallationId` was unused, queued automation
+launches only required a non-null value, and queued GitHub launches now use
+the fixed `okou` run brand, as AgentPhone does. The GitHub webhook and manual
+"Run now" paths no longer pass a brand into workflow automation admission.
+
+Migration `1230_github_automation_public_brand_okou_default` sets the default
+to `'okou'` on `github_installations.setup_public_brand`,
+`chat_github_context.public_brand` and `chat_automation_context.public_brand`
+(previously `'vm0'`); `github_installations.public_brand` already defaulted to
+`'okou'`. An old API therefore reads `okou`, including the non-null automation
+brand its queue drain requires, from rows the new API inserts. Old API/new DB
+and rollback remain compatible. The columns and their Drizzle declarations
+stay until a separate Phase 2 drop.
+
+GitHub App install state no longer carries `publicBrand` / `publicBrandSig`.
+The callback-redirect and requested-scope HMACs no longer include a brand and
+use new `v2` payload tags; the identity signature is unchanged. States that
+omit a brand are no longer treated as a signed `vm0` brand, and brand keys in
+a state are ignored. A GitHub install started on one API version and
+completed on the other fails signature validation and shows the existing
+"Invalid OAuth state" error; the user restarts the install. These states only
+live for one GitHub install round trip, so no compatibility path is kept.
+State-less callbacks (`setup_action=update`, provider errors) are unchanged.
+
+The `workflow-automation:result-email` callback reader no longer declares
+`publicBrand` and strips it instead of rejecting it, so callbacks persisted by
+earlier APIs still parse. The `github:chat` reader ignores the field in the
+same way. Writers still emit `publicBrand: "okou"` in the result-email payload
+because earlier APIs require the key in their strict schema; the generic
+`chat` callback brand and the `github:chat` writer belong to the run-level
+brand cleanup. Remove these writes when the Phase 2 rollback floor excludes
+APIs that require them. No App, CLI or public contract changes.
 
 ## Discord canonical Chat sources (2026-09-24)
 
