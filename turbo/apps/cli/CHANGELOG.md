@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.365.3](https://github.com/okou-ai/okou/compare/cli-v9.365.2...cli-v9.365.3) (2026-09-25)
+
+
+### Refactoring
+
+* **chat:** retire ios inline snapshot response ([#36945](https://github.com/okou-ai/okou/issues/36945)) ([3d93ff8](https://github.com/okou-ai/okou/commit/3d93ff8d4b4a07a5888e3030e69b340f40da0ad4))
+* remove redundant rollback checks and discord retry advice ([#36962](https://github.com/okou-ai/okou/issues/36962)) ([566e37b](https://github.com/okou-ai/okou/commit/566e37b48dc2ff1d6b3b55321d21769932493c09))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.514.0
+    * @okouai/core bumped to 8.710.11
+    * @okouai/pi-agent-runtime bumped to 1.40.23
+
 ## [9.365.2](https://github.com/okou-ai/okou/compare/cli-v9.365.1...cli-v9.365.2) (2026-09-25)
 
 
