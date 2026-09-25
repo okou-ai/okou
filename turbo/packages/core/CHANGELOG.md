@@ -1,5 +1,23 @@
 # Changelog
 
+## [8.710.5](https://github.com/okou-ai/okou/compare/core-v8.710.4...core-v8.710.5) (2026-09-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.510.1
+
+## [8.710.4](https://github.com/okou-ai/okou/compare/core-v8.710.3...core-v8.710.4) (2026-09-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.510.0
+
 ## [8.710.3](https://github.com/okou-ai/okou/compare/core-v8.710.2...core-v8.710.3) (2026-09-25)
 
 

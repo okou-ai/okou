@@ -728,7 +728,6 @@ export const dispatchRequiredTerminalChatCallback$ = command(
         error: input.error,
         redriveChatCallbackId: chatCallbackId,
         redriveUndeliveredChatCallbackOnly: true,
-        awaitTerminalChatProjection: true,
       },
       signal,
     );

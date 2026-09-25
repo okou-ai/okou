@@ -1,14 +1,9 @@
 import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import type { Tx } from "../../lib/db-types";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import {
-  PUBLIC_BRAND,
-  PUBLIC_BRAND_PRESENTATION,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { v5 as uuidv5 } from "uuid";
 import {
   getBuiltInVisibleModels,
@@ -1767,7 +1762,6 @@ const persistTeamsChatMessage$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: PUBLIC_BRAND,
         files: teamsInputFiles(
           args.activity,
           args.installation,
@@ -1789,9 +1783,7 @@ const persistTeamsChatMessage$ = command(
       ),
     });
     const chatEventId = teamsChatMessageId(args.activity, args.connection.id);
-    const splitWrites = await isSplitChatEventWriteEnabled(args.db);
-    signal.throwIfAborted();
-    const persist = async (tx: Db | Tx, touchThread: () => Promise<void>) => {
+    const persist = async (tx: Db, touchThread: () => Promise<void>) => {
       const event = await insertChatEvent(
         tx,
         {
@@ -1825,7 +1817,6 @@ const persistTeamsChatMessage$ = command(
           createdAt: currentTime,
         },
         "id",
-        { splitWrites },
       );
       signal.throwIfAborted();
       if (!event) {
@@ -1837,7 +1828,6 @@ const persistTeamsChatMessage$ = command(
     const inserted = await withNativeChatEventThreadTouch(
       args.db,
       {
-        splitWrites,
         chatThreadId: route.chatThreadId,
         createdAt: currentTime,
         eventId: chatEventId,
@@ -2362,7 +2352,6 @@ const runResolvedTeamsAgentForActivity$ = command(
     signal.throwIfAborted();
 
     const promptContext = await loadOptionalChatEnrichment(
-      db,
       "teams",
       () => {
         return fetchTeamsPromptContext({ activity: args.activity }, signal);

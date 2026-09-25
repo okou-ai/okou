@@ -10,6 +10,10 @@ import {
   type SharedThreadArtifactPolicy,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
 import {
+  linkLayoutFromSegment,
+  storedLinkLayoutSegment,
+} from "@okouai/api-contracts/contracts/link-layout";
+import {
   sharedThreadArtifactAuthorUserId,
   sharedThreadArtifactLogicalKey,
 } from "../../lib/shared-thread-artifact";
@@ -22,7 +26,7 @@ import {
   writeArtifactSharePolicyObject,
 } from "../external/s3";
 import { settle } from "../utils";
-import { env } from "../../lib/env";
+import { hostedLinkOrigin } from "../../lib/link-layout";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import {
   privateArtifactCreationEnabled,
@@ -37,8 +41,12 @@ import {
 
 type SnapshotIdentity = Pick<
   typeof sharedThreads.$inferSelect,
-  "id" | "userId" | "orgId" | "publicBrand" | "hasArtifactSnapshot"
->;
+  "id" | "userId" | "orgId" | "hasArtifactSnapshot"
+> & {
+  // The shared thread's stored link-layout segment. Conversation snapshots
+  // created before the layout change stay under the legacy segment.
+  readonly publicBrand: string;
+};
 
 /** Match the delivery Worker's authority without reopening the owner's live resource. */
 export const resolveSharedThreadHostedDownload$ = command(
@@ -92,7 +100,7 @@ export const resolveSharedThreadHostedDownload$ = command(
       signSharedThreadHostedDownload$,
       {
         publicSlug: args.publicSlug,
-        publicBrand: record.publicBrand,
+        layoutSegment: record.publicBrand,
         target,
       },
       signal,
@@ -106,7 +114,7 @@ export const signSharedThreadHostedDownload$ = command(
     { set },
     args: {
       readonly publicSlug: string;
-      readonly publicBrand: SharedThreadArtifactPolicy["publicBrand"];
+      readonly layoutSegment: SharedThreadArtifactPolicy["publicBrand"];
       readonly target: Extract<
         SharedThreadArtifactPolicy["resources"][string],
         { kind: "html" }
@@ -115,18 +123,10 @@ export const signSharedThreadHostedDownload$ = command(
     signal: AbortSignal,
   ): Promise<HostedSiteFilesResponse> => {
     const { target } = args;
-    const scheme = env(
-      args.publicBrand === "okou" ? "OKOU_HOST_SCHEME" : "ZERO_HOST_SCHEME",
-    );
-    const domain = env(
-      args.publicBrand === "okou"
-        ? "OKOU_PUBLIC_HOST_DOMAIN"
-        : "ZERO_HOST_DOMAIN",
-    );
-    if (!scheme || !domain) {
-      throw new Error("Public hosted artifact delivery is not configured");
-    }
-    const url = `${scheme}://${args.publicSlug}.${domain}/`;
+    const url = `${hostedLinkOrigin(
+      linkLayoutFromSegment(args.layoutSegment),
+      args.publicSlug,
+    )}/`;
     return await set(
       signHostedSiteFiles$,
       {
@@ -140,7 +140,7 @@ export const signSharedThreadHostedDownload$ = command(
           aliasUrl: url,
         },
         manifest: target.manifest,
-        prefix: `shared-artifacts/${args.publicBrand}/${target.snapshotId}/${target.id}`,
+        prefix: `shared-artifacts/${args.layoutSegment}/${target.snapshotId}/${target.id}`,
       },
       signal,
     );
@@ -153,7 +153,10 @@ function readPolicy(identity: SnapshotIdentity, signal: AbortSignal) {
       get(
         readArtifactSharePolicyObject(
           sharedThreadArtifactsBucket(),
-          sharedThreadArtifactPolicyKey(identity.publicBrand, identity.id),
+          sharedThreadArtifactPolicyKey(
+            storedLinkLayoutSegment(identity.publicBrand),
+            identity.id,
+          ),
           signal,
         ),
       ),
@@ -272,7 +275,10 @@ const changeSharedThreadArtifactPhase$ = command(
       await get(
         writeArtifactSharePolicyObject(
           sharedThreadArtifactsBucket(),
-          sharedThreadArtifactPolicyKey(row.publicBrand, row.id),
+          sharedThreadArtifactPolicyKey(
+            storedLinkLayoutSegment(row.publicBrand),
+            row.id,
+          ),
           JSON.stringify({ ...current.policy, status: "active" }),
           current.etag,
           signal,
@@ -323,7 +329,10 @@ function revokePolicy(identity: SnapshotIdentity, signal: AbortSignal) {
       await get(
         writeArtifactSharePolicyObject(
           sharedThreadArtifactsBucket(),
-          sharedThreadArtifactPolicyKey(identity.publicBrand, identity.id),
+          sharedThreadArtifactPolicyKey(
+            storedLinkLayoutSegment(identity.publicBrand),
+            identity.id,
+          ),
           JSON.stringify({ ...current.policy, status: "revoked" }),
           current.etag,
           signal,
@@ -350,7 +359,7 @@ export function removeSharedThreadArtifactCopies(
       if (target.kind === "file") {
         files.push(target.key);
       } else {
-        const prefix = `shared-artifacts/${identity.publicBrand}/${target.snapshotId}/${target.id}`;
+        const prefix = `shared-artifacts/${storedLinkLayoutSegment(identity.publicBrand)}/${target.snapshotId}/${target.id}`;
         siteFiles.push(
           `${prefix}/manifest.json`,
           ...Object.keys(target.manifest.files).map((path) => {

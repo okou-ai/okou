@@ -291,10 +291,18 @@ async function requireThreadAccess(
       }
     }
   }
+  // Sending into an archived thread unarchives it, so only a moderator lock
+  // closes a thread for writes. Discord lets MANAGE_THREADS holders send into
+  // and reopen a locked thread; the bot's authority cannot stand in for the
+  // sender's, so both principals must hold it.
   if (
     args.mode === "write" &&
     isDiscordThread(channel) &&
-    (channel.thread_metadata?.archived || channel.thread_metadata?.locked)
+    channel.thread_metadata?.locked &&
+    !(
+      hasDiscordPermission(permissions.user, DiscordPermission.ManageThreads) &&
+      hasDiscordPermission(permissions.bot, DiscordPermission.ManageThreads)
+    )
   ) {
     return {
       kind: "denied",
@@ -304,7 +312,7 @@ async function requireThreadAccess(
           error: {
             code: "DISCORD_THREAD_CLOSED",
             message:
-              "This Discord thread is archived or locked. Reopen it in Discord before sending.",
+              "This Discord thread is locked. Ask a moderator to unlock it before sending.",
           },
         },
       },

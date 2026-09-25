@@ -24,6 +24,19 @@ export function discordUnavailable(): DiscordFailureResponse {
   };
 }
 
+export function discordDmReadDenied(): DiscordFailureResponse {
+  return {
+    status: 403,
+    body: {
+      error: {
+        code: "DISCORD_DM_READ_DENIED",
+        message:
+          "Discord bot DM content cannot be read because that DM is shared by every Okou organization connected to your Discord account. Sending to your own bot DM is still available.",
+      },
+    },
+  };
+}
+
 export function discordApiFailure(
   result: Exclude<DiscordApiResult<unknown>, { kind: "ok" }>,
 ): DiscordFailureResponse {

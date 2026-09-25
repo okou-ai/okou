@@ -1,13 +1,9 @@
+import type { Tx } from "../../lib/db-types";
 import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import type { Tx } from "../../lib/db-types";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
-import {
-  PUBLIC_BRAND,
-  PUBLIC_BRAND_PRESENTATION,
-} from "@okouai/core/public-brand";
+import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,
@@ -35,7 +31,6 @@ import {
 import { now } from "../../lib/time";
 import {
   publishChatThreadMessageCreatedSafely,
-  publishThreadListChanged,
   publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
@@ -46,6 +41,7 @@ import {
 } from "../external/agentphone-client";
 import { bestEffort, safeUrlParse } from "../utils";
 import {
+  agentPhoneChannelForLinkedHandle,
   agentPhoneReplyDestination,
   describeAgentPhoneHandleShape,
   isAgentPhoneChannel,
@@ -107,6 +103,7 @@ const agentPhoneQueueEventRevoker = alias(
 const AGENTPHONE_DM_ROOT_MESSAGE_ID = "dm";
 
 export {
+  agentPhoneChannelForLinkedHandle,
   describeAgentPhoneHandleShape,
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
@@ -470,38 +467,30 @@ export async function resolveAgentPhoneUserLinkForEvent(
   return resolveAgentPhoneConversationUserLink(db, event.conversationId);
 }
 
-export async function resolveAgentPhoneUserLinkForOwner(
-  db: Db,
+/**
+ * The member's own phone link. A member has at most one link per organization,
+ * so proactive sends address it directly instead of trusting a caller-supplied
+ * handle.
+ */
+export async function resolveAgentPhoneUserLinkForMember(
+  db: ReadonlyDb,
   params: {
-    readonly phoneHandle: string;
-    readonly channel: AgentPhoneChannel;
     readonly userId: string;
     readonly orgId: string;
   },
 ): Promise<AgentPhoneUserLink | null> {
-  const normalized = normalizeAgentPhoneHandle(
-    params.phoneHandle,
-    params.channel,
-  );
-  if (!normalized) {
-    return null;
-  }
   const [userLink] = await db
     .select()
     .from(agentphoneUserLinks)
     .where(
       and(
-        eq(agentphoneUserLinks.phoneHandle, normalized),
         eq(agentphoneUserLinks.userId, params.userId),
         eq(agentphoneUserLinks.orgId, params.orgId),
       ),
     )
     .limit(1);
 
-  if (!userLink) {
-    return null;
-  }
-  return touchAgentPhoneUserLink(db, userLink, normalized, params.channel);
+  return userLink ?? null;
 }
 
 export async function resolveAgentPhoneAgentIdForUserLink(
@@ -1537,7 +1526,6 @@ function agentPhoneInputFiles(
 type PersistedAgentPhoneChatMessage =
   | {
       readonly inserted: true;
-      readonly splitWrites: boolean;
       readonly chatThreadId: string;
       readonly chatEventId: string;
     }
@@ -1584,7 +1572,6 @@ const persistAgentPhoneChatMessage$ = command(
         userId: args.userLink.userId,
         orgId: args.userLink.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: PUBLIC_BRAND,
         files: agentPhoneInputFiles(args.event, args.userLink.id),
       },
       signal,
@@ -1598,9 +1585,7 @@ const persistAgentPhoneChatMessage$ = command(
           .filter(Boolean)
           .join("\n\n")
       : args.prompt;
-    const splitWrites = await isSplitChatEventWriteEnabled(args.db);
-    signal.throwIfAborted();
-    const persist = async (tx: Db | Tx, touchThread: () => Promise<void>) => {
+    const persist = async (tx: Db, touchThread: () => Promise<void>) => {
       const event = await insertChatEvent(
         tx,
         {
@@ -1635,7 +1620,6 @@ const persistAgentPhoneChatMessage$ = command(
           createdAt: currentTime,
         },
         "id",
-        { splitWrites },
       );
       signal.throwIfAborted();
       if (!event) {
@@ -1647,7 +1631,6 @@ const persistAgentPhoneChatMessage$ = command(
     const inserted = await withNativeChatEventThreadTouch(
       args.db,
       {
-        splitWrites,
         chatThreadId: route.chatThreadId,
         createdAt: currentTime,
         eventId: chatEventId,
@@ -1656,12 +1639,7 @@ const persistAgentPhoneChatMessage$ = command(
     );
     signal.throwIfAborted();
     return inserted
-      ? {
-          inserted: true,
-          splitWrites,
-          chatThreadId: route.chatThreadId,
-          chatEventId,
-        }
+      ? { inserted: true, chatThreadId: route.chatThreadId, chatEventId }
       : { inserted: false };
   },
 );
@@ -1752,11 +1730,7 @@ const runAgentForAgentPhone$ = command(
       threadId: persisted.chatThreadId,
     });
     signal.throwIfAborted();
-    await (
-      persisted.splitWrites
-        ? publishThreadListChangedSafely
-        : publishThreadListChanged
-    )({
+    await publishThreadListChangedSafely({
       userId: args.userLink.userId,
       orgId: args.userLink.orgId,
     });
@@ -1862,7 +1836,6 @@ export const handleAgentPhoneMessage$ = command(
         });
     const userLinkId = params.userLink.id;
     const { executionContext } = await loadOptionalChatEnrichment(
-      db,
       "agentphone",
       () => {
         return fetchAgentPhoneContext(db, {

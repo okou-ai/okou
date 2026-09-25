@@ -14,6 +14,8 @@ import { expect, onTestFinished } from "vitest";
 import { z } from "zod";
 
 export const APPLICATION_ID = "100000000000000001";
+// Older applications have a bot user ID distinct from the application ID.
+export const BOT_USER_ID = "100000000000000008";
 export const GUILD_ID = "100000000000000002";
 export const CHANNEL_ID = "100000000000000003";
 export const MESSAGE_ID = "100000000000000004";
@@ -85,6 +87,7 @@ export class GatewayConnection {
         session_id: sessionId,
         resume_gateway_url: "wss://gateway.discord.gg",
         application: { id: APPLICATION_ID },
+        user: { id: BOT_USER_ID },
       },
     });
   }
@@ -99,8 +102,8 @@ export class GatewayConnection {
         channel_id: CHANNEL_ID,
         guild_id: GUILD_ID,
         author: { id: "100000000000000005", username: "member", bot: false },
-        content: "<@100000000000000001> Hello",
-        mentions: [{ id: APPLICATION_ID, username: "okou", bot: true }],
+        content: `<@${BOT_USER_ID}> Hello`,
+        mentions: [{ id: BOT_USER_ID, username: "okou", bot: true }],
         attachments: [],
         type: 0,
       },
@@ -136,6 +139,8 @@ export class RelayFixture {
   reply: (delivery: Delivery) => Response | Promise<Response> = () => {
     return Response.json({ ok: true, outcome: "accepted" });
   };
+  // Overrides Discord's /gateway/bot response when set.
+  gatewayReply: (() => Response) | null = null;
   gatewayMetadata = {
     url: "wss://gateway.discord.gg",
     shards: 1,
@@ -187,7 +192,7 @@ export class RelayFixture {
       this.discoveries.push({
         authorization: request.headers.get("Authorization"),
       });
-      return Response.json(this.gatewayMetadata);
+      return this.gatewayReply?.() ?? Response.json(this.gatewayMetadata);
     }
     if (request.url === "https://gateway.discord.gg/?v=10&encoding=json") {
       expect(request.headers.get("Upgrade")).toBe("websocket");
@@ -216,7 +221,7 @@ export class RelayFixture {
 
   request(path: string, token: string | null = CONTROL_SECRET) {
     return this.runtime.dispatchFetch(`https://relay.example.test${path}`, {
-      method: path === "/health" ? "GET" : "POST",
+      method: ["/health", "/dead-letters"].includes(path) ? "GET" : "POST",
       headers: token === null ? {} : { Authorization: `Bearer ${token}` },
     });
   }

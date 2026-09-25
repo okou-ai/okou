@@ -926,7 +926,7 @@ describe("dormant relational sweep", () => {
     expect(theirThreads.rows).toStrictEqual([{ rows: 1 }]);
   });
 
-  it("removes attributed orphan provenance and nullable legacy provenance without removing another owner's", async () => {
+  it("removes attributed orphan provenance and unattributed retained provenance without removing another owner's", async () => {
     const mine = account("provenance_mine");
     const theirs = account("provenance_theirs");
     const orgId = `org_sweep_${randomUUID().replaceAll("-", "")}`;

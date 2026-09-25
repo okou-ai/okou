@@ -7,7 +7,6 @@ import {
   type AvatarVideoAvatarsQuery,
   type AvatarVideoVoicesQuery,
 } from "@okouai/api-contracts/contracts/avatar-video";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, eq } from "drizzle-orm";
@@ -743,7 +742,6 @@ export const recordGeneratedAvatarVideo$ = command(
       readonly runId: string | undefined;
       readonly billingRunId: string | null;
       readonly billingContext: string;
-      readonly publicBrand: PublicBrand;
       readonly privateArtifacts: boolean;
       readonly pricing: AvatarVideoPricingRow;
       readonly generation: ParsedAvatarVideoGeneration;
@@ -762,7 +760,6 @@ export const recordGeneratedAvatarVideo$ = command(
         extension: extensionForContentType(params.generation.contentType),
         body: params.generation.videoBytes,
         contentType: params.generation.contentType,
-        publicBrand: params.publicBrand,
       },
       signal,
     );
@@ -778,7 +775,7 @@ export const recordGeneratedAvatarVideo$ = command(
         sizeBytes: params.generation.videoBytes.byteLength,
         url: artifact.url,
         s3Key: artifact.key,
-        publicBrand: params.publicBrand,
+        layout: artifact.layout,
         metadata: compactObject({
           generatedBy: "zero-joggai-avatar-video",
           provider: "joggai",

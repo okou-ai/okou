@@ -8,10 +8,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow } from "../../../lib/time";
-import {
-  readUserExportJobFixture,
-  seedLegacyUserExportJobFixture,
-} from "../../../test-fixtures/user-export";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -326,30 +322,6 @@ describe("OPS-01: user data export", () => {
     await expect(api.requestGetUserExport(peer, [200])).resolves.toMatchObject({
       body: { job: null, canExport: true, nextExportAt: null },
     });
-  });
-
-  it("downloads a historical export with the Okou filename without rewriting its row", async () => {
-    const actor = createBddApi(context).user();
-    const storage = installDurableUserExportStorage(context);
-    const { api, jobId } = await completedExport(actor, storage);
-    const exportKey = `exports/${actor.userId}/${jobId}.zip`;
-
-    const historicalJob = await seedLegacyUserExportJobFixture(
-      actor.userId,
-      jobId,
-    );
-    const downloaded = await api.requestGetUserExport(actor, [200]);
-    expect(downloaded.body.job).toMatchObject({
-      id: jobId,
-      status: "completed",
-      downloadUrl: expect.any(String),
-    });
-    expect(exportDownloadDispositions(exportKey)).toStrictEqual(
-      expect.arrayContaining(['attachment; filename="okou-data-export.zip"']),
-    );
-    await expect(
-      readUserExportJobFixture(actor.userId, jobId),
-    ).resolves.toStrictEqual(historicalJob);
   });
 
   it("exports owned threads, instructions, workflows, and current memory in format v4", async () => {

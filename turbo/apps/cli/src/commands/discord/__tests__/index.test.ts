@@ -26,7 +26,6 @@ const message = {
       id: "18446744073709551611",
       filename: "report.pdf",
       size: 1234,
-      url: "https://cdn.discordapp.com/attachments/report.pdf",
       contentType: "application/pdf",
     },
   ],
@@ -303,26 +302,28 @@ describe("okou discord", () => {
     expect(output).not.toHaveBeenCalled();
   });
 
-  it("reports ambiguous guild selection with actionable API guidance", async () => {
+  it("reports a --guild-id that does not match the organization's binding as unavailable", async () => {
     server.use(
       http.get(`${baseUrl}/channels`, () => {
         return HttpResponse.json(
           {
             error: {
-              code: "DISCORD_GUILD_REQUIRED",
+              code: "NOT_FOUND",
               message:
-                "Multiple verified guild bindings are available. Pass --guild-id to select one.",
+                "This Discord conversation is unavailable to your connected account and Okou in the current organization.",
             },
           },
-          { status: 400 },
+          { status: 404 },
         );
       }),
     );
 
-    await expect(runDiscordCommand(["channel", "list"])).rejects.toThrow(
-      "process.exit",
+    await expect(
+      runDiscordCommand(["channel", "list", "--guild-id", guildId]),
+    ).rejects.toThrow("process.exit");
+    expect(errors.mock.calls.flat().join("\n")).toContain(
+      "unavailable to your connected account and Okou in the current organization",
     );
-    expect(errors.mock.calls.flat().join("\n")).toContain("Pass --guild-id");
     expect(output).not.toHaveBeenCalled();
   });
 

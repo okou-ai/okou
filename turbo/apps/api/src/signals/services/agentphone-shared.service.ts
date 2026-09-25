@@ -59,6 +59,16 @@ export function normalizeAgentPhoneHandle(
   return trimmed.replace(/[^\d+]/gu, "");
 }
 
+/**
+ * Channel implied by an already-normalized linked handle. Email handles only
+ * exist on iMessage; phone numbers keep the SMS normalization.
+ */
+export function agentPhoneChannelForLinkedHandle(
+  handle: string,
+): AgentPhoneChannel {
+  return AGENTPHONE_EMAIL_HANDLE_PATTERN.test(handle) ? "imessage" : "sms";
+}
+
 export function isValidAgentPhoneHandle(
   handle: string,
   channel: AgentPhoneChannel,

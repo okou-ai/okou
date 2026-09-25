@@ -1,7 +1,7 @@
 import { command, computed } from "ccstate";
 import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { z } from "zod";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -36,7 +36,6 @@ export const allocateUploadedArtifact$ = command(
       readonly filename: string;
       readonly contentType: string;
       readonly size: number;
-      readonly publicBrand: PublicBrand;
       readonly purpose?: "artifact";
       readonly privateArtifacts?: boolean;
       readonly id?: string;
@@ -64,7 +63,8 @@ export const allocateUploadedArtifact$ = command(
     return {
       ...artifact,
       bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
-      storageMetadata: { publicBrand: args.publicBrand },
+      // Persisted link-layout marker; stored files without it are legacy.
+      storageMetadata: { publicBrand: linkLayoutSegment(artifact.layout) },
     };
   },
 );
@@ -130,7 +130,7 @@ export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
         key: record.key,
         bucket: record.bucket,
         url: privateArtifactUrl(record.id, record.filename, record.metadata),
-        publicBrand: record.publicBrand,
+        layout: record.layout,
         filename: record.filename,
         contentType: record.contentType,
         size: head.contentLength,

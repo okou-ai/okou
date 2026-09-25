@@ -78,14 +78,14 @@ explicit `showUsagePack: false` behavior.
 ### Active transition validators
 
 - `apps/api/scripts/chat-event-sequences/acceptance.ts` protects the chat-event
-  sequence bridge and bounded backfill. It exercises the actual PR1 append SQL
-  against mixed outgoing/direct writers, concurrent multi-thread batches,
-  idempotent conflicts and sequence gaps, SQL rollback, interrupted-batch retry,
-  retention, thread-FK lock compatibility, irreversible global activation and
-  the planned PR2 column contraction. The migration-consistency command runs
-  this isolated-schema validator before schema comparison. Retain the legacy
-  transition cases until the bridge/column contraction has shipped and the
-  rollback window has closed; retain canonical allocation and cleanup coverage.
+  sequence bridge, bounded backfill and the `contract_chat_event_sequence_bridge` contraction. It runs the
+  current append SQL against a frozen outgoing counter writer, concurrent
+  multi-thread batches, idempotent conflicts and sequence gaps, SQL rollback,
+  interrupted-batch retry, retention, thread-FK lock compatibility, irreversible
+  activation, the contraction's fail-closed refusal before activation and its
+  activation of a database without threads. Retain the outgoing-writer cases
+  until the contraction has shipped and the Release 1 rollback window has closed; retain
+  canonical allocation and cleanup coverage.
 
 - `scripts/test-marketing-privacy-retirement.ts` protects migration
   `1139_retire_marketing_privacy_storage` (#33747): populated/empty storage,

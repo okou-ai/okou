@@ -1,14 +1,14 @@
 //! Claimed job task spawning, completion, and panic cleanup.
 //!
 //! Discovery and idle reuse decide when a claimed job should start. This module
-//! owns the spawned task body: executor orchestration, provider completion,
-//! deferred telemetry/network-log uploads, and outer-task panic cleanup.
+//! owns the spawned task body: concrete executor invocation and request wiring,
+//! deferred telemetry/network-log uploads, and the outer panic boundary.
+//! The supervisor owns post-executor finalizing, completion and settlement policy.
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason;
 use futures_util::FutureExt;
 use sandbox::SandboxId;
 use tokio::sync::mpsc;
@@ -35,20 +35,21 @@ use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
 use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, ActiveRuns};
 use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
-use runner_provider::{ClaimedJob, CompletionReportTiming, JobProvider};
+use runner_provider::{ClaimedJob, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_supervisor::blank_pool::BlankPoolDiagnostics;
 use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
 use runner_supervisor::job_lifecycle::{
-    ActiveBudgetLease, CompletionPayload, FinalizationReady, RunCleanupDisposition, RunCleanupState,
+    ActiveBudgetLease, CompletionPayload, FinalizedJob, RunCleanupState, completion_failure_reason,
+    recover_panicked_run,
 };
 use runner_supervisor::orphan_reap::OrphanedActiveRuns;
-use runner_supervisor::ownership::{OwnershipTransitions, RunSandbox};
+use runner_supervisor::ownership::RunSandbox;
 use runner_supervisor::sandbox_finalization::FinalizeContext;
 #[cfg(not(test))]
-use runner_supervisor::sandbox_finalization::finalize_sandbox_for_completion_with_telemetry;
+use runner_supervisor::sandbox_finalization::finalize_claimed_run;
 #[cfg(test)]
-use runner_supervisor::sandbox_finalization::finalize_sandbox_for_completion_with_test_hooks;
+use runner_supervisor::sandbox_finalization::finalize_claimed_run_with_test_hooks;
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
@@ -98,35 +99,6 @@ pub(super) struct SpawnContext {
     pub(super) outer_job_panic: Option<OuterJobPanicPoint>,
     #[cfg(test)]
     pub(super) test_observer: StartLoopTestObserver,
-}
-
-fn completion_failure_reason(
-    exit_code: i32,
-    cancelled: bool,
-    failure: Option<&executor::ExecutionFailure>,
-) -> Option<RequestFailureReason> {
-    if exit_code == 0 || cancelled {
-        return None;
-    }
-    let failure = failure?;
-    match failure.kind {
-        executor::ExecutionFailureKind::Generic
-            if failure
-                .resource_diagnostics
-                .and_then(|diagnostics| diagnostics.failure_kind)
-                == Some(executor::ResourceFailureKind::GuestRootFilesystemFull) =>
-        {
-            Some(RequestFailureReason::GuestRootFilesystemFull)
-        }
-        executor::ExecutionFailureKind::Generic => failure
-            .diagnostic
-            .as_ref()
-            .and_then(|diagnostic| diagnostic.failure_reason)
-            .map(Into::into),
-        executor::ExecutionFailureKind::RunnerJobTimeout { .. } => {
-            Some(RequestFailureReason::ExecutionTimeout)
-        }
-    }
 }
 
 pub(super) struct SpawnJobRequest {
@@ -312,11 +284,6 @@ struct FinalizationPhase {
     test_observer: StartLoopTestObserver,
 }
 
-struct FinalizedJob {
-    finalization_ready: FinalizationReady,
-    telemetry: JobTelemetry,
-}
-
 impl FinalizationPhase {
     async fn finalize(self, executor_result: ExecutorPhaseOutcome) -> FinalizedJob {
         let Self {
@@ -365,27 +332,8 @@ impl FinalizationPhase {
             discovered_cli_agent_session_id,
             restored_session_identity,
         } = outcome;
-        let had_sandbox = sandbox.is_some();
-        let has_restored_session_identity = restored_session_identity.is_some();
-        let has_reuse_key = reuse_key.is_some();
-        let cleanup_state_after_finalize = cleanup_state.clone();
-
         // Cancellation can arrive after terminal logging or while
-        // `sandbox.park()` is in flight. Pass the live handle so finalization
-        // can synchronize the final idle-pool ownership transfer.
-        let finalization_started = Instant::now();
-        if has_reuse_key {
-            assert!(
-                active_run_reuse.mark_finalizing(finalization_started),
-                "reusable active run entered finalization from a resolved state"
-            );
-        }
-        telemetry.record(
-            "runner_host_finalization_started",
-            Duration::ZERO,
-            true,
-            None,
-        );
+        // `sandbox.park()` is in flight. Pass the live handle to the supervisor.
         let finalization_context = FinalizeContext {
             run_id,
             sandbox_id,
@@ -406,8 +354,8 @@ impl FinalizationPhase {
             factory,
             idle_pool,
             status,
-            reuse_state_notify: Arc::clone(&reuse_state_notify),
-            active_run_reuse: active_run_reuse.clone(),
+            reuse_state_notify,
+            active_run_reuse,
             workspace_cache_snapshot,
             parking_gate,
             network_log_drain,
@@ -417,7 +365,7 @@ impl FinalizationPhase {
             cleanup_state,
         };
         #[cfg(not(test))]
-        let finalization_ready = finalize_sandbox_for_completion_with_telemetry(
+        let finalization_ready = finalize_claimed_run(
             sandbox,
             ActiveBudgetLease::new(active_lease),
             &mut telemetry,
@@ -425,7 +373,7 @@ impl FinalizationPhase {
         )
         .await;
         #[cfg(test)]
-        let finalization_ready = finalize_sandbox_for_completion_with_test_hooks(
+        let finalization_ready = finalize_claimed_run_with_test_hooks(
             sandbox,
             ActiveBudgetLease::new(active_lease),
             &mut telemetry,
@@ -433,105 +381,9 @@ impl FinalizationPhase {
             finalization_test_hooks(outer_job_panic, test_observer),
         )
         .await;
-        if has_reuse_key && active_run_reuse.publish_no_exact_sandbox() {
-            reuse_state_notify.notify_one();
-        }
-        let finalization_duration = finalization_started.elapsed();
-        let disposition = cleanup_state_after_finalize.disposition();
-        let reuse_state_changed = finalization_ready.reuse_state_changed();
-        if had_sandbox {
-            telemetry.record(
-                sandbox_reuse_disposition.telemetry_action(),
-                Duration::ZERO,
-                true,
-                None,
-            );
-        }
-        let (finalization_action, finalization_success, finalization_error) = match disposition {
-            RunCleanupDisposition::IdlePoolOwned | RunCleanupDisposition::HandoffOwned => {
-                ("runner_host_finalization_reusable_sandbox", true, None)
-            }
-            _ if reuse_state_changed => ("runner_host_finalization_workspace_cache", true, None),
-            RunCleanupDisposition::DestroyCompleted | RunCleanupDisposition::StatusRemoved => {
-                ("runner_host_finalization_no_resource", true, None)
-            }
-            RunCleanupDisposition::ActiveOrUnknown if !had_sandbox => {
-                ("runner_host_finalization_no_resource", true, None)
-            }
-            RunCleanupDisposition::ActiveOrUnknown => (
-                "runner_host_finalization_failed",
-                false,
-                Some("sandbox ownership unresolved"),
-            ),
-        };
-        telemetry.record(
-            finalization_action,
-            finalization_duration,
-            finalization_success,
-            finalization_error,
-        );
-        record_session_history_identity_park_telemetry(
-            &mut telemetry,
-            disposition,
-            has_restored_session_identity,
-        );
-
         FinalizedJob {
             finalization_ready,
             telemetry,
-        }
-    }
-}
-
-fn record_session_history_identity_park_telemetry(
-    telemetry: &mut JobTelemetry,
-    disposition: RunCleanupDisposition,
-    has_restored_session_identity: bool,
-) {
-    if !matches!(disposition, RunCleanupDisposition::IdlePoolOwned) {
-        return;
-    }
-    let action_type = if has_restored_session_identity {
-        "session_history_identity_parked"
-    } else {
-        "session_history_identity_park_missing"
-    };
-    telemetry.record(action_type, Duration::ZERO, true, None);
-}
-
-struct CompletionSettlementPhase {
-    run_id: RunId,
-    sandbox_id: SandboxId,
-    status: Arc<StatusTracker>,
-    active_run_guard: ActiveRunGuard,
-    cleanup_state: RunCleanupState,
-}
-
-impl CompletionSettlementPhase {
-    async fn settle(self, finalization_ready: FinalizationReady, telemetry: &mut JobTelemetry) {
-        let Self {
-            run_id,
-            sandbox_id,
-            status,
-            active_run_guard,
-            cleanup_state,
-        } = self;
-
-        let ownership = OwnershipTransitions::new(status.as_ref());
-        finalization_ready
-            .settle(
-                RunSandbox::new(run_id, sandbox_id),
-                &ownership,
-                &cleanup_state,
-            )
-            .await;
-        if active_run_guard.release() {
-            telemetry.record(
-                "runner_active_reuse_key_released",
-                Duration::ZERO,
-                true,
-                None,
-            );
         }
     }
 }
@@ -593,8 +445,8 @@ impl DeferredUploadPhase {
 ///
 /// The provider has already claimed the job and the caller has reserved
 /// resources in the budget. The spawned task runs the executor, reports
-/// completion through the provider, and delegates the post-executor
-/// park-or-destroy decision to [`finalize_sandbox_for_completion_with_telemetry`].
+/// completion through the supervisor, which owns the post-executor
+/// park-or-destroy decision in [`runner_supervisor::sandbox_finalization::finalize_claimed_run`].
 ///
 /// If `reuse_entry` is `Some`, the job reuses an existing idle sandbox.
 /// Otherwise it creates a new one via the factory.
@@ -763,13 +615,6 @@ pub(super) async fn run_job(
         #[cfg(test)]
         test_observer,
     };
-    let completion_settlement = CompletionSettlementPhase {
-        run_id,
-        sandbox_id,
-        status,
-        active_run_guard,
-        cleanup_state: cleanup_state_for_body,
-    };
     let deferred_upload = DeferredUploadPhase {
         run_id,
         sandbox_token,
@@ -817,24 +662,14 @@ pub(super) async fn run_job(
         .with_workspace_reuse_result(executor_result.outcome.workspace_reuse_result);
         // Structural guarantee: claim (in provider) is always paired with complete.
         signal_usage_flush(run_id, &usage_flush_tx);
-        let (completion_report, finalized) = match provider.completion_report_timing() {
-            CompletionReportTiming::ConcurrentWithFinalization => tokio::join!(
-                completion_payload.report(provider.as_ref()),
+        let telemetry = completion_payload
+            .complete_claimed_run(
+                provider.as_ref(),
                 finalization.finalize(executor_result),
-            ),
-            CompletionReportTiming::AfterFinalization => {
-                let finalized = finalization.finalize(executor_result).await;
-                let completion_report = completion_payload.report(provider.as_ref()).await;
-                (completion_report, finalized)
-            }
-        };
-        let FinalizedJob {
-            finalization_ready,
-            mut telemetry,
-        } = finalized;
-        completion_report.record(&mut telemetry);
-        completion_settlement
-            .settle(finalization_ready, &mut telemetry)
+                status.as_ref(),
+                active_run_guard,
+                &cleanup_state_for_body,
+            )
             .await;
         deferred_upload.flush(telemetry).await;
     };
@@ -883,30 +718,14 @@ pub(super) async fn cleanup_panicked_job(
     orphaned_active_runs: OrphanedActiveRuns,
 ) {
     cancellation.unregister().await;
-    let ownership = OwnershipTransitions::new(status.as_ref());
-    let run = RunSandbox::new(run_id, sandbox_id);
-
-    match cleanup_state.disposition() {
-        RunCleanupDisposition::StatusRemoved => {}
-        RunCleanupDisposition::DestroyCompleted => {
-            ownership.active_destroy_completed(run).await;
-        }
-        RunCleanupDisposition::IdlePoolOwned => {
-            let snapshot = idle_pool.lock().await.status_snapshot();
-            ownership.active_idle_pool_owned(run, snapshot).await;
-        }
-        RunCleanupDisposition::HandoffOwned => {
-            ownership.active_completed(run).await;
-        }
-        RunCleanupDisposition::ActiveOrUnknown => {
-            warn!(
-                run_id = %run_id,
-                sandbox_id = %sandbox_id,
-                "outer job task panicked before sandbox ownership was proven; leaving active run visible for orphan reconciliation"
-            );
-            ownership.active_ownership_unknown(&orphaned_active_runs, run);
-        }
-    }
+    recover_panicked_run(
+        RunSandbox::new(run_id, sandbox_id),
+        status.as_ref(),
+        &idle_pool,
+        &cleanup_state,
+        &orphaned_active_runs,
+    )
+    .await;
 }
 
 /// Handle a completed job from the JoinSet, removing its cancellation registration.
@@ -927,9 +746,6 @@ pub(super) async fn handle_job_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guest_contracts::diagnostics::{
-        AgentFramework, FailureClass, FailureDiagnostic, FailureReason, PromptMetadata,
-    };
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -947,7 +763,7 @@ mod tests {
     use runner_lifecycle::active_runs::ActiveRuns;
     use runner_provider::RunCancellationRegistry;
     use runner_supervisor::idle_lifecycle::SharedIdlePool;
-    use runner_supervisor::job_lifecycle::RunCleanupState;
+    use runner_supervisor::job_lifecycle::{RunCleanupDisposition, RunCleanupState};
     use runner_supervisor::orphan_reap::OrphanedActiveRuns;
     use runner_types::ids::RunId;
 
@@ -1180,120 +996,6 @@ mod tests {
                 panic!("expected runner job timeout failure kind")
             }
         }
-    }
-
-    #[test]
-    fn completion_reason_uses_diagnostic_for_generic_failure() {
-        let diagnostic = FailureDiagnostic::new(
-            FailureClass::CliNonzero,
-            AgentFramework::ClaudeCode,
-            PromptMetadata::from_prompt("plain prompt"),
-        )
-        .with_failure_reason(FailureReason::UsageLimit);
-        let failure = executor::ExecutionFailure::new(1, "usage limit", Some(diagnostic));
-
-        assert_eq!(
-            completion_failure_reason(1, false, Some(&failure)),
-            Some(RequestFailureReason::UsageLimit)
-        );
-    }
-
-    #[test]
-    fn completion_reason_reports_proven_rootfs_exhaustion() {
-        let diagnostic = FailureDiagnostic::new(
-            FailureClass::CliNonzero,
-            AgentFramework::ClaudeCode,
-            PromptMetadata::from_prompt("plain prompt"),
-        )
-        .with_failure_reason(FailureReason::UsageLimit);
-        for diagnostic in [None, Some(diagnostic)] {
-            let failure =
-                executor::ExecutionFailure::new(1, "Agent exited with code 1", diagnostic)
-                    .with_resource_diagnostics(Some(
-                        executor::ResourceFailureDiagnostics::from_failure_kind(
-                            executor::ResourceFailureKind::GuestRootFilesystemFull,
-                        ),
-                    ));
-            assert_eq!(
-                completion_failure_reason(1, false, Some(&failure)),
-                Some(RequestFailureReason::GuestRootFilesystemFull)
-            );
-            assert_eq!(completion_failure_reason(0, false, Some(&failure)), None);
-            assert_eq!(completion_failure_reason(1, true, Some(&failure)), None);
-        }
-    }
-
-    #[test]
-    fn completion_reason_does_not_infer_rootfs_exhaustion_from_error_text() {
-        let failure = executor::ExecutionFailure::new(1, "No space left on device", None);
-        assert_eq!(completion_failure_reason(1, false, Some(&failure)), None);
-        for kind in [
-            executor::ResourceFailureKind::GuestMemoryOomKilled,
-            executor::ResourceFailureKind::HostMemoryOomKilled,
-        ] {
-            let failure = executor::ExecutionFailure::new(1, "Agent process killed", None)
-                .with_resource_diagnostics(Some(
-                    executor::ResourceFailureDiagnostics::from_failure_kind(kind),
-                ));
-            assert_eq!(completion_failure_reason(1, false, Some(&failure)), None);
-        }
-    }
-
-    #[test]
-    fn completion_reason_uses_runner_kind_for_timeout_and_overrides_diagnostic() {
-        let failure = executor::ExecutionFailure::runner_job_timeout(
-            124,
-            "execution timed out",
-            None,
-            Duration::from_secs(7200),
-            Duration::from_secs(7200),
-            None,
-        );
-
-        assert_eq!(
-            completion_failure_reason(124, false, Some(&failure)),
-            Some(RequestFailureReason::ExecutionTimeout)
-        );
-
-        let conflicting_diagnostic = FailureDiagnostic::new(
-            FailureClass::CliNonzero,
-            AgentFramework::ClaudeCode,
-            PromptMetadata::from_prompt("plain prompt"),
-        )
-        .with_failure_reason(FailureReason::UsageLimit);
-        let failure_with_conflicting_diagnostic = executor::ExecutionFailure::runner_job_timeout(
-            124,
-            "execution timed out",
-            Some(conflicting_diagnostic),
-            Duration::from_secs(7200),
-            Duration::from_secs(7200),
-            None,
-        )
-        .with_resource_diagnostics(Some(
-            executor::ResourceFailureDiagnostics::from_failure_kind(
-                executor::ResourceFailureKind::GuestRootFilesystemFull,
-            ),
-        ));
-
-        assert_eq!(
-            completion_failure_reason(124, false, Some(&failure_with_conflicting_diagnostic)),
-            Some(RequestFailureReason::ExecutionTimeout)
-        );
-    }
-
-    #[test]
-    fn completion_reason_omits_success_and_cancellation() {
-        let failure = executor::ExecutionFailure::runner_job_timeout(
-            124,
-            "execution timed out",
-            None,
-            Duration::from_secs(7200),
-            Duration::from_secs(7200),
-            None,
-        );
-
-        assert_eq!(completion_failure_reason(0, false, None), None);
-        assert_eq!(completion_failure_reason(124, true, Some(&failure)), None);
     }
 
     #[tokio::test]

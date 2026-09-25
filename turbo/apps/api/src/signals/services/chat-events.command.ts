@@ -11,6 +11,7 @@ import {
 } from "./chat-reasoning-effort.service";
 /** Canonical ChatEvent write commands. */
 import { randomBytes } from "node:crypto";
+import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
@@ -27,7 +28,6 @@ import {
   isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   chatEvents,
@@ -102,11 +102,7 @@ import {
   ORDINARY_CHAT_THREAD_PROVENANCE,
   recordOfficialWorkflowThreadProvenance,
 } from "./morning-brief-thread-provenance.service";
-import {
-  touchChatThreadLastMessageAt,
-  touchChatThreadLastMessageAtIndependently,
-} from "./chat-event-shared.service";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
+import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import {
   attemptChatEventSideEffect,
   clearThreadDraftIndependently,
@@ -119,8 +115,8 @@ import {
 } from "./chat-event.service";
 import {
   officialWorkflowQueueContextId,
-  webChatPublicBrandContextId,
-} from "./web-chat-public-brand-context.service";
+  webChatContextId,
+} from "./web-chat-queue-context.service";
 import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
@@ -143,7 +139,6 @@ import {
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-import { clearExistingChatThreadDraftRow } from "./chat-thread-draft-write.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
@@ -302,7 +297,6 @@ interface NormalSendArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly apiStartTime: number;
-  readonly publicBrand: PublicBrand;
   readonly preloadedAgent?: AgentForChatSend;
   readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
@@ -925,7 +919,7 @@ const resolveIncomingAttachFileMetadata$ = command(
               contentType: file.contentType,
               size: object.size,
               objectKey: object.key,
-              publicBrand: object.publicBrand,
+              publicBrand: linkLayoutSegment(object.layout),
             });
           }
         }
@@ -1958,7 +1952,6 @@ interface AppendUnassociatedUserMessageParams {
   readonly revokesEventId: string | undefined;
   readonly triggerSource: "web" | "agent";
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
-  readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
 }
@@ -2072,7 +2065,6 @@ async function recordOfficialSourceThreadProvenance(
 async function resolveLockedMcpSubmission(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
-  splitWrites = false,
 ): Promise<ClientEventIdResolution | undefined> {
   if (params.mcpSubmission) {
     const [thread] = await tx
@@ -2085,7 +2077,7 @@ async function resolveLockedMcpSubmission(
           chatThreadOrganizationCondition(tx, params.orgId),
         ),
       )
-      .for(splitWrites ? "no key update" : "update");
+      .for("no key update");
     if (!thread) {
       return { kind: "conflict" };
     }
@@ -2108,80 +2100,6 @@ async function resolveLockedMcpSubmission(
   return undefined;
 }
 
-/**
- * Clears the draft and re-proves, inside the event transaction, the same
- * user/organization scope the request already authorized. The predicates must
- * not narrow which threads the caller could already enqueue into; the thread's
- * Agent is fixed at creation, so it is not re-checked here.
- */
-/**
- * Enter a send-clear transaction with the authorized parent's FOR UPDATE lock.
- * PATCH retains KEY SHARE -> child -> parent; this strong lock makes either
- * complete before the other reaches the child. The queue's FOR NO KEY UPDATE
- * lock is compatible with KEY SHARE and cannot serve as this entry lock.
- */
-async function lockAuthorizedThreadForDraftClear(
-  tx: ChatThreadEventTransaction,
-  threadId: string,
-  userId: string,
-  orgId?: string,
-): Promise<boolean> {
-  const [thread] = await tx
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, threadId),
-        eq(chatThreads.userId, userId),
-        ...(orgId === undefined
-          ? []
-          : [chatThreadOrganizationCondition(tx, orgId)]),
-      ),
-    )
-    .for("update", { of: chatThreads })
-    .limit(1);
-  return thread !== undefined;
-}
-
-async function authorizeChatThreadForEnqueue(
-  tx: ChatThreadEventTransaction,
-  params: AppendUnassociatedUserMessageParams,
-): Promise<boolean> {
-  // This must precede the parent UPDATE and all child writes. MCP submission
-  // already holds FOR UPDATE; reacquiring it in the same transaction is safe.
-  if (
-    !(await lockAuthorizedThreadForDraftClear(
-      tx,
-      params.threadId,
-      params.userId,
-      params.orgId,
-    ))
-  ) {
-    return false;
-  }
-  const [thread] = await tx
-    .update(chatThreads)
-    .set({
-      draftUserMessage: null,
-      draftAttachments: null,
-    })
-    .where(
-      and(
-        eq(chatThreads.id, params.threadId),
-        eq(chatThreads.userId, params.userId),
-        chatThreadOrganizationCondition(tx, params.orgId),
-      ),
-    )
-    .returning({
-      id: chatThreads.id,
-    });
-  if (!thread) {
-    return false;
-  }
-  await clearExistingChatThreadDraftRow(tx, thread.id);
-  return true;
-}
-
 function unassociatedUserMessageEvent(
   params: AppendUnassociatedUserMessageParams,
 ): Extract<NewChatEvent, { readonly eventType: "input.prompt" }> {
@@ -2202,8 +2120,8 @@ function unassociatedUserMessageEvent(
           contextType: "web",
           contextId:
             params.requiredOfficialWorkflowIds === undefined
-              ? webChatPublicBrandContextId(params.publicBrand)
-              : officialWorkflowQueueContextId(params.publicBrand),
+              ? webChatContextId()
+              : officialWorkflowQueueContextId(),
         }
       : {}),
     ...(params.triggerSource === "agent" && params.agentRunSource
@@ -2217,7 +2135,7 @@ function unassociatedUserMessageEvent(
           }
         : {
             contextType: "agent_run",
-            contextId: officialWorkflowQueueContextId(params.publicBrand),
+            contextId: officialWorkflowQueueContextId(),
           }
       : {}),
   };
@@ -2227,25 +2145,9 @@ async function appendUnassociatedUserMessageTransaction(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
 ): Promise<ClientEventIdResolution> {
-  const splitWrites = await isSplitChatEventWriteEnabled(tx);
-  const existing = await resolveLockedMcpSubmission(tx, params, splitWrites);
+  const existing = await resolveLockedMcpSubmission(tx, params);
   if (existing) {
     return existing;
-  }
-  const authorizedThread =
-    splitWrites ||
-    (await measureApiDispatchTiming(
-      params.timing,
-      "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_clear_draft",
-      "nested",
-      () => {
-        return authorizeChatThreadForEnqueue(tx, params);
-      },
-    ));
-  if (!authorizedThread) {
-    // `conflict` is the duplicate-clientEventId answer. The request already
-    // authorized this thread, so losing it here is a broken invariant.
-    throw new Error("Authorized chat thread changed before enqueue");
   }
 
   const explicitId = params.clientEventId ?? undefined;
@@ -2285,25 +2187,6 @@ async function appendUnassociatedUserMessageTransaction(
         });
       },
     );
-    if (params.touchThreadSort && !splitWrites) {
-      await measureApiDispatchTiming(
-        params.timing,
-        "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_touch_thread_sort",
-        "nested",
-        () => {
-          return touchChatThreadLastMessageAt(
-            tx,
-            params.threadId,
-            inserted.createdAt,
-            params.chatThreadSortEventId,
-            {
-              userId: params.userId,
-              orgId: params.orgId,
-            },
-          );
-        },
-      );
-    }
     return {
       kind: "queued",
       createdAt: inserted.createdAt,
@@ -2326,7 +2209,6 @@ export async function appendMcpQueuedUserMessageInTransaction(
     readonly threadId: string;
     readonly inputId: string;
     readonly text: string;
-    readonly publicBrand: PublicBrand;
   },
 ): Promise<boolean> {
   const resolution = await appendUnassociatedUserMessageTransaction(tx, {
@@ -2346,7 +2228,6 @@ export async function appendMcpQueuedUserMessageInTransaction(
     revokesEventId: undefined,
     triggerSource: "web",
     agentRunSource: null,
-    publicBrand: params.publicBrand,
   });
   return resolution.kind === "queued" && resolution.inserted;
 }
@@ -2357,7 +2238,7 @@ class McpEnqueueCollision extends Error {
   }
 }
 
-async function appendUnassociatedUserMessageIndependently(
+async function appendUnassociatedUserMessage(
   params: AppendUnassociatedUserMessageParams & { readonly db: Db },
 ): Promise<ClientEventIdResolution> {
   const db = params.db;
@@ -2397,7 +2278,7 @@ async function appendUnassociatedUserMessageIndependently(
   };
   const result = params.mcpSubmission
     ? await db.transaction(async (tx) => {
-        const existing = await resolveLockedMcpSubmission(tx, params, true);
+        const existing = await resolveLockedMcpSubmission(tx, params);
         if (existing) {
           return { existing };
         }
@@ -2468,54 +2349,6 @@ async function appendUnassociatedUserMessageIndependently(
   };
 }
 
-async function appendUnassociatedUserMessage(
-  params: AppendUnassociatedUserMessageParams & { readonly db: Db },
-): Promise<ClientEventIdResolution> {
-  if (await isSplitChatEventWriteEnabled(params.db)) {
-    return await appendUnassociatedUserMessageIndependently(params);
-  }
-  return measureApiDispatchTiming(
-    params.timing,
-    "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_transaction",
-    "nested",
-    async () => {
-      const result = await settle(
-        params.db.transaction((tx) => {
-          return appendUnassociatedUserMessageTransaction(tx, params);
-        }),
-      );
-      if (result.ok) {
-        return result.value;
-      }
-      if (result.error instanceof McpEnqueueCollision) {
-        return result.error.resolution;
-      }
-      throw result.error;
-    },
-  );
-}
-
-async function clearThreadDraft(
-  tx: ChatThreadEventTransaction,
-  threadId: string,
-  userId: string,
-): Promise<void> {
-  if (!(await lockAuthorizedThreadForDraftClear(tx, threadId, userId))) {
-    return;
-  }
-  const [thread] = await tx
-    .update(chatThreads)
-    .set({
-      draftUserMessage: null,
-      draftAttachments: null,
-    })
-    .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)))
-    .returning({ id: chatThreads.id });
-  if (thread) {
-    await clearExistingChatThreadDraftRow(tx, thread.id);
-  }
-}
-
 async function appendAssociatedUserMessage(params: {
   readonly db: Db;
   readonly threadId: string;
@@ -2535,93 +2368,47 @@ async function appendAssociatedUserMessage(params: {
   // are not user-initiated typing, so they must not clear the user's draft.
   readonly clearDraft: boolean;
 }): Promise<boolean> {
-  if (await isSplitChatEventWriteEnabled(params.db)) {
-    await registerCanonicalWebInputAssets(params.db, {
-      chatThreadId: params.threadId,
-      userId: params.userId,
-      orgId: params.orgId,
-      files: params.attachFileMetadata ?? [],
-    });
-    const event: NewChatEvent = {
-      ...(params.clientEventId ? { id: params.clientEventId } : {}),
-      chatThreadId: params.threadId,
-      eventType: "input.prompt",
-      userMessage: params.userMessage,
-      runId: params.runId,
-      ...(params.triggerSource === "web"
-        ? { contextType: "web" as const }
-        : {}),
-    };
-    const inserted = params.revokesEventId
-      ? await replaceChatEvent(params.db, params.revokesEventId, event)
-      : await insertChatEvent(params.db, event, "id");
-    if (inserted && params.clearDraft) {
-      await clearThreadDraftIndependently(params.db, params);
-    }
-    if (inserted && params.touchThreadSort) {
-      await attemptChatEventSideEffect("thread_touch", params.threadId, () => {
-        return touchChatThreadLastMessageAtIndependently(
-          params.db,
-          params.threadId,
-          inserted.createdAt,
-          params.chatThreadSortEventId,
-          { userId: params.userId, orgId: params.orgId },
-        );
-      });
-    }
-    if (params.appendQueueMarker) {
-      await params.db.transaction((tx) => {
-        return appendQueuedRunAssistantMarker(tx, {
-          chatThreadId: params.threadId,
-          runId: params.runId,
-          createdAfter: inserted?.createdAt ?? nowDate(),
-        });
-      });
-    }
-    return inserted !== null;
+  await registerCanonicalWebInputAssets(params.db, {
+    chatThreadId: params.threadId,
+    userId: params.userId,
+    orgId: params.orgId,
+    files: params.attachFileMetadata ?? [],
+  });
+  const event: NewChatEvent = {
+    ...(params.clientEventId ? { id: params.clientEventId } : {}),
+    chatThreadId: params.threadId,
+    eventType: "input.prompt",
+    userMessage: params.userMessage,
+    runId: params.runId,
+    ...(params.triggerSource === "web" ? { contextType: "web" as const } : {}),
+  };
+  const inserted = params.revokesEventId
+    ? await replaceChatEvent(params.db, params.revokesEventId, event)
+    : await insertChatEvent(params.db, event, "id");
+  if (inserted && params.clearDraft) {
+    await clearThreadDraftIndependently(params.db, params);
   }
-  return await params.db.transaction(async (tx) => {
-    if (params.clearDraft) {
-      await clearThreadDraft(tx, params.threadId, params.userId);
-    }
-    const explicitId = params.clientEventId ?? undefined;
-    const fileMetadata = params.attachFileMetadata;
-    const event: NewChatEvent = {
-      ...(explicitId ? { id: explicitId } : {}),
-      chatThreadId: params.threadId,
-      eventType: "input.prompt",
-      userMessage: params.userMessage,
-      runId: params.runId,
-      ...(params.triggerSource === "web" ? { contextType: "web" } : {}),
-    };
-    const inserted = params.revokesEventId
-      ? await replaceChatEvent(tx, params.revokesEventId, event)
-      : await insertChatEvent(tx, event, "id");
-    if (inserted) {
-      await registerCanonicalWebInputAssets(tx, {
-        chatThreadId: params.threadId,
-        userId: params.userId,
-        orgId: params.orgId,
-        files: fileMetadata ?? [],
-      });
-    }
-    if (inserted && params.touchThreadSort) {
-      await touchChatThreadLastMessageAt(
-        tx,
+  if (inserted && params.touchThreadSort) {
+    await attemptChatEventSideEffect("thread_touch", params.threadId, () => {
+      return touchChatThreadLastMessageAtIndependently(
+        params.db,
         params.threadId,
         inserted.createdAt,
         params.chatThreadSortEventId,
+        { userId: params.userId, orgId: params.orgId },
       );
-    }
-    if (params.appendQueueMarker) {
-      await appendQueuedRunAssistantMarker(tx, {
+    });
+  }
+  if (params.appendQueueMarker) {
+    await params.db.transaction((tx) => {
+      return appendQueuedRunAssistantMarker(tx, {
         chatThreadId: params.threadId,
         runId: params.runId,
         createdAfter: inserted?.createdAt ?? nowDate(),
       });
-    }
-    return inserted !== null;
-  });
+    });
+  }
+  return inserted !== null;
 }
 
 function appendRecallChatEvent(params: {
@@ -3502,7 +3289,6 @@ async function queueUnassociatedNormalEvent(params: {
   readonly userId: string;
   readonly touchThreadSort: boolean;
   readonly orgId: string;
-  readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
 }): Promise<{
@@ -3528,7 +3314,6 @@ async function queueUnassociatedNormalEvent(params: {
     revokesEventId: params.body.revokesEventId,
     triggerSource: params.prepared.triggerSource,
     agentRunSource: params.prepared.agentRunSource,
-    publicBrand: params.publicBrand,
     getStartedWorkflowId: params.getStartedWorkflowId,
     ...(params.requiredOfficialWorkflowIds === undefined
       ? {}
@@ -3995,7 +3780,10 @@ function buildCreateAgentRunArgs(params: {
         payload: {
           threadId: prepared.thread.threadId,
           agentId: args.body.agentId,
-          publicBrand: args.publicBrand,
+          // Rollout fallback (new API -> old API): older API instances default a
+          // missing brand to VM0. Stop writing it once those APIs no longer serve
+          // and are not rollback targets (#36766 Phase 2).
+          publicBrand: PUBLIC_BRAND,
         },
       },
     ],
@@ -4425,7 +4213,6 @@ const sendQueueFirstNormalEvent$ = command(
             prepared.thread.isNewThread,
           ),
           orgId: args.orgId,
-          publicBrand: args.publicBrand,
           getStartedWorkflowId: args.getStartedWorkflowId,
           ...(args.requiredOfficialWorkflowIds === undefined
             ? {}
@@ -4551,7 +4338,6 @@ export const handleSendChatEvent$ = command(
         userId: auth.userId,
         orgId: auth.orgId,
         apiStartTime,
-        publicBrand: PUBLIC_BRAND,
         timing,
       },
       signal,

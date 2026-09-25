@@ -1365,13 +1365,6 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
-      "CREATE TRIGGER bridge_chat_event_sequence_allocation BEFORE UPDATE OF last_chat_event_seq_id ON public.chat_threads FOR EACH ROW EXECUTE FUNCTION bridge_chat_event_sequence_allocation()",
-    schemaName: "public",
-    tableName: "chat_threads",
-    triggerName: "bridge_chat_event_sequence_allocation",
-  },
-  {
-    definition:
       "CREATE TRIGGER preserve_chat_event_write_activation BEFORE DELETE OR UPDATE ON public.chat_event_write_control FOR EACH ROW EXECUTE FUNCTION preserve_chat_event_write_activation()",
     schemaName: "public",
     tableName: "chat_event_write_control",
@@ -1443,13 +1436,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
-  {
-    bodyHash: "1fa222f5cedf2d5f5899fcbd5605e860",
-    functionName: "bridge_chat_event_sequence_allocation",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
   {
     bodyHash: "0d37e98a01767d7416f0ae9e69f1311b",
     functionName: "preserve_chat_event_write_activation",

@@ -89,6 +89,7 @@ async function expectRunAppContext(args: {
     },
     context.signal,
   );
+  // Older API instances default a missing callback brand to VM0.
   expect(
     state.callbacks.find((callback) => {
       return callback.internalKind === "chat";

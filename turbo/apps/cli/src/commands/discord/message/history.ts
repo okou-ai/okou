@@ -6,11 +6,12 @@ import { printDiscordMessages } from "./format";
 
 export const historyCommand = new Command()
   .name("history")
-  .description(
-    "Read one page of Discord channel, thread, or your bot DM history",
+  .description("Read one page of Discord channel or native thread history")
+  .requiredOption("--channel-id <id>", "Channel or native thread ID")
+  .option(
+    "--guild-id <id>",
+    "Optional; must match your organization's bound guild",
   )
-  .requiredOption("--channel-id <id>", "Channel, native thread, or bot DM ID")
-  .option("--guild-id <id>", "Select one of your verified guild bindings")
   .option(
     "--before <id>",
     "Read messages before this ID; use nextBefore to continue",
@@ -26,8 +27,8 @@ Examples:
 
 Notes:
   - Requires discord:read and access for both your verified Discord user and Okou.
-  - Bot DM reads are limited to your own one-to-one conversation with Okou.
-  - Pass --guild-id when multiple guild bindings are available, including for DMs.
+  - Bot DM history is not readable: every organization connected to your Discord account shares that one DM.
+  - --guild-id is optional; when given, it must match your organization's bound guild.
   - Results are newest first. Each call reads one page; native threads are not expanded.
   - To read a message's native thread, use message replies --channel-id <parent-channel-id> --message-id <root-message-id>.
   - A Discord reply reference is not a native thread.

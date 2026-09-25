@@ -19,7 +19,10 @@ export const downloadFileCommand = new Command()
   .argument("<attachment-id>", "Discord attachment ID")
   .requiredOption("-c, --channel <id>", "Discord channel or thread ID")
   .requiredOption("-m, --message <id>", "Discord message ID")
-  .option("--guild-id <id>", "Guild for the Discord connection")
+  .option(
+    "--guild-id <id>",
+    "Optional; must match your organization's bound guild",
+  )
   .option(
     "-o, --out <path>",
     "Output path (default: /tmp/discord-<attachment-id>)",
@@ -35,6 +38,7 @@ Output:
 
 Notes:
   - Both the requesting user and bot must have access to the message.
+  - Bot DM attachments cannot be downloaded: every organization connected to your Discord account shares that one DM.
   - Downloads are limited to 10 MiB; attachment URLs are resolved by the server.
   - The output file is replaced only after the full download is validated.`,
   )

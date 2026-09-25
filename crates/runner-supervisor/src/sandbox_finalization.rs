@@ -1,8 +1,9 @@
 //! Sandbox finalization after executor completion.
 //!
-//! This module owns the post-executor decision to park or destroy a sandbox.
-//! The job spawn module coordinates executor orchestration, provider completion,
-//! deferred uploads, and panic boundaries.
+//! This module owns the post-executor finalizing transition and decision to
+//! park or destroy a sandbox, including reuse resolution and outcome telemetry.
+//! `job_lifecycle` coordinates provider completion and status/lease settlement;
+//! Runner wires the executor, deferred uploads, and outer panic boundary.
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use crate::idle_lifecycle::{
     SharedIdlePool, destroy_idle_jobs_and_wait, destroy_idle_payload_and_wait,
 };
 use crate::job_lifecycle::{
-    ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupState,
+    ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupDisposition, RunCleanupState,
 };
 use crate::ownership::OwnershipTransitions;
 use runner_executor::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
@@ -311,6 +312,111 @@ impl FinalizationTestHooks {
             callback(event);
         }
     }
+}
+
+/// Coordinate the finalizing transition, physical resource disposition and
+/// observable outcome after executor return. Provider reporting and settlement
+/// surround this future in `job_lifecycle`.
+pub async fn finalize_claimed_run(
+    sandbox: Option<Box<dyn Sandbox>>,
+    active_lease: ActiveBudgetLease,
+    telemetry: &mut JobTelemetry,
+    ctx: FinalizeContext,
+) -> FinalizationReady {
+    finalize_claimed_run_inner(
+        sandbox,
+        active_lease,
+        telemetry,
+        ctx,
+        #[cfg(any(test, feature = "test-support"))]
+        FinalizationTestHooks::default(),
+    )
+    .await
+}
+
+/// Keep fault injection outside the production finalization interface.
+#[cfg(feature = "test-support")]
+pub async fn finalize_claimed_run_with_test_hooks(
+    sandbox: Option<Box<dyn Sandbox>>,
+    active_lease: ActiveBudgetLease,
+    telemetry: &mut JobTelemetry,
+    ctx: FinalizeContext,
+    test_hooks: FinalizationTestHooks,
+) -> FinalizationReady {
+    finalize_claimed_run_inner(sandbox, active_lease, telemetry, ctx, test_hooks).await
+}
+
+async fn finalize_claimed_run_inner(
+    sandbox: Option<Box<dyn Sandbox>>,
+    active_lease: ActiveBudgetLease,
+    telemetry: &mut JobTelemetry,
+    ctx: FinalizeContext,
+    #[cfg(any(test, feature = "test-support"))] test_hooks: FinalizationTestHooks,
+) -> FinalizationReady {
+    let had_sandbox = sandbox.is_some();
+    let has_restored_session_identity = ctx.restored_session_identity.is_some();
+    let has_reuse_key = ctx.reuse_key.is_some();
+    let disposition = ctx.sandbox_reuse_disposition;
+    let cleanup_state = ctx.cleanup_state.clone();
+    let active_run_reuse = ctx.active_run_reuse.clone();
+    let reuse_state_notify = Arc::clone(&ctx.reuse_state_notify);
+    let started = Instant::now();
+    if has_reuse_key {
+        assert!(
+            active_run_reuse.mark_finalizing(started),
+            "reusable active run entered finalization from a resolved state"
+        );
+    }
+    telemetry.record(
+        "runner_host_finalization_started",
+        Duration::ZERO,
+        true,
+        None,
+    );
+    let ready = finalize_sandbox_for_completion_inner(
+        sandbox,
+        active_lease,
+        FinalizationTelemetry::new(telemetry),
+        ctx,
+        #[cfg(any(test, feature = "test-support"))]
+        test_hooks,
+    )
+    .await;
+    if has_reuse_key && active_run_reuse.publish_no_exact_sandbox() {
+        reuse_state_notify.notify_one();
+    }
+    let final_disposition = cleanup_state.disposition();
+    let reuse_state_changed = ready.reuse_state_changed();
+    if had_sandbox {
+        telemetry.record(disposition.telemetry_action(), Duration::ZERO, true, None);
+    }
+    let (action, success, error) = match final_disposition {
+        RunCleanupDisposition::IdlePoolOwned | RunCleanupDisposition::HandoffOwned => {
+            ("runner_host_finalization_reusable_sandbox", true, None)
+        }
+        _ if reuse_state_changed => ("runner_host_finalization_workspace_cache", true, None),
+        RunCleanupDisposition::DestroyCompleted | RunCleanupDisposition::StatusRemoved => {
+            ("runner_host_finalization_no_resource", true, None)
+        }
+        RunCleanupDisposition::ActiveOrUnknown if !had_sandbox => {
+            ("runner_host_finalization_no_resource", true, None)
+        }
+        RunCleanupDisposition::ActiveOrUnknown => (
+            "runner_host_finalization_failed",
+            false,
+            Some("sandbox ownership unresolved"),
+        ),
+    };
+    telemetry.record(action, started.elapsed(), success, error);
+    if matches!(final_disposition, RunCleanupDisposition::IdlePoolOwned) {
+        let action = if has_restored_session_identity {
+            "session_history_identity_parked"
+        } else {
+            "session_history_identity_park_missing"
+        };
+        telemetry.record(action, Duration::ZERO, true, None);
+    }
+    ready
 }
 
 /// Finalizes ownership of a sandbox returned by the executor.

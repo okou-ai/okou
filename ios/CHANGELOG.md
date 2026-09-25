@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/okou-ai/okou/compare/ios-v0.2.0...ios-v0.2.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **ios:** scope distribution profile to app target ([#36825](https://github.com/okou-ai/okou/issues/36825)) ([9f555df](https://github.com/okou-ai/okou/commit/9f555df0c099a6be762a735e36552c630ca6888f))
+
 ## [0.2.0](https://github.com/okou-ai/okou/compare/ios-v0.1.0...ios-v0.2.0) (2026-09-24)
 
 

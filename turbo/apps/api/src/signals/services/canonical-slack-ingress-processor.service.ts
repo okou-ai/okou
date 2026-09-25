@@ -1,9 +1,6 @@
 import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import type { Tx } from "../../lib/db-types";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { command } from "ccstate";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type { ChatSlackMessageAssets } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -22,7 +19,6 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
-  publishThreadListChanged,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import {
@@ -358,7 +354,6 @@ async function markIngressFailure(
 }
 
 interface PersistedCanonicalSlackIngress {
-  readonly splitWrites: boolean;
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
@@ -372,11 +367,9 @@ function persistedCanonicalSlackIngress(
   orgId: string,
   threadTs: string,
   chatThreadId: string,
-  splitWrites: boolean,
 ): PersistedCanonicalSlackIngress {
   return {
     orgId,
-    splitWrites,
     userId: ingress.userId,
     chatThreadId,
     channelId: ingress.channelId,
@@ -478,11 +471,9 @@ async function persistCanonicalSlackMessage(
     readonly canonicalAssets: readonly CanonicalSlackInputAsset[];
   },
   signal: AbortSignal,
-): Promise<boolean> {
-  const splitWrites = await isSplitChatEventWriteEnabled(db);
-  signal.throwIfAborted();
-  const persist = async (tx: Db | Tx, touchThread: () => Promise<void>) => {
-    const inserted = await insertChatEvent(
+): Promise<void> {
+  const persist = async (tx: Db, touchThread: () => Promise<void>) => {
+    await insertChatEvent(
       tx,
       {
         id: args.ingress.ingressId,
@@ -501,12 +492,8 @@ async function persistCanonicalSlackMessage(
         createdAt: args.ingress.createdAt,
       },
       "id",
-      { splitWrites },
     );
     signal.throwIfAborted();
-    if (!inserted && !splitWrites) {
-      throw new Error("Canonical Slack ingress message already exists");
-    }
     await touchThread();
     signal.throwIfAborted();
     await tx
@@ -529,14 +516,12 @@ async function persistCanonicalSlackMessage(
   await withNativeChatEventThreadTouch(
     db,
     {
-      splitWrites,
       chatThreadId: args.chatThreadId,
       createdAt: args.ingress.createdAt,
       eventId: args.ingress.ingressId,
     },
     persist,
   );
-  return splitWrites;
 }
 
 async function fetchCanonicalConversationContext(args: {
@@ -583,7 +568,6 @@ function rethrowClassifiedSlackFailure(error: unknown): void {
 }
 
 async function loadCanonicalSlackEnrichment(
-  db: Db,
   args: {
     readonly client: SlackClient;
     readonly ingressId: string;
@@ -598,7 +582,6 @@ async function loadCanonicalSlackEnrichment(
   const { client, ingressId, event, messageContent, userInfoResolver } = args;
   return await Promise.all([
     loadOptionalChatEnrichment(
-      db,
       "slack",
       () => {
         return enrichMessageContent({
@@ -621,7 +604,6 @@ async function loadCanonicalSlackEnrichment(
       signal,
     ),
     loadOptionalChatEnrichment(
-      db,
       "slack",
       () => {
         return fetchCanonicalConversationContext({
@@ -687,7 +669,6 @@ const persistClaimedCanonicalSlackIngress$ = command(
         workspaceId: ingress.workspaceId,
         channelId: ingress.channelId,
         messageTs: event.ts,
-        publicBrand: PUBLIC_BRAND,
         botToken,
         files: event.files ?? [],
       },
@@ -696,7 +677,6 @@ const persistClaimedCanonicalSlackIngress$ = command(
     signal.throwIfAborted();
     const [enriched, context, permalinkResult] =
       await loadCanonicalSlackEnrichment(
-        db,
         { client, ingressId, event, messageContent, userInfoResolver },
         signal,
       );
@@ -709,7 +689,7 @@ const persistClaimedCanonicalSlackIngress$ = command(
         error: permalinkResult.error,
       });
     }
-    const splitWrites = await persistCanonicalSlackMessage(
+    await persistCanonicalSlackMessage(
       db,
       {
         ingress,
@@ -736,7 +716,6 @@ const persistClaimedCanonicalSlackIngress$ = command(
       orgId,
       threadTs,
       chatThreadId,
-      splitWrites,
     );
   },
 );
@@ -768,11 +747,7 @@ export const processCanonicalSlackIngress$ = command(
           threadId: ingress.chatThreadId,
         });
         signal.throwIfAborted();
-        await (
-          ingress.splitWrites
-            ? publishThreadListChangedSafely
-            : publishThreadListChanged
-        )({
+        await publishThreadListChangedSafely({
           userId: ingress.userId,
           orgId: ingress.orgId,
         });

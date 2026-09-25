@@ -1100,6 +1100,27 @@
       "when": 1790306049217,
       "tag": "1234_teams_telegram_public_brand_okou_default",
       "breakpoints": true
+    },
+    {
+      "idx": 1235,
+      "version": "7",
+      "when": 1790307760596,
+      "tag": "1235_hosted_artifact_link_layout_okou_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 1236,
+      "version": "7",
+      "when": 1790309125231,
+      "tag": "1236_contract_chat_event_sequence_bridge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1237,
+      "version": "7",
+      "when": 1790310766064,
+      "tag": "1237_public_brand_okou_default_platform",
+      "breakpoints": true
     }
   ]
 }

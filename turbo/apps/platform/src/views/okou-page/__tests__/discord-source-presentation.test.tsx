@@ -110,6 +110,66 @@ test.each([
   },
 );
 
+test("Discord sources never link outside discord.com", async () => {
+  const untrusted = [
+    "https://discord.com.example.net/channels/123456789012345678/234567890123456789/345678901234567890",
+    "https://example.net/channels/123456789012345678/234567890123456789/345678901234567890",
+    "http://discord.com/channels/123456789012345678/234567890123456789/345678901234567890",
+    "https://discord.com/invite/okou",
+  ];
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [
+      ...untrusted.map((href, index) => {
+        return {
+          id: `discord-untrusted-source-${String(index)}`,
+          role: "user" as const,
+          content: null,
+          runId: RUN_ID,
+          createdAt: CREATED_AT,
+          userMessage: {
+            version: 1 as const,
+            parts: [
+              {
+                type: "text" as const,
+                text: `Untrusted source ${String(index)}`,
+              },
+              { type: "source" as const, kind: "discord" as const, href },
+            ],
+          },
+        };
+      }),
+      {
+        id: "discord-untrusted-answer",
+        role: "assistant",
+        content: "The untrusted sources were reviewed.",
+        runId: RUN_ID,
+        runLifecycleEvent: "completed",
+        createdAt: "2026-09-24T09:00:03.000Z",
+      },
+    ],
+  });
+
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+
+  await expect(
+    screen.findByText("The untrusted sources were reviewed."),
+  ).resolves.toBeInTheDocument();
+  const hrefs = queryAllByRoleFast("link").map((link) => {
+    return link.getAttribute("href");
+  });
+  for (const href of untrusted) {
+    expect(hrefs).not.toContain(href);
+  }
+  const labels = screen.getAllByText("Discord").filter((element) => {
+    return element.closest("a") === null;
+  });
+  expect(labels).toHaveLength(untrusted.length);
+  expect(
+    screen.queryByText("Open original message in Discord"),
+  ).not.toBeInTheDocument();
+});
+
 test("Activity identifies a Discord run as its source", async () => {
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
     return respond(200, {

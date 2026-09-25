@@ -1,4 +1,4 @@
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import type { LinkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 
 export interface HostedSiteManifestFile {
   readonly path: string;
@@ -31,7 +31,8 @@ export interface HostedSiteManifest {
   /** Checksum-bound uploads; #35240 owns sealing unmarked legacy deployments. */
   readonly immutableContent?: true;
   readonly access?: "owner-private-v1";
-  readonly publicBrand?: PublicBrand;
+  /** Persisted link-layout marker; absent on legacy-layout manifests. */
+  readonly publicBrand?: LinkLayoutSegment;
   readonly deploymentId: string;
   readonly siteId: string;
   readonly site?: string;

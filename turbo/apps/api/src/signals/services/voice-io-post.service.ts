@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { userBehaviorCount } from "@okouai/db/schema/user-behavior-count";
@@ -1069,7 +1068,6 @@ export const recordGeneratedSpeech$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly runId: string | undefined;
-      readonly publicBrand: PublicBrand;
       readonly privateArtifacts: boolean;
       readonly voice: string;
       readonly audioBytes: Uint8Array;
@@ -1089,7 +1087,6 @@ export const recordGeneratedSpeech$ = command(
         extension: "wav",
         body: Buffer.from(params.audioBytes),
         contentType: SPEECH_CONTENT_TYPE,
-        publicBrand: params.publicBrand,
       },
       signal,
     );
@@ -1106,7 +1103,7 @@ export const recordGeneratedSpeech$ = command(
         sizeBytes: params.audioBytes.byteLength,
         url,
         s3Key,
-        publicBrand: params.publicBrand,
+        layout: artifact.layout,
         metadata: {
           generatedBy: "zero-official-voice",
           model: VOICE_IO_TTS_MODEL,

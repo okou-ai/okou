@@ -7,7 +7,6 @@ import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
 import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
@@ -58,7 +57,6 @@ import {
   type RunBuiltInAdmission,
 } from "../services/run-built-in-admission.service";
 import { resolveProviderReferenceUrls$ } from "../services/provider-reference-url.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const L = logger("ImageGeneration");
 const imageBody$ = bodyResultOf(imageIoGenerateContract.post);
@@ -80,7 +78,6 @@ interface ImageJobArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string | undefined;
-  readonly publicBrand: PublicBrand;
   readonly privateArtifacts: boolean;
   readonly admission: RunBuiltInAdmission | null;
   readonly options: ImageOptions;
@@ -324,7 +321,6 @@ const executeDirectImageProviderJob$ = command(
         runId: args.runId,
         billingRunId: args.runId ?? null,
         billingContext: args.runId ? "run" : "runless",
-        publicBrand: args.publicBrand,
         privateArtifacts: args.privateArtifacts,
         pricing: args.pricing,
         generation,
@@ -466,7 +462,6 @@ const postImageInner$ = command(
       return prepared;
     }
     const { auth, runId, requiredPrivateArtifacts, options } = prepared;
-    const publicBrand = PUBLIC_BRAND;
 
     const hasCredits = await set(
       checkImageCredits$,
@@ -538,7 +533,6 @@ const postImageInner$ = command(
           imageRequestRecord(options),
           {
             admissionId: admission?.id,
-            publicBrand,
             provider: options.provider,
             providerTask: "image",
           },
@@ -554,7 +548,6 @@ const postImageInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         runId,
-        publicBrand,
         privateArtifacts,
         admission,
         options,

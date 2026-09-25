@@ -1,7 +1,5 @@
 import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import type { Tx } from "../../lib/db-types";
-import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -11,7 +9,6 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { logger } from "../../lib/log";
 import { env } from "../../lib/env";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
@@ -36,7 +33,6 @@ import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
-  publishThreadListChanged,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { settle } from "../utils";
@@ -267,7 +263,6 @@ async function markIngressFailed(
 }
 
 interface PersistedCanonicalFeishuIngress {
-  readonly splitWrites: boolean;
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
@@ -430,7 +425,6 @@ const persistCanonicalFeishuIngress$ = command(
         userId: args.connection.userId,
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: PUBLIC_BRAND,
         files: feishuInputFiles(args.db, args.message, args.ingress.platform),
       },
       signal,
@@ -450,14 +444,12 @@ const persistCanonicalFeishuIngress$ = command(
         : prompt;
     }, args.message.promptText);
 
-    const splitWrites = await isSplitChatEventWriteEnabled(args.db);
-    signal.throwIfAborted();
-    const persist = async (tx: Db | Tx, touchThread: () => Promise<void>) => {
+    const persist = async (tx: Db, touchThread: () => Promise<void>) => {
       const chatOpenUrl = buildFeishuChatOpenUrl(
         args.message.chatId,
         args.message.platform,
       );
-      const inserted = await insertChatEvent(
+      await insertChatEvent(
         tx,
         {
           id: args.ingress.ingressId,
@@ -476,12 +468,8 @@ const persistCanonicalFeishuIngress$ = command(
           createdAt: args.ingress.createdAt,
         },
         "id",
-        { splitWrites },
       );
       signal.throwIfAborted();
-      if (!inserted && !splitWrites) {
-        throw new Error("Canonical Feishu ingress message already exists");
-      }
       await touchThread();
       signal.throwIfAborted();
       await tx
@@ -497,7 +485,6 @@ const persistCanonicalFeishuIngress$ = command(
     await withNativeChatEventThreadTouch(
       args.db,
       {
-        splitWrites,
         chatThreadId: route.chatThreadId,
         createdAt: args.ingress.createdAt,
         eventId: args.ingress.ingressId,
@@ -506,7 +493,6 @@ const persistCanonicalFeishuIngress$ = command(
     );
     signal.throwIfAborted();
     return {
-      splitWrites,
       orgId: args.installation.orgId,
       userId: args.connection.userId,
       chatThreadId: route.chatThreadId,
@@ -712,7 +698,6 @@ const processClaimedIngress$ = command(
         .where(eq(feishuChatIngress.id, ingress.ingressId));
     }
     const history = await loadOptionalChatEnrichment(
-      args.db,
       "feishu",
       () => {
         return loadFeishuConversationHistory({ db: args.db, message }, signal);
@@ -798,11 +783,7 @@ export const processCanonicalFeishuIngress$ = command(
       threadId: result.value.chatThreadId,
     });
     signal.throwIfAborted();
-    await (
-      result.value.splitWrites
-        ? publishThreadListChangedSafely
-        : publishThreadListChanged
-    )({
+    await publishThreadListChangedSafely({
       userId: result.value.userId,
       orgId: result.value.orgId,
     });

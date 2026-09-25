@@ -1,5 +1,77 @@
 # Deployment Compatibility
 
+## Phone proactive sends target the caller's own link (2026-09-25)
+
+`POST /api/integrations/phone/message` and
+`POST /api/integrations/phone/upload-file/complete` now always deliver to the
+caller's own AgentPhone link, resolved by user and organization (a member has at
+most one link per organization). The request `toNumber` is optional and ignored.
+Previously the routes normalized `toNumber` as an SMS number, so email-shaped
+iMessage handles normalized to an empty string and every proactive send from
+an email-linked member failed with 404.
+
+CLIs released before this change still send `toNumber`; the API accepts and
+ignores it. The new CLI keeps `--to` as a hidden, ignored option and no longer
+sends `toNumber`. A new CLI talking to an older API (rollout overlap or API
+rollback) is rejected with 400 because the older contract requires
+`toNumber`; the send can be retried after the new API is live. Remove the
+contract field and the hidden `--to` option once CLI versions from before this
+change are no longer in use.
+
+## Platform and run pipeline public brand retirement (2026-09-25)
+
+Okou is the only product brand (#36766, slice E). The API no longer reads or
+writes `public_brand` on `push_subscriptions`, `email_outbox`, `export_jobs`,
+`usage_pack_invitation_purchases`, `browser_sessions` or
+`socialkit_download_jobs`. `shared_threads.public_brand` is owned by the
+artifact link layout (#36773), which writes the current layout segment and
+reads the stored segment to locate existing shares; this change only drops it
+from shared-thread responses and request plumbing. Reusing a pending
+usage-pack invitation checkout no longer filters by brand.
+
+Migration `1237_public_brand_okou_default_platform` sets the column default to
+`'okou'` on all seven tables (previously `'vm0'`, or no default on
+`browser_sessions` and `socialkit_download_jobs`). An old API reads `okou` from
+rows the new API inserts, and its own inserts still carry an explicit brand, so
+old API/new DB and rollback remain compatible. The columns and their ORM
+declarations stay in place; drop them in a separate migration after older API
+deployments drain.
+
+`GET /api/shared-threads/:id` and `GET /api/shared-threads/:id/meta` no longer
+return `publicBrand`. No App code reads it, and the App does not validate
+responses. The test-only email outbox state endpoint no longer returns
+`public_brand`.
+
+Chat run callbacks no longer read `publicBrand`. The persisted `chat` callback
+payload still carries a fixed `publicBrand: "okou"`, because an older API
+instance that processes the callback defaults a missing value to `vm0`; stop
+writing it after older API deployments drain. Stored callbacks that carry any
+`publicBrand`, including `vm0`, keep parsing because the payload schema passes
+unknown keys through, and the value is ignored. Provider delivery callback
+payloads keep the fixed value until their provider slices retire the field.
+Queued Feishu launches no longer require a run-level brand.
+
+A queued Web input whose context ID is the VM0-era Web ID now decodes exactly
+like the Okou Web ID. Writers still emit the Okou ID. Official Workflow queue
+markers, their IDs and their claim rules are unchanged (#29908).
+
+The internal custom connector OAuth start no longer takes a brand; the brand
+was never part of the persisted OAuth state, so no in-flight flow is affected.
+
+The Platform runtime configuration no longer carries `publicBrand`, and the
+Platform no longer sends the PostHog `public_brand` property or the Sentry
+`public_brand` tag. Queries that filter on `public_brand = 'okou'` must drop
+that filter; historical events keep the property.
+
+## Discord native history attachment URLs (2026-09-25)
+
+`GET /api/integrations/discord/messages` and `/replies` no longer return
+`attachments[].url` (the signed Discord CDN link); `id`, `filename`, `size` and
+`contentType` remain. Older CLI builds do not validate this response and print
+only attachment filenames, so they are unaffected; downloads use the
+attachment ID through `download-file`. `channel list` also stops returning
+forum and media channels. The Discord integration is default-off.
+
 ## Teams and Telegram public brand retirement (2026-09-25)
 
 Teams and Telegram are Okou-only (#36766, slice C). The API no longer reads or
@@ -125,6 +197,74 @@ skipped, so the old client simply stops purging. Its saved
 are not migrated. A new App against an older API makes no such calls. Rollback
 is safe; an older API resumes serving the routes with the same signing key.
 
+## Artifact and hosted-site link layouts (2026-09-25)
+
+The retired VM0 brand survives only as the read-only _legacy link layout_
+(#36766). `LinkLayout` (`packages/api-contracts/src/contracts/link-layout.ts`)
+is `current` or `legacy`; every new publication, upload, generated artifact,
+conversation snapshot and preview grant uses `current`. The layout is resolved
+only from stored data and is never a product identity. Records derived from
+legacy content, such as a share, owner preview or pointer update of a legacy
+site, inherit that content's layout so previously issued links keep resolving.
+
+The persisted layout marker keeps its historical spelling; renaming it would
+break stored objects and deployed Workers:
+
+| Layout    | Segment / marker | Hosted origin                                             | Artifact CDN                     | Pointer namespace    |
+| --------- | ---------------- | --------------------------------------------------------- | -------------------------------- | -------------------- |
+| `current` | `okou`           | `OKOU_HOST_SCHEME`://…`OKOU_PUBLIC_HOST_DOMAIN`           | `OKOU_PUBLIC_ARTIFACTS_BASE_URL` | `sites/brands/okou/` |
+| `legacy`  | `vm0`            | `ZERO_HOST_SCHEME`://…`ZERO_HOST_DOMAIN` (`sites.vm0.io`) | `PUBLIC_ARTIFACTS_BASE_URL`      | `sites/`             |
+
+The segment appears in R2 keys (`artifact-shares/<segment>/`,
+`artifact-delivery/<segment>/html/`, `shared-thread-artifacts/<segment>/`,
+`shared-artifacts/<segment>/`, `private-sites/<segment>/`,
+`private-previews/<segment>/`, `shared-previews/<segment>/`), in the
+`publicBrand` field of stored R2 policies, delivery records, preview grants,
+pointers and manifests, in the `public-brand` object metadata, in the
+`publicBrand` key of `run_uploaded_files.metadata` and chat attachment
+metadata, and in the `public_brand` column of `hosted_sites`,
+`hosted_deployments`, `private_hosted_deployments` and `artifact_shares`.
+Where a marker is absent — V1 artifact objects, V2 objects and canonical assets
+stored before the marker, pointers and manifests written before it, and
+historical public delivery writes — the layout is `legacy`. Present unknown
+values fail. The host Worker (#36766 slice G) uses the same segment names.
+Conversation snapshots are addressed through `shared_threads.public_brand`,
+which therefore remains readable as their layout marker until Phase 2.
+
+Writers therefore keep emitting the `okou` marker on every current-layout
+object: deployed Workers and an older API treat a missing marker as legacy.
+The API no longer accepts or passes a brand for uploads, generations, hosted
+deployments, integration input files or conversation attachment copies.
+Legacy-layout hosted sites keep serving and keep their names reserved; a new
+publication never redeploys a legacy site and, as before, receives a fallback
+name in the current layout when a legacy site holds the requested name. Artifact preview images are new objects and use `current`; the video
+poster transform still runs on the source artifact's CDN origin. The private
+video poster request always uses the current `files.` host, which the Worker
+accepts for both domains.
+
+Migration `1235_hosted_artifact_link_layout_okou_default` sets `DEFAULT 'okou'`
+on the four `public_brand` columns, so any writer that omits the column
+records the current layout. The API still writes the segment explicitly on
+hosted sites, deployments, shares and shared threads, using the same layout that
+selects their URLs and keys, so rows do not depend on the migration having run.
+Old API/new DB and rollback remain compatible. The columns, the
+`(site_id, public_brand)` foreign keys and their unique key stay: they are the
+per-row layout marker for roughly 13.4k sites and 22.5k deployments. Phase 2
+may replace the marker with a neutral column (for example a `legacy_link_layout`
+boolean backfilled from `public_brand = 'vm0'`) before dropping
+`public_brand`; that requires its own expand/contract release.
+
+Built-in generation jobs no longer read a brand. New job requests keep writing
+`__builtInGeneration.publicBrand = "okou"` so an older API that completes the
+job during rollout or rollback does not publish its result in the legacy
+layout. Stored requests that still carry any `publicBrand` value parse and the
+value is ignored.
+
+Environment names are unchanged because renaming deployed secrets is not safe
+in one release: `OKOU_*` configures the current layout and
+`PUBLIC_ARTIFACTS_BASE_URL` / `ZERO_HOST_*` configure only legacy-link
+reconstruction.
+
 ## Host-worker storage layouts replace public brand (2026-09-25)
 
 `apps/host-worker` no longer models a public brand (#36766). It resolves hosted
@@ -219,7 +359,7 @@ a later transaction so scans do not hold the expansion's exclusive table locks.
 
 Discord thread creation uses the preparation API runtime mapping, so its implicit
 INSERT remains legal after the separately authorized legacy allocator contraction.
-The physical table keeps the column for DDL and the existing bridge. Discord
+The chat event contraction later removed that column and bridge. Discord
 input claims, required per-message context, canonical events and durable ingress
 completion stay atomic; the active mode moves weak thread activity updates after
 commit. Terminal callback replay repairs missing Discord outbox registration.
@@ -443,13 +583,29 @@ production comparisons must report field coverage and Runner version mix;
 missing timing is never a zero duration. The Guest protocol and storage apply
 behavior are unchanged.
 
+## Chat event split-write contraction (2026-09-25)
+
+Release 2 of [the two-release chat event rollout](chat-event-split-write-rollout.md)
+removes the legacy write mode. Production activated split writes at
+2026-09-25 00:06:25 UTC. Migration `contract_chat_event_sequence_bridge` locks
+`chat_threads` and `chat_event_write_control`, fails with SQLSTATE `55000` unless
+the control row is activated, and then drops the allocation bridge trigger,
+its function and `chat_threads.last_chat_event_seq_id`. A database without
+chat threads is activated by the migration. Every other database, including a
+shared preview parent, must run the documented control write first.
+
+Release 1 APIs remain compatible with the contracted schema only in active
+mode: their runtime mapping already omits the column. The rollback resolver
+requires an activated control row and refuses targets that predate the split
+reader. Never null the activation marker or restore a pre-Release-1 binary.
+
 ## Chat event split-write preparation
 
 See [the two-release chat event rollout](chat-event-split-write-rollout.md) for
 the temporary allocation bridge, inactive global control, reader/writer drain,
 activation prerequisites, late-content maintenance, and postactivation rollback
-floor. This release retains the legacy column and bridge. Migration and API
-promotion do not authorize or perform activation; contraction is a later PR.
+floor. That release retained the legacy column and bridge; the contraction
+above removes them after activation.
 
 ## Codex 0.156.1 OAuth workspace routing
 

@@ -7,7 +7,6 @@ import {
   type DiscordDownloadFileQuery,
 } from "@okouai/api-contracts/contracts/integrations-discord-files";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
@@ -19,7 +18,10 @@ import {
   DiscordFileFetchError,
   fetchDiscordAttachment,
 } from "../external/discord-file-fetcher";
-import { requireDiscordConversationAccess$ } from "../services/discord-access.service";
+import {
+  requireDiscordConversationAccess$,
+  requireDiscordRunReadAccess$,
+} from "../services/discord-access.service";
 import {
   discordApiFailure,
   discordUnavailable,
@@ -81,7 +83,6 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
         contentType,
         size: body.length,
         checksumSha256: body.checksumSha256,
-        publicBrand: PUBLIC_BRAND,
         destination: {
           provider: "discord",
           connectionId: access.binding.connectionId,
@@ -169,13 +170,12 @@ const downloadAttempt$ = command(
   ) => {
     const auth = get(organizationAuthContext$);
     const access = await set(
-      requireDiscordConversationAccess$,
+      requireDiscordRunReadAccess$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
         channelId: query.channelId,
         guildId: query.guildId,
-        mode: "read",
       },
       signal,
     );
