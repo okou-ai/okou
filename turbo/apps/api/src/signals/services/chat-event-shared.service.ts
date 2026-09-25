@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { historicalRunGroupId } from "./run-event-provenance.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -312,9 +311,7 @@ interface AppendAssistantEventRowsResult {
 
 export async function appendAssistantEventRows(
   tx: Db | ChatThreadEventTransaction,
-  args: InsertAssistantEventsInput & {
-    readonly runGroupId: string | undefined;
-  },
+  args: InsertAssistantEventsInput,
   signal: AbortSignal,
 ): Promise<AppendAssistantEventRowsResult> {
   if (args.items.length === 0) {
@@ -334,7 +331,6 @@ export async function appendAssistantEventRows(
         id: assistantEventIdForRunEvent(args.runId, item.runEventId),
         chatThreadId: args.threadId,
         runId: args.runId,
-        runGroupId: args.runGroupId,
         runEventSequenceNumber: item.runEventSequenceNumber,
         runEventId: item.runEventId,
       };
@@ -378,17 +374,7 @@ export async function insertAssistantEvents(
     return 0;
   }
 
-  const runGroupId = await historicalRunGroupId(
-    writeDb,
-    args.runId,
-    undefined,
-    signal,
-  );
-  const result = await appendAssistantEventRows(
-    writeDb,
-    { ...args, runGroupId },
-    signal,
-  );
+  const result = await appendAssistantEventRows(writeDb, args, signal);
   signal.throwIfAborted();
 
   if (result.insertedRowCount > 0) {

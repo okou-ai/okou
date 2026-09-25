@@ -1651,9 +1651,7 @@ export const createQueueFirstAgentRun$ = command(
     args: CreateQueueFirstAgentRunCommandArgs,
     signal: AbortSignal,
   ) => {
-    if (
-      isUnsupportedRunAdmission(args.triggerSource, args.queueFirstAssociation)
-    ) {
+    if (isUnsupportedRunAdmission(args.queueFirstAssociation)) {
       return conflict("Unsupported run input");
     }
     const result = await set(createAgentRunInternal$, args, signal);

@@ -6,7 +6,6 @@ import { alias } from "drizzle-orm/pg-core";
 import { revokeChatEvent, insertChatEvent } from "./chat-event.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import type { Tx } from "../../lib/db-types";
-import { canonicalChatEventGoalId } from "./canonical-chat-event-read.service";
 import { lockChatQueueThread } from "./chat-event-queue.service";
 
 type DbTransaction = Tx;
@@ -33,7 +32,6 @@ export async function appendQueuedRunAssistantMarker(
   args: {
     readonly chatThreadId: string;
     readonly runId: string;
-    readonly runGroupId?: string;
     readonly createdAfter?: Date;
   },
 ): Promise<QueuedRunMarkerAppendResult> {
@@ -69,7 +67,6 @@ export async function appendQueuedRunAssistantMarker(
     eventType: "run.queued",
     content: QUEUED_RUN_ASSISTANT_MESSAGE,
     runId: args.runId,
-    runGroupId: args.runGroupId,
     runEventId: QUEUED_RUN_MARKER_EVENT_ID,
     ...(args.createdAfter
       ? { createdAt: new Date(args.createdAfter.getTime() + 1) }
@@ -92,7 +89,6 @@ export async function revokeQueuedRunAssistantMarkers(
     .select({
       id: chatEvents.id,
       chatThreadId: chatEvents.chatThreadId,
-      runGroupId: canonicalChatEventGoalId(),
     })
     .from(chatEvents)
     .where(
@@ -115,7 +111,6 @@ export async function revokeQueuedRunAssistantMarkers(
       chatThreadId: marker.chatThreadId,
       eventType: "run.dequeued",
       runId: args.runId,
-      runGroupId: marker.runGroupId ?? undefined,
       runEventId: QUEUED_RUN_MARKER_REVOKE_EVENT_ID,
     });
     if (inserted) {

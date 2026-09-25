@@ -11557,7 +11557,6 @@ const commitAndActivateAtomicLaunch$ = command(
     signal.throwIfAborted();
     const executionContext = launch.runnerJobPayload.executionContext;
     const preparation =
-      input.context.body.triggerSource !== "goal" &&
       executionContext.piLaunchConfig &&
       !executionContext.piLaunchConfig.maintenance
         ? set(prepareConfiguredPiApiFirstTurn$, {
@@ -11806,12 +11805,7 @@ export const prepareAgentRun$ = command(
     input: PrepareAgentRunArgs,
     signal: AbortSignal,
   ): Promise<PreparedAgentRun | CreateRunErrorResult> => {
-    if (
-      isUnsupportedRunAdmission(
-        input.args.body.triggerSource,
-        input.args.queueFirstAssociation,
-      )
-    ) {
+    if (isUnsupportedRunAdmission(input.args.queueFirstAssociation)) {
       return conflict("Unsupported run input");
     }
     assertThreadBoundRunHasQueueAssociation(input.args);
@@ -11881,12 +11875,7 @@ export const completeAgentRun$ = command(
     input: CompleteAgentRunArgs,
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
-    if (
-      isUnsupportedRunAdmission(
-        input.prepared.args.body.triggerSource,
-        input.prepared.args.queueFirstAssociation,
-      )
-    ) {
+    if (isUnsupportedRunAdmission(input.prepared.args.queueFirstAssociation)) {
       return conflict("Unsupported run input");
     }
     assertThreadBoundRunHasQueueAssociation(input.prepared.args);

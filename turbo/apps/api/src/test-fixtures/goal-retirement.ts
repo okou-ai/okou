@@ -123,6 +123,31 @@ export async function seedMalformedGoalArchiveFixture(
   return eventId;
 }
 
+/** Seed a retained Goal-context message through historical storage, not current writers. */
+export async function seedRetainedGoalGroupedOutput(
+  threadId: string,
+  goalId: string,
+): Promise<string> {
+  const [event] = await db().transaction(async (tx) => {
+    const seqId = await reserveFixtureChatEventSequence(tx, threadId, 1);
+    return await tx
+      .insert(chatEvents)
+      .values({
+        chatThreadId: threadId,
+        eventType: "output.message",
+        contextType: "goal",
+        contextId: goalId,
+        payload: { content: "Retained Goal grouped output" },
+        seqId,
+      })
+      .returning({ id: chatEvents.id });
+  });
+  if (!event) {
+    throw new Error("Expected retained Goal-context message");
+  }
+  return event.id;
+}
+
 /** Permanent history fixtures contain only canonical retained events after S5. */
 export async function seedLiteralGoalArchive(
   threadId: string,
