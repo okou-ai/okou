@@ -81,18 +81,6 @@ export async function removeErasureSubjectsFixture(
     .where(inArray(accountErasureJobs.id, [...jobIds]));
 }
 
-/** Whether one exact test-owned erasure job still exists. */
-export async function erasureSubjectJobExistsFixture(
-  jobId: string,
-): Promise<boolean> {
-  const [job] = await db()
-    .select({ id: accountErasureJobs.id })
-    .from(accountErasureJobs)
-    .where(eq(accountErasureJobs.id, jobId))
-    .limit(1);
-  return job !== undefined;
-}
-
 /** Reassigns one Agent's owner, the change a future ownership transfer would
  * persist. No production writer updates this column today, and the unique
  * `(id, org_id, owner)` key makes it the key update a content writer's KEY
@@ -200,30 +188,6 @@ export function erasureFenceStatementKinds(
     return [ERASURE_FENCE_DEADLINES, ERASURE_FENCE_CLOSED_LOOKUP];
   }
   return [ERASURE_FENCE_DEADLINES];
-}
-
-export const ERASURE_FENCE_BEGIN = /^(?:begin|start transaction)(?:$|\s)/;
-export const ERASURE_FENCE_COMMIT = /^commit$/;
-
-/** The same shared prefix as exact statement patterns, for a suite that pins
- * complete SQL shapes rather than classified kinds. Both views are generated
- * from one place so admission cannot drift away from what suites assert. */
-export function erasureFenceStatementPatterns(
-  admission: ErasureFenceAdmission,
-): readonly RegExp[] {
-  const deadlines =
-    /^select set_config\('lock_timeout', ?\$\d+, true\), ?set_config\('statement_timeout', ?\$\d+, true\)$/;
-  const subjectLocks =
-    /^select (?=.*erasure_isolation_probe)(?=.*pg_advisory_xact_lock_shared).+$/;
-  const closedLookup =
-    /^select .+ from "account_erasure_jobs" where .+ limit \$\d+$/;
-  if (admission === "write") {
-    return [deadlines, subjectLocks, closedLookup];
-  }
-  if (admission === "read") {
-    return [deadlines, closedLookup];
-  }
-  return [deadlines];
 }
 
 /** Classifies the transaction controls and fence statements every fenced route
