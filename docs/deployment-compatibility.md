@@ -1,5 +1,22 @@
 # Deployment Compatibility
 
+## Workflow import source column (2026-09-25)
+
+Migration `1248_workflow_import_source` adds the nullable
+`workflows.import_source` column. It is a metadata-only `ADD COLUMN` without a
+default, so it takes a brief `ACCESS EXCLUSIVE` lock under the default 1s lock
+timeout and rewrites no rows.
+
+The skill import writes the column when it creates a workflow, from an optional
+`provider` claim in the session token; the workflow list and detail responses
+expose it as an optional `importSource`. Every version combination is
+compatible: an older API neither reads nor writes the column, so a rollback
+only stops tagging new imports. An older app opens a session without a body,
+which the API accepts and whose imports stay untagged, and it ignores the extra
+response field. A newer app reads a missing `importSource` from an older API as
+untagged. Tokens issued before this change carry no provider and keep working
+until they expire. No API rollback floor is needed.
+
 ## Chat event retention and Discord delivery table retirement (2026-09-25)
 
 Discord has no production users, so this change ships without a staged

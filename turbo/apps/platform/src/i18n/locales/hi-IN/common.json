@@ -7923,6 +7923,20 @@
       "uninstallTitle": "आधिकारिक वर्कफ़्लो अनइंस्टॉल करें",
       "viewAndInstall": "देखें और इंस्टॉल करें",
       "yes": "हाँ"
+    },
+    "skillImport": {
+      "action": "स्किल्स इम्पोर्ट करें",
+      "description": "यह प्रॉम्प्ट वहाँ चलाएँ जहाँ आपकी स्किल्स हैं। हर स्किल एक निजी वर्कफ़्लो बन जाती है।",
+      "emptyAction": "Claude Code या Codex से इम्पोर्ट करें",
+      "hidePrompt": "प्रॉम्प्ट छिपाएँ",
+      "providerLabel": "यहाँ से इम्पोर्ट करें",
+      "showPrompt": "प्रॉम्प्ट दिखाएँ",
+      "source": {
+        "claudeCode": "Claude Code से इम्पोर्ट किया गया",
+        "codex": "Codex से इम्पोर्ट किया गया"
+      },
+      "title": "अपनी स्किल्स इम्पोर्ट करें",
+      "viewWorkflows": "वर्कफ़्लो देखें"
     }
   },
   "works": {

@@ -95,10 +95,11 @@ function skillImportDisabled() {
 }
 
 /**
- * Skill import is the onboarding skills step's backend, so it rolls out with
- * that flow. Both routes check it: the session route so no token can be minted
- * while the flow is off, and the upload route so turning it off also stops a
- * session that already holds one.
+ * Skill import backs the onboarding skills step and the workflows page's import
+ * dialog, so it rolls out with whichever of the two a user has. Both routes
+ * check it: the session route so no token can be minted while both are off,
+ * and the upload route so turning them off also stops a session that already
+ * holds one.
  */
 const skillImportEnabled$ = command(
   async (
@@ -108,13 +109,19 @@ const skillImportEnabled$ = command(
     const overrides = await get(
       userFeatureSwitchOverrides(identity.orgId, identity.userId),
     );
-    return isFeatureEnabled(FeatureSwitchKey.OnboardingSourcesFirst, {
+    const context = {
       orgId: identity.orgId,
       userId: identity.userId,
       overrides,
-    });
+    };
+    return (
+      isFeatureEnabled(FeatureSwitchKey.OnboardingSourcesFirst, context) ||
+      isFeatureEnabled(FeatureSwitchKey.WorkflowSkillImport, context)
+    );
   },
 );
+
+const sessionBody$ = bodyResultOf(skillImportSessionsContract.create);
 
 const createSessionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -128,6 +135,12 @@ const createSessionInner$ = command(
       return skillImportDisabled();
     }
 
+    const bodyResult = await get(sessionBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+
     const agentId = await resolveSkillImportAgentId(get(db$), {
       orgId: auth.orgId,
       userId: auth.userId,
@@ -137,7 +150,12 @@ const createSessionInner$ = command(
       return notFound("This organization has no default agent to import into");
     }
 
-    const session = generateSkillImportToken(auth.userId, auth.orgId, agentId);
+    const session = generateSkillImportToken(
+      auth.userId,
+      auth.orgId,
+      agentId,
+      bodyResult.data.provider ?? null,
+    );
     // The token is a credential; keep it out of every cache on the way back.
     set(setResHeader$, "Cache-Control", "no-store");
     return {
@@ -377,6 +395,7 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         ...(body.files ? { files: body.files } : {}),
       },
       visibility: "private" as const,
+      importSource: session.provider,
     },
     signal,
   );

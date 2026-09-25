@@ -12,6 +12,13 @@ export const workflowVisibilitySchema = z.enum(["public", "private"]);
 export type WorkflowVisibility = z.infer<typeof workflowVisibilitySchema>;
 
 /**
+ * The local tool an imported workflow's skill came from. The skill import
+ * records it when it creates the workflow; a workflow made in Okou has none.
+ */
+export const workflowImportSourceSchema = z.enum(["claudeCode", "codex"]);
+export type WorkflowImportSource = z.infer<typeof workflowImportSourceSchema>;
+
+/**
  * Workflow name (slug) validation regex.
  * Must be lowercase alphanumeric with hyphens, no leading/trailing hyphens.
  * Minimum 2 characters. Slugs are NOT unique — duplicates across and within an
@@ -1507,6 +1514,8 @@ export const workflowSummarySchema = z.object({
     })
     .nullable()
     .optional(),
+  // Optional so an app can still read an API that predates the import tag.
+  importSource: workflowImportSourceSchema.nullable().optional(),
 });
 
 export const workflowDetailResponseSchema = workflowSummarySchema.extend({

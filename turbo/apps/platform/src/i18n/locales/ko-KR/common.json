@@ -7901,6 +7901,20 @@
       "uninstallTitle": "공식 워크플로 제거",
       "viewAndInstall": "보고 설치",
       "yes": "예"
+    },
+    "skillImport": {
+      "action": "스킬 가져오기",
+      "description": "스킬이 있는 곳에서 이 프롬프트를 실행하세요. 각 스킬은 비공개 워크플로가 됩니다.",
+      "emptyAction": "Claude Code 또는 Codex에서 가져오기",
+      "hidePrompt": "프롬프트 숨기기",
+      "providerLabel": "가져올 곳",
+      "showPrompt": "프롬프트 보기",
+      "source": {
+        "claudeCode": "Claude Code에서 가져옴",
+        "codex": "Codex에서 가져옴"
+      },
+      "title": "스킬 가져오기",
+      "viewWorkflows": "워크플로 보기"
     }
   },
   "works": {

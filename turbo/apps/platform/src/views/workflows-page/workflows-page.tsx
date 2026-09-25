@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   BadgeCheck,
   ChevronDown,
+  Download,
   Lock,
   Plus,
   Route,
@@ -57,6 +58,7 @@ import { openCreateWorkflowDialog$ } from "../../signals/automation-page/workflo
 import { brandName$ } from "../../signals/branding.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
+import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import {
   allVisibleWorkflows$,
   allWorkflowAutomationEntries$,
@@ -615,6 +617,17 @@ function WorkflowRow({
                     })}
               </span>
             ) : null}
+            {workflow.importSource ? (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {workflow.importSource === "codex"
+                  ? i18n.t(($) => {
+                      return $.workflows.skillImport.source.codex;
+                    })
+                  : i18n.t(($) => {
+                      return $.workflows.skillImport.source.claudeCode;
+                    })}
+              </span>
+            ) : null}
           </span>
         </Link>
       </WorkflowTooltip>
@@ -907,6 +920,7 @@ function WorkflowListPanel({
   workflows,
   loading,
   emptyDescription,
+  emptyAction,
   sortMode = "next-run",
   automationEntriesByWorkflowId,
   displayTimezone = new Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -914,6 +928,8 @@ function WorkflowListPanel({
   readonly workflows: readonly WorkflowSummary[] | null;
   readonly loading: boolean;
   readonly emptyDescription: string;
+  /** Offered under the description when the list is empty. */
+  readonly emptyAction?: ReactNode;
   readonly sortMode?: WorkflowSortMode;
   readonly automationEntriesByWorkflowId?: WorkflowAutomationEntryMap;
   readonly displayTimezone?: string;
@@ -962,6 +978,7 @@ function WorkflowListPanel({
           <p className="mt-1 text-sm text-muted-foreground">
             {emptyDescription}
           </p>
+          {emptyAction}
         </div>
       )}
     </section>
@@ -1247,6 +1264,78 @@ function WorkflowFilterBar({
   );
 }
 
+/** Opens the import skills dialog; null while its switch is off. */
+function useImportSkills(): (() => void) | null {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.WorkflowSkillImport] ?? false;
+  const openSkillImportDialog = useSet(openSkillImportDialog$);
+  const pageSignal = useGet(pageSignal$);
+  if (!enabled) {
+    return null;
+  }
+  return () => {
+    detach(openSkillImportDialog(pageSignal), Reason.DomCallback);
+  };
+}
+
+function WorkflowsHeaderActions({
+  officialWorkflowsEnabled,
+  onImportSkills,
+}: {
+  readonly officialWorkflowsEnabled: boolean;
+  readonly onImportSkills: (() => void) | null;
+}) {
+  const { t } = useTranslation();
+  const openCreateWorkflowDialog = useSet(openCreateWorkflowDialog$);
+
+  return (
+    <div className="flex items-center gap-2">
+      {officialWorkflowsEnabled ? (
+        <Link
+          pathname={ROUTES.officialWorkflows}
+          className={cn(
+            buttonVariants({ variant: "neutral", size: "sm" }),
+            "h-9 shrink-0 gap-2 rounded-lg",
+          )}
+        >
+          <BadgeCheck size={14} />
+          {t(($) => {
+            return $.workflows.official.browse;
+          })}
+        </Link>
+      ) : null}
+      {onImportSkills ? (
+        <Button
+          type="button"
+          variant="neutral"
+          size="sm"
+          className="h-9 shrink-0 gap-2 rounded-lg"
+          onClick={onImportSkills}
+        >
+          <Download size={14} />
+          {t(($) => {
+            return $.workflows.skillImport.action;
+          })}
+        </Button>
+      ) : null}
+      <Button
+        type="button"
+        variant="neutral"
+        size="sm"
+        className="h-9 shrink-0 gap-2 rounded-lg"
+        onClick={() => {
+          openCreateWorkflowDialog();
+        }}
+      >
+        <Plus size={14} />
+        {t(($) => {
+          return $.workflows.list.createInChat;
+        })}
+      </Button>
+    </div>
+  );
+}
+
 export function WorkflowsPage() {
   const { t } = useTranslation();
   const brandName = useGet(brandName$);
@@ -1258,10 +1347,10 @@ export function WorkflowsPage() {
     allWorkflowAutomationEntries$,
   );
   const preferences = useLastResolved(userPreferences$);
-  const openCreateWorkflowDialog = useSet(openCreateWorkflowDialog$);
   const features = useGet(featureSwitch$);
   const officialWorkflowsEnabled =
     features[FeatureSwitchKey.OfficialWorkflows] ?? false;
+  const importSkills = useImportSkills();
   const loading =
     workflowsLoadable.state === "loading" ||
     automationEntriesLoadable.state === "loading";
@@ -1310,36 +1399,10 @@ export function WorkflowsPage() {
               })}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {officialWorkflowsEnabled ? (
-              <Link
-                pathname={ROUTES.officialWorkflows}
-                className={cn(
-                  buttonVariants({ variant: "neutral", size: "sm" }),
-                  "h-9 shrink-0 gap-2 rounded-lg",
-                )}
-              >
-                <BadgeCheck size={14} />
-                {t(($) => {
-                  return $.workflows.official.browse;
-                })}
-              </Link>
-            ) : null}
-            <Button
-              type="button"
-              variant="neutral"
-              size="sm"
-              className="h-9 shrink-0 gap-2 rounded-lg"
-              onClick={() => {
-                openCreateWorkflowDialog();
-              }}
-            >
-              <Plus size={14} />
-              {t(($) => {
-                return $.workflows.list.createInChat;
-              })}
-            </Button>
-          </div>
+          <WorkflowsHeaderActions
+            officialWorkflowsEnabled={officialWorkflowsEnabled}
+            onImportSkills={importSkills}
+          />
         </div>
       </header>
 
@@ -1361,6 +1424,24 @@ export function WorkflowsPage() {
                 : t(($) => {
                     return $.workflows.list.agentEmpty;
                   })
+            }
+            emptyAction={
+              importSkills &&
+              filter === "all" &&
+              agentFilter === WORKFLOW_ALL_AGENTS ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 gap-2"
+                  onClick={importSkills}
+                >
+                  <Download size={14} />
+                  {t(($) => {
+                    return $.workflows.skillImport.emptyAction;
+                  })}
+                </Button>
+              ) : undefined
             }
             automationEntriesByWorkflowId={automationEntriesByWorkflowId}
             displayTimezone={displayTimezone}

@@ -1191,6 +1191,13 @@
       "when": 1790344779761,
       "tag": "1247_chat_event_retention_cursors",
       "breakpoints": true
+    },
+    {
+      "idx": 1248,
+      "version": "7",
+      "when": 1790348633298,
+      "tag": "1248_workflow_import_source",
+      "breakpoints": true
     }
   ]
 }

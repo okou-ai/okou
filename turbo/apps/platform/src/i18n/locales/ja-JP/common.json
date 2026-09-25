@@ -7901,6 +7901,20 @@
       "uninstallTitle": "公式ワークフローをアンインストール",
       "viewAndInstall": "表示してインストール",
       "yes": "はい"
+    },
+    "skillImport": {
+      "action": "スキルをインポート",
+      "description": "スキルがある環境でこのプロンプトを実行してください。各スキルは非公開のワークフローになります。",
+      "emptyAction": "Claude Code または Codex からインポート",
+      "hidePrompt": "プロンプトを隠す",
+      "providerLabel": "インポート元",
+      "showPrompt": "プロンプトを表示",
+      "source": {
+        "claudeCode": "Claude Code からインポート",
+        "codex": "Codex からインポート"
+      },
+      "title": "スキルをインポート",
+      "viewWorkflows": "ワークフローを表示"
     }
   },
   "works": {

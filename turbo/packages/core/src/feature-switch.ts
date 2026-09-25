@@ -557,6 +557,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Replace the make-something onboarding with the source-first flow: choose an industry, connect a work source, invite, AI experience, Slack, and a tailored starting prompt.",
     enabled: false,
   },
+  [FeatureSwitchKey.WorkflowSkillImport]: {
+    maintainer: "ming@okou.ai",
+    description:
+      "Import Claude Code or Codex skills as private workflows from the workflows page, its empty state and the composer's plus menu, and tag each imported workflow with its source.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
 };
 
 interface ResolvedHashes {

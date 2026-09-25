@@ -7,6 +7,10 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { SKILL_IMPORT_SESSION_TTL_SECONDS } from "@okouai/api-contracts/contracts/skill-import";
+import {
+  workflowImportSourceSchema,
+  type WorkflowImportSource,
+} from "@okouai/api-contracts/contracts/workflows";
 import { z } from "zod";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 
@@ -118,6 +122,9 @@ const skillImportTokenPayloadSchema = jwtBaseSchema.extend({
   scope: z.literal("skill-import"),
   orgId: z.string().min(1),
   agentId: z.string().min(1),
+  // Absent from a token issued before the import tag, or for a session that
+  // named no tool; the workflows such a session imports stay untagged.
+  provider: workflowImportSourceSchema.optional(),
 });
 
 export type SkillImportTokenPayload = z.infer<
@@ -429,6 +436,7 @@ export function verifySkillImportToken(token: string): SkillImportAuth | null {
     userId: parsed.data.userId,
     orgId: parsed.data.orgId,
     agentId: parsed.data.agentId,
+    provider: parsed.data.provider ?? null,
     issuedAtSeconds: parsed.data.iat,
   };
 }
@@ -437,6 +445,7 @@ export function generateSkillImportToken(
   userId: string,
   orgId: string,
   agentId: string,
+  provider: WorkflowImportSource | null,
 ): { readonly token: string; readonly expiresAt: Date } {
   const nowSeconds = Math.floor(now() / 1000);
   const expiresAtSeconds = nowSeconds + SKILL_IMPORT_SESSION_TTL_SECONDS;
@@ -445,6 +454,7 @@ export function generateSkillImportToken(
     userId,
     orgId,
     agentId,
+    ...(provider === null ? {} : { provider }),
     iat: nowSeconds,
     exp: expiresAtSeconds,
   };

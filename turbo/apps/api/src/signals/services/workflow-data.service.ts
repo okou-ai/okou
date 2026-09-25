@@ -1,5 +1,8 @@
 import { computed, type Computed } from "ccstate";
-import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
+import type {
+  WorkflowImportSource,
+  WorkflowSummary,
+} from "@okouai/api-contracts/contracts/workflows";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, asc, desc, eq, isNull, or, type SQL } from "drizzle-orm";
@@ -25,6 +28,7 @@ export interface WorkflowRow {
   readonly description: string | null;
   readonly officialDefinitionName: string | null;
   readonly officialInstallationState: "installing" | "installed" | null;
+  readonly importSource: WorkflowImportSource | null;
   readonly createdBy: string;
   readonly updatedBy: string;
   readonly createdAt: Date;
@@ -42,6 +46,7 @@ type WorkflowSummaryRow = Pick<
   | "description"
   | "officialDefinitionName"
   | "officialInstallationState"
+  | "importSource"
   | "createdAt"
 >;
 
@@ -237,6 +242,7 @@ export function workflowSummary(args: {
             readOnly: true,
           },
     shadowedBy: args.shadowedBy ?? null,
+    importSource: args.workflow.importSource,
   };
 }
 
@@ -352,6 +358,7 @@ export function workflowList(args: {
           description: workflows.description,
           officialDefinitionName: workflows.officialDefinitionName,
           officialInstallationState: workflows.officialInstallationState,
+          importSource: workflows.importSource,
           createdAt: workflows.createdAt,
         },
         agent: {

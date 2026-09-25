@@ -8004,6 +8004,20 @@
       "uninstallTitle": "Désinstaller le workflow officiel",
       "viewAndInstall": "Afficher et installer",
       "yes": "Oui"
+    },
+    "skillImport": {
+      "action": "Importer des skills",
+      "description": "Exécutez ce prompt là où se trouvent vos skills. Chacune devient un workflow privé.",
+      "emptyAction": "Importer depuis Claude Code ou Codex",
+      "hidePrompt": "Masquer le prompt",
+      "providerLabel": "Importer depuis",
+      "showPrompt": "Afficher le prompt",
+      "source": {
+        "claudeCode": "Importé de Claude Code",
+        "codex": "Importé de Codex"
+      },
+      "title": "Importez vos skills",
+      "viewWorkflows": "Voir les workflows"
     }
   },
   "works": {
