@@ -9,6 +9,7 @@ use tokio::sync::{Notify, oneshot, watch};
 
 use crate::idle_pool::{FinalizingHandoffCandidate, IdleParkCandidate};
 use runner_types::ids::RunId;
+use runner_types::types::{ActiveReuseProducer, MAX_ACTIVE_REUSE_PRODUCERS};
 
 #[derive(Clone)]
 pub struct ActiveRuns {
@@ -283,6 +284,9 @@ impl ActiveRuns {
             });
         }
         drop(entries);
+        if has_reuse_key {
+            self.reuse_state_notify.notify_one();
+        }
         ActiveRunGuard {
             active_runs: self.clone(),
             run_id: Some(run_id),
@@ -308,6 +312,24 @@ impl ActiveRuns {
             handoff: Arc::clone(&entry.handoff),
         };
         proof.state().can_publish_exact().then_some(proof)
+    }
+
+    pub fn active_reuse_producers(&self) -> Vec<ActiveReuseProducer> {
+        let entries = lock_entries(&self.entries);
+        let mut producers: Vec<_> = entries
+            .iter()
+            .filter(|(_, entry)| entry.reuse_state.borrow().can_publish_exact())
+            .filter_map(|(run_id, entry)| {
+                Some(ActiveReuseProducer {
+                    run_id: *run_id,
+                    reuse_key: entry.reuse_key.clone()?,
+                    profile: entry.profile_name.clone(),
+                })
+            })
+            .collect();
+        producers.sort_unstable_by_key(|entry| entry.run_id);
+        producers.truncate(MAX_ACTIVE_REUSE_PRODUCERS);
+        producers
     }
 
     pub fn reuse_keys(&self) -> HashSet<String> {
@@ -409,6 +431,11 @@ mod tests {
             active_runs.reuse_keys(),
             HashSet::from(["thread:shared".to_string()])
         );
+        assert_eq!(active_runs.active_reuse_producers().len(), 2);
+        assert_eq!(
+            active_runs.active_reuse_producers()[0].run_id,
+            first_run_id.min(second_run_id)
+        );
         assert!(active_runs.has_reusable_run());
         assert!(
             active_runs
@@ -427,10 +454,12 @@ mod tests {
         );
 
         drop(first);
+        assert_eq!(active_runs.active_reuse_producers().len(), 1);
         assert!(active_runs.reuse_keys().contains("thread:shared"));
         drop(second);
         assert!(active_runs.reuse_keys().is_empty());
         assert!(!active_runs.has_reusable_run());
+        assert!(active_runs.active_reuse_producers().is_empty());
 
         let no_reuse = active_runs.register(first_run_id, None, "vm0/default".into());
         assert!(!no_reuse.release());
@@ -462,6 +491,7 @@ mod tests {
             HashSet::from(["thread:finalizing".to_string()])
         );
         assert!(active_runs.has_reusable_run());
+        assert_eq!(active_runs.active_reuse_producers()[0].run_id, run_id);
         assert!(
             active_runs
                 .finalizing_predecessor(run_id, "thread:finalizing", "vm0/default")
@@ -475,6 +505,7 @@ mod tests {
         );
         assert!(active_runs.reuse_keys().is_empty());
         assert!(!active_runs.has_reusable_run());
+        assert!(active_runs.active_reuse_producers().is_empty());
         assert!(
             active_runs
                 .finalizing_predecessor(run_id, "thread:finalizing", "vm0/default")
@@ -506,6 +537,7 @@ mod tests {
             ActiveRunReuseState::NoExactSandbox
         );
         assert!(!no_exact_publisher.publish_exact_sandbox());
+        assert!(active_runs.active_reuse_producers().is_empty());
         drop(no_exact_guard);
         assert_eq!(
             no_exact_proof.changed().await,

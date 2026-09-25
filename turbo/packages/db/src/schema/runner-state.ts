@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type {
   RunnerAdmittableProfiles,
+  RunnerActiveReuseProducers,
   RunnerHeldSandboxStates,
   RunnerHeldWorkspaceStates,
 } from "@okouai/db/jsonb-contracts/runner-state";
@@ -47,6 +48,10 @@ export const runnerState = pgTable(
       .notNull(),
     heldWorkspaceStates: jsonb("held_workspace_states")
       .$type<RunnerHeldWorkspaceStates>()
+      .default([])
+      .notNull(),
+    activeReuseProducers: jsonb("active_reuse_producers")
+      .$type<RunnerActiveReuseProducers>()
       .default([])
       .notNull(),
     mode: varchar("mode", { length: 20 }).notNull().default("running"),

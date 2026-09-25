@@ -16,7 +16,8 @@ use runner_lifecycle::workspace_image_cache::snapshot::{
 use runner_lifecycle::workspace_image_cache::{WorkspaceCacheChange, WorkspaceImageCache};
 use runner_provider::JobProvider;
 use runner_types::types::{
-    HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_HELD_SANDBOX_STATES,
+    HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_ACTIVE_REUSE_PRODUCERS,
+    MAX_HELD_SANDBOX_STATES,
 };
 
 /// Period between routine heartbeat ticks sent to the server. First tick is
@@ -299,6 +300,9 @@ async fn send_heartbeat(
     snapshot_sequence: u64,
     request: HeartbeatRequest,
 ) {
+    // A producer can move into the idle pool while the heartbeat waits for
+    // its lock. Include either side of that transfer in this advisory snapshot.
+    let mut producers = hb.active_runs.active_reuse_producers();
     let pool = hb.idle_pool.lock().await;
     let mut state = collect_heartbeat_state(
         HeartbeatSnapshotMetadata {
@@ -331,8 +335,15 @@ async fn send_heartbeat(
             changed: false,
         }
     };
+    // Preserve the pre-transfer producer even if filtering observes its
+    // resolved state; the next snapshot will advertise the parked sandbox.
     state.held_sandbox_states =
         filter_current_held_sandbox_states(state.held_sandbox_states, &hb.active_runs, None);
+    producers.extend(hb.active_runs.active_reuse_producers());
+    producers.sort_unstable_by_key(|entry| entry.run_id);
+    producers.dedup_by_key(|entry| entry.run_id);
+    producers.truncate(MAX_ACTIVE_REUSE_PRODUCERS);
+    state.active_reuse_producers = producers;
     state.held_workspace_states =
         filter_current_held_workspace_states(refresh.states, &hb.active_runs, None);
     if let Some(change) = cache_change
@@ -353,6 +364,7 @@ async fn send_heartbeat(
         mode = ?mode,
         running = state.running_count,
         reusable_sandboxes = state.held_sandbox_states.len(),
+        active_reuse_producers = state.active_reuse_producers.len(),
         workspace_states = state.held_workspace_states.len(),
         "heartbeat"
     );
@@ -543,6 +555,7 @@ pub fn collect_heartbeat_state(
         admittable_profiles,
         held_sandbox_states: idle_pool.held_sandbox_states(),
         held_workspace_states: Vec::new(),
+        active_reuse_producers: Vec::new(),
         mode: match mode {
             RunnerMode::Starting => "starting".to_string(),
             RunnerMode::Running => "running".to_string(),
@@ -561,6 +574,7 @@ fn duration_ms(duration: Duration) -> u64 {
 mod tests {
     use super::*;
     use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
+    use futures_util::FutureExt;
     use runner_host::paths::RunnerPaths;
     use runner_lifecycle::idle_pool::{
         IdlePoolConfig, ParkResult, ParkedIdleCandidate, test_support::ParkedIdleCandidateBuilder,
@@ -1056,6 +1070,75 @@ mod tests {
             !states.iter().any(|state| state.reuse_key == "sess-claimed"),
             "currently claimed reuse key should be filtered until the run finishes"
         );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn heartbeat_advertises_live_producer_then_held_sandbox() {
+        let reuse_key = "thread:heartbeat-producer";
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+            max_idle: 1,
+        })));
+        let notify = Arc::new(tokio::sync::Notify::new());
+        let active_runs = ActiveRuns::new(Arc::clone(&notify));
+        let run_id = runner_types::ids::RunId::new_v4();
+        let guard = active_runs.register(run_id, Some(reuse_key.into()), "vm0/default".into());
+        assert!(notify.notified().now_or_never().is_some());
+        let publisher = guard.reuse_publisher();
+        let provider = Arc::new(RecordingProvider::default());
+        let profiles = test_profiles();
+        let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
+        let hb = HeartbeatContext::new(HeartbeatContextInit {
+            idle_pool: &idle_pool,
+            runner_identity: test_runner_identity(),
+            group: "vm0/test",
+            profiles: &profiles,
+            budget: &budget,
+            provider: provider.clone(),
+            workspace_cache: None,
+            active_runs: &active_runs,
+            workspace_cache_snapshot: WorkspaceCacheStateSnapshot::new(),
+        });
+
+        send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;
+        assert!(publisher.mark_finalizing(std::time::Instant::now()));
+        send_heartbeat(&hb, RunnerMode::Running, 2, HeartbeatRequest::ordinary()).await;
+        let mut pool = idle_pool.lock().await;
+        let in_flight_hb = hb.clone();
+        let in_flight = tokio::spawn(async move {
+            send_heartbeat(
+                &in_flight_hb,
+                RunnerMode::Running,
+                3,
+                HeartbeatRequest::ordinary(),
+            )
+            .await;
+        });
+        // The task takes the active snapshot then waits for the pool lock.
+        tokio::task::yield_now().await;
+        let candidate = ParkedIdleCandidateBuilder::new(
+            reuse_key,
+            ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap(),
+        )
+        .with_last_completed_at("2026-06-01T00:00:00.000Z")
+        .build();
+        assert!(matches!(pool.park(candidate), ParkResult::Parked));
+        assert!(publisher.publish_exact_sandbox());
+        drop(pool);
+        in_flight.await.unwrap();
+        send_heartbeat(&hb, RunnerMode::Running, 4, HeartbeatRequest::ordinary()).await;
+
+        let heartbeats = provider
+            .heartbeats
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert_eq!(heartbeats[0].active_reuse_producers[0].run_id, run_id);
+        assert_eq!(heartbeats[0].active_reuse_producers[0].reuse_key, reuse_key);
+        assert!(heartbeats[0].held_sandbox_states.is_empty());
+        assert_eq!(heartbeats[1].active_reuse_producers[0].run_id, run_id);
+        assert_eq!(heartbeats[2].active_reuse_producers[0].run_id, run_id);
+        assert_eq!(heartbeats[2].held_sandbox_states[0].reuse_key, reuse_key);
+        assert!(heartbeats[3].active_reuse_producers.is_empty());
+        assert_eq!(heartbeats[3].held_sandbox_states[0].reuse_key, reuse_key);
     }
 
     #[test]

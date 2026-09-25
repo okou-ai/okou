@@ -1,5 +1,13 @@
 export type RunnerAdmittableProfiles = string[];
 
+export interface RunnerActiveReuseProducer {
+  readonly runId: string;
+  readonly reuseKey: string;
+  readonly profile: string;
+}
+
+export type RunnerActiveReuseProducers = RunnerActiveReuseProducer[];
+
 export interface RunnerHeldSandboxState {
   readonly reuseKey: string;
   readonly lastCompletedAt: string;

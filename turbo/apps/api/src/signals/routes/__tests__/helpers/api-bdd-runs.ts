@@ -271,6 +271,7 @@ function runnerHeartbeatBody(
     readonly runningCount?: RunnerHeartbeatBody["runningCount"];
     readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
     readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
+    readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
     readonly mode?: RunnerHeartbeatBody["mode"];
   } = {},
 ): RunnerHeartbeatBody {
@@ -288,6 +289,9 @@ function runnerHeartbeatBody(
     admittableProfiles: args.admittableProfiles ?? ["vm0/default"],
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldWorkspaceStates: args.heldWorkspaceStates ?? [],
+    ...(args.activeReuseProducers
+      ? { activeReuseProducers: args.activeReuseProducers }
+      : {}),
     mode: args.mode ?? "running",
   };
 }
@@ -1326,6 +1330,7 @@ export function createRunsApi(
         readonly runningCount?: RunnerHeartbeatBody["runningCount"];
         readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
         readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
+        readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
         readonly mode?: RunnerHeartbeatBody["mode"];
       } = {},
     ) {

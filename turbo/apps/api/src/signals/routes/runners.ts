@@ -544,6 +544,10 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     body.data.heldWorkspaceStates,
   );
   const admittableProfiles = body.data.admittableProfiles;
+  // Older Runner heartbeats omit this field during fleet drain and rollback.
+  // Remove this API fallback only after those senders leave the supported
+  // Runner fleet and rollback floor (see #36867).
+  const activeReuseProducers = body.data.activeReuseProducers ?? [];
   const currentDate = nowDate();
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
@@ -566,6 +570,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       admittableProfiles,
       heldSandboxStates,
       heldWorkspaceStates,
+      activeReuseProducers,
       mode: body.data.mode,
       lastSeenAt: currentDate,
     })
@@ -584,6 +589,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         admittableProfiles,
         heldSandboxStates,
         heldWorkspaceStates,
+        activeReuseProducers,
         mode: body.data.mode,
         lastSeenAt: currentDate,
       },

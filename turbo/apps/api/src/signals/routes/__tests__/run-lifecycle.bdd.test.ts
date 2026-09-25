@@ -891,10 +891,13 @@ interface SameThreadReuseHeartbeatArgs {
   }[];
 }
 
-async function setupSameThreadReuseScenario(sourceRunnerIdentity?: {
-  readonly runnerId: string;
-  readonly heartbeatGeneration: number;
-}) {
+async function setupSameThreadReuseScenario(
+  sourceRunnerIdentity?: {
+    readonly runnerId: string;
+    readonly heartbeatGeneration: number;
+  },
+  options?: { readonly advertiseActiveProducer?: boolean },
+) {
   const api = createRunsApi(context);
   const chat = createChatFilesBddApi(context);
   const webhooks = createWebhookCallbackApi(context);
@@ -914,13 +917,25 @@ async function setupSameThreadReuseScenario(sourceRunnerIdentity?: {
   expect(firstClaim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
     first.threadId,
   );
+  const reuseKey = `thread:${first.threadId}`;
+  if (options?.advertiseActiveProducer && sourceRunnerIdentity) {
+    await api.requestHeartbeatRunner(true, [200], {
+      runnerId: sourceRunnerIdentity.runnerId,
+      group: runnerGroup,
+      snapshotGeneration: sourceRunnerIdentity.heartbeatGeneration,
+      snapshotSequence: 1,
+      admittableProfiles: [],
+      activeReuseProducers: [
+        { runId: first.runId, reuseKey, profile: "vm0/default" },
+      ],
+    });
+  }
   expect(
     Object.keys(firstClaim.environment ?? {}).filter((key) => {
       return key.startsWith("ZERO_");
     }),
   ).toStrictEqual([]);
   const cliAgentSessionId = `bdd-reuse-cli-${first.runId}`;
-  const reuseKey = `thread:${first.threadId}`;
   const reuseRunnerId = randomUUID();
   const history = `bdd reuse history ${first.runId}`;
   const historyHash = createHash("sha256").update(history).digest("hex");
@@ -4307,6 +4322,240 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
     expect(claimed.status).toBe(200);
 
+    await api.requestCancelRun(actor, successor.runId, [200]);
+    await flushWaitUntilForTest();
+  });
+
+  it("keeps a live exact producer preferred beyond the predecessor completion window", async () => {
+    const sourceCompletedAt = now();
+    mockNow(sourceCompletedAt);
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const sourceRunnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 7,
+    };
+    // The producer snapshot is reported while the predecessor is still running.
+    const { actor, agentId, api, first, runnerGroup } =
+      await setupSameThreadReuseScenario(sourceRunnerIdentity, {
+        advertiseActiveProducer: true,
+      });
+    const blankRunnerId = randomUUID();
+    await api.requestHeartbeatRunner(true, [200], {
+      runnerId: blankRunnerId,
+      group: runnerGroup,
+      snapshotGeneration: 2,
+      snapshotSequence: 1,
+      admittableProfiles: ["vm0/default"],
+    });
+
+    const successorCreatedAt = sourceCompletedAt + 2094;
+    mockNow(successorCreatedAt);
+    context.mocks.ably.publish.mockClear();
+    const successor = await sendChatRunMessage(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "continue while the predecessor is still parking",
+    });
+    const preference = {
+      kind: "preference" as const,
+      runnerIdentity: sourceRunnerIdentity,
+      tier: "finalizingPredecessor" as const,
+      expiresAt: new Date(successorCreatedAt + 2000).toISOString(),
+    };
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "job",
+      expect.objectContaining({
+        runId: successor.runId,
+        historyGenerationRunId: first.runId,
+        runnerPreference: preference,
+      }),
+    );
+    const sourcePoll = await api.requestPollRunner(
+      true,
+      {
+        runnerId: sourceRunnerIdentity.runnerId,
+        group: runnerGroup,
+        supportedProfiles: ["vm0/default"],
+      },
+      [200],
+    );
+    if (sourcePoll.status !== 200) {
+      throw new Error("Expected producer poll to succeed");
+    }
+    expect(sourcePoll.body.job?.runId).toBe(successor.runId);
+    expect(runnerPreference(sourcePoll.body.job)).toStrictEqual(preference);
+
+    const blankPoll = await api.requestPollRunner(
+      true,
+      {
+        runnerId: blankRunnerId,
+        group: runnerGroup,
+        supportedProfiles: ["vm0/default"],
+      },
+      [200],
+    );
+    if (blankPoll.status !== 200) {
+      throw new Error("Expected competing runner poll to succeed");
+    }
+    // Notifications and polls are broadcast; the preference makes the
+    // non-holder defer its local claim rather than hiding the candidate.
+    expect(blankPoll.body.job?.runId).toBe(successor.runId);
+    expect(runnerPreference(blankPoll.body.job)).toStrictEqual(preference);
+
+    mockNow(successorCreatedAt + 2001);
+    const fallbackPoll = await api.requestPollRunner(
+      true,
+      {
+        runnerId: blankRunnerId,
+        group: runnerGroup,
+        supportedProfiles: ["vm0/default"],
+      },
+      [200],
+    );
+    if (fallbackPoll.status !== 200) {
+      throw new Error("Expected bounded fallback poll to succeed");
+    }
+    expect(fallbackPoll.body.job?.runId).toBe(successor.runId);
+    expect(runnerPreference(fallbackPoll.body.job)).toStrictEqual({
+      kind: "noPreference",
+      reason: "expired",
+    });
+    await api.requestCancelRun(actor, successor.runId, [200]);
+    await flushWaitUntilForTest();
+  });
+
+  it("requires a current exact producer tuple and process generation beyond the bridge", async () => {
+    const sourceCompletedAt = now();
+    mockNow(sourceCompletedAt);
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const sourceRunnerIdentity = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 7,
+    };
+    const { actor, agentId, api, first, reuseKey, runnerGroup } =
+      await setupSameThreadReuseScenario(sourceRunnerIdentity, {
+        advertiseActiveProducer: true,
+      });
+    const sourceHeartbeat = {
+      runnerId: sourceRunnerIdentity.runnerId,
+      group: runnerGroup,
+      snapshotGeneration: sourceRunnerIdentity.heartbeatGeneration,
+      admittableProfiles: [],
+    };
+    await api.requestHeartbeatRunner(true, [200], {
+      ...sourceHeartbeat,
+      snapshotSequence: 2,
+      activeReuseProducers: [
+        {
+          runId: first.runId,
+          reuseKey: "thread:wrong",
+          profile: "vm0/default",
+        },
+        { runId: first.runId, reuseKey, profile: "vm0/large" },
+        { runId: randomUUID(), reuseKey, profile: "vm0/default" },
+      ],
+    });
+    // A delayed older heartbeat cannot restore the exact producer.
+    await api.requestHeartbeatRunner(true, [200], {
+      ...sourceHeartbeat,
+      snapshotSequence: 1,
+      activeReuseProducers: [
+        { runId: first.runId, reuseKey, profile: "vm0/default" },
+      ],
+    });
+
+    const successorCreatedAt = sourceCompletedAt + 2100;
+    mockNow(successorCreatedAt);
+    context.mocks.ably.publish.mockClear();
+    const successor = await sendChatRunMessage(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "continue without an exact active producer",
+    });
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "job",
+      expect.objectContaining({
+        runId: successor.runId,
+        runnerPreference: { kind: "noPreference", reason: "noViableHolder" },
+      }),
+    );
+
+    await api.requestHeartbeatRunner(true, [200], {
+      ...sourceHeartbeat,
+      snapshotSequence: 3,
+      activeReuseProducers: [
+        { runId: first.runId, reuseKey, profile: "vm0/default" },
+      ],
+    });
+    const matchingPoll = await api.requestPollRunner(
+      true,
+      {
+        runnerId: sourceRunnerIdentity.runnerId,
+        group: runnerGroup,
+        supportedProfiles: ["vm0/default"],
+      },
+      [200],
+    );
+    if (matchingPoll.status !== 200) {
+      throw new Error("Expected matching-producer poll to succeed");
+    }
+    expect(runnerPreference(matchingPoll.body.job)).toStrictEqual({
+      kind: "preference",
+      runnerIdentity: sourceRunnerIdentity,
+      tier: "finalizingPredecessor",
+      expiresAt: new Date(successorCreatedAt + 2000).toISOString(),
+    });
+
+    await api.requestHeartbeatRunner(true, [200], {
+      ...sourceHeartbeat,
+      snapshotSequence: 4,
+      activeReuseProducers: [],
+    });
+    const resolvedPoll = await api.requestPollRunner(
+      true,
+      {
+        runnerId: sourceRunnerIdentity.runnerId,
+        group: runnerGroup,
+        supportedProfiles: ["vm0/default"],
+      },
+      [200],
+    );
+    if (resolvedPoll.status !== 200) {
+      throw new Error("Expected resolved-producer poll to succeed");
+    }
+    expect(runnerPreference(resolvedPoll.body.job)).toStrictEqual({
+      kind: "noPreference",
+      reason: "noViableHolder",
+    });
+
+    await api.requestHeartbeatRunner(true, [200], {
+      ...sourceHeartbeat,
+      snapshotGeneration: sourceRunnerIdentity.heartbeatGeneration + 1,
+      snapshotSequence: 1,
+      activeReuseProducers: [
+        { runId: first.runId, reuseKey, profile: "vm0/default" },
+      ],
+    });
+    const restartedPoll = await api.requestPollRunner(
+      true,
+      {
+        runnerId: sourceRunnerIdentity.runnerId,
+        group: runnerGroup,
+        supportedProfiles: ["vm0/default"],
+      },
+      [200],
+    );
+    if (restartedPoll.status !== 200) {
+      throw new Error("Expected restarted-holder poll to succeed");
+    }
+    expect(runnerPreference(restartedPoll.body.job)).toStrictEqual({
+      kind: "noPreference",
+      reason: "noViableHolder",
+    });
     await api.requestCancelRun(actor, successor.runId, [200]);
     await flushWaitUntilForTest();
   });

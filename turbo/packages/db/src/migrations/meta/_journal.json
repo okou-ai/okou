@@ -1121,6 +1121,13 @@
       "when": 1790310766064,
       "tag": "1237_public_brand_okou_default_platform",
       "breakpoints": true
+    },
+    {
+      "idx": 1238,
+      "version": "7",
+      "when": 1790318127290,
+      "tag": "1238_natural_annihilus",
+      "breakpoints": true
     }
   ]
 }
