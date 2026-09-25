@@ -640,6 +640,11 @@ async fn prepare_ranked_preference_candidate(
                 history_generation_run_id,
             );
         }
+        info!(
+            run_id = %candidate.run_id(),
+            reason = "no_publishable_predecessor",
+            "selected finalizing preference has no matching process-local proof"
+        );
         return defer_preference_candidate(candidate, preference, reuse_key, ctx, true).await;
     }
 

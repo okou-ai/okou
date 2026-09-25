@@ -2642,6 +2642,7 @@ mod tests {
                     workspace_affinity_version: runner_types::types::WORKSPACE_AFFINITY_VERSION,
                 }],
             }],
+            active_reuse_producers: vec![],
             mode: "running".to_string(),
         }
     }

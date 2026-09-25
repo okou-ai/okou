@@ -138,6 +138,10 @@ export async function notifyRunnerJob(
   const notificationEnteredAt = now();
   const currentDate = new Date(notificationEnteredAt);
   let preferenceLookupSucceeded = true;
+  let finalizingPreferenceSource:
+    | "active_producer"
+    | "completion_bridge"
+    | undefined;
   const runnerPreference =
     (await tapError(
       resolveRunnerReusePreference({
@@ -148,6 +152,9 @@ export async function notifyRunnerJob(
         historyGenerationRunId: args.historyGenerationRunId,
         createdAt: args.createdAt,
         currentDate,
+        onFinalizingSource(source) {
+          finalizingPreferenceSource = source;
+        },
       }),
       (error) => {
         preferenceLookupSucceeded = false;
@@ -188,6 +195,9 @@ export async function notifyRunnerJob(
     ...attributionDimensions,
     reuse_key_kind: runnerReuseKeyTelemetryKind(args.reuseKey),
     ...runnerPreferenceTelemetryDimensions(runnerPreference),
+    ...(finalizingPreferenceSource
+      ? { runner_preference_finalizing_source: finalizingPreferenceSource }
+      : {}),
   };
   if (args.historyGenerationRunId) {
     dimensions.history_generation_run_id = args.historyGenerationRunId;

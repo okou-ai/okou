@@ -911,6 +911,7 @@ async fn finalize_sandbox_for_completion_inner(
                 match deliver_exact_handoff(&active_run_reuse, candidate, run_id) {
                     ExactHandoffAttempt::Delivered { handoff_point } => {
                         cleanup_state.mark_handoff_owned();
+                        reuse_state_notify.notify_one();
                         #[cfg(any(test, feature = "test-support"))]
                         test_hooks.emit(FinalizationTestEvent::HandoffOwned { run_id });
                         drop(transfer_guard);

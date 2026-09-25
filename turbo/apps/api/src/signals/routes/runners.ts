@@ -544,6 +544,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     body.data.heldWorkspaceStates,
   );
   const admittableProfiles = body.data.admittableProfiles;
+  const activeReuseProducers = body.data.activeReuseProducers ?? [];
   const currentDate = nowDate();
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
@@ -566,6 +567,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       admittableProfiles,
       heldSandboxStates,
       heldWorkspaceStates,
+      activeReuseProducers,
       mode: body.data.mode,
       lastSeenAt: currentDate,
     })
@@ -584,6 +586,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         admittableProfiles,
         heldSandboxStates,
         heldWorkspaceStates,
+        activeReuseProducers,
         mode: body.data.mode,
         lastSeenAt: currentDate,
       },

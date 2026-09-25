@@ -1,0 +1,1 @@
+ALTER TABLE "runner_state" ADD COLUMN "active_reuse_producers" jsonb DEFAULT '[]'::jsonb NOT NULL;
