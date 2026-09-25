@@ -147,7 +147,8 @@ export type VncAuthMethod = VncCredentialResponse["authMethod"];
 
 export function vncAuthMethodForProfile(profile: VncProfile): VncAuthMethod {
   switch (profile) {
-    case "x509_vnc": {
+    case "x509_vnc":
+    case "apple_vnc_password": {
       return "vnc_password";
     }
     case "x509_plain": {
@@ -272,6 +273,7 @@ export const chooseVncProfile$ = command(
       !get(editorLocked$) &&
       (profile === "x509_vnc" ||
         profile === "x509_plain" ||
+        profile === "apple_vnc_password" ||
         profile === "apple_dh" ||
         profile === "apple_srp" ||
         profile === "apple_rsa_srp")
@@ -284,6 +286,7 @@ export const chooseVncProfile$ = command(
               profile,
               selection: "",
               transport:
+                profile === "apple_vnc_password" ||
                 profile === "apple_dh" ||
                 profile === "apple_srp" ||
                 profile === "apple_rsa_srp"
@@ -307,7 +310,8 @@ export const chooseVncTransport$ = command(
       !get(editorLocked$) &&
       (transport === "direct" || transport === "ssh") &&
       (transport !== "direct" ||
-        (get(editor$).profile !== "apple_dh" &&
+        (get(editor$).profile !== "apple_vnc_password" &&
+          get(editor$).profile !== "apple_dh" &&
           get(editor$).profile !== "apple_srp" &&
           get(editor$).profile !== "apple_rsa_srp"))
     ) {
@@ -398,6 +402,7 @@ function initialVncEditor(
     selection: connection?.credentialId ?? (kind === "create" ? "" : "new"),
     profile: initialVncProfile(connection, credential),
     trust:
+      connection?.security.type === "apple_vnc_password" ||
       connection?.security.type === "apple_dh" ||
       connection?.security.type === "apple_srp" ||
       connection?.security.type === "apple_rsa_srp"
@@ -405,6 +410,7 @@ function initialVncEditor(
         : (connection?.security.trust.mode ?? "system"),
     transport:
       sshConnectionId ||
+      initialVncProfile(connection, credential) === "apple_vnc_password" ||
       initialVncProfile(connection, credential) === "apple_dh" ||
       initialVncProfile(connection, credential) === "apple_srp" ||
       initialVncProfile(connection, credential) === "apple_rsa_srp"
@@ -484,7 +490,8 @@ function textField(form: HTMLFormElement, name: string): string {
 function credentialFields(form: HTMLFormElement, profile: VncProfile) {
   const name = textField(form, "credentialName");
   switch (profile) {
-    case "x509_vnc": {
+    case "x509_vnc":
+    case "apple_vnc_password": {
       return {
         name,
         authentication: {
@@ -559,6 +566,7 @@ interface Editor {
 
 function connectionFields(form: HTMLFormElement, editor: Editor) {
   const serverName =
+    editor.profile === "apple_vnc_password" ||
     editor.profile === "apple_dh" ||
     editor.profile === "apple_srp" ||
     editor.profile === "apple_rsa_srp"
@@ -577,6 +585,7 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
         ? { create: credentialFields(form, editor.profile) }
         : { id: editor.selection },
     security:
+      editor.profile === "apple_vnc_password" ||
       editor.profile === "apple_dh" ||
       editor.profile === "apple_srp" ||
       editor.profile === "apple_rsa_srp"

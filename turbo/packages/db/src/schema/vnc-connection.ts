@@ -47,6 +47,7 @@ export const vncConnections = pgTable(
       enum: [
         "x509_vnc",
         "x509_plain",
+        "apple_vnc_password",
         "apple_dh",
         "apple_srp",
         "apple_rsa_srp",
@@ -128,11 +129,11 @@ export const vncConnections = pgTable(
       check("chk_vnc_connections_generation", sql`${table.generation} > 0`),
       check(
         "chk_vnc_connections_profile",
-        sql`(${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'username_password' AND ${table.securityType} = 'x509_plain') OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.securityType} = 'apple_dh' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_srp_username_password' AND ${table.securityType} = 'apple_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_rsa_srp_username_password' AND ${table.securityType} = 'apple_rsa_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL)`,
+        sql`(${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'x509_vnc') OR (${table.authMethod} = 'vnc_password' AND ${table.securityType} = 'apple_vnc_password' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'username_password' AND ${table.securityType} = 'x509_plain') OR (${table.authMethod} = 'apple_dh_username_password' AND ${table.securityType} = 'apple_dh' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_srp_username_password' AND ${table.securityType} = 'apple_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL) OR (${table.authMethod} = 'apple_rsa_srp_username_password' AND ${table.securityType} = 'apple_rsa_srp' AND ${table.transportType} = 'ssh' AND ${table.host} IN ('127.0.0.1', '::1') AND ${table.x509ServerName} IS NULL)`,
       ),
       check(
         "chk_vnc_connections_trust",
-        sql`(${table.securityType} IN ('apple_dh', 'apple_srp', 'apple_rsa_srp') AND ${table.trustMode} = 'none' AND ${table.caBundle} IS NULL) OR (${table.securityType} NOT IN ('apple_dh', 'apple_srp', 'apple_rsa_srp') AND ((${table.trustMode} = 'system' AND ${table.caBundle} IS NULL) OR (${table.trustMode} = 'custom_ca' AND ${table.caBundle} IS NOT NULL AND octet_length(${table.caBundle}) BETWEEN 1 AND 65536)))`,
+        sql`(${table.securityType} IN ('apple_vnc_password', 'apple_dh', 'apple_srp', 'apple_rsa_srp') AND ${table.trustMode} = 'none' AND ${table.caBundle} IS NULL) OR (${table.securityType} NOT IN ('apple_vnc_password', 'apple_dh', 'apple_srp', 'apple_rsa_srp') AND ((${table.trustMode} = 'system' AND ${table.caBundle} IS NULL) OR (${table.trustMode} = 'custom_ca' AND ${table.caBundle} IS NOT NULL AND octet_length(${table.caBundle}) BETWEEN 1 AND 65536)))`,
       ),
     ];
   },

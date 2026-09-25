@@ -5,7 +5,8 @@ VNC is an independent remote-access capability alongside SSH. The
 staff. Explicit owner/Agent grants, metadata inventory and private Runner
 authority are described in [Runner VNC authority](runner-vnc-authority.md).
 The Runner, owner configuration and Agent inventory support the exact X509Vnc,
-X509Plain, SSH-protected Apple DH, Apple Direct SRP and Apple RSA/SRP profiles.
+X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct SRP
+and Apple RSA/SRP profiles.
 The feature remains unavailable until a separate activation decision.
 
 ## Supported profiles and rollout state
@@ -21,6 +22,24 @@ The feature remains unavailable until a separate activation decision.
 Acceptance must name the exact server and Runner versions and distinguish
 engine-only evidence, controlled Runner integration and a real Agent session.
 Neither the matrix nor a merged implementation turns on the feature.
+
+Optional Mac classic VNC password adds the **separate** `vnc_password` /
+`apple_vnc_password` pair for bare RFB security type 2. It reuses the 1–8
+printable-ASCII-byte credential shape of X509Vnc but **not** its X.509 trust
+or TLS profile. Configure the Mac's optional “VNC viewers may control screen
+with password” setting yourself with a distinct password (not a Mac login
+password), then deliberately choose this profile, a saved host-key-verified
+SSH connection ending on the Mac, and literal `127.0.0.1` or `::1` as the RFB
+destination. The type-2 password only authenticates the client: it does not
+authenticate the RFB server or encrypt the desktop. SSH protects this Okou
+connection, **not** the Mac's TCP/5900 listener; depending on Mac firewall and
+network settings, other clients may reach its weak-password service. The
+owner chooses whether that exposure is acceptable; Okou does not require
+host-side isolation, measure external reachability or enable the Mac option
+automatically. A saved SSH host key authenticates the selected endpoint but
+cannot exclude an onward proxy. Older Runners without the exact tuple return
+`unsupported_profile` before password decryption. No direct route or fallback
+from X509Vnc is admitted; `VncAccess` remains default-off.
 
 Apple Screen Sharing adds an exact `apple_dh_username_password` / `apple_dh`
 pair. The Rust engine authenticates Apple RFB security type 30, which neither
@@ -93,7 +112,7 @@ Each security variant may also carry `serverName`, a separately canonicalized
 DNS name or IP identity for future certificate verification. Omitting it means
 use the saved VNC host; it never replaces the socket destination.
 The exact stored pairs are `vnc_password` / `x509_vnc`,
-`username_password` / `x509_plain`, and
+`vnc_password` / `apple_vnc_password`, `username_password` / `x509_plain`, and
 `apple_dh_username_password` / `apple_dh`,
 `apple_srp_username_password` / `apple_srp`, and
 `apple_rsa_srp_username_password` / `apple_rsa_srp`. None of the Apple profiles
