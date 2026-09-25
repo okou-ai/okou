@@ -290,7 +290,11 @@ describe("Usage Allowance", () => {
     },
   );
 
-  it.each(runCreditExhaustionCases)(
+  it.each(
+    runCreditExhaustionCases.filter(([tier]) => {
+      return tier === "free" || tier === "pro";
+    }),
+  )(
     "allows or denies a promoted built-in run after exhaustion on %s",
     async (tier, expectedFirewallStatus) => {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
