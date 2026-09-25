@@ -57,7 +57,9 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-executor -- --test-threads=1
 
-# Extracted Runner idle, pre-claim admission/rollback, finalizing-successor arbitration, claimed activation, post-executor finalizing/report ordering/sandbox finalization/settlement, heartbeat, and orphan-recovery owner tests
+# Extracted Runner idle, pre-claim admission/rollback and pending-candidate state, finalizing-successor arbitration, claimed activation, post-executor finalizing/report ordering/sandbox finalization/settlement, heartbeat, and orphan-recovery owner tests
+# The pending-candidate policy has three supervisor unit tests; existing Runner
+# main-loop admission/expiry/duplicate tests remain as cross-domain coverage.
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-supervisor -- --test-threads=1
 
