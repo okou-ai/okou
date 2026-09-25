@@ -502,7 +502,6 @@ test.each(
     expect(usages[0]).toMatchObject({
       usage: { totalCredits: 7 },
     });
-    expect(usages[0]?.runGroupId).toBeUndefined();
   },
   60_000,
 );

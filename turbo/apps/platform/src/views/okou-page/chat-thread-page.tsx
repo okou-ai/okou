@@ -3117,10 +3117,7 @@ function ChatThreadRenderedEventGroups({
   const modelChanges = modelChangesByEventId(renderedActiveGroups);
   const scrollTargetEventId =
     useGet(thread.threadScrollPosition$)?.targetEventId ?? null;
-  const runWorkFolding = buildRunWorkFolding(
-    renderedActiveGroups,
-    new Set(modelChanges.keys()),
-  );
+  const runWorkFolding = buildRunWorkFolding(renderedActiveGroups);
   const runWorkExpandedKeys = useGet(runWorkExpandedKeys$);
   const effectiveRunWorkExpandedKeys = runWorkExpandedKeysForScrollTarget(
     runWorkFolding,
@@ -3550,16 +3547,6 @@ function modelChangeLabel(
       : t(($) => {
           return $.chat.run.fastModeOff;
         });
-}
-
-function FoldedModelChangeDivider({ change }: { change: RunModelChange }) {
-  const { t } = useTranslation();
-  return (
-    <RunSectionDivider
-      label={modelChangeLabel(t, change)}
-      labelPosition="right"
-    />
-  );
 }
 
 function RunWorkSectionRow({
@@ -6223,7 +6210,6 @@ function PagedGroupRow({
     <PagedAssistantGroup
       group={group}
       thread={thread}
-      modelChanges={modelChanges}
       runWorkSection={runWorkSection}
       runIndicatorMode={runIndicatorMode}
       statusTailEvents={statusTailEvents}
@@ -6324,10 +6310,7 @@ function SelectablePagedGroupRow({
           ? [
               ...group.events,
               ...(runWorkSection
-                ? [
-                    ...runWorkSection.hiddenGroups,
-                    ...runWorkSection.hiddenGroupsAfterAnchor,
-                  ].flatMap((hiddenGroup) => {
+                ? runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
                     return hiddenGroup.events;
                   })
                 : []),
@@ -7967,22 +7950,15 @@ type RunWorkSectionControl = Omit<RunWorkSection, "key"> & {
 type PagedAssistantGroupProps = {
   readonly group: ChatEventGroup;
   readonly thread: ChatPanelSignals;
-  readonly modelChanges: ReadonlyMap<string, RunModelChange>;
   readonly runWorkSection?: RunWorkSectionControl;
   readonly runIndicatorMode?: Exclude<ThinkingIndicatorMode, null>;
   readonly statusTailEvents?: readonly EnrichedChatEvent[];
 };
 
-type PagedAssistantHistoryItem =
-  | {
-      readonly kind: "assistant";
-      readonly event: EnrichedChatEvent;
-    }
-  | {
-      readonly kind: "model-change";
-      readonly eventId: string;
-      readonly change: RunModelChange;
-    };
+type PagedAssistantHistoryItem = {
+  readonly kind: "assistant";
+  readonly event: EnrichedChatEvent;
+};
 
 type PagedAssistantTimelineItem =
   | PagedAssistantHistoryItem
@@ -8004,30 +7980,12 @@ function assistantTimelineItems(
   });
 }
 
-function foldedRunWorkTimelineItems(
-  groups: readonly ChatEventGroup[],
-  modelChanges: ReadonlyMap<string, RunModelChange>,
-): PagedAssistantHistoryItem[] {
-  return groups.flatMap((group) => {
-    return group.events.flatMap((event): PagedAssistantHistoryItem[] => {
-      const change = modelChanges.get(event.id);
-      if (change !== undefined) {
-        return [{ kind: "model-change", eventId: event.id, change }];
-      }
-      return isRenderableAssistantEvent(event)
-        ? [{ kind: "assistant", event }]
-        : [];
-    });
-  });
-}
-
 function buildPagedAssistantTimeline({
   group,
-  modelChanges,
   runWorkSection,
 }: Pick<
   PagedAssistantGroupProps,
-  "group" | "modelChanges" | "runWorkSection"
+  "group" | "runWorkSection"
 >): PagedAssistantTimelineItem[] {
   const items: PagedAssistantTimelineItem[] = [];
   if (runWorkSection === undefined) {
@@ -8047,7 +8005,11 @@ function buildPagedAssistantTimeline({
   const showAllHistory = runWorkSection.expanded || !runWorkSection.collapsible;
   if (showAllHistory) {
     historyItems.push(
-      ...foldedRunWorkTimelineItems(runWorkSection.hiddenGroups, modelChanges),
+      ...assistantTimelineItems(
+        runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
+          return hiddenGroup.events;
+        }),
+      ),
     );
   }
   historyItems.push(
@@ -8060,14 +8022,6 @@ function buildPagedAssistantTimeline({
       kind: "run-work-main",
       event: anchorEvent,
     });
-  }
-  if (showAllHistory) {
-    items.push(
-      ...foldedRunWorkTimelineItems(
-        runWorkSection.hiddenGroupsAfterAnchor,
-        modelChanges,
-      ),
-    );
   }
   return items;
 }
@@ -8084,11 +8038,6 @@ function PagedAssistantTimeline({
   workHistory?: boolean;
 }) {
   return items.map((item) => {
-    if (item.kind === "model-change") {
-      return (
-        <FoldedModelChangeDivider key={item.eventId} change={item.change} />
-      );
-    }
     if (item.kind === "run-work") {
       return (
         <div
@@ -8148,7 +8097,6 @@ function PagedAssistantTimeline({
 function PagedRunWorkAssistantContent({
   group,
   thread,
-  modelChanges,
   runWorkSection,
   runIndicatorMode,
   statusTailEvents,
@@ -8156,7 +8104,6 @@ function PagedRunWorkAssistantContent({
   PagedAssistantGroupProps,
   | "group"
   | "thread"
-  | "modelChanges"
   | "runWorkSection"
   | "runIndicatorMode"
   | "statusTailEvents"
@@ -8168,7 +8115,6 @@ function PagedRunWorkAssistantContent({
         return !statusTailEvents?.includes(event);
       }),
     },
-    modelChanges,
     runWorkSection,
   });
   const mainEvent = runWorkSection
@@ -8226,7 +8172,6 @@ function PagedRunWorkAssistantContent({
 function PagedAssistantGroup({
   group,
   thread,
-  modelChanges,
   runWorkSection,
   runIndicatorMode,
   statusTailEvents,
@@ -8281,7 +8226,6 @@ function PagedAssistantGroup({
             <PagedRunWorkAssistantContent
               group={group}
               thread={thread}
-              modelChanges={modelChanges}
               runWorkSection={runWorkSection}
               runIndicatorMode={runIndicatorMode}
               statusTailEvents={statusTailEvents}
@@ -8290,7 +8234,6 @@ function PagedAssistantGroup({
             <PagedAssistantTimeline
               items={buildPagedAssistantTimeline({
                 group,
-                modelChanges,
                 runWorkSection: undefined,
               })}
               thread={thread}

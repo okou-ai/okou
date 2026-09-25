@@ -37,7 +37,6 @@ function promptRow(
   options: {
     readonly id?: string;
     readonly runId?: string;
-    readonly runGroupId?: string;
     readonly revokesEventId?: string;
     readonly userMessage?: UserMessageDocument;
   } = {},
@@ -45,9 +44,6 @@ function promptRow(
   const row = continuityEventRow(caseId, sequence, threadId, "input.prompt", {
     payload: { userMessage: options.userMessage ?? textDocument(text) },
     ...(options.runId === undefined ? {} : { runId: options.runId }),
-    ...(options.runGroupId === undefined
-      ? {}
-      : { runGroupId: options.runGroupId }),
     ...(options.revokesEventId === undefined
       ? {}
       : { revokesEventId: options.revokesEventId }),
@@ -60,12 +56,11 @@ function outputRow(
   sequence: number,
   threadId: string,
   text: string,
-  run: { readonly id: string; readonly groupId?: string },
+  run: { readonly id: string },
 ): ChatEventRow {
   return continuityEventRow(caseId, sequence, threadId, "output.message", {
     payload: { content: text },
     runId: run.id,
-    ...(run.groupId === undefined ? {} : { runGroupId: run.groupId }),
   });
 }
 
@@ -133,25 +128,22 @@ function queuedMessage(container: ParentNode): HTMLElement | undefined {
   );
 }
 
-async function prepareLongGroupedConversation() {
-  const thread = continuityThread(20, 1, "Long grouped history");
+async function prepareLongConversation() {
+  const thread = continuityThread(20, 1, "Long history");
   const rows: ChatEventRow[] = [];
   let sequence = 1;
   const addPair = (
     prompt: string,
     response: string,
     runId: string,
-    runGroupId?: string,
     userMessage?: UserMessageDocument,
   ): { readonly prompt: ChatEventRow; readonly response: ChatEventRow } => {
     const promptEvent = promptRow(20, sequence++, thread.id, prompt, {
       runId,
-      ...(runGroupId === undefined ? {} : { runGroupId }),
       ...(userMessage === undefined ? {} : { userMessage }),
     });
     const responseEvent = outputRow(20, sequence++, thread.id, response, {
       id: runId,
-      ...(runGroupId === undefined ? {} : { groupId: runGroupId }),
     });
     rows.push(promptEvent, responseEvent);
     return { prompt: promptEvent, response: responseEvent };
@@ -168,24 +160,20 @@ async function prepareLongGroupedConversation() {
     "Neighboring answer before repeated work",
     "history-run-before-group",
   );
-  const runGroupId = "launch-brief-group";
   addPair(
     "Build the launch brief from these references",
     "First launch brief result",
     "history-group-run-1",
-    runGroupId,
   );
   addPair(
     "Build the launch brief from these references",
     "Second launch brief result",
     "history-group-run-2",
-    runGroupId,
   );
-  const latestGrouped = addPair(
+  addPair(
     "Build the launch brief from these references",
     "Final launch brief is ready",
     "history-group-run-3",
-    runGroupId,
     {
       version: 1,
       parts: [
@@ -224,36 +212,15 @@ async function prepareLongGroupedConversation() {
     thread,
     composer,
     container,
-    latestGrouped,
     earliest,
     beforeGroup,
     afterGroup,
   };
 }
 
-test("Render a long conversation with intact grouped messages", async () => {
-  const { composer, container, latestGrouped } =
-    await prepareLongGroupedConversation();
-  await waitFor(() => {
-    expect(container).toHaveTextContent("Final launch brief is ready");
-    expect(container).toHaveTextContent(
-      "Neighboring answer before repeated work",
-    );
-    expect(container).toHaveTextContent(
-      "Neighboring answer after repeated work",
-    );
-    expect(container).toHaveTextContent("launch-evidence.pdf");
-  });
-  expect(composer).toBeVisible();
-  expect(container).toHaveTextContent("First launch brief result");
-  expect(container).toHaveTextContent("Second launch brief result");
-  expect(container).not.toHaveTextContent("Earliest retained request");
-  expect(eventAnchorCount(container, latestGrouped.response.id)).toBe(1);
-});
-
-test("Page older conversation history without losing grouped-run anchors", async () => {
+test("Page older conversation history without duplicating anchors", async () => {
   const { thread, container, earliest, beforeGroup, afterGroup } =
-    await prepareLongGroupedConversation();
+    await prepareLongConversation();
   await waitFor(() => {
     expect(container).toHaveTextContent("Final launch brief is ready");
   });

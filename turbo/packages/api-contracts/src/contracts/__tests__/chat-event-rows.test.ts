@@ -272,20 +272,19 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     expect(projected.runId).toBeUndefined();
   });
 
-  it("emits goal context pointers as runGroupId", () => {
-    const goalId = "00000000-0000-4000-8000-000000000011";
+  it("projects historical goal context rows without a run group", () => {
     const projected = chatEventFromRow(
       canonicalRow({
         payload: { content: "goal result" },
         contextType: "goal",
-        contextId: goalId,
+        contextId: "00000000-0000-4000-8000-000000000011",
       }),
     );
     expect(projected).toMatchObject({
       eventType: "output.message",
       content: "goal result",
-      runGroupId: goalId,
     });
+    expect(projected).not.toHaveProperty("runGroupId");
   });
 
   it("defensively hides citation envelopes from historical cached rows", () => {

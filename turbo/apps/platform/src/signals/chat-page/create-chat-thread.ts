@@ -186,10 +186,6 @@ import {
   threadMeta,
   type ThreadMeta,
 } from "./chat-thread-event-sourcing.ts";
-import {
-  previousRunGroupVisualWindowStartIndex,
-  runGroupVisualWindowStartIndex,
-} from "./run-group-visual-window.ts";
 import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
 import { connectorOverview$ } from "../okou-page/connector-overview.ts";
 import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
@@ -1813,7 +1809,6 @@ function planEventTreeUpdates(
     if (
       event.eventType === "output.message" &&
       event.runId === undefined &&
-      event.runGroupId === undefined &&
       event.runEventId === undefined &&
       event.sequenceNumber === null &&
       event.revokesEventId === undefined &&
@@ -2702,22 +2697,26 @@ function renderWindowStartIndex(
   groups: readonly ChatEventGroup[],
   cursorGroupId: string | null,
 ): number {
-  return runGroupVisualWindowStartIndex(
-    groups,
-    cursorGroupId,
-    INITIAL_RENDER_GROUP_COUNT,
-  );
+  const cursorGroupIndex =
+    cursorGroupId === null
+      ? -1
+      : groups.findIndex((group) => {
+          return group.beginEventId === cursorGroupId;
+        });
+  return cursorGroupIndex === -1
+    ? Math.max(0, groups.length - INITIAL_RENDER_GROUP_COUNT)
+    : cursorGroupIndex;
 }
 
 function previousRenderWindowStartIndex(
   groups: readonly ChatEventGroup[],
   currentStartGroupIndex: number,
 ): number {
-  return previousRunGroupVisualWindowStartIndex(
-    groups,
-    currentStartGroupIndex,
-    RENDER_GROUP_LOAD_INCREMENT,
-  );
+  const normalizedStartGroupIndex =
+    currentStartGroupIndex >= 0 && currentStartGroupIndex < groups.length
+      ? currentStartGroupIndex
+      : Math.max(0, groups.length - RENDER_GROUP_LOAD_INCREMENT);
+  return Math.max(0, normalizedStartGroupIndex - RENDER_GROUP_LOAD_INCREMENT);
 }
 
 function renderWindowStateForThread(

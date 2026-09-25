@@ -19,11 +19,6 @@ import { fastButton } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 
-interface RunAssociation {
-  readonly id: string;
-  readonly groupId?: string;
-}
-
 function textDocument(text: string): UserMessageDocument {
   return { version: 1, parts: [{ type: "text", text }] };
 }
@@ -33,12 +28,11 @@ function promptRow(
   sequence: number,
   threadId: string,
   text: string,
-  run: RunAssociation,
+  runId: string,
 ): ChatEventRow {
   return continuityEventRow(caseId, sequence, threadId, "input.prompt", {
     payload: { userMessage: textDocument(text) },
-    runId: run.id,
-    ...(run.groupId === undefined ? {} : { runGroupId: run.groupId }),
+    runId,
   });
 }
 
@@ -47,12 +41,11 @@ function outputRow(
   sequence: number,
   threadId: string,
   content: string,
-  run: RunAssociation,
+  runId: string,
 ): ChatEventRow {
   return continuityEventRow(caseId, sequence, threadId, "output.message", {
     payload: { content },
-    runId: run.id,
-    ...(run.groupId === undefined ? {} : { runGroupId: run.groupId }),
+    runId,
   });
 }
 
@@ -191,7 +184,7 @@ test("Explain unavailable email cards in a conversation", async () => {
   const deletedDraftId = "c1000000-0000-4000-a000-000000000321";
   const reconnectDraftId = "c1000000-0000-4000-a000-000000000322";
   const rows = [
-    promptRow(32, 1, thread.id, "Review both drafts", { id: runId }),
+    promptRow(32, 1, thread.id, "Review both drafts", runId),
     outputRow(
       32,
       2,
@@ -200,7 +193,7 @@ test("Explain unavailable email cards in a conversation", async () => {
         `[Deleted launch note](https://app.okou.ai/mail/drafts/${deletedDraftId})`,
         `[Quarterly access review](https://app.okou.ai/mail/drafts/${reconnectDraftId})`,
       ].join("\n\n"),
-      { id: runId },
+      runId,
     ),
     completedRow(32, 3, thread.id, runId),
   ];
@@ -262,24 +255,17 @@ test("Keep the work being read expanded as conversation groups change", async ()
   const thread = continuityThread(33, 1, "Protected reading position");
   const firstRunId = "b1000000-0000-4000-a000-000000000331";
   const laterRunId = "b1000000-0000-4000-a000-000000000332";
-  const runGroupId = "b2000000-0000-4000-a000-000000000033";
   const responseBeingRead = outputRow(
     33,
     2,
     thread.id,
     "Response the reader is reviewing",
-    { id: firstRunId, groupId: runGroupId },
+    firstRunId,
   );
   let rows = [
-    promptRow(33, 1, thread.id, "Investigate the rollout", {
-      id: firstRunId,
-      groupId: runGroupId,
-    }),
+    promptRow(33, 1, thread.id, "Investigate the rollout", firstRunId),
     responseBeingRead,
-    outputRow(33, 3, thread.id, "Current rollout conclusion", {
-      id: firstRunId,
-      groupId: runGroupId,
-    }),
+    outputRow(33, 3, thread.id, "Current rollout conclusion", firstRunId),
   ];
   const workspace = installContinuityWorkspace(context, {
     caseId: 33,
@@ -320,20 +306,14 @@ test("Keep the work being read expanded as conversation groups change", async ()
   ).getBoundingClientRect().top;
   rows = [
     ...rows,
-    promptRow(33, 4, thread.id, "Continue the grouped rollout work", {
-      id: laterRunId,
-      groupId: runGroupId,
-    }),
-    outputRow(33, 5, thread.id, "Later grouped response", {
-      id: laterRunId,
-      groupId: runGroupId,
-    }),
+    promptRow(33, 4, thread.id, "Continue the rollout work", laterRunId),
+    outputRow(33, 5, thread.id, "Later rollout response", laterRunId),
   ];
   workspace.setChatEventRows(rows);
   createChatEvent(thread.id);
 
   await waitFor(() => {
-    expect(screen.getByText("Later grouped response")).toBeVisible();
+    expect(screen.getByText("Later rollout response")).toBeVisible();
     expect(fastButton("Collapse work history", container)).toBeVisible();
   });
   const workHistory = fastButton("Collapse work history", container);
@@ -350,7 +330,7 @@ test("Keep the work being read expanded as conversation groups change", async ()
 
   await waitFor(() => {
     const laterResponse = screen
-      .getByText("Later grouped response")
+      .getByText("Later rollout response")
       .closest('[data-role="assistant"]');
     expect(laterResponse).toHaveTextContent("Worked for");
     expect(fastButton("Collapse work history", container)).toBeVisible();

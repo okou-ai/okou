@@ -110,7 +110,6 @@ export function continuityEventRow(
   options: {
     readonly payload?: ChatEventRow["payload"];
     readonly runId?: string;
-    readonly runGroupId?: string;
     readonly revokesEventId?: string;
   } = {},
 ): ChatEventRow {
@@ -124,8 +123,8 @@ export function continuityEventRow(
     payload: options.payload ?? null,
     runId: options.runId ?? null,
     revokesEventId: options.revokesEventId ?? null,
-    contextType: options.runGroupId === undefined ? null : "goal",
-    contextId: options.runGroupId ?? null,
+    contextType: null,
+    contextId: null,
     runEventSequenceNumber: null,
     runEventId: null,
     seqId: sequence,

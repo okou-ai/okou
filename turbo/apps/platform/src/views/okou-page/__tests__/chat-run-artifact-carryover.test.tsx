@@ -4,7 +4,6 @@ import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
-import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
@@ -534,89 +533,6 @@ test("Render inline media and action cards after expanding short history", async
   expect(screen.getByTestId("plan-upgrade-card")).toBeVisible();
   expect(screen.queryByTestId("chat-run-related-artifacts-trigger")).toBeNull();
   expect(queryWorkHistoryToggle("expanded")).toBeVisible();
-});
-
-test("Carry artifacts across every run in the same run group", async () => {
-  const runGroupId = "e0000000-0000-4000-a000-000000000282";
-  const nextRunId = "a0000000-0000-4000-a000-000000000282";
-  const earlierUrl = artifactUrl("earlier-run", "earlier-run.pdf");
-  const automationInput = (
-    id: string,
-    runId: string,
-    seqId: number,
-  ): MockChatEventInput => {
-    return {
-      id,
-      role: "user",
-      eventType: "input.automation",
-      content: null,
-      runId,
-      runGroupId,
-      seqId,
-      createdAt: `2026-08-01T10:00:0${String(seqId)}.000Z`,
-      userMessage: {
-        version: 1,
-        parts: [
-          {
-            type: "automation",
-            workflowName: "artifact-review",
-            automationBrief: "Review generated artifacts",
-          },
-        ],
-      },
-    };
-  };
-  const inRunGroup = (event: MockChatEventInput): MockChatEventInput => {
-    return { ...event, runGroupId };
-  };
-  installRunChat({
-    chatEvents: [
-      automationInput("earlier-run-input", RUN_ID, 1),
-      inRunGroup(
-        assistantEvent({
-          id: "earlier-run-artifact",
-          runId: RUN_ID,
-          seqId: 2,
-          text: `Earlier run output\n\n![Report](${earlierUrl})`,
-        }),
-      ),
-      inRunGroup(
-        completedEvent({
-          id: "earlier-run-complete",
-          runId: RUN_ID,
-          seqId: 3,
-        }),
-      ),
-      automationInput("next-run-input", nextRunId, 4),
-      inRunGroup(
-        assistantEvent({
-          id: "next-run-main",
-          runId: nextRunId,
-          seqId: 5,
-          text: "Latest run result",
-        }),
-      ),
-      inRunGroup(
-        completedEvent({
-          id: "next-run-complete",
-          runId: nextRunId,
-          seqId: 6,
-        }),
-      ),
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  await readyChat();
-
-  expect(screen.getByText("Latest run result")).toBeVisible();
-  expect(screen.queryByText("Earlier run output")).toBeNull();
-  const dialog = await openRelatedArtifacts();
-  expect(relatedArtifactRow(dialog, earlierUrl)).toHaveTextContent("Report");
-  expect(queryWorkHistoryToggle("collapsed")).toBeVisible();
 });
 
 test("Ignore artifacts from revoked output messages", async () => {

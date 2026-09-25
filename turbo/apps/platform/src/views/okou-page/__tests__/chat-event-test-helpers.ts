@@ -89,7 +89,6 @@ function baseEvent(
     threadId,
     content,
     runId: message.runId,
-    runGroupId: message.runGroupId,
     runEventId: message.runEventId,
     revokesEventId: message.revokesEventId,
     seqId: message.seqId ?? fallbackSeqId,
@@ -415,7 +414,6 @@ export function mockChatEventRows(
   events: readonly ChatEvent[],
 ): ChatEventRow[] {
   return events.map((event) => {
-    const goalContextId = event.runGroupId ?? null;
     return chatEventRowSchema.parse({
       id: event.id,
       chatThreadId: event.threadId,
@@ -426,8 +424,8 @@ export function mockChatEventRows(
       revokesEventId: event.revokesEventId ?? null,
       eventType: event.eventType,
       payload: mockChatEventRowPayload(event),
-      contextType: goalContextId === null ? null : "goal",
-      contextId: goalContextId,
+      contextType: null,
+      contextId: null,
       runEventSequenceNumber: event.sequenceNumber ?? null,
       runEventId: event.runEventId ?? null,
       ...(event.eventType === "run.failed" && event.failureReason !== undefined

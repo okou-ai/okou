@@ -225,7 +225,6 @@ async function executeDueWorkflowAutomations(
 
 interface WorkflowRunMessage {
   readonly runId: string;
-  readonly runGroupId?: string;
   readonly triggerBrief: string | null | undefined;
   readonly workflowId: string | undefined;
   readonly workflowName: string;
@@ -251,9 +250,6 @@ async function workflowRunMessages(
     return [
       {
         runId: message.runId,
-        ...(message.runGroupId === undefined
-          ? {}
-          : { runGroupId: message.runGroupId }),
         triggerBrief: automationPart.automationBrief,
         workflowId: automationPart.workflowId,
         workflowName: automationPart.workflowName,
@@ -551,7 +547,6 @@ describe("okou workflow automation scheduler", () => {
     const threadId = await executeDueWorkflowAutomations(created.body.id);
 
     const run = await onlyWorkflowRunMessage(threadId);
-    expect(run.runGroupId).toBeUndefined();
     const logs = await runReadsApi.requestListLogs(scenario.actor, {}, [200]);
     expect(logs.body.data).toContainEqual(
       expect.objectContaining({

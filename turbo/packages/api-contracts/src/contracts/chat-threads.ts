@@ -784,7 +784,6 @@ const chatEventBaseSchema = z.object({
   threadId: z.string(),
   content: z.string().nullable(),
   runId: z.string().optional(),
-  runGroupId: z.string().optional(),
   runEventId: z.string().optional(),
   revokesEventId: z.string().optional(),
   /** Strictly increasing thread position; it may start above 1 and have gaps. */
@@ -872,7 +871,6 @@ const inputGoalEventSchema = chatEventBaseSchema
     // Queue association stays server-side; the public event preserves only
     // the user-facing document and stream ordering contract.
     runId: z.never().optional(),
-    runGroupId: z.never().optional(),
     runEventId: z.never().optional(),
     revokesEventId: z.never().optional(),
     sequenceNumber: z.never().optional(),
@@ -1001,7 +999,6 @@ const browserCloseEventSchema = chatEventBaseSchema
 
 const goalMarkerMetadataSchema = {
   runId: z.never().optional(),
-  runGroupId: z.never().optional(),
   runEventId: z.never().optional(),
   revokesEventId: z.never().optional(),
   sequenceNumber: z.never().optional(),

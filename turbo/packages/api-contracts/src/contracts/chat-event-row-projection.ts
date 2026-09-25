@@ -31,10 +31,6 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
       row.eventType === "control.interrupt"
         ? undefined
         : (row.runId ?? undefined),
-    runGroupId:
-      row.contextType === "goal" && row.contextId !== null
-        ? row.contextId
-        : undefined,
     runEventId: row.runEventId ?? undefined,
     revokesEventId: row.revokesEventId ?? undefined,
     seqId: row.seqId,

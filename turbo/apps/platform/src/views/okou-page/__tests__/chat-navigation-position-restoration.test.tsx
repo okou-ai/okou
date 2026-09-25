@@ -672,15 +672,7 @@ test("Expand folded work when opening a linked message", async () => {
         : [event];
     })
     .map((event, index) => {
-      return {
-        ...event,
-        seqId: index + 1,
-        runGroupId:
-          event.runId === "folded-link-run-3" ||
-          event.runId === "folded-link-run-4"
-            ? "folded-link-group"
-            : undefined,
-      };
+      return { ...event, seqId: index + 1 };
     });
   mockChatLifecycleWithoutBrowserSession({
     threadId: DEEP_LINK_THREAD_ID,

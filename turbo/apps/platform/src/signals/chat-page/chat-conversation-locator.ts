@@ -197,8 +197,8 @@ function createSampledTurns(
       });
       return events.length === 0 ? [] : [{ ...group, events }];
     });
-    // Match the transcript's visible projection: folded continuation inputs
-    // have no rendered anchor, while independent goals retain a context row.
+    // Match the transcript's visible projection so every tick has a rendered
+    // anchor.
     return sampleTurns(
       userTurns(buildRunWorkFolding(activeGroups).visibleGroups),
     );
