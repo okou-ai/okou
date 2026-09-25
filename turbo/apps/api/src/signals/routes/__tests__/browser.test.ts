@@ -2118,7 +2118,11 @@ describe("Browser user-action route", () => {
         return siteRequired;
       },
       validValue: (value) => {
-        return value === canonical || (value === "" && !siteRequired);
+        return (
+          value === null ||
+          value === canonical ||
+          (value === "" && !siteRequired)
+        );
       },
     });
     server.use(
