@@ -69,6 +69,9 @@ async function expectRunAppContext(args: {
   readonly claim: RunnerClaim;
   readonly appUrl: string;
 }): Promise<void> {
+  if (!args.actor.orgId) {
+    throw new Error("Expected an organization-scoped chat actor");
+  }
   expect(args.claim.platformEnvironment.OKOU_APP_URL).toBe(args.appUrl);
   const token = args.claim.platformEnvironment.OKOU_TOKEN;
   if (!token) {
@@ -76,6 +79,23 @@ async function expectRunAppContext(args: {
   }
   expect(verifyOkouToken(token)).toMatchObject({
     runId: args.runId,
+  });
+  const state = await runStateStore.set(
+    readAgentRunState$,
+    {
+      orgId: args.actor.orgId,
+      userId: args.actor.userId,
+      runId: args.runId,
+    },
+    context.signal,
+  );
+  // Older API instances default a missing callback brand to VM0.
+  expect(
+    state.callbacks.find((callback) => {
+      return callback.internalKind === "chat";
+    }),
+  ).toMatchObject({
+    payload: { publicBrand: "okou" },
   });
 }
 

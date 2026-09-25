@@ -335,12 +335,11 @@ async function materializeQueuedUserMessage(
     parseCanonicalChatEventRequiredOfficialWorkflowIds(
       event.requiredOfficialWorkflowIds,
     );
-  const { webContext, officialAgentContext } =
-    resolveQueuedOfficialWorkflowContext({
-      contextType,
-      contextId: event.contextId,
-      requiredOfficialWorkflowIds,
-    });
+  const { officialAgentContext } = resolveQueuedOfficialWorkflowContext({
+    contextType,
+    contextId: event.contextId,
+    requiredOfficialWorkflowIds,
+  });
   const sourceAutonomyBudget = await loadQueuedSourceAutonomyBudget(db, {
     userMessage: event.userMessage,
     sourceAutonomyBudget: event.sourceAutonomyBudget,
