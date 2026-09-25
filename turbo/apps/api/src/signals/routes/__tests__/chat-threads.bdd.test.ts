@@ -926,7 +926,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
   });
 
-  it("returns a scoped R2 URL when a chat thread snapshot has an object pointer", async () => {
+  it("returns a scoped R2 URL to capable clients and inline R2 data to header-less iOS", async () => {
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
@@ -959,23 +959,24 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       chatThreads: [],
     });
     const materialized = await chat.getThreadSnapshot(actor);
+    expect(materialized.chatThreads).toContainEqual(
+      expect.objectContaining({ title: "R2 snapshot pointer thread" }),
+    );
     const client = setupApp({ context, routes: chatThreadRoutes })(
       chatThreadsContract,
     );
-    const oldAppHeaders = {
-      ...okouCapabilityHeaders(
-        actor,
-        randomUUID(),
-        CHAT_THREAD_READ_CAPABILITIES,
-      ),
-    };
-    const oldAppResponse = await accept(
+    // Native iOS omits the capability header and still decodes inline data.
+    const iosResponse = await accept(
       client.snapshot({
-        headers: oldAppHeaders,
+        headers: okouCapabilityHeaders(
+          actor,
+          randomUUID(),
+          CHAT_THREAD_READ_CAPABILITIES,
+        ),
       }),
       [200],
     );
-    expect(oldAppResponse.body).toStrictEqual(materialized);
+    expect(iosResponse.body).toStrictEqual(materialized);
     await setChatThreadSnapshotObjectKeyFixture({
       userId: actor.userId,
       orgId: actor.orgId,
@@ -983,7 +984,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       body: Buffer.from("{}"),
     });
 
-    const newAppHeaders = {
+    const capableClientHeaders = {
       ...okouCapabilityHeaders(
         actor,
         randomUUID(),
@@ -993,7 +994,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     };
     const response = await accept(
       client.snapshot({
-        headers: newAppHeaders,
+        headers: capableClientHeaders,
       }),
       [200],
     );

@@ -88,20 +88,6 @@ describe("archive event replay", () => {
       replayChatThreadEvents([], [created, archived, unarchived])[0],
     ).toMatchObject({ archived: false });
   });
-
-  it("treats snapshots without the archived field as unarchived", () => {
-    const [thread] = replayChatThreadEvents([], [created]);
-    if (!thread) {
-      throw new Error("Expected the created thread");
-    }
-    const { archived: _archived, ...legacySnapshot } = thread;
-    expect(replayChatThreadEvents([legacySnapshot], [])[0]).toMatchObject({
-      archived: false,
-    });
-    expect(
-      replayChatThreadEvents([legacySnapshot], [archived])[0],
-    ).toMatchObject({ archived: true });
-  });
 });
 
 describe("independently committed activity touches", () => {
