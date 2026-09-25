@@ -723,9 +723,6 @@ export default [
       // R2 chat snapshot keys outlive their mutable SQL pointer; no HTTP
       // endpoint can seal capture, remove the pointer and assert byte absence.
       "src/signals/services/__tests__/account-erasure-chat-snapshot-collector.test.ts",
-      // A candidate SELECT can finish before the D1 lock is acquired; no
-      // endpoint can hold that exact DB boundary while sealing B1 capture.
-      "src/signals/services/__tests__/account-erasure-chat-snapshot-writer-fence.test.ts",
       // B1 must persist >1,000 command locators and test provider absence
       // after a sealed lease, a removed catalog row, and a held D1 PUT.
       "src/signals/services/__tests__/account-erasure-computer-use-collector.test.ts",
@@ -984,7 +981,6 @@ export default [
       "src/signals/services/__tests__/account-erasure-browser-profile-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-browser-session-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-chat-snapshot-collector.test.ts",
-      "src/signals/services/__tests__/account-erasure-chat-snapshot-writer-fence.test.ts",
       "src/signals/services/__tests__/account-erasure-computer-use-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-ssh-remote-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-connector-remote-collector.test.ts",

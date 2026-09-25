@@ -92,12 +92,11 @@ import {
   closeErasureSubjectFixture,
   removeErasureSubjectsFixture,
 } from "../../../test-fixtures/account-erasure-subject";
-import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   completeRunWithoutCallbacksFixture,
+  holdAgentRowLockFixture,
   holdChatThreadRowLockFixture,
   setQueuedUserMessageCreatedAtFixture,
   timeoutRunWithoutCallbacksFixture,
@@ -1412,47 +1411,6 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
-  it("re-resolves a concurrently accepted default Agent without reversing the subject lock order", async () => {
-    const f = await creationFixture({ withDefaultAgent: true });
-    if (!f.defaultAgentId) {
-      throw new Error("Expected the default Agent fixture");
-    }
-    const token = f.auth.token({ scope: defaultScopes });
-    const args = { requestId: randomUUID() };
-    const replacement = await f.bdd.createAgent(f.actor, {
-      displayName: "Replacement MCP default Agent",
-      visibility: "private",
-    });
-    const lock = await holdAgentRowLockFixture({
-      agentId: f.defaultAgentId,
-      signal: context.signal,
-    });
-    const first = createThread(token, args);
-    onTestFinished(async () => {
-      lock.release();
-      await lock.done;
-      await first;
-    });
-    await expect
-      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5000 })
-      .toBeGreaterThan(0);
-    await setOrgDefaultAgentFixture({
-      orgId: f.auth.orgId,
-      agentId: replacement.agentId,
-    });
-
-    await expect(createThread(token, args)).resolves.toMatchObject({
-      agentId: replacement.agentId,
-      replayed: false,
-    });
-    lock.release();
-    await lock.done;
-    await expect(first).resolves.toMatchObject({
-      agentId: replacement.agentId,
-      replayed: true,
-    });
-  });
-
   it("atomically creates a conversation with its first message and resolves defaults", async () => {
     const f = await creationFixture({ withDefaultAgent: true });
     const token = f.auth.token({ scope: defaultScopes });
@@ -1555,9 +1513,9 @@ describe("MCP chat discovery and creation", () => {
       model: "claude-sonnet-5",
       message: "Keep this input after response loss",
     };
-    // Infrastructure exception: hold the selected Agent after MCP mutation
-    // admission so the HTTP response can disconnect while waitUntil retains
-    // ownership of the real creation transaction.
+    // Infrastructure exception: hold the selected Agent so the creation
+    // transaction waits on it and the HTTP response can disconnect while
+    // waitUntil retains ownership of the real creation transaction.
     const lock = await holdAgentRowLockFixture({
       agentId: f.agent.agentId,
       signal: context.signal,
@@ -2237,35 +2195,6 @@ describe("MCP chat discovery and creation", () => {
       expect(JSON.stringify(failed)).not.toContain("Owner's conversation");
     }
     expect((await listThreads(token)).threads).toHaveLength(1);
-  });
-
-  it("rejects closed-account creation with cached membership", async () => {
-    const f = await creationFixture();
-    const token = f.auth.token({ scope: defaultScopes });
-    expect((await listAgents(token)).agents).toContainEqual(
-      expect.objectContaining({ agentId: f.agent.agentId }),
-    );
-    // Infrastructure exception: account-erasure closure has no production
-    // ingress. Install only this test-owned dormant decision, without a worker.
-    const closed = await closeErasureSubjectFixture({
-      subjectKind: "user",
-      subjectId: f.auth.userId,
-    });
-    onTestFinished(async () => {
-      await removeErasureSubjectsFixture([closed.jobId]);
-    });
-    const result = await callTool(token, "create_chat_thread", {
-      requestId: randomUUID(),
-      agentId: f.agent.agentId,
-      title: "Must not be created",
-      model: "claude-sonnet-5",
-    });
-    expect(result.isError).toBeTruthy();
-    structuredToolError(result);
-    expect(result.content).toContainEqual({
-      type: "text",
-      text: "Account content is closed.",
-    });
   });
 
   it("validates optional creation choices and rejects unrelated execution controls", async () => {

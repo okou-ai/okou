@@ -6,7 +6,6 @@ import {
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
 import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
-import { agents } from "@okouai/db/schema/agent";
 import { count, eq, inArray, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { z } from "zod";
@@ -79,45 +78,6 @@ export async function removeErasureSubjectsFixture(
   await db()
     .delete(accountErasureJobs)
     .where(inArray(accountErasureJobs.id, [...jobIds]));
-}
-
-/** Reassigns one Agent's owner, the change a future ownership transfer would
- * persist. No production writer updates this column today, and the unique
- * `(id, org_id, owner)` key makes it the key update a content writer's KEY
- * SHARE is meant to conflict with.
- */
-export async function transferAgentOwnerFixture(args: {
-  readonly agentId: string;
-  readonly owner: string;
-}): Promise<void> {
-  const updated = await db()
-    .update(agents)
-    .set({ owner: args.owner })
-    .where(eq(agents.id, args.agentId))
-    .returning({ id: agents.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one Agent owner to transfer");
-  }
-}
-
-/** Reassigns one Agent's organization, the other half of the same unique
- * `(id, org_id, owner)` key. No production writer updates this column today,
- * and it is the canonical parent a read-cursor publication targets, so moving
- * it is the change a writer's retained KEY SHARE must turn into a reselection
- * instead of a stale-organization notification.
- */
-export async function transferAgentOrganizationFixture(args: {
-  readonly agentId: string;
-  readonly orgId: string;
-}): Promise<void> {
-  const updated = await db()
-    .update(agents)
-    .set({ orgId: args.orgId })
-    .where(eq(agents.id, args.agentId))
-    .returning({ id: agents.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one Agent organization to transfer");
-  }
 }
 
 export function barrierQueryText(queryArgs: unknown[]): string {

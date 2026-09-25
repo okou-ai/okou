@@ -4,7 +4,7 @@ import type {
   PersistedAttachment,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { settleIncludingAbort } from "../../utils";
