@@ -3,7 +3,7 @@
 ## Public brand retirement contraction (2026-09-25)
 
 Phase 2 of #36766 contracts the columns that Phase 1 stopped reading. Migration
-`1253_retire_public_brand` drops `public_brand` from `slack_org_installations`,
+`1254_retire_public_brand` drops `public_brand` from `slack_org_installations`,
 `slack_chat_ingress`, `chat_slack_context`, `discord_chat_ingress`,
 `chat_discord_context`, `feishu_org_installations`, `feishu_org_connections`,
 `feishu_chat_ingress`, `chat_feishu_context`, `teams_org_installations`,
@@ -69,7 +69,7 @@ unaffected; Phase 1 already removed the brand from them.
 
 Rollback promotes artifacts without restoring schema. The production rollback
 resolver therefore rejects API targets that predate the canonical main commit
-that added `1253_retire_public_brand.sql`. Recovering past that commit requires
+that added `1254_retire_public_brand.sql`. Recovering past that commit requires
 a forward-fix migration that restores the columns and the old layout column
 name, not an artifact rollback.
 

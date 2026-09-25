@@ -245,6 +245,7 @@ async fn run_case(password: bool, security: Security) {
                         {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
                         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
                         {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
+                        {"authMethod":"vnc_password","securityType":"apple_vnc_password","transportType":"ssh"},
                         {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"},
                         {"authMethod":"apple_srp_username_password","securityType":"apple_srp","transportType":"ssh"},
                         {"authMethod":"apple_rsa_srp_username_password","securityType":"apple_rsa_srp","transportType":"ssh"}

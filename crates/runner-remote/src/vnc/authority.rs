@@ -46,6 +46,7 @@ pub(super) enum Authentication {
         authentication: X509Authentication,
         roots: TrustRoots,
     },
+    AppleVncPassword(VncPassword),
     AppleDh(AppleDhCredentials),
     AppleSrp(AppleSrpCredentials),
     AppleRsaSrp(AppleRsaSrpCredentials),
@@ -84,6 +85,40 @@ fn parse_transport(
             })
         }
     }
+}
+
+fn apple_vnc_password_credential(
+    host: String,
+    port: u64,
+    generation: i64,
+    transport: ResolveResponseResolvedTransportTransport,
+    authentication: ResolveResponseResolvedAuthentication,
+    security: ResolveResponseResolvedSecurity,
+    supports_ssh: bool,
+) -> Result<Credential, Failure> {
+    let port = valid_port_and_generation(port, generation)?;
+    if !supports_ssh || !matches!(host.as_str(), "127.0.0.1" | "::1") {
+        return Err(Failure::Authority);
+    }
+    let transport = match parse_transport(transport, supports_ssh)? {
+        ssh @ Transport::Ssh { .. } => ssh,
+        Transport::Direct => return Err(Failure::Authority),
+    };
+    let password = match (authentication, security) {
+        (
+            ResolveResponseResolvedAuthentication::VncPassword { password },
+            ResolveResponseResolvedSecurity::AppleVncPassword,
+        ) => VncPassword::new_zeroizing(password.into_zeroizing())
+            .map_err(|_| Failure::InvalidCredential)?,
+        _ => return Err(Failure::Authority),
+    };
+    Ok(Credential {
+        host,
+        port,
+        generation,
+        transport,
+        authentication: Authentication::AppleVncPassword(password),
+    })
 }
 
 fn apple_dh_credential(
@@ -189,6 +224,99 @@ fn apple_rsa_srp_credential(
         transport,
         authentication: Authentication::AppleRsaSrp(credentials),
     })
+}
+
+#[cfg(test)]
+mod apple_vnc_password_tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn response() -> Value {
+        json!({
+            "outcome": "resolved_apple_vnc_password",
+            "host": "127.0.0.1",
+            "port": 5900,
+            "generation": 3,
+            "transport": {
+                "type": "ssh",
+                "connectionId": "00000000-0000-4000-8000-000000000001",
+                "generation": 4
+            },
+            "authentication": { "method": "vnc_password", "password": "secret" },
+            "security": { "type": "apple_vnc_password" }
+        })
+    }
+
+    fn parse(value: Value, supports_ssh: bool) -> Result<Credential, Failure> {
+        let response: ResolveResponse =
+            serde_json::from_value(value).map_err(|_| Failure::InvalidCredential)?;
+        let ResolveResponse::ResolvedAppleVncPassword {
+            host,
+            port,
+            generation,
+            transport,
+            authentication,
+            security,
+        } = response
+        else {
+            panic!("expected Apple classic password outcome");
+        };
+        apple_vnc_password_credential(
+            host,
+            port,
+            generation,
+            transport,
+            authentication,
+            security,
+            supports_ssh,
+        )
+    }
+
+    #[test]
+    fn accepts_only_exact_ssh_loopback_and_classic_password() {
+        let valid = parse(response(), true).unwrap();
+        assert!(matches!(
+            valid.transport,
+            Transport::Ssh { generation: 4, .. }
+        ));
+        assert!(matches!(
+            valid.authentication,
+            Authentication::AppleVncPassword(_)
+        ));
+        let mut ipv6 = response();
+        ipv6["host"] = json!("::1");
+        assert!(parse(ipv6, true).is_ok());
+        assert!(matches!(parse(response(), false), Err(Failure::Authority)));
+
+        for (pointer, value) in [
+            ("/host", json!("localhost")),
+            ("/host", json!("mac.example.com")),
+            ("/port", json!(0)),
+            ("/generation", json!(0)),
+            ("/transport", json!({ "type": "direct" })),
+            ("/transport/generation", json!(0)),
+            (
+                "/authentication",
+                json!({ "method": "username_password", "username": "u", "password": "secret" }),
+            ),
+            (
+                "/security",
+                json!({ "type": "x509_vnc", "trust": { "mode": "system" } }),
+            ),
+        ] {
+            let mut invalid = response();
+            *invalid.pointer_mut(pointer).unwrap() = value;
+            assert!(parse(invalid, true).is_err(), "accepted {pointer}");
+        }
+        for password in ["", "ninebytes", "nonäsc", "with\0nul"] {
+            let mut invalid = response();
+            invalid["authentication"]["password"] = json!(password);
+            assert!(matches!(
+                parse(invalid, true),
+                Err(Failure::InvalidCredential)
+            ));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -564,6 +692,11 @@ impl Authority {
                     transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
                 },
                 ResolveRequestSupportedProfile {
+                    auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
+                    security_type: ResolveRequestSupportedProfileSecurityType::AppleVncPassword,
+                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                },
+                ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::AppleDhUsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleDh,
                     transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
@@ -602,6 +735,24 @@ impl Authority {
                 ResolveResponse::Unavailable => return Err(Failure::Unavailable),
                 ResolveResponse::UnsupportedProfile => return Err(Failure::UnsupportedProfile),
                 ResolveResponse::Resolved { .. } => return Err(Failure::Authority),
+                ResolveResponse::ResolvedAppleVncPassword {
+                    host,
+                    port,
+                    generation,
+                    transport,
+                    authentication,
+                    security,
+                } => {
+                    return apple_vnc_password_credential(
+                        host,
+                        port,
+                        generation,
+                        transport,
+                        authentication,
+                        security,
+                        supports_ssh,
+                    );
+                }
                 ResolveResponse::ResolvedAppleDh {
                     host,
                     port,

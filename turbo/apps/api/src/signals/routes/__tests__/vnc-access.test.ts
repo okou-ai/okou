@@ -398,6 +398,71 @@ describe("explicit VNC grants and current Agent inventory", () => {
     await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
   });
 
+  it("lists the authorized Mac classic password profile without exposing its secret", async () => {
+    const current = await owner();
+    const runtime = { ...current, ...(await api.runtime(current)) };
+    const ssh = await accept(
+      sshConnections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Mac SSH",
+          host: "mac.example.com",
+          credential: inlineSshKey("operator", "private-key"),
+        },
+      }),
+      [201],
+    );
+    const saved = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Classic desktop",
+          host: "127.0.0.1",
+          credential: {
+            create: {
+              name: "Classic password",
+              authentication: {
+                method: "vnc_password",
+                password: "testpass",
+              },
+            },
+          },
+          security: { type: "apple_vnc_password" },
+          transport: { type: "ssh", connectionId: ssh.body.id },
+        },
+      }),
+      [201],
+    );
+    await api.grant(runtime, true);
+    await api.grantSsh(runtime, true);
+    const kms = useSecretKmsProbe();
+    const listed = await accept(
+      inventory().list({ headers: token(runtime) }),
+      [200],
+    );
+    expect(listed.body).toStrictEqual({
+      hosts: [
+        {
+          id: saved.body.id,
+          displayName: "Classic desktop",
+          host: "127.0.0.1",
+          port: 5900,
+          authMethod: "vnc_password",
+          securityType: "apple_vnc_password",
+          availability: { status: "ready" },
+        },
+      ],
+    });
+    expect(JSON.stringify(listed.body)).not.toContain("testpass");
+    expect(kms.decryptCalls).toBe(0);
+    await api.grantSsh(runtime, false);
+    expect(
+      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+    ).toStrictEqual({ hosts: [] });
+  });
+
   it("returns both exact supported pairs without decrypting credentials", async () => {
     const current = await owner();
     const runtime = { ...current, ...(await api.runtime(current)) };

@@ -232,6 +232,14 @@ impl Run {
                         )
                         .await
                     }
+                    Authentication::AppleVncPassword(password) => {
+                        rfb_client::authenticate_apple_vnc_password(
+                            stream,
+                            password,
+                            scope.deadline,
+                        )
+                        .await
+                    }
                     Authentication::AppleDh(credentials) => {
                         rfb_client::authenticate_apple_dh(stream, credentials, scope.deadline).await
                     }
