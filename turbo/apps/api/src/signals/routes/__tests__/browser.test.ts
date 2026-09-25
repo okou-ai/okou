@@ -820,6 +820,16 @@ describe("Browser user-action route", () => {
       status: 400,
       body: { error: { code: "BROWSER_USER_ACTION_REQUIRED_VALUE_MISSING" } },
     });
+    expect(
+      (
+        await accept(
+          apply(requiredToken, [
+            { key: "consent", checked: true, observedChecked: false },
+          ]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("succeeded");
     siteRequired = true;
     const siteRequiredAction = await createCheckbox();
     const siteRequiredToken = siteRequiredAction.body.action.requestToken;
