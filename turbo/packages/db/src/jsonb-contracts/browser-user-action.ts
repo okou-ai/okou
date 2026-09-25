@@ -169,6 +169,23 @@ function decodeFieldFingerprint(
   };
 }
 
+function validRadioMemberIds(field: Record<string, unknown>): boolean {
+  const ids = field.radioMemberNodeIds;
+  if (field.fieldKind !== "radio") {
+    return ids === undefined;
+  }
+  return (
+    Array.isArray(ids) &&
+    ids.length >= 1 &&
+    ids.length <= BROWSER_USER_ACTION_MAX_RADIO_MEMBERS &&
+    ids.includes(field.backendNodeId) &&
+    new Set(ids).size === ids.length &&
+    ids.every((id: unknown) => {
+      return Number.isSafeInteger(id) && Number(id) > 0;
+    })
+  );
+}
+
 function decodeField(value: unknown): BrowserUserActionInputField | null {
   const field = objectValue(value);
   const safeFingerprint = decodeFieldFingerprint(field?.fingerprint);
@@ -206,18 +223,7 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
     !Number.isSafeInteger(field.backendNodeId) ||
     Number(field.backendNodeId) <= 0 ||
     !safeFingerprint ||
-    (field.fieldKind === "radio"
-      ? !Array.isArray(field.radioMemberNodeIds) ||
-        field.radioMemberNodeIds.length < 1 ||
-        field.radioMemberNodeIds.length >
-          BROWSER_USER_ACTION_MAX_RADIO_MEMBERS ||
-        !field.radioMemberNodeIds.includes(field.backendNodeId) ||
-        new Set(field.radioMemberNodeIds).size !==
-          field.radioMemberNodeIds.length ||
-        !field.radioMemberNodeIds.every(
-          (id: unknown) => Number.isSafeInteger(id) && Number(id) > 0,
-        )
-      : field.radioMemberNodeIds !== undefined)
+    !validRadioMemberIds(field)
   ) {
     return null;
   }
