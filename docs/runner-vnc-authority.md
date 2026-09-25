@@ -192,13 +192,14 @@ After the first SSH-backed row exists, do not roll the API below the typed-route
 reader/writer; disabling `VncAccess` preserves data and does not make that
 rollback safe. Product exposure requires its own later rollout evidence.
 
-For the separately selected Mac classic-password profile, apply migration
-`1238_thin_spot` before the API. An older Runner cannot advertise the exact
-`(vnc_password, apple_vnc_password, ssh)` tuple, so the compatible API returns
-`unsupported_profile` before KMS. An older API cannot read newly saved type-2
-rows; after creating any, do not roll the API back without removing or migrating
-those rows under owner control. See [deployment compatibility](deployment-compatibility.md)
-for rollout order. `VncAccess` remains disabled until separate activation.
+For the separately selected Mac classic-password profile, migration
+`1238_thin_spot` defines the exact persisted tuple. A Runner without
+`(vnc_password, apple_vnc_password, ssh)` support receives
+`unsupported_profile` before KMS; the API never reinterprets this row as
+X509Vnc. This is a profile and authorization boundary, not a requirement to
+support old VNC clients or Runners. `VncAccess` remains disabled; neither
+backward-compatibility nor production activation is an acceptance gate for
+this still-off profile.
 
 Before creating grants, every serving and rollback API must support grant
 cleanup. Keep the additive schema on rollback. Disable the feature to stop new
