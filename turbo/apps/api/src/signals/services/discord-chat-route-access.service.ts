@@ -47,11 +47,11 @@ async function loadCurrentConversationAccess(
   return access;
 }
 
-export async function loadDiscordChatRouteAccess(
+/** The sender's sticky route still owns this chat and exact destination. */
+export async function findDiscordChatRoute(
   db: Db,
-  args: DiscordChatRouteAccessArgs,
-  signal: AbortSignal,
-) {
+  args: Pick<DiscordChatRouteAccessArgs, "chatThreadId" | "userId" | "target">,
+): Promise<{ readonly id: string } | undefined> {
   const [route] = await db
     .select({ id: discordChatThreadRoutes.id })
     .from(discordChatThreadRoutes)
@@ -66,6 +66,15 @@ export async function loadDiscordChatRouteAccess(
       ),
     )
     .limit(1);
+  return route;
+}
+
+export async function loadDiscordChatRouteAccess(
+  db: Db,
+  args: DiscordChatRouteAccessArgs,
+  signal: AbortSignal,
+) {
+  const route = await findDiscordChatRoute(db, args);
   signal.throwIfAborted();
   if (!route) {
     return null;
