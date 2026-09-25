@@ -25,8 +25,9 @@ import { storages, storageVersions } from "./storage";
 export type PiStableContextErasureSubjectKind = "organization" | "user";
 
 /**
- * Durable legacy-Clerk erasure closure. Only a one-way digest is retained so
- * late identity-cache refreshes cannot restore stable-context authority.
+ * Retired legacy-Clerk erasure closure. The API no longer reads or writes it;
+ * it is kept only while older API instances in the rollback window may still
+ * insert rows, and a later migration drops it.
  */
 export const piStableContextErasureFences = pgTable(
   "pi_stable_context_erasure_fences",

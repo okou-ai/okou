@@ -1383,16 +1383,14 @@ or production backfill. Deploy the additive migration before an API that writes
 these rows. Existing Runner, Sandbox, CLI and persisted Pi resource-snapshot
 wire readers are unchanged.
 
-Legacy Clerk user and organization deletion closes a one-way subject digest in
-`pi_stable_context_erasure_fences` under the existing account-erasure advisory
-lock, in the same transaction that removes stable-context lifecycle rows. No
-writer or reader consults that closure any more: membership-cache refresh,
-generation initialization, demand registration, publication, and connector,
-permission and Workflow writes proceed after deletion, and later erasure
-cleanup removes such late rows. The table is scheduled for removal; it does
-not retain the raw Clerk identifier or authorize deletion of any other product
-data. Keep stable-context activation on hold until migration 1168
-and this API writer are present on every serving API instance.
+Legacy Clerk user and organization deletion no longer writes
+`pi_stable_context_erasure_fences`, and no writer or reader consults it:
+membership-cache refresh, generation initialization, demand registration,
+publication, and connector, permission and Workflow writes proceed after
+deletion, and later erasure cleanup removes such late rows. The table stays
+until every API that writes it has left the rollback window; a later migration
+drops it. Keep stable-context activation on hold until migration 1168 is present
+on every serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
 generation/head treats the exact variant as missing and uses canonical

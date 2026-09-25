@@ -5,7 +5,6 @@ import { z } from "zod";
 
 import {
   assertErasureSourceCaptured,
-  setErasureFenceDeadlines,
   type ErasureHandler,
   type ErasureLease,
   type ErasureProof,
@@ -860,13 +859,6 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
   "f75c6bcb-b5f8-48a0-915e-c6e3b8f51f5a";
 
-// The fence's own deadlines. A sweep waits for admission behind the exclusive
-// subject lock, so its lock timeout is the fence's, not a route's.
-const FENCE_DEADLINES = {
-  lockTimeout: "5s",
-  statementTimeout: "120s",
-} as const;
-
 function reference(parts: readonly unknown[]): string {
   return uuidv5(JSON.stringify(parts), RELATIONAL_NAMESPACE);
 }
@@ -1021,18 +1013,15 @@ export async function deleteErasedArtifactCatalog(
 
 /** Deletes the account's relational graph in one transaction.
  *
- * `assertErasureSourceCaptured` runs first and owns the fence: it takes the
- * exclusive subject advisory lock, then the job row, and verifies the job is
- * the current generation, sealed at this capture revision, bound to this
- * producer boundary, with every required selector captured. Only then does a
- * business row get touched, which keeps D1's lock order — advisory keys, then
- * job, then business rows — and holds all of it through COMMIT.
+ * `assertErasureSourceCaptured` runs first: it locks the job row and verifies
+ * the job is the current generation, sealed at this capture revision, bound to
+ * this producer boundary, with every required selector captured. Only then
+ * does a business row get touched.
  *
  * One transaction, not one per table. Deleting a root while a sibling root
- * still references it has to be atomic, and the closed subject means no writer
- * is admitted to race it. The sweep is also idempotent, so a statement timeout
- * on an unusually large account re-runs and finds less work rather than
- * needing a resume cursor.
+ * still references it has to be atomic. Business writers are not fenced, so a
+ * row written after this sweep commits is left for a later sweep; the sweep is
+ * idempotent, so a re-run finds less work rather than needing a resume cursor.
  */
 export async function sweepRelationalErasure(
   db: Db,
@@ -1041,7 +1030,6 @@ export async function sweepRelationalErasure(
   plan: RelationalErasurePlan,
 ): Promise<number> {
   return await db.transaction(async (tx) => {
-    await setErasureFenceDeadlines(tx, FENCE_DEADLINES);
     await assertErasureSourceCaptured(
       tx,
       subject,
@@ -1054,8 +1042,8 @@ export async function sweepRelationalErasure(
       },
       binding.required,
     );
-    // A user-export worker can still write result or staging bytes after D1
-    // closes new admissions. Its durable row is the cleanup coordinator; do
+    // A user-export worker can still write result or staging bytes while the
+    // account is erased. Its durable row is the cleanup coordinator; do
     // not sweep that row until export cleanup has quiesced the writer, aborted
     // uploads and removed the row itself.
     const exportOwner =
@@ -1220,8 +1208,8 @@ async function leaseSubject(
     ciphertext: lease.item.selectorCiphertext,
     digest: lease.item.selectorDigest,
   });
-  // A relational sink is keyed by the subject itself. The fence revalidates it
-  // against the job, so a selector naming another account cannot be swept.
+  // A relational sink is keyed by the subject itself.
+  // `assertErasureSourceCaptured` revalidates it against the job, so a selector naming another account cannot be swept.
   return selector.kind === "subject"
     ? { subjectKind: selector.subjectKind, subjectId: selector.subjectId }
     : undefined;
