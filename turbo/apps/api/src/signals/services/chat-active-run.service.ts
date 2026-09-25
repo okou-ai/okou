@@ -11,6 +11,7 @@ import {
   gt,
   inArray,
   isNotNull,
+  isNull,
   lte,
   ne,
   notExists,
@@ -20,7 +21,6 @@ import {
 } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { pendingChatQueueEventCondition } from "./chat-event-queue.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 
 const ACTIVE_CHAT_RUN_STATUSES = ["queued", "pending", "running"] as const;
@@ -206,55 +206,109 @@ export async function chatThreadAdmissionBlocked(
   return await chatThreadAdmissionBlockerExists(db, args);
 }
 
-/** Pending queue threads whose cancellation recovery barrier has failed open. */
+/**
+ * Recheck a cancellation recovery barrier for this long after it fails open.
+ * Older barriers are left to normal per-thread admission and callback paths,
+ * matching the stale queue repair window.
+ */
+const CANCELLATION_RECOVERY_SWEEP_WINDOW_MS = 10 * 60_000;
+
+/**
+ * Pending queue threads whose cancellation recovery barrier failed open within
+ * the sweep window. Each step is a bounded single-table read; the drain itself
+ * re-checks admission, so a thread with a live run is only a wasted drain.
+ */
 export async function expiredCancellationRecoveryThreads(
-  db: Pick<Db, "select" | "selectDistinct">,
+  db: Pick<Db, "select">,
   args: {
     readonly expiredBefore: Date;
     readonly limit: number;
     readonly chatThreadIds?: readonly string[];
   },
 ): Promise<readonly { chatThreadId: string; userId: string }[]> {
-  const rows = await db
-    .selectDistinct({
-      chatThreadId: chatEvents.chatThreadId,
-      userId: chatThreads.userId,
+  const runs = await db
+    .select({
+      id: agentRuns.id,
+      chatThreadId: agentRuns.chatThreadId,
+      cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
     })
-    .from(chatEvents)
-    .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+    .from(agentRuns)
     .where(
       and(
-        pendingChatQueueEventCondition(db),
-        notExists(
-          db
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.chatThreadId, chatEvents.chatThreadId),
-                activeChatRunCondition(db),
-              ),
-            ),
+        eq(agentRuns.status, "cancelled"),
+        isNotNull(agentRuns.triggerSource),
+        isNotNull(agentRuns.cancellationRecoveryCompleted),
+        gt(
+          agentRuns.completedAt,
+          new Date(
+            args.expiredBefore.getTime() -
+              CANCELLATION_RECOVERY_SWEEP_WINDOW_MS,
+          ),
         ),
-        exists(
-          db
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.chatThreadId, chatEvents.chatThreadId),
-                unresolvedCancellationRecoveryCondition(
-                  db,
-                  lte(agentRuns.completedAt, args.expiredBefore),
-                ),
-              ),
-            ),
-        ),
+        lte(agentRuns.completedAt, args.expiredBefore),
         args.chatThreadIds === undefined
-          ? undefined
-          : inArray(chatEvents.chatThreadId, args.chatThreadIds),
+          ? isNotNull(agentRuns.chatThreadId)
+          : inArray(agentRuns.chatThreadId, args.chatThreadIds),
       ),
     )
     .limit(args.limit);
-  return rows;
+  const recoveredRunIds = runs
+    .filter((run) => {
+      return run.cancellationRecoveryCompleted === true;
+    })
+    .map((run) => {
+      return run.id;
+    });
+  const cancelledEventRunIds = new Set(
+    recoveredRunIds.length === 0
+      ? []
+      : (
+          await db
+            .select({ runId: chatEvents.runId })
+            .from(chatEvents)
+            .where(
+              and(
+                inArray(chatEvents.runId, recoveredRunIds),
+                chatEventTypeIn(["run.cancelled"]),
+              ),
+            )
+        ).map((event) => {
+          return event.runId;
+        }),
+  );
+  const unresolvedThreadIds = new Set<string>();
+  for (const run of runs) {
+    if (
+      run.chatThreadId !== null &&
+      (run.cancellationRecoveryCompleted === false ||
+        !cancelledEventRunIds.has(run.id))
+    ) {
+      unresolvedThreadIds.add(run.chatThreadId);
+    }
+  }
+  // A revoked run-less input also matches; the drain skips it.
+  const pendingThreadIds: string[] = [];
+  for (const chatThreadId of unresolvedThreadIds) {
+    const [pending] = await db
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, chatThreadId),
+          isNull(chatEvents.runId),
+          chatEventTypeIn(["input.prompt", "input.automation"]),
+        ),
+      )
+      .limit(1);
+    if (pending) {
+      pendingThreadIds.push(chatThreadId);
+    }
+  }
+  if (pendingThreadIds.length === 0) {
+    return [];
+  }
+  return await db
+    .select({ chatThreadId: chatThreads.id, userId: chatThreads.userId })
+    .from(chatThreads)
+    .where(inArray(chatThreads.id, pendingThreadIds));
 }

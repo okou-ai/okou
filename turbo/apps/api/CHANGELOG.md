@@ -8,6 +8,20 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.680.1](https://github.com/okou-ai/okou/compare/api-v1.680.0...api-v1.680.1) (2026-09-25)
+
+
+### Refactoring
+
+* **db:** drop the chat event write control ([#36907](https://github.com/okou-ai/okou/issues/36907)) ([8c50449](https://github.com/okou-ai/okou/commit/8c5044916f4a6ff195f7ef72cb6b53af3f24b342))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.302.2
+
 ## [1.680.0](https://github.com/okou-ai/okou/compare/api-v1.679.0...api-v1.680.0) (2026-09-25)
 
 
