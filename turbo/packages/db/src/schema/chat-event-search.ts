@@ -46,12 +46,6 @@ export const chatEventSearchMessages = pgTable(
         table.orgId,
         table.createdAt.desc(),
       ),
-      index("chat_event_search_messages_user_org_agent_id_created_idx").on(
-        table.userId,
-        table.orgId,
-        table.agentId,
-        table.createdAt.desc(),
-      ),
       // btree_gin: intersect the user's postings with keyword postings inside
       // one GIN scan, so common keywords do not fall back to a table scan.
       index("chat_event_search_messages_user_tsv_gin_idx").using(

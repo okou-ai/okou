@@ -296,7 +296,8 @@ export async function readRunContentOwnership(
 }
 
 /** Preserve timeout disposition before potentially remote history preparation.
- * The actual writer rechecks status under the run lock after preparation.
+ * Bounded primary-key reads outside any transaction; the append holds no run
+ * lock, so a timeout committed after this read may still admit one batch.
  */
 export async function prepareRunOutputOwnership(
   db: Db,
@@ -310,36 +311,25 @@ export async function prepareRunOutputOwnership(
   | undefined
 > {
   return await observeOutputFailure(
-    db.transaction(
-      async (tx) => {
-        const value = await observeOutputFailure(
-          (async () => {
-            await setContentDeadlines(tx);
-            const [run] = await tx
-              .select({
-                status: agentRuns.status,
-                modelProvider: agentRuns.modelProvider,
-              })
-              .from(agentRuns)
-              .where(eq(agentRuns.id, runId));
-            if (!run) {
-              throw new AgentEventRunNotFoundError(runId);
-            }
-            if (run.status === "timeout") {
-              return undefined;
-            }
-            return {
-              ownership: await readOwnership(tx, runId),
-              modelProvider: run.modelProvider,
-            };
-          })(),
-          diagnostics,
-        );
-        diagnostics?.enter("transaction_finalize");
-        return value;
-      },
-      { isolationLevel: "read committed" },
-    ),
+    (async () => {
+      const [run] = await db
+        .select({
+          status: agentRuns.status,
+          modelProvider: agentRuns.modelProvider,
+        })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, runId));
+      if (!run) {
+        throw new AgentEventRunNotFoundError(runId);
+      }
+      if (run.status === "timeout") {
+        return undefined;
+      }
+      return {
+        ownership: await readOwnership(db, runId),
+        modelProvider: run.modelProvider,
+      };
+    })(),
     diagnostics,
   );
 }
@@ -446,7 +436,6 @@ async function lockOwnership(
 
 interface PreparedRunContentIdentity {
   readonly runId: string;
-  readonly diagnostics?: RunOutputDiagnostics;
   readonly runOwner?: Owner;
   readonly destination?: Owner & { readonly threadId: string };
   readonly ownership: RunContentOwnership;
@@ -506,62 +495,11 @@ export async function validateRunContentIdentity(
   };
 }
 
-/** The run row owns timeout/output arbitration. No thread or erasure lock is
- * acquired here, and the callback may only append the prepared chat events.
- * Materialization, citations, metrics, touch and delivery commit separately.
- */
-export async function withRunOutputWrite<T>(
-  db: Db,
+/** Pure identity check of a prepared write against its caller's claim. */
+export function assertPreparedRunContentIdentity(
   args: PreparedRunContentIdentity,
-  append: (
-    tx: Tx,
-    current: {
-      readonly ownership: RunContentOwnership;
-      readonly status: RunStatus;
-      readonly modelProvider: string | null;
-    },
-  ) => Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  return await observeOutputFailure(
-    db.transaction(async (tx) => {
-      args.diagnostics?.enter("transaction_setup");
-      await setContentDeadlines(tx);
-      args.diagnostics?.enter("run_lock");
-      const [run] = await tx
-        .select({
-          status: agentRuns.status,
-          modelProvider: agentRuns.modelProvider,
-        })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, args.runId))
-        .for("no key update");
-      if (!run) {
-        throw new AgentEventRunNotFoundError(args.runId);
-      }
-      args.diagnostics?.enter("ownership_recheck");
-      const ownership = await readOwnership(tx, args.runId);
-      signal.throwIfAborted();
-      assertPreparedOwnership(ownership, args);
-      const value = await observeOutputFailure(
-        append(tx, {
-          ownership,
-          status: runStatusSchema.parse(run.status),
-          modelProvider: run.modelProvider,
-        }),
-        args.diagnostics,
-      );
-      signal.throwIfAborted();
-      // The append may have waited on its FK checks. Re-read ownership after it
-      // so a transfer committed meanwhile rolls the prepared content back.
-      args.diagnostics?.enter("ownership_recheck");
-      assertPreparedOwnership(await readOwnership(tx, args.runId), args);
-      signal.throwIfAborted();
-      args.diagnostics?.enter("transaction_finalize");
-      return value;
-    }),
-    args.diagnostics,
-  );
+): void {
+  assertPreparedOwnership(args.ownership, args);
 }
 
 /** Owns the actual transaction: subjects -> resources -> thread -> run ->

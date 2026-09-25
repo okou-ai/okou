@@ -195,7 +195,7 @@ if ! git merge-base --is-ancestor "$CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT" "$TA
   fail "Rollback target predates the keyword-only chat search GIN index drop: ${CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT}."
 fi
 
-# Migration 1242 drops chat_event_write_control. APIs 1.674.0 and 1.675.0 read
+# Migration 1243 drops chat_event_write_control. APIs 1.674.0 and 1.675.0 read
 # it on every chat event write, so only APIs from Release 2 on can serve.
 if ! git merge-base --is-ancestor "$CHAT_EVENT_WRITE_CONTROL_READER_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat_event_write_control reader removal: ${CHAT_EVENT_WRITE_CONTROL_READER_REMOVAL_COMMIT}."

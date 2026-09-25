@@ -1,6 +1,6 @@
 {
-  "id": "1b6f7c21-a49a-4d3d-a4bf-ff3dbf0c1fed",
-  "prevId": "97a3bc0d-5af1-4458-bd60-5a1151142ad6",
+  "id": "57464f86-e62c-4fa5-bbbd-7cfe1ddfe630",
+  "prevId": "1b6f7c21-a49a-4d3d-a4bf-ff3dbf0c1fed",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8204,37 +8204,6 @@
         "chat_event_snapshots_terminal_cursor_check": {
           "name": "chat_event_snapshots_terminal_cursor_check",
           "value": "(\n          \"chat_event_snapshots\".\"terminal_event_id\" IS NULL\n          AND \"chat_event_snapshots\".\"terminal_seq_id\" = 0\n        ) OR (\n          \"chat_event_snapshots\".\"terminal_event_id\" IS NOT NULL\n          AND \"chat_event_snapshots\".\"terminal_seq_id\" > 0\n          AND \"chat_event_snapshots\".\"terminal_seq_id\" <= \"chat_event_snapshots\".\"last_seq_id\"\n        )"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.chat_event_write_control": {
-      "name": "chat_event_write_control",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "'global'"
-        },
-        "activated_at": {
-          "name": "activated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chat_event_write_control_singleton": {
-          "name": "chat_event_write_control_singleton",
-          "value": "\"chat_event_write_control\".\"id\" = 'global'"
         }
       },
       "isRLSEnabled": false

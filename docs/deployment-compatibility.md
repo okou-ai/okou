@@ -2,7 +2,7 @@
 
 ## Chat event write control retirement (2026-09-25)
 
-Migration `1242_drop_chat_event_write_control` drops `chat_event_write_control`
+Migration `1243_drop_chat_event_write_control` drops `chat_event_write_control`
 together with its `preserve_chat_event_write_activation` trigger and function.
 APIs 1.674.0 and 1.675.0 read the control row on every chat event write, so the
 production rollback resolver now refuses targets before #36703 (`15117da781`,
@@ -17,6 +17,29 @@ a rollback), its Clerk deletion jobs fail with
 every 60 seconds without losing their checkpoint, until an API with this change
 serves. The table was not account-scoped and had no foreign keys, so the
 relational sweep plan and its collector version are unchanged.
+
+## Chat search agent recency index dropped (2026-09-25)
+
+Migration `1242_drop_chat_search_agent_created_idx` drops
+`chat_event_search_messages_user_org_agent_id_created_idx` with
+`DROP INDEX CONCURRENTLY`. It does not block chat search reads or projector
+writes; it waits for older transactions on the table, so it raises
+`lock_timeout` to 10 minutes and disables `statement_timeout` for its own
+session, then resets both.
+
+Since #36456 no query orders this table by `(user_id, org_id, agent_id,
+created_at)`. Chat search and MCP chat search take keyword candidates from
+`chat_event_search_messages_user_tsv_gin_idx` and sort them in the query;
+projection writes and thread deletion use the primary key; account erasure
+deletes by `user_id`, which `chat_event_search_messages_user_org_created_idx`
+serves.
+Production statistics from 2026-09-17 to 2026-09-25 show 164 scans reading
+about 157,000 index tuples each, consistent with agent-scoped searches that
+walked an agent's whole history and filtered each row by keyword.
+
+No code names the index, so old API/new DB and new API/old DB are both
+compatible and no API rollback floor is needed. Restoring the index means
+rebuilding it concurrently; no data is lost.
 
 ## Discord replies become fire and forget (2026-09-25)
 
