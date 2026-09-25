@@ -1398,6 +1398,225 @@ describe("Canonical Discord file publication and delivery", () => {
     expect(sends).toBe(1);
   });
 
+  it("ends a nonce replay that Discord rejects without sending again", async () => {
+    const fixture = await boundFixture();
+    const upload = await canonicalUpload(fixture);
+    const client = fileClients();
+    await accept(
+      client.materialize({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+    const nonces: string[] = [];
+    server.use(
+      http.post(
+        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+        async ({ request }) => {
+          nonces.push(await uploadedDiscordNonce(request, upload.bytes));
+          return nonces.length === 1
+            ? new HttpResponse(null, { status: 502 })
+            : HttpResponse.json(
+                { code: 50_013, message: "Missing Permissions" },
+                { status: 403 },
+              );
+        },
+      ),
+    );
+    await accept(
+      client.complete({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+    const rejected = await accept(
+      client.complete({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+    const repeated = await accept(
+      client.complete({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+
+    expect(rejected.body.delivery).toMatchObject({
+      status: "failed",
+      retryable: false,
+    });
+    expect(repeated.body.delivery).toStrictEqual(rejected.body.delivery);
+    expect(nonces).toHaveLength(2);
+    expect(nonces[1]).toBe(nonces[0]);
+  });
+
+  it("keeps Discord's deadline and the original window for a rate-limited replay", async () => {
+    const fixture = await boundFixture();
+    const upload = await canonicalUpload(fixture);
+    const client = fileClients();
+    await accept(
+      client.materialize({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+    const nonces: string[] = [];
+    const deliveredMessageId = discordSnowflake();
+    const deliveredAttachmentId = discordSnowflake();
+    server.use(
+      http.post(
+        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+        async ({ request }) => {
+          const nonce = await uploadedDiscordNonce(request, upload.bytes);
+          nonces.push(nonce);
+          if (nonces.length === 1) {
+            return new HttpResponse(null, { status: 502 });
+          }
+          if (nonces.length === 2) {
+            return HttpResponse.json(
+              { retry_after: 5, global: false },
+              { status: 429, headers: { "retry-after": "5" } },
+            );
+          }
+          return HttpResponse.json(
+            discordFileMessage({
+              channelId: fixture.channelId,
+              messageId: deliveredMessageId,
+              authorId: fixture.botUserId,
+              bot: true,
+              nonce,
+              attachment: {
+                id: deliveredAttachmentId,
+                filename: upload.body.filename,
+                size: upload.bytes.byteLength,
+                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
+                content_type: "text/csv",
+              },
+            }),
+          );
+        },
+      ),
+    );
+    const requestedAt = now();
+    await withMockNowForTest(requestedAt, async () => {
+      await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
+      mockNow(requestedAt + 1000);
+      const limited = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
+      expect(limited.body.delivery).toMatchObject({
+        status: "failed",
+        retryable: true,
+        retryAfterSeconds: 5,
+      });
+
+      mockNow(requestedAt + 3000);
+      const waiting = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
+      expect(waiting.body.delivery).toMatchObject({
+        status: "failed",
+        retryable: true,
+        retryAfterSeconds: 3,
+      });
+      expect(nonces).toHaveLength(2);
+
+      mockNow(requestedAt + 7000);
+      const delivered = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
+      expect(delivered.body.delivery).toMatchObject({
+        status: "delivered",
+        messageId: deliveredMessageId,
+        attachmentId: deliveredAttachmentId,
+      });
+    });
+    expect(nonces).toHaveLength(3);
+    expect(new Set(nonces).size).toBe(1);
+  });
+
+  it("allows only one nonce replay when retries overlap", async () => {
+    const fixture = await boundFixture();
+    const upload = await canonicalUpload(fixture);
+    const client = fileClients();
+    await accept(
+      client.materialize({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+    const replaying = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const deliveredMessageId = discordSnowflake();
+    const deliveredAttachmentId = discordSnowflake();
+    let sends = 0;
+    server.use(
+      http.post(
+        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+        async ({ request }) => {
+          sends += 1;
+          const nonce = await uploadedDiscordNonce(request, upload.bytes);
+          if (sends === 1) {
+            return new HttpResponse(null, { status: 502 });
+          }
+          replaying.resolve(undefined);
+          await release.promise;
+          return HttpResponse.json(
+            discordFileMessage({
+              channelId: fixture.channelId,
+              messageId: deliveredMessageId,
+              authorId: fixture.botUserId,
+              bot: true,
+              nonce,
+              attachment: {
+                id: deliveredAttachmentId,
+                filename: upload.body.filename,
+                size: upload.bytes.byteLength,
+                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
+                content_type: "text/csv",
+              },
+            }),
+          );
+        },
+      ),
+    );
+    await accept(
+      client.complete({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+
+    const replay = client.complete({
+      headers: fixture.headers,
+      body: upload.operation,
+    });
+    const overlapping = await settle(
+      (async () => {
+        await Promise.race([
+          replaying.promise,
+          replay.then((response) => {
+            throw new Error(
+              `Replay returned ${response.status} before reaching Discord`,
+            );
+          }),
+        ]);
+        return await accept(
+          client.complete({ headers: fixture.headers, body: upload.operation }),
+          [200],
+        );
+      })(),
+      context.signal,
+    );
+    release.resolve(undefined);
+    const replayed = await accept(replay, [200]);
+    if (!overlapping.ok) {
+      throw overlapping.error;
+    }
+
+    expect(overlapping.value.body.delivery).toStrictEqual({
+      status: "pending",
+    });
+    expect(replayed.body.delivery).toMatchObject({
+      status: "delivered",
+      messageId: deliveredMessageId,
+    });
+    expect(sends).toBe(2);
+  });
+
   it("allows only one external message when completion requests overlap", async () => {
     const fixture = await boundFixture();
     const upload = await canonicalUpload(fixture);
