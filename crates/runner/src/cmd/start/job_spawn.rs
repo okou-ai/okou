@@ -666,7 +666,6 @@ pub(super) async fn run_job(
             .complete_claimed_run(
                 provider.as_ref(),
                 finalization.finalize(executor_result),
-                RunSandbox::new(run_id, sandbox_id),
                 status.as_ref(),
                 active_run_guard,
                 &cleanup_state_for_body,

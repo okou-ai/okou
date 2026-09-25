@@ -265,11 +265,11 @@ impl CompletionPayload {
         self,
         provider: &dyn JobProvider,
         finalize: F,
-        run: RunSandbox,
         status: &StatusTracker,
         active_run_guard: ActiveRunGuard,
         cleanup_state: &RunCleanupState,
     ) -> JobTelemetry {
+        let run = RunSandbox::new(self.run_id, self.sandbox_id);
         let (report, finalized) = self.report_with_finalization(provider, finalize).await;
         let FinalizedJob {
             finalization_ready,
@@ -806,14 +806,7 @@ mod tests {
             SandboxReuseResult::PoolMiss,
             CompletionAuth::sandbox_token(run_id, "completion-token".to_owned()),
         )
-        .complete_claimed_run(
-            &provider,
-            finalized,
-            RunSandbox::new(run_id, sandbox_id),
-            &status,
-            active_run_guard,
-            &cleanup,
-        )
+        .complete_claimed_run(&provider, finalized, &status, active_run_guard, &cleanup)
         .await;
         assert_eq!(reports.load(Ordering::SeqCst), 1);
         assert_eq!(status_active_run_count(&status_path).await, 0);
