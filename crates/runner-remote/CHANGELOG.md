@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.4.4...runner-remote-v0.5.0) (2026-09-25)
+
+
+### Features
+
+* **vnc:** add opt-in mac classic password profile ([#36856](https://github.com/okou-ai/okou/issues/36856)) ([ab807e1](https://github.com/okou-ai/okou/commit/ab807e1651f58fd68934104416b39beb37bf282c))
+
 ## [0.4.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.4.3...runner-remote-v0.4.4) (2026-09-25)
 
 ## [0.4.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.4.2...runner-remote-v0.4.3) (2026-09-25)
