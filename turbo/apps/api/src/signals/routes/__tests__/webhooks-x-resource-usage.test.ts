@@ -536,11 +536,29 @@ describe("X daily resource usage webhook", () => {
     }
     await flushWaitUntilForTest();
 
-    await runs.requestReadRun(deleted.actor, deleted.runId, [200]);
+    const deniedRun = await runs.requestReadRun(
+      deleted.actor,
+      deleted.runId,
+      [401],
+    );
+    expect(deniedRun.body).toMatchObject({
+      error: { code: "UNAUTHORIZED" },
+    });
     await accept(submit(deleted, [observation([resourceId()])]), [404]);
-    expect(
-      (await billing.readUsageRecord(deleted.actor)).body.totalCredits,
-    ).toBeGreaterThan(0);
+    if (!deleted.actor.orgId) {
+      throw new Error("Expected the held user's organization");
+    }
+    // A valid new admin in the retained org can still reconcile this user's
+    // charge, without reauthorizing the deleted identity.
+    const replacement = bdd.user({ orgId: deleted.actor.orgId });
+    const usage = await billing.readUsageMembers(replacement, {
+      range: "24h",
+      tz: "UTC",
+    });
+    const chargedMember = usage.body.members.find((member) => {
+      return member.userId === deleted.actor.userId;
+    });
+    expect(chargedMember?.creditsCharged).toBeGreaterThan(0);
   });
 
   it.each(["user", "organization"] as const)(
@@ -886,11 +904,16 @@ describe("X daily resource usage webhook", () => {
       }
       await flushWaitUntilForTest();
 
-      await runs.requestReadRun(
+      const readback = await runs.requestReadRun(
         deleted.actor,
         deleted.runId,
-        subjectKind === "user" ? [200] : [404],
+        subjectKind === "user" ? [401] : [404],
       );
+      if (subjectKind === "user") {
+        expect(readback.body).toMatchObject({
+          error: { code: "UNAUTHORIZED" },
+        });
+      }
       await accept(submit(deleted, [observation([freshId])]), [404]);
       await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
       await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
@@ -965,11 +988,16 @@ describe("X daily resource usage webhook", () => {
       }
       await flushWaitUntilForTest();
 
-      await runs.requestReadRun(
+      const readback = await runs.requestReadRun(
         deleted.actor,
         deleted.runId,
-        subjectKind === "user" ? [200] : [404],
+        subjectKind === "user" ? [401] : [404],
       );
+      if (subjectKind === "user") {
+        expect(readback.body).toMatchObject({
+          error: { code: "UNAUTHORIZED" },
+        });
+      }
       await accept(submit(deleted, [observation([freshId])]), [404]);
       await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
       await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);

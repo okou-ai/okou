@@ -78,11 +78,18 @@ test.each(["user", "organization"] as const)(
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    await runs.requestReadRun(
+    const readback = await runs.requestReadRun(
       actor,
       run.runId,
-      kind === "user" ? [200] : [404],
+      kind === "user" ? [401] : [404],
     );
+    if (kind === "user") {
+      expect(readback.body).toMatchObject({
+        error: { code: "UNAUTHORIZED" },
+      });
+    }
+    // The private blob itself remains held for owner-scoped deletion, whereas
+    // organization deletion releases the accounted reference immediately.
     await expect(readHistoryBlobReferenceCountFixture(run.hash)).resolves.toBe(
       kind === "user" ? 1 : 0,
     );
