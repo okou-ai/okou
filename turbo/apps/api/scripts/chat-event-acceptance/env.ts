@@ -1,5 +1,5 @@
 // Test-process-only values. Never load production configuration for synthetic
-// dual-store acceptance. DATABASE_URL is separately restricted to a local host.
+// chat event acceptance. DATABASE_URL is separately restricted to a local host.
 Object.assign(process.env, {
   CLERK_SECRET_KEY: "sk_test_synthetic",
   CLERK_PUBLISHABLE_KEY: "pk_test_synthetic",
