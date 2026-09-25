@@ -694,6 +694,18 @@ export async function setTelegramThinkingMessageIdFixture(
     .where(eq(chatTelegramContext.id, event.contextId));
 }
 
+/** Reproduce a pending Telegram context stored with a retired brand value. */
+export async function setTelegramContextLegacyBrandFixture(
+  eventId: string,
+  publicBrand: string | null,
+): Promise<void> {
+  const event = await pendingTelegramEventContext(eventId);
+  await db()
+    .update(chatTelegramContext)
+    .set({ publicBrand })
+    .where(eq(chatTelegramContext.id, event.contextId));
+}
+
 interface AgentphoneChatEventByPromptFixture {
   readonly eventId: string;
 }
