@@ -609,7 +609,7 @@ describe("video Artifact previews", () => {
       "reference-footage.mp4",
     );
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /\/artifacts\/[0-9a-z]{10}\.jpg$/u,
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.jpg$/u,
     );
   }, 180_000);
 
@@ -747,7 +747,7 @@ describe("video Artifact previews", () => {
       }),
     ]);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /\/artifacts\/[0-9a-z]{10}\.jpg$/u,
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.jpg$/u,
     );
   }, 180_000);
 
