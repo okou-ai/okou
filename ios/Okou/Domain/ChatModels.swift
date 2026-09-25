@@ -10,6 +10,7 @@ struct ChatThread: Identifiable, Equatable, Sendable {
   var sortAt: Date
   var pinnedAt: Date?
   var pinOrder: String?
+  var isArchived = false
   var indicator: ChatIndicator?
 
   var displayTitle: String { title.isEmpty ? "New chat" : title }
@@ -75,6 +76,7 @@ struct SendReceipt: Sendable {
 
 enum ChatServiceError: LocalizedError, Sendable {
   case noDefaultAgent
+  case agentUnavailable
   case noDefaultModel
   case invalidContract(String)
   case settingsChanged
@@ -85,6 +87,8 @@ enum ChatServiceError: LocalizedError, Sendable {
     switch self {
     case .noDefaultAgent:
       "This workspace has no default agent. Complete setup on the Okou website, then refresh."
+    case .agentUnavailable:
+      "This agent is no longer available. Choose another agent and try again."
     case .noDefaultModel:
       "This workspace has no default model. Choose one on the Okou website, then refresh."
     case .invalidContract(let detail):

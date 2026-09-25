@@ -1,6 +1,6 @@
 {
-  "id": "37871223-7bce-4be0-870e-f1a1db9f6845",
-  "prevId": "23a53794-34f8-4ff7-8bea-74754331da49",
+  "id": "82ce3434-7703-4761-8712-249497bad5e8",
+  "prevId": "37871223-7bce-4be0-870e-f1a1db9f6845",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -11359,7 +11359,7 @@
           "name": "host_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "kind": {
           "name": "kind",
@@ -11397,7 +11397,7 @@
           "name": "timeout_ms",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "claimed_at": {
           "name": "claimed_at",

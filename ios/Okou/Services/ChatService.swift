@@ -48,14 +48,19 @@ actor ChatService {
     try await loadHistory(threadID: threadID)
   }
 
-  func createThread() async throws -> ChatThread {
+  func createThread(agentID: String? = nil) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     async let preferenceRequest: ModelPreference = client.request("/api/user-model-preference")
     async let policiesRequest: ModelPolicies = client.request("/api/model-policies")
     let (agents, preference, policies) = try await (
       agentsRequest, preferenceRequest, policiesRequest
     )
-    guard let agent = agents.first(where: \.isDefaultAgent) else {
+    guard
+      let agent = agents.first(where: {
+        $0.agentId == agentID || (agentID == nil && $0.isDefaultAgent)
+      })
+    else {
+      if agentID != nil { throw ChatServiceError.agentUnavailable }
       throw ChatServiceError.noDefaultAgent
     }
     let model =
@@ -133,6 +138,21 @@ actor ChatService {
 
   func markRead(threadID: String) async throws {
     try await client.data("/api/chat-threads/\(threadID)/mark-read", method: "POST")
+  }
+
+  func setPinned(threadID: String, pinned: Bool) async throws {
+    let action = pinned ? "pin" : "unpin"
+    try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST")
+  }
+
+  func setArchived(threadID: String, archived: Bool) async throws {
+    let action = archived ? "archive" : "unarchive"
+    try await client.data("/api/chat-threads/\(threadID)/\(action)", method: "POST")
+  }
+
+  func rename(threadID: String, title: String) async throws {
+    let body = try JSONEncoder().encode(["title": title])
+    try await client.data("/api/chat-threads/\(threadID)/rename", method: "POST", body: body)
   }
 
   private func normalizeMobileSettings(threadID: String) async throws -> ThreadMetadata {
@@ -274,6 +294,8 @@ actor ChatService {
     case .unpinned:
       thread.pinnedAt = nil
       thread.pinOrder = nil
+    case .archived: thread.isArchived = true
+    case .unarchived: thread.isArchived = false
     case .sortTouched:
       if let order = event.pinOrder {
         thread.pinOrder = order
