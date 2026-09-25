@@ -118,10 +118,17 @@ An event exceeding the 120,000-byte durable-record budget stops the relay before
 checkpointing it. Discord's own resume retention is finite: prolonged outages
 or nonresumable sessions cannot recover events Discord no longer retains.
 
-Fatal Gateway close codes, an application mismatch or a permanent API rejection
-require operator correction and a new authenticated `/start`; they do not erase
-the outbox. `/health` exposes the stopped reason and pending count, never event
-content, credentials or session IDs. Identify reservations survive process loss,
+An event the API rejects as malformed (`400`) or too large (`413`) cannot
+succeed on retry, so the relay moves it out of the outbox into a dead-letter
+record and continues with later events; one member's message never stops
+delivery for other guilds. The newest 100 rejected envelopes are retained for
+diagnosis and `/health` reports the cumulative `deadLettered` count.
+
+Fatal Gateway close codes, an application mismatch, an invalid receipt or any
+other permanent API rejection (such as `401`, `403` or `404`) require operator
+correction and a new authenticated `/start`; they do not erase the outbox.
+`/health` exposes the stopped reason, pending and dead-lettered counts, never
+event content, credentials or session IDs. Identify reservations survive process loss,
 respect Discord's reported session-start budget and enforce the five-second
 single-shard Identify interval. A failed connection may conservatively consume
 a reservation even when Identify never reached Discord.

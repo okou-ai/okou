@@ -98,9 +98,11 @@ export class GatewayConnection {
         id,
         channel_id: CHANNEL_ID,
         guild_id: GUILD_ID,
-        author: { id: "100000000000000005", bot: false },
+        author: { id: "100000000000000005", username: "member", bot: false },
         content: "<@100000000000000001> Hello",
+        mentions: [{ id: APPLICATION_ID, username: "okou", bot: true }],
         attachments: [],
+        type: 0,
       },
     });
   }

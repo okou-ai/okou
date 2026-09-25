@@ -26,6 +26,7 @@ describe("Discord Gateway relay", () => {
       connected: false,
       resumable: false,
       pending: 0,
+      deadLettered: 0,
       fatal: null,
     });
     expect(relay.opened).toEqual([]);
@@ -62,9 +63,11 @@ describe("Discord Gateway relay", () => {
         id: MESSAGE_ID,
         channel_id: CHANNEL_ID,
         guild_id: GUILD_ID,
-        author: { id: "100000000000000005", bot: false },
+        author: { id: "100000000000000005", username: "member", bot: false },
         content: "<@100000000000000001> Hello",
+        mentions: [{ id: APPLICATION_ID, username: "okou", bot: true }],
         attachments: [],
+        type: 0,
       },
     });
     // An independent crypto implementation verifies the exact transmitted bytes,
@@ -81,14 +84,14 @@ describe("Discord Gateway relay", () => {
       .toMatchObject({ pending: 0, resumable: true, connected: true });
   });
 
-  it.each(["missing-receipt", "empty-204"])(
+  it.each(["missing-receipt", "non-json-200", "empty-204"])(
     "retains delivery after %s until a durable receipt is returned",
     async (kind) => {
       const relay = await createRelay();
       relay.reply = () => {
-        return kind === "missing-receipt"
-          ? Response.json({ ok: true })
-          : new Response(null, { status: 204 });
+        if (kind === "missing-receipt") return Response.json({ ok: true });
+        if (kind === "non-json-200") return new Response("ok");
+        return new Response(null, { status: 204 });
       };
       const gateway = await relay.start();
       gateway.hello();
@@ -123,6 +126,83 @@ describe("Discord Gateway relay", () => {
         .toMatchObject({ running: true, pending: 0, fatal: null });
     },
   );
+
+  it.each([400, 413])(
+    "sets aside an event rejected with %i and keeps relaying later events",
+    async (status) => {
+      const relay = await createRelay();
+      relay.reply = (delivery) => {
+        return JSON.parse(delivery.rawBody).eventId ===
+          `MESSAGE_CREATE:${MESSAGE_ID}`
+          ? Response.json({ error: { code: "BAD_REQUEST" } }, { status })
+          : Response.json({ ok: true, outcome: "accepted" });
+      };
+      const gateway = await relay.start();
+      gateway.hello();
+      await gateway.next(2);
+      gateway.ready();
+      gateway.message();
+      gateway.message(3, "100000000000000006");
+
+      const rejected = await relay.deliveries.next();
+      expect(JSON.parse(rejected.rawBody).eventId).toBe(
+        `MESSAGE_CREATE:${MESSAGE_ID}`,
+      );
+      const later = await relay.deliveries.next();
+      expect(JSON.parse(later.rawBody).eventId).toBe(
+        "MESSAGE_CREATE:100000000000000006",
+      );
+      await expect
+        .poll(() => {
+          return relay.health();
+        })
+        .toMatchObject({
+          running: true,
+          connected: true,
+          pending: 0,
+          deadLettered: 1,
+          fatal: null,
+        });
+      expect(relay.forwarded).toHaveLength(2);
+    },
+  );
+
+  it("halts on a credential rejection and redelivers the same event after /start", async () => {
+    const relay = await createRelay();
+    relay.reply = () => {
+      return Response.json(
+        { error: { code: "UNAUTHORIZED" } },
+        { status: 401 },
+      );
+    };
+    const gateway = await relay.start();
+    gateway.hello();
+    await gateway.next(2);
+    gateway.ready();
+    gateway.message();
+    const first = await relay.deliveries.next();
+    await expect
+      .poll(() => {
+        return relay.health();
+      })
+      .toMatchObject({
+        running: false,
+        pending: 1,
+        deadLettered: 0,
+        fatal: "api-rejected-401",
+      });
+
+    relay.reply = () => {
+      return Response.json({ ok: true, outcome: "accepted" });
+    };
+    expect((await relay.request("/start")).status).toBe(200);
+    expect((await relay.deliveries.next()).rawBody).toBe(first.rawBody);
+    await expect
+      .poll(() => {
+        return relay.health();
+      })
+      .toMatchObject({ running: true, pending: 0, fatal: null });
+  });
 
   it("keeps GUILD_DELETE unavailable unchanged and uses a stable lifecycle identity", async () => {
     const relay = await createRelay();
@@ -470,6 +550,7 @@ describe("Discord Gateway relay", () => {
         connected: false,
         resumable: false,
         pending: 0,
+        deadLettered: 0,
         fatal: "gateway-close-4004",
       });
     expect(relay.opened).toHaveLength(1);

@@ -24,6 +24,10 @@ import {
 } from "./protocol";
 
 const MAX_OUTBOX = 1000;
+const MAX_DEAD_LETTERS = 100;
+// The API will never accept these bodies, so retrying cannot succeed and
+// halting would let one member's message block every other guild.
+const EVENT_REJECTIONS = new Set([400, 413]);
 const FATAL_CLOSES = new Set([4004, 4010, 4011, 4012, 4013, 4014]);
 const outboxKey = (index: number) => {
   return `outbox:${index.toString().padStart(16, "0")}`;
@@ -195,6 +199,7 @@ export class DiscordGateway {
         connected: this.socket !== null,
         resumable: this.state.session !== null,
         pending: this.state.pending,
+        deadLettered: this.state.deadLettered,
         fatal: this.state.fatal,
       },
       { headers: { "Cache-Control": "no-store" } },
@@ -615,9 +620,14 @@ export class DiscordGateway {
         if (Number.isFinite(seconds) && seconds > 0)
           retryAfter = Math.min(3_600_000, seconds * 1000);
         if (status === 200) {
-          const receipt = discordGatewayReceiptSchema.safeParse(
-            await response.json(),
-          );
+          const text = await response.text();
+          let json: unknown = null;
+          try {
+            json = JSON.parse(text);
+          } catch {
+            /* A non-JSON success body is an invalid receipt. */
+          }
+          const receipt = discordGatewayReceiptSchema.safeParse(json);
           accepted = receipt.success;
           invalidReceipt = !receipt.success;
         } else {
@@ -644,6 +654,8 @@ export class DiscordGateway {
           this.state = next;
         } else if (invalidReceipt) {
           await this.halt("api-invalid-receipt");
+        } else if (EVENT_REJECTIONS.has(status)) {
+          await this.deadLetter(key, body);
         } else if (
           status >= 400 &&
           status < 500 &&
@@ -662,8 +674,33 @@ export class DiscordGateway {
         }
         await this.arm();
       });
-      if (!accepted) return;
+      if (!accepted && !EVENT_REJECTIONS.has(status)) return;
     }
+  }
+
+  // Retains a bounded sample of rejected envelopes for operator diagnosis.
+  private async deadLetter(key: string, body: string): Promise<void> {
+    const oldest = await this.ctx.storage.list<string>({
+      prefix: "dead:",
+      limit: 1,
+    });
+    const next = {
+      ...this.state,
+      pending: this.state.pending - 1,
+      deliveryFailures: 0,
+      deliveryAt: 0,
+      deadLettered: this.state.deadLettered + 1,
+    };
+    await this.ctx.storage.transaction(async (transaction) => {
+      if (this.state.deadLettered >= MAX_DEAD_LETTERS) {
+        const [evicted] = oldest.keys();
+        if (evicted !== undefined) await transaction.delete(evicted);
+      }
+      await transaction.delete(key);
+      await transaction.put(`dead:${key.slice("outbox:".length)}`, body);
+      await transaction.put("state", next);
+    });
+    this.state = next;
   }
 }
 
