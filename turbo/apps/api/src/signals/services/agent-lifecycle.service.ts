@@ -26,7 +26,6 @@ import {
   deleteOrgUsageData,
   deleteUserUsageData,
 } from "./usage-event-cleanup.service";
-import { lockXResourceAdmission } from "./x-resource-usage-lifecycle";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
 export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
@@ -90,7 +89,7 @@ export async function deleteClerkStableContextLifecycleData(
 ): Promise<void> {
   if (scope.kind === "organization") {
     // Publication fences deliberately have no Agent FK, so organization
-    // erasure also removes any fence left by an interrupted Agent lifecycle.
+    // deletion also removes any fence left by an interrupted Agent lifecycle.
     await deleteStableContextGenerations(
       tx,
       eq(piStableContextGenerations.orgId, scope.orgId),
@@ -220,10 +219,9 @@ export async function deleteClerkAgentLifecycleData(
   scope: ClerkDeletionScope,
 ): Promise<void> {
   const receipt = await db.transaction(async (tx) => {
-    // X admission -> compaction -> ledger/entitlements -> parents/Run.
-    // The helper uses a savepoint on this same connection; both deletion
-    // stages commit atomically and retain their locks through that commit.
-    await lockXResourceAdmission(tx, "exclusive");
+    // Compaction -> ledger/entitlements -> parents/Run. The helper uses a
+    // savepoint on this same connection; both deletion stages commit
+    // atomically and retain their locks through that commit.
     await deleteScopedUsageData(tx, scope);
     await tx.execute(
       sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
@@ -327,7 +325,7 @@ export async function deleteClerkAgentLifecycleData(
         );
       // Agent cascades drain child-row writers that could initialize non-FK
       // lifecycle metadata after the first sweep. Remove that late state while
-      // the erasure and canonical Agent locks are still held.
+      // the canonical Agent locks are still held.
       await deleteClerkStableContextLifecycleData(tx, scope, agentIds);
     }
     return await releaseDeletedConversationReferences(tx, removed);

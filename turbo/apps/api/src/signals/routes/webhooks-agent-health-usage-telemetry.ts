@@ -538,7 +538,7 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
       if (usageEventValues.length > 0) {
         await db.transaction(async (tx) => {
           await setXResourceTransactionTimeouts(tx);
-          // Count-event retries share the account-cleanup fence with resource batches.
+          // Count-event retries share retention admission with resource batches.
           await lockXResourceAdmission(tx, "shared");
           await tx
             .insert(usageEvent)
