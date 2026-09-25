@@ -166,7 +166,6 @@ import {
 } from "./attachment-chips.tsx";
 import { DiscordMark } from "./components/discord-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
-import { DiscordMark } from "./components/discord-mark.tsx";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
   ArtifactKind,
@@ -6976,11 +6975,6 @@ function sourceMessageLabel(
     case "slack": {
       return t(($) => {
         return $.chat.origins.slack;
-      });
-    }
-    case "discord": {
-      return t(($) => {
-        return $.chat.origins.discord;
       });
     }
     case "feishu": {
