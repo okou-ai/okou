@@ -1633,7 +1633,33 @@ describe("CHAT-02: completed chat callback", () => {
       lifecycleMarkers(afterCancel.events, cancelled.runId, "cancelled"),
     ).toHaveLength(1);
     await expectArchiveState(cancelled.threadId, true, 0);
-  }, 60_000);
+
+    // A sandbox that reports its own cancellation goes through the failed
+    // callback but still lands a cancelled marker.
+    const sandboxCancelled = await startArchivedRun("sandbox cancels");
+    const sandboxCancelledHeaders = await claimChatRun(
+      runnerGroup,
+      sandboxCancelled.runId,
+    );
+    await failChatRun(
+      sandboxCancelled.runId,
+      sandboxCancelledHeaders,
+      "Run cancelled",
+    );
+    await flushWaitUntilForTest();
+    const afterSandboxCancel = await chat.listThreadEvents(
+      actor,
+      sandboxCancelled.threadId,
+    );
+    expect(
+      lifecycleMarkers(
+        afterSandboxCancel.events,
+        sandboxCancelled.runId,
+        "cancelled",
+      ),
+    ).toHaveLength(1);
+    await expectArchiveState(sandboxCancelled.threadId, true, 0);
+  }, 90_000);
 
   it("pins the model, reasoning effort, and token budget of every fast-path completion", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

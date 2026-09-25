@@ -1607,7 +1607,14 @@ async function insertAssistantErrorEvent(
 
   // Replays repeat the monotonic touch and publishes because an earlier
   // attempt may have failed after its marker committed.
-  await touchChatThreadForUnreadRunFinishIndependently(args.db, args.threadId);
+  if (args.lifecycleEvent === "failed") {
+    await touchChatThreadForUnreadRunFinishIndependently(
+      args.db,
+      args.threadId,
+    );
+  } else {
+    await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
+  }
   await publishAssistantErrorEventSignals(args);
   return {
     displayErrorMessage,
