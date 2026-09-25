@@ -2947,7 +2947,7 @@
     "configuration": "Cloudflare Access",
     "convert": "個人用に変更",
     "convertConfirm": "所有者が再設定するまで、これらのホストに接続できなくなることを理解しました。",
-    "convertHelp": "この Service Token を個人用として保持します。自分のホストは接続を維持できます。",
+    "convertHelp": "この組織の Cloudflare Access は、作成者が別の人でも、操作しているあなた自身の個人用設定になります。Service Token はそのままで、自分の SSH ホストは接続を維持できます。",
     "convertUncertain": "変更を確認できませんでした。再試行する前に最新の設定を確認してください。",
     "convertWarning_other": "影響を受ける他のユーザーの SSH ホスト: {{count}} 台。所有者が再設定するか Direct を選ぶまで利用できません。",
     "createNew": "新しい Cloudflare Access を作成",
