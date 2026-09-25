@@ -258,21 +258,6 @@ pub(crate) async fn discard_reason<S: AsyncRead + Unpin>(stream: &mut S) -> Resu
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn standard_result_never_reinterprets_apple_classic_failure() {
-        let (mut client, mut server) = tokio::io::duplex(16);
-        server.write_all(&[1, 0, 0, 0]).await.unwrap();
-        assert!(matches!(
-            read_security_result(&mut client).await,
-            Err(Error::InvalidAuthenticationResult)
-        ));
-    }
-}
-
 fn challenge_response(password: VncPassword, challenge: [u8; 16]) -> Zeroizing<[u8; 16]> {
     let mut key = Zeroizing::new([0u8; 8]);
     for (target, byte) in key.iter_mut().zip(password.0.iter()) {
@@ -287,4 +272,19 @@ fn challenge_response(password: VncPassword, challenge: [u8; 16]) -> Zeroizing<[
         chunk.copy_from_slice(&block);
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn standard_result_never_reinterprets_apple_classic_failure() {
+        let (mut client, mut server) = tokio::io::duplex(16);
+        server.write_all(&[1, 0, 0, 0]).await.unwrap();
+        assert!(matches!(
+            read_security_result(&mut client).await,
+            Err(Error::InvalidAuthenticationResult)
+        ));
+    }
 }
