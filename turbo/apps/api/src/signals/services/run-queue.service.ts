@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -477,6 +478,10 @@ async function promoteAdmittedQueuedRun(
   if (!updated) {
     return { status: "lost" };
   }
+  await tx
+    .update(activeAgentRuns)
+    .set({ lastHeartbeatAt: new Date(promotedAt) })
+    .where(eq(activeAgentRuns.runId, args.row.runId));
 
   await tx.delete(agentRunQueue).where(eq(agentRunQueue.runId, args.row.runId));
   const queueMarkerNotification = await revokeQueuedRunAssistantMarkers(tx, {

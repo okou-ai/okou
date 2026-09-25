@@ -1,5 +1,32 @@
 # Deployment Compatibility
 
+## Active run state moves to `active_agent_runs` (2026-09-25, step 1 of 3)
+
+Heartbeats rewrote the wide `agent_runs` row and two heartbeat indexes that no
+query used, and activity snapshots were written through the run-content lock
+chain. Migration `1240` builds `idx_agent_runs_status` concurrently and drops
+`idx_agent_runs_status_heartbeat` and `idx_agent_runs_running_heartbeat`; no
+API names either index. Migration `1241` adds `active_agent_runs`, one narrow
+row per queued, pending or running run, and seeds it from currently active
+runs.
+
+The new API inserts the row in the launch statement, refreshes its heartbeat on
+promotion, claim and heartbeat, and deletes it in the terminal transition. It
+still writes `agent_runs.last_heartbeat_at`, and timeout cleanup and capacity
+checks still read that column. Activity capture and the activity summary read
+and write only the active row with single-row compare-and-set updates; they no
+longer touch `run_activity_snapshots`, `chat_threads` or `chat_events`, and no
+longer pass the account-erasure write fence. A scheduled sweep deletes rows
+whose run is no longer active.
+
+During rollout an old API keeps writing `run_activity_snapshots`, and runs it
+creates have no active row, so the new API shows no activity for them. Both are
+disposable UI state. Step 2 seeds the missing rows, switches heartbeat readers
+to `active_agent_runs`, stops writing `agent_runs.last_heartbeat_at` and drops
+`run_activity_snapshots`; after step 2, rolling back to this release is not
+supported because its timeout cleanup would read a stale heartbeat column. Step
+3 drops `agent_runs.last_heartbeat_at`.
+
 ## Keyword-only chat search GIN index dropped (2026-09-25)
 
 Migration `1239_drop_chat_search_tsv_gin` drops

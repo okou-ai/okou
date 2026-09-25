@@ -1,4 +1,5 @@
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, eq, inArray, type SQL } from "drizzle-orm";
@@ -17,7 +18,7 @@ export async function stopErasureClosedComputeRun(
   tx: Tx,
   runId: string,
 ): Promise<void> {
-  await tx
+  const [stopped] = await tx
     .update(agentRuns)
     .set({
       status: "cancelled",
@@ -29,7 +30,11 @@ export async function stopErasureClosedComputeRun(
         eq(agentRuns.id, runId),
         inArray(agentRuns.status, ["pending", "queued"]),
       ),
-    );
+    )
+    .returning({ id: agentRuns.id });
+  if (stopped) {
+    await tx.delete(activeAgentRuns).where(eq(activeAgentRuns.runId, runId));
+  }
 }
 
 type TerminalRunStatus = Extract<
@@ -87,14 +92,15 @@ export async function transitionAgentRunsToTerminal(
   if (transitioned.length === 0) {
     return transitioned;
   }
-  await tx.delete(agentRunConnectorDiagnosticRegistrations).where(
-    inArray(
-      agentRunConnectorDiagnosticRegistrations.runId,
-      transitioned.map((run) => {
-        return run.runId;
-      }),
-    ),
-  );
+  const runIds = transitioned.map((run) => {
+    return run.runId;
+  });
+  await tx
+    .delete(agentRunConnectorDiagnosticRegistrations)
+    .where(inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds));
+  await tx
+    .delete(activeAgentRuns)
+    .where(inArray(activeAgentRuns.runId, runIds));
   await cleanupDisconnectedPersonalModelProviderAccounts(tx, transitioned);
   return transitioned;
 }

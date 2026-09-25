@@ -29,8 +29,6 @@ import {
   readRunContentOwnership,
   withRunOutputWrite,
 } from "../../src/signals/services/run-content-erasure-admission.service";
-import { activityContentTransaction } from "../../src/signals/services/run-activity-snapshot.service";
-import { runActivitySnapshots } from "@okouai/db/schema/run-activity-snapshot";
 import {
   createDeferredPromise,
   settleIncludingAbort,
@@ -373,115 +371,6 @@ try {
       materialization?.latestOutputText,
       "Committed before the failed auxiliary write",
     );
-  });
-
-  await test("activity control waiting on the run cannot deadlock the output event foreign key", async () => {
-    const f = await fixture("running");
-    const [run] = await db
-      .select({ sessionId: agentRuns.sessionId })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, f.runId));
-    assert.ok(run);
-    await db
-      .update(chatThreads)
-      .set({ agentSessionId: run.sessionId, agentSessionRunId: f.runId })
-      .where(eq(chatThreads.id, f.threadId));
-    const ownership = await readRunContentOwnership(db, f.runId);
-    const runLocked = createDeferredPromise<void>(signal);
-    const releaseOutput = createDeferredPromise<void>(signal);
-    const output = withRunOutputWrite(
-      db,
-      { runId: f.runId, ownership },
-      async (tx) => {
-        runLocked.resolve();
-        await releaseOutput.promise;
-        return await insertChatEvent(
-          tx,
-          {
-            chatThreadId: f.threadId,
-            runId: f.runId,
-            eventType: "output.message",
-            content: "Output crosses a concurrent activity control lock",
-            runEventSequenceNumber: 0,
-            runEventId: "activity_concurrency:0",
-          },
-          "none",
-        );
-      },
-      signal,
-    );
-    const outputResult = output.then(
-      (value) => {
-        return { value };
-      },
-      (error: unknown) => {
-        return { error };
-      },
-    );
-    assert.equal(
-      await Promise.race([
-        runLocked.promise.then(() => {
-          return true;
-        }),
-        outputResult.then(() => {
-          return false;
-        }),
-      ]),
-      true,
-      "output must acquire its run boundary before the competing activity starts",
-    );
-    const activity = activityContentTransaction(
-      db,
-      {
-        runId: f.runId,
-        threadId: f.threadId,
-        userId: f.userId,
-        orgId: f.orgId,
-      },
-      ownership,
-      async (tx) => {
-        await tx.insert(runActivitySnapshots).values({ runId: f.runId });
-        return "activity committed";
-      },
-      signal,
-    );
-    let activitySettled = false;
-    const activityResult = activity.then(
-      (value) => {
-        activitySettled = true;
-        return { value };
-      },
-      (error: unknown) => {
-        activitySettled = true;
-        return { error };
-      },
-    );
-    try {
-      let blocked = false;
-      while (!blocked && !activitySettled) {
-        const state = await pool.query(
-          "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE application_name = $1 AND query LIKE '%agent_runs%' AND cardinality(pg_blocking_pids(pid)) > 0) AS blocked",
-          [applicationName],
-        );
-        blocked = state.rows[0]?.blocked === true;
-        if (!blocked) {
-          await setImmediate();
-        }
-      }
-      assert.ok(
-        blocked,
-        "activity must acquire its thread control lock before waiting for the run",
-      );
-    } finally {
-      releaseOutput.resolve();
-      await Promise.all([outputResult, activityResult]);
-    }
-    const written = await outputResult;
-    assert.ok(
-      "value" in written && written.value,
-      "the event FK must pass the activity thread lock",
-    );
-    assert.deepEqual(await activityResult, { value: "activity committed" });
   });
 
   for (const existingSequence of [false, true]) {

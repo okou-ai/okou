@@ -388,6 +388,9 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   account_erasure_selector_dependencies: { coverage: "not_account_scoped" },
   account_erasure_sinks: { coverage: "not_account_scoped" },
   account_erasure_work: { coverage: "not_account_scoped" },
+  // Cascades from `agent_runs`, but it copies the run's `user_id`, so the
+  // inventory guard classifies it as a root rather than a descendant.
+  active_agent_runs: { coverage: "user_root", ownership: ["user_id"] },
   active_input_deliveries: {
     coverage: "user_descendant",
     parents: ["chat_threads"],

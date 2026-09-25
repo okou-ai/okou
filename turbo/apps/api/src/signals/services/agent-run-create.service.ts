@@ -177,6 +177,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type {
@@ -8308,6 +8309,18 @@ function buildAtomicLaunchCteContext(
   // The insert executes with the statement and depends on insertedRun's ID.
   // Its returned row need not participate in the final result join.
   ctes.push(insertedDiagnosticRegistration);
+
+  // Queued and pending runs are active from creation; the terminal transition
+  // deletes this row. It shares the statement so both rows commit atomically.
+  const insertedActiveRun = args.tx.$with("inserted_launch_active_run").as(
+    args.tx.insert(activeAgentRuns).values({
+      runId: returnedCteId(insertedRun),
+      orgId: rowsArgs.orgId,
+      userId: rowsArgs.userId,
+      lastHeartbeatAt: createdAt,
+    }),
+  );
+  ctes.push(insertedActiveRun);
 
   appendLaunchCallbackCte({
     tx: args.tx,

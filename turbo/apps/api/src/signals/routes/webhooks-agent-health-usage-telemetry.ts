@@ -12,6 +12,7 @@ import {
   type SandboxReuseResult,
 } from "@okouai/api-contracts/contracts/webhooks";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
@@ -403,9 +404,10 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const db = set(writeDb$);
+  const heartbeatAt = nowDate();
   const result = await db
     .update(agentRuns)
-    .set({ lastHeartbeatAt: nowDate() })
+    .set({ lastHeartbeatAt: heartbeatAt })
     .where(
       and(
         eq(agentRuns.id, body.runId),
@@ -422,6 +424,17 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result.length === 0) {
     return notFound("Agent run not found");
   }
+
+  await db
+    .update(activeAgentRuns)
+    .set({ lastHeartbeatAt: heartbeatAt })
+    .where(
+      and(
+        eq(activeAgentRuns.runId, body.runId),
+        eq(activeAgentRuns.userId, auth.userId),
+      ),
+    );
+  signal.throwIfAborted();
 
   const typingRefreshIntervalSeconds = await settle(
     set(

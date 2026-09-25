@@ -36,6 +36,7 @@ import {
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
@@ -1441,7 +1442,15 @@ async function transitionClaimedJobToRunning(
         },
       );
       signal.throwIfAborted();
-      return decodeClaimTransitionResult(result);
+      const transition = decodeClaimTransitionResult(result);
+      if (transition.status === "claimed") {
+        await tx
+          .update(activeAgentRuns)
+          .set({ lastHeartbeatAt: transition.claimedAt })
+          .where(eq(activeAgentRuns.runId, runId));
+        signal.throwIfAborted();
+      }
+      return transition;
     });
   });
 }
