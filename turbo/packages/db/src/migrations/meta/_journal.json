@@ -1195,8 +1195,15 @@
     {
       "idx": 1248,
       "version": "7",
-      "when": 1790348873449,
-      "tag": "1248_chat_agent_run_context_owner_not_null",
+      "when": 1790347365037,
+      "tag": "1248_contract_chat_thread_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1249,
+      "version": "7",
+      "when": 1790349800849,
+      "tag": "1249_chat_agent_run_context_owner_not_null",
       "breakpoints": true
     }
   ]

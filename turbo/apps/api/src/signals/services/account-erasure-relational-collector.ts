@@ -434,7 +434,7 @@ function catalogueResolves(
   return path.length > 0;
 }
 
-/** Resolves descendant paths, including a root's transitional parent reaches.
+/** Resolves every declared descendant to the paths the sweep can delete it by.
  *
  * A catalogue foreign key to a declared parent is the ordinary case. Where the
  * schema deliberately declines the key, the inventory's declared reach supplies
@@ -455,11 +455,7 @@ function resolveDescendantPaths(
   const unreachable: string[] = [];
   const unattributable: string[] = [];
   for (const [table, entry] of Object.entries(ACCOUNT_OWNERSHIP_INVENTORY)) {
-    const parents =
-      entry.coverage === "user_descendant" || entry.coverage === "user_root"
-        ? entry.parents
-        : undefined;
-    if (!parents) {
+    if (entry.coverage !== "user_descendant") {
       continue;
     }
     if (table in UNATTRIBUTABLE_DESCENDANTS) {
@@ -468,7 +464,7 @@ function resolveDescendantPaths(
     }
     const resolved: RelationalDescendantPath[] = keys
       .filter((key) => {
-        return key.child === table && parents.includes(key.parent);
+        return key.child === table && entry.parents.includes(key.parent);
       })
       .map((key) => {
         return {
@@ -858,7 +854,7 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
-  "c57193cc-222d-4c6e-8776-201cd7cc352f";
+  "a5410500-8f74-41b3-92f5-c147ba9cd0e5";
 
 // The fence's own deadlines. A sweep waits for admission behind the exclusive
 // subject lock, so its lock timeout is the fence's, not a route's.
