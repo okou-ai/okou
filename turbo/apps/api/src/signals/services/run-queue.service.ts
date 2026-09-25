@@ -497,7 +497,6 @@ async function promoteQueuedCandidateInTransaction(
   const [lockedRun] = await tx
     .select({
       status: agentRuns.status,
-      triggerSource: agentRuns.triggerSource,
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
       modelProvider: agentRuns.modelProvider,
@@ -915,7 +914,7 @@ export const staleQueueOrgIds$ = command(
     signal: AbortSignal,
   ): Promise<readonly string[]> => {
     const writeDb = set(writeDb$);
-    const legacyOrgsWithQueued = await writeDb
+    const orgsWithQueued = await writeDb
       .selectDistinct({ orgId: agentRunQueue.orgId })
       .from(agentRunQueue)
       .where(
@@ -923,14 +922,7 @@ export const staleQueueOrgIds$ = command(
       );
     signal.throwIfAborted();
     const staleOrgIds: string[] = [];
-    const orgsWithQueued = [
-      ...new Set(
-        legacyOrgsWithQueued.map((row) => {
-          return row.orgId;
-        }),
-      ),
-    ];
-    for (const orgId of orgsWithQueued) {
+    for (const { orgId } of orgsWithQueued) {
       const capacity = await effectiveOrgConcurrencyState(
         writeDb,
         orgId,
