@@ -1,6 +1,6 @@
 {
-  "id": "3008f695-4414-45b2-9de0-8f4b7807a48b",
-  "prevId": "f4056535-d82c-4bb8-ba86-9ed5439c3f4c",
+  "id": "069b060d-f8e7-4310-9bc5-533c92ef424d",
+  "prevId": "97a3bc0d-5af1-4458-bd60-5a1151142ad6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7817,43 +7817,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.chat_event_retention_cursors": {
-      "name": "chat_event_retention_cursors",
-      "schema": "",
-      "columns": {
-        "scope_key": {
-          "name": "scope_key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "last_created_at": {
-          "name": "last_created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_event_id": {
-          "name": "last_event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sweep_started_at": {
-          "name": "sweep_started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.chat_event_search_message_watermarks": {
       "name": "chat_event_search_message_watermarks",
       "schema": "",
@@ -11514,6 +11477,22 @@
           "method": "btree",
           "with": {}
         },
+        "idx_computer_use_commands_running_host": {
+          "name": "idx_computer_use_commands_running_host",
+          "columns": [
+            {
+              "expression": "host_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "status = 'running'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_computer_use_commands_org_user": {
           "name": "idx_computer_use_commands_org_user",
           "columns": [
@@ -11729,21 +11708,6 @@
             },
             {
               "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_computer_use_hosts_last_seen": {
-          "name": "idx_computer_use_hosts_last_seen",
-          "columns": [
-            {
-              "expression": "last_seen_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

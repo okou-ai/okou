@@ -2084,6 +2084,7 @@
       "skipAutomationEvent": "跳过自动化事件"
     },
     "remoteAccess": {
+      "default": "默认",
       "defaultEnabled": "聊天默认启用",
       "enabledCount_other": "已启用 {{count}} 个",
       "loadFailed": "无法加载远程访问权限。",
@@ -2093,8 +2094,7 @@
       "requiresSsh": "还需要访问 SSH 主机 {{name}}。",
       "retry": "重试",
       "title": "远程访问",
-      "unavailableSsh": "不可用的 SSH 主机",
-      "useDefault": "使用默认设置"
+      "unavailableSsh": "不可用的 SSH 主机"
     },
     "replaceDraft": {
       "description": "继续将清空你当前的输入框草稿，并开始一个工作流提示词。",

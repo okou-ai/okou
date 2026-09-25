@@ -5,7 +5,13 @@ import {
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -87,6 +93,31 @@ function numberAction(
           min: "10",
           max: "20",
           step: "0.5",
+        },
+      },
+    ],
+  };
+}
+
+function dateTimeAction(
+  inputType: "date" | "time" | "datetime-local" | "month" | "week",
+  required: boolean,
+): Extract<BrowserUserActionResponse, { kind: "input" }> {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "arrival",
+        label: "Arrival",
+        fieldKind: "date_time",
+        required,
+        control: {
+          tagName: "INPUT",
+          inputType,
+          siteRequired: false,
+          min: undefined,
+          max: undefined,
+          step: "any",
         },
       },
     ],
@@ -563,6 +594,88 @@ test.each([
     ).toBeVisible();
     click(button("Add to browser"));
     await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  },
+);
+
+test.each([
+  { inputType: "date" as const, value: "2026-09-25" },
+  { inputType: "time" as const, value: "09:30" },
+  { inputType: "datetime-local" as const, value: "2026-09-25T09:30" },
+  { inputType: "month" as const, value: "2026-09" },
+  { inputType: "week" as const, value: "2026-W39" },
+])(
+  "A native $inputType picker submits its local canonical string",
+  async ({ inputType, value }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, { ...dateTimeAction(inputType, false), state });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, dateTimeAction(inputType, false));
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual([{ key: "arrival", value }]);
+      state = "succeeded";
+      return respond(200, { ...dateTimeAction(inputType, false), state });
+    });
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    const picker = within(form).getByLabelText(/Arrival/u);
+    expect(picker).toHaveAttribute("type", inputType);
+    expect(picker).toHaveAttribute("step", "any");
+    fireEvent.change(picker, { target: { value } });
+    click(button("Add to browser"));
+    await expect(
+      screen.findByText("Agent notified"),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each([
+  { clear: false, expected: [] },
+  { clear: true, expected: [{ key: "arrival", value: "" }] },
+])(
+  "An optional date can be untouched or explicitly cleared ($clear)",
+  async ({ clear, expected }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, { ...dateTimeAction("date", false), state });
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, dateTimeAction("date", false));
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      expect(body.values).toStrictEqual(expected);
+      state = "succeeded";
+      return respond(200, { ...dateTimeAction("date", false), state });
+    });
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    await screen.findByRole("form", { name: "Enter information in browser" });
+    if (clear) {
+      click(button("Clear website value"));
+    }
+    click(button("Add to browser"));
+    await expect(
+      screen.findByText("Agent notified"),
+    ).resolves.toBeInTheDocument();
   },
 );
 

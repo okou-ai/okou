@@ -232,34 +232,26 @@ function HostChoiceSelect({
   onChange: (enabled: boolean | null) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
+  const defaultLabel = t(($) => {
+    return $.chat.remoteAccess.default;
+  });
+  const onLabel = t(($) => {
+    return $.chat.remoteAccess.on;
+  });
+  const offLabel = t(($) => {
+    return $.chat.remoteAccess.off;
+  });
+  const defaultOnLabel = `${defaultLabel} (${onLabel})`;
+  const defaultOffLabel = `${defaultLabel} (${offLabel})`;
   const items = [
     {
       value: "default",
-      label: `${t(($) => {
-        return $.chat.remoteAccess.useDefault;
-      })} (${
-        host.defaultEnabled
-          ? t(($) => {
-              return $.chat.remoteAccess.on;
-            })
-          : t(($) => {
-              return $.chat.remoteAccess.off;
-            })
-      })`,
+      label: host.defaultEnabled ? defaultOnLabel : defaultOffLabel,
     },
-    {
-      value: "on",
-      label: t(($) => {
-        return $.chat.remoteAccess.on;
-      }),
-    },
-    {
-      value: "off",
-      label: t(($) => {
-        return $.chat.remoteAccess.off;
-      }),
-    },
+    { value: "on", label: onLabel },
+    { value: "off", label: offLabel },
   ];
+  const sizingLabels = [defaultOnLabel, defaultOffLabel, onLabel, offLabel];
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
       {protocol === "ssh" ? (
@@ -285,14 +277,41 @@ function HostChoiceSelect({
           );
         }}
       >
-        <SelectTrigger
-          variant="neutral"
-          className="h-8 w-40 shrink-0 py-1 text-sm"
-          aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent align="start" className="w-(--anchor-width)">
+        <div className="relative grid min-w-0 max-w-[min(12rem,calc(100%-1.5rem))] shrink-0 grid-cols-[minmax(0,1fr)]">
+          {sizingLabels.map((label) => {
+            return (
+              <span
+                key={label}
+                aria-hidden="true"
+                className="invisible col-start-1 row-start-1 flex h-8 items-center gap-2 whitespace-nowrap border px-3 py-1 pr-3.5 text-sm"
+              >
+                {label}
+                <span className="h-4 w-4 shrink-0" />
+              </span>
+            );
+          })}
+          <SelectTrigger
+            variant="neutral"
+            className="col-start-1 row-start-1 h-8 min-w-0 w-full py-1 text-sm"
+            aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
+          >
+            <SelectValue className="min-w-0">
+              {value === "default" ? (
+                <span className="flex min-w-0 w-full items-center">
+                  <span className="min-w-0 truncate">{defaultLabel}</span>
+                  <span className="shrink-0 whitespace-pre">
+                    {` (${host.defaultEnabled ? onLabel : offLabel})`}
+                  </span>
+                </span>
+              ) : value === "on" ? (
+                onLabel
+              ) : (
+                offLabel
+              )}
+            </SelectValue>
+          </SelectTrigger>
+        </div>
+        <SelectContent align="start" className="w-max max-w-[calc(100vw-2rem)]">
           {items.map((item) => {
             return (
               <SelectItem key={item.value} value={item.value}>

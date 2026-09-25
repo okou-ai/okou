@@ -913,8 +913,10 @@ function browserUseControlInspectionFunction(): string {
   return `function (...otherControls) {
     const controls = [this, ...otherControls];
     const supportedInputTypes = new Set([
-      "text", "password", "email", "tel", "url", "search", "number", "checkbox", "radio"
+      "text", "password", "email", "tel", "url", "search", "number",
+      "date", "time", "datetime-local", "month", "week", "checkbox", "radio"
     ]);
+    const dateTimeTypes = new Set(["date", "time", "datetime-local", "month", "week"]);
     return controls.map((control) => {
       const input = control instanceof HTMLInputElement;
       const textarea = control instanceof HTMLTextAreaElement;
@@ -925,9 +927,9 @@ function browserUseControlInspectionFunction(): string {
           option.value.length <= ${BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH}));
       const supported =
         textarea || select || (input && supportedInputTypes.has(control.type));
-      const textual = supported && (textarea || !["number", "checkbox", "radio"].includes(control.type));
-      const number = input && control.type === "number";
-      const boundedNumberConstraints = !number ||
+      const textual = supported && (textarea || !["number", "date", "time", "datetime-local", "month", "week", "checkbox", "radio"].includes(control.type));
+      const constrained = input && (control.type === "number" || dateTimeTypes.has(control.type));
+      const boundedNumberConstraints = !constrained ||
         [control.min, control.max, control.step].every((value) =>
           value.length <= ${BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH});
       return {
@@ -950,11 +952,11 @@ function browserUseControlInspectionFunction(): string {
           ? { maxLength: control.maxLength } : {}),
         ...(textual && input && control.pattern && control.pattern.length <= 512
           ? { pattern: control.pattern } : {}),
-        ...(number && boundedNumberConstraints && control.min
+        ...(constrained && boundedNumberConstraints && control.min
           ? { min: control.min } : {}),
-        ...(number && boundedNumberConstraints && control.max
+        ...(constrained && boundedNumberConstraints && control.max
           ? { max: control.max } : {}),
-        ...(number && boundedNumberConstraints && control.step
+        ...(constrained && boundedNumberConstraints && control.step
           ? { step: control.step } : {}),
       };
     });
@@ -2185,7 +2187,8 @@ async function validateBrowserUseApplyValues(
             return controls.every((control, index) => {
               const value = values[index];
               if (value === null) {
-                return !control.required || control.value !== "";
+                return !control.required || (control.value !== "" &&
+                  (!["date", "time", "datetime-local", "month", "week"].includes(control.type) || control.validity.valid));
               }
               if (typeof value !== "string") return false;
               if (control.minLength >= 0 && value.length < control.minLength) return false;
@@ -2356,14 +2359,16 @@ function browserUseMixedControlWriterFunction(): string {
                 : control instanceof HTMLTextAreaElement ? "textarea" : null;
               if (control.tagName !== spec.tagName || actualType !== spec.inputType || control.readOnly ||
                   control.required !== spec.required) return false;
+              const dateTime = control instanceof HTMLInputElement &&
+                ["date", "time", "datetime-local", "month", "week"].includes(control.type);
               const textual = control instanceof HTMLTextAreaElement ||
-                (control instanceof HTMLInputElement && !["number", "checkbox", "radio"].includes(control.type));
-              const number = control instanceof HTMLInputElement && control.type === "number";
+                (control instanceof HTMLInputElement && !["number", "date", "time", "datetime-local", "month", "week", "checkbox", "radio"].includes(control.type));
+              const constrained = control instanceof HTMLInputElement && (control.type === "number" || dateTime);
               if ((control instanceof HTMLInputElement && control.type === "email" ? control.multiple : false) !== spec.multiple ||
                   (textual && (control.minLength !== (spec.minLength ?? -1) ||
                     control.maxLength !== (spec.maxLength ?? -1) ||
                     (control instanceof HTMLInputElement && (control.pattern || undefined) !== spec.pattern))) ||
-                  (number && ((control.min || undefined) !== spec.min ||
+                  (constrained && ((control.min || undefined) !== spec.min ||
                     (control.max || undefined) !== spec.max ||
                     (control.step || undefined) !== spec.step))) return false;
               if (spec.value === null) {
@@ -2376,7 +2381,7 @@ function browserUseMixedControlWriterFunction(): string {
                   !(control.maxLength >= 0 && value.length > control.maxLength) &&
                   control.validity.valid;
               }
-              return !final || control.value === spec.value;
+              return !final || (control.value === spec.value && (!dateTime || control.validity.valid));
             }
             if (!(control instanceof HTMLSelectElement) ||
                 (control.multiple ? "select-multiple" : "select-one") !== spec.mode ||
@@ -2432,6 +2437,19 @@ function browserUseMixedControlWriterFunction(): string {
           }
           return controls.every((control, index) => matches(control, specs[index], true));
         }`;
+}
+
+function needsIndependentBrowserUseVerification(
+  fields: readonly ResolvedBrowserUseUserActionField[],
+): boolean {
+  return fields.some((field) => {
+    return (
+      field.radio !== undefined ||
+      ["date", "time", "datetime-local", "month", "week"].includes(
+        field.inspection.inputType,
+      )
+    );
+  });
 }
 
 async function writeBrowserUseMixedControlFields(
@@ -2533,11 +2551,7 @@ async function writeBrowserUseMixedControlFields(
   if (result.result.value !== true) {
     throw new BrowserUseUserActionMutationError(true);
   }
-  if (
-    args.fields.some((field) => {
-      return field.radio !== undefined;
-    })
-  ) {
+  if (needsIndependentBrowserUseVerification(args.fields)) {
     // A separate CDP task observes microtasks queued by the website's event handlers.
     const verified = browserUseCdpValueSchema.parse(
       await sendBrowserUseCdpCommand(
@@ -2606,7 +2620,13 @@ async function applyBrowserUseUserActionOnSocket(
       return (
         field.inspection.tagName === "SELECT" ||
         field.inspection.inputType === "checkbox" ||
-        field.inspection.inputType === "radio"
+        field.inspection.inputType === "radio" ||
+        (resolved.fields.some((candidate) => {
+          return candidate.value !== undefined;
+        }) &&
+          ["date", "time", "datetime-local", "month", "week"].includes(
+            field.inspection.inputType,
+          ))
       );
     })
   ) {

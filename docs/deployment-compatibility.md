@@ -5,7 +5,7 @@
 Discord has no production users, so this change ships without a staged
 compatibility window.
 
-- Migration `1241_drop_discord_chat_deliveries` drops `discord_chat_deliveries`
+- Migration `1242_drop_discord_chat_deliveries` drops `discord_chat_deliveries`
   with its foreign keys into `chat_events`, then the
   `chat_events_id_thread_unique` constraint that only backed the composite
   foreign key, and the redundant `idx_chat_events_run_id` (covered by
@@ -15,7 +15,7 @@ compatibility window.
   also fails with `account_erasure_relational:catalogue_absent:discord_chat_deliveries`
   and retries until it runs on this API; rolling back below this API stalls
   erasure jobs the same way.
-- Migration `1242_chat_event_retention_cursors` adds the retention sweep
+- Migration `1243_chat_event_retention_cursors` adds the retention sweep
   cursor. Retention now reads candidates with bounded, unlocked single-table
   queries and deletes them by ID in short statements, without the advisory
   lock, `FOR UPDATE SKIP LOCKED` or the in-transaction remainder scan. The cron
@@ -40,7 +40,7 @@ or channel revocation are unchanged.
 
 The API no longer writes or reads `discord_chat_deliveries`, and the test-only
 Discord delivery drain endpoint is removed. Migration
-`1241_drop_discord_chat_deliveries` drops the table (see below).
+`1242_drop_discord_chat_deliveries` drops the table (see below).
 
 ## Completed Clerk deletion receipt index retirement (2026-09-25)
 

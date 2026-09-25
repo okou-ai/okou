@@ -1146,15 +1146,22 @@
     {
       "idx": 1241,
       "version": "7",
-      "when": 1790335766334,
-      "tag": "1241_drop_discord_chat_deliveries",
+      "when": 1790336867908,
+      "tag": "1241_computer_use_host_liveness_indexes",
       "breakpoints": true
     },
     {
       "idx": 1242,
       "version": "7",
-      "when": 1790335773329,
-      "tag": "1242_chat_event_retention_cursors",
+      "when": 1790339335458,
+      "tag": "1242_drop_discord_chat_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 1243,
+      "version": "7",
+      "when": 1790339342209,
+      "tag": "1243_chat_event_retention_cursors",
       "breakpoints": true
     }
   ]
