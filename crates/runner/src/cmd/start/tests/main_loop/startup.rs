@@ -923,4 +923,18 @@ server:
         "unexpected error: {error}"
     );
     assert_eq!(create_calls.load(Ordering::SeqCst), 0);
+    // The composition root allocates the host-owned identity under the base-dir
+    // lock before later local-provider setup, even when that setup fails.
+    uuid::Uuid::parse_str(
+        &tokio::fs::read_to_string(base_dir.join("runner_id"))
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        tokio::fs::read_to_string(base_dir.join("heartbeat_generation"))
+            .await
+            .unwrap(),
+        "1"
+    );
 }

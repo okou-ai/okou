@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+mod persistence;
+pub use persistence::load_runner_process_identity;
+
 const JAVASCRIPT_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 /// Stable identity of one runner process generation.
