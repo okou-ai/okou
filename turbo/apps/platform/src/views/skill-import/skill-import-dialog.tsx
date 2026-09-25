@@ -156,17 +156,23 @@ export function SkillImportDialog() {
             })}
           </DialogDescription>
         </DialogHeader>
-        {disclosure === "prompt-first" ? (
-          <>
-            <SkillImportPromptSection />
-            <ImportedSkillList skills={imported} />
-          </>
-        ) : (
-          <>
-            <ImportedSkillList skills={imported} />
-            <SkillImportPromptDisclosure expanded={disclosure === "expanded"} />
-          </>
-        )}
+        {/* The dialog body is a grid, whose items would otherwise grow to
+            the prompt's widest line instead of the dialog's width. */}
+        <div className="flex min-w-0 flex-col gap-4">
+          {disclosure === "prompt-first" ? (
+            <>
+              <SkillImportPromptSection />
+              <ImportedSkillList skills={imported} />
+            </>
+          ) : (
+            <>
+              <ImportedSkillList skills={imported} />
+              <SkillImportPromptDisclosure
+                expanded={disclosure === "expanded"}
+              />
+            </>
+          )}
+        </div>
         <DialogFooter>
           <Button
             type="button"

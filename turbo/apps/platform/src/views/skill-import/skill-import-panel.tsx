@@ -19,13 +19,15 @@ function SkillImportPromptBody({ prompt }: { readonly prompt: string }) {
   return (
     <pre
       // A named, focusable scroll container: the prompt is long, so it is
-      // read and selected where it stands rather than in a dialog.
+      // read and selected where it stands. The session token and URLs are
+      // single unbroken tokens, so they may wrap anywhere rather than widen
+      // whatever holds the prompt.
       role="region"
       tabIndex={0}
       aria-label={t(($) => {
         return $.onboarding.sourcesFirst.skills.promptLabel;
       })}
-      className="max-h-[240px] overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border/60 bg-muted/30 p-4 font-mono text-xs leading-5 text-muted-foreground"
+      className="max-h-[240px] overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-xl border border-border/60 bg-muted/30 p-4 font-mono text-xs leading-5 text-muted-foreground"
     >
       {prompt}
     </pre>

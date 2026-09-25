@@ -287,6 +287,10 @@ test("Reopening the dialog after an import leads with the imported skills", asyn
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+  // Closing brings the page's own list up to date with what arrived.
+  await expect(
+    screen.findByText("Imported from Claude Code"),
+  ).resolves.toBeVisible();
 
   click(getButtonNamed("Import skills"));
   dialog = await findDialog();

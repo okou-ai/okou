@@ -6,6 +6,7 @@
  */
 import { command, computed, state } from "ccstate";
 import { resetSignal } from "../utils.ts";
+import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import {
   createSkillImportSignals,
   type SkillImportProvider,
@@ -67,9 +68,16 @@ export const openSkillImportDialog$ = command(
   },
 );
 
-export const closeSkillImportDialog$ = command(({ set }) => {
+/**
+ * Closing stops the poll. Skills it saw arrive are already workflows, so the
+ * workflow list is asked again rather than left without them until a reload.
+ */
+export const closeSkillImportDialog$ = command(({ get, set }) => {
   set(internalOpen$, false);
   set(resetSkillImport$);
+  if (get(skillImportDialogSignals.state$).imported.length > 0) {
+    set(reloadWorkflowData$);
+  }
 });
 
 /** Writing the prompt for another tool needs a session for that tool. */
