@@ -64,7 +64,6 @@ const discordUploadResponseSchema = z.object({
       status: z.literal("failed"),
       message: z.string(),
       retryable: z.boolean(),
-      retryAfterSeconds: z.number().int().nonnegative().optional(),
     }),
   ]),
 });
