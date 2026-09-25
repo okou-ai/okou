@@ -926,7 +926,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
   });
 
-  it("returns a scoped R2 URL to capable clients and inline R2 data to header-less iOS", async () => {
+  it("returns a scoped R2 URL for snapshots with or without the capability header", async () => {
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
@@ -965,8 +965,15 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const client = setupApp({ context, routes: chatThreadRoutes })(
       chatThreadsContract,
     );
-    // Native iOS omits the capability header and still decodes inline data.
-    const iosResponse = await accept(
+    await setChatThreadSnapshotObjectKeyFixture({
+      userId: actor.userId,
+      orgId: actor.orgId,
+      latestSeqId: materialized.latestSeqId,
+      body: Buffer.from("{}"),
+    });
+
+    // The API must not read or materialize the R2 object for either request.
+    const headerlessResponse = await accept(
       client.snapshot({
         headers: okouCapabilityHeaders(
           actor,
@@ -976,13 +983,13 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       }),
       [200],
     );
-    expect(iosResponse.body).toStrictEqual(materialized);
-    await setChatThreadSnapshotObjectKeyFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
+    expect(headerlessResponse.body).toMatchObject({
+      url: expect.any(String),
+      expiresInSeconds: expect.any(Number),
+      latestEventId: materialized.latestEventId,
       latestSeqId: materialized.latestSeqId,
-      body: Buffer.from("{}"),
     });
+    expect("chatThreads" in headerlessResponse.body).toBeFalsy();
 
     const capableClientHeaders = {
       ...okouCapabilityHeaders(

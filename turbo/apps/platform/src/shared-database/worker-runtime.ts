@@ -1046,8 +1046,8 @@ export class SharedDatabaseWorkerRuntime {
       throw new SharedDatabaseHttpError(snapshot.status);
     }
     if ("chatThreads" in snapshot.body) {
-      // New App -> old API or an unbackfilled DB row: keep inline responses
-      // until old API targets and legacy rows are gone (follow-up #36375).
+      // A rollback-window API can still return an inline snapshot. The current
+      // API returns this shape only for a scope without a snapshot row.
       return snapshot.body;
     }
     const response = await fetchResource(snapshot.body.url, {}, signal);
