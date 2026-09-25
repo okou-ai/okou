@@ -6,7 +6,6 @@ import {
   jsonb,
   boolean,
   varchar,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { agents } from "../schema/agent";
@@ -16,10 +15,6 @@ import type {
   ChatThreadDraftUserMessage,
 } from "@okouai/db/jsonb-contracts/chat-thread";
 import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
-import {
-  resolveAgentRunId,
-  resolveAgentSessionId,
-} from "../schema/agent-run-reference";
 
 import type { ChatThreadProvenance } from "../schema/chat-thread";
 
@@ -46,23 +41,16 @@ export function chatThreadColumns() {
     /**
      * Canonical application session for runs admitted on this thread.
      * Every thread-bound run source resolves continuation through this binding.
+     * No FK: binding writes must not lock agent_sessions, and a deleted session
+     * resolves to "initialized" because continuity left-joins it.
      */
-    agentSessionId: uuid("agent_session_id").references(
-      (): AnyPgColumn => {
-        return resolveAgentSessionId();
-      },
-      { onDelete: "set null" },
-    ),
+    agentSessionId: uuid("agent_session_id"),
     /**
      * Run whose final admission most recently established agentSessionId.
      * Provides route provenance for session rotation and binding snapshots.
+     * No FK, for the same reason as agentSessionId; a dangling id is harmless.
      */
-    agentSessionRunId: uuid("agent_session_run_id").references(
-      (): AnyPgColumn => {
-        return resolveAgentRunId();
-      },
-      { onDelete: "set null" },
-    ),
+    agentSessionRunId: uuid("agent_session_run_id"),
     /**
      * Retired: the composer draft lives in `chat_thread_drafts`. Nothing reads
      * or writes this column; the contract release drops it.

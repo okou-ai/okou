@@ -29,7 +29,7 @@ forwarded sends, now leave the user's draft in place. If the client's clearing
 The web client now refetches the sidebar drafts listing only when a save adds
 or removes a thread's draft, instead of after every debounced save.
 
-Migration `1243_chat_thread_drafts_user_backfill` drops the
+Migration `1244_chat_thread_drafts_user_backfill` drops the
 `chat_thread_drafts` → `chat_threads` foreign key, so a draft write takes no
 lock on the thread row. It adds `chat_thread_drafts.user_id` with an index,
 copies drafts that exist only in the legacy `chat_threads.draft_user_message` /
