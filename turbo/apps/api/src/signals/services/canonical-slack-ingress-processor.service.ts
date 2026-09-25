@@ -561,6 +561,17 @@ async function fetchCanonicalConversationContext(args: {
   return { executionContext: "" };
 }
 
+/**
+ * Slack API failures keep the ingress retry classification: a revoked token is
+ * terminal and a rate limit is retryable. Only unclassified lookup failures and
+ * the optional-context authorization errors handled above are omitted.
+ */
+function rethrowClassifiedSlackFailure(error: unknown): void {
+  if (slackMessageClientFailure(error)) {
+    throw error;
+  }
+}
+
 async function loadCanonicalSlackEnrichment(
   args: {
     readonly client: SlackClient;
@@ -586,7 +597,8 @@ async function loadCanonicalSlackEnrichment(
           userInfoResolver,
         });
       },
-      () => {
+      (error) => {
+        rethrowClassifiedSlackFailure(error);
         return {
           prompt: messageContent,
           displayContent: messageContent,
@@ -606,7 +618,8 @@ async function loadCanonicalSlackEnrichment(
           userInfoResolver,
         });
       },
-      () => {
+      (error) => {
+        rethrowClassifiedSlackFailure(error);
         return { executionContext: "" };
       },
       signal,

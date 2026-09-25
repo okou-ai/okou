@@ -8,13 +8,13 @@
 //! The sibling modules keep focused responsibilities out of this orchestration
 //! file:
 //! - `factory_lifecycle`: sandbox factory creation and shutdown.
-//! - `runner-supervisor`: idle-pool, heartbeat, ownership, completion settlement, and orphan-recovery policy.
+//! - `runner-supervisor`: idle-pool, heartbeat, claimed activation ownership, completion settlement, and orphan-recovery policy.
 //! - `identity`: persistent runner id storage.
 //! - `job_discovery`: discovery branch handling and idle-reuse admission.
 //! - `job_spawn`: claimed job task spawning, completion, and panic cleanup.
 //! - `job_terminal_log`: terminal outcome tracing and diagnostic projection.
 //! - `mitm_restart`: mitmproxy crash restart and backoff.
-//! - `sandbox_finalization`: post-executor sandbox park/destroy finalization.
+//! - `runner-supervisor::sandbox_finalization`: post-executor park/handoff/destroy policy.
 //! - `signals`: lifecycle signal registration, task ownership, and dispatch.
 //!
 //! Important invariants:
@@ -97,7 +97,6 @@ mod job_spawn;
 mod job_terminal_log;
 mod mitm_restart;
 mod prune_idle;
-mod sandbox_finalization;
 mod signals;
 
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
@@ -1702,6 +1701,34 @@ fn maybe_panic_outer_job(
 ) {
     if configured == Some(point) {
         panic!("simulated outer job panic at {point:?} for {run_id}");
+    }
+}
+
+#[cfg(test)]
+fn finalization_test_hooks(
+    configured: Option<OuterJobPanicPoint>,
+    observer: StartLoopTestObserver,
+) -> runner_supervisor::sandbox_finalization::FinalizationTestHooks {
+    use runner_supervisor::sandbox_finalization::{FinalizationTestEvent, FinalizationTestHooks};
+
+    FinalizationTestHooks {
+        on_event: Some(Arc::new(move |event| match event {
+            FinalizationTestEvent::BeforeIdlePoolOwnershipTransfer { run_id } => {
+                observer.notify_before_idle_pool_ownership_transfer(run_id);
+            }
+            FinalizationTestEvent::SandboxParkedForReuse { run_id, reuse_key } => {
+                observer.notify_sandbox_parked_for_reuse(run_id, reuse_key);
+            }
+            FinalizationTestEvent::HandoffOwned { run_id } => {
+                maybe_panic_outer_job(configured, OuterJobPanicPoint::HandoffOwned, run_id);
+            }
+            FinalizationTestEvent::IdlePoolOwned { run_id } => {
+                maybe_panic_outer_job(configured, OuterJobPanicPoint::IdlePoolOwned, run_id);
+            }
+            FinalizationTestEvent::DestroyCompleted { run_id } => {
+                maybe_panic_outer_job(configured, OuterJobPanicPoint::DestroyCompleted, run_id);
+            }
+        })),
     }
 }
 

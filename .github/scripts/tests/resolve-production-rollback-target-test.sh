@@ -54,6 +54,8 @@ case "${1:-}" in
       [ "${MOCK_CHAT_EVENT_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
       [ "${MOCK_SNAPSHOT_R2_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1111111111111111111111111111111111111111" ]; then
+      [ "${MOCK_AGENTPHONE_BRAND_DROP_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
       [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "f205ec54fc463f43b1106a3659e5d6a8c979cab8" ]; then
@@ -83,6 +85,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CHAT_EVENT_READER_COMMIT-ffffffffffffffffffffffffffffffffffffffff}"
     elif [[ "$*" == *chat-thread-snapshot-object.ts* ]]; then
       printf '%s\n' "${MOCK_SNAPSHOT_R2_READER_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
+    elif [[ "$*" == *1228_drop_agentphone_public_brand.sql* ]]; then
+      printf '%s\n' "${MOCK_AGENTPHONE_BRAND_DROP_COMMIT-1111111111111111111111111111111111111111}"
     else
       printf '%s\n' "${MOCK_PRIVACY_READER_COMMIT-dddddddddddddddddddddddddddddddddddddddd}"
     fi
@@ -189,6 +193,7 @@ grep -Fxq "git merge-base --is-ancestor 8d8f3a3e14d23f7471e0773bd9acb988f59217af
 grep -Fxq "git merge-base --is-ancestor 322efb6d72508e15b90dc788100a776da1485751 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi session-construction digest reader floor"
 grep -Fxq "git merge-base --is-ancestor 065f970bbb8c21c10ef709495d5824d0a6183e50 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the artifact/chat explicit-writer floor"
 grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot R2 reader floor"
+grep -Fxq "git merge-base --is-ancestor 1111111111111111111111111111111111111111 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the AgentPhone public_brand drop floor"
 grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -681,6 +686,23 @@ assert_failure "Rollback target predates the chat thread snapshot R2 reader" \
 [ ! -s "${tmp_dir}/snapshot-r2-floor.output" ] || fail "old snapshot reader must not publish outputs"
 if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "snapshot R2 reader floor must be checked before artifact resolution"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged AgentPhone public_brand drop" \
+    run_resolver "${tmp_dir}/agentphone-brand-history.output" "MOCK_AGENTPHONE_BRAND_DROP_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/agentphone-brand-history.output" ] || fail "missing AgentPhone drop history must not publish outputs"
+  if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "missing AgentPhone drop history must fail before artifact resolution"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the AgentPhone public_brand drop" \
+  run_resolver "${tmp_dir}/agentphone-brand-floor.output" MOCK_AGENTPHONE_BRAND_DROP_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/agentphone-brand-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "AgentPhone public_brand drop floor must be checked before artifact resolution"
 fi
 
 # Verify the real Git history boundary, including the cleanup file's later

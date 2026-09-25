@@ -66,14 +66,13 @@ Lock strength follows the actual constraints and writers:
 - `agents` carries the `idx_agents_id_org_owner` unique key over
   `(id, org_id, owner)`, so an owner or organization move is a **key** update.
   KEY SHARE conflicts with it and with Agent deletion, which cascades the thread.
-- `chat_threads` has no unique key containing `user_id` or `agent_id`, and no
-  production writer updates either column; the repository's only writers of those
-  columns are test fixtures. Its KEY SHARE conflicts with the `FOR UPDATE` that
-  `deleteChatThread$` takes before removing the projection rows, and with Agent
-  cascade deletion, while leaving ordinary thread updates such as
-  `lastMessageAt`/`lastChatEventSeqId` free. The projector therefore still does
-  not serialize against ordinary chat-event writes.
-- Because a non-key ownership move would not conflict, the ownership tuple is
+- `chat_threads` carries the `(id, user_id)` ownership key, so KEY SHARE retains
+  its user. `agent_id` remains non-key; no production writer transfers either
+  identity field. KEY SHARE also conflicts with the `FOR UPDATE` taken by
+  `deleteChatThread$` and with Agent cascade deletion, while leaving ordinary
+  non-key updates such as `lastMessageAt`/`lastChatEventSeqId` free. The projector
+  therefore still does not serialize against ordinary chat-event writes.
+- Because a non-key Agent rebind would not conflict, the ownership tuple is
   re-read under the retained locks. A transfer committed between selection and
   lock acquisition rolls the attempt back instead of relabelling prepared
   content or expanding the admitted subject set after the business locks.

@@ -8,6 +8,78 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.673.1](https://github.com/okou-ai/okou/compare/api-v1.673.0...api-v1.673.1) (2026-09-24)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#36754](https://github.com/okou-ai/okou/issues/36754)) ([cc5147f](https://github.com/okou-ai/okou/commit/cc5147f9b25b62821d11daa489a0a96b7bdbf92e))
+
+
+### Performance Improvements
+
+* **app:** edge-prefetch org and model preferences, exchange ably token on the server ([#36731](https://github.com/okou-ai/okou/issues/36731)) ([c6495e1](https://github.com/okou-ai/okou/commit/c6495e1927c69bf5479300e841a9805df59d0a77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.1
+    * @okouai/core bumped to 8.710.1
+    * @okouai/db bumped to 1.297.1
+    * @okouai/pi-agent-runtime bumped to 1.40.13
+
+## [1.673.0](https://github.com/okou-ai/okou/compare/api-v1.672.0...api-v1.673.0) (2026-09-24)
+
+
+### Features
+
+* **access:** promote personal configurations and review shared deletion ([#36715](https://github.com/okou-ai/okou/issues/36715)) ([aa20d6a](https://github.com/okou-ai/okou/commit/aa20d6a8609326008f5da853bd9db75d0ad1d204))
+* add verified discord integration foundation ([#36665](https://github.com/okou-ai/okou/issues/36665)) ([fdeb98f](https://github.com/okou-ai/okou/commit/fdeb98f05f1ef4d51eb44dfed1f4bd4244fe74be))
+* **api:** add discord commands and account interactions ([#36659](https://github.com/okou-ai/okou/issues/36659)) ([af9be5c](https://github.com/okou-ai/okou/commit/af9be5c5d0a04d2425c5187f7d7717ff2dbbf897))
+* **discord:** add authorized native reads and message tools ([#36661](https://github.com/okou-ai/okou/issues/36661)) ([dafe827](https://github.com/okou-ai/okou/commit/dafe827d3ddc4fe391776c35e49a36022d4397c6))
+* **discord:** add canonical chat ingress and reply delivery ([#36685](https://github.com/okou-ai/okou/issues/36685)) ([99ddcab](https://github.com/okou-ai/okou/commit/99ddcab5538b064d842ad523f50579f3d14ebe1e))
+
+
+### Refactoring
+
+* **agentphone:** retire public brand and connect link brand signature ([#36722](https://github.com/okou-ai/okou/issues/36722)) ([3c4cdb4](https://github.com/okou-ai/okou/commit/3c4cdb4a0d241eed624b878dcd7b4717513e3724))
+* **morning-brief:** remove settings status line, realtime refresh and collection account ([#36719](https://github.com/okou-ai/okou/issues/36719)) ([8d8de09](https://github.com/okou-ai/okou/commit/8d8de09466c1ef81d3d2017e75351b315aa40b0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.0
+    * @okouai/core bumped to 8.710.0
+    * @okouai/db bumped to 1.297.0
+    * @okouai/pi-agent-runtime bumped to 1.40.12
+
+## [1.672.0](https://github.com/okou-ai/okou/compare/api-v1.671.1...api-v1.672.0) (2026-09-24)
+
+
+### Features
+
+* **browser:** guide agents to request only user-owned native input ([#36726](https://github.com/okou-ai/okou/issues/36726)) ([d3d8c0c](https://github.com/okou-ai/okou/commit/d3d8c0c03c417ba046eb00bfdc2db1d863c0f9ed))
+* **platform:** add the get started imessage quest and unify the phone connect dialog ([#36655](https://github.com/okou-ai/okou/issues/36655)) ([fc14031](https://github.com/okou-ai/okou/commit/fc140318a21f6ae3ea2c350abf9482e67a089482))
+
+
+### Refactoring
+
+* **api:** decouple chat event writes behind a two-release bridge ([#36614](https://github.com/okou-ai/okou/issues/36614)) ([63ad2ee](https://github.com/okou-ai/okou/commit/63ad2eed786e3f36eb9341f4db436b95a1eac6e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.506.0
+    * @okouai/core bumped to 8.709.0
+    * @okouai/db bumped to 1.296.0
+    * @okouai/pi-agent-runtime bumped to 1.40.11
+
 ## [1.671.1](https://github.com/okou-ai/okou/compare/api-v1.671.0...api-v1.671.1) (2026-09-24)
 
 

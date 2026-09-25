@@ -39,7 +39,7 @@ const CHAT_EVENT_SCHEMA_HEADERS = {
 const CACHE_SCHEMA_VERSION_FILE = ".okou-chat-event-schema-version";
 const CACHE_SCHEMA_VERSION_BODY = `${CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString()}\n`;
 
-function rawEventRow(seqId: number): ChatEventRow {
+function rawEventRow(seqId: number) {
   return {
     id: `00000000-0000-4000-8000-${String(seqId).padStart(12, "0")}`,
     chatThreadId: THREAD_ID,
@@ -53,7 +53,7 @@ function rawEventRow(seqId: number): ChatEventRow {
     runEventId: null,
     seqId,
     createdAt: "2026-08-12T10:00:00.000Z",
-  };
+  } satisfies ChatEventRow;
 }
 
 function failedEventRow(seqId: number): ChatEventRow {
@@ -71,6 +71,28 @@ function failedEventRow(seqId: number): ChatEventRow {
     runEventId: null,
     seqId,
     createdAt: "2026-08-12T10:00:00.000Z",
+  };
+}
+
+function discordEventRow(seqId: number): ChatEventRow {
+  return {
+    ...rawEventRow(seqId),
+    eventType: "input.prompt",
+    contextType: "discord",
+    contextId: "00000000-0000-4000-8000-000000000098",
+    payload: {
+      userMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text: "Review this Discord message" },
+          {
+            type: "source",
+            kind: "discord",
+            href: "https://discord.com/channels/111111111111111111/222222222222222222/333333333333333333",
+          },
+        ],
+      },
+    },
   };
 }
 
@@ -123,7 +145,7 @@ describe("okou chat messages command", () => {
   it("synchronizes a snapshot and hot event files", async () => {
     const outputDirectory = await createOutputDirectory();
     const snapshotLastRow = failedEventRow(2);
-    const snapshotRows = [rawEventRow(1), snapshotLastRow];
+    const snapshotRows = [discordEventRow(1), snapshotLastRow];
     const hotRow = failedEventRow(3);
     server.use(
       http.get(SNAPSHOT_URL, ({ request }) => {

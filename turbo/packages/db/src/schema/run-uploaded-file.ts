@@ -27,6 +27,7 @@ export const RUN_UPLOADED_FILE_SOURCES = [
   "goal",
   "web",
   "slack",
+  "discord",
   "teams",
   "feishu",
   "lark",

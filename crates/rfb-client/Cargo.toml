@@ -1,6 +1,6 @@
 [package]
 name = "rfb-client"
-version = "0.14.0"
+version = "0.15.0"
 edition.workspace = true
 publish = false
 description = "Bounded RFB authentication, captures and serialized input"
@@ -14,6 +14,8 @@ getrandom = { workspace = true }
 hmac = { workspace = true, features = ["zeroize"] }
 md-5 = { workspace = true }
 png = { workspace = true }
+rand = { version = "0.10", default-features = false, features = ["std", "std_rng", "sys_rng"] }
+rsa = { workspace = true, features = ["encoding", "std"] }
 rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
 sha2 = { workspace = true, features = ["zeroize"] }
 subtle = { workspace = true }

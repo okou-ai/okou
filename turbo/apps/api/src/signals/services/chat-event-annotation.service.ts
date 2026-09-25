@@ -7,7 +7,7 @@ type UserMessageSourcePart = Extract<
 
 type ChatEventSourceContext =
   | {
-      readonly kind: "slack";
+      readonly kind: "slack" | "discord";
       readonly messagePermalink: string | null;
     }
   | {
@@ -145,7 +145,7 @@ export function createChatEventSourcePart(
   context: ChatEventSourceContext,
 ): UserMessageSourcePart {
   let href: string | undefined;
-  if (context.kind === "slack") {
+  if (context.kind === "slack" || context.kind === "discord") {
     href = storedHref(context.messagePermalink);
   } else if (context.kind === "feishu" || context.kind === "lark") {
     href = storedHref(context.chatOpenUrl);

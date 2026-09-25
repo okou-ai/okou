@@ -1,5 +1,44 @@
 # Changelog
 
+## [9.360.1](https://github.com/okou-ai/okou/compare/cli-v9.360.0...cli-v9.360.1) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.507.1
+    * @okouai/core bumped to 8.710.1
+    * @okouai/pi-agent-runtime bumped to 1.40.13
+
+## [9.360.0](https://github.com/okou-ai/okou/compare/cli-v9.359.5...cli-v9.360.0) (2026-09-24)
+
+
+### Features
+
+* **discord:** add authorized native reads and message tools ([#36661](https://github.com/okou-ai/okou/issues/36661)) ([dafe827](https://github.com/okou-ai/okou/commit/dafe827d3ddc4fe391776c35e49a36022d4397c6))
+* **discord:** add canonical chat ingress and reply delivery ([#36685](https://github.com/okou-ai/okou/issues/36685)) ([99ddcab](https://github.com/okou-ai/okou/commit/99ddcab5538b064d842ad523f50579f3d14ebe1e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.507.0
+    * @okouai/core bumped to 8.710.0
+    * @okouai/pi-agent-runtime bumped to 1.40.12
+
+## [9.359.5](https://github.com/okou-ai/okou/compare/cli-v9.359.4...cli-v9.359.5) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.506.0
+    * @okouai/core bumped to 8.709.0
+    * @okouai/pi-agent-runtime bumped to 1.40.11
+
 ## [9.359.4](https://github.com/okou-ai/okou/compare/cli-v9.359.3...cli-v9.359.4) (2026-09-24)
 
 

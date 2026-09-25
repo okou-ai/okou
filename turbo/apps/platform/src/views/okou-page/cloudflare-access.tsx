@@ -18,6 +18,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  surfaceVariants,
 } from "@okouai/ui";
 import {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
@@ -28,14 +29,25 @@ import {
 import {
   acceptCloudflareAccessConflictReview$,
   acknowledgeCloudflareAccessConversion$,
+  acknowledgeCloudflareAccessDeletion$,
+  acknowledgeCloudflareAccessPromotion$,
   chooseCloudflareAccessScope$,
   closeCloudflareAccessDialog$,
   closeCloudflareAccessConversion$,
+  closeCloudflareAccessDeletion$,
+  closeCloudflareAccessPromotion$,
   cloudflareAccessConfigs$,
   cloudflareAccessConversionAcknowledgedSnapshot$,
   cloudflareAccessConversionDialog$,
   cloudflareAccessConversionError$,
   cloudflareAccessConversionPreview$,
+  cloudflareAccessDeletionAcknowledged$,
+  cloudflareAccessDeletionDialog$,
+  cloudflareAccessDeletionError$,
+  cloudflareAccessDeletionPreview$,
+  cloudflareAccessPromotionDialog$,
+  cloudflareAccessPromotionError$,
+  cloudflareAccessPromotionAcknowledged$,
   cloudflareAccessConflict$,
   cloudflareAccessConflictReview$,
   cloudflareAccessCreateScope$,
@@ -44,12 +56,17 @@ import {
   cloudflareAccessSaveMessage$,
   cloudflareAccessSaveUncertain$,
   confirmCloudflareAccessConversion$,
+  confirmCloudflareAccessDeletion$,
+  confirmCloudflareAccessPromotion$,
   mountCloudflareAccessForm$,
   openCloudflareAccessDialog$,
   openCloudflareAccessConversion$,
+  openCloudflareAccessDeletion$,
+  openCloudflareAccessPromotion$,
   replaceCloudflareAccessToken$,
   retryCloudflareAccess$,
   reviewCloudflareAccessConversion$,
+  reviewCloudflareAccessDeletion$,
   saveCloudflareAccess$,
   type CloudflareAccessDialogState,
 } from "../../signals/cloudflare-access.ts";
@@ -687,6 +704,285 @@ function CloudflareAccessConversionDecision({
   );
 }
 
+export function CloudflareAccessPromotionDialog() {
+  const { t } = useTranslation();
+  const dialog = useLoadable(cloudflareAccessPromotionDialog$);
+  const error = useGet(cloudflareAccessPromotionError$);
+  const acknowledged = useGet(cloudflareAccessPromotionAcknowledged$);
+  const setAcknowledged = useSet(acknowledgeCloudflareAccessPromotion$);
+  const close = useSet(closeCloudflareAccessPromotion$);
+  const [saving, confirm] = useLoadableSet(confirmCloudflareAccessPromotion$);
+  const signal = useGet(pageSignal$);
+  const current = dialog.state === "hasData" ? dialog.data : null;
+  if (!current) {
+    return null;
+  }
+  const isSaving = saving.state === "loading";
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !isSaving) {
+          close();
+        }
+      }}
+    >
+      <DialogContent key={current.configId} contentClassName="flex flex-col">
+        <DialogHeader>
+          <DialogTitle>
+            {t(($) => {
+              return $.cloudflareAccess.promote;
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(($) => {
+              return $.cloudflareAccess.promoteHelp;
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="grid gap-4">
+          <p className="font-medium">{current.name}</p>
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              checked={acknowledged}
+              disabled={isSaving || !!error}
+              onCheckedChange={(checked) => {
+                return setAcknowledged(checked === true);
+              }}
+            />
+            {t(($) => {
+              return $.cloudflareAccess.promoteConfirm;
+            })}
+          </label>
+          {error && (
+            <p role="alert">
+              {error === "uncertain"
+                ? t(($) => {
+                    return $.cloudflareAccess.promoteUncertain;
+                  })
+                : (localizedCloudflareAccessError(error) ??
+                  t(($) => {
+                    return $.cloudflareAccess.failed;
+                  }))}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSaving}
+              onClick={close}
+            >
+              {t(($) => {
+                return $.cloudflareAccess.cancel;
+              })}
+            </Button>
+            <Button
+              type="button"
+              disabled={!acknowledged || isSaving || !!error}
+              onClick={() => {
+                return detach(confirm(signal), Reason.DomCallback);
+              }}
+            >
+              {t(($) => {
+                return $.cloudflareAccess.promote;
+              })}
+            </Button>
+          </div>
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CloudflareAccessDeletionReview({
+  isSaving,
+  error,
+}: {
+  readonly isSaving: boolean;
+  readonly error: string | null;
+}) {
+  const { t } = useTranslation();
+  const preview = useLoadable(cloudflareAccessDeletionPreview$);
+  const impact = preview.state === "hasData" ? preview.data : null;
+  const acknowledged = useGet(cloudflareAccessDeletionAcknowledged$);
+  const acknowledge = useSet(acknowledgeCloudflareAccessDeletion$);
+  return (
+    <>
+      {preview.state === "loading" && (
+        <p role="status">
+          {t(($) => {
+            return $.cloudflareAccess.loading;
+          })}
+        </p>
+      )}
+      {preview.state === "hasError" && (
+        <p role="alert">
+          {t(($) => {
+            return $.cloudflareAccess.loadFailed;
+          })}
+        </p>
+      )}
+      {preview.state === "hasData" && !impact && (
+        <p role="alert">
+          {t(($) => {
+            return $.cloudflareAccess.missing;
+          })}
+        </p>
+      )}
+      {impact && impact.ownHostCount > 0 && (
+        <p role="alert">
+          {t(($) => {
+            return $.cloudflareAccess.inUseHelp;
+          })}
+        </p>
+      )}
+      {impact && impact.affectedOwners.length > 0 && (
+        <div className="grid gap-3 rounded-lg border p-4 text-sm">
+          <p role="alert">
+            {t(($) => {
+              return $.cloudflareAccess.deleteImpact;
+            })}
+          </p>
+          <ul className="list-inside list-disc">
+            {impact.affectedOwners.map(({ userId, displayName, hostCount }) => {
+              return (
+                <li key={userId}>
+                  {displayName ??
+                    t(($) => {
+                      return $.cloudflareAccess.formerMember;
+                    })}{" "}
+                  ({userId}):{" "}
+                  {t(
+                    ($) => {
+                      return $.cloudflareAccess.hostCount;
+                    },
+                    { count: hostCount },
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={acknowledged === impact.impactSnapshot}
+              disabled={isSaving || !!error || impact.ownHostCount > 0}
+              onCheckedChange={(checked) => {
+                return acknowledge(checked ? impact.impactSnapshot : null);
+              }}
+            />
+            {t(($) => {
+              return $.cloudflareAccess.deleteConfirm;
+            })}
+          </label>
+        </div>
+      )}
+    </>
+  );
+}
+
+export function CloudflareAccessDeletionDialog() {
+  const { t } = useTranslation();
+  const dialog = useLoadable(cloudflareAccessDeletionDialog$);
+  const preview = useLoadable(cloudflareAccessDeletionPreview$);
+  const acknowledged = useGet(cloudflareAccessDeletionAcknowledged$);
+  const error = useGet(cloudflareAccessDeletionError$);
+  const close = useSet(closeCloudflareAccessDeletion$);
+  const review = useSet(reviewCloudflareAccessDeletion$);
+  const [saving, confirm] = useLoadableSet(confirmCloudflareAccessDeletion$);
+  const signal = useGet(pageSignal$);
+  const current = dialog.state === "hasData" ? dialog.data : null;
+  if (!current) {
+    return null;
+  }
+  const isSaving = saving.state === "loading";
+  const impact = preview.state === "hasData" ? preview.data : null;
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !isSaving) {
+          close();
+        }
+      }}
+    >
+      <DialogContent contentClassName="flex flex-col">
+        <DialogHeader>
+          <DialogTitle>
+            {t(($) => {
+              return $.cloudflareAccess.delete;
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(($) => {
+              return $.cloudflareAccess.deleteHelp;
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="grid gap-4">
+          <p className="font-medium">{current.name}</p>
+          <CloudflareAccessDeletionReview isSaving={isSaving} error={error} />
+          {error && (
+            <p role="alert">
+              {error === "uncertain"
+                ? t(($) => {
+                    return $.cloudflareAccess.deleteUncertain;
+                  })
+                : (localizedCloudflareAccessError(error) ??
+                  t(($) => {
+                    return $.cloudflareAccess.failed;
+                  }))}
+            </p>
+          )}
+          {(error || preview.state === "hasError") && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSaving}
+              onClick={review}
+            >
+              {t(($) => {
+                return $.cloudflareAccess.reviewLatest;
+              })}
+            </Button>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isSaving}
+              onClick={close}
+            >
+              {t(($) => {
+                return $.cloudflareAccess.cancel;
+              })}
+            </Button>
+            {impact && !error && (
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={
+                  isSaving ||
+                  impact.ownHostCount > 0 ||
+                  (impact.affectedOwners.length > 0 &&
+                    acknowledged !== impact.impactSnapshot)
+                }
+                onClick={() => {
+                  return detach(confirm(impact, signal), Reason.DomCallback);
+                }}
+              >
+                {t(($) => {
+                  return $.cloudflareAccess.delete;
+                })}
+              </Button>
+            )}
+          </div>
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function CloudflareAccessConversionDialog() {
   const { t } = useTranslation();
   const dialog = useLoadable(cloudflareAccessConversionDialog$);
@@ -812,14 +1108,18 @@ function CloudflareAccessSection({
   scope,
   configs,
   canManage,
+  canPromote = false,
 }: {
   readonly scope: "personal" | "organization";
   readonly configs: readonly ScopedCloudflareAccessConfig[];
   readonly canManage: boolean;
+  readonly canPromote?: boolean;
 }) {
   const { t } = useTranslation();
   const open = useSet(openCloudflareAccessDialog$);
   const openConversion = useSet(openCloudflareAccessConversion$);
+  const openPromotion = useSet(openCloudflareAccessPromotion$);
+  const openDeletion = useSet(openCloudflareAccessDeletion$);
   const signal = useGet(pageSignal$);
   return (
     <section
@@ -848,7 +1148,7 @@ function CloudflareAccessSection({
         return (
           <article
             key={config.id}
-            className="grid gap-3 rounded-xl border bg-card p-5"
+            className={surfaceVariants({ className: "grid gap-3 p-5" })}
           >
             <h3 className="font-semibold">{config.name}</h3>
             <AccessImpact config={config} />
@@ -867,6 +1167,21 @@ function CloudflareAccessSection({
                     return $.cloudflareAccess.edit;
                   })}
                 </Button>
+                {scope === "personal" && canPromote && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      return detach(
+                        openPromotion(config, signal),
+                        Reason.DomCallback,
+                      );
+                    }}
+                  >
+                    {t(($) => {
+                      return $.cloudflareAccess.promote;
+                    })}
+                  </Button>
+                )}
                 {scope === "organization" && (
                   <Button
                     variant="outline"
@@ -887,7 +1202,9 @@ function CloudflareAccessSection({
                   disabled={config.sshHosts.length > 0}
                   onClick={() => {
                     return detach(
-                      open("delete", config, signal),
+                      scope === "organization"
+                        ? openDeletion(config, signal)
+                        : open("delete", config, signal),
                       Reason.DomCallback,
                     );
                   }}
@@ -967,6 +1284,7 @@ export function CloudflareAccessConfigs() {
           return config.scope === "personal";
         })}
         canManage
+        canPromote={admin.state === "hasData" && admin.data === true}
       />
       <CloudflareAccessSection
         scope="organization"

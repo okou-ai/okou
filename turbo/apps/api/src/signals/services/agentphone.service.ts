@@ -1,8 +1,8 @@
+import type { Tx } from "../../lib/db-types";
 import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   PUBLIC_BRAND,
   PUBLIC_BRAND_PRESENTATION,
@@ -22,6 +22,7 @@ import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserAgentPreferences } from "@okouai/db/schema/agentphone-user-agent-preference";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { and, desc, eq, isNull, like, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
@@ -55,6 +56,7 @@ import {
   type AgentPhoneChannel,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
+import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { ensureAgentPhoneChatThreadRoute } from "./agentphone-chat-ingress.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import {
@@ -220,23 +222,6 @@ function signAgentPhoneConnectParams(params: {
     .digest("hex");
 }
 
-function signAgentPhoneConnectBrand(params: {
-  readonly phoneHandle: string;
-  readonly agentphoneAgentId: string;
-  readonly timestamp: number;
-  readonly channel: AgentPhoneChannel;
-  readonly publicBrand: PublicBrand;
-  readonly secret: string;
-}): string {
-  return createHmac("sha256", params.secret)
-    .update(
-      `${normalizeHandleForConnect(params.phoneHandle)}:${
-        params.agentphoneAgentId
-      }:${String(params.timestamp)}:${params.channel}:${params.publicBrand}`,
-    )
-    .digest("hex");
-}
-
 function safeHexSignatureEqual(expected: string, actual: string): boolean {
   if (actual.length !== expected.length || !/^[0-9a-f]+$/iu.test(actual)) {
     return false;
@@ -314,7 +299,6 @@ export function buildAgentPhoneConnectUrl(params: {
   readonly secret: string;
 }): string {
   const timestamp = Math.floor(now() / 1000);
-  const publicBrand = PUBLIC_BRAND;
   const phoneHandle = normalizeAgentPhoneHandle(
     params.phoneHandle,
     params.channel,
@@ -331,37 +315,35 @@ export function buildAgentPhoneConnectUrl(params: {
       secret: params.secret,
     }),
     channel: params.channel,
-    // Older App bundles still require these fields on the connect page. The
-    // API no longer verifies them. Remove with #36650 after those bundles
-    // drain.
-    publicBrand,
-    brandSig: signAgentPhoneConnectBrand({
-      phoneHandle,
-      agentphoneAgentId: params.agentphoneAgentId,
-      timestamp,
-      channel: params.channel,
-      publicBrand,
-      secret: params.secret,
-    }),
   });
   return `${env("APP_URL")}/agentphone/connect?${query.toString()}`;
 }
 
+/**
+ * Link a phone to the member, in the caller's transaction.
+ *
+ * Creating the link is what the Get started iMessage quest rewards, so the
+ * award commits or rolls back with the row. Only a new row earns it: the
+ * branches that find the member's existing link merely touch it, which keeps
+ * phones linked before the quest shipped from being credited retroactively.
+ * The source key is fixed rather than the phone or organization, so the member
+ * has a single claim however often they unlink and link again, and the quest's
+ * one reward slot is what holds the limit.
+ */
 export async function linkAgentPhoneUser(
-  db: Db,
+  tx: Tx,
   params: {
     readonly phoneHandle: string;
     readonly channel: AgentPhoneChannel;
     readonly userId: string;
     readonly orgId: string;
-    readonly publicBrand: PublicBrand;
   },
 ): Promise<LinkAgentPhoneUserResult> {
   const phoneHandle = normalizeAgentPhoneHandle(
     params.phoneHandle,
     params.channel,
   );
-  const [existingPhoneLink] = await db
+  const [existingPhoneLink] = await tx
     .select()
     .from(agentphoneUserLinks)
     .where(eq(agentphoneUserLinks.phoneHandle, phoneHandle))
@@ -375,11 +357,10 @@ export async function linkAgentPhoneUser(
       return {
         ok: true,
         userLink: await touchAgentPhoneUserLink(
-          db,
+          tx,
           existingPhoneLink,
           phoneHandle,
           params.channel,
-          params.publicBrand,
         ),
       };
     }
@@ -391,7 +372,7 @@ export async function linkAgentPhoneUser(
     };
   }
 
-  const [existingUserOrgLink] = await db
+  const [existingUserOrgLink] = await tx
     .select()
     .from(agentphoneUserLinks)
     .where(
@@ -407,11 +388,10 @@ export async function linkAgentPhoneUser(
       return {
         ok: true,
         userLink: await touchAgentPhoneUserLink(
-          db,
+          tx,
           existingUserOrgLink,
           phoneHandle,
           params.channel,
-          params.publicBrand,
         ),
       };
     }
@@ -423,18 +403,23 @@ export async function linkAgentPhoneUser(
     };
   }
 
-  const [inserted] = await db
+  const [inserted] = await tx
     .insert(agentphoneUserLinks)
     .values({
       phoneHandle,
       userId: params.userId,
       orgId: params.orgId,
-      publicBrand: params.publicBrand,
     })
     .onConflictDoNothing()
     .returning();
 
   if (inserted) {
+    await awardCompletedGetStartedQuest(tx, {
+      orgId: params.orgId,
+      userId: params.userId,
+      questKey: "imessage",
+      sourceKey: "agentphone-link",
+    });
     return { ok: true, userLink: inserted };
   }
   return { ok: false, reason: "conflict" };
@@ -553,7 +538,6 @@ export async function storeInboundAgentPhoneMessage(
   params: {
     readonly event: AgentPhoneMessageEvent;
     readonly userLinkId?: string | null;
-    readonly publicBrand: PublicBrand;
   },
 ): Promise<{ readonly inserted: boolean }> {
   const inserted = await db
@@ -563,7 +547,6 @@ export async function storeInboundAgentPhoneMessage(
       agentphoneMessageId: params.event.messageId,
       conversationId: params.event.conversationId,
       agentphoneAgentId: params.event.agentphoneAgentId,
-      publicBrand: params.publicBrand,
       agentphoneUserLinkId: params.userLinkId ?? null,
       phoneHandle: normalizeAgentPhoneHandle(
         params.event.fromNumber,
@@ -1570,7 +1553,6 @@ const persistAgentPhoneChatMessage$ = command(
       readonly threadContext: string;
       readonly apiStartTime: number;
       readonly modelRoute: ModelRoutePin | undefined;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<PersistedAgentPhoneChatMessage> => {
@@ -1599,7 +1581,7 @@ const persistAgentPhoneChatMessage$ = command(
         userId: args.userLink.userId,
         orgId: args.userLink.orgId,
         chatThreadId: route.chatThreadId,
-        publicBrand: args.publicBrand,
+        publicBrand: PUBLIC_BRAND,
         files: agentPhoneInputFiles(args.event, args.userLink.id),
       },
       signal,
@@ -1644,7 +1626,6 @@ const persistAgentPhoneChatMessage$ = command(
             toNumber: args.event.toNumber,
             userLinkId: args.userLink.id,
             agentphoneAgentId: args.event.agentphoneAgentId,
-            publicBrand: args.publicBrand,
           },
           createdAt: currentTime,
         },
@@ -1738,7 +1719,6 @@ const runAgentForAgentPhone$ = command(
       readonly threadContext: string;
       readonly apiStartTime: number;
       readonly modelRoute: ModelRoutePin | undefined;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<AgentPhoneMessageDispatchResult> => {
@@ -1800,7 +1780,6 @@ export const handleAgentPhoneMessage$ = command(
       readonly event: AgentPhoneMessageEvent;
       readonly userLink: AgentPhoneUserLink | null;
       readonly apiStartTime: number;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1904,7 +1883,6 @@ export const handleAgentPhoneMessage$ = command(
         event: params.event,
         apiStartTime: params.apiStartTime,
         modelRoute,
-        publicBrand: params.publicBrand,
       },
       signal,
     );
@@ -1917,4 +1895,12 @@ export async function publishAgentPhoneUserChanged(
   userId: string,
 ): Promise<void> {
   await publishUserSignal([userId], "agentphone:changed");
+}
+
+/** A new link may also have completed the Get started iMessage quest. */
+export async function publishAgentPhoneUserLinked(
+  userId: string,
+): Promise<void> {
+  await publishAgentPhoneUserChanged(userId);
+  await publishUserSignal([userId], GET_STARTED_REWARDS_CHANGED_EVENT);
 }

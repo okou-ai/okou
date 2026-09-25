@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.6...runner-provider-v0.3.7) (2026-09-24)
+
+
+### Performance Improvements
+
+* **runner:** attribute first claim body chunk wait ([#36747](https://github.com/okou-ai/okou/issues/36747)) ([bb22f6a](https://github.com/okou-ai/okou/commit/bb22f6a8bf717c1b104567028a4d35e4648229b9))
+
 ## [0.3.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.5...runner-provider-v0.3.6) (2026-09-24)
 
 ## [0.3.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.4...runner-provider-v0.3.5) (2026-09-24)

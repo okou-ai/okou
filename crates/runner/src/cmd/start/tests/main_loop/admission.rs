@@ -1811,7 +1811,7 @@ async fn finalizing_handoff_grace_starts_when_predecessor_enters_finalization() 
     let finalization_started = tokio::time::Instant::now().into_std();
     assert!(predecessor_reuse.mark_finalizing(finalization_started));
     let finalization_deadline = finalization_started
-        + super::super::super::finalizing_claim::FINALIZING_HANDOFF_ACCEPTANCE_GRACE;
+        + runner_supervisor::finalizing_admission::FINALIZING_HANDOFF_ACCEPTANCE_GRACE;
     let remaining =
         finalization_deadline.saturating_duration_since(tokio::time::Instant::now().into_std());
     tokio::time::advance(remaining - Duration::from_millis(1)).await;

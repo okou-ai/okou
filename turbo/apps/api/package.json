@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.671.1",
+  "version": "1.673.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "start": "tsx src/server.ts",
     "db:dev-seed": "dotenv -e .env.local -- tsx src/scripts/dev-seed.ts",
     "db:dev-bench-seed": "dotenv -e .env.local -- tsx src/scripts/dev-bench-seed.ts",
+    "discord:register": "node scripts/register-discord-commands.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint --deny-warnings && GOMAXPROCS=1 oxlint src --type-aware -c ../../.oxlintrc.typeaware.json --ignore-pattern '**/__tests__/**' --deny-warnings && GOMAXPROCS=1 oxlint $(find src -type d -name __tests__) --type-aware -c ../../.oxlintrc.typeaware.json --deny-warnings && eslint . --max-warnings 0",

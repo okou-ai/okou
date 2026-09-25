@@ -138,11 +138,10 @@ function preferenceClient() {
 }
 
 /**
- * The obligation exactly as the owner reads it in Settings.
- *
- * `GET /api/preferences/morning-brief` projects a native owner's `next_run_at`
- * directly, so every scheduling assertion this suite makes about the obligation
- * itself goes through that production endpoint rather than the durable row.
+ * The owner's obligation: the Settings state from
+ * `GET /api/preferences/morning-brief`, joined with the durable native row's
+ * `next_run_at`, which is the authoritative schedule for a native owner now
+ * that the preference response no longer carries it.
  */
 async function readObligation(owner: Fixture) {
   mocks.clerk.session(owner.userId, owner.orgId);
@@ -152,7 +151,11 @@ async function readObligation(owner: Fixture) {
     }),
     [200],
   );
-  return response.body;
+  const schedule = await readNativeSchedule(owner);
+  return {
+    ...response.body,
+    nextRunAt: schedule?.nextRunAt?.toISOString() ?? null,
+  };
 }
 
 function userPreferencesClient() {

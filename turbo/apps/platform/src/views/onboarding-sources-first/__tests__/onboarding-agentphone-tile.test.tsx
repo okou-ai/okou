@@ -115,7 +115,9 @@ test("The AgentPhone tile offers the real link and reports the real status", asy
   });
   click(getChannelTile(IMESSAGE_TILE));
 
-  const dialog = await screen.findByRole("dialog", { name: "Connect phone" });
+  const dialog = await screen.findByRole("dialog", {
+    name: "Text Okou from your iPhone",
+  });
   expect(within(dialog).getByTestId("agentphone-link-qr")).toHaveAttribute(
     "data-sms-href",
     `sms:+19039853128?body=${CONNECTION_CODE}`,
@@ -125,7 +127,6 @@ test("The AgentPhone tile offers the real link and reports the real status", asy
   // reaches this step without it being opened again.
   context.mocks.data.agentPhoneIntegration({
     linked: true,
-    publicBrand: "okou",
     phoneHandle: "+15555550123",
     agentPhoneNumber: "+19039853128",
     configured: true,

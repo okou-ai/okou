@@ -42,7 +42,21 @@ export const materializeIntegrationInputAssets$ = command(
   ): Promise<readonly IntegrationInputAsset[]> => {
     const assets: IntegrationInputAsset[] = [];
     for (const file of args.files) {
-      const { provider, installationId, externalFileId } = file.provenance;
+      const { provider, externalFileId } = file.provenance;
+      const key =
+        file.provenance.provider === "discord"
+          ? JSON.stringify([
+              args.orgId,
+              file.provenance.guildId,
+              file.provenance.channelId,
+              file.provenance.messageId,
+              externalFileId,
+            ])
+          : JSON.stringify([
+              args.orgId,
+              file.provenance.installationId,
+              externalFileId,
+            ]);
       const asset = await set(
         materializeCanonicalInputFile$,
         {
@@ -52,7 +66,7 @@ export const materializeIntegrationInputAssets$ = command(
           publicBrand: args.publicBrand,
           source: provider,
           scope: `${provider}-input`,
-          key: JSON.stringify([args.orgId, installationId, externalFileId]),
+          key,
           externalId: externalFileId,
           provenance: file.provenance,
           filename: file.filename,

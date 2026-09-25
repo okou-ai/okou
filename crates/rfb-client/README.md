@@ -18,12 +18,13 @@ authorization before opening that stream. This crate never resolves a hostname
 or opens a second socket.
 
 `authenticate_apple_dh` is a separate entry point for Apple's legacy ARD
-security type 30. `authenticate_apple_srp` is a separate, additive entry point
-for the observed Apple Direct SRP security type 36. Neither raw-stream entry
-point supplies post-authentication encryption or an authorization decision.
-The Runner admits each as a distinct saved profile only through an independently
-authorized SSH host and a literal Mac loopback VNC destination. `VncAccess`
-remains disabled by default.
+security type 30. `authenticate_apple_srp` supports observed Apple Direct SRP
+security type 36. The separate `authenticate_apple_rsa_srp` engine supports the
+observed Apple RSA/SRP security type 33; no product caller or saved profile
+selects it. None of these raw-stream entry points supplies post-authentication
+encryption or an authorization decision. The Runner admits types 30 and 36 as
+distinct saved profiles only through an independently authorized SSH host and
+a literal Mac loopback VNC destination. `VncAccess` remains disabled by default.
 
 RFB 3.8 / VeNCrypt 0.2 supports only the caller-selected X509None (subtype 260),
 X509Vnc (261), or X509Plain (262) policy. TLS 1.2 or 1.3 verifies the certificate
@@ -56,8 +57,8 @@ Success returns `Authenticated::into_stream()`, positioned immediately after
 SecurityResult. The caller sends ClientInit next; ServerInit and framebuffer data
 are not consumed. The returned object retains no client credentials and starts no
 task. Its owned transport is fixed at authentication: verified TLS for X509 or
-the caller-supplied raw stream for Apple DH or Apple Direct SRP. No fallback
-changes that variant.
+the caller-supplied raw stream for Apple DH or either Apple SRP method. No
+fallback changes that variant.
 
 ## Apple DH / ARD type 30 engine boundary
 
@@ -120,12 +121,37 @@ must terminate on the Mac itself, with saved SSH host-key verification and VNC
 on literal Mac loopback. The ignored exact-Mac fixture runs on that Mac through
 host-key-verified SSH, uses literal loopback VNC and a one-time dedicated test
 password, and checks accepted credentials, a corrupted server proof, and
-rejected credentials. It does not
-initialize or read the desktop. An earlier direct-public-port authentication
-probe is not a product transport policy.
-Security type 33 (Apple RSA-SRP) remains unsupported pending an independently
-verified key-trust and final-proof contract. This crate does not turn on
-`VncAccess` or select a saved profile; the Runner enforces that policy.
+rejected credentials. It does not initialize or read the desktop. An earlier
+direct-public-port authentication probe is not a product transport policy.
+
+## Apple RSA/SRP / type 33 engine boundary
+
+`authenticate_apple_rsa_srp` is an **engine-only**, caller-selected entry point.
+It selects type 33 on exact `RFB 003.889`, sending the selection and `RSA1`
+request in one write (required by the tested Mac parser). It accepts only the
+observed 301-byte RSA reply: canonical DER SPKI encoding of an RSA-2048 public
+key with exponent 65537 and zero trailing byte. This on-wire key is **not a
+trusted host identity** and must never substitute for a verified SSH host key.
+A randomized PKCS#1 v1.5 encrypted username is sent in the bounded RSA1
+entry. The separate `AppleRsaSrpCredentials` requires a 1–234-byte UTF-8
+username: the 2048-bit RSA block permits 245 plaintext bytes, of which Apple
+uses 11 for framing. A 1–1023-byte password and both credential fields reject
+embedded NUL; no truncation or normalization is performed.
+
+The exact RSA1 challenge envelope is validated before using the same pinned
+RFC 5054 group, generator, PBKDF2 and SRP-6a calculations as type 36. The
+client verifies the complete 98-byte RSA-branch final token, including a
+constant-time check of SRP M2, followed by SecurityResult. Malformed keys,
+lengths, group, proof or server result fail closed; no fallback to types 30,
+36 or weaker VNC security is attempted. The same absolute 30-second-or-earlier
+caller deadline applies. This establishes the observed Mac profile only, not
+all macOS versions or settings. The issued key does not encrypt post-auth RFB
+traffic. A future product admission requires its own policy review, verified
+SSH **terminating on the Mac** and literal Mac loopback; raw/direct internet
+connections are not authorized. This engine change does not enable `VncAccess`
+or change any saved Runner profile.
+
+## Shared deadlines and failure handling
 
 The earlier of the caller deadline and 30 seconds bounds the whole handshake.
 RFB version exchange, security negotiation, any selected TLS handshake, and the

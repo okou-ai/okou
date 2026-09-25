@@ -11,6 +11,76 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.961.2](https://github.com/okou-ai/okou/compare/app-v0.961.1...app-v0.961.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* **platform:** align remote connector card surfaces ([#36760](https://github.com/okou-ai/okou/issues/36760)) ([108e2e8](https://github.com/okou-ai/okou/commit/108e2e8634c847b751b82e9d21ff0c043b231d05))
+
+## [0.961.1](https://github.com/okou-ai/okou/compare/app-v0.961.0...app-v0.961.1) (2026-09-24)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#36754](https://github.com/okou-ai/okou/issues/36754)) ([cc5147f](https://github.com/okou-ai/okou/commit/cc5147f9b25b62821d11daa489a0a96b7bdbf92e))
+
+
+### Performance Improvements
+
+* **app:** edge-prefetch org and model preferences, exchange ably token on the server ([#36731](https://github.com/okou-ai/okou/issues/36731)) ([c6495e1](https://github.com/okou-ai/okou/commit/c6495e1927c69bf5479300e841a9805df59d0a77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.1
+    * @okouai/core bumped to 8.710.1
+
+## [0.961.0](https://github.com/okou-ai/okou/compare/app-v0.960.0...app-v0.961.0) (2026-09-24)
+
+
+### Features
+
+* **access:** promote personal configurations and review shared deletion ([#36715](https://github.com/okou-ai/okou/issues/36715)) ([aa20d6a](https://github.com/okou-ai/okou/commit/aa20d6a8609326008f5da853bd9db75d0ad1d204))
+* **discord:** add canonical chat ingress and reply delivery ([#36685](https://github.com/okou-ai/okou/issues/36685)) ([99ddcab](https://github.com/okou-ai/okou/commit/99ddcab5538b064d842ad523f50579f3d14ebe1e))
+
+
+### Refactoring
+
+* **agentphone:** retire public brand and connect link brand signature ([#36722](https://github.com/okou-ai/okou/issues/36722)) ([3c4cdb4](https://github.com/okou-ai/okou/commit/3c4cdb4a0d241eed624b878dcd7b4717513e3724))
+* **morning-brief:** remove settings status line, realtime refresh and collection account ([#36719](https://github.com/okou-ai/okou/issues/36719)) ([8d8de09](https://github.com/okou-ai/okou/commit/8d8de09466c1ef81d3d2017e75351b315aa40b0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.507.0
+    * @okouai/core bumped to 8.710.0
+
+## [0.960.0](https://github.com/okou-ai/okou/compare/app-v0.959.0...app-v0.960.0) (2026-09-24)
+
+
+### Features
+
+* **platform:** add the get started imessage quest and unify the phone connect dialog ([#36655](https://github.com/okou-ai/okou/issues/36655)) ([fc14031](https://github.com/okou-ai/okou/commit/fc140318a21f6ae3ea2c350abf9482e67a089482))
+
+
+### Bug Fixes
+
+* **platform:** keep mark all read visible and toggle disabled state ([#36723](https://github.com/okou-ai/okou/issues/36723)) ([d4ab66f](https://github.com/okou-ai/okou/commit/d4ab66fe7a1b3eeb0aaf19a15f289bbeaf83c6dd))
+* **platform:** simplify email subscription status ui ([#36717](https://github.com/okou-ai/okou/issues/36717)) ([16765c0](https://github.com/okou-ai/okou/commit/16765c08c39abe992c2a96b578e43eb67f18708e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.506.0
+    * @okouai/core bumped to 8.709.0
+
 ## [0.959.0](https://github.com/okou-ai/okou/compare/app-v0.958.0...app-v0.959.0) (2026-09-24)
 
 

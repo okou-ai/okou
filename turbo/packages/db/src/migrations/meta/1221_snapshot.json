@@ -1,5 +1,5 @@
 {
-  "id": "3c34f7b1-3b6e-4479-b304-9938b3f85733",
+  "id": "e87001bf-463b-4530-8c73-ef14b4966bd5",
   "prevId": "4fd4a686-52f2-484e-bf43-417be614fcfd",
   "version": "7",
   "dialect": "postgresql",
@@ -10207,6 +10207,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "last_chat_event_seq_id": {
+          "name": "last_chat_event_seq_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         }
       },
       "indexes": {
@@ -15711,7 +15718,7 @@
       "checkConstraints": {
         "get_started_quest_check": {
           "name": "get_started_quest_check",
-          "value": "\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'workflow', 'invite', 'share', 'checkin')"
+          "value": "\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'imessage', 'workflow', 'invite', 'share', 'checkin')"
         },
         "get_started_status_check": {
           "name": "get_started_status_check",
@@ -15727,11 +15734,11 @@
         },
         "get_started_slot_check": {
           "name": "get_started_slot_check",
-          "value": "(\"get_started_claims\".\"status\" <> 'granted' AND \"get_started_claims\".\"reward_slot\" IS NULL) OR (\"get_started_claims\".\"status\" = 'granted' AND ((\"get_started_claims\".\"quest_key\" = 'invite' AND \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 15 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('workflow', 'share') AND \"get_started_claims\".\"reward_slot\" = 1 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'checkin') AND \"get_started_claims\".\"reward_slot\" IS NULL)))"
+          "value": "(\"get_started_claims\".\"status\" <> 'granted' AND \"get_started_claims\".\"reward_slot\" IS NULL) OR (\"get_started_claims\".\"status\" = 'granted' AND ((\"get_started_claims\".\"quest_key\" = 'invite' AND \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 15 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('imessage', 'workflow', 'share') AND \"get_started_claims\".\"reward_slot\" = 1 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'checkin') AND \"get_started_claims\".\"reward_slot\" IS NULL)))"
         },
         "get_started_amount_check": {
           "name": "get_started_amount_check",
-          "value": "\"get_started_claims\".\"reward_amount\" = CASE \"get_started_claims\".\"quest_key\" WHEN 'slack' THEN 2000 WHEN 'share' THEN 2000 WHEN 'workflow' THEN 1000 ELSE 100 END"
+          "value": "\"get_started_claims\".\"reward_amount\" = CASE \"get_started_claims\".\"quest_key\" WHEN 'slack' THEN 2000 WHEN 'share' THEN 2000 WHEN 'imessage' THEN 1000 WHEN 'workflow' THEN 1000 ELSE 100 END"
         }
       },
       "isRLSEnabled": false

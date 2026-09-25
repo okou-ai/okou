@@ -3,6 +3,7 @@ import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
+import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { command } from "ccstate";
@@ -24,6 +25,7 @@ const MONITORED_CONTEXT_TYPES = [
   "slack",
   "feishu",
   "teams",
+  "discord",
   "telegram",
   "github",
   "agentphone",
@@ -92,6 +94,15 @@ async function loadExistingContextRows(
         })
         .from(chatTeamsContext)
         .where(inArray(chatTeamsContext.id, [...contextIds]));
+    }
+    case "discord": {
+      return await db
+        .select({
+          id: chatDiscordContext.id,
+          chatThreadId: chatDiscordContext.chatThreadId,
+        })
+        .from(chatDiscordContext)
+        .where(inArray(chatDiscordContext.id, [...contextIds]));
     }
     case "telegram": {
       return await db

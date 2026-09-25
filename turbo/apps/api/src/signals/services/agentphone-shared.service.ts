@@ -3,7 +3,6 @@ import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
@@ -88,13 +87,9 @@ export async function touchAgentPhoneUserLink(
   userLink: AgentPhoneUserLink,
   phoneHandle: string,
   channel: AgentPhoneChannel,
-  publicBrand?: PublicBrand,
 ): Promise<AgentPhoneUserLink> {
   const normalized = normalizeAgentPhoneHandle(phoneHandle, channel);
-  if (
-    userLink.phoneHandle === normalized &&
-    (publicBrand === undefined || userLink.publicBrand === publicBrand)
-  ) {
+  if (userLink.phoneHandle === normalized) {
     return userLink;
   }
 
@@ -102,7 +97,6 @@ export async function touchAgentPhoneUserLink(
     .update(agentphoneUserLinks)
     .set({
       phoneHandle: normalized,
-      ...(publicBrand ? { publicBrand } : {}),
       updatedAt: nowDate(),
     })
     .where(eq(agentphoneUserLinks.id, userLink.id))
@@ -138,7 +132,6 @@ export async function storeOutboundAgentPhoneMessage(
     readonly agentphoneMessageId: string;
     readonly conversationId: string | null;
     readonly agentphoneAgentId: string;
-    readonly publicBrand: PublicBrand;
     readonly userLinkId: string;
     readonly phoneHandle: string;
     readonly fromNumber: string;
@@ -155,7 +148,6 @@ export async function storeOutboundAgentPhoneMessage(
       agentphoneMessageId: params.agentphoneMessageId,
       conversationId: params.conversationId,
       agentphoneAgentId: params.agentphoneAgentId,
-      publicBrand: params.publicBrand,
       agentphoneUserLinkId: params.userLinkId,
       phoneHandle: normalizeAgentPhoneHandle(
         params.phoneHandle,

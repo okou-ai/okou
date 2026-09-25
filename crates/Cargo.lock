@@ -3342,7 +3342,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "aes",
  "crypto-bigint",
@@ -3354,7 +3354,9 @@ dependencies = [
  "md-5",
  "pbkdf2",
  "png",
+ "rand 0.10.3",
  "rcgen",
+ "rsa",
  "rustls",
  "serde_json",
  "sha2",
@@ -3459,7 +3461,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.213.13"
+version = "0.213.15"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3526,7 +3528,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3658,11 +3660,12 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
  "async-trait",
+ "bytes",
  "chrono",
  "futures-util",
  "guest-contracts",
@@ -3692,7 +3695,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3806,21 +3809,25 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.1.5"
+version = "0.1.7"
 dependencies = [
  "api-contracts",
  "async-trait",
  "chrono",
  "futures-util",
+ "guest-contracts",
+ "hex",
  "runner-executor",
  "runner-host",
  "runner-lifecycle",
+ "runner-network",
  "runner-provider",
  "runner-storage",
  "runner-types",
  "sandbox",
  "sandbox-mock",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
  "tokio",

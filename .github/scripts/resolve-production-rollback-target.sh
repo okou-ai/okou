@@ -20,6 +20,7 @@ readonly PREPARED_DOMAIN_TRIGGER_RELEASE=eb2f211a9af41450d0d5dad10c0c8ad12fac0a2
 readonly ARTIFACT_CHAT_TRIGGER_WRITERS_COMMIT=065f970bbb8c21c10ef709495d5824d0a6183e50
 readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
 readonly CHAT_THREAD_SNAPSHOT_R2_READER_PATH=turbo/apps/api/src/signals/services/chat-thread-snapshot-object.ts
+readonly AGENTPHONE_PUBLIC_BRAND_DROP_PATH=turbo/packages/db/src/migrations/1228_drop_agentphone_public_brand.sql
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb988f59217af
 readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
@@ -148,6 +149,19 @@ if [[ ! "$snapshot_r2_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$snapshot_r2_reader_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread snapshot R2 reader: ${snapshot_r2_reader_commit}."
+fi
+
+# Migration 1228 drops the four AgentPhone public_brand columns. Every earlier
+# API, including those after #36722, still declares them and names them in
+# inserts and bare selects. Resolve the migration's canonical main introduction
+# so squash merging cannot leave a branch-only SHA as the rollback floor.
+agentphone_public_brand_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$AGENTPHONE_PUBLIC_BRAND_DROP_PATH" | sed -n '1p')
+if [[ ! "$agentphone_public_brand_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged AgentPhone public_brand drop on main."
+fi
+if ! git merge-base --is-ancestor "$agentphone_public_brand_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the AgentPhone public_brand drop: ${agentphone_public_brand_drop_commit}."
 fi
 
 # Terminal presentation trusts the stored cause without repairing old records.

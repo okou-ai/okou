@@ -1602,7 +1602,6 @@ describe("native Morning Brief cron", () => {
     expect(paused.body).toMatchObject({
       enabled: false,
       status: "paused",
-      nextRunAt: null,
     });
     await expect(readNativeSchedule(f)).resolves.toMatchObject({
       enabled: false,

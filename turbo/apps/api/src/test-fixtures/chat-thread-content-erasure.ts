@@ -48,9 +48,9 @@ export async function setChatThreadAgentFixture(args: {
 
 /**
  * Infrastructure exception: no production writer moves a thread between users,
- * but `user_id` is not a key column. This mutation proves the shared helper's
- * KEY SHARE permits the move and the creation-local SHARE re-read detects it
- * before a downstream run can be pinned.
+ * and `user_id` belongs to the canonical ownership key. Before admission pins
+ * the thread, this mutation exercises identity revalidation. After KEY SHARE,
+ * it waits until the admitted operation commits or rolls back.
  */
 export async function setChatThreadUserFixture(args: {
   readonly chatThreadId: string;
