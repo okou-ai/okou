@@ -53,15 +53,22 @@ Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 
 `resolve` requires `connectionId` and `supportedProfiles`, a bounded list of
 exact authentication/security/transport tuples. Current Runners advertise the
-X509Vnc and X509Plain pairs separately for `direct` and `ssh`, plus the Apple
-DH, Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. A pre-transport Runner
+X509Vnc and X509Plain pairs separately for `direct` and `ssh`, plus the distinct
+Mac classic-password `vnc_password` / `apple_vnc_password` pair and Apple DH,
+Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. A pre-transport Runner
 omits `transportType`; omission means direct-only. An empty list or a saved
 tuple absent from the list returns `unsupported_profile` only after VNC
 authorization and before KMS. An SSH row is also checked for its SSH grant
 before any credential handoff.
 Unknown methods, profiles and cross-paired combinations are rejected. Future
 engine support must add a new exact pair instead of broadening a saved policy or
-creating an implicit downgrade path. For Apple RSA/SRP (RFB type 33), the
+creating an implicit downgrade path. The Mac classic-password profile selects
+bare RFB type 2 only through verified SSH ending on the Mac, with a literal
+`127.0.0.1` or `::1` RFB destination. Its
+1–8-byte password does not authenticate the server or encrypt the desktop;
+SSH protects this session, not the Mac's possibly reachable TCP/5900 listener.
+The owner opts in after seeing this risk, without a required Mac ingress-isolation
+proof. For Apple RSA/SRP (RFB type 33), the
 RFB-provided RSA key is not an independent host identity and SRP proof does not
 encrypt the subsequent desktop stream. The saved SSH host must be verified,
 terminate on a Mac controlled by the owner, and connect to literal `127.0.0.1`

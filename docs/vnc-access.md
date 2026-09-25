@@ -108,9 +108,10 @@ Hosts contain a canonical DNS name or IP address, a port (default 5900), a
 credential selection and explicit `security`. Owner configuration accepts
 `{ type: "x509_vnc", trust }` and `{ type: "x509_plain", trust }`; trust is
 either `{ mode: "system" }` or `{ mode: "custom_ca", caBundle: "..." }`.
-Each security variant may also carry `serverName`, a separately canonicalized
-DNS name or IP identity for future certificate verification. Omitting it means
-use the saved VNC host; it never replaces the socket destination.
+Either X509 security variant may also carry `serverName`, a separately
+canonicalized DNS name or IP identity for certificate verification. Omitting it
+means use the saved VNC host; it never replaces the socket destination. Apple
+security variants do not accept `serverName` or an X.509 trust policy.
 The exact stored pairs are `vnc_password` / `x509_vnc`,
 `vnc_password` / `apple_vnc_password`, `username_password` / `x509_plain`, and
 `apple_dh_username_password` / `apple_dh`,
