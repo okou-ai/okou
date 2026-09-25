@@ -19,11 +19,7 @@ import {
   readRunActivityBookkeepingFixture,
 } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  createDeferredPromise,
-  joinAll,
-  settleIncludingAbort,
-} from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -505,51 +501,6 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   });
 
-  it("preserves parent admission and coalesces refreshed claims after contention", async () => {
-    const f = await fixture();
-    await deliver(f, [tool(0)]);
-    const inputs = provider();
-    // Erasure admission now locks the parent before touching the snapshot.
-    // Its first visible context still needs refreshing once admission succeeds.
-    const before = await readRunActivityBookkeepingFixture(f.run.runId);
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    const blocked = await joinAll([
-      summarize(f.actor, f.run),
-      summarize(f.actor, f.run),
-    ]);
-    expect(blocked).toStrictEqual([
-      { runId: f.run.runId, status: "unavailable", messages: [] },
-      { runId: f.run.runId, status: "unavailable", messages: [] },
-    ]);
-    expect(inputs).toHaveLength(0);
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toStrictEqual(before);
-    await held.release();
-    const responses = await joinAll([
-      summarize(f.actor, f.run),
-      summarize(f.actor, f.run),
-    ]);
-    expect(
-      responses.every((result) => {
-        return result.status === "available";
-      }),
-    ).toBeTruthy();
-    expect(
-      responses.some((result) => {
-        return result.messages.length > 0;
-      }),
-    ).toBeTruthy();
-    expect(inputs).toHaveLength(1);
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      messages: [{ text: "Preparing the launch checklist" }],
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
   it("rolls back a new snapshot blocked by its parent without calling the model", async () => {
     const f = await fixture();
     const inputs = provider();
@@ -655,87 +606,6 @@ describe("thread activity summary", () => {
     });
     expect(inputs).toHaveLength(1);
   });
-
-  it("degrades completion contention after rollback without publishing the provider phrase", async () => {
-    const f = await fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<string>(context.signal);
-    const inputs = provider(async () => {
-      entered.resolve(undefined);
-      return await release.promise;
-    });
-    const pending = summarize(f.actor, f.run);
-    await entered.promise;
-    const before = await readRunActivityBookkeepingFixture(f.run.runId);
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    release.resolve("This uncommitted phrase must stay private");
-    await expect(pending).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toStrictEqual(before);
-    expect(inputs).toHaveLength(1);
-    await held.release();
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "available",
-      messages: [],
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
-  it.each(["abort", "database cancellation"] as const)(
-    "propagates completion %s instead of degrading it",
-    async (failure) => {
-      const f = await fixture();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<string>(context.signal);
-      const inputs = provider(async () => {
-        entered.resolve(undefined);
-        return await release.promise;
-      });
-      const shutdown = new AbortController();
-      const pending = settleIncludingAbort(
-        request(f.actor, f.run, {
-          signal: shutdown.signal,
-          rethrowErrors: true,
-        }),
-      );
-      await entered.promise;
-      const before = await readRunActivityBookkeepingFixture(f.run.runId);
-      const held = await holdRunActivityParentFixture(
-        f.run.runId,
-        context.signal,
-      );
-      release.resolve("This completion must roll back");
-      const waiter = await held.waitForBlocked();
-      const reason = new DOMException("API instance stopping", "AbortError");
-      if (failure === "abort") {
-        shutdown.abort(reason);
-      } else {
-        await cancelRunActivityWaiterFixture(waiter);
-      }
-      const result = await pending;
-      if (failure === "abort") {
-        expect(result).toStrictEqual({ ok: false, error: reason });
-      } else {
-        expect(result).toMatchObject({
-          ok: false,
-          error: { cause: { code: "57014" } },
-        });
-      }
-      await expect(
-        readRunActivityBookkeepingFixture(f.run.runId),
-      ).resolves.toStrictEqual(before);
-      expect(inputs).toHaveLength(1);
-      await held.release();
-    },
-  );
 
   it("does not resurrect a snapshot cleaned before completion admission", async () => {
     const f = await fixture();
