@@ -80,6 +80,16 @@ pub struct ReuseFromPoolFailure {
     pub error: String,
 }
 
+/// Fully selected resource and transfer gate for a claimed fresh admission.
+pub struct ReuseFromPoolReady {
+    pub reuse_entry: Option<ReusableIdleSandbox>,
+    pub active_lease: BudgetLease,
+    pub reuse_result: SandboxReuseResult,
+    pub idle_snapshot: Option<IdlePoolSnapshot>,
+    pub needs_reuse_state_refresh: bool,
+    pub transfer_guard: Option<OwnedMutexGuard<()>>,
+}
+
 pub struct ReservedActivationRequest<'a> {
     pub run_id: RunId,
     pub profile_name: &'a str,
@@ -851,17 +861,7 @@ pub async fn try_reuse_from_pool(
     ctx: &ActivationResources<'_>,
     pre_spawn_timing: &mut RunnerPreSpawnTiming,
     cancellation: &RunCancellationHandle,
-) -> Result<
-    (
-        Option<ReusableIdleSandbox>,
-        BudgetLease,
-        SandboxReuseResult,
-        Option<IdlePoolSnapshot>,
-        bool,
-        Option<OwnedMutexGuard<()>>,
-    ),
-    ReuseFromPoolFailure,
-> {
+) -> Result<ReuseFromPoolReady, ReuseFromPoolFailure> {
     let ReuseAdmissionRequest {
         profile_name,
         device_rate_limits,
@@ -880,14 +880,14 @@ pub async fn try_reuse_from_pool(
     {
         // v4 is demand-only. A blank pool entry is already activated before
         // the normal spawn binding, so it cannot provide our release proof.
-        return Ok((
-            None,
-            job_lease,
-            SandboxReuseResult::NoReuseKey,
-            None,
-            false,
-            None,
-        ));
+        return Ok(ReuseFromPoolReady {
+            reuse_entry: None,
+            active_lease: job_lease,
+            reuse_result: SandboxReuseResult::NoReuseKey,
+            idle_snapshot: None,
+            needs_reuse_state_refresh: false,
+            transfer_guard: None,
+        });
     }
 
     let reuse_key = context.reuse_key();
@@ -1002,14 +1002,14 @@ pub async fn try_reuse_from_pool(
                         entry.into_destroy_job_without_workspace_promotion_for_mismatch(),
                         "reuse_workspace_promotion_mismatch",
                     );
-                    return Ok((
-                        None,
-                        job_lease,
-                        fallback_reuse_result,
-                        Some(snapshot),
+                    return Ok(ReuseFromPoolReady {
+                        reuse_entry: None,
+                        active_lease: job_lease,
+                        reuse_result: fallback_reuse_result,
+                        idle_snapshot: Some(snapshot),
                         needs_reuse_state_refresh,
-                        None,
-                    ));
+                        transfer_guard: None,
+                    });
                 }
             }
             let idle_snapshot = snapshot.clone();
@@ -1024,14 +1024,14 @@ pub async fn try_reuse_from_pool(
                     ctx.reuse_state_notify,
                 )
                 .await;
-                return Ok((
-                    None,
-                    job_lease,
-                    fallback_reuse_result,
-                    None,
+                return Ok(ReuseFromPoolReady {
+                    reuse_entry: None,
+                    active_lease: job_lease,
+                    reuse_result: fallback_reuse_result,
+                    idle_snapshot: None,
                     needs_reuse_state_refresh,
-                    None,
-                ));
+                    transfer_guard: None,
+                });
             }
             let status_started_at = Instant::now();
             if let Err(error) = add_preparing_run_with_idle_status_snapshot(
@@ -1058,14 +1058,14 @@ pub async fn try_reuse_from_pool(
                     ctx,
                 )
                 .await;
-                return Ok((
-                    None,
-                    job_lease,
-                    fallback_reuse_result,
-                    None,
+                return Ok(ReuseFromPoolReady {
+                    reuse_entry: None,
+                    active_lease: job_lease,
+                    reuse_result: fallback_reuse_result,
+                    idle_snapshot: None,
                     needs_reuse_state_refresh,
-                    None,
-                ));
+                    transfer_guard: None,
+                });
             }
             pre_spawn_timing
                 .record_phase_elapsed(RunnerPreSpawnPhase::ActiveStatusPublish, status_started_at);
@@ -1089,14 +1089,14 @@ pub async fn try_reuse_from_pool(
                     // fresh-job lease and move the idle lease to the outer job
                     // task before handing the sandbox to the executor.
                     drop(job_lease);
-                    Ok((
-                        Some(*sandbox),
-                        budget_lease,
-                        activation_reuse_result,
-                        Some(snapshot),
+                    Ok(ReuseFromPoolReady {
+                        reuse_entry: Some(*sandbox),
+                        active_lease: budget_lease,
+                        reuse_result: activation_reuse_result,
+                        idle_snapshot: Some(snapshot),
                         needs_reuse_state_refresh,
-                        Some(transfer_guard),
-                    ))
+                        transfer_guard: Some(transfer_guard),
+                    })
                 }
                 IdleUnparkResult::Failed { destroy_job, error } => {
                     warn!(
@@ -1115,14 +1115,14 @@ pub async fn try_reuse_from_pool(
                     match cleanup.outcome {
                         DestroyOutcome::Completed => {
                             drop(cleanup.budget_lease);
-                            Ok((
-                                None,
-                                job_lease,
-                                unpark_failure_reuse_result,
-                                Some(snapshot),
+                            Ok(ReuseFromPoolReady {
+                                reuse_entry: None,
+                                active_lease: job_lease,
+                                reuse_result: unpark_failure_reuse_result,
+                                idle_snapshot: Some(snapshot),
                                 needs_reuse_state_refresh,
-                                None,
-                            ))
+                                transfer_guard: None,
+                            })
                         }
                         DestroyOutcome::Uncertain => {
                             drop(cleanup.budget_lease);
@@ -1158,14 +1158,14 @@ pub async fn try_reuse_from_pool(
                 stale.into_destroy_job(),
                 "reuse_device_limit_mismatch",
             );
-            Ok((
-                None,
-                job_lease,
-                SandboxReuseResult::DeviceLimitMismatch,
-                Some(snapshot),
+            Ok(ReuseFromPoolReady {
+                reuse_entry: None,
+                active_lease: job_lease,
+                reuse_result: SandboxReuseResult::DeviceLimitMismatch,
+                idle_snapshot: Some(snapshot),
                 needs_reuse_state_refresh,
-                None,
-            ))
+                transfer_guard: None,
+            })
         }
         Some((stale, snapshot)) => {
             let stale_reuse_key = stale.reuse_key().map(str::to_owned);
@@ -1182,14 +1182,14 @@ pub async fn try_reuse_from_pool(
                 stale.into_destroy_job(),
                 "reuse_profile_mismatch",
             );
-            Ok((
-                None,
-                job_lease,
-                SandboxReuseResult::ProfileMismatch,
-                Some(snapshot),
+            Ok(ReuseFromPoolReady {
+                reuse_entry: None,
+                active_lease: job_lease,
+                reuse_result: SandboxReuseResult::ProfileMismatch,
+                idle_snapshot: Some(snapshot),
                 needs_reuse_state_refresh,
-                None,
-            ))
+                transfer_guard: None,
+            })
         }
         None => {
             match reuse_key {
@@ -1202,14 +1202,14 @@ pub async fn try_reuse_from_pool(
                 ),
                 None => info!(run_id = %run_id, "no compatible blank sandbox found"),
             }
-            Ok((
-                None,
-                job_lease,
-                miss_result,
-                None,
+            Ok(ReuseFromPoolReady {
+                reuse_entry: None,
+                active_lease: job_lease,
+                reuse_result: miss_result,
+                idle_snapshot: None,
                 needs_reuse_state_refresh,
-                None,
-            ))
+                transfer_guard: None,
+            })
         }
     }
 }

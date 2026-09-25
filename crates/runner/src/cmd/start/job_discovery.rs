@@ -129,7 +129,8 @@ use runner_supervisor::claimed_activation::{
 };
 use runner_supervisor::claimed_resource_activation::{
     ActivationResources, ExactActivation, ReservedActivation, ReservedActivationRequest,
-    ReuseAdmissionRequest, activate_reserved_idle, activate_speculated_exact, try_reuse_from_pool,
+    ReuseAdmissionRequest, ReuseFromPoolReady, activate_reserved_idle, activate_speculated_exact,
+    try_reuse_from_pool,
 };
 use runner_supervisor::idle_lifecycle::SharedIdlePool;
 use runner_supervisor::pre_claim_admission::{
@@ -363,40 +364,46 @@ pub(super) async fn handle_discovered_job(
         activation_transfer_guard,
     ) = match resource {
         SandboxAdmittedResource::Fresh(job_lease) => {
-            let (reuse_entry, active_lease, reuse_result, idle_snapshot, refresh, transfer_guard) =
-                match try_reuse_from_pool(
-                    run_id,
-                    ReuseAdmissionRequest {
-                        profile_name: &profile_name,
-                        device_rate_limits: &device_rate_limits,
-                        workspace_disk_mb: job_workspace_disk_mb,
-                        context: claimed.context(),
-                        job_lease,
-                    },
-                    &activation_resources(ctx.spawn_ctx),
-                    &mut pre_spawn_timing,
-                    &cancellation_handle,
-                )
-                .await
-                {
-                    Ok(ready) => ready,
-                    Err(failure) => {
-                        let completion = complete_claimed_failure(
-                            claimed,
-                            cancellation,
-                            ClaimedFailureDiagnostics::from_timing(
-                                Some(failure.reuse_result),
-                                &pre_spawn_timing,
-                            ),
-                            crate::executor::ExecutionFailure::from_error(failure.error),
-                            &ctx,
-                        )
-                        .await;
-                        drop(active_run_guard);
-                        completion.flush_telemetry().await;
-                        return DiscoveredJobResult::completed(true);
-                    }
-                };
+            let ReuseFromPoolReady {
+                reuse_entry,
+                active_lease,
+                reuse_result,
+                idle_snapshot,
+                needs_reuse_state_refresh: refresh,
+                transfer_guard,
+            } = match try_reuse_from_pool(
+                run_id,
+                ReuseAdmissionRequest {
+                    profile_name: &profile_name,
+                    device_rate_limits: &device_rate_limits,
+                    workspace_disk_mb: job_workspace_disk_mb,
+                    context: claimed.context(),
+                    job_lease,
+                },
+                &activation_resources(ctx.spawn_ctx),
+                &mut pre_spawn_timing,
+                &cancellation_handle,
+            )
+            .await
+            {
+                Ok(ready) => ready,
+                Err(failure) => {
+                    let completion = complete_claimed_failure(
+                        claimed,
+                        cancellation,
+                        ClaimedFailureDiagnostics::from_timing(
+                            Some(failure.reuse_result),
+                            &pre_spawn_timing,
+                        ),
+                        crate::executor::ExecutionFailure::from_error(failure.error),
+                        &ctx,
+                    )
+                    .await;
+                    drop(active_run_guard);
+                    completion.flush_telemetry().await;
+                    return DiscoveredJobResult::completed(true);
+                }
+            };
             (
                 reuse_entry,
                 active_lease,
