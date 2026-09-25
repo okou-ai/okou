@@ -13,7 +13,7 @@
 //! - `job_discovery`: discovery branch handling and idle-reuse admission.
 //! - `job_spawn`: claimed job task spawning, completion, and panic cleanup.
 //! - `job_terminal_log`: terminal outcome tracing and diagnostic projection.
-//! - `mitm_restart`: mitmproxy crash restart and backoff.
+//! - `runner-network::proxy::MitmRecovery`: mitmproxy crash restart and backoff.
 //! - `runner-supervisor::sandbox_finalization`: post-executor park/handoff/destroy policy.
 //! - `signals`: lifecycle signal registration, task ownership, and dispatch.
 //!
@@ -73,7 +73,6 @@ use crate::pre_spawn_admission::PreSpawnAdmission;
 use crate::prefetch;
 use crate::proxy;
 use crate::resource_budget::ResourceBudget;
-use crate::retry::{RetryState, sleep_until_retry};
 use crate::status::{StatusTracker, remove_stale_status_file};
 use crate::workspace_image_cache::{
     WorkspaceCacheChange, WorkspaceCacheWatcher, WorkspaceImageCache,
@@ -95,7 +94,6 @@ mod identity;
 mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
-mod mitm_restart;
 mod prune_idle;
 mod signals;
 
@@ -104,13 +102,9 @@ use heartbeat::heartbeat_profiles;
 use identity::load_runner_process_identity;
 use job_discovery::{DiscoveredJob, DiscoveredJobContext, handle_discovered_job};
 use job_spawn::{SpawnContext, handle_job_result};
-use mitm_restart::{
-    MITM_BACKOFF_INITIAL, MITM_BACKOFF_MAX, MITM_MAX_CONSECUTIVE_FAILURES, MitmRestartHandle,
-    finish_mitm_restart_before_shutdown, handle_mitm_restart_result, maybe_spawn_mitm_restart,
-    recv_mitm_restart, stop_mitm_retries,
-};
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
+use runner_network::proxy::MitmRecovery;
 use runner_supervisor::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use runner_supervisor::heartbeat::{
     HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
@@ -2027,11 +2021,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     // -----------------------------------------------------------------------
     // Mitmproxy crash-restart state
     // -----------------------------------------------------------------------
-    let mut mitm_retry: RetryState<MitmRestartHandle> = RetryState::new(
-        MITM_BACKOFF_INITIAL,
-        MITM_BACKOFF_MAX,
-        Some(MITM_MAX_CONSECUTIVE_FAILURES),
-    );
+    let mut mitm_recovery = MitmRecovery::new();
 
     // -----------------------------------------------------------------------
     // Heartbeat interval — same first-tick delay as above. Integration tests
@@ -2291,7 +2281,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
             .await;
 
         // Spawn background restart task when timer fires
-        maybe_spawn_mitm_restart(&mut mitm, &mut mitm_crash_rx, &mut mitm_retry);
+        mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
 
         let can_discover = if matches!(mode, RunnerMode::Running) {
             // A selected finalizing successor can claim against an exact
@@ -2308,6 +2298,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         if matches!(mode, RunnerMode::Running) && !can_discover {
             test_hooks.test_observer.notify_budget_exhausted_reactor();
         }
+        let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
         let pending_finalizing_deadline = pending_finalizing_candidate
             .as_ref()
@@ -2603,23 +2594,20 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                     component = "runner",
                     "mitmproxy exited unexpectedly, scheduling restart"
                 );
-                mitm_retry.schedule();
+                mitm_recovery.on_crash();
             }
             // Mitmproxy restart result (background task)
-            result = recv_mitm_restart(&mut mitm_retry.handle) => {
-                match result {
-                    Ok(result) => handle_mitm_restart_result(result, &mut mitm, &mut mitm_retry),
-                    Err(error) => {
-                        stop_mitm_retries(&mut mitm_crash_rx, &mut mitm_retry);
-                        handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                            &provider_state.cancel_tokens, &lifecycle).await;
-                        terminal_error = Some(error);
-                    }
+            result = mitm_recovery.wait(&mut mitm) => {
+                if let Err(error) = result {
+                    mitm_recovery.stop_retries(&mut mitm_crash_rx);
+                    handle_stopping_signal("mitm-recovery", &provider_state.cancel,
+                        &provider_state.cancel_tokens, &lifecycle).await;
+                    terminal_error = Some(error.into());
                 }
             }
             // A late crash can arm a timer during recovery. Keep that request,
             // but do not spin on an expired timer while its owner is in flight.
-            () = sleep_until_retry(&mitm_retry.restart_at), if mitm_retry.handle.is_none() => {}
+            () = sleep_until_optional_instant(mitm_retry_deadline) => {}
             // Heartbeat: report runner state to the server
             _ = heartbeat_tick.tick() => {
                 let live_mode = *mode_rx.borrow();
@@ -2812,7 +2800,8 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     if remaining > 0 {
         info!(remaining, "waiting for running jobs to finish");
         while !jobs.is_empty() {
-            maybe_spawn_mitm_restart(&mut mitm, &mut mitm_crash_rx, &mut mitm_retry);
+            mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
+            let mitm_retry_deadline = mitm_recovery.retry_deadline();
 
             tokio::select! {
                 result = jobs.join_next() => {
@@ -2839,20 +2828,17 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
                         component = "runner",
                         "mitmproxy exited unexpectedly, scheduling restart"
                     );
-                    mitm_retry.schedule();
+                    mitm_recovery.on_crash();
                 }
-                result = recv_mitm_restart(&mut mitm_retry.handle) => {
-                    match result {
-                        Ok(result) => handle_mitm_restart_result(result, &mut mitm, &mut mitm_retry),
-                        Err(error) => {
-                            stop_mitm_retries(&mut mitm_crash_rx, &mut mitm_retry);
-                            handle_stopping_signal("mitm-recovery", &provider_state.cancel,
-                                &provider_state.cancel_tokens, &lifecycle).await;
-                            terminal_error.get_or_insert(error);
-                        }
+                result = mitm_recovery.wait(&mut mitm) => {
+                    if let Err(error) = result {
+                        mitm_recovery.stop_retries(&mut mitm_crash_rx);
+                        handle_stopping_signal("mitm-recovery", &provider_state.cancel,
+                            &provider_state.cancel_tokens, &lifecycle).await;
+                        terminal_error.get_or_insert(error.into());
                     }
                 }
-                () = sleep_until_retry(&mitm_retry.restart_at), if mitm_retry.handle.is_none() => {}
+                () = sleep_until_optional_instant(mitm_retry_deadline) => {}
             }
         }
     }
@@ -2888,9 +2874,9 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     exec_config.decoded_cache.shutdown().await;
     teardown.phase_complete("background_fill_shutdown", phase);
     let phase = teardown.phase_start("finish_mitm_restart");
-    if let Err(error) = finish_mitm_restart_before_shutdown(&mut mitm, &mut mitm_retry).await {
+    if let Err(error) = mitm_recovery.finish_before_shutdown(&mut mitm).await {
         error!(%error, "failed to finish mitmproxy recovery");
-        terminal_error.get_or_insert(error);
+        terminal_error.get_or_insert(error.into());
     }
     teardown.phase_complete("finish_mitm_restart", phase);
     if let Some(handler_task) = signal_handler_task.take() {
