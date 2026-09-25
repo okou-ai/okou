@@ -21,7 +21,7 @@ them.
 
 ## Completed Clerk deletion receipt index retirement (2026-09-25)
 
-Migration `1239_retire_clerk_deletion_receipt_index` drops
+Migration `1240_retire_clerk_deletion_receipt_index` drops
 `idx_background_jobs_completed_clerk_deletion`. Its only reader was the
 late-content sweep's receipt reconciliation for older APIs
 (`kind = 'clerk-user-deletion' AND status = 'completed' ORDER BY id`), which
@@ -32,6 +32,31 @@ every minute. Without the index it becomes a sequential scan of
 `background_jobs`, which held 23 rows on 2026-09-25, so their results and
 correctness are unchanged. The migration takes a brief `ACCESS EXCLUSIVE` lock
 on that small table under the default 1s lock timeout.
+
+## Keyword-only chat search GIN index dropped (2026-09-25)
+
+Migration `1239_drop_chat_search_tsv_gin` drops
+`chat_event_search_messages_tsv_idx` with `DROP INDEX CONCURRENTLY`. It does not
+block chat search reads or projector writes; it waits for older transactions on
+the table, so it raises `lock_timeout` to 10 minutes and disables
+`statement_timeout` for its own session, then resets both.
+
+Ship it only after the API that stops maintaining this index (previous entry,
+#36885) is in production; that API was promoted in release #36887 (`f24f7192`).
+Chat search and MCP chat search already use the `(user_id, tsv)` index; queries
+and responses are unchanged. Restoring the index means rebuilding it
+concurrently; no data is lost.
+
+**API rollback floor: `32e48c76fea61c39d0962762e1bc2e0aa5a5cab0`** (#36885's
+merge commit). An API artifact that predates it names
+`chat_event_search_messages_tsv_idx` in chat search GIN maintenance; after this
+migration its `::regclass` cast fails with `42P01` and every projection tick
+fails before projecting a thread. Rolling the API back does not restore the
+index. The production rollback resolver
+(`.github/scripts/resolve-production-rollback-target.sh`) enforces the floor for
+API targets; verify manually with
+`gh api repos/okou-ai/okou/compare/32e48c76fea61c39d0962762e1bc2e0aa5a5cab0...<artifact-sha> --jq .status`
+and require `ahead` or `identical`.
 
 ## Chat search stops maintaining the keyword-only GIN index (2026-09-25)
 

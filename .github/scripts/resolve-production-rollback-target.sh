@@ -24,6 +24,8 @@ readonly AGENTPHONE_PUBLIC_BRAND_DROP_PATH=turbo/packages/db/src/migrations/1228
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb988f59217af
 readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
+# #36885 stopped GIN maintenance of the keyword-only chat search index that 1239 drops.
+readonly CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT=32e48c76fea61c39d0962762e1bc2e0aa5a5cab0
 
 fail() {
   echo "::error::$*" >&2
@@ -183,6 +185,12 @@ fi
 # Runner tags remain independent because the guest ignores unknown fields.
 if ! git merge-base --is-ancestor "$PI_SESSION_CONSTRUCTION_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Pi session-construction digest reader: ${PI_SESSION_CONSTRUCTION_READER_COMMIT}."
+fi
+
+# Migration 1239 drops chat_event_search_messages_tsv_idx. Earlier APIs name it
+# in chat search GIN maintenance, so every projection tick fails with 42P01.
+if ! git merge-base --is-ancestor "$CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the keyword-only chat search GIN index drop: ${CHAT_SEARCH_TSV_GIN_MAINTENANCE_COMMIT}."
 fi
 
 # Production has activated split chat event writes, and the contraction

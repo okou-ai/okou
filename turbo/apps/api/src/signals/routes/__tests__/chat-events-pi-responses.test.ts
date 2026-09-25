@@ -34,7 +34,6 @@ import {
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
-  GPT_PI_BDD_MODELS,
   GPT_API_KEY_BDD_ROUTES,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
   requireOrgId,
@@ -374,13 +373,11 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each([
-    ...GPT_PI_BDD_MODELS.map((selectedModel) => {
-      return {
-        name: selectedModel,
-        selectedModel,
-        providerUrl: "https://api.openai.com/v1/responses",
-      };
-    }),
+    {
+      name: "gpt-5.6-terra",
+      selectedModel: "gpt-5.6-terra",
+      providerUrl: "https://api.openai.com/v1/responses",
+    },
     {
       name: "DeepSeek V4.1 Flash",
       selectedModel: "deepseek-v4.1-flash",
@@ -477,13 +474,11 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each([
-    ...GPT_PI_BDD_MODELS.map((selectedModel) => {
-      return {
-        name: selectedModel,
-        selectedModel,
-        providerUrl: "https://api.openai.com/v1/responses",
-      };
-    }),
+    {
+      name: "gpt-5.6-terra",
+      selectedModel: "gpt-5.6-terra",
+      providerUrl: "https://api.openai.com/v1/responses",
+    },
     {
       name: "DeepSeek V4.1 Flash",
       selectedModel: "deepseek-v4.1-flash",
@@ -761,7 +756,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
   }, 90_000);
 
-  it.each(GPT_PI_BDD_MODELS)(
+  it.each(["gpt-5.6-terra"] as const)(
     "reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for %s",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -1029,7 +1024,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(GPT_PI_BDD_MODELS)(
+  it.each(["gpt-5.6-terra"] as const)(
     "bills managed OpenRouter priority only from the observed terminal Responses tier %s",
     async (selectedModel) => {
       const { actor, agentId } = await entitledChatActor();
@@ -1114,7 +1109,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(GPT_PI_BDD_MODELS)(
+  it.each(["gpt-5.6-terra"] as const)(
     "promotes queued fast %s through Pi API-first with priority",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup, providerId } =
