@@ -907,7 +907,9 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   expect(submit).toBeDisabled();
   const file = new File(["test"], "note.txt", { type: "text/plain" });
   Object.defineProperty(file, "arrayBuffer", {
-    value: () => {return Promise.resolve(new Uint8Array([116, 101, 115, 116]).buffer)},
+    value: () => {
+      return Promise.resolve(new Uint8Array([116, 101, 115, 116]).buffer);
+    },
   });
   fireEvent.change(input, { target: { files: [file] } });
   expect(uploaded).toBeFalsy();

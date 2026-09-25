@@ -66,8 +66,8 @@ describe("Browser user-action JSONB payload", () => {
     expect(
       parseBrowserUserActionPayload(payload).target.fields[0],
     ).toMatchObject(field);
-    expect(() =>
-      {return parseBrowserUserActionPayload({
+    expect(() => {
+      return parseBrowserUserActionPayload({
         ...payload,
         target: {
           ...inputTarget,
@@ -75,17 +75,17 @@ describe("Browser user-action JSONB payload", () => {
             { ...field, fingerprint: { tagName: "INPUT", inputType: "text" } },
           ],
         },
-      })},
-    ).toThrow("Invalid Browser user-action payload");
-    expect(() =>
-      {return parseBrowserUserActionPayload({
+      });
+    }).toThrow("Invalid Browser user-action payload");
+    expect(() => {
+      return parseBrowserUserActionPayload({
         ...payload,
         target: {
           ...inputTarget,
           fields: [{ ...field, contentBase64: "dGVzdA==" }],
         },
-      })},
-    ).toThrow("Invalid Browser user-action payload");
+      });
+    }).toThrow("Invalid Browser user-action payload");
   });
 
   it("accepts genuine number targets but keeps semantic kinds distinct", () => {

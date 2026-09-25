@@ -996,27 +996,27 @@ describe("Browser user-action route", () => {
       [FeatureSwitchKey.BrowserNativeInput]: true,
       [FeatureSwitchKey.BrowserNativeFileInput]: false,
     });
-    const denied = await accept(
-      userActionClient().create({
-        headers: current.claim.browserHeaders,
-        body: {
-          kind: "input",
-          callbackPrompt: "Continue after selecting the file",
-          pageTargetId: "native-input-target",
-          fields: [
-            {
-              key: "document",
-              label: "Document",
-              fieldKind: "file",
-              required: false,
-              backendNodeId: 45,
-            },
-          ],
-        },
-      }),
-      [403],
-    );
-    expect(denied.body.error.code).toBe("FORBIDDEN");
+    const denied = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after selecting the file",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "document",
+            label: "Document",
+            fieldKind: "file",
+            required: false,
+            backendNodeId: 45,
+          },
+        ],
+      },
+    });
+    expect(denied).toMatchObject({
+      status: 403,
+      body: { error: { code: "FORBIDDEN" } },
+    });
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserNativeInput]: true,
       [FeatureSwitchKey.BrowserNativeFileInput]: true,

@@ -94,7 +94,9 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (
     body.data.kind === "input" &&
-    body.data.fields.some((field) => {return field.fieldKind === "file"})
+    body.data.fields.some((field) => {
+      return field.fieldKind === "file";
+    })
   ) {
     const fileEnabled = await set(browserNativeFileInputEnabled$);
     signal.throwIfAborted();
