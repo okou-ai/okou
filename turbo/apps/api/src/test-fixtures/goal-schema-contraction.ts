@@ -103,13 +103,20 @@ export async function seedRetainedRunProvenance(
       .set({ triggerSource })
       .where(eq(agentRuns.id, runId));
     if (groupId !== null) {
-      await insertChatEvent(tx, {
+      const output = await insertChatEvent(tx, {
         chatThreadId: threadId,
         runId,
-        runGroupId: groupId,
         eventType: "output.message",
         content: "Retained historical output",
       });
+      if (!output) {
+        throw new Error("Expected retained historical output");
+      }
+      // Current writers never emit Goal context; restore the historical pointer.
+      await tx
+        .update(chatEvents)
+        .set({ contextType: "goal", contextId: groupId })
+        .where(eq(chatEvents.id, output.id));
     }
   });
 }
