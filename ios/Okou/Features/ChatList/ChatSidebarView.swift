@@ -23,9 +23,9 @@ struct ChatSidebarView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 16)
         .padding(.top, 14)
-        .padding(.bottom, 22)
+        .padding(.bottom, 0)
 
       List {
         pinnedAgentsSection
@@ -52,6 +52,11 @@ struct ChatSidebarView: View {
               .foregroundStyle(.secondary)
           }
         }
+        Color.clear
+          .frame(height: 80)
+          .listRowInsets(EdgeInsets())
+          .listRowSeparator(.hidden)
+          .listRowBackground(Color.clear)
       }
       .listStyle(.plain)
       .listSectionSpacing(.compact)
@@ -59,7 +64,7 @@ struct ChatSidebarView: View {
       .environment(\.defaultMinListRowHeight, 0)
       .environment(\.defaultMinListHeaderHeight, 0)
       .scrollContentBackground(.hidden)
-      footer
+      .overlay(alignment: .bottom) { footer }
     }
     .background(Color(uiColor: .systemBackground))
     .alert(
@@ -270,7 +275,7 @@ struct ChatSidebarView: View {
       .accessibilityLabel("Account")
     }
     .buttonStyle(.plain)
-    .padding(.horizontal, 24)
+    .padding(.horizontal, 16)
     .padding(.top, 10)
     .padding(.bottom, 12)
   }

@@ -115,7 +115,6 @@ private struct WorkspaceRootView: View {
           newChat: startNewChat
         )
         .frame(width: sidebarWidth, height: geometry.size.height)
-        .opacity(isSidebarOpen ? 1 : 0)
         .allowsHitTesting(isSidebarOpen)
         .accessibilityHidden(!isSidebarOpen)
 
@@ -139,20 +138,21 @@ private struct WorkspaceRootView: View {
         .frame(width: geometry.size.width, height: geometry.size.height)
         .background(alignment: .top) {
           RoundedRectangle(cornerRadius: isSidebarOpen ? 30 : 0)
-            .fill(Color(uiColor: isSidebarOpen ? .secondarySystemBackground : .systemBackground))
+            .fill(Color(uiColor: .systemBackground))
             .frame(width: geometry.size.width, height: screenHeight)
             .offset(y: -topInset)
         }
         .overlay(alignment: .top) {
-          if isSidebarOpen {
-            Color(uiColor: .secondarySystemBackground).opacity(0.82)
-              .frame(width: geometry.size.width, height: screenHeight)
-              .clipShape(RoundedRectangle(cornerRadius: 30))
-              .offset(y: -topInset)
-              .onTapGesture(perform: closeSidebar)
-              .accessibilityLabel("Close sidebar")
-              .accessibilityAddTraits(.isButton)
-          }
+          Color(uiColor: .secondarySystemBackground)
+            .frame(width: geometry.size.width, height: screenHeight)
+            .clipShape(RoundedRectangle(cornerRadius: isSidebarOpen ? 30 : 0))
+            .opacity(isSidebarOpen ? 0.82 : 0)
+            .offset(y: -topInset)
+            .allowsHitTesting(isSidebarOpen)
+            .onTapGesture(perform: closeSidebar)
+            .accessibilityLabel("Close sidebar")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHidden(!isSidebarOpen)
         }
         .shadow(color: .black.opacity(isSidebarOpen ? 0.3 : 0), radius: 18, x: -5)
         .offset(x: isSidebarOpen ? sidebarWidth : 0)
@@ -199,17 +199,10 @@ private struct WorkspaceRootView: View {
             .frame(width: 32, height: 32)
         }
         .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
         .accessibilityLabel("Open sidebar")
         .accessibilityIdentifier("open-sidebar")
         Spacer()
-        Button(action: { startNewChat() }) {
-          Image(systemName: "square.and.pencil")
-            .font(.system(size: 19, weight: .medium))
-            .frame(width: 32, height: 32)
-        }
-        .buttonStyle(.glass)
-        .accessibilityLabel("New chat")
-        .disabled(store.isCreating || store.needsUpgrade)
       }
     }
     .buttonStyle(.plain)
