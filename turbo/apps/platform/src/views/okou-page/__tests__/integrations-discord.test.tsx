@@ -489,3 +489,166 @@ test.each([
     });
   },
 );
+
+test.each([
+  {
+    name: "admin",
+    data: { isAdmin: true },
+    connected: true,
+    actions: ["Disconnect Discord", "Remove Discord"],
+  },
+  {
+    name: "connected member",
+    data: { isAdmin: false },
+    connected: true,
+    actions: ["Disconnect Discord"],
+  },
+  {
+    name: "member without a connection",
+    data: { isAdmin: false, isConnected: false, discordUserId: null },
+    connected: false,
+    actions: [] as string[],
+  },
+])(
+  "A missing bot configuration shows one unavailable state to an installed $name",
+  async ({ data, connected, actions }) => {
+    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+      return respond(
+        200,
+        status({ isAvailable: false, contextMode: "unavailable", ...data }),
+      );
+    });
+    await setupDiscordPage();
+
+    await expect(
+      screen.findByText(
+        "Discord is temporarily unavailable. Existing connections are kept.",
+      ),
+    ).resolves.toBeInTheDocument();
+    const card = getIntegrationCard("Discord");
+    expect(
+      within(card).queryByText(
+        "Discord is not available yet for this organization.",
+      ),
+    ).toBeNull();
+    expect(within(card).getByText("Server: Design team")).toBeInTheDocument();
+    expect(within(card).queryByText(/Limited context:/u)).toBeNull();
+    expect(within(card).queryAllByText("Connected")).toHaveLength(
+      connected ? 1 : 0,
+    );
+    const menu = queryAction("button", "More Discord options", card);
+    expect(menu === null).toBe(actions.length === 0);
+    if (menu) {
+      click(menu);
+    }
+    for (const action of ["Disconnect Discord", "Remove Discord"]) {
+      expect(queryAction("button", action) !== null).toBe(
+        actions.includes(action),
+      );
+    }
+  },
+);
+
+test("Saving a DM server stays pending until the refreshed choice arrives", async () => {
+  const first = "e0000000-0000-4000-a000-000000000001";
+  const second = "e0000000-0000-4000-a000-000000000002";
+  const refreshStarted = context.mocks.deferred<void>();
+  const refreshReady = context.mocks.deferred<void>();
+  let current = status({
+    dmSelectionConnectionId: first,
+    dmBindings: [
+      {
+        connectionId: first,
+        guildId: "123456789012345678",
+        guildName: "Design team",
+      },
+      {
+        connectionId: second,
+        guildId: "345678901234567890",
+        guildName: "Operations",
+      },
+    ],
+  });
+  let deferNextRefresh = false;
+  context.mocks.api(
+    integrationsDiscordContract.getStatus,
+    async ({ respond, withSignal }) => {
+      if (deferNextRefresh) {
+        deferNextRefresh = false;
+        refreshStarted.resolve();
+        await withSignal(refreshReady.promise);
+      }
+      return respond(200, current);
+    },
+  );
+  context.mocks.api(
+    integrationsDiscordContract.setDmSelection,
+    ({ body, respond }) => {
+      current = { ...current, dmSelectionConnectionId: body.connectionId };
+      deferNextRefresh = true;
+      return respond(200, { ok: true });
+    },
+  );
+  await setupDiscordPage();
+  click(
+    await screen.findByRole("combobox", {
+      name: "Default server for direct messages",
+    }),
+  );
+  click(await screen.findByRole("option", { name: "Operations" }));
+
+  await refreshStarted.promise;
+  const pending = screen.getByRole("combobox", {
+    name: "Default server for direct messages",
+  });
+  expect(pending).toBeDisabled();
+  refreshReady.resolve();
+  await waitFor(() => {
+    const saved = screen.getByRole("combobox", {
+      name: "Default server for direct messages",
+    });
+    expect(saved).toBeEnabled();
+    expect(saved).toHaveTextContent("Operations");
+  });
+});
+
+test("Disconnecting stays pending until the refreshed status arrives", async () => {
+  const refreshStarted = context.mocks.deferred<void>();
+  const refreshReady = context.mocks.deferred<void>();
+  let current = status();
+  let deferNextRefresh = false;
+  context.mocks.api(
+    integrationsDiscordContract.getStatus,
+    async ({ respond, withSignal }) => {
+      if (deferNextRefresh) {
+        deferNextRefresh = false;
+        refreshStarted.resolve();
+        await withSignal(refreshReady.promise);
+      }
+      return respond(200, current);
+    },
+  );
+  context.mocks.api(integrationsDiscordContract.disconnect, ({ respond }) => {
+    current = { ...current, isConnected: false, discordUserId: null };
+    deferNextRefresh = true;
+    return respond(200, { ok: true });
+  });
+  await setupDiscordPage();
+  await expect(
+    screen.findByText("Server: Design team"),
+  ).resolves.toBeInTheDocument();
+  click(
+    getAction("button", "More Discord options", getIntegrationCard("Discord")),
+  );
+  click(getAction("button", "Disconnect Discord"));
+
+  await refreshStarted.promise;
+  expect(getAction("button", "Disconnect Discord")).toBeDisabled();
+  refreshReady.resolve();
+  await expect(
+    screen.findByText(/Your account is not connected/u),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(getIntegrationCard("Discord")).queryByText("Connected"),
+  ).toBeNull();
+});

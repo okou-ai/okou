@@ -449,6 +449,11 @@ function SlackCard({ displayName }: { displayName: string }) {
 }
 
 function discordDescription(data: DiscordOrgStatus): string {
+  if (!data.isAvailable && data.isInstalled) {
+    return i18n.t(($) => {
+      return $.works.discord.suspended;
+    });
+  }
   if (!data.isAvailable) {
     return i18n.t(($) => {
       return $.works.discord.unconfigured;

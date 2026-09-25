@@ -15,6 +15,8 @@ import {
   helloSchema,
   initialState,
   packetSchema,
+  messageRoutingSchema,
+  outboxEntrySchema,
   readySchema,
   relayIdentity,
   signature,
@@ -33,6 +35,17 @@ const MAX_DURABLE_RECORD_BYTES = 120_000;
 const outboxKey = (index: number) => {
   return `outbox:${index.toString().padStart(16, "0")}`;
 };
+// Guild chatter that does not mention the bot cannot start a task, so only
+// DMs and explicit mentions occupy the ordered outbox. Unparseable routing
+// fields are forwarded for the API to reject.
+function addressesBot(data: unknown, botUserId: string): boolean {
+  const message = messageRoutingSchema.safeParse(data);
+  if (!message.success) return true;
+  if (message.data.guild_id === undefined) return true;
+  return message.data.mentions.some((mention) => {
+    return mention.id === botUserId;
+  });
+}
 const deadKey = (index: number) => {
   return `dead:${index.toString().padStart(16, "0")}`;
 };
@@ -160,9 +173,10 @@ export class DiscordGateway {
         this.deliveryAbort?.abort();
         await this.save({ ...this.state, running: false });
         await this.ctx.storage.deleteAlarm();
-        return this.health();
+        return await this.health();
       }
-      if (path === "/health" && request.method === "GET") return this.health();
+      if (path === "/health" && request.method === "GET")
+        return await this.health();
       if (path !== "/start" || request.method !== "POST")
         return new Response("Not found", { status: 404 });
       if (this.env.DISCORD_GATEWAY_ENABLED !== "true")
@@ -191,11 +205,16 @@ export class DiscordGateway {
         });
       }
       await this.arm();
-      return this.health();
+      return await this.health();
     });
   }
 
-  private health(): Response {
+  private async health(): Promise<Response> {
+    const oldest = await this.ctx.storage.list<unknown>({
+      prefix: "outbox:",
+      limit: 1,
+    });
+    const [head] = oldest.values();
     return Response.json(
       {
         enabled: this.env.DISCORD_GATEWAY_ENABLED === "true",
@@ -204,6 +223,11 @@ export class DiscordGateway {
         resumable: this.state.session !== null,
         pending: this.state.pending,
         deadLettered: this.state.deadLettered,
+        deliveryFailures: this.state.deliveryFailures,
+        oldestPendingAgeMs:
+          head === undefined
+            ? null
+            : Math.max(0, Date.now() - outboxEntrySchema.parse(head).queuedAt),
         fatal: this.state.fatal,
       },
       { headers: { "Cache-Control": "no-store" } },
@@ -509,6 +533,7 @@ export class DiscordGateway {
         id: ready.session_id,
         url: ready.resume_gateway_url,
         sequence: packet.s,
+        botUserId: ready.user.id,
       };
     } else {
       if (!session) throw new Error("Dispatch before Ready");
@@ -516,7 +541,9 @@ export class DiscordGateway {
       session = { ...session, sequence: packet.s };
     }
     const forwarded =
-      packet.t === "MESSAGE_CREATE" || packet.t === "GUILD_DELETE";
+      packet.t === "GUILD_DELETE" ||
+      (packet.t === "MESSAGE_CREATE" &&
+        addressesBot(packet.d, session.botUserId));
     if (forwarded && this.state.pending >= MAX_OUTBOX) {
       await this.retry(false, 5000);
       return;
@@ -562,7 +589,10 @@ export class DiscordGateway {
       } else {
         next.pending++;
         await this.ctx.storage.transaction(async (transaction) => {
-          await transaction.put(outboxKey(this.state.nextOutbox), body);
+          await transaction.put(outboxKey(this.state.nextOutbox), {
+            body,
+            queuedAt: Date.now(),
+          });
           await transaction.put("state", next);
         });
       }
@@ -597,7 +627,7 @@ export class DiscordGateway {
   private async flush(): Promise<void> {
     // Bounded network work never holds the Gateway dispatch/heartbeat queue.
     for (let sent = 0; sent < 20 && this.state.running; sent++) {
-      const entries = await this.ctx.storage.list<string>({
+      const entries = await this.ctx.storage.list<unknown>({
         prefix: "outbox:",
         limit: 1,
       });
@@ -608,7 +638,8 @@ export class DiscordGateway {
         this.env.DISCORD_GATEWAY_ENABLED !== "true"
       )
         return;
-      const [key, body] = entry;
+      const [key, value] = entry;
+      const { body } = outboxEntrySchema.parse(value);
       const secret = this.env.DISCORD_GATEWAY_SECRET;
       if (!secret) return;
       const timestamp = Math.floor(Date.now() / 1000).toString();
