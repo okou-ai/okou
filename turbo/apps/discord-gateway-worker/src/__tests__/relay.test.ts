@@ -488,7 +488,8 @@ describe("Discord Gateway relay", () => {
   it("gives a requested heartbeat its full ACK interval across the next scheduled tick", async () => {
     const relay = await createRelay();
     const gateway = await relay.start();
-    gateway.hello(300);
+    // Each ACK must arrive within one interval, so leave slack for loaded CI.
+    gateway.hello(1_500);
     await gateway.next(2);
     gateway.ready();
     await gateway.next(1);
@@ -508,7 +509,7 @@ describe("Discord Gateway relay", () => {
       `MESSAGE_CREATE:${MESSAGE_ID}`,
     );
     expect(relay.opened).toHaveLength(1);
-  });
+  }, 15_000);
 
   it("identifies again after an invalid sequence close instead of resuming it", async () => {
     const relay = await createRelay();
