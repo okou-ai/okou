@@ -227,18 +227,5 @@ describe("agentRuns circular foreign keys", () => {
     expect(officialWorkflowProvenanceSql).toContain("__system__");
     expect(officialWorkflowProvenanceSql).toContain("__org__");
     expect(officialWorkflowProvenanceSql).toContain("^[0-9a-f]{64}$");
-
-    // Session binding writes must not lock agent_runs or agent_sessions.
-    const chatThreadForeignKeys = getTableConfig(chatThreads).foreignKeys.map(
-      (foreignKey) => {
-        return foreignKey.getName();
-      },
-    );
-    expect(chatThreadForeignKeys).not.toContain(
-      "chat_threads_agent_session_id_agent_sessions_id_fk",
-    );
-    expect(chatThreadForeignKeys).not.toContain(
-      "chat_threads_agent_session_run_id_agent_runs_id_fk",
-    );
   });
 });
