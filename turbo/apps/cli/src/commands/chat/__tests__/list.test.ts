@@ -26,6 +26,7 @@ const REFRESH_SEQ_ID = 4;
 const SNAPSHOT_URL = "http://localhost:3000/api/chat-threads/snapshot";
 const EVENTS_URL = "http://localhost:3000/api/chat-threads/events";
 const INDICATORS_URL = "http://localhost:3000/api/indicators";
+const ARCHIVE_URL = "https://r2.example.com/chat-thread-snapshots";
 
 function okouToken(): string {
   const payload = Buffer.from(
@@ -60,6 +61,24 @@ function snapshotThread(options: {
   };
 }
 
+const archives = new Map<string, unknown>();
+
+/** Serves the snapshot the way the API does: an R2 URL plus its cursor. */
+function r2Snapshot(snapshot: {
+  readonly chatThreads: readonly ReturnType<typeof snapshotThread>[];
+  readonly latestEventId: string;
+  readonly latestSeqId: number;
+}) {
+  const url = `${ARCHIVE_URL}/${String(archives.size)}.json`;
+  archives.set(url, { chatThreads: snapshot.chatThreads });
+  return {
+    url,
+    expiresInSeconds: 900,
+    latestEventId: snapshot.latestEventId,
+    latestSeqId: snapshot.latestSeqId,
+  };
+}
+
 function event(options: {
   readonly id: string;
   readonly seqId: number;
@@ -81,11 +100,13 @@ function mockStableThreadSnapshot(
 ): void {
   server.use(
     http.get(SNAPSHOT_URL, () => {
-      return HttpResponse.json({
-        chatThreads: threads,
-        latestEventId: INITIAL_EVENT_ID,
-        latestSeqId: INITIAL_SEQ_ID,
-      });
+      return HttpResponse.json(
+        r2Snapshot({
+          chatThreads: threads,
+          latestEventId: INITIAL_EVENT_ID,
+          latestSeqId: INITIAL_SEQ_ID,
+        }),
+      );
     }),
     http.get(EVENTS_URL, () => {
       return HttpResponse.json({ events: [], hasMore: false });
@@ -110,6 +131,14 @@ describe("okou chat list command", () => {
     vi.stubEnv("OKOU_TOKEN", okouToken());
     vi.stubEnv("OKOU_AGENT_ID", AGENT_ID);
     vi.stubEnv("XDG_CACHE_HOME", cacheDirectory);
+    server.use(
+      http.get(`${ARCHIVE_URL}/:file`, ({ request }) => {
+        const archive = archives.get(request.url);
+        return archive === undefined
+          ? HttpResponse.json({ error: "missing" }, { status: 404 })
+          : HttpResponse.json(archive);
+      }),
+    );
   });
 
   afterEach(async () => {
@@ -117,6 +146,7 @@ describe("okou chat list command", () => {
     mockConsoleError.mockClear();
     mockExit.mockClear();
     vi.unstubAllEnvs();
+    archives.clear();
     await rm(cacheDirectory, { recursive: true, force: true });
   });
 
@@ -126,30 +156,32 @@ describe("okou chat list command", () => {
     server.use(
       http.get(SNAPSHOT_URL, () => {
         snapshotRequests++;
-        return HttpResponse.json({
-          chatThreads: [
-            snapshotThread({
-              id: THREAD_ID,
-              agentId: AGENT_ID,
-              title: "Initial title",
-              sortAt: "2026-07-24T03:00:00.000Z",
-            }),
-            snapshotThread({
-              id: SECOND_THREAD_ID,
-              agentId: AGENT_ID,
-              title: "Second title",
-              sortAt: "2026-07-24T02:00:00.000Z",
-            }),
-            snapshotThread({
-              id: OTHER_THREAD_ID,
-              agentId: OTHER_AGENT_ID,
-              title: "Other agent",
-              sortAt: "2026-07-24T04:00:00.000Z",
-            }),
-          ],
-          latestEventId: INITIAL_EVENT_ID,
-          latestSeqId: INITIAL_SEQ_ID,
-        });
+        return HttpResponse.json(
+          r2Snapshot({
+            chatThreads: [
+              snapshotThread({
+                id: THREAD_ID,
+                agentId: AGENT_ID,
+                title: "Initial title",
+                sortAt: "2026-07-24T03:00:00.000Z",
+              }),
+              snapshotThread({
+                id: SECOND_THREAD_ID,
+                agentId: AGENT_ID,
+                title: "Second title",
+                sortAt: "2026-07-24T02:00:00.000Z",
+              }),
+              snapshotThread({
+                id: OTHER_THREAD_ID,
+                agentId: OTHER_AGENT_ID,
+                title: "Other agent",
+                sortAt: "2026-07-24T04:00:00.000Z",
+              }),
+            ],
+            latestEventId: INITIAL_EVENT_ID,
+            latestSeqId: INITIAL_SEQ_ID,
+          }),
+        );
       }),
       http.get(EVENTS_URL, ({ request }) => {
         eventRequests++;
@@ -236,20 +268,23 @@ describe("okou chat list command", () => {
     server.use(
       http.get(SNAPSHOT_URL, () => {
         snapshotRequests++;
-        return HttpResponse.json({
-          chatThreads: [
-            snapshotThread({
-              id: THREAD_ID,
-              agentId: AGENT_ID,
-              title:
-                snapshotRequests === 1 ? "Cached title" : "Refreshed title",
-              sortAt: "2026-07-24T03:00:00.000Z",
-            }),
-          ],
-          latestEventId:
-            snapshotRequests === 1 ? INITIAL_EVENT_ID : REFRESH_EVENT_ID,
-          latestSeqId: snapshotRequests === 1 ? INITIAL_SEQ_ID : REFRESH_SEQ_ID,
-        });
+        return HttpResponse.json(
+          r2Snapshot({
+            chatThreads: [
+              snapshotThread({
+                id: THREAD_ID,
+                agentId: AGENT_ID,
+                title:
+                  snapshotRequests === 1 ? "Cached title" : "Refreshed title",
+                sortAt: "2026-07-24T03:00:00.000Z",
+              }),
+            ],
+            latestEventId:
+              snapshotRequests === 1 ? INITIAL_EVENT_ID : REFRESH_EVENT_ID,
+            latestSeqId:
+              snapshotRequests === 1 ? INITIAL_SEQ_ID : REFRESH_SEQ_ID,
+          }),
+        );
       }),
       http.get(EVENTS_URL, ({ request }) => {
         eventRequests++;
@@ -288,24 +323,26 @@ describe("okou chat list command", () => {
   it("lets --agent override OKOU_AGENT_ID", async () => {
     server.use(
       http.get(SNAPSHOT_URL, () => {
-        return HttpResponse.json({
-          chatThreads: [
-            snapshotThread({
-              id: THREAD_ID,
-              agentId: AGENT_ID,
-              title: "Current agent",
-              sortAt: "2026-07-24T03:00:00.000Z",
-            }),
-            snapshotThread({
-              id: OTHER_THREAD_ID,
-              agentId: OTHER_AGENT_ID,
-              title: "Selected agent",
-              sortAt: "2026-07-24T04:00:00.000Z",
-            }),
-          ],
-          latestEventId: INITIAL_EVENT_ID,
-          latestSeqId: INITIAL_SEQ_ID,
-        });
+        return HttpResponse.json(
+          r2Snapshot({
+            chatThreads: [
+              snapshotThread({
+                id: THREAD_ID,
+                agentId: AGENT_ID,
+                title: "Current agent",
+                sortAt: "2026-07-24T03:00:00.000Z",
+              }),
+              snapshotThread({
+                id: OTHER_THREAD_ID,
+                agentId: OTHER_AGENT_ID,
+                title: "Selected agent",
+                sortAt: "2026-07-24T04:00:00.000Z",
+              }),
+            ],
+            latestEventId: INITIAL_EVENT_ID,
+            latestSeqId: INITIAL_SEQ_ID,
+          }),
+        );
       }),
       http.get(EVENTS_URL, () => {
         return HttpResponse.json({ events: [], hasMore: false });
@@ -495,6 +532,53 @@ describe("okou chat list command", () => {
       agentId: threads.at(-1)?.agentId,
       unreadAt: threads.at(-1)?.sortAt,
     });
+  });
+
+  it("lists no threads when the scope has no snapshot row", async () => {
+    server.use(
+      http.get(SNAPSHOT_URL, () => {
+        return HttpResponse.json({
+          chatThreads: [],
+          latestEventId: null,
+          latestSeqId: null,
+        });
+      }),
+      http.get(EVENTS_URL, ({ request }) => {
+        expect(new URL(request.url).searchParams.has("sinceSeqId")).toBe(false);
+        return HttpResponse.json({ events: [], hasMore: false });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "list"]);
+
+    expect(mockConsoleLog).toHaveBeenCalledWith("No chat threads found");
+  });
+
+  it("rejects a non-empty inline snapshot", async () => {
+    server.use(
+      http.get(SNAPSHOT_URL, () => {
+        return HttpResponse.json({
+          chatThreads: [
+            snapshotThread({
+              id: THREAD_ID,
+              agentId: AGENT_ID,
+              title: "Inline",
+              sortAt: "2026-07-24T03:00:00.000Z",
+            }),
+          ],
+          latestEventId: INITIAL_EVENT_ID,
+          latestSeqId: INITIAL_SEQ_ID,
+        });
+      }),
+    );
+
+    await expect(async () => {
+      await chatCommand.parseAsync(["node", "cli", "list"]);
+    }).rejects.toThrow("process.exit called");
+
+    const stderr = mockConsoleError.mock.calls.flat().join("\n");
+    expect(stderr).toContain("Expected an R2 chat thread snapshot URL");
+    expect(mockExit).toHaveBeenCalledWith(1);
   });
 
   it("rejects --all-agents with --agent", async () => {

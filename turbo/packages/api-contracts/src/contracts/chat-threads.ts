@@ -354,6 +354,31 @@ export const chatThreadSnapshotArchiveSchema = z.object({
   chatThreads: z.array(chatThreadSnapshotProjectionSchema),
 });
 
+/**
+ * Web App and CLI send X-Chat-Thread-Snapshot-R2, so every API they can reach
+ * (current and rollback-window builds) returns inline data only for a scope
+ * without a snapshot row. Reject anything else rather than accept an inline
+ * snapshot.
+ */
+export function emptyChatThreadSnapshot(body: {
+  readonly chatThreads: readonly unknown[];
+  readonly latestEventId: string | null;
+  readonly latestSeqId: number | null;
+}): {
+  readonly chatThreads: never[];
+  readonly latestEventId: null;
+  readonly latestSeqId: null;
+} {
+  if (
+    body.chatThreads.length > 0 ||
+    body.latestEventId !== null ||
+    body.latestSeqId !== null
+  ) {
+    throw new Error("Expected an R2 chat thread snapshot URL");
+  }
+  return { chatThreads: [], latestEventId: null, latestSeqId: null };
+}
+
 const chatThreadEventSchema = z.object({
   id: chatThreadEventIdSchema,
   /** Server-assigned strict position within the user/org event stream. */
@@ -1294,12 +1319,19 @@ export const chatThreadsContract = c.router({
     headers: authHeadersSchema,
     responses: {
       200: z.union([
+        // Every compacted snapshot lives in R2; capable clients download the
+        // archive from this short-lived URL.
         z.object({
           url: z.string().url(),
           expiresInSeconds: z.number().int().positive(),
           latestEventId: chatThreadEventIdSchema.nullable(),
           latestSeqId: z.number().int().positive().nullable(),
         }),
+        // A scope without a snapshot row (for example, no chat threads yet)
+        // returns `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
+        // to every client. Non-empty inline data is served only to clients
+        // that omit X-Chat-Thread-Snapshot-R2 (the native iOS client; see
+        // getChatThreadSnapshotInner$).
         z.object({
           chatThreads: z.array(chatThreadSnapshotProjectionSchema),
           latestEventId: chatThreadEventIdSchema.nullable(),

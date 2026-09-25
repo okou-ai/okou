@@ -3,6 +3,7 @@ import {
   chatThreadsContract,
   chatThreadEventsContract,
   chatThreadSnapshotArchiveSchema,
+  emptyChatThreadSnapshot,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -1045,10 +1046,8 @@ export class SharedDatabaseWorkerRuntime {
     if (snapshot.status !== 200) {
       throw new SharedDatabaseHttpError(snapshot.status);
     }
-    if ("chatThreads" in snapshot.body) {
-      // New App -> old API or an unbackfilled DB row: keep inline responses
-      // until old API targets and legacy rows are gone (follow-up #36375).
-      return snapshot.body;
+    if (!("url" in snapshot.body)) {
+      return emptyChatThreadSnapshot(snapshot.body);
     }
     const response = await fetchResource(snapshot.body.url, {}, signal);
     if (!response.ok) {

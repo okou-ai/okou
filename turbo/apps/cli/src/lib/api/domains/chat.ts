@@ -6,6 +6,7 @@ import {
   chatThreadEventsContract,
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
+  emptyChatThreadSnapshot,
   type ChatThreadEvent as ApiChatThreadEvent,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
@@ -122,26 +123,20 @@ export async function getChatThreadSnapshot(): Promise<ChatThreadSnapshot> {
   const client = initClient(chatThreadsContract, config);
   const result = await client.snapshot();
   if (result.status === 200) {
-    if ("url" in result.body) {
-      const response = await fetch(result.body.url);
-      if (!response.ok) {
-        throw new Error(
-          `Failed to download chat thread snapshot: ${response.status.toString()}`,
-        );
-      }
-      const archive = chatThreadSnapshotArchiveSchema.parse(
-        await response.json(),
-      );
-      return {
-        chatThreads: archive.chatThreads,
-        latestEventId: result.body.latestEventId,
-        latestSeqId: result.body.latestSeqId,
-      };
+    if (!("url" in result.body)) {
+      return emptyChatThreadSnapshot(result.body);
     }
-    // New CLI -> old API or an unbackfilled DB row: remove this inline branch
-    // after the old API floor and legacy-row census gates pass (#36375).
+    const response = await fetch(result.body.url);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download chat thread snapshot: ${response.status.toString()}`,
+      );
+    }
+    const archive = chatThreadSnapshotArchiveSchema.parse(
+      await response.json(),
+    );
     return {
-      chatThreads: result.body.chatThreads,
+      chatThreads: archive.chatThreads,
       latestEventId: result.body.latestEventId,
       latestSeqId: result.body.latestSeqId,
     };
