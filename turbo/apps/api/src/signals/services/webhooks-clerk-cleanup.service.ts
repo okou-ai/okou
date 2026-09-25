@@ -102,7 +102,11 @@ import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collectio
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
-import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
+  transitionAgentRunsToTerminal,
+} from "./agent-run-terminal-transition.service";
 import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
 import {
   deleteDiscordOrgData,
@@ -180,6 +184,7 @@ async function cancelOrgRuns(
         orgId,
       });
     }
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(rows));
     return rows;
   });
   await Promise.all(
@@ -261,6 +266,7 @@ async function cancelUserRuns(
       );
       await revokeMorningBriefDeliveryOwnership(tx, { kind: "user", userId });
     }
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(rows));
     return rows;
   });
   await Promise.all(

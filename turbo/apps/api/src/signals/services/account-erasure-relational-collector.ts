@@ -854,7 +854,7 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
-  "a5410500-8f74-41b3-92f5-c147ba9cd0e5";
+  "e1d10618-ceeb-40a0-a764-8153afad46ed";
 
 // The fence's own deadlines. A sweep waits for admission behind the exclusive
 // subject lock, so its lock timeout is the fence's, not a route's.

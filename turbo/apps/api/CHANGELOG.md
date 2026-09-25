@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.680.2](https://github.com/okou-ai/okou/compare/api-v1.680.1...api-v1.680.2) (2026-09-25)
+
+
+### Refactoring
+
+* contract thread drafts after the child-table cutover ([#36932](https://github.com/okou-ai/okou/issues/36932)) ([7a187fa](https://github.com/okou-ai/okou/commit/7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38))
+
+
+### Performance Improvements
+
+* **db:** drop discord deliveries and simplify chat event crons ([#36894](https://github.com/okou-ai/okou/issues/36894)) ([00edcaa](https://github.com/okou-ai/okou/commit/00edcaa76105997cc90d4b9eb68f6e8772243994))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.513.1
+    * @okouai/core bumped to 8.710.10
+    * @okouai/db bumped to 1.302.3
+    * @okouai/pi-agent-runtime bumped to 1.40.22
+
 ## [1.680.1](https://github.com/okou-ai/okou/compare/api-v1.680.0...api-v1.680.1) (2026-09-25)
 
 

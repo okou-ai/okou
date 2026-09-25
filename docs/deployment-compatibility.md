@@ -16,7 +16,7 @@ the previous replay flow need no migration; their extra JSONB keys are ignored.
 
 ## Agent-run context ownership becomes required (2026-09-25)
 
-Migration `1249_chat_agent_run_context_owner_not_null` deletes
+Migration `1251_chat_agent_run_context_owner_not_null` deletes
 `chat_agent_run_context` rows whose `source_user_id` or `source_org_id` is null,
 then makes both columns `NOT NULL`. Every API from the split writer on (API
 1.672.0) inserts a row only after reading both owners from the source thread and
@@ -34,6 +34,52 @@ replay. A job that an older API captures during the release overlap or after a
 rollback registers its relational sink under the old version, which this API
 refuses to execute. Check for such jobs after the release and after any rollback
 until the older APIs leave the rollback window.
+
+## Active run state moves to `active_agent_runs` (2026-09-25, step 1 of 3)
+
+Heartbeats rewrote the wide `agent_runs` row and two heartbeat indexes that no
+query used, and activity snapshots were written through the run-content lock
+chain. Migration `1249` builds `idx_agent_runs_status` concurrently and drops
+`idx_agent_runs_status_heartbeat` and `idx_agent_runs_running_heartbeat`; no
+API names either index. Migration `1250` adds `active_agent_runs`, one narrow
+row per active run with an immutable `chat_thread_id` (no foreign key, null for
+threadless runs), and seeds it from queued, pending and running runs.
+
+A row lives while a runner may still work on the run. The new API inserts it as
+the launch transaction's last statement and refreshes its heartbeat on
+promotion, claim and every sandbox heartbeat. A run that never reached `running`
+loses the row when it turns terminal; a run that did, including one cancelled
+while running, keeps it until the completion webhook, the running-heartbeat
+timeout, or a cleanup sweep that releases rows of runs terminal and silent for
+the 120-second cancellation-recovery grace. Every release is the last
+statement of its transaction, after the provider-account cleanup. The follow-up
+per-thread admission index relies on this ordering. It still writes `agent_runs.last_heartbeat_at`, and timeout cleanup and capacity
+checks still read that column. Activity capture and the activity summary read
+and write only the active row with single-row compare-and-set updates; they no
+longer touch `run_activity_snapshots`, `chat_threads` or `chat_events`, and no
+longer pass the account-erasure write fence.
+
+During rollout, and on any rollback to an older API, the older API keeps writing
+`run_activity_snapshots`, creates runs without an active row (the new API shows
+no activity for them), and ends seeded runs without deleting their active row.
+New API instances no longer expire `run_activity_snapshots` rows; they stay
+until step 2 drops the table and remain erasable through the `agent_runs`
+cascade. An older API's account-erasure worker rejects the uncatalogued
+`active_agent_runs` table (`catalogue_uncovered`), so account deletions wait for
+a new worker during the migration-to-promotion window and on rollback. A row an
+older API abandons is either still live, or terminal and released by the
+stale-terminal sweep once its heartbeat and completion age past the grace; no
+reader treats it as more than activity for a run the summary already reports as
+ineligible, so none of these states needs a runtime fallback.
+
+Step 2's migration seeds the missing rows for active runs, including runs
+cancelled while running whose recovery grace has not passed, and deletes only
+rows the stale-terminal sweep would release (terminal, completed and silent past
+the grace); it then switches
+heartbeat readers to `active_agent_runs`, stops writing
+`agent_runs.last_heartbeat_at` and drops `run_activity_snapshots`. After step 2,
+rolling back to this release is not supported because its timeout cleanup would
+read a stale heartbeat column. Step 3 drops `agent_runs.last_heartbeat_at`.
 
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 
