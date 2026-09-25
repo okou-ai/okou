@@ -308,15 +308,19 @@ permission to activate production.
    guidance, accessible-option filtering, stale component rejection, sticky
    guild routes, and the expected DM session boundaries. Connect must state the
    OAuth limitation honestly.
-   Slash commands use a callback-ACK design: after Ed25519 verification, and
-   before any database or Clerk work, the API posts a deferred private response
-   (type 5, flags 64) to the interaction callback endpoint, then answers the
-   webhook with `202` and no body. The command finishes by editing that
-   response in the background. A second ACK for the same interaction (Discord
-   error 40060) also returns `202` without applying changes. Verify each
+   Interactions use a callback-ACK design: after Ed25519 verification, and
+   before any database or Clerk work, the API posts the interaction callback
+   (a deferred private response, type 5 with flags 64, for slash commands; a
+   deferred update, type 6, for component clicks so the result replaces the
+   picker in place), then answers the webhook with `202` and no body. The
+   interaction finishes by editing that response in the background. A second
+   ACK for the same interaction (Discord error 40060) returns `202` without
+   applying changes. When the callback times out or fails with a server error,
+   its outcome is uncertain: the API applies no change, returns `202`, and
+   replaces any loading state after Discord's 3-second window. Verify each
    command shows the private "thinking" state within three seconds and then the
-   final private response, and that replaying a signed request changes
-   nothing.
+   final private response, that a picker selection updates in place, and that
+   replaying a signed request changes nothing.
 5. Send a file and a task producing a long result and an output artifact. Verify
    input/output ownership, complete content, native upload/download, usable
    references, and Discord source-message links in web history. Verify the
