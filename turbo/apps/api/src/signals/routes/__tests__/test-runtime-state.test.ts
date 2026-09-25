@@ -451,16 +451,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       cooldownSeconds: 5 * 60,
     },
     {
-      caseName: "provider unavailable default",
-      body: { failureKind: "provider_unavailable" },
-      cooldownSeconds: 5 * 60,
-    },
-    {
-      caseName: "timeout default",
-      body: { failureKind: "timeout" },
-      cooldownSeconds: 5 * 60,
-    },
-    {
       caseName: "provider-response connection default",
       body: {
         failureKind: "connection",

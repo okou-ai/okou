@@ -124,6 +124,9 @@ function finalizingPredecessorCondition(args: {
   readonly completedAfter: Date;
   readonly activeProducer: SQL;
 }): SQL | undefined {
+  // The recent-completion guard also covers a current Runner whose first
+  // producer-bearing heartbeat has not reached the API yet. The process
+  // generation and short completion deadline bound that advisory preference.
   // admittableProfiles is remaining capacity, so it may be empty while this
   // process is still finalizing. Poll and Ably recipients enforce static
   // profile support before admitting the advisory preference.

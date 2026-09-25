@@ -1833,6 +1833,7 @@ describe("runner resume session contract", () => {
       admittableProfiles: ["vm0/default"],
       heldSandboxStates: [],
       heldWorkspaceStates: [],
+      activeReuseProducers: [],
       mode: "running",
     } as const;
 
@@ -1896,6 +1897,7 @@ describe("runner resume session contract", () => {
       admittableProfiles: ["vm0/default"],
       heldSandboxStates: [],
       heldWorkspaceStates: [],
+      activeReuseProducers: [],
       mode: "running",
     } as const;
 
@@ -1903,6 +1905,12 @@ describe("runner resume session contract", () => {
       heartbeatBodySchema.safeParse({
         ...heartbeat,
         heldSandboxStates: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      heartbeatBodySchema.safeParse({
+        ...heartbeat,
+        activeReuseProducers: undefined,
       }).success,
     ).toBe(false);
 
@@ -1918,7 +1926,7 @@ describe("runner resume session contract", () => {
     });
     expect(parsed.heldSandboxStates).toHaveLength(1);
     expect(parsed.heldSandboxStates[0]?.reuseKey).toBe("thread:canonical");
-    expect(parsed).not.toHaveProperty("activeReuseProducers");
+    expect(parsed.activeReuseProducers).toStrictEqual([]);
 
     const producer = {
       runId: "22222222-2222-4222-8222-222222222222",
@@ -1962,6 +1970,7 @@ describe("runner resume session contract", () => {
       admittableProfiles: ["vm0/default"],
       heldSandboxStates: [],
       heldWorkspaceStates: [],
+      activeReuseProducers: [],
       mode: "running",
     } as const;
     const workspaceCaches = Array.from({ length: 8 }, (_, index) => {
