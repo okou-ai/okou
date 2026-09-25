@@ -65,6 +65,14 @@ describe("Feishu OAuth state", () => {
     );
   });
 
+  it("verifies a state signed before the brand was retired", async () => {
+    expect.hasAssertions();
+    await expectConnectError(
+      signedState({ ...statePayload(), publicBrand: "vm0" }),
+      "Feishu bot not found",
+    );
+  });
+
   it("identifies a missing Lark bot from its signed redirect URI", async () => {
     expect.hasAssertions();
     mockEnv("APP_URL", "https://app.okou.ai");
