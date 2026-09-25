@@ -93,13 +93,14 @@ ledger-before-Run order. Agent deletion then retains canonical mutation advisory
 -> agent -> sessions -> runs, with existing NOWAIT and 100 ms behavior; the
 shared admission wait also uses that 100 ms retry boundary.
 Clerk cleanup takes the usage-compaction advisory lock and deletes scoped
-ledger/entitlement rows before applying the 100 ms timeout or taking
-parent/run locks. Settlement takes shared compaction admission before its
-organization credit lock, so cleanup drains both compaction and settlement.
-Ledger and Run deletion commit together on one connection. Cleanup does not
+ledger/entitlement rows before taking parent/run locks. Settlement takes shared
+compaction admission before its organization credit lock, so cleanup drains
+both compaction and settlement. Ledger and Run deletion commit together on one
+connection. Clerk lifecycle no longer sets its own 100 ms lock timeout: parent,
+Run and later deletion locks use the database global timeout. Cleanup does not
 take X resource admission; see [account cleanup](x-resource-observations.md).
 Organization cleanup revalidates agents after canonical mutation ownership;
-both scopes then lock sessions and the deduplicated run set in ID order. Parent, Run and subsequent deletion locks retain 100 ms;
+both scopes then lock sessions and the deduplicated run set in ID order;
 blob locks still use NOWAIT. Threadless cleanup retains its run and Phase 2
 maintenance barriers. The
 new helper never acquires the checkpoint advisory lock after acquiring the run.

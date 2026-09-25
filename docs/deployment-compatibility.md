@@ -40,12 +40,17 @@ cleanup, narrowed so that user deletion never deletes an Agent.
   chat content deletion receipts and their late-content sweep, the dormant Clerk
   bridge and the separate decision journal are deleted. Blob retention uses the
   plain reference count again and upload intents are gone.
-- **X resource admission.** Clerk account cleanup no longer takes the global
-  `x_resource_reads` admission lock exclusively, so it no longer drains admitted
-  uploads. An upload holding its Run lock past cleanup's 100 ms lock timeout
-  fails that cleanup attempt; the user deletion job retries, organization
-  cleanup does not. The retention cron and ingestion still use the lock;
-  redesigning it is separate work.
+- **X resource retention.** Clerk cleanup, telemetry ingestion and the
+  retention cron no longer take a global `x_resource_reads` advisory lock.
+  Ingestion still validates the UTC today/yesterday window, serializes claims
+  by the resource primary key, and holds the Run's SHARE lock while writing
+  usage. Cron reads at most 1,000 expired keys, then deletes only those keys
+  with a repeated day predicate in a separate statement. An insert committed
+  just after its final time check at midnight can leave an expired key until
+  the next retention tick; it cannot reopen the admission window. Database
+  global timeouts replace the per-transaction X resource and 100 ms Clerk
+  lifecycle overrides. An upload holding its Run lock may delay cleanup;
+  the user deletion job retries a failed attempt, organization cleanup does not.
 
 Rows written for a deleted account after its legacy cleanup committed are no
 longer swept by anything. That is the accepted gap until the redesign.

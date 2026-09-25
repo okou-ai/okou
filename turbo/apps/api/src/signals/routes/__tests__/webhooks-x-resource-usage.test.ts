@@ -8,10 +8,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
-import {
-  usageEventCompactionDbFixture,
-  xResourceAdmissionDbFixture,
-} from "../../../test-fixtures/db-fixture";
+import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import {
   createUsagePricingFixture,
   type UsagePricingFixture,
@@ -21,7 +18,7 @@ import { holdUsageSettlementCreditWriteForTest } from "../../../test-fixtures/us
 import {
   holdXResourceClaimForTest,
   withXResourceClock,
-} from "../../../test-fixtures/x-resource-admission";
+} from "../../../test-fixtures/x-resource-usage";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
@@ -51,7 +48,7 @@ interface RunFixture {
 
 const context = testContext({
   connectorCatalog: true,
-  dbFixtures: [usageEventCompactionDbFixture, xResourceAdmissionDbFixture],
+  dbFixtures: [usageEventCompactionDbFixture],
 });
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);

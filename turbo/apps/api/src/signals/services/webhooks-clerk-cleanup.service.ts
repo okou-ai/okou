@@ -83,7 +83,6 @@ import {
   loadStoredBuiltinConnectorRuntimeSnapshot,
 } from "./connector-data.service";
 import {
-  AGENT_LIFECYCLE_LOCK_TIMEOUT,
   deleteClerkAgentLifecycleData,
   deleteStableContextLifecycleAfterAuthorityRemoval,
 } from "./agent-lifecycle.service";
@@ -878,12 +877,6 @@ async function deleteUserData(
   await deleteDiscordUserData(db, userId);
   signal.throwIfAborted();
 
-  await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
-    );
-  });
-
   await db
     .delete(slackOrgConnections)
     .where(eq(slackOrgConnections.userId, userId));
@@ -972,12 +965,7 @@ async function deleteUserData(
     .where(eq(userDisabledPaidTools.userId, userId));
   await db.delete(userCache).where(eq(userCache.userId, userId));
   signal.throwIfAborted();
-  await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
-    );
-    await tx.delete(users).where(eq(users.id, userId));
-  });
+  await db.delete(users).where(eq(users.id, userId));
 }
 
 export const cleanupClerkDeletedOrg$ = command(

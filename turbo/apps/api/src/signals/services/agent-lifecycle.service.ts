@@ -26,8 +26,6 @@ import {
 } from "./usage-event-cleanup.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
-export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
-
 type ClerkDeletionScope =
   | { readonly kind: "organization"; readonly orgId: string }
   | { readonly kind: "user"; readonly userId: string };
@@ -197,9 +195,6 @@ async function deleteClerkUserLifecycleData(
     // savepoint on this same connection; both deletion stages commit
     // atomically and retain their locks through that commit.
     await deleteUserUsageData(tx, userId);
-    await tx.execute(
-      sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
-    );
     const userSessions = tx
       .select({ id: agentSessions.id })
       .from(agentSessions)
@@ -256,9 +251,6 @@ async function deleteClerkOrganizationLifecycleData(
     // savepoint on this same connection; both deletion stages commit
     // atomically and retain their locks through that commit.
     await deleteOrgUsageData(tx, orgId);
-    await tx.execute(
-      sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
-    );
     const agentScope = eq(agents.orgId, orgId);
     const candidates = await tx
       .select({ id: agents.id })

@@ -26,7 +26,8 @@ Observations must be inside the two-date admission window below. The complete
 batch commits atomically and returns the existing `{ success: true }`
 acknowledgement. Both mixed and count-event batches discard original zero
 quantities for every usage kind, retain positive quantities and the existing BYOK
-model filter, and share bounded write admission.
+model filter, and keep bounded writes. Count-only batches insert the usage rows in one
+statement; resource batches keep their atomic source-and-claim transaction.
 
 X post and user reads always use resource observations. Runner claims and the
 proxy registry carry no separate X capability or activation date. The API retains
@@ -107,9 +108,9 @@ new claims or obligations. Foreign or conflicting source identities return
 Do not return foreign source records or winning attribution. Reusing a UUID
 with changed content is not checked against a stored digest.
 
-Lock order is shared X admission, the live run,
-the entire normalized/sorted source UUID set, then the entire sorted
-date/type/ID set. Reserve source rows at quantity zero before inserting any
+Lock order is the live run's SHARE lock, the entire normalized/sorted source
+UUID set, then the entire sorted date/type/ID set. There is no global X
+admission lock. Reserve source rows at quantity zero before inserting any
 resource; uncommitted placeholders are invisible to settlement. Insert resources
 with `ON CONFLICT DO NOTHING RETURNING`, derive N from the inserted identities,
 and finalize the new sources at N+R in that transaction, deleting placeholders
@@ -132,9 +133,10 @@ including when maintenance for another organization delays admission.
 
 The consumer takes no compaction or organization credit lock. Compaction only
 handles processed rows older than four days, so an immutable source within the
-two-date admission window cannot be compacted. It never waits for the X
-admission lock. Cleanup takes only the exclusive X admission lock and resource
-rows; it does not acquire run or ledger locks.
+two-date admission window cannot be compacted. Cleanup first reads at most 1,000
+expired resource primary keys, then deletes just those keys in a separate
+conditional statement. It never acquires a global X admission, run or ledger
+lock.
 
 ## Two-date admission and cleanup
 
@@ -145,15 +147,17 @@ mutation; a producer must never move an expired observation to a fresh date.
 Use JSON completion or complete NDJSON-row time and split streams at UTC
 midnight, rather than using upload or settlement time.
 
-Ingestion takes a transaction-scoped shared admission lock; cleanup takes the
-same lock exclusively. Sample the database clock after admission and again
-after source/resource insertion waits, before finalizing billing.
-This prevents cleanup from deleting a day while an admitted transaction can
-still charge against it. Each transaction has a 15-second total timeout,
-5-second statement timeout and 2-second lock timeout. Cleanup samples the clock
-after its exclusive lock is acquired and deletes at most 1,000 rows per call
-where `utc_day < current_utc_date - 1`. A delayed cleanup retains extra rows
-but never extends admission. No permanent closed-day watermark is needed.
+Ingestion samples the database clock before source lookup and again after
+source/resource insertion waits, before finalizing billing. An expired batch
+rolls back; the composite primary key arbitrates concurrent first claims.
+Cleanup samples the database UTC clock, reads up to 1,000 expired primary keys,
+then deletes only those keys while repeating `utc_day < cutoff` in the DELETE.
+The cron no longer blocks all ingestion, and none of these paths sets custom
+lock, statement or transaction timeouts; the database global timeouts apply.
+A resource insert committed just after its last time check at midnight can
+leave an expired row until the next hourly retention tick. This never extends
+the today/yesterday admission window. A delayed cleanup retains extra rows;
+no permanent closed-day watermark is needed.
 
 The existing ledger retains healthy processed rows for at least four days,
 which exceeds the two-date retry horizon. There is no source replay guarantee
@@ -168,13 +172,13 @@ deleting the scoped ledger and organization allowance entitlements. It then
 locks and deletes the live runs in the same transaction. The existing usage
 helper uses a savepoint on that connection, so no second pooled connection is
 needed. All locks survive until the common commit, so admitted settlements
-finish first. Ledger cleanup occurs before the lifecycle's existing
-100-millisecond lock timeout; parent, Run and later deletion locks retain that
-policy. Account cleanup does not take X admission, so it no longer drains
-admitted uploads first. An upload holding its Run `SHARE` lock past that
-timeout fails the cleanup transaction: the durable user deletion job retries it
-a minute later, while organization cleanup, which runs once after the webhook
-is acknowledged, is not retried. Uploads for a deleted Run return 404. Usage
+finish first. Clerk lifecycle no longer overrides the lock timeout; the
+database global setting governs parent, Run and later deletion locks. Account
+cleanup does not drain X uploads with a global admission lock. An upload
+holding its Run `SHARE` lock can delay the cleanup transaction until that
+global timeout: the durable user deletion job retries a failed attempt a minute
+later, while organization cleanup, which runs once after the webhook is
+acknowledged, is not retried. Uploads for a deleted Run return 404. Usage
 from an upload that commits between the ledger cleanup and the Run lock is not
 swept. These are accepted gaps until account deletion is redesigned. Shared
 resource records remain untouched.
