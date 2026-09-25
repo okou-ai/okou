@@ -423,9 +423,13 @@ async function persistMessage(
         return touchChatThreadLastMessageAtIndependently(
           db,
           args.ingress.chatThreadId,
-          args.ingress.createdAt,
-          args.ingress.id,
-          { userId: args.ingress.userId, orgId: args.orgId },
+          {
+            touchedAt: args.ingress.createdAt,
+            eventId: args.ingress.id,
+            orgId: args.orgId,
+            authorizedScope: { userId: args.ingress.userId, orgId: args.orgId },
+            unarchive: false,
+          },
         );
       },
     );

@@ -102,13 +102,12 @@ try {
     assert.ok(event);
     await clearThreadDraftIndependently(db, f);
     const touchedAt = new Date("2030-01-01T00:00:00Z");
-    await touchChatThreadLastMessageAtIndependently(
-      db,
-      f.threadId,
-      touchedAt,
-      undefined,
-      f,
-    );
+    await touchChatThreadLastMessageAtIndependently(db, f.threadId, {
+      touchedAt: touchedAt,
+      orgId: f.orgId,
+      authorizedScope: f,
+      unarchive: false,
+    });
     assert.equal(
       (await db.select().from(chatEvents).where(eq(chatEvents.id, event.id)))
         .length,
@@ -149,13 +148,12 @@ try {
     await pool.query(`CREATE FUNCTION fail_thread_touch() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN IF NEW.id = '${f.threadId}' THEN RAISE EXCEPTION 'synthetic timestamp fault'; END IF; RETURN NEW; END $$;
       CREATE TRIGGER fail_thread_touch BEFORE UPDATE OF last_message_at ON chat_threads FOR EACH ROW EXECUTE FUNCTION fail_thread_touch()`);
-    await touchChatThreadLastMessageAtIndependently(
-      db,
-      f.threadId,
-      new Date("2030-01-02T00:00:00Z"),
-      undefined,
-      f,
-    );
+    await touchChatThreadLastMessageAtIndependently(db, f.threadId, {
+      touchedAt: new Date("2030-01-02T00:00:00Z"),
+      orgId: f.orgId,
+      authorizedScope: f,
+      unarchive: false,
+    });
     assert.equal(
       (
         await db
@@ -172,13 +170,12 @@ try {
       BEGIN IF NEW.chat_thread_id = '${f.threadId}' THEN RAISE EXCEPTION 'synthetic sort fault'; END IF; RETURN NEW; END $$;
       CREATE TRIGGER fail_sort_touch BEFORE INSERT ON chat_thread_events FOR EACH ROW EXECUTE FUNCTION fail_sort_touch()`);
     const newest = new Date("2030-01-03T00:00:00Z");
-    await touchChatThreadLastMessageAtIndependently(
-      db,
-      f.threadId,
-      newest,
-      undefined,
-      f,
-    );
+    await touchChatThreadLastMessageAtIndependently(db, f.threadId, {
+      touchedAt: newest,
+      orgId: f.orgId,
+      authorizedScope: f,
+      unarchive: false,
+    });
     const [thread] = await db
       .select({ at: chatThreads.lastMessageAt })
       .from(chatThreads)
@@ -223,13 +220,12 @@ try {
         publicBrand: "okou",
         conversationContext: "Synthetic late history",
       });
-      await touchChatThreadLastMessageAtIndependently(
-        db,
-        erased.threadId,
-        new Date(),
-        undefined,
-        erased,
-      );
+      await touchChatThreadLastMessageAtIndependently(db, erased.threadId, {
+        touchedAt: new Date(),
+        orgId: erased.orgId,
+        authorizedScope: erased,
+        unarchive: false,
+      });
       assert.ok((await cleanupLateChatContent(db, subject, signal)) >= 3);
       assert.equal(
         (
