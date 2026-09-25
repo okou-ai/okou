@@ -232,34 +232,26 @@ function HostChoiceSelect({
   onChange: (enabled: boolean | null) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
+  const defaultLabel = t(($) => {
+    return $.chat.remoteAccess.default;
+  });
+  const onLabel = t(($) => {
+    return $.chat.remoteAccess.on;
+  });
+  const offLabel = t(($) => {
+    return $.chat.remoteAccess.off;
+  });
+  const defaultOnLabel = `${defaultLabel} (${onLabel})`;
+  const defaultOffLabel = `${defaultLabel} (${offLabel})`;
   const items = [
     {
       value: "default",
-      label: `${t(($) => {
-        return $.chat.remoteAccess.default;
-      })} (${
-        host.defaultEnabled
-          ? t(($) => {
-              return $.chat.remoteAccess.on;
-            })
-          : t(($) => {
-              return $.chat.remoteAccess.off;
-            })
-      })`,
+      label: host.defaultEnabled ? defaultOnLabel : defaultOffLabel,
     },
-    {
-      value: "on",
-      label: t(($) => {
-        return $.chat.remoteAccess.on;
-      }),
-    },
-    {
-      value: "off",
-      label: t(($) => {
-        return $.chat.remoteAccess.off;
-      }),
-    },
+    { value: "on", label: onLabel },
+    { value: "off", label: offLabel },
   ];
+  const sizingLabels = [defaultOnLabel, defaultOffLabel, onLabel, offLabel];
   return (
     <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
       {protocol === "ssh" ? (
@@ -286,14 +278,14 @@ function HostChoiceSelect({
         }}
       >
         <div className="relative grid min-w-0 max-w-[calc(100%-1.5rem)] shrink-0">
-          {items.map((item) => {
+          {sizingLabels.map((label) => {
             return (
               <span
-                key={item.value}
+                key={label}
                 aria-hidden="true"
                 className="invisible col-start-1 row-start-1 flex h-8 items-center gap-2 whitespace-nowrap border px-3 py-1 pr-3.5 text-sm"
               >
-                {item.label}
+                {label}
                 <span className="h-4 w-4 shrink-0" />
               </span>
             );
