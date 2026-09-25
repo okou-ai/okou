@@ -128,6 +128,7 @@ import {
 } from "./teams-chat-callback-payload";
 import {
   discordDeliveryTargetSchema,
+  storedDiscordDeliveryTarget,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
 import {
@@ -898,8 +899,7 @@ type CompletedChatCallbackResult =
       readonly agentphoneDeliveryCallbackId?: string;
       readonly githubDeliveryCallbackId?: string;
     }
-  | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks)
-  | { readonly outcome: "closed" };
+  | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks);
 
 type FailedChatCallbackResult =
   | {
@@ -913,11 +913,10 @@ type FailedChatCallbackResult =
       readonly agentphoneDeliveryCallbackId?: string;
       readonly githubDeliveryCallbackId?: string;
     }
-  | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks)
-  | { readonly outcome: "closed" };
+  | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks);
 
 interface TerminalChatCallbackWork {
-  readonly outcome: "written" | "replayed" | "duplicate" | "closed";
+  readonly outcome: "written" | "replayed" | "duplicate";
   readonly slackDeliveryCallbackId?: string;
   readonly feishuDeliveryCallbackId?: string;
   readonly teamsDeliveryCallbackId?: string;
@@ -981,7 +980,7 @@ function buildQueuedCreateAgentRunArgs(
           slackDelivery: input.slackDelivery,
           feishuDelivery: input.feishuDelivery,
           teamsDelivery: input.teamsDelivery,
-          discordDelivery: input.discordDelivery,
+          discordDelivery: storedDiscordDeliveryTarget(input.discordDelivery),
           telegramDelivery: input.telegramDelivery,
           agentphoneDelivery: input.agentphoneDelivery,
           githubDelivery: input.githubDelivery,
@@ -1304,7 +1303,6 @@ async function insertSlackChatDeliveryCallback(args: {
   readonly sourceCallbackId: string;
   readonly target: SlackDeliveryTarget;
   readonly chatEventId: string;
-  readonly publicBrand: PublicBrand;
 }): Promise<string> {
   return await insertChatDeliveryCallback({
     db: args.db,
@@ -1315,7 +1313,9 @@ async function insertSlackChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: args.publicBrand,
+      // Older APIs require this field when they deliver the callback; remove
+      // it once no rollback target predates #36766 Phase 1.
+      publicBrand: "okou",
     },
   });
 }
@@ -1542,7 +1542,6 @@ async function insertAssistantErrorEventTransaction(
         sourceCallbackId: input.sourceCallbackId,
         target: input.slackDelivery,
         chatEventId: event.id,
-        publicBrand: input.publicBrand,
       })
     : undefined;
   const feishuDeliveryCallbackId = input.feishuDelivery
@@ -1832,7 +1831,6 @@ async function registerRunLifecycleDeliveryCallbacks(
           sourceCallbackId: input.sourceCallbackId,
           target: input.slackDelivery,
           chatEventId: deliveryEvent.id,
-          publicBrand: input.publicBrand,
         })
       : undefined;
   const feishuDeliveryCallbackId =
@@ -1969,7 +1967,6 @@ async function insertRunLifecycleMarker(
   signal: AbortSignal,
 ): Promise<
   | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks)
-  | { readonly outcome: "closed" }
   | ({
       readonly outcome: "written" | "replayed";
     } & RunLifecycleDeliveryCallbacks)
@@ -2252,7 +2249,7 @@ async function handleCompletedChatCallback(
     },
   );
   signal.throwIfAborted();
-  if (inserted.outcome === "duplicate" || inserted.outcome === "closed") {
+  if (inserted.outcome === "duplicate") {
     return inserted;
   }
 
@@ -4895,31 +4892,11 @@ async function drainAndClearTerminalChatThread(
 ): Promise<DrainOutcome> {
   const result = await settle(
     (async () => {
-      // Closure does not own a marker, but the early ACK still owns this wakeup.
-      // Resolve the current run/thread mapping; the scheduler reloads its own
-      // candidates and uses B2b1 admission, independently of the closed old owner.
-      const currentThread =
-        args.work.outcome === "closed"
-          ? await chatThreadForRunFromDb(
-              args.callback.db,
-              args.callback.callback.runId,
-            )
-          : null;
-      signal.throwIfAborted();
-      const drainThreadId =
-        args.work.outcome === "closed"
-          ? currentThread?.chatThreadId
-          : args.chatThreadId;
-      if (drainThreadId === undefined) {
-        return { ok: true } as const;
-      }
       return await maybeDrainThreadQueueForTerminalCallback(
         {
           enabled:
-            args.work.outcome === "written" ||
-            args.work.outcome === "replayed" ||
-            args.work.outcome === "closed",
-          chatThreadId: drainThreadId,
+            args.work.outcome === "written" || args.work.outcome === "replayed",
+          chatThreadId: args.chatThreadId,
           dependencies: args.callback.dependencies,
           timing: args.timing,
         },

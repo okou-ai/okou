@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   discordChatIngress,
   type DiscordChatIngressStatus,
@@ -266,7 +265,6 @@ export async function admitCanonicalDiscordChatEvent(
     readonly messageId: string;
     readonly eventId: string;
     readonly payload: string;
-    readonly publicBrand: PublicBrand;
     readonly currentTime: Date;
   },
 ): Promise<DiscordChatIngressAdmission | undefined> {
@@ -295,7 +293,6 @@ export async function admitCanonicalDiscordChatEvent(
         messageId: args.messageId,
         eventId: args.eventId,
         payload: args.payload,
-        publicBrand: args.publicBrand,
         status: "pending",
         createdAt: args.currentTime,
         updatedAt: args.currentTime,

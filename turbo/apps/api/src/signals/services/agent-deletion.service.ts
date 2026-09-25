@@ -245,7 +245,8 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   }
   // The Agent cascade strongly locks its threads before deleting sequence
   // children. A direct append already owns a sequence before its thread FK
-  // check, so take existing sequences first and wait for in-flight appends.
+  // check, so take existing sequences first. A busy sequence surfaces through
+  // this transaction's existing lock timeout and conflict response.
   await tx
     .select({ id: chatEventSequences.chatThreadId })
     .from(chatEventSequences)

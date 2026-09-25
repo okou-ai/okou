@@ -1,5 +1,43 @@
 # Deployment Compatibility
 
+## Slack and Discord public brand retirement (2026-09-25)
+
+Slack and Discord are Okou-only. The API no longer reads or writes
+`public_brand` on `slack_org_installations`, `slack_chat_ingress`,
+`chat_slack_context`, `discord_chat_ingress` or `chat_discord_context`, and the
+Slack webhook handlers no longer overlay a request brand on the installation
+row (#36766, slice A).
+
+Migration `1233_slack_discord_public_brand_okou_default` sets the column default
+to `'okou'` on `slack_chat_ingress`, `chat_slack_context`,
+`discord_chat_ingress` and `chat_discord_context` (previously no default);
+`slack_org_installations` already defaulted to `'okou'`. An old API therefore
+reads a non-null `okou` brand from rows the new API inserts, so old API/new DB
+and rollback remain compatible. The columns and their ORM declarations stay in
+place; drop them in a separate migration after older API deployments drain.
+
+Persisted callback payloads:
+
+- `slack:chat`: the reader no longer declares `publicBrand`, so stored payloads
+  that carry it keep parsing (the key is stripped). Older APIs require the
+  field, so the writer still emits the literal `publicBrand: "okou"`. Remove
+  that write once no API rollback target predates this change.
+- `chat` callback `discordDelivery`: the target no longer declares
+  `publicBrand`; stored targets that carry it keep parsing. Older APIs require
+  `publicBrand: "okou"` on the stored target, so the persisted `chat` callback
+  still writes that literal through `storedDiscordDeliveryTarget`. Remove it
+  once no API rollback target predates this change.
+
+Slack OAuth state no longer carries `publicBrand`. The new API accepts states
+issued before this change, because it ignores the key. An older API rejects
+states without it, so an install or connect started on the new API and
+completed on an older one (the rollout window or a rollback) fails with
+"Invalid OAuth state." States expire after 15 minutes; the user restarts the
+flow. The `?publicBrand=` install query parameter was already ignored.
+
+The test-only `/api/test/slack-state` contract no longer accepts
+`public_brand` or returns `publicBrand`; undeclared request keys are stripped.
+
 ## Feishu public brand retirement (2026-09-25)
 
 Feishu and Lark are Okou-only (#36766, slice B). The API no longer reads or
@@ -145,7 +183,7 @@ a later transaction so scans do not hold the expansion's exclusive table locks.
 
 Discord thread creation uses the preparation API runtime mapping, so its implicit
 INSERT remains legal after the separately authorized legacy allocator contraction.
-The physical table keeps the column for DDL and the existing bridge. Discord
+The chat event contraction later removed that column and bridge. Discord
 input claims, required per-message context, canonical events and durable ingress
 completion stay atomic; the active mode moves weak thread activity updates after
 commit. Terminal callback replay repairs missing Discord outbox registration.
@@ -369,13 +407,29 @@ production comparisons must report field coverage and Runner version mix;
 missing timing is never a zero duration. The Guest protocol and storage apply
 behavior are unchanged.
 
+## Chat event split-write contraction (2026-09-25)
+
+Release 2 of [the two-release chat event rollout](chat-event-split-write-rollout.md)
+removes the legacy write mode. Production activated split writes at
+2026-09-25 00:06:25 UTC. Migration `contract_chat_event_sequence_bridge` locks
+`chat_threads` and `chat_event_write_control`, fails with SQLSTATE `55000` unless
+the control row is activated, and then drops the allocation bridge trigger,
+its function and `chat_threads.last_chat_event_seq_id`. A database without
+chat threads is activated by the migration. Every other database, including a
+shared preview parent, must run the documented control write first.
+
+Release 1 APIs remain compatible with the contracted schema only in active
+mode: their runtime mapping already omits the column. The rollback resolver
+requires an activated control row and refuses targets that predate the split
+reader. Never null the activation marker or restore a pre-Release-1 binary.
+
 ## Chat event split-write preparation
 
 See [the two-release chat event rollout](chat-event-split-write-rollout.md) for
 the temporary allocation bridge, inactive global control, reader/writer drain,
 activation prerequisites, late-content maintenance, and postactivation rollback
-floor. This release retains the legacy column and bridge. Migration and API
-promotion do not authorize or perform activation; contraction is a later PR.
+floor. That release retained the legacy column and bridge; the contraction
+above removes them after activation.
 
 ## Codex 0.156.1 OAuth workspace routing
 

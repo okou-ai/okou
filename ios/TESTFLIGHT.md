@@ -2,7 +2,7 @@
 
 Okou iOS participates in the existing release-please manifest as `ios`. A release
 PR updates `ios/version.txt`, `Config/Shared.xcconfig`, the release manifest, and
-its changelog. The initial managed release is `0.1.1`. Merging that PR creates `ios-v<VERSION>` and runs
+its changelog. Merging that PR creates `ios-v<VERSION>` and runs
 `publish-ios-testflight` in `.github/workflows/release-please.yml`.
 
 Like Desktop, publication uses GitHub-hosted macOS and the existing `production`
@@ -34,6 +34,15 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    | `IOS_DISTRIBUTION_P12_BASE64`     | Base64 of the distribution identity exported as PKCS#12 |
    | `IOS_DISTRIBUTION_P12_PASSWORD`   | Password protecting that export                         |
    | `IOS_PROVISIONING_PROFILE_BASE64` | Base64 of the distribution provisioning profile         |
+
+   Before storing the PKCS#12 export, verify it with macOS `security import`
+   in a disposable keychain and confirm that it lists the Apple Distribution
+   identity with `security find-identity -p codesigning`. An OpenSSL 3 default
+   PBES2/AES export can open with OpenSSL but fail to import with macOS
+   `security`, even with the correct password. An OpenSSL 3 export using
+   `-legacy -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1` and a
+   strong random password is compatible. Delete the disposable keychain after
+   verification.
 
 4. Set the production environment variable `IOS_INTERNAL_GROUP_NAME` to the exact
    internal group name.
@@ -85,6 +94,9 @@ required for the final archive.
 - dSYMs are retained as private workflow artifacts for 90 days. Signing material
   lives in a temporary keychain and temporary files and is removed when the
   publishing script exits. Renew the certificate/profile before expiration.
+- The archive supplies the provisioning profile only to the Okou app target's
+  Release configuration. Do not pass `PROVISIONING_PROFILE_SPECIFIER` as a
+  global `xcodebuild` setting: Swift Package resource targets reject it.
 - The existing server rollback workflow does not roll back installed iOS apps.
   Ship a corrected build instead. A separate minimum-build API gate remains
   outstanding; TestFlight's 90-day build validity is not that gate.

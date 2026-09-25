@@ -1,4 +1,5 @@
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
@@ -28,7 +29,8 @@ export class DiscordQueuedLaunchUnavailableError extends Error {
 export interface DiscordQueuedLaunchMaterial {
   readonly prompt: string;
   readonly appendSystemPrompt: string;
-  readonly publicBrand: "okou";
+  /** Run-level brand is fixed; its plumbing is retired separately (#36766). */
+  readonly publicBrand: typeof PUBLIC_BRAND;
   readonly discordDelivery: DiscordDeliveryTarget;
   readonly userInfoExtras?: undefined;
 }
@@ -95,10 +97,7 @@ export async function loadDiscordQueuedLaunchMaterial(
     }
     return null;
   }
-  const target = discordDeliveryTargetSchema.parse({
-    ...context,
-    publicBrand: "okou",
-  });
+  const target = discordDeliveryTargetSchema.parse(context);
   const access = await loadDiscordChatRouteAccess(
     db,
     {
@@ -151,7 +150,7 @@ export async function loadDiscordQueuedLaunchMaterial(
         return part.length > 0;
       })
       .join("\n\n"),
-    publicBrand: "okou",
+    publicBrand: PUBLIC_BRAND,
     discordDelivery: target,
   };
 }

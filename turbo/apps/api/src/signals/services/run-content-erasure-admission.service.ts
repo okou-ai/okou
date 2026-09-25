@@ -471,7 +471,7 @@ function assertPreparedOwnership(
   }
 }
 
-/** Identity validation for the activated split writer. It deliberately holds
+/** Identity validation for chat event writers. It deliberately holds
  * no erasure, thread, run or resource locks across event insertion. A deletion
  * racing an admitted write is collected by the periodic erasure sweep.
  * Queue control and activity ownership continue to use their own transactions.

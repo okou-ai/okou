@@ -478,6 +478,9 @@ describe("send-coupled draft clears", () => {
       context.signal,
     );
 
+    // Each draft copy is cleared independently: the served draft is cleared
+    // while the failed child clear leaves its row unchanged.
+    await expect(servedDraftText(fixture)).resolves.toBeNull();
     await expect(storedDraftRow(fixture)).resolves.toStrictEqual(child);
     const after = await chat.listThreadEvents(fixture.actor, fixture.threadId);
     expect(
