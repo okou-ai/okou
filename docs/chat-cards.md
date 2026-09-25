@@ -746,6 +746,8 @@ identities, grouping name, form owner and state before applying an indexed
 choice; changed membership, grouping or selection makes a choice stale, and
 post-handler mismatch is uncertain. A second, read-only Browser check catches
 radio state reverted by handlers' queued microtasks before reporting success.
+In a mixed request, a site-required untouched scalar that becomes invalid
+through those handlers also makes the write uncertain.
 Empty-name, unlabeled, oversized or unsupported groups require
 Browser takeover. Okou does not invoke website form submission when setting a
 radio choice; the website's own `input` or `change` handlers may still react,

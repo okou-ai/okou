@@ -2366,7 +2366,17 @@ function browserUseMixedControlWriterFunction(): string {
                   (number && ((control.min || undefined) !== spec.min ||
                     (control.max || undefined) !== spec.max ||
                     (control.step || undefined) !== spec.step))) return false;
-              return !final || spec.value === null || control.value === spec.value;
+              if (spec.value === null) {
+                if (!spec.required) return true;
+                // Another control's handler can invalidate an untouched,
+                // site-required field. Reading validity does not dispatch an
+                // invalid event on the website's control.
+                const value = control.value;
+                return !(control.minLength >= 0 && value.length < control.minLength) &&
+                  !(control.maxLength >= 0 && value.length > control.maxLength) &&
+                  control.validity.valid;
+              }
+              return !final || control.value === spec.value;
             }
             if (!(control instanceof HTMLSelectElement) ||
                 (control.multiple ? "select-multiple" : "select-one") !== spec.mode ||
