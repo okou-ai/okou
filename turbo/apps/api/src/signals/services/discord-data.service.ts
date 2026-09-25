@@ -150,6 +150,20 @@ export function discordUserBinding(args: {
   });
 }
 
+/** A cheap pre-filter before the per-sender identity checks below. */
+export function discordGuildBotUserId(
+  guildId: string,
+): Computed<Promise<string | null>> {
+  return computed(async (get) => {
+    const [row] = await get(db$)
+      .select({ botUserId: discordOrgInstallations.botUserId })
+      .from(discordOrgInstallations)
+      .where(eq(discordOrgInstallations.guildId, guildId))
+      .limit(1);
+    return row?.botUserId ?? null;
+  });
+}
+
 export function discordGuildUserBinding(args: {
   readonly guildId: string;
   readonly discordUserId: string;

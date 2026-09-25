@@ -1,6 +1,12 @@
 import { Response } from "miniflare";
 import { describe, expect, it } from "vitest";
-import { BOT_TOKEN, CHANNEL_ID, GUILD_ID, createRelay } from "./relay-fixture";
+import {
+  BOT_TOKEN,
+  BOT_USER_ID,
+  CHANNEL_ID,
+  GUILD_ID,
+  createRelay,
+} from "./relay-fixture";
 
 describe("Discord Gateway durable recovery", () => {
   it("resumes before the overflow event after an acknowledgement frees outbox capacity", async () => {
@@ -97,7 +103,7 @@ describe("Discord Gateway durable recovery", () => {
         guild_id: GUILD_ID,
         author: { id: "100000000000000005", username: "member", bot: false },
         content: "x".repeat(120_001),
-        mentions: [],
+        mentions: [{ id: BOT_USER_ID, username: "okou", bot: true }],
         attachments: [],
         type: 0,
       },
