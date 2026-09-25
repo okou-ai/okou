@@ -961,10 +961,7 @@ export const projectChatEventSearch$ = command(
       {
         // Every GIN index on the projection keeps fastupdate; drain each one
         // before its pending list reaches the foreground flush threshold.
-        ginIndexNames: [
-          "public.chat_event_search_messages_tsv_idx",
-          "public.chat_event_search_messages_user_tsv_gin_idx",
-        ],
+        ginIndexNames: ["public.chat_event_search_messages_user_tsv_gin_idx"],
       },
       signal,
     );
