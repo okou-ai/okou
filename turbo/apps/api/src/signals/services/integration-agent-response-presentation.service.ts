@@ -13,7 +13,8 @@ import { resolveRunModelSelection } from "./run-model-selection.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
 
-async function resolveRespondedByLabel(args: {
+/** Names the responding agent only when it is not the org default. */
+async function resolveNonDefaultAgentLabel(args: {
   readonly db: Db;
   readonly orgId: string;
   readonly composeId: string;
@@ -38,8 +39,7 @@ async function resolveRespondedByLabel(args: {
     .from(agents)
     .where(eq(agents.id, args.composeId))
     .limit(1);
-  const label = agent?.displayName ?? agent?.name;
-  return label ? `Responded by ${label}` : undefined;
+  return agent?.displayName ?? agent?.name;
 }
 
 async function resolveOrgDefaultModelProviderSelectedModel(
@@ -93,8 +93,8 @@ export async function resolveIntegrationAgentResponsePresentation(
 ): Promise<{
   readonly footerText: string | undefined;
 }> {
-  const [respondedBy, modelLabel] = await Promise.all([
-    resolveRespondedByLabel({
+  const [agentLabel, modelLabel] = await Promise.all([
+    resolveNonDefaultAgentLabel({
       db: args.db,
       orgId: args.orgId,
       composeId: args.agentId,
@@ -109,8 +109,8 @@ export async function resolveIntegrationAgentResponsePresentation(
   signal.throwIfAborted();
 
   const parts: string[] = [];
-  if (respondedBy) {
-    parts.push(respondedBy);
+  if (agentLabel) {
+    parts.push(`Responded by ${agentLabel}`);
   }
   if (args.replyToMention) {
     parts.push(`Reply to ${args.replyToMention}`);
@@ -119,6 +119,39 @@ export async function resolveIntegrationAgentResponsePresentation(
     parts.push(modelLabel);
   }
 
+  return {
+    footerText: parts.length > 0 ? parts.join(" · ") : undefined,
+  };
+}
+
+/**
+ * Admission failures have no run, so the footer names only the chat's agent
+ * and the mentioned sender, like other integrations' admission notices.
+ */
+export async function resolveIntegrationAdmissionFailurePresentation(
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly agentId: string;
+    readonly replyToMention?: string;
+  },
+  signal: AbortSignal,
+): Promise<{
+  readonly footerText: string | undefined;
+}> {
+  const agentLabel = await resolveNonDefaultAgentLabel({
+    db: args.db,
+    orgId: args.orgId,
+    composeId: args.agentId,
+  });
+  signal.throwIfAborted();
+  const parts: string[] = [];
+  if (agentLabel) {
+    parts.push(`Sent via ${agentLabel}`);
+  }
+  if (args.replyToMention) {
+    parts.push(`Reply to ${args.replyToMention}`);
+  }
   return {
     footerText: parts.length > 0 ? parts.join(" · ") : undefined,
   };

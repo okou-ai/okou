@@ -32,7 +32,10 @@ import {
   resolveIntegrationModelRouteForUser$,
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
-import { enqueueDiscordIngressFailure } from "./internal-discord-chat-run-callback.service";
+import {
+  dispatchDiscordChatDeliveryOnce,
+  enqueueDiscordIngressFailure,
+} from "./internal-discord-chat-run-callback.service";
 
 function requireDiscordResult<T>(result: DiscordApiResult<T>): T {
   if (result.kind === "ok") {
@@ -134,8 +137,8 @@ async function terminalIngress(
       readonly content: string;
     };
   },
-): Promise<void> {
-  await db.transaction(async (tx) => {
+): Promise<string | null> {
+  return await db.transaction(async (tx) => {
     const [updated] = await tx
       .update(discordChatIngress)
       .set({
@@ -156,11 +159,12 @@ async function terminalIngress(
       )
       .returning({ id: discordChatIngress.id });
     if (updated && args.notice) {
-      await enqueueDiscordIngressFailure(tx, {
+      return await enqueueDiscordIngressFailure(tx, {
         ingressId: args.ingressId,
         ...args.notice,
       });
     }
+    return null;
   });
 }
 
@@ -287,8 +291,9 @@ async function loadAssignedDiscordRoute(
 async function terminalAgentUnavailable(
   db: Db,
   { claim, message, source: { binding } }: DiscordAdmissionContext,
+  signal: AbortSignal,
 ): Promise<void> {
-  await terminalIngress(db, {
+  const deliveryId = await terminalIngress(db, {
     ...claim,
     reason: "agent_unavailable",
     notice: {
@@ -298,6 +303,11 @@ async function terminalAgentUnavailable(
         "No accessible agent is configured. Use /okou switch to choose an agent.",
     },
   });
+  signal.throwIfAborted();
+  // The sender is waiting for a reply; the recovery sweep is only a backstop.
+  if (deliveryId) {
+    await dispatchDiscordChatDeliveryOnce(db, deliveryId, signal);
+  }
 }
 
 type DiscordRouteKey = Pick<
@@ -322,7 +332,7 @@ const createDiscordAdmissionRoute$ = command(
     const agent = effectiveAgent ?? (await get(discordEffectiveAgent(binding)));
     signal.throwIfAborted();
     if (!agent) {
-      await terminalAgentUnavailable(db, context);
+      await terminalAgentUnavailable(db, context, signal);
       signal.throwIfAborted();
       return undefined;
     }
@@ -385,7 +395,7 @@ const resolveCanonicalDiscordRoute$ = command(
         : undefined;
     signal.throwIfAborted();
     if (isDm && !assignedRoute && !effectiveAgent) {
-      await terminalAgentUnavailable(db, context);
+      await terminalAgentUnavailable(db, context, signal);
       signal.throwIfAborted();
       return undefined;
     }

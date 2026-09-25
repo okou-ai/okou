@@ -27,16 +27,20 @@ import type {
   DiscordChatDeliveryParts,
 } from "@okouai/db/jsonb-contracts/discord-chat-delivery";
 import { splitDiscordMessage } from "../../lib/discord-message";
+import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { discordClient, type DiscordMessage } from "../external/discord-client";
-import { settleIncludingAbort } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
-import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
+import {
+  resolveIntegrationAdmissionFailurePresentation,
+  resolveIntegrationAgentResponsePresentation,
+} from "./integration-agent-response-presentation.service";
 
 const L = logger("DiscordChatDelivery");
 const DELIVERY_LEASE_MS = 120_000;
@@ -360,7 +364,7 @@ async function renderDeliveryParts(
     if (!event) {
       throw new Error("Discord delivery canonical event is unavailable");
     }
-    if (event.runId !== null && event.agentId !== null) {
+    if (event.agentId !== null) {
       const [mentionerCount] = await db
         .select({ count: countDistinct(discordChatThreadRoutes.userId) })
         .from(discordChatThreadRoutes)
@@ -381,19 +385,24 @@ async function renderDeliveryParts(
       if (!mentionerCount) {
         throw new Error("Discord delivery mentioner count is unavailable");
       }
-      const presentation = await resolveIntegrationAgentResponsePresentation(
-        {
-          db,
-          orgId: delivery.orgId,
-          runId: event.runId,
-          agentId: event.agentId,
-          replyToMention:
-            mentionerCount.count > 1
-              ? `<@${binding.discordUserId}>`
-              : undefined,
-        },
-        signal,
-      );
+      const presentationArgs = {
+        db,
+        orgId: delivery.orgId,
+        agentId: event.agentId,
+        replyToMention:
+          mentionerCount.count > 1 ? `<@${binding.discordUserId}>` : undefined,
+      };
+      // An admission failure has no run, so its footer omits the model.
+      const presentation =
+        event.runId === null
+          ? await resolveIntegrationAdmissionFailurePresentation(
+              presentationArgs,
+              signal,
+            )
+          : await resolveIntegrationAgentResponsePresentation(
+              { ...presentationArgs, runId: event.runId },
+              signal,
+            );
       signal.throwIfAborted();
       content = [
         content,
@@ -614,19 +623,62 @@ async function deliverClaimedDiscordChat(
     ...(await renderDeliveryParts(db, delivery, initialAccess.binding, signal)),
   ];
   await persistParts(db, delivery, parts);
-  for (const [index, part] of parts.entries()) {
+  const noticeNonce = uncertainPartNoticeNonce(delivery);
+  let uncertain = false;
+  // Indexed: an uncertainty notice may be appended while iterating.
+  for (let index = 0; index < parts.length; index += 1) {
     signal.throwIfAborted();
-    if (part.messageId !== null) {
+    if (parts[index]?.messageId !== null) {
       continue;
     }
-    if (
-      (await sendDeliveryPart(db, delivery, parts, index, signal)) ===
-      "suppressed"
-    ) {
+    const sent = await settle(
+      sendDeliveryPart(db, delivery, parts, index, signal),
+      signal,
+    );
+    if (!sent.ok) {
+      if (!(sent.error instanceof DiscordDeliveryUncertain)) {
+        throw sent.error;
+      }
+      // Resending this part could duplicate it. Later parts were never sent,
+      // so they still go out, followed by one notice so the reply is never
+      // silently truncated.
+      uncertain = true;
+      if (
+        delivery.chatThreadId !== null &&
+        !parts.some((part) => {
+          return part.nonce === noticeNonce;
+        })
+      ) {
+        parts.push({
+          content: uncertainPartNotice(delivery.chatThreadId),
+          nonce: noticeNonce,
+          attemptedAt: null,
+          messageId: null,
+        });
+        await persistParts(db, delivery, parts);
+      }
+      continue;
+    }
+    if (sent.value === "suppressed") {
       return "suppressed";
     }
   }
+  if (uncertain) {
+    throw new DiscordDeliveryUncertain();
+  }
   return "delivered";
+}
+
+function uncertainPartNoticeNonce(delivery: Delivery): string {
+  return createHash("sha256")
+    .update(`${delivery.id}:uncertain-part-notice`)
+    .digest("hex")
+    .slice(0, 25);
+}
+
+function uncertainPartNotice(chatThreadId: string): string {
+  const url = new URL(`/chats/${chatThreadId}`, env("APP_URL")).toString();
+  return `_I couldn't confirm that part of this reply reached Discord, so I didn't send it again to avoid a duplicate. Read the full reply in Okou: ${url}_`;
 }
 
 export async function dispatchDiscordChatDeliveryOnce(
