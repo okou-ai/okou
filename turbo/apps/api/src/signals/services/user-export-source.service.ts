@@ -196,6 +196,27 @@ function snapshotEntries(threadId: string, head: SnapshotHead) {
   };
 }
 
+/** The thread's saved composer draft; no row means no draft. */
+async function threadDraftForExport(
+  db: QueryDb,
+  threadId: string,
+  signal: AbortSignal,
+) {
+  const [draft] = await db
+    .select({
+      draftUserMessage: chatThreadDrafts.draftUserMessage,
+      draftAttachments: chatThreadDrafts.draftAttachments,
+    })
+    .from(chatThreadDrafts)
+    .where(eq(chatThreadDrafts.chatThreadId, threadId))
+    .limit(1);
+  signal.throwIfAborted();
+  return {
+    draftUserMessage: draft?.draftUserMessage ?? null,
+    draftAttachments: draft?.draftAttachments ?? null,
+  };
+}
+
 async function collectThread(
   args: SourceArgs,
   checkpoint: SourceCheckpoint,
@@ -242,15 +263,7 @@ async function collectThread(
       if (!thread) {
         return nextPhase(checkpoint, "agents");
       }
-      const [draft] = await tx
-        .select({
-          draftUserMessage: chatThreadDrafts.draftUserMessage,
-          draftAttachments: chatThreadDrafts.draftAttachments,
-        })
-        .from(chatThreadDrafts)
-        .where(eq(chatThreadDrafts.chatThreadId, thread.id))
-        .limit(1);
-      signal.throwIfAborted();
+      const draft = await threadDraftForExport(tx, thread.id, signal);
       const head = await snapshotHead(tx, thread.id, signal);
       const [lastEvent] = await tx
         .select({ seqId: chatEvents.seqId })
@@ -266,11 +279,7 @@ async function collectThread(
       const entries = [
         jsonEntry(
           `chat-threads/${thread.id}.json`,
-          {
-            ...thread,
-            draftUserMessage: draft?.draftUserMessage ?? null,
-            draftAttachments: draft?.draftAttachments ?? null,
-          },
+          { ...thread, ...draft },
           {
             sourceKind: "chat-thread",
             threadId: thread.id,

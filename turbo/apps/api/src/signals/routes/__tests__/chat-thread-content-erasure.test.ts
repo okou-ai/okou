@@ -350,11 +350,12 @@ describe("account erasure fences direct chat-thread content writes", () => {
       context.signal,
     );
 
-    await chat.requestReadThreadMetadata(
+    const read = await chat.requestReadThreadMetadata(
       fixture.actor,
       fixture.threadId,
       [404],
     );
+    expect(read.status).toBe(404);
   });
 
   it("propagates a held parent lock as a failure rather than a closure 404", async () => {

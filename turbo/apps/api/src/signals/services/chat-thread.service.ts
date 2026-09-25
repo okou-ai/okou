@@ -227,19 +227,24 @@ export function chatThreadDraft(args: {
   readonly userId: string;
 }): Computed<Promise<ChatThreadDraft | null>> {
   return computed(async (get): Promise<ChatThreadDraft | null> => {
-    const thread = await get(ownedChatThread(args.threadId, args.userId));
-    if (!thread) {
+    // Two bounded primary-key reads, no join: the owner, then the draft row.
+    const db = get(db$);
+    const [thread] = await db
+      .select({ userId: chatThreads.userId })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, args.threadId))
+      .limit(1);
+    if (thread?.userId !== args.userId) {
       return null;
     }
 
-    const db = get(db$);
     const [draft] = await db
       .select({
         draftUserMessage: chatThreadDrafts.draftUserMessage,
         draftAttachments: chatThreadDrafts.draftAttachments,
       })
       .from(chatThreadDrafts)
-      .where(eq(chatThreadDrafts.chatThreadId, thread.id))
+      .where(eq(chatThreadDrafts.chatThreadId, args.threadId))
       .limit(1);
     return {
       draftUserMessage: draft?.draftUserMessage ?? null,
