@@ -98,6 +98,17 @@ export function canonicalChatEventError(
   );
 }
 
+/** Goal grouping exists only on the canonical goal context pointer. */
+export function canonicalChatEventGoalId(
+  contextType: SQLWrapper = chatEvents.contextType,
+  contextId: SQLWrapper = chatEvents.contextId,
+) {
+  return sql`CASE
+    WHEN ${contextType} = 'goal' THEN ${contextId}
+    ELSE NULL
+  END`.mapWith(nullableDriverValueDecoder(chatEvents.contextId));
+}
+
 /** Canonical payload leaves projected from an archived raw row. */
 export function canonicalArchivedChatEventContent(
   row: ChatEventRow,
@@ -116,4 +127,10 @@ export function canonicalArchivedChatEventError(
   row: ChatEventRow,
 ): string | null {
   return row.payload?.error ?? null;
+}
+
+export function canonicalArchivedChatEventGoalId(
+  row: ChatEventRow,
+): string | null {
+  return row.contextType === "goal" ? row.contextId : null;
 }
