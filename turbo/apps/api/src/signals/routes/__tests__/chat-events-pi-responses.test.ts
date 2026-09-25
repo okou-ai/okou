@@ -756,10 +756,9 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
   }, 90_000);
 
-  it(
-    "reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for gpt-5.6-terra",
-    async () => {
-      const selectedModel = "gpt-5.6-terra";
+  it.each(["gpt-5.6-terra"] as const)(
+    "reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for %s",
+    async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
@@ -1025,10 +1024,9 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it(
-    "bills managed OpenRouter priority only from the observed terminal Responses tier for gpt-5.6-terra",
-    async () => {
-      const selectedModel = "gpt-5.6-terra";
+  it.each(["gpt-5.6-terra"] as const)(
+    "bills managed OpenRouter priority only from the observed terminal Responses tier %s",
+    async (selectedModel) => {
       const { actor, agentId } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
@@ -1111,10 +1109,9 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it(
-    "promotes queued fast gpt-5.6-terra through Pi API-first with priority",
-    async () => {
-      const selectedModel = "gpt-5.6-terra";
+  it.each(["gpt-5.6-terra"] as const)(
+    "promotes queued fast %s through Pi API-first with priority",
+    async (selectedModel) => {
       const { actor, agentId, runnerGroup, providerId } =
         await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();

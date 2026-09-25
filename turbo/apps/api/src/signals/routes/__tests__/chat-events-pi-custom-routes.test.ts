@@ -1261,10 +1261,9 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it(
-    "promotes queued custom gpt-5.6-terra Fast with the admitted tier and switch snapshot",
-    async () => {
-      const selectedModel = "gpt-5.6-terra";
+  it.each(["gpt-5.6-terra"] as const)(
+    "promotes queued custom %s Fast with the admitted tier and switch snapshot",
+    async (selectedModel) => {
       const { actor, agentId, runnerGroup, providerId } =
         await entitledChatActor();
       // The anchor must stay on the native Runner while the queued target
