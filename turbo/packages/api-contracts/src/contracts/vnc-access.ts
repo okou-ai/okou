@@ -50,6 +50,12 @@ export const vncHostSchema = z.discriminatedUnion("securityType", [
       securityType: z.literal("apple_srp"),
     })
     .strict(),
+  vncHostBaseSchema
+    .extend({
+      authMethod: z.literal("apple_rsa_srp_username_password"),
+      securityType: z.literal("apple_rsa_srp"),
+    })
+    .strict(),
 ]);
 
 export const agentVncAccessContract = c.router({

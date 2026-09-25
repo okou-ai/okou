@@ -11,7 +11,7 @@ lookup no longer copies a row's own brand back onto it, and
 `chat_telegram_context` rows with a null or `vm0` brand now launch normally
 instead of being dropped at claim time.
 
-Migration `1229_teams_telegram_public_brand_okou_default` sets the column
+Migration `1230_teams_telegram_public_brand_okou_default` sets the column
 default to `'okou'` on `chat_teams_context` (previously `NOT NULL` without a
 default), `chat_telegram_context` (previously no default),
 `telegram_installations` and `telegram_official_user_links` (both previously

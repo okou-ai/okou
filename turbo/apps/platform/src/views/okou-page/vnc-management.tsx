@@ -20,6 +20,15 @@ import { VncCredentialImpact } from "./vnc-fields.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
+function isX509Security(
+  security: VncConnectionResponse["security"],
+): security is Extract<
+  VncConnectionResponse["security"],
+  { type: "x509_vnc" | "x509_plain" }
+> {
+  return security.type === "x509_vnc" || security.type === "x509_plain";
+}
+
 function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
   const { t } = useTranslation();
   switch (profile) {
@@ -41,6 +50,11 @@ function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
     case "apple_srp": {
       return t(($) => {
         return $.vnc.security.appleSrp;
+      });
+    }
+    case "apple_rsa_srp": {
+      return t(($) => {
+        return $.vnc.security.appleRsaSrp;
       });
     }
   }
@@ -73,6 +87,11 @@ function VncAuthenticationLabel({
     case "apple_srp_username_password": {
       return t(($) => {
         return $.vnc.credential.appleSrpMethod;
+      });
+    }
+    case "apple_rsa_srp_username_password": {
+      return t(($) => {
+        return $.vnc.credential.appleRsaSrpMethod;
       });
     }
   }
@@ -157,8 +176,7 @@ function VncHostCard({
         {": "}
         {destination}
       </p>
-      {connection.security.type === "apple_dh" ||
-      connection.security.type === "apple_srp" ? null : (
+      {isX509Security(connection.security) ? (
         <p className="break-all text-sm">
           {t(($) => {
             return $.vnc.security.serverName;
@@ -166,7 +184,7 @@ function VncHostCard({
           {": "}
           {connection.security.serverName ?? connection.host}
         </p>
-      )}
+      ) : null}
       <p className="break-all text-sm text-muted-foreground">
         {connection.credentialName}
       </p>
@@ -176,8 +194,7 @@ function VncHostCard({
         <VncAuthenticationLabel
           method={vncAuthMethodForProfile(connection.security.type)}
         />
-        {connection.security.type === "apple_dh" ||
-        connection.security.type === "apple_srp" ? null : (
+        {isX509Security(connection.security) ? (
           <>
             {" "}
             {" · "}{" "}
@@ -189,7 +206,7 @@ function VncHostCard({
                   return $.vnc.security.custom;
                 })}
           </>
-        )}
+        ) : null}
       </p>
       <RemoteHostDefaultToggle protocol="vnc" connectionId={connection.id} />
       <div className="flex flex-wrap gap-2">
@@ -300,7 +317,8 @@ function VncCredentialCard({
       </p>
       {(credential.authMethod === "username_password" ||
         credential.authMethod === "apple_dh_username_password" ||
-        credential.authMethod === "apple_srp_username_password") && (
+        credential.authMethod === "apple_srp_username_password" ||
+        credential.authMethod === "apple_rsa_srp_username_password") && (
         <p className="break-all text-sm">{credential.username}</p>
       )}
       <VncCredentialImpact credential={credential} />
