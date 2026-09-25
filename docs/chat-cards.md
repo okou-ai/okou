@@ -747,7 +747,9 @@ choice; changed membership, grouping or selection makes a choice stale, and
 post-handler mismatch is uncertain. A second, read-only Browser check catches
 radio state reverted by handlers' queued microtasks before reporting success.
 Empty-name, unlabeled, oversized or unsupported groups require
-Browser takeover. Radio input does not submit the website form.
+Browser takeover. Okou does not invoke website form submission when setting a
+radio choice; the website's own `input` or `change` handlers may still react,
+including by submitting the form.
 Option values and submitted selections do not appear in the action URL or
 chat callback. A confirmed page or control change makes the request
 stale; a temporary provider failure blocks submission, preserves the draft,
