@@ -1,6 +1,6 @@
 {
-  "id": "b283629c-0b8b-4a7c-81b7-7de90521f5dc",
-  "prevId": "5083e5a7-053d-4b6b-80b4-fecf93b4abbb",
+  "id": "37871223-7bce-4be0-870e-f1a1db9f6845",
+  "prevId": "23a53794-34f8-4ff7-8bea-74754331da49",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7817,6 +7817,43 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.chat_event_retention_cursors": {
+      "name": "chat_event_retention_cursors",
+      "schema": "",
+      "columns": {
+        "scope_key": {
+          "name": "scope_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_created_at": {
+          "name": "last_created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_event_id": {
+          "name": "last_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sweep_started_at": {
+          "name": "sweep_started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.chat_event_search_message_watermarks": {
       "name": "chat_event_search_message_watermarks",
       "schema": "",
@@ -9493,13 +9530,13 @@
           "name": "user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "draft_user_message": {
           "name": "draft_user_message",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "draft_attachments": {
           "name": "draft_attachments",
@@ -9537,6 +9574,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "uq_chat_thread_drafts_thread_user": {
+          "name": "uq_chat_thread_drafts_thread_user",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -9550,12 +9608,7 @@
       },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "chat_thread_drafts_draft_user_message_check": {
-          "name": "chat_thread_drafts_draft_user_message_check",
-          "value": "\"chat_thread_drafts\".\"draft_user_message\" IS NOT NULL\n          OR COALESCE(\"chat_thread_drafts\".\"draft_attachments\", '[]'::jsonb) = '[]'::jsonb"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.chat_thread_event_sequences": {
@@ -10136,18 +10189,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "draft_user_message": {
-          "name": "draft_user_message",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "draft_attachments": {
-          "name": "draft_attachments",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "last_read_at": {
           "name": "last_read_at",
           "type": "timestamp",
@@ -10273,6 +10314,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "draft_user_message": {
+          "name": "draft_user_message",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draft_attachments": {
+          "name": "draft_attachments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {

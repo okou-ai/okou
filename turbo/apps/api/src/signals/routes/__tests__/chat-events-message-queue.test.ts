@@ -4,9 +4,11 @@ import {
   ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
 } from "@okouai/api-contracts/contracts/runners";
+import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
@@ -15,6 +17,7 @@ import {
   revokeReservedActiveInputFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { expectApiError } from "./helpers/api-bdd";
 import { cleanupTimedOutRun } from "./helpers/api-bdd-run-timeout";
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -55,6 +58,57 @@ const RUN_TIME_BUDGET_MESSAGE = `This runner has a hard maximum runtime of 2 hou
 A normal completion provides a reliable handoff for the next run. The handoff includes completed work, current state, verification performed, remaining work, and blockers.
 
 Use the remaining time to leave the task in a resumable state and finish this turn normally.`;
+
+/** Run the queue repair sweep over one owned thread. */
+async function sweepOwnedThreadQueue(chatThreadId: string): Promise<void> {
+  await accept(
+    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
+      testCronCleanupSandboxesStateContract,
+    ).cleanup({
+      body: {
+        chatThreadIds: [chatThreadId],
+        runIds: [],
+        orgIds: [],
+        exportJobIds: [],
+      },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+}
+
+/** Cancel a claimed run and queue a prompt behind its recovery barrier. */
+async function queueBehindCancellationRecovery(label: string) {
+  const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+  const active = await sendChatRun(actor, {
+    agentId,
+    prompt: `${label} cancelled run`,
+  });
+  await claimChatRun(runnerGroup, active.runId);
+  await api.requestCancelRun(actor, active.runId, [200]);
+  await waitForRunStatus(actor, active.runId, "cancelled");
+  const queuedEventId = randomUUID();
+  const queued = await chat.requestSendEvent(
+    actor,
+    {
+      agentId,
+      threadId: active.threadId,
+      prompt: `${label} queued prompt`,
+      clientEventId: queuedEventId,
+    },
+    [201],
+  );
+  if (queued.status !== 201) {
+    throw new Error("Expected the prompt to queue behind cancellation");
+  }
+  expect(queued.body.runId).toBeNull();
+  return {
+    actor,
+    threadId: active.threadId,
+    runId: active.runId,
+    queuedEventId,
+  };
+}
 
 /** Steer one owned run without scanning rows owned by other test files. */
 async function steerOwnedRunAtElapsedTime(
@@ -776,6 +830,59 @@ describe("CHAT-02: queueing and recalling messages", () => {
     ).toHaveLength(1);
     const successorClaim = await claimChatRun(runnerGroup, successor);
     await cancelChatRun(actor, successor, successorClaim.sandboxHeaders);
+  }, 90_000);
+
+  it("redrives a queue once its cancellation recovery barrier expires", async () => {
+    const queued = await queueBehindCancellationRecovery("recent expiry");
+
+    mockNow(now() + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    await sweepOwnedThreadQueue(queued.threadId);
+    clearMockNow();
+
+    const messages = await waitForThreadMessages(
+      queued.actor,
+      queued.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === queued.queuedEventId &&
+            typeof message.runId === "string" &&
+            message.runId !== queued.runId
+          );
+        });
+      },
+    );
+    const successor = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === queued.queuedEventId;
+    })?.runId;
+    if (!successor) {
+      throw new Error("Expected the queued prompt to start a run");
+    }
+    expect(successor).not.toBe(queued.runId);
+    await cancelChatRun(queued.actor, successor);
+  }, 90_000);
+
+  it("leaves a long-expired cancellation recovery barrier to thread admission", async () => {
+    const queued = await queueBehindCancellationRecovery("old expiry");
+
+    // Past both the ten-minute recovery recheck window and the stale queue
+    // item window, so no sweep owns this queue any more.
+    mockNow(now() + 20 * 60 * 1000);
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    await sweepOwnedThreadQueue(queued.threadId);
+    clearMockNow();
+
+    const events = await chat.listThreadEvents(queued.actor, queued.threadId);
+    expect(
+      userMessages(events.events).filter((message) => {
+        return message.revokesEventId === queued.queuedEventId;
+      }),
+    ).toHaveLength(0);
   }, 90_000);
 
   it("settles timed-out delivery input when stopping the Runner fails", async () => {

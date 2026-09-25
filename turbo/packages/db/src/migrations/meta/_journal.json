@@ -1181,8 +1181,22 @@
     {
       "idx": 1246,
       "version": "7",
-      "when": 1790346522585,
-      "tag": "1246_contract_chat_thread_drafts",
+      "when": 1790344779760,
+      "tag": "1246_drop_discord_chat_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 1247,
+      "version": "7",
+      "when": 1790344779761,
+      "tag": "1247_chat_event_retention_cursors",
+      "breakpoints": true
+    },
+    {
+      "idx": 1248,
+      "version": "7",
+      "when": 1790347365037,
+      "tag": "1248_contract_chat_thread_drafts",
       "breakpoints": true
     }
   ]

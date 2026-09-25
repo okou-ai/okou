@@ -6,7 +6,7 @@ Release 2 of the thread-draft move off `chat_threads` (#36173). Release 1
 (#36897, merge commit `4558c9fa`) made `chat_thread_drafts` the only draft
 store and writes `user_id` on every row.
 
-Migration `1246_contract_chat_thread_drafts` fills any missing `user_id` from
+Migration `1248_contract_chat_thread_drafts` fills any missing `user_id` from
 the thread. It then deletes cleared tombstones (both draft values null) and rows
 whose thread no longer exists, makes `user_id` and `draft_user_message`
 `NOT NULL`, drops `chat_thread_drafts_draft_user_message_check`, and adds the
@@ -33,6 +33,33 @@ rollback floor. It drops the two `chat_threads` draft columns and their check
 constraint, which Release 1 would still name in thread inserts. It also makes
 `(chat_thread_id, user_id)` the primary key and lets the draft `PATCH` skip the
 owner read, so a missing or foreign thread returns `204` instead of `404`.
+
+## Chat event retention and Discord delivery table retirement (2026-09-25)
+
+Discord has no production users, so this change ships without a staged
+compatibility window.
+
+- Migration `1246_drop_discord_chat_deliveries` drops `discord_chat_deliveries`
+  with its foreign keys into `chat_events`, then the
+  `chat_events_id_thread_unique` constraint that only backed the composite
+  foreign key, and the redundant `idx_chat_events_run_id` (covered by
+  `chat_events_run_event_seq_unique`). An API that predates #36879 fails its
+  Discord reply enqueue, and a user export on an older API fails its Discord
+  deliveries page until the rollout completes. Account erasure on an older API
+  also fails with `account_erasure_relational:catalogue_absent:discord_chat_deliveries`
+  and retries until it runs on this API; rolling back below this API stalls
+  erasure jobs the same way.
+- Migration `1247_chat_event_retention_cursors` adds the retention sweep
+  cursor. Retention now reads candidates with bounded, unlocked single-table
+  queries and deletes them by ID in short statements, without the advisory
+  lock, `FOR UPDATE SKIP LOCKED` or the in-transaction remainder scan. The cron
+  response drops `deleteLimit`, `candidates`, `skippedBatchLimit` and
+  `overlapPrevented` and adds `sweepRestarted`. An older API still running the
+  locked sweep is safe alongside the new one: both only delete rows that pass
+  the same holds.
+- The cancellation-recovery queue sweep only redrives barriers that expired in
+  the last ten minutes. Older barriers are left to per-thread admission and
+  callback paths, as for stale queue items.
 
 ## Chat event write control retirement (2026-09-25)
 
@@ -174,12 +201,8 @@ stays readable in the Okou chat. Access checks and suppression after binding
 or channel revocation are unchanged.
 
 The API no longer writes or reads `discord_chat_deliveries`, and the test-only
-Discord delivery drain endpoint is removed. The table, its erasure inventory
-entry, its user-export section and the preview seed that covers that export stay
-until every API that writes the table has left the rollback window; a later
-migration drops them together. During rollout overlap or after an API rollback,
-older instances still enqueue and dispatch their own rows; this API ignores
-them.
+Discord delivery drain endpoint is removed. Migration
+`1246_drop_discord_chat_deliveries` drops the table (see above).
 
 ## Completed Clerk deletion receipt index retirement (2026-09-25)
 

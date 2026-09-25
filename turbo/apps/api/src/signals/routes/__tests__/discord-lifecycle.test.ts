@@ -159,7 +159,6 @@ test("exports every owned Discord record, including pre-route ingress and delive
       "routes",
       "ingress",
       "contexts",
-      "deliveries",
     ].map((kind) => {
       return [
         kind,
@@ -177,7 +176,6 @@ test("exports every owned Discord record, including pre-route ingress and delive
     routes: 1,
     ingress: 2,
     contexts: 1,
-    deliveries: 1,
   });
   const exported = entries
     .map((entry) => {
@@ -191,7 +189,6 @@ test("exports every owned Discord record, including pre-route ingress and delive
   expect(exported).not.toContain(unrelated.discordUserId);
   expect(exported).not.toContain("Another member's private Discord message");
   expect(exported).not.toContain("claimToken");
-  expect(exported).toContain("Okou could not start this Discord task");
   expect(exported).not.toContain("Missing Access");
   expect(exported).not.toContain("lastError");
 });
