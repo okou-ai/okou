@@ -67,6 +67,11 @@ export const testEmailOutboxStateActionBodySchema = z.discriminatedUnion(
       item_id: z.string().uuid(),
     }),
     z.object({
+      action: z.literal("cleanup-native-owner"),
+      org_id: z.string().min(1),
+      user_id: z.string().min(1),
+    }),
+    z.object({
       action: z.literal("find-item"),
       to_address: z.string().min(1),
       subject: z.string().min(1),
@@ -97,6 +102,7 @@ export const testEmailOutboxStateActionResponseSchema = z.discriminatedUnion(
     z.object({
       action: z.literal("seed-native-mail"),
       item: testEmailOutboxStateItemSchema,
+      agent_id: z.string().uuid(),
     }),
     z.object({
       action: z.literal("read-native-receipt"),
@@ -105,6 +111,10 @@ export const testEmailOutboxStateActionResponseSchema = z.discriminatedUnion(
     z.object({
       action: z.literal("delete-native-mail"),
       deleted: z.boolean(),
+    }),
+    z.object({
+      action: z.literal("cleanup-native-owner"),
+      cleaned: z.boolean(),
     }),
     z.object({
       action: z.literal("find-item"),

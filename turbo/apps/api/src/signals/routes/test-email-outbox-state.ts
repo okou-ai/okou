@@ -245,7 +245,11 @@ async function seedLinkedNativeMail(
   signal.throwIfAborted();
   return {
     status: 200 as const,
-    body: { action: "seed-native-mail" as const, item: itemState(item) },
+    body: {
+      action: "seed-native-mail" as const,
+      item: itemState(item),
+      agent_id: agentId,
+    },
   };
 }
 
@@ -309,6 +313,64 @@ async function deleteLinkedNativeMail(
   };
 }
 
+async function cleanupNativeOwnerFixture(
+  db: Db,
+  orgId: string,
+  userId: string,
+  signal: AbortSignal,
+) {
+  await db.transaction(async (tx) => {
+    const owned = and(
+      eq(morningBriefDeliveries.orgId, orgId),
+      eq(morningBriefDeliveries.userId, userId),
+    );
+    const removed = await tx
+      .delete(morningBriefDeliveries)
+      .where(owned)
+      .returning({ outboxId: morningBriefDeliveries.emailOutboxId });
+    const outboxIds = removed.flatMap((row) => {
+      return row.outboxId === null ? [] : [row.outboxId];
+    });
+    if (outboxIds.length > 0) {
+      await tx.delete(emailOutbox).where(inArray(emailOutbox.id, outboxIds));
+    }
+    await tx
+      .delete(morningBriefCollectionOccurrences)
+      .where(
+        and(
+          eq(morningBriefCollectionOccurrences.orgId, orgId),
+          eq(morningBriefCollectionOccurrences.userId, userId),
+        ),
+      );
+    await tx
+      .delete(morningBriefNativeSchedules)
+      .where(
+        and(
+          eq(morningBriefNativeSchedules.orgId, orgId),
+          eq(morningBriefNativeSchedules.userId, userId),
+        ),
+      );
+    await tx.delete(chatThreads).where(eq(chatThreads.userId, userId));
+    await tx
+      .delete(agents)
+      .where(and(eq(agents.orgId, orgId), eq(agents.owner, userId)));
+    await tx
+      .delete(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, orgId),
+          eq(orgMembersMetadata.userId, userId),
+        ),
+      );
+    await tx.delete(users).where(eq(users.id, userId));
+  });
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: { action: "cleanup-native-owner" as const, cleaned: true },
+  };
+}
+
 async function applyAction(
   db: Db,
   body: TestEmailOutboxStateActionBody,
@@ -334,6 +396,14 @@ async function applyAction(
     }
     case "delete-native-mail": {
       return await deleteLinkedNativeMail(db, body.item_id, signal);
+    }
+    case "cleanup-native-owner": {
+      return await cleanupNativeOwnerFixture(
+        db,
+        body.org_id,
+        body.user_id,
+        signal,
+      );
     }
     case "find-item": {
       const items = await db

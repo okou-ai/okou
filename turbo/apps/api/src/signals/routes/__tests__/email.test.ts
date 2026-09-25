@@ -216,6 +216,41 @@ describe("retired Native Morning Brief email", () => {
       { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
     );
   });
+
+  it("removes unsent Native mail and its receipt through Agent deletion without touching a sibling", async () => {
+    const outbox = createEmailOutboxStateApi(context);
+    const orgId = `org_${randomUUID()}`;
+    const userId = `user_${randomUUID()}`;
+    const item = await outbox.seedLinkedNativeMail({
+      orgId,
+      userId,
+      membershipId: `mem_${randomUUID()}`,
+      toAddress: `recipient-${randomUUID()}@example.test`,
+      createdAt: nowDate(),
+    });
+    const sibling = await outbox.seedItem({
+      toAddress: `sibling-${randomUUID()}@example.test`,
+      subject: "Unrelated transactional mail",
+      status: "pending",
+      createdAt: nowDate(),
+    });
+    onTestFinished(async () => {
+      await outbox.cleanupNativeOwner(orgId, userId);
+      await outbox.deleteItems([sibling.id]);
+    });
+
+    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
+    await bdd.deleteAgent(
+      { userId, orgId, orgRole: "org:admin", email: `${userId}@example.test` },
+      item.agentId,
+    );
+    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeFalsy();
+    await expect(outbox.readItem(item.id)).resolves.toBeNull();
+    await expect(outbox.readItem(sibling.id)).resolves.toMatchObject({
+      status: "pending",
+    });
+    expect(resendMocks.send).not.toHaveBeenCalled();
+  });
 });
 
 describe("low-credit email delivery", () => {

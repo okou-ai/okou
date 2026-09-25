@@ -90,7 +90,7 @@ export function createEmailOutboxStateApi(context: TestContext) {
       readonly activeAuthority?: boolean;
       readonly toAddress: string;
       readonly createdAt: Date;
-    }): Promise<TestEmailOutboxStateItem> {
+    }): Promise<TestEmailOutboxStateItem & { readonly agentId: string }> {
       const response = await postAction(context, {
         action: "seed-native-mail",
         org_id: options.orgId,
@@ -105,7 +105,18 @@ export function createEmailOutboxStateApi(context: TestContext) {
       if (response.action !== "seed-native-mail") {
         throw new Error("Expected the linked Native email seed response");
       }
-      return response.item;
+      return { ...response.item, agentId: response.agent_id };
+    },
+
+    async cleanupNativeOwner(orgId: string, userId: string): Promise<void> {
+      const response = await postAction(context, {
+        action: "cleanup-native-owner",
+        org_id: orgId,
+        user_id: userId,
+      });
+      if (response.action !== "cleanup-native-owner" || !response.cleaned) {
+        throw new Error("Expected the Native owner fixture cleanup response");
+      }
     },
 
     async nativeReceiptExists(itemId: string): Promise<boolean> {
