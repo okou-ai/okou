@@ -4329,9 +4329,7 @@
     "sourcesFirst": {
       "common": {
         "back": "Retour",
-        "continue": "Continuer",
-        "finish": "Terminer la configuration",
-        "skip": "Passer pour l'instant"
+        "continue": "Continuer"
       },
       "compliance": {
         "frameworks": {

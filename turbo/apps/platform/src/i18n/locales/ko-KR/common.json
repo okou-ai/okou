@@ -4253,9 +4253,7 @@
     "sourcesFirst": {
       "common": {
         "back": "뒤로",
-        "continue": "계속",
-        "finish": "설정 완료",
-        "skip": "지금은 건너뛰기"
+        "continue": "계속"
       },
       "compliance": {
         "frameworks": {

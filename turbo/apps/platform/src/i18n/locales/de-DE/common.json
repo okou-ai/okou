@@ -4270,9 +4270,7 @@
     "sourcesFirst": {
       "common": {
         "back": "Zurück",
-        "continue": "Weiter",
-        "finish": "Einrichtung abschließen",
-        "skip": "Vorerst überspringen"
+        "continue": "Weiter"
       },
       "compliance": {
         "frameworks": {

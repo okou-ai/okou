@@ -4262,9 +4262,7 @@
     "sourcesFirst": {
       "common": {
         "back": "Back",
-        "continue": "Continue",
-        "finish": "Finish setup",
-        "skip": "Skip for now"
+        "continue": "Continue"
       },
       "compliance": {
         "frameworks": {

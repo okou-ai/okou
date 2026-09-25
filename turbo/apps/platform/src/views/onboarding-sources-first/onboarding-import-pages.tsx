@@ -312,19 +312,12 @@ export function OnboardingSkillsPage() {
         },
         { provider: providerName },
       )}
-      // Nothing on this step is required: until a skill arrives, the way on is
-      // a skip, and it becomes Continue once one has.
-      primaryLabel={
-        imported
-          ? t(($) => {
-              return $.onboarding.sourcesFirst.common.continue;
-            })
-          : t(($) => {
-              return $.onboarding.sourcesFirst.common.skip;
-            })
-      }
+      primaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.continue;
+      })}
+      // Nothing on this step is required; leaving before any skill arrives
+      // still counts as a skip.
       onPrimary={imported ? flow.goNext : flow.goSkip}
-      primaryEmphasis={imported ? "strong" : "quiet"}
       onBack={flow.goBack}
     >
       <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6">
@@ -970,17 +963,11 @@ export function OnboardingSlackPage() {
               return $.onboarding.sourcesFirst.slack.copy;
             })
       }
-      primaryLabel={
-        connected
-          ? t(($) => {
-              return $.onboarding.sourcesFirst.common.finish;
-            })
-          : t(($) => {
-              return $.onboarding.sourcesFirst.common.skip;
-            })
-      }
+      primaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.continue;
+      })}
+      // Leaving without Slack connected still counts as a skip.
       onPrimary={connected ? flow.goNext : flow.goSkip}
-      primaryEmphasis={connected ? "strong" : "quiet"}
       onBack={flow.goBack}
     >
       {/* One column on the step's own sheet: what it looks like in a channel,

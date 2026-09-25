@@ -4253,9 +4253,7 @@
     "sourcesFirst": {
       "common": {
         "back": "戻る",
-        "continue": "次へ",
-        "finish": "セットアップを完了",
-        "skip": "今はスキップ"
+        "continue": "次へ"
       },
       "compliance": {
         "frameworks": {

@@ -4253,9 +4253,7 @@
     "sourcesFirst": {
       "common": {
         "back": "Kembali",
-        "continue": "Lanjutkan",
-        "finish": "Selesaikan penyiapan",
-        "skip": "Lewati dulu"
+        "continue": "Lanjutkan"
       },
       "compliance": {
         "frameworks": {

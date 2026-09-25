@@ -293,17 +293,11 @@ export function OnboardingTeamPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.team.copy;
       })}
-      primaryLabel={
-        invited
-          ? t(($) => {
-              return $.onboarding.sourcesFirst.common.continue;
-            })
-          : t(($) => {
-              return $.onboarding.sourcesFirst.common.skip;
-            })
-      }
+      primaryLabel={t(($) => {
+        return $.onboarding.sourcesFirst.common.continue;
+      })}
+      // One way on; leaving without an accepted invite still counts as a skip.
       onPrimary={invited ? flow.goNext : flow.goSkip}
-      primaryEmphasis={invited ? "strong" : "quiet"}
       onBack={flow.goBack}
     >
       <OnboardingPanel

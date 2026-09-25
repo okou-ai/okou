@@ -118,7 +118,6 @@ export function OnboardingStepLayout({
   onPrimary,
   primaryDisabled = false,
   primaryBusy = false,
-  primaryEmphasis = "strong",
   onBack,
   trustPoints,
   footnote,
@@ -134,11 +133,6 @@ export function OnboardingStepLayout({
   readonly onPrimary: () => void;
   readonly primaryDisabled?: boolean;
   readonly primaryBusy?: boolean;
-  /**
-   * `quiet` while the way on is a skip: the step's own action is the one to
-   * stand out until the user has taken it.
-   */
-  readonly primaryEmphasis?: "strong" | "quiet";
   readonly onBack?: () => void;
   readonly trustPoints?: readonly string[];
   /** A line under the action, for a step that carries an offer or a note. */
@@ -202,7 +196,6 @@ export function OnboardingStepLayout({
               <Button
                 type="button"
                 size="lg"
-                variant={primaryEmphasis === "quiet" ? "outline" : "default"}
                 onClick={onPrimary}
                 disabled={primaryDisabled || primaryBusy}
                 aria-busy={primaryBusy}

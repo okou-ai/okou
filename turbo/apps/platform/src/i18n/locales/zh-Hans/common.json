@@ -4253,9 +4253,7 @@
     "sourcesFirst": {
       "common": {
         "back": "返回",
-        "continue": "继续",
-        "finish": "完成设置",
-        "skip": "先跳过"
+        "continue": "继续"
       },
       "compliance": {
         "frameworks": {

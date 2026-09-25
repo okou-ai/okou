@@ -4270,9 +4270,7 @@
     "sourcesFirst": {
       "common": {
         "back": "वापस",
-        "continue": "आगे बढ़ें",
-        "finish": "सेटअप पूरा करें",
-        "skip": "अभी छोड़ें"
+        "continue": "आगे बढ़ें"
       },
       "compliance": {
         "frameworks": {
