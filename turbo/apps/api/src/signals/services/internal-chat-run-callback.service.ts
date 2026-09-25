@@ -227,6 +227,7 @@ import {
   loadDiscordQueuedLaunchMaterial,
   type DiscordQueuedLaunchMaterial,
 } from "./discord-queued-launch-context.service";
+import { scheduleDiscordRunTyping } from "./discord-run-typing.service";
 import {
   loadGitHubQueuedLaunchMaterial,
   type GitHubQueuedLaunchMaterial,
@@ -4183,7 +4184,23 @@ async function autoSendQueuedMessageForThread(
       prompt: runInput.prompt,
       includePriorRounds: true,
     });
+    scheduleQueuedLaunchStatus(args.db, run.runId, runInput);
     args.timing.flush(run.runId, runInput.triggerSource);
+  }
+}
+
+/** A launched queued input shows processing status before its Runner starts. */
+function scheduleQueuedLaunchStatus(
+  db: Db,
+  runId: string,
+  runInput: CreateQueuedChatRunInput,
+): void {
+  if (runInput.discordDelivery) {
+    scheduleDiscordRunTyping(db, {
+      runId,
+      chatThreadId: runInput.threadId,
+      target: runInput.discordDelivery,
+    });
   }
 }
 
@@ -5270,6 +5287,13 @@ async function handleChatInternalCallback(
   }
 
   if (args.callback.status === "progress") {
+    if (payload.data.discordDelivery) {
+      scheduleDiscordRunTyping(args.db, {
+        runId: args.callback.runId,
+        chatThreadId: payload.data.threadId,
+        target: payload.data.discordDelivery,
+      });
+    }
     if (payload.data.slackDelivery) {
       const backgroundSignal = new AbortController().signal;
       waitUntil(

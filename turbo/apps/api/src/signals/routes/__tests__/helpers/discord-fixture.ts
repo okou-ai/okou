@@ -165,6 +165,8 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
   const messages = new Map<string, DiscordMessage>();
   const guildIds = new Set([actor.guildId]);
   const sentMessages: DiscordMessage[] = [];
+  /** Channels whose typing indicator Discord accepted, in request order. */
+  const typingChannels: string[] = [];
   const deniedChannels = new Set<string>();
   const deniedMembers = new Set<string>();
   const state: {
@@ -187,6 +189,9 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
       | Response
       | undefined
       | Promise<Response | undefined>;
+    typingResponse?: (
+      channelId: string,
+    ) => Response | undefined | Promise<Response | undefined>;
   } = {};
   const base = "https://discord.com/api/v10";
   server.use(
@@ -365,7 +370,19 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
         return overridden ?? HttpResponse.json(message);
       },
     ),
-    http.post(`${base}/channels/:channelId/typing`, () => {
+    http.post(`${base}/channels/:channelId/typing`, async ({ params }) => {
+      const channelId = String(params.channelId);
+      const overridden = await state.typingResponse?.(channelId);
+      if (overridden) {
+        return overridden;
+      }
+      if (!channels.has(channelId) || deniedChannels.has(channelId)) {
+        return HttpResponse.json(
+          { message: "Unknown channel", code: 10_003 },
+          { status: 404 },
+        );
+      }
+      typingChannels.push(channelId);
       return new HttpResponse(null, { status: 204 });
     }),
   );
@@ -376,6 +393,7 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
     guildIds,
     messages,
     sentMessages,
+    typingChannels,
     deniedChannels,
     deniedMembers,
     state,

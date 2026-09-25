@@ -59,6 +59,7 @@ import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.servic
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { prepareCanonicalDiscordIngressRoute$ } from "./discord-route-admission.service";
+import { scheduleDiscordAdmissionTyping } from "./discord-run-typing.service";
 import {
   discordIngressSenderBindings,
   type DiscordVerifiedBinding,
@@ -798,7 +799,7 @@ const persistClaimedIngress$ = command(
       { ...accessArgs, channelId: message.channel_id, mode: "view" },
       signal,
     );
-    await set(
+    const destination = await set(
       requireIngressAccess$,
       { ...accessArgs, channelId: ingress.destinationChannelId, mode: "write" },
       signal,
@@ -828,6 +829,12 @@ const persistClaimedIngress$ = command(
       },
       signal,
     );
+    if (persisted) {
+      scheduleDiscordAdmissionTyping({
+        botToken: destination.botToken,
+        channelId: ingress.destinationChannelId,
+      });
+    }
     return persisted
       ? {
           orgId: binding.orgId,

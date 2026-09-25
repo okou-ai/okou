@@ -26,7 +26,6 @@ mod provider_test_support;
 use runner_lifecycle::resource_budget;
 #[cfg(test)]
 use runner_lifecycle::restored_session_identity;
-mod retry;
 mod run_resolution;
 mod runtime_overrides;
 use runner_lifecycle::status;

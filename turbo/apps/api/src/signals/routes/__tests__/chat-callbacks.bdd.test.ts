@@ -2018,7 +2018,7 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
 
-  it("completes a terminal callback while a control writer holds the thread row", async () => {
+  it("persists the terminal marker while a control writer holds the thread row", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -2069,7 +2069,22 @@ describe("CHAT-02: completed chat callback", () => {
     await held.done;
 
     // The terminal marker append takes only its FK KEY SHARE, which does not
-    // conflict with a control writer's NO KEY UPDATE on the thread row.
+    // conflict with a control writer's NO KEY UPDATE on the thread row. Observe
+    // the committed marker before releasing the lock; the independent
+    // last_message_at update may need the row after the marker commits.
+    const whileHeld = await waitForThreadMessages(
+      actor,
+      run.threadId,
+      (events) => {
+        return lifecycleMarkers(events, run.runId, "completed").length > 0;
+      },
+    );
+    expect(
+      lifecycleMarkers(whileHeld.events, run.runId, "completed"),
+    ).toHaveLength(1);
+    heldThread.release();
+    await heldThread.done;
+
     const completedResult = await blockedCompletion;
     if (!completedResult.ok) {
       throw completedResult.error;
@@ -2078,13 +2093,6 @@ describe("CHAT-02: completed chat callback", () => {
       success: true,
       status: "completed",
     });
-    const afterCompletion = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      lifecycleMarkers(afterCompletion.events, run.runId, "completed"),
-    ).toHaveLength(1);
-    heldThread.release();
-    await heldThread.done;
-
     const duplicate = await webhooks.requestAgentComplete(
       completionBody,
       sandboxHeaders,

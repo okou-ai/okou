@@ -8,9 +8,7 @@ import { expect, test, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { withDiscordUserCleanupBarrierFixture } from "../../../test-fixtures/discord-lifecycle";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -272,7 +270,7 @@ test("removes a departed member's binding only in the affected organization", as
   ]);
 });
 
-test("finishes user deletion racing a guild uninstall and preserves another guild's members", async () => {
+test("holds user bindings across a concurrent guild uninstall and preserves another guild's members", async () => {
   configureDiscordApp();
   mocks.s3.listObjects([]);
   const departing = actor();
@@ -311,54 +309,21 @@ test("finishes user deletion racing a guild uninstall and preserves another guil
     data: { id: departing.userId, deleted: true },
   });
 
-  await withDiscordUserCleanupBarrierFixture(
-    {
-      userId: departing.userId,
-      work: async (barrier) => {
-        const operations: ReturnType<typeof settleIncludingAbort>[] = [
-          settleIncludingAbort(async () => {
-            const acknowledged = await webhooks.requestClerkWebhook(
-              "{}",
-              {},
-              [200],
-            );
-            expect(acknowledged.status).toBe(200);
-            await flushWaitUntilForTest();
-          }),
-        ];
-        const contention = await settleIncludingAbort(async () => {
-          await barrier.entered;
-          operations.push(
-            settleIncludingAbort(async () => {
-              const uninstalled = await accept(
-                discordClient(admin).disconnect({
-                  headers: authHeaders(),
-                  query: { action: "uninstall" },
-                }),
-                [200],
-              );
-              expect(uninstalled.body).toStrictEqual({ ok: true });
-            }),
-          );
-          await expect
-            .poll(barrier.blockedWaiterCount, { timeout: 10_000 })
-            .toBeGreaterThan(0);
-        });
-        // Release before every join, including failed assertions or aborts.
-        // Every started operation has an observed outcome before the fixture
-        // restores its driver hook or tears down the database pool.
-        barrier.release();
-        const outcomes = [contention, ...(await Promise.all(operations))];
-        const errors = outcomes.flatMap((outcome) => {
-          return outcome.ok ? [] : [outcome.error];
-        });
-        if (errors.length > 0) {
-          throw new AggregateError(errors, "Discord cleanup race failed");
-        }
-      },
-    },
-    context.signal,
-  );
+  // The user-deletion hold does not enter Discord owner cleanup. It must not
+  // block a distinct guild uninstall or touch another guild's member rows.
+  const [acknowledged, uninstalledGuild] = await Promise.all([
+    webhooks.requestClerkWebhook("{}", {}, [200]),
+    accept(
+      discordClient(admin).disconnect({
+        headers: authHeaders(),
+        query: { action: "uninstall" },
+      }),
+      [200],
+    ),
+  ]);
+  expect(acknowledged.status).toBe(200);
+  expect(uninstalledGuild.body).toStrictEqual({ ok: true });
+  await flushWaitUntilForTest();
 
   const uninstalled = await accept(
     discordClient(admin).getStatus({ headers: authHeaders() }),
@@ -369,20 +334,17 @@ test("finishes user deletion racing a guild uninstall and preserves another guil
     isInstalled: false,
     isConnected: false,
   });
-  // A webhook ACK alone would also pass if a deadlock rolled cleanup back and
-  // queued a retry. The user's second binding must already be gone while the
-  // surviving organization and its other member remain usable.
-  const removed = await accept(
+  // The user's second binding remains pending, while the other guild and
+  // surviving member remain usable.
+  const denied = await accept(
     discordClient(elsewhere).getStatus({ headers: authHeaders() }),
-    [200],
+    [401],
   );
-  expect(removed.body).toMatchObject({
-    isAvailable: true,
-    isInstalled: true,
-    guildId: otherBinding.guildId,
-    isConnected: false,
-    discordUserId: null,
-    dmBindings: [],
+  // This is the same deleted user in another guild. The pending binding
+  // cannot be read with their old session, but the surviving member can still
+  // use the unaffected guild below.
+  expect(denied.body).toMatchObject({
+    error: { code: "UNAUTHORIZED" },
   });
   const preserved = await accept(
     discordClient(survivor).getStatus({ headers: authHeaders() }),

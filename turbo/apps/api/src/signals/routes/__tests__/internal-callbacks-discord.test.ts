@@ -3,12 +3,13 @@ import { createHash } from "node:crypto";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { testDiscordDeliveriesContract } from "@okouai/api-contracts/contracts/test-discord-deliveries";
-import { HttpResponse } from "msw";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import { testDiscordDeliveriesRoutes } from "../test-discord-deliveries";
@@ -43,6 +44,9 @@ const trackDiscordFixture = createFixtureTracker(
 
 async function startDiscordRun(
   options: {
+    readonly configureProvider?: (
+      provider: ReturnType<typeof mockDiscordProvider>,
+    ) => void;
     readonly beforeMessage?: (actor: ConnectedDiscordActor) => Promise<void>;
   } = {},
 ) {
@@ -54,6 +58,7 @@ async function startDiscordRun(
   const { actor } = fixture;
   runs.acceptTelemetryIngest();
   const provider = mockDiscordProvider(actor);
+  options.configureProvider?.(provider);
   await options.beforeMessage?.(actor);
   const message = discordMessageForTest(actor, {
     channelId: provider.guildChannelId,
@@ -994,5 +999,275 @@ describe("canonical Discord terminal replies", () => {
     mockNow(now() + 121_000);
     await recoverReplies(started.actor);
     expect(sentContents(started)).toStrictEqual(contents);
+  });
+});
+
+describe("Discord processing status", () => {
+  const TYPING_REFRESH_GAP_MS = 9000;
+  const TYPING_ACCESS_REUSE_MS = 45_000;
+
+  async function heartbeat(runId: string, sandboxToken: string) {
+    const response = await webhooks.requestAgentHeartbeat(
+      { runId },
+      { authorization: `Bearer ${sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    return response.body;
+  }
+
+  it("shows typing on admission and refreshes it from Runner heartbeats until the reply", async () => {
+    const started = await startDiscordRun();
+    expect(started.provider.typingChannels).toContain(started.channelId);
+    expect(new Set(started.provider.typingChannels)).toStrictEqual(
+      new Set([started.channelId]),
+    );
+    const claim = await claimRun(started.actor, started.runId);
+
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    const typedBeforeHeartbeat = started.provider.typingChannels.length;
+    await expect(
+      heartbeat(started.runId, claim.sandboxToken),
+    ).resolves.toStrictEqual({ ok: true, typingRefreshIntervalSeconds: 8 });
+    expect(started.provider.typingChannels).toHaveLength(
+      typedBeforeHeartbeat + 1,
+    );
+
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "The status task is complete.",
+    });
+    expect(started.provider.sentMessages).toHaveLength(1);
+    const typedAtReply = started.provider.typingChannels.length;
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    await webhooks.requestAgentHeartbeat(
+      { runId: started.runId },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [404],
+    );
+    await flushWaitUntilForTest();
+    expect(started.provider.typingChannels).toHaveLength(typedAtReply);
+  });
+
+  it("shows typing when a queued Discord follow-up is admitted and when it launches", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    const typedBeforeFollowup = started.provider.typingChannels.length;
+    const followup = discordMessageForTest(started.actor, {
+      channelId: started.channelId,
+      content: `<@${started.actor.botUserId}> Continue after the first task.`,
+    });
+    started.provider.messages.set(followup.id, followup);
+    await postDiscordMessage(context, followup);
+    await flushWaitUntilForTest();
+    expect(started.provider.typingChannels).toHaveLength(
+      typedBeforeFollowup + 1,
+    );
+
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    const typedBeforeLaunch = started.provider.typingChannels.length;
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "The first task is complete.",
+    });
+    const events = await readProjectedChatEvents(context, {
+      threadId: started.threadId,
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    const launched = events.filter((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.runId !== undefined &&
+        event.runId !== started.runId
+      );
+    });
+    expect(launched).toHaveLength(1);
+    expect(started.provider.sentMessages).toHaveLength(1);
+    expect(started.provider.typingChannels).toHaveLength(typedBeforeLaunch + 1);
+    expect(started.provider.typingChannels.at(-1)).toBe(started.channelId);
+  });
+
+  it.each([403, 500] as const)(
+    "delivers the reply when Discord rejects typing with HTTP %s",
+    async (status) => {
+      let typingRequests = 0;
+      const started = await startDiscordRun({
+        configureProvider: (provider) => {
+          provider.state.typingResponse = () => {
+            typingRequests += 1;
+            return HttpResponse.json({ message: "Rejected" }, { status });
+          };
+        },
+      });
+      const { provider } = started;
+      expect(typingRequests).toBeGreaterThan(0);
+      const claim = await claimRun(started.actor, started.runId);
+      mockNow(now() + TYPING_REFRESH_GAP_MS);
+      await heartbeat(started.runId, claim.sandboxToken);
+      await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        text: "Delivered despite a typing failure.",
+      });
+      expect(provider.typingChannels).toHaveLength(0);
+      expect(provider.sentMessages).toHaveLength(1);
+      expect(provider.sentMessages[0]?.content).toContain(
+        "Delivered despite a typing failure.",
+      );
+    },
+  );
+
+  it("waits out a typing rate limit without delaying the reply", async () => {
+    let typingRequests = 0;
+    const started = await startDiscordRun({
+      configureProvider: (provider) => {
+        provider.state.typingResponse = () => {
+          typingRequests += 1;
+          return typingRequests === 1
+            ? HttpResponse.json(
+                { message: "Rate limited", retry_after: 60, global: false },
+                { status: 429 },
+              )
+            : undefined;
+        };
+      },
+    });
+    const { provider } = started;
+    expect(typingRequests).toBe(1);
+    const claim = await claimRun(started.actor, started.runId);
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    await heartbeat(started.runId, claim.sandboxToken);
+    expect(typingRequests).toBe(1);
+
+    mockNow(now() + 60_000);
+    await heartbeat(started.runId, claim.sandboxToken);
+    expect(typingRequests).toBe(2);
+    expect(provider.typingChannels).toStrictEqual([started.channelId]);
+
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "Delivered after a typing rate limit.",
+    });
+    expect(provider.sentMessages).toHaveLength(1);
+  });
+
+  it.each(["binding", "member"] as const)(
+    "stops typing after %s revocation",
+    async (revocation) => {
+      const started = await startDiscordRun();
+      const claim = await claimRun(started.actor, started.runId);
+      let typingRequests = 0;
+      started.provider.state.typingResponse = () => {
+        typingRequests += 1;
+        return undefined;
+      };
+      if (revocation === "binding") {
+        await deleteDiscordFixture(context, started.actor.fixture);
+        started.fixture.deleted = true;
+      } else {
+        started.provider.deniedMembers.add(started.actor.discordUserId);
+      }
+      mockNow(now() + TYPING_REFRESH_GAP_MS);
+      await heartbeat(started.runId, claim.sandboxToken);
+      expect(typingRequests).toBe(0);
+    },
+  );
+
+  it("refreshes typing without repeating Discord permission reads inside the reuse window", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    let channelReads = 0;
+    started.provider.state.channelResponse = () => {
+      channelReads += 1;
+      return undefined;
+    };
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    await heartbeat(started.runId, claim.sandboxToken);
+    const readsPerFullCheck = channelReads;
+    expect(readsPerFullCheck).toBeGreaterThan(0);
+    const typedAfterFirstRefresh = started.provider.typingChannels.length;
+
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    await heartbeat(started.runId, claim.sandboxToken);
+    // One refresh costs one typing request while the permission reads are reused.
+    expect(channelReads).toBe(readsPerFullCheck);
+    expect(started.provider.typingChannels).toHaveLength(
+      typedAfterFirstRefresh + 1,
+    );
+
+    mockNow(now() + TYPING_ACCESS_REUSE_MS);
+    await heartbeat(started.runId, claim.sandboxToken);
+    expect(channelReads).toBe(readsPerFullCheck * 2);
+  });
+
+  it("stops typing after member revocation once the reuse window ends", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    await heartbeat(started.runId, claim.sandboxToken);
+    started.provider.deniedMembers.add(started.actor.discordUserId);
+    mockNow(now() + TYPING_ACCESS_REUSE_MS);
+    const typedAtRevocationCheck = started.provider.typingChannels.length;
+    await heartbeat(started.runId, claim.sandboxToken);
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    await heartbeat(started.runId, claim.sandboxToken);
+    expect(started.provider.typingChannels).toHaveLength(
+      typedAtRevocationCheck,
+    );
+  });
+
+  it("pauses all typing after a rate limit on a Discord permission read", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    let limited = true;
+    let limitedReads = 0;
+    server.use(
+      http.get(
+        "https://discord.com/api/v10/guilds/:guildId/members/:userId",
+        () => {
+          if (!limited) {
+            return undefined;
+          }
+          limitedReads += 1;
+          return HttpResponse.json(
+            { message: "Rate limited", retry_after: 30, global: false },
+            { status: 429 },
+          );
+        },
+      ),
+    );
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    const typedBeforeLimit = started.provider.typingChannels.length;
+    await heartbeat(started.runId, claim.sandboxToken);
+    expect(limitedReads).toBeGreaterThan(0);
+    limited = false;
+
+    // A new conversation in another channel is admitted during the pause.
+    const other = discordMessageForTest(started.actor, {
+      channelId: started.provider.guildChannelId,
+      content: `<@${started.actor.botUserId}> Start a separate task`,
+    });
+    started.provider.messages.set(other.id, other);
+    await postDiscordMessage(context, other);
+    await flushWaitUntilForTest();
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    await heartbeat(started.runId, claim.sandboxToken);
+    expect(started.provider.typingChannels).toHaveLength(typedBeforeLimit);
+
+    mockNow(now() + 30_000);
+    await heartbeat(started.runId, claim.sandboxToken);
+    expect(started.provider.typingChannels).toHaveLength(typedBeforeLimit + 1);
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "Delivered after typing yielded to a rate limit.",
+    });
+    expect(started.provider.sentMessages.at(-1)?.content).toContain(
+      "Delivered after typing yielded to a rate limit.",
+    );
   });
 });

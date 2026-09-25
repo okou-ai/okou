@@ -35,6 +35,10 @@ import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
 import { hasAgentPhoneTypingTargetForRun$ } from "../services/agent-event-consumer-agentphone-typing.service";
+import {
+  DISCORD_TYPING_REFRESH_INTERVAL_SECONDS,
+  hasDiscordTypingTargetForRun,
+} from "../services/discord-run-typing.service";
 import { settle } from "../utils";
 import {
   getSandboxAuthForRun,
@@ -48,6 +52,7 @@ import {
   XResourceUsageError,
 } from "../services/x-resource-usage.service";
 import {
+  hasHeldClerkUserDeletion,
   lockXResourceAdmission,
   setXResourceTransactionTimeouts,
 } from "../services/x-resource-usage-lifecycle";
@@ -57,6 +62,7 @@ const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
 const SANDBOX_TELEMETRY_NETWORK_DATASET = "sandbox-telemetry-network";
 const MODEL_USAGE_KIND = "model";
 const TELEMETRY_INGEST_TIMEOUT_MS = 10_000;
+const AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS = 4;
 
 const L = logger("webhooks:agent");
 
@@ -357,6 +363,31 @@ function workspaceHistoryRestoreDimensions(
   };
 }
 
+/**
+ * Typing indicators are best-effort side effects of heartbeat progress. The
+ * Runner uses this hint for an extra refresh cadence that never counts as a
+ * control-path heartbeat failure.
+ */
+const typingRefreshIntervalSecondsForRun$ = command(
+  async (
+    { get, set },
+    args: { readonly runId: string; readonly triggerSource: string | null },
+    signal: AbortSignal,
+  ): Promise<number | undefined> => {
+    if (args.triggerSource === "agentphone") {
+      return (await set(hasAgentPhoneTypingTargetForRun$, args.runId, signal))
+        ? AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS
+        : undefined;
+    }
+    if (args.triggerSource === "discord") {
+      const refresh = await hasDiscordTypingTargetForRun(get(db$), args.runId);
+      signal.throwIfAborted();
+      return refresh ? DISCORD_TYPING_REFRESH_INTERVAL_SECONDS : undefined;
+    }
+    return undefined;
+  },
+);
+
 const heartbeatBody$ = bodyResultOf(webhookHeartbeatContract.send);
 const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   const bodyResult = await get(heartbeatBody$);
@@ -392,11 +423,16 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Agent run not found");
   }
 
-  const typingTarget =
-    result[0]?.triggerSource === "agentphone"
-      ? await settle(set(hasAgentPhoneTypingTargetForRun$, body.runId, signal))
-      : null;
-  const refreshTyping = typingTarget?.ok && typingTarget.value;
+  const typingRefreshIntervalSeconds = await settle(
+    set(
+      typingRefreshIntervalSecondsForRun$,
+      {
+        runId: body.runId,
+        triggerSource: result[0]?.triggerSource ?? null,
+      },
+      signal,
+    ),
+  );
   signal.throwIfAborted();
 
   waitUntil(set(dispatchProgressCallbacks$, body.runId, signal));
@@ -405,7 +441,10 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       ok: true,
-      ...(refreshTyping ? { typingRefreshIntervalSeconds: 4 } : {}),
+      ...(typingRefreshIntervalSeconds.ok &&
+      typingRefreshIntervalSeconds.value !== undefined
+        ? { typingRefreshIntervalSeconds: typingRefreshIntervalSeconds.value }
+        : {}),
     },
   };
 });
@@ -502,6 +541,9 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
           await setXResourceTransactionTimeouts(tx);
           // Count-event retries share the account-cleanup fence with resource batches.
           await lockXResourceAdmission(tx, "shared");
+          if (await hasHeldClerkUserDeletion(tx, auth.userId)) {
+            throw new XResourceUsageError(404, "Run not found");
+          }
           await tx
             .insert(usageEvent)
             .values(usageEventValues)
@@ -513,6 +555,12 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!insertResult.ok) {
+    if (
+      insertResult.error instanceof XResourceUsageError &&
+      insertResult.error.status === 404
+    ) {
+      return notFound(insertResult.error.message);
+    }
     if (isForeignKeyViolation(insertResult.error)) {
       L.error("Run not found for usage event, dropping", {
         ...usageUnderbillingFields("run_not_found", "confirmed"),
