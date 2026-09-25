@@ -4080,7 +4080,8 @@ organization. Older CLIs lack these commands; a new CLI against an older API
 receives an unavailable endpoint. No Runner protocol or production activation is
 introduced. A revoked or rebound Discord connection cannot reuse the stored
 delivery destination. If a send might have succeeded but its receipt is missing,
-retries reconcile the bot message by the persisted nonce and exact destination;
-absence from the bounded history scan does not authorize another send. Explicit
+a prompt retry replays the persisted nonce with `enforce_nonce`, so Discord
+returns the original message instead of creating another. After the one-minute
+replay window the delivery stays uncertain and is never sent again. Explicit
 Discord rate-limit delays are persisted with the delivery attempt; subsequent
 completion requests return the remaining delay without sending early.

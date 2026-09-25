@@ -19,6 +19,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
+import { sanitizeArtifactFilename } from "../../../lib/file-url";
 import { server } from "../../../mocks/server";
 import {
   closeErasureSubjectFixture,
@@ -142,7 +143,10 @@ async function boundFixture(): Promise<BoundFixture> {
   };
 }
 
-async function canonicalUpload(fixture: BoundFixture) {
+async function canonicalUpload(
+  fixture: BoundFixture,
+  overrides: Partial<DiscordUploadInitBody> = {},
+) {
   await updateFeatureSwitchesForUser(context, fixture.actor, {
     [FeatureSwitchKey.DiscordIntegration]: true,
     [FeatureSwitchKey.PrivateArtifacts]: true,
@@ -152,6 +156,7 @@ async function canonicalUpload(fixture: BoundFixture) {
   const body = uploadBody({
     channelId: fixture.channelId,
     checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+    ...overrides,
   });
   const initialized = await accept(
     fileClients().init({ headers: fixture.headers, body }),
@@ -159,7 +164,7 @@ async function canonicalUpload(fixture: BoundFixture) {
   );
   objectStore.addObject({
     bucket: "test-private-artifacts",
-    key: `private-artifacts/${initialized.body.assetId}/${body.filename}`,
+    key: `private-artifacts/${initialized.body.assetId}/${sanitizeArtifactFilename(body.filename)}`,
     size: bytes.byteLength,
     body: bytes,
     contentType: body.contentType,
@@ -1012,7 +1017,7 @@ describe("Canonical Discord file publication and delivery", () => {
     expect(catalog.body.artifacts).toStrictEqual([]);
   });
 
-  it("reconciles a lost Discord send response without publishing or sending twice", async () => {
+  it("reconciles a lost Discord send response by replaying its enforced nonce", async () => {
     const fixture = await boundFixture();
     const upload = await canonicalUpload(fixture);
     const client = fileClients();
@@ -1020,48 +1025,50 @@ describe("Canonical Discord file publication and delivery", () => {
       client.materialize({ headers: fixture.headers, body: upload.operation }),
       [200],
     );
-    let sentMessage: ReturnType<typeof discordFileMessage> | undefined;
-    let sends = 0;
+    // Discord returns the original message for a repeated enforced nonce.
+    const created = new Map<string, ReturnType<typeof discordFileMessage>>();
+    const nonces: string[] = [];
     server.use(
       http.post(
         `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
         async ({ request }) => {
-          sends += 1;
           const nonce = await uploadedDiscordNonce(request, upload.bytes);
+          nonces.push(nonce);
+          const existing = created.get(nonce);
+          if (existing) {
+            return HttpResponse.json(existing);
+          }
           const deliveredAttachmentId = discordSnowflake();
-          sentMessage = discordFileMessage({
-            channelId: fixture.channelId,
-            messageId: discordSnowflake(),
-            authorId: fixture.botUserId,
-            bot: true,
+          created.set(
             nonce,
-            attachment: {
-              id: deliveredAttachmentId,
-              filename: upload.body.filename,
-              size: upload.bytes.byteLength,
-              url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
-              content_type: "text/csv",
-            },
-          });
+            discordFileMessage({
+              channelId: fixture.channelId,
+              messageId: discordSnowflake(),
+              authorId: fixture.botUserId,
+              bot: true,
+              nonce,
+              attachment: {
+                id: deliveredAttachmentId,
+                filename: upload.body.filename,
+                size: upload.bytes.byteLength,
+                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/report.csv`,
+                content_type: "text/csv",
+              },
+            }),
+          );
           return HttpResponse.error();
         },
       ),
-      http.get(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        () => {
-          return HttpResponse.json(sentMessage ? [sentMessage] : []);
-        },
-      ),
     );
-    const uncertain = await accept(
+    const unconfirmed = await accept(
       client.complete({ headers: fixture.headers, body: upload.operation }),
       [200],
     );
 
-    expect(uncertain.body).toMatchObject({
+    expect(unconfirmed.body).toMatchObject({
       ...upload.operation,
       url: upload.initialized.url,
-      delivery: { status: "failed", retryable: false },
+      delivery: { status: "failed", retryable: true },
     });
     const catalog = await accept(
       catalogClient().list({ headers: fixture.headers }),
@@ -1072,6 +1079,7 @@ describe("Canonical Discord file publication and delivery", () => {
       client.complete({ headers: fixture.headers, body: upload.operation }),
       [200],
     );
+    const [sentMessage] = [...created.values()];
     if (!sentMessage) {
       throw new Error("Expected the external Discord send to have occurred");
     }
@@ -1085,7 +1093,59 @@ describe("Canonical Discord file publication and delivery", () => {
         attachmentId: sentMessage.attachments[0]?.id,
       },
     });
-    expect(sends).toBe(1);
+    expect(created.size).toBe(1);
+    expect(nonces).toHaveLength(2);
+    expect(nonces[1]).toBe(nonces[0]);
+  });
+
+  it("records the receipt when Discord normalizes the attachment filename", async () => {
+    const fixture = await boundFixture();
+    const upload = await canonicalUpload(fixture, {
+      filename: "quarterly report.csv",
+    });
+    const client = fileClients();
+    await accept(
+      client.materialize({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+    const deliveredMessageId = discordSnowflake();
+    const deliveredAttachmentId = discordSnowflake();
+    server.use(
+      http.post(
+        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
+        async ({ request }) => {
+          const nonce = await uploadedDiscordNonce(request, upload.bytes);
+          return HttpResponse.json(
+            discordFileMessage({
+              channelId: fixture.channelId,
+              messageId: deliveredMessageId,
+              authorId: fixture.botUserId,
+              bot: true,
+              nonce,
+              attachment: {
+                id: deliveredAttachmentId,
+                filename: "quarterly_report.csv",
+                size: upload.bytes.byteLength,
+                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${deliveredAttachmentId}/quarterly_report.csv`,
+                content_type: "text/csv",
+              },
+            }),
+          );
+        },
+      ),
+    );
+    const completed = await accept(
+      client.complete({ headers: fixture.headers, body: upload.operation }),
+      [200],
+    );
+
+    expect(completed.body.delivery).toStrictEqual({
+      status: "delivered",
+      channelId: fixture.channelId,
+      messageId: deliveredMessageId,
+      attachmentId: deliveredAttachmentId,
+      permalink: `https://discord.com/channels/${fixture.guildId}/${fixture.channelId}/${deliveredMessageId}`,
+    });
   });
 
   it("retries an explicit rate limit only on a new authorized completion request", async () => {
@@ -1289,7 +1349,7 @@ describe("Canonical Discord file publication and delivery", () => {
     });
   });
 
-  it("does not infer a successful send from another author's matching nonce", async () => {
+  it("does not replay a lost send after Discord's nonce window", async () => {
     const fixture = await boundFixture();
     const upload = await canonicalUpload(fixture);
     const client = fileClients();
@@ -1297,51 +1357,43 @@ describe("Canonical Discord file publication and delivery", () => {
       client.materialize({ headers: fixture.headers, body: upload.operation }),
       [200],
     );
-    let nonce = "";
     let sends = 0;
     server.use(
       http.post(
         `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
         async ({ request }) => {
           sends += 1;
-          nonce = await uploadedDiscordNonce(request, upload.bytes);
+          await uploadedDiscordNonce(request, upload.bytes);
           return new HttpResponse(null, { status: 502 });
         },
       ),
-      http.get(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        () => {
-          const fileId = discordSnowflake();
-          return HttpResponse.json([
-            discordFileMessage({
-              channelId: fixture.channelId,
-              messageId: discordSnowflake(),
-              authorId: fixture.discordUserId,
-              nonce,
-              attachment: {
-                id: fileId,
-                filename: upload.body.filename,
-                size: upload.bytes.byteLength,
-                url: `https://cdn.discordapp.com/attachments/${fixture.channelId}/${fileId}/report.csv`,
-                content_type: "text/csv",
-              },
-            }),
-          ]);
-        },
-      ),
     );
-    await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
-    const retried = await accept(
-      client.complete({ headers: fixture.headers, body: upload.operation }),
-      [200],
-    );
+    const requestedAt = now();
+    await withMockNowForTest(requestedAt, async () => {
+      const unconfirmed = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
+      expect(unconfirmed.body.delivery).toMatchObject({
+        status: "failed",
+        retryable: true,
+      });
 
-    expect(retried.body.delivery).toMatchObject({
-      status: "failed",
-      retryable: false,
+      mockNow(requestedAt + 60_000);
+      const expired = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
+      const repeated = await accept(
+        client.complete({ headers: fixture.headers, body: upload.operation }),
+        [200],
+      );
+
+      expect(expired.body.delivery).toMatchObject({
+        status: "failed",
+        retryable: false,
+      });
+      expect(repeated.body.delivery).toStrictEqual(expired.body.delivery);
     });
     expect(sends).toBe(1);
   });
@@ -1383,12 +1435,6 @@ describe("Canonical Discord file publication and delivery", () => {
               },
             }),
           );
-        },
-      ),
-      http.get(
-        `${discordApiOrigin}/channels/${fixture.channelId}/messages`,
-        () => {
-          return HttpResponse.json([]);
         },
       ),
     );
