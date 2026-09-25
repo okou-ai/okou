@@ -50,8 +50,8 @@ case "${1:-}" in
       [ "${MOCK_ARTIFACT_CHAT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dddddddddddddddddddddddddddddddddddddddd" ]; then
       [ "${MOCK_PRIVACY_CLEANUP_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "ffffffffffffffffffffffffffffffffffffffff" ]; then
-      [ "${MOCK_CHAT_EVENT_READER_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "15117da7815a192e2f08ca46a2084129cb7fc48f" ]; then
+      [ "${MOCK_CHAT_EVENT_WRITE_CONTROL_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
       [ "${MOCK_SNAPSHOT_R2_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1111111111111111111111111111111111111111" ]; then
@@ -83,9 +83,7 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   log)
-    if [[ "$*" == *chat-event-write-mode.service.ts* ]]; then
-      printf '%s\n' "${MOCK_CHAT_EVENT_READER_COMMIT-ffffffffffffffffffffffffffffffffffffffff}"
-    elif [[ "$*" == *chat-thread-snapshot-object.ts* ]]; then
+    if [[ "$*" == *chat-thread-snapshot-object.ts* ]]; then
       printf '%s\n' "${MOCK_SNAPSHOT_R2_READER_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
     elif [[ "$*" == *1228_drop_agentphone_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_AGENTPHONE_BRAND_DROP_COMMIT-1111111111111111111111111111111111111111}"
@@ -753,8 +751,14 @@ if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "priority rejection must precede artifact resolution"
 fi
 
-echo "resolve-production-rollback-target tests passed"
+# Migration 1245 drops chat_event_write_control, which APIs before #36703 read.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat_event_write_control reader removal" \
+  run_resolver "${tmp_dir}/write-control-floor.output" MOCK_CHAT_EVENT_WRITE_CONTROL_FLOOR_VALID=0
+grep -Fq '15117da7815a192e2f08ca46a2084129cb7fc48f' "${tmp_dir}/failure.err" || fail "write-control floor rejection must identify the reader removal commit"
+[ ! -s "${tmp_dir}/write-control-floor.output" ] || fail "pre-Release-2 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-Release-2 API target must fail before artifact or host access"
+fi
 
-# The contracted schema accepts only APIs at or after the split writer.
-assert_failure "predates activated split chat event writes" run_resolver "${tmp_dir}/pre-split.output" MOCK_CHAT_EVENT_READER_VALID=0
-assert_failure "Cannot resolve the merged split chat event reader" run_resolver "${tmp_dir}/unknown-floor.output" MOCK_CHAT_EVENT_READER_COMMIT=
+echo "resolve-production-rollback-target tests passed"

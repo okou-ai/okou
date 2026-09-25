@@ -17,12 +17,10 @@ export async function withNativeChatEventThreadTouch<T>(
 ): Promise<T> {
   return await write(db, () => {
     return attemptChatEventSideEffect("thread_touch", args.chatThreadId, () => {
-      return touchChatThreadLastMessageAtIndependently(
-        db,
-        args.chatThreadId,
-        args.createdAt,
-        args.eventId,
-      );
+      return touchChatThreadLastMessageAtIndependently(db, args.chatThreadId, {
+        touchedAt: args.createdAt,
+        eventId: args.eventId,
+      });
     });
   });
 }

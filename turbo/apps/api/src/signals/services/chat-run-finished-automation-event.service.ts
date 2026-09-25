@@ -68,8 +68,7 @@ async function appendAutonomyBudgetError(args: {
     return touchChatThreadLastMessageAtIndependently(
       args.db,
       args.chatThreadId,
-      errorEvent.createdAt,
-      errorEvent.id,
+      { touchedAt: errorEvent.createdAt, eventId: errorEvent.id },
     );
   });
   return true;

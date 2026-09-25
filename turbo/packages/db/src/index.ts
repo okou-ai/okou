@@ -123,7 +123,6 @@ import * as userBehaviorCountSchema from "./schema/user-behavior-count";
 import * as activeInputDeliverySchema from "./schema/active-input-delivery";
 import * as chatThreadSchema from "./schema/chat-thread";
 import * as chatEventSequenceSchema from "./schema/chat-event-sequence";
-import * as chatEventWriteControlSchema from "./schema/chat-event-write-control";
 import * as chatEventSchema from "./schema/chat-event";
 import * as chatEventSearchSchema from "./schema/chat-event-search";
 import * as chatEventRetentionCursorSchema from "./schema/chat-event-retention-cursor";
@@ -301,7 +300,6 @@ export const schema = {
   ...chatThreadSchema,
   ...chatEventSchema,
   ...chatEventSequenceSchema,
-  ...chatEventWriteControlSchema,
   ...chatEventSearchSchema,
   ...chatEventRetentionCursorSchema,
   ...chatEventSnapshotSchema,

@@ -116,50 +116,31 @@ interface AuthorizedChatThreadTouchScope {
   readonly orgId: string;
 }
 
+interface ChatThreadTouchOptions {
+  readonly touchedAt?: Date;
+  readonly eventId?: string;
+  readonly authorizedScope?: AuthorizedChatThreadTouchScope;
+  /**
+   * The thread's organization, already validated by the caller, so its thread
+   * events skip the Agent lookup. Unlike `authorizedScope`, it does not add
+   * predicates to the thread read.
+   */
+  readonly orgId?: string;
+  /**
+   * Set only for a completed or failed run's terminal marker: that marker makes
+   * the thread unread, so an archived thread also returns to the default
+   * sidebar list. Cancellation is user-initiated and leaves it archived.
+   */
+  readonly unarchive?: boolean;
+}
+
 export async function touchChatThreadLastMessageAtIndependently(
   tx: Db,
   threadId: string,
-  touchedAt: Date = nowDate(),
-  eventId?: string,
-  authorizedScope?: AuthorizedChatThreadTouchScope,
+  options: ChatThreadTouchOptions = {},
 ): Promise<void> {
-  await touchChatThreadIndependently(tx, threadId, {
-    touchedAt,
-    eventId,
-    authorizedScope,
-    unarchive: false,
-  });
-}
-
-/**
- * Touch for a completed or failed run's terminal marker. That marker makes the
- * thread unread, so an archived thread also returns to the default sidebar
- * list. Cancellation is user-initiated and must not use this.
- */
-export async function touchChatThreadForUnreadRunFinishIndependently(
-  tx: Db,
-  threadId: string,
-  touchedAt: Date = nowDate(),
-): Promise<void> {
-  await touchChatThreadIndependently(tx, threadId, {
-    touchedAt,
-    eventId: undefined,
-    authorizedScope: undefined,
-    unarchive: true,
-  });
-}
-
-async function touchChatThreadIndependently(
-  tx: Db,
-  threadId: string,
-  options: {
-    readonly touchedAt: Date;
-    readonly eventId: string | undefined;
-    readonly authorizedScope: AuthorizedChatThreadTouchScope | undefined;
-    readonly unarchive: boolean;
-  },
-): Promise<void> {
-  const { touchedAt, eventId, authorizedScope } = options;
+  const { touchedAt = nowDate(), eventId, authorizedScope } = options;
+  const orgId = authorizedScope?.orgId ?? options.orgId;
   // Resolve identity before either independent write. Failure of the weak
   // timestamp update must not suppress the separate ordering event attempt.
   const [thread] = await tx
@@ -190,7 +171,7 @@ async function touchChatThreadIndependently(
   // The flag rides on the same single-row UPDATE; `archived` is not indexed.
   // A concurrent re-archive between the read and this write loses, which is
   // acceptable for a best-effort sidebar state.
-  const unarchive = options.unarchive && thread.archived;
+  const unarchive = options.unarchive === true && thread.archived;
   let unarchived = false;
   await attemptChatEventSideEffect("last_message_at", threadId, async () => {
     const updated = await tx
@@ -199,12 +180,7 @@ async function touchChatThreadIndependently(
         lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
         ...(unarchive ? { archived: false } : {}),
       })
-      .where(
-        and(
-          eq(chatThreads.id, threadId),
-          eq(chatThreads.userId, thread.userId),
-        ),
-      )
+      .where(eq(chatThreads.id, threadId))
       .returning({ id: chatThreads.id });
     unarchived = unarchive && updated.length > 0;
   });
@@ -212,7 +188,7 @@ async function touchChatThreadIndependently(
     await appendChatThreadEvent(tx, {
       kind: "sort_touched",
       userId: thread.userId,
-      ...(authorizedScope ? { orgId: authorizedScope.orgId } : {}),
+      orgId,
       chatThreadId: threadId,
       agentId,
       eventId,
@@ -226,6 +202,7 @@ async function touchChatThreadIndependently(
     await appendChatThreadEvent(tx, {
       kind: "unarchived",
       userId: thread.userId,
+      orgId,
       chatThreadId: threadId,
       agentId,
     });
