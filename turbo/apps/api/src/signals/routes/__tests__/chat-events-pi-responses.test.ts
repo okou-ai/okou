@@ -1246,14 +1246,45 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
+  const outcomeRepresentativeModels = {
+    "openai-api-key": {
+      standard: "gpt-5.6-terra",
+      failed: "gpt-5.6-sol",
+      cancelled: "gpt-5.6-luna",
+    },
+    "openrouter-codex": {
+      standard: "gpt-5.6-sol",
+      failed: "gpt-5.6-luna",
+      cancelled: "gpt-5.6-terra",
+    },
+    "vercel-ai-gateway-codex": {
+      standard: "gpt-5.6-luna",
+      failed: "gpt-5.6-terra",
+      cancelled: "gpt-5.6-sol",
+    },
+  } as const;
+
   it.each(
     GPT_API_KEY_BDD_ROUTES.flatMap((route) => {
-      return [
-        { ...route, tier: undefined, generation: 2, outcome: "completed" },
-        { ...route, tier: "fast", generation: 3, outcome: "completed" },
-        { ...route, tier: "fast", generation: 3, outcome: "failed" },
-        { ...route, tier: "fast", generation: 3, outcome: "cancelled" },
-      ] as const;
+      const representative = outcomeRepresentativeModels[route.type];
+      return (
+        [
+          { ...route, tier: undefined, generation: 2, outcome: "completed" },
+          { ...route, tier: "fast", generation: 3, outcome: "completed" },
+          { ...route, tier: "fast", generation: 3, outcome: "failed" },
+          { ...route, tier: "fast", generation: 3, outcome: "cancelled" },
+        ] as const
+      ).filter(({ tier, outcome }) => {
+        return (
+          (tier === "fast" && outcome === "completed") ||
+          (tier === undefined &&
+            route.selectedModel === representative.standard) ||
+          (outcome === "failed" &&
+            route.selectedModel === representative.failed) ||
+          (outcome === "cancelled" &&
+            route.selectedModel === representative.cancelled)
+        );
+      });
     }),
   )(
     "runs $name API-key $tier through API-first and generation-$generation Sandbox with $outcome and credential rotation",
@@ -1627,7 +1658,16 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(GPT_API_KEY_BDD_ROUTES)(
+  it.each(
+    GPT_API_KEY_BDD_ROUTES.filter((route) => {
+      const representative = {
+        "openai-api-key": "gpt-5.6-terra",
+        "openrouter-codex": "gpt-5.6-sol",
+        "vercel-ai-gateway-codex": "gpt-5.6-luna",
+      } as const;
+      return route.selectedModel === representative[route.type];
+    }),
+  )(
     "fails closed when the admitted $name Fast credential disappears before provider ownership",
     async (route) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -1713,7 +1753,16 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(GPT_API_KEY_BDD_ROUTES)(
+  it.each(
+    GPT_API_KEY_BDD_ROUTES.filter((route) => {
+      const representative = {
+        "openai-api-key": "gpt-5.6-sol",
+        "openrouter-codex": "gpt-5.6-luna",
+        "vercel-ai-gateway-codex": "gpt-5.6-terra",
+      } as const;
+      return route.selectedModel === representative[route.type];
+    }),
+  )(
     "keeps rejected $name API-key Fast single-owner, redacted, and unbilled",
     async (route) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();

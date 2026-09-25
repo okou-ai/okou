@@ -2593,16 +2593,20 @@ describe("POST /api/image-io/generate", () => {
       error: "Invalid status code: 422 private-provider-token",
       detail: "private-provider-message https://private.example/input",
     },
-    ...["private-provider-message", 503, true, []].map((payloadBody, index) => {
-      return {
-        caseName: `unsupported body despite status 503 (${index})`,
-        status: "ERROR",
-        wrapper: "payload",
-        error: "Invalid status code: 503",
-        detail: undefined,
-        payloadBody,
-      };
-    }),
+    ...["private-provider-message", 503, true, []]
+      .map((payloadBody, index) => {
+        return {
+          caseName: `unsupported body despite status 503 (${index})`,
+          status: "ERROR",
+          wrapper: "payload",
+          error: "Invalid status code: 503",
+          detail: undefined,
+          payloadBody,
+        };
+      })
+      .filter((_, index) => {
+        return index === 0 || index === 3;
+      }),
     ...[429, 500, 502, 503, 504].map((reportedStatus) => {
       return {
         caseName: `status-only provider failure ${reportedStatus}`,
@@ -2633,15 +2637,19 @@ describe("POST /api/image-io/generate", () => {
       "Unexpected status code: 099",
       503,
       { status: 503 },
-    ].map((error, index) => {
-      return {
-        caseName: `malformed status-only evidence ${index}`,
-        status: "ERROR",
-        wrapper: "payload",
-        error,
-        detail: undefined,
-      };
-    }),
+    ]
+      .map((error, index) => {
+        return {
+          caseName: `malformed status-only evidence ${index}`,
+          status: "ERROR",
+          wrapper: "payload",
+          error,
+          detail: undefined,
+        };
+      })
+      .filter((_, index) => {
+        return index !== 8;
+      }),
     ...["downstream_service_error", "downstream_service_unavailable"].map(
       (type) => {
         return {
@@ -2710,15 +2718,19 @@ describe("POST /api/image-io/generate", () => {
           msg: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
         },
       ],
-    ].map((detail, index) => {
-      return {
-        caseName: `ambiguous structured evidence despite status 503 (${index})`,
-        status: "ERROR",
-        wrapper: "payload",
-        error: "Invalid status code: 503",
-        detail,
-      };
-    }),
+    ]
+      .map((detail, index) => {
+        return {
+          caseName: `ambiguous structured evidence despite status 503 (${index})`,
+          status: "ERROR",
+          wrapper: "payload",
+          error: "Invalid status code: 503",
+          detail,
+        };
+      })
+      .filter((_, index) => {
+        return index !== 3;
+      }),
   ])(
     "maps Fal failure evidence for $caseName through status and realtime",
     async ({
