@@ -60,7 +60,6 @@ import {
   startRunBuiltInAdmission$,
 } from "../services/run-built-in-admission.service";
 import { resolveProviderReferenceUrls$ } from "../services/provider-reference-url.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const videoBody$ = bodyResultOf(videoIoGenerateContract.post);
 
@@ -545,7 +544,6 @@ const postVideoInner$ = command(
       return prepared;
     }
     const { auth, runId, privateArtifacts, options } = prepared;
-    const publicBrand = PUBLIC_BRAND;
 
     const hasCredits = await set(
       checkVideoCredits$,
@@ -613,7 +611,6 @@ const postVideoInner$ = command(
           videoRequestRecord(options),
           {
             admissionId: admission?.id,
-            publicBrand,
           },
         ),
       },

@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+import {
+  hostedSitePointerNamespace,
+  linkLayoutFromSegment,
+  linkLayoutSegment,
+  storedLinkLayoutSegment,
+} from "@okouai/api-contracts/contracts/link-layout";
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import {
@@ -146,7 +152,11 @@ const preserveSnapshotToken$ = command(
     const token = await get(
       storedObject(
         args.bucket,
-        artifactDeliveryKey(site.publicBrand, "html", record.publicToken),
+        artifactDeliveryKey(
+          storedLinkLayoutSegment(site.publicBrand),
+          "html",
+          record.publicToken,
+        ),
         signal,
       ),
     );
@@ -189,7 +199,8 @@ async function retainedPointer(
   if (
     current.siteId !== site.id ||
     current.publicSlug !== site.publicSlug ||
-    (current.publicBrand ?? "vm0") !== site.publicBrand
+    // Pointers written before the layout marker are legacy-layout pointers.
+    (current.publicBrand ?? linkLayoutSegment("legacy")) !== site.publicBrand
   ) {
     aliasConflict();
   }
@@ -250,14 +261,16 @@ export const publishHostedSitePointer$ = command(
     signal: AbortSignal,
   ): Promise<HostedSitePointer> => {
     const { site } = args;
-    const namespace =
-      site.publicBrand === "okou" ? "sites/brands/okou" : "sites";
+    const segment = storedLinkLayoutSegment(site.publicBrand);
+    const namespace = hostedSitePointerNamespace(
+      linkLayoutFromSegment(segment),
+    );
     const pointerKey = `${namespace}/${site.publicSlug}/active.json`;
-    const key = artifactDeliveryKey(site.publicBrand, "html", site.publicSlug);
+    const key = artifactDeliveryKey(segment, "html", site.publicSlug);
     const desired: ArtifactDeliveryRecord = {
       version: 1,
       kind: "legacy-site",
-      publicBrand: site.publicBrand,
+      publicBrand: segment,
       audience: "public",
       pointerKey,
     };

@@ -3,7 +3,6 @@ import { privateArtifactCreationEnabled } from "../services/private-artifact-sto
 import { command } from "ccstate";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { voiceIoSpeechContract } from "@okouai/api-contracts/contracts/voice-io-speech";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -34,7 +33,6 @@ import {
   startRunBuiltInAdmission$,
 } from "../services/run-built-in-admission.service";
 import { onRejection } from "../utils";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const L = logger("VoiceIoSpeech");
 const speechBody$ = bodyResultOf(voiceIoSpeechContract.post);
@@ -43,7 +41,6 @@ interface GenerateSpeechResponseArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string | undefined;
-  readonly publicBrand: PublicBrand;
   readonly text: string;
   readonly voice: string;
   readonly instructions: string | undefined;
@@ -120,7 +117,6 @@ const generateSpeechResponse$ = command(
         orgId: args.orgId,
         userId: args.userId,
         runId: args.runId,
-        publicBrand: args.publicBrand,
         privateArtifacts,
         voice: args.voice,
         audioBytes,
@@ -209,8 +205,6 @@ const postSpeechInner$ = command(
         "NOT_CONFIGURED",
       );
     }
-
-    const publicBrand = PUBLIC_BRAND;
     const admission = await set(
       startRunBuiltInAdmission$,
       { runId, kind: "voice" },
@@ -227,7 +221,6 @@ const postSpeechInner$ = command(
           orgId: auth.orgId,
           userId: auth.userId,
           runId,
-          publicBrand,
           text,
           voice,
           instructions,

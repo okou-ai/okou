@@ -19,7 +19,6 @@ import {
   notFound,
 } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 function internalError(message: string) {
   return {
@@ -38,7 +37,6 @@ const prepareInner$ = command(
     signal: AbortSignal,
   ) => {
     const auth = get(organizationAuthContext$);
-    const publicBrand = PUBLIC_BRAND;
 
     const bodyResult = await get(prepareBody$);
     signal.throwIfAborted();
@@ -57,7 +55,6 @@ const prepareInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         runId: "runId" in auth ? auth.runId : undefined,
-        publicBrand,
         body: {
           ...bodyResult.data,
           requirePrivateArtifact:

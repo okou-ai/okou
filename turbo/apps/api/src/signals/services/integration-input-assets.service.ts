@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { CanonicalAssetProvenance } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import {
   canonicalInputContentType,
@@ -35,7 +34,6 @@ export const materializeIntegrationInputAssets$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly chatThreadId: string;
-      readonly publicBrand: PublicBrand;
       readonly files: readonly IntegrationInputFile[];
     },
     signal: AbortSignal,
@@ -63,7 +61,6 @@ export const materializeIntegrationInputAssets$ = command(
           userId: args.userId,
           orgId: args.orgId,
           chatThreadId: args.chatThreadId,
-          publicBrand: args.publicBrand,
           source: provider,
           scope: `${provider}-input`,
           key,

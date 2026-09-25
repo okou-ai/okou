@@ -1,5 +1,6 @@
 import { command, computed } from "ccstate";
 import { z } from "zod";
+import { linkLayoutSegmentSchema } from "@okouai/api-contracts/contracts/link-layout";
 import {
   artifactShareTargetSchema,
   type ArtifactShareTarget,
@@ -15,7 +16,8 @@ import { settle } from "../utils";
 const sharedThreadReferenceSchema = z.object({
   version: z.literal(3),
   threadId: z.uuid(),
-  publicBrand: z.enum(["vm0", "okou"]),
+  // Persisted link-layout segment of the shared conversation.
+  publicBrand: linkLayoutSegmentSchema,
   publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
   target: artifactShareTargetSchema,
   previewPath: z

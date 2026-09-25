@@ -50,7 +50,6 @@ import { recordFeishuUploadedFile$ } from "../services/run-uploaded-files.servic
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 import { safeUriComponentDecode, settle } from "../utils";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024;
 const FEISHU_FILE_ID_PREFIX = "feishu_file_";
@@ -452,7 +451,6 @@ const initUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       contentType: bodyResult.data.contentType,
       size: bodyResult.data.length,
-      publicBrand: PUBLIC_BRAND,
     },
     signal,
   );
@@ -590,7 +588,7 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
     contentType,
     sizeBytes: object.size,
     url: fileUrl,
-    publicBrand: object.publicBrand,
+    layout: object.layout,
     metadata: uploadMetadata({
       body,
       installationId: installation.id,

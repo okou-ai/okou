@@ -295,7 +295,7 @@ describe("POST /api/uploads/complete", () => {
     });
   });
 
-  it("keeps legacy v2 objects without brand metadata on the VM0 CDN", async () => {
+  it("keeps legacy v2 objects without a layout marker on the legacy CDN", async () => {
     const fixture = await createRunUploadFixture();
     const fileId = randomUUID();
     const key = buildArtifactKeyV2(fileId, "财务 报告.pdf");
@@ -329,7 +329,7 @@ describe("POST /api/uploads/complete", () => {
     expect(response.body.url).toMatch(/^https:\/\/cdn\.vm7\.io\//u);
   });
 
-  it("resolves the CDN from immutable object brand metadata", async () => {
+  it("resolves the CDN from the immutable object layout marker", async () => {
     const fixture = await createRunUploadFixture();
     const prepared = await chat.prepareUpload(fixture.actor, {
       filename: "okou-report.pdf",
@@ -407,7 +407,7 @@ describe("POST /api/uploads/complete", () => {
     });
   });
 
-  it("rejects corrupt persisted artifact brand metadata", async () => {
+  it("rejects a corrupt persisted artifact layout marker", async () => {
     const fixture = await createRunUploadFixture();
     const prepared = await chat.prepareUpload(fixture.actor, {
       filename: "corrupt-brand.pdf",

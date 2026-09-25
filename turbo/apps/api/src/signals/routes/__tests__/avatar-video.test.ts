@@ -675,7 +675,7 @@ describe("JoggAI built-in avatar video routes", () => {
       randomUUID(),
       "voice.mp3",
     );
-    const audioUrl = buildFileUrlFromKey(audioKey, "okou");
+    const audioUrl = buildFileUrlFromKey(audioKey, "current");
     let observedBody: unknown = null;
     server.use(
       http.post(JOGGAI_CREATE_URL, async ({ request }) => {
