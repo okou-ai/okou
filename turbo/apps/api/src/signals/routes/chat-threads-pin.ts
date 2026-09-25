@@ -1,7 +1,5 @@
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
 import { chatThreadPinContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -11,8 +9,7 @@ import { publishThreadListChanged } from "../external/realtime";
 import { isChatThreadPinOrder } from "@okouai/core/chat-thread-pin-order";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import { appendChatThreadEvent } from "../services/chat-thread-event.service";
-import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
+import { updateOwnedChatThreadWithEvent } from "../services/chat-thread-owned-update.service";
 import type { RouteEntry } from "../route-entry";
 
 const pinInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -27,41 +24,23 @@ const pinInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const pinOrder = query?.pinOrder ?? null;
   const writeDb = set(writeDb$);
 
-  const updated = await writeDb.transaction(async (tx) => {
-    const pinnedAt = nowDate();
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({ pinnedAt, pinOrder })
-      .where(
-        and(
-          eq(chatThreads.id, params.id),
-          eq(chatThreads.userId, auth.userId),
-          chatThreadOrganizationCondition(tx, auth.orgId),
-          isNotNull(chatThreads.agentId),
-        ),
-      )
-      .returning({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-      });
-    if (!thread?.agentId) {
-      return false;
-    }
-    await appendChatThreadEvent(tx, {
-      kind: "pinned",
-      userId: auth.userId,
-      orgId: auth.orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      eventId: query?.eventId,
-      pinOrder,
-      createdAt: pinnedAt,
-    });
-    return true;
+  const pinnedAt = nowDate();
+  const written = await updateOwnedChatThreadWithEvent(writeDb, {
+    userId: auth.userId,
+    orgId: auth.orgId,
+    threadId: params.id,
+    set: { pinnedAt, pinOrder },
+    event: () => {
+      return {
+        kind: "pinned",
+        eventId: query?.eventId,
+        pinOrder,
+        createdAt: pinnedAt,
+      };
+    },
   });
   signal.throwIfAborted();
-
-  if (!updated) {
+  if (!written) {
     return notFound("Chat thread not found");
   }
 

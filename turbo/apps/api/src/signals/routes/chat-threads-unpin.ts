@@ -1,7 +1,5 @@
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
 import { chatThreadUnpinContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -9,8 +7,7 @@ import { pathParamsOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
 import { notFound } from "../../lib/error";
-import { appendChatThreadEvent } from "../services/chat-thread-event.service";
-import { chatThreadOrganizationCondition } from "../services/chat-thread-organization.service";
+import { updateOwnedChatThreadWithEvent } from "../services/chat-thread-owned-update.service";
 import type { RouteEntry } from "../route-entry";
 
 const unpinInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -21,38 +18,20 @@ const unpinInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const writeDb = set(writeDb$);
 
-  const updated = await writeDb.transaction(async (tx) => {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({ pinnedAt: null, pinOrder: null })
-      .where(
-        and(
-          eq(chatThreads.id, params.id),
-          eq(chatThreads.userId, auth.userId),
-          chatThreadOrganizationCondition(tx, auth.orgId),
-          isNotNull(chatThreads.agentId),
-        ),
-      )
-      .returning({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-      });
-    if (!thread?.agentId) {
-      return false;
-    }
-    await appendChatThreadEvent(tx, {
-      kind: "unpinned",
-      userId: auth.userId,
-      orgId: auth.orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
-      eventId: query?.eventId,
-    });
-    return true;
+  const written = await updateOwnedChatThreadWithEvent(writeDb, {
+    userId: auth.userId,
+    orgId: auth.orgId,
+    threadId: params.id,
+    set: { pinnedAt: null, pinOrder: null },
+    event: () => {
+      return {
+        kind: "unpinned",
+        eventId: query?.eventId,
+      };
+    },
   });
   signal.throwIfAborted();
-
-  if (!updated) {
+  if (!written) {
     return notFound("Chat thread not found");
   }
 
