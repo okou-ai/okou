@@ -52,7 +52,6 @@ export const computerUseHosts = pgTable(
         .on(table.orgId, table.userId, table.installationId)
         .where(sql`installation_id IS NOT NULL AND revoked_at IS NULL`),
       index("idx_computer_use_hosts_org_user").on(table.orgId, table.userId),
-      index("idx_computer_use_hosts_last_seen").on(table.lastSeenAt),
     ];
   },
 );

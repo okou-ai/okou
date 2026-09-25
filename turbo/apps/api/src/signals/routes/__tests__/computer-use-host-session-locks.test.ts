@@ -48,10 +48,10 @@ async function commandStatus(
  * is mocked and no statement is changed.
  */
 describe("Computer Use host session row locks", () => {
-  it.each(["heartbeat", "claim"] as const)(
-    "lets a new command reference the host while a %s holds its host row",
+  it(
+    "lets a new command reference the host while a claim holds its host row",
     { timeout: CASE_TIMEOUT_MS },
-    async (route) => {
+    async () => {
       const actor = orgScoped(bdd.user());
       const host = await startHost(actor);
 
@@ -60,10 +60,9 @@ describe("Computer Use host session row locks", () => {
           orgId: actor.orgId,
           stopAt: "locked-host",
           work: async (barrier) => {
-            const holding =
-              route === "heartbeat"
-                ? computerUse.heartbeatComputerUseHost(host.hostToken)
-                : computerUse.claimNextComputerUseCommand(host.hostToken);
+            const holding = computerUse.claimNextComputerUseCommand(
+              host.hostToken,
+            );
             const entered = await barrier.entered;
             expect(entered).toMatchObject({
               rowCount: 1,
@@ -87,22 +86,12 @@ describe("Computer Use host session row locks", () => {
         context.signal,
       );
 
-      if (route === "claim") {
-        // The command committed while the claim held the host, so the same
-        // poll's later candidate read dispatches it.
-        expect(outcome.held).toMatchObject({
-          status: "command",
-          command: { id: outcome.created.commandId, status: "running" },
-        });
-      } else {
-        expect(outcome.held).toMatchObject({ ok: true, hostId: host.hostId });
-        await expect(
-          computerUse.claimNextComputerUseCommand(host.hostToken),
-        ).resolves.toMatchObject({
-          status: "command",
-          command: { id: outcome.created.commandId },
-        });
-      }
+      // The command committed while the claim held the host, so the same
+      // poll's later candidate read dispatches it.
+      expect(outcome.held).toMatchObject({
+        status: "command",
+        command: { id: outcome.created.commandId, status: "running" },
+      });
     },
   );
 
@@ -345,32 +334,18 @@ describe("Computer Use host session row locks", () => {
       mockNow(STARTED_AT_MS + 120_000);
       context.mocks.ably.publish.mockClear();
 
-      await withComputerUseHostSessionBarrierFixture(
-        {
-          orgId: actor.orgId,
-          stopAt: "locked-host",
-          work: async (barrier) => {
-            const firstBeat = computerUse.heartbeatComputerUseHost(
-              host.hostToken,
-            );
-            await barrier.entered;
-
-            // The second heartbeat waits for the first and then compares
-            // against the row the first one committed, not a stale snapshot.
-            const secondBeat = computerUse.heartbeatComputerUseHost(
-              host.hostToken,
-            );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
-
-            barrier.release();
-            await expect(firstBeat).resolves.toMatchObject({ ok: true });
-            await expect(secondBeat).resolves.toMatchObject({ ok: true });
-          },
-        },
-        context.signal,
-      );
+      // Whichever heartbeat writes second either reads the revived row or
+      // loses its row-version guard and re-reads it, so only one publishes.
+      const beats = await Promise.all([
+        computerUse.heartbeatComputerUseHost(host.hostToken),
+        computerUse.heartbeatComputerUseHost(host.hostToken),
+        computerUse.heartbeatComputerUseHost(host.hostToken),
+      ]);
+      expect(beats).toMatchObject([
+        { ok: true, hostId: host.hostId },
+        { ok: true, hostId: host.hostId },
+        { ok: true, hostId: host.hostId },
+      ]);
 
       expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
       expect(context.mocks.ably.publish).toHaveBeenCalledWith(

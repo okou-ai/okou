@@ -4,6 +4,7 @@ import { command, computed, type Computed } from "ccstate";
 import {
   assertErasureSubjectReadable,
   assertErasureSubjectWritable,
+  erasureSubjectOpenCondition,
   setErasureFenceDeadlines,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
@@ -16,6 +17,7 @@ import {
   isNotNull,
   isNull,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import {
@@ -53,6 +55,10 @@ import {
 } from "@okouai/db/schema/computer-use-host";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
+import {
+  pgBooleanDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -1489,6 +1495,41 @@ export const startComputerUseHost$ = command(
   },
 );
 
+/**
+ * How stale `last_seen_at` may get before a heartbeat or claim poll rewrites
+ * an otherwise unchanged host row. Well inside the online window, so a host
+ * that keeps polling stays online even when a refresh or two is lost.
+ */
+const COMPUTER_USE_HOST_LIVENESS_REFRESH_MS = 30 * 1000;
+
+function computerUseHostLivenessIsFresh(
+  host: {
+    readonly status: string;
+    readonly revokedAt: Date | null;
+    readonly lastSeenAt: Date;
+  },
+  now: Date,
+): boolean {
+  return (
+    computerUseHostIsOnline(host, now) &&
+    now.getTime() - host.lastSeenAt.getTime() <
+      COMPUTER_USE_HOST_LIVENESS_REFRESH_MS
+  );
+}
+
+/** Bounded optimistic retries when a concurrent host write lands between a
+ * heartbeat's read and its conditional update. */
+const COMPUTER_USE_HEARTBEAT_ATTEMPTS = 3;
+
+/**
+ * The heartbeat is the most frequent Computer Use call and only refreshes a
+ * row that already exists, so it runs without a transaction: one plain read,
+ * and a write only when the host went offline, its reported state changed, or
+ * its liveness stamp is getting stale. The write is a single conditional
+ * UPDATE guarded by the row version (`xmin`) the read saw, so a concurrent
+ * stop, revocation, erasure closure or heartbeat makes it match nothing and
+ * the loop re-reads instead of overwriting a newer row.
+ */
 export const heartbeatComputerUseHost$ = command(
   async (
     { set },
@@ -1503,69 +1544,105 @@ export const heartbeatComputerUseHost$ = command(
     signal: AbortSignal,
   ): Promise<HeartbeatComputerUseHostResult> => {
     const db = set(writeDb$);
-    const { result, publishChanged, userId } = await db.transaction(
-      async (tx) => {
-        const admitted = await admitComputerUseHostSession(
-          tx,
-          params.hostToken,
-          "no key update",
-          signal,
-        );
-        if (admitted.outcome !== "admitted") {
-          return {
-            result: { status: admitted.outcome },
-            publishChanged: false,
-            userId: null,
-          };
-        }
-        // Admission can wait behind an erasure mutation. One fresh clock after
-        // that wait owns host liveness and every persisted timestamp here.
-        const now = nowDate();
-        const lockedHost = admitted.host;
-        const displayName = normalizeHostName(params.hostName);
-        const appVersion = normalizeVersion(params.appVersion);
-        const osVersion = normalizeOsVersion(params.osVersion);
-        const supportedCapabilities = normalizeCapabilities(
-          params.supportedCapabilities,
-        );
-        const publishChanged =
-          !computerUseHostIsOnline(lockedHost, now) ||
-          lockedHost.displayName !== displayName ||
-          lockedHost.appVersion !== appVersion ||
-          lockedHost.osVersion !== osVersion ||
-          !sameStringArray(
-            lockedHost.supportedCapabilities,
-            supportedCapabilities,
-          ) ||
-          !samePermissions(lockedHost.permissions, params.permissions);
-
-        await tx
-          .update(computerUseHosts)
-          .set({
-            displayName,
-            appVersion,
-            osVersion,
-            supportedCapabilities,
-            permissions: params.permissions,
-            status: "online",
-            lastSeenAt: now,
-            updatedAt: now,
-          })
-          .where(eq(computerUseHosts.id, lockedHost.id));
-        signal.throwIfAborted();
-        return {
-          result: { status: "ok" as const, hostId: lockedHost.id },
-          publishChanged,
-          userId: lockedHost.userId,
-        };
-      },
+    const tokenHash = hashSecret(params.hostToken);
+    const displayName = normalizeHostName(params.hostName);
+    const appVersion = normalizeVersion(params.appVersion);
+    const osVersion = normalizeOsVersion(params.osVersion);
+    const supportedCapabilities = normalizeCapabilities(
+      params.supportedCapabilities,
     );
-    signal.throwIfAborted();
-    if (result.status === "ok" && publishChanged && userId) {
-      await publishComputerUseHostsChanged(userId);
+    const subjectOpen = erasureSubjectOpenCondition(db, [
+      { subjectKind: "user", subjectId: computerUseHosts.userId },
+      { subjectKind: "organization", subjectId: computerUseHosts.orgId },
+    ]);
+
+    for (
+      let attempt = 1;
+      attempt <= COMPUTER_USE_HEARTBEAT_ATTEMPTS;
+      attempt += 1
+    ) {
+      const [host] = await db
+        .select({
+          id: computerUseHosts.id,
+          userId: computerUseHosts.userId,
+          displayName: computerUseHosts.displayName,
+          appVersion: computerUseHosts.appVersion,
+          osVersion: computerUseHosts.osVersion,
+          supportedCapabilities: computerUseHosts.supportedCapabilities,
+          permissions: computerUseHosts.permissions,
+          status: computerUseHosts.status,
+          lastSeenAt: computerUseHosts.lastSeenAt,
+          revokedAt: computerUseHosts.revokedAt,
+          rowVersion: sql`${computerUseHosts}.xmin::text`.mapWith(
+            pgTextDecoder,
+          ),
+          subjectOpen: subjectOpen.mapWith(pgBooleanDecoder),
+        })
+        .from(computerUseHosts)
+        .where(
+          and(
+            eq(computerUseHosts.tokenHash, tokenHash),
+            isNull(computerUseHosts.revokedAt),
+          ),
+        )
+        .limit(1);
       signal.throwIfAborted();
+      if (!host) {
+        return { status: "invalid_token" };
+      }
+      if (!host.subjectOpen) {
+        return { status: "subject_closed" };
+      }
+
+      const now = nowDate();
+      const stateChanged =
+        host.displayName !== displayName ||
+        host.appVersion !== appVersion ||
+        host.osVersion !== osVersion ||
+        !sameStringArray(host.supportedCapabilities, supportedCapabilities) ||
+        !samePermissions(host.permissions, params.permissions);
+      if (!stateChanged && computerUseHostLivenessIsFresh(host, now)) {
+        return { status: "ok", hostId: host.id };
+      }
+      const publishChanged =
+        stateChanged || !computerUseHostIsOnline(host, now);
+
+      const updated = await db
+        .update(computerUseHosts)
+        .set({
+          displayName,
+          appVersion,
+          osVersion,
+          supportedCapabilities,
+          permissions: params.permissions,
+          status: "online",
+          lastSeenAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(computerUseHosts.id, host.id),
+            eq(computerUseHosts.tokenHash, tokenHash),
+            isNull(computerUseHosts.revokedAt),
+            sql`${computerUseHosts}.xmin = ${host.rowVersion}::xid`,
+            subjectOpen,
+          ),
+        )
+        .returning({ id: computerUseHosts.id });
+      signal.throwIfAborted();
+      if (updated.length === 0) {
+        // Another writer committed first; re-read and decide again.
+        continue;
+      }
+      if (publishChanged) {
+        await publishComputerUseHostsChanged(host.userId);
+        signal.throwIfAborted();
+      }
+      return { status: "ok", hostId: host.id };
     }
-    return result;
+    throw new Error(
+      "Computer Use heartbeat kept losing concurrent host writes",
+    );
   },
 );
 
@@ -2075,16 +2152,23 @@ export const claimNextComputerUseHostCommand$ = command(
       const now = nowDate();
       const host = admitted.host;
 
-      await tx
-        .update(computerUseHosts)
-        .set({
-          supportedCapabilities: capabilities,
-          status: "online",
-          lastSeenAt: now,
-          updatedAt: now,
-        })
-        .where(eq(computerUseHosts.id, host.id));
-      signal.throwIfAborted();
+      // Polls run every few seconds; only rewrite the host row when its
+      // capabilities changed or its liveness stamp is getting stale.
+      if (
+        !sameStringArray(host.supportedCapabilities, capabilities) ||
+        !computerUseHostLivenessIsFresh(host, now)
+      ) {
+        await tx
+          .update(computerUseHosts)
+          .set({
+            supportedCapabilities: capabilities,
+            status: "online",
+            lastSeenAt: now,
+            updatedAt: now,
+          })
+          .where(eq(computerUseHosts.id, host.id));
+        signal.throwIfAborted();
+      }
 
       await failStaleRunningComputerUseCommands(
         tx,

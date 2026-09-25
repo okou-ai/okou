@@ -65,10 +65,12 @@ async function startHost(actor: ApiTestUser & { readonly orgId: string }) {
 }
 
 /**
- * These four endpoints authenticate by host token, so their erasure subjects
- * are only known after the host row is read. They are also the highest
- * frequency Computer Use calls, which is why the fence here is the folded
- * write template rather than the original per-subject one.
+ * These endpoints authenticate by host token, so their erasure subjects are
+ * only known after the host row is read. They are also the highest frequency
+ * Computer Use calls, which is why the fence here is the folded write template
+ * rather than the original per-subject one. The heartbeat only refreshes an
+ * existing row, so it checks closure inside its own read and conditional
+ * update instead of taking the fence.
  */
 describe("Computer Use host session account-erasure fence", () => {
   it.each(["user", "organization"] as const)(
@@ -212,7 +214,7 @@ describe("Computer Use host session account-erasure fence", () => {
           orgId: actor.orgId,
           stopAt: "commit",
           work: async (barrier) => {
-            const beating = computerUse.heartbeatComputerUseHost(
+            const claiming = computerUse.claimNextComputerUseCommand(
               host.hostToken,
             );
             const entered = await barrier.entered;
@@ -223,7 +225,7 @@ describe("Computer Use host session account-erasure fence", () => {
             });
             const captured = barrier.statements();
             barrier.release();
-            await beating;
+            await claiming;
             return captured;
           },
         },
@@ -235,7 +237,7 @@ describe("Computer Use host session account-erasure fence", () => {
       // subjects to lock, then the folded write template, then the business
       // row lock. The unlocked read is the only statement this fence adds
       // beyond the template, and it is what makes the order possible.
-      expect(shape).toStrictEqual([
+      const admission = [
         "BEGIN READ COMMITTED",
         "FENCE DEADLINES",
         "UNLOCKED HOST IDENTITY BY TOKEN",
@@ -243,9 +245,12 @@ describe("Computer Use host session account-erasure fence", () => {
           return kind !== "FENCE DEADLINES";
         }),
         "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE",
-        "HOST UPDATE",
-        "COMMIT",
-      ]);
+      ];
+      expect(shape.slice(0, admission.length)).toStrictEqual(admission);
+      // The host was just started, so its liveness is fresh and the idle
+      // poll leaves the host row alone.
+      expect(shape).not.toContain("HOST UPDATE");
+      expect(shape.at(-1)).toBe("COMMIT");
 
       // The whole point of resolving the host without a lock first: admission
       // is complete before any business row is locked, so this path cannot
@@ -266,7 +271,6 @@ describe("Computer Use host session account-erasure fence", () => {
     },
   );
   it.each([
-    { route: "heartbeat", lock: "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE" },
     { route: "claim", lock: "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE" },
     { route: "completion", lock: "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE" },
     { route: "stop", lock: "LOCKED HOST ROW BY TOKEN FOR UPDATE" },
@@ -284,9 +288,6 @@ describe("Computer Use host session account-erasure fence", () => {
       }
       const runRoute = async () => {
         switch (route) {
-          case "heartbeat": {
-            return await computerUse.heartbeatComputerUseHost(host.hostToken);
-          }
           case "claim": {
             return await computerUse.claimNextComputerUseCommand(
               host.hostToken,
