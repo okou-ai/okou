@@ -1,5 +1,31 @@
 # Deployment Compatibility
 
+## Host-worker storage layouts replace public brand (2026-09-25)
+
+`apps/host-worker` no longer models a public brand (#36766). It resolves hosted
+sites, previews and artifact shares through two read-only storage layouts: the
+**legacy** layout served on `HOST_DOMAIN` (`*.sites.vm0.io`) and the **current**
+layout served on `OKOU_HOST_DOMAIN` (`*.okou.app`). The persisted path segments
+`vm0` and `okou` remain layout constants, so every R2 key the Worker reads is
+unchanged: `sites/` and `sites/brands/okou/` pointers, `private-sites/`,
+`shared-artifacts/`, `private-previews/`, `shared-previews/`, `artifact-shares/`,
+`artifact-delivery/` and `shared-thread-artifacts/` prefixes, the
+`artifact-delivery/{segment}/registration.json` markers, and the
+`/__artifact-content/{segment}/` content-cache keys.
+
+Stored pointers, manifests, grants and registry records keep their historical
+`publicBrand` field. The Worker reads it only as the stored layout segment;
+pointers and manifests without it remain in the legacy layout permanently
+(#28449). Wrangler routes, domains and environment variable names are
+unchanged, and legacy `sh-` shares and the #32492 registration-marker fallback
+keep their existing behavior.
+
+This is a Worker-only refactor with identical request behavior, so it has no
+ordering requirement against the API, and a Worker rollback is safe in either
+direction. The API writers of these objects are retired separately; they must
+keep writing the same key layout and stored segment values until a planned
+storage migration replaces both sides.
+
 ## Discord canonical Chat sources (2026-09-24)
 
 The default-off Discord integration adds `discord` to the canonical Chat context,
@@ -4068,7 +4094,7 @@ retries. Native member uploads have no Run; Run-scoped uploads retain their actu
 Run source. The API validates the stored bytes before publication, then records
 Discord delivery independently from the canonical file URL.
 
-Migration `1229_discord_canonical_delivery_state` adds nullable `provider_state`
+Migration `1230_discord_canonical_delivery_state` adds nullable `provider_state`
 to `canonical_asset_deliveries`. Existing Slack destinations keep their original
 JSON shape and have no Discord state. Outgoing API statements remain valid after
 the additive migration. The new API requires the migration before promotion;

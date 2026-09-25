@@ -84,6 +84,7 @@ import { Markdown } from "../components/markdown.tsx";
 import { NoPermissionIllustration } from "./components/no-permission-illustration.tsx";
 import { formatAppNumber } from "../../i18n/format.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
+import { DiscordMark } from "./components/discord-mark.tsx";
 
 // ---------------------------------------------------------------------------
 // Error Banner
@@ -356,7 +357,8 @@ export function ActivityHeaderCard({
                     return $.activity.detail.fields.source;
                   })}
                 </span>
-                <span className="text-foreground whitespace-nowrap">
+                <span className="inline-flex items-center gap-1.5 text-foreground whitespace-nowrap">
+                  {triggerSource === "discord" && <DiscordMark size={15} />}
                   {getTriggerSourceLabel(
                     triggerSource,
                     logDetail?.appendSystemPrompt,

@@ -26,6 +26,7 @@ import type { FormEvent, ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  BrowserSelectChoiceDraft,
   BrowserUserActionRequestState,
   BrowserUserActionSignals,
 } from "../../signals/chat-page/browser-user-action-block.ts";
@@ -471,6 +472,230 @@ function BrowserInputControl({
   );
 }
 
+function requiredSelectsSatisfied(
+  action: PendingBrowserInputAction,
+  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
+): boolean {
+  return action.fields.every((field) => {
+    if (field.fieldKind !== "select") {
+      return true;
+    }
+    const choice = choiceDraft.get(field.key);
+    if (
+      choice &&
+      choice.optionSetFingerprint !== field.control.optionSetFingerprint
+    ) {
+      return false;
+    }
+    if (field.required && !choice) {
+      return false;
+    }
+    if (!field.required && !field.control.siteRequired) {
+      return true;
+    }
+    const options = field.control.options;
+    if (!options) {
+      return false;
+    }
+    const selected =
+      choice?.optionIndexes ??
+      options
+        .filter((option) => {
+          return option.selected;
+        })
+        .map((option) => {
+          return option.index;
+        });
+    return (
+      (choice === undefined ||
+        selected.every((index) => {
+          const option = options[index];
+          return option && !option.disabled;
+        })) &&
+      selected.some((index) => {
+        const option = options[index];
+        return option && !option.disabled && !option.empty;
+      })
+    );
+  });
+}
+
+function selectedSelectIndices(
+  field: PendingBrowserInputField,
+  choice: BrowserSelectChoiceDraft | undefined,
+): readonly number[] {
+  if (
+    choice &&
+    choice.optionSetFingerprint === field.control.optionSetFingerprint
+  ) {
+    return choice.optionIndexes;
+  }
+  return (
+    field.control.options
+      ?.filter((option) => {
+        return option.selected;
+      })
+      .map((option) => {
+        return option.index;
+      }) ?? []
+  );
+}
+
+function canKeepSiteSelectChoice(
+  field: PendingBrowserInputField,
+  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
+): boolean {
+  if (!field.required) {
+    return choiceDraft.has(field.key);
+  }
+  const selected = selectedSelectIndices(field, undefined);
+  return (
+    selected.every((index) => {
+      const option = field.control.options?.[index];
+      return option && !option.disabled;
+    }) &&
+    selected.some((index) => {
+      const option = field.control.options?.[index];
+      return option && !option.empty;
+    })
+  );
+}
+
+function selectedEnabledOptionIndices(control: HTMLSelectElement): number[] {
+  return [...control.selectedOptions]
+    .filter((option) => {
+      return !option.disabled;
+    })
+    .map((option) => {
+      return Number(option.value);
+    });
+}
+
+function BrowserSelectControl({
+  field,
+  choiceDraft,
+  busy,
+  inputId,
+  describedBy,
+  onUpdate,
+  onRemove,
+}: {
+  readonly field: PendingBrowserInputField;
+  readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
+  readonly busy: boolean;
+  readonly inputId: string;
+  readonly describedBy: string;
+  readonly onUpdate: (
+    key: string,
+    indices: readonly number[],
+    optionSetFingerprint: string,
+  ) => void;
+  readonly onRemove: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  const options = field.control.options;
+  const ready =
+    options !== undefined && field.control.optionSetFingerprint !== undefined;
+  const selected = selectedSelectIndices(field, choiceDraft.get(field.key));
+  const siteSelected = selectedSelectIndices(field, undefined);
+  const canKeep = canKeepSiteSelectChoice(field, choiceDraft);
+  const multiple = field.control.inputType === "select-multiple";
+  const required = field.required || field.control.siteRequired;
+  return (
+    <div className="flex flex-col items-start gap-1.5">
+      <select
+        id={inputId}
+        name={field.key}
+        aria-describedby={describedBy}
+        className={cn(
+          "w-full rounded-lg border border-[hsl(var(--gray-400))] bg-input px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-[3px] focus:ring-primary/10 disabled:cursor-not-allowed disabled:opacity-50",
+          multiple ? "min-h-24" : "h-9",
+        )}
+        multiple={multiple}
+        size={multiple ? Math.min(options?.length ?? 2, 5) : undefined}
+        required={required}
+        disabled={busy || !ready}
+        value={
+          multiple ? selected.map(String) : (selected[0]?.toString() ?? "")
+        }
+        onChange={(event) => {
+          if (!field.control.optionSetFingerprint) {
+            return;
+          }
+          onUpdate(
+            field.key,
+            selectedEnabledOptionIndices(event.currentTarget),
+            field.control.optionSetFingerprint,
+          );
+        }}
+      >
+        {!multiple && (
+          <option value="" disabled>
+            —
+          </option>
+        )}
+        {options?.map((option) => {
+          return (
+            <option
+              key={option.index}
+              value={String(option.index)}
+              disabled={option.disabled}
+            >
+              {option.label || "—"}
+            </option>
+          );
+        })}
+      </select>
+      {ready && (!required || canKeep) && (
+        <div className="flex max-w-full flex-wrap gap-2">
+          {!required && (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
+              disabled={busy}
+              onClick={() => {
+                const fingerprint = field.control.optionSetFingerprint;
+                if (fingerprint) {
+                  onUpdate(field.key, [], fingerprint);
+                }
+              }}
+            >
+              {t(($) => {
+                return $.chat.browserInput.clearValue;
+              })}
+            </Button>
+          )}
+          {canKeep && (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
+              disabled={busy}
+              onClick={() => {
+                if (field.required) {
+                  const fingerprint = field.control.optionSetFingerprint;
+                  if (fingerprint) {
+                    onUpdate(field.key, siteSelected, fingerprint);
+                  }
+                } else {
+                  onRemove(field.key);
+                }
+              }}
+            >
+              {t(($) => {
+                return $.chat.browserInput.keepValue;
+              })}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OptionalNumberClearAction({
   field,
   draft,
@@ -517,10 +742,22 @@ function BrowserInputField({
   field,
   index,
   draft,
+  choiceDraft,
   busy,
   onUpdate,
   onRemove,
-}: BrowserInputEditProps & { readonly index: number }) {
+  onUpdateChoice,
+  onRemoveChoice,
+}: BrowserInputEditProps & {
+  readonly index: number;
+  readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
+  readonly onUpdateChoice: (
+    key: string,
+    indices: readonly number[],
+    optionSetFingerprint: string,
+  ) => void;
+  readonly onRemoveChoice: (key: string) => void;
+}) {
   const { t } = useTranslation();
   const inputId = `browser-input-field-${index}`;
   const requirementId = `${inputId}-requirement`;
@@ -554,17 +791,31 @@ function BrowserInputField({
           {field.description}
         </span>
       )}
-      <BrowserInputControl
-        field={field}
-        inputId={inputId}
-        describedBy={
-          descriptionId ? `${requirementId} ${descriptionId}` : requirementId
-        }
-        draft={draft}
-        busy={busy}
-        onUpdate={onUpdate}
-        onRemove={onRemove}
-      />
+      {field.fieldKind === "select" ? (
+        <BrowserSelectControl
+          field={field}
+          inputId={inputId}
+          describedBy={
+            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
+          }
+          choiceDraft={choiceDraft}
+          busy={busy}
+          onUpdate={onUpdateChoice}
+          onRemove={onRemoveChoice}
+        />
+      ) : (
+        <BrowserInputControl
+          field={field}
+          inputId={inputId}
+          describedBy={
+            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
+          }
+          draft={draft}
+          busy={busy}
+          onUpdate={onUpdate}
+          onRemove={onRemove}
+        />
+      )}
       <OptionalNumberClearAction
         field={field}
         draft={draft}
@@ -579,11 +830,21 @@ function BrowserInputField({
 function BrowserInputFields({
   action,
   draft,
+  choiceDraft,
   busy,
   onUpdate,
   onRemove,
+  onUpdateChoice,
+  onRemoveChoice,
 }: Omit<BrowserInputEditProps, "field"> & {
   readonly action: PendingBrowserInputAction;
+  readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
+  readonly onUpdateChoice: (
+    key: string,
+    indices: readonly number[],
+    optionSetFingerprint: string,
+  ) => void;
+  readonly onRemoveChoice: (key: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -594,9 +855,12 @@ function BrowserInputFields({
             field={field}
             index={index}
             draft={draft}
+            choiceDraft={choiceDraft}
             busy={busy}
             onUpdate={onUpdate}
             onRemove={onRemove}
+            onUpdateChoice={onUpdateChoice}
+            onRemoveChoice={onRemoveChoice}
           />
         );
       })}
@@ -660,10 +924,14 @@ function PendingForm({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const draft = useGet(signals.draft$);
+  const choiceDraft = useGet(signals.choiceDraft$);
   const sharedBusy = useGet(signals.busy$);
   const entryState = useGet(signals.entryState$);
+  const entryAction = useGet(signals.entryAction$);
   const updateDraft = useSet(signals.updateDraft$);
   const removeDraft = useSet(signals.removeDraft$);
+  const updateChoiceDraft = useSet(signals.updateChoiceDraft$);
+  const removeChoiceDraft = useSet(signals.removeChoiceDraft$);
   const beginEntry = useSet(signals.beginEntry$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
@@ -674,9 +942,12 @@ function PendingForm({
   const failed =
     submitLoadable.state === "hasError" || cancelLoadable.state === "hasError";
   const cancelFailed = cancelLoadable.state === "hasError";
+  const activeAction =
+    entryState === "ready" && entryAction ? entryAction : request.action;
+  const selectValuesValid = requiredSelectsSatisfied(activeAction, choiceDraft);
   const submitForm = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!event.currentTarget.reportValidity()) {
+    if (!selectValuesValid || !event.currentTarget.reportValidity()) {
       return;
     }
     detach(submit(pageSignal), Reason.DomCallback);
@@ -696,11 +967,14 @@ function PendingForm({
         showTitle={showTitle}
       />
       <BrowserInputFields
-        action={request.action}
+        action={activeAction}
         draft={draft}
+        choiceDraft={choiceDraft}
         busy={busy}
         onUpdate={updateDraft}
         onRemove={removeDraft}
+        onUpdateChoice={updateChoiceDraft}
+        onRemoveChoice={removeChoiceDraft}
       />
 
       {(entryState === "idle" || entryState === "checking") && (
@@ -752,7 +1026,15 @@ function PendingForm({
       <PendingFormActions
         submitting={submitting}
         cancelling={cancelling}
-        canSubmit={entryState !== "unavailable" && entryState !== "invalid"}
+        canSubmit={
+          entryState !== "unavailable" &&
+          entryState !== "invalid" &&
+          selectValuesValid &&
+          (!request.action.fields.some((field) => {
+            return field.fieldKind === "select";
+          }) ||
+            entryState === "ready")
+        }
         onCancel={() => {
           detach(cancel(pageSignal), Reason.DomCallback);
         }}
