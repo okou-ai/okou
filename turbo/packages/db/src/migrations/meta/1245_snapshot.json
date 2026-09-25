@@ -1,6 +1,6 @@
 {
-  "id": "1882b9be-9d9b-4c39-8d3c-ad942ff0e53c",
-  "prevId": "ab6166f2-f9b2-4c93-9b95-5ce184ef6ec7",
+  "id": "9842067b-b908-4c8b-97c8-114698e428d9",
+  "prevId": "dc39fdb2-7df8-414c-ac1b-ae21b5cf1f92",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7817,43 +7817,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.chat_event_retention_cursors": {
-      "name": "chat_event_retention_cursors",
-      "schema": "",
-      "columns": {
-        "scope_key": {
-          "name": "scope_key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "last_created_at": {
-          "name": "last_created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_event_id": {
-          "name": "last_event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sweep_started_at": {
-          "name": "sweep_started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.chat_event_search_message_watermarks": {
       "name": "chat_event_search_message_watermarks",
       "schema": "",
@@ -9557,6 +9520,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "draft_user_message": {
           "name": "draft_user_message",
           "type": "jsonb",
@@ -9584,22 +9553,24 @@
           "default": "now()"
         }
       },
-      "indexes": {},
-      "foreignKeys": {
-        "chat_thread_drafts_chat_thread_id_chat_threads_id_fk": {
-          "name": "chat_thread_drafts_chat_thread_id_chat_threads_id_fk",
-          "tableFrom": "chat_thread_drafts",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "chat_thread_id"
+      "indexes": {
+        "idx_chat_thread_drafts_user": {
+          "name": "idx_chat_thread_drafts_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
           ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
+      "foreignKeys": {},
       "compositePrimaryKeys": {
         "chat_thread_drafts_chat_thread_id_pk": {
           "name": "chat_thread_drafts_chat_thread_id_pk",
