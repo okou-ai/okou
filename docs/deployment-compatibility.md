@@ -4,9 +4,9 @@
 
 Heartbeats rewrote the wide `agent_runs` row and two heartbeat indexes that no
 query used, and activity snapshots were written through the run-content lock
-chain. Migration `1243` builds `idx_agent_runs_status` concurrently and drops
+chain. Migration `1244` builds `idx_agent_runs_status` concurrently and drops
 `idx_agent_runs_status_heartbeat` and `idx_agent_runs_running_heartbeat`; no
-API names either index. Migration `1244` adds `active_agent_runs`, one narrow
+API names either index. Migration `1245` adds `active_agent_runs`, one narrow
 row per queued, pending or running run, and seeds it from currently active
 runs.
 
