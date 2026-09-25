@@ -249,7 +249,7 @@ test.each(["list", "delete"] as const)(
     });
 
     await deleteUserWithSignedWebhook(userId, `preserve-locators-${failure}`);
-    expect(failed).toBe(false);
+    expect(failed).toBeFalsy();
     await expect(storages.listStorages(actor, "user")).resolves.toContainEqual(
       expect.objectContaining({ name: storageName }),
     );
@@ -264,7 +264,7 @@ test.each(["list", "delete"] as const)(
       [200],
     );
     expect(resumed.body.processed).toBe(1);
-    expect(failed).toBe(false);
+    expect(failed).toBeFalsy();
     expect(deleteCount).toBe(0);
     await expect(storages.listStorages(actor, "user")).resolves.toContainEqual(
       expect.objectContaining({ name: storageName }),

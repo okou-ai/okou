@@ -173,6 +173,8 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
     // even the user's private Agent instead of cascading through it.
     await fixture.bdd.requestReadAgent(actor, deletedAgent.agentId, [200]);
     await fixture.bdd.requestReadAgent(owner, agentId, [200]);
-    expect((await billing.readUsageRecord(actor)).body.totalCredits).toBe(0);
+    // The independent threadless Run sweep does not erase the held user's
+    // already charged ledger.
+    expect((await billing.readUsageRecord(actor)).body.totalCredits).toBe(1);
   });
 });

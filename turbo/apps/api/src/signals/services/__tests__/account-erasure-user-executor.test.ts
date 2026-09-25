@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Pool } from "pg";
 import { expect, onTestFinished, test } from "vitest";
 
