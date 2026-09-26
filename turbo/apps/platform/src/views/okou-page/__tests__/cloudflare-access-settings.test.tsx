@@ -175,10 +175,11 @@ test("An admin can edit and delete a shared configuration through scoped mutatio
       return respond(200, renamed);
     },
   );
-  context.mocks.api(cloudflareAccessContract.deletionPreview, ({ respond }) => {
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
     return respond(200, {
       expectedRevision: 2,
       ownHostCount: 0,
+      otherHostCount: 0,
       affectedOwners: [],
       impactSnapshot: "a".repeat(64),
     });
@@ -556,7 +557,7 @@ test("Access load failure does not expose provider details", async () => {
   expect(document.body.textContent).not.toContain("private provider detail");
 });
 
-test("admin conversion requires an aggregate impact confirmation and sends the reviewed snapshot", async () => {
+test("admin conversion lists affected members and only the aggregate host count before confirmation", async () => {
   const shared: ScopedCloudflareAccessConfig = {
     ...config,
     scope: "organization",
@@ -568,11 +569,17 @@ test("admin conversion requires an aggregate impact confirmation and sends the r
     return respond(200, { configs });
   });
   context.mocks.api(
-    cloudflareAccessContract.conversionPreview,
-    ({ respond }) => {
+    cloudflareAccessContract.impactPreview,
+    ({ query, respond }) => {
+      expect(query.operation).toBe("convert");
       return respond(200, {
         expectedRevision: 1,
-        otherHostCount: 2,
+        ownHostCount: 1,
+        otherHostCount: 3,
+        affectedOwners: [
+          { userId: "user-member-1", displayName: "Member One" },
+          { userId: "user-member-2", displayName: "Member Two" },
+        ],
         impactSnapshot: "a".repeat(64),
       });
     },
@@ -599,7 +606,10 @@ test("admin conversion requires an aggregate impact confirmation and sends the r
     ),
   ).toBeInTheDocument();
   const warning = await within(dialog).findByRole("alert");
-  expect(warning).toHaveTextContent("Other users' SSH hosts affected: 2");
+  expect(warning).toHaveTextContent("2 members and 3 SSH hosts");
+  expect(dialog).toHaveTextContent("Member One");
+  expect(dialog).toHaveTextContent("Member Two");
+  expect(dialog.textContent).not.toContain("user-member-1");
   expect(dialog.textContent).not.toContain("other-member-host");
   const confirm = getAction("button", "Make personal", dialog);
   expectConversionActionsInOrder(dialog);
@@ -632,16 +642,15 @@ test("zero-impact conversion needs no other-user warning", async () => {
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [shared] });
   });
-  context.mocks.api(
-    cloudflareAccessContract.conversionPreview,
-    ({ respond }) => {
-      return respond(200, {
-        expectedRevision: 1,
-        otherHostCount: 0,
-        impactSnapshot: "b".repeat(64),
-      });
-    },
-  );
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(200, {
+      expectedRevision: 1,
+      ownHostCount: 0,
+      otherHostCount: 0,
+      affectedOwners: [],
+      impactSnapshot: "b".repeat(64),
+    });
+  });
   await page(undefined, "admin");
   const organization = await screen.findByRole("region", {
     name: "Organization",
@@ -672,16 +681,15 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [shared] });
   });
-  context.mocks.api(
-    cloudflareAccessContract.conversionPreview,
-    ({ respond }) => {
-      return respond(200, {
-        expectedRevision: 1,
-        otherHostCount: count,
-        impactSnapshot: (count === 1 ? "a" : "b").repeat(64),
-      });
-    },
-  );
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(200, {
+      expectedRevision: 1,
+      ownHostCount: 0,
+      otherHostCount: count,
+      affectedOwners: [{ userId: "user-member-1", displayName: "Member One" }],
+      impactSnapshot: (count === 1 ? "a" : "b").repeat(64),
+    });
+  });
   context.mocks.api(
     cloudflareAccessContract.convertToPersonal,
     ({ body, respond }) => {
@@ -702,7 +710,7 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
   await within(organization).findByText(shared.name);
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
-  await within(dialog).findByText(/SSH hosts affected: 1/u);
+  await within(dialog).findByText(/1 member and 1 SSH host/u);
   const acknowledge = within(dialog).getByRole("checkbox", {
     name: /I understand these hosts will need their owners/u,
   });
@@ -714,12 +722,12 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
   ]);
   expect(queryAction("button", "Make personal", dialog)).toBeNull();
   click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/SSH hosts affected: 2/u);
+  await within(dialog).findByText(/1 member and 2 SSH hosts/u);
   expect(getAction("button", "Make personal", dialog)).toBeDisabled();
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
 });
 
-test("uncertain conversion result requires a new impact review", async () => {
+test("an older API's aggregate-only conversion preview remains usable after a missing new route", async () => {
   const shared: ScopedCloudflareAccessConfig = {
     ...config,
     scope: "organization",
@@ -727,6 +735,9 @@ test("uncertain conversion result requires a new impact review", async () => {
   let previewCount = 0;
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(404, { error: { code: "NOT_FOUND", message: "No route" } });
   });
   context.mocks.api(
     cloudflareAccessContract.conversionPreview,
@@ -755,6 +766,7 @@ test("uncertain conversion result requires a new impact review", async () => {
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
   await within(dialog).findByText(/SSH hosts affected: 1/u);
+  expect(dialog).not.toHaveTextContent("Name unavailable");
   await userEvent.click(within(dialog).getByRole("checkbox"));
   click(getAction("button", "Make personal", dialog));
   await within(dialog).findByText(/could not confirm the conversion/u);
@@ -817,6 +829,71 @@ test("a member cannot see the Personal promotion action", async () => {
   expect(queryAction("button", "Make organization", personal)).toBeNull();
 });
 
+test("equal member names are disambiguated without showing per-person host counts", async () => {
+  const shared = { ...config, scope: "organization" as const };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(200, {
+      expectedRevision: 1,
+      ownHostCount: 0,
+      otherHostCount: 5,
+      impactSnapshot: "c".repeat(64),
+      affectedOwners: [
+        { userId: "user_aaaaaaaa", displayName: "Same Name" },
+        { userId: "user_bbbbbbbb", displayName: "Same Name" },
+      ],
+    });
+  });
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  click(getAction("button", "Make personal", organization));
+  const dialog = await screen.findByRole("dialog", { name: "Make personal" });
+  await within(dialog).findByText(/2 members and 5 SSH hosts/u);
+  expect(dialog).toHaveTextContent("Same Name (ID …aaaaaaaa)");
+  expect(dialog).toHaveTextContent("Same Name (ID …bbbbbbbb)");
+  expect(dialog.textContent).not.toContain("user_aaaaaaaa");
+  expect(getAction("button", "Make personal", dialog)).toBeDisabled();
+});
+
+test("older deletion preview stays usable without rendering its per-owner counts", async () => {
+  const shared = { ...config, scope: "organization" as const };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(404, { error: { code: "NOT_FOUND", message: "No route" } });
+  });
+  context.mocks.api(cloudflareAccessContract.deletionPreview, ({ respond }) => {
+    return respond(200, {
+      expectedRevision: 1,
+      ownHostCount: 0,
+      impactSnapshot: "d".repeat(64),
+      affectedOwners: [
+        { userId: "user_member_1", displayName: "Member One", hostCount: 3 },
+      ],
+    });
+  });
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  click(getAction("button", "Delete Cloudflare Access", organization));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete Cloudflare Access",
+  });
+  await within(dialog).findByText(/1 member and 3 SSH hosts/u);
+  expect(dialog).toHaveTextContent("Member One");
+  expect(dialog.textContent).not.toContain("user_member_1");
+  expect(dialog.textContent).not.toContain("Member One: 3 SSH hosts");
+  expect(
+    getAction("button", "Delete Cloudflare Access", dialog),
+  ).toBeDisabled();
+});
+
 test("reviewed shared deletion names affected owners and requires re-review when the host set changes", async () => {
   const shared = {
     ...config,
@@ -828,21 +905,22 @@ test("reviewed shared deletion names affected owners and requires re-review when
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [shared] });
   });
-  context.mocks.api(cloudflareAccessContract.deletionPreview, ({ respond }) => {
-    return respond(200, {
-      expectedRevision: 1,
-      ownHostCount: 0,
-      impactSnapshot: impact,
-      affectedOwners: [
-        { userId: "user-member-1", displayName: "Member One", hostCount: 2 },
-        {
-          userId: "user-former-2",
-          displayName: null,
-          hostCount: impact.startsWith("a") ? 1 : 2,
-        },
-      ],
-    });
-  });
+  context.mocks.api(
+    cloudflareAccessContract.impactPreview,
+    ({ query, respond }) => {
+      expect(query.operation).toBe("delete");
+      return respond(200, {
+        expectedRevision: 1,
+        ownHostCount: 0,
+        otherHostCount: impact.startsWith("a") ? 3 : 4,
+        impactSnapshot: impact,
+        affectedOwners: [
+          { userId: "user-member-1", displayName: "Member One" },
+          { userId: "user-former-2", displayName: null },
+        ],
+      });
+    },
+  );
   context.mocks.api(cloudflareAccessContract.delete, ({ body, respond }) => {
     bodies.push(body);
     impact = "b".repeat(64);
@@ -861,10 +939,11 @@ test("reviewed shared deletion names affected owners and requires re-review when
   const dialog = await screen.findByRole("dialog", {
     name: "Delete Cloudflare Access",
   });
-  await within(dialog).findByText(/Member One.*2 SSH hosts/u);
-  expect(dialog).toHaveTextContent(
-    "Former member (name unavailable) (user-former-2): 1 SSH host",
-  );
+  await within(dialog).findByText(/2 members and 3 SSH hosts/u);
+  expect(dialog).toHaveTextContent("Member One");
+  expect(dialog).toHaveTextContent("Name unavailable (ID …former-2)");
+  expect(dialog.textContent).not.toContain("user-former-2");
+  expect(dialog.textContent).not.toContain("Former member");
   expect(
     getAction("button", "Delete Cloudflare Access", dialog),
   ).toBeDisabled();
@@ -875,7 +954,7 @@ test("reviewed shared deletion names affected owners and requires re-review when
     { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
   ]);
   click(getAction("button", "Review latest impact", dialog));
-  await within(dialog).findByText(/user-former-2.*2 SSH hosts/u);
+  await within(dialog).findByText(/2 members and 4 SSH hosts/u);
   expect(
     getAction("button", "Delete Cloudflare Access", dialog),
   ).toBeDisabled();

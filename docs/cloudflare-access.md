@@ -31,9 +31,11 @@ requests use a client-generated resource ID so an explicit retry can safely
 reuse the same request identity. Updates and deletion use the displayed revision,
 and conflicts require reviewing the latest metadata. A configuration cannot be deleted while any of **your own** SSH hosts reference
 it: first rebind or delete those hosts. An admin deleting an Organization
-configuration referenced only by other members' SSH hosts must review a
-per-owner name/ID and host-count preview and explicitly confirm the impact.
-Names unavailable for a former member are identified by stable user ID. The
+configuration referenced only by other members' SSH hosts must review the
+affected members and aggregate SSH-host count and explicitly confirm the impact.
+The preview shows names (or email), but no other member's host details or
+per-member host count; missing or duplicate names are disambiguated with an ID
+only when necessary. An unavailable name does not prove former membership. The
 server checks the revision, exact reference snapshot, and absence of the
 admin's own host references again in the deletion transaction; an unreviewed
 or changed impact is rejected. Other members' hosts remain saved as
@@ -68,9 +70,10 @@ permitted Cloudflare Access configuration or Direct. The host, credential, and
 learned host key remain intact. After reviewing its current impact, an
 organization admin can convert a shared configuration to their own Personal
 configuration, even if someone else originally created it. The preview
-reports only the count of other members' referencing SSH hosts; their names and
-owners are never shown. When that count is positive, the admin must explicitly
-confirm that those hosts will need to be rebound. A changed revision or impact
+shows affected member names and the aggregate number of their referencing SSH
+hosts, without disclosing individual host details or per-member usage. When
+that count is positive, the admin must explicitly confirm that those hosts
+will need to be rebound. A changed revision or impact
 requires another review. Conversion retains the Access ID and stored Service
 Token. The admin's own hosts remain bound, while other members' hosts remain
 saved in needs-rebind state until their owners explicitly choose a permitted

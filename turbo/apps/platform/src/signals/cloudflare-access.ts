@@ -6,8 +6,7 @@ import {
   cloudflareAccessContract,
   scopedCloudflareAccessConfigSchema,
   type ScopedCloudflareAccessConfig,
-  type CloudflareAccessConversionPreview,
-  type CloudflareAccessDeletionPreview,
+  type CloudflareAccessImpactPreview,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { command, computed, state } from "ccstate";
@@ -558,6 +557,10 @@ export const reviewCloudflareAccessConversion$ = command(({ set }) => {
   set(invalidateCloudflareAccess$);
 });
 
+export interface CloudflareAccessImpactReview extends CloudflareAccessImpactPreview {
+  readonly memberNamesAvailable: boolean;
+}
+
 export const cloudflareAccessConversionPreview$ = computed(async (get) => {
   get(conversionPreviewReload$);
   const dialog = await get(cloudflareAccessConversionDialog$);
@@ -569,12 +572,35 @@ export const cloudflareAccessConversionPreview$ = computed(async (get) => {
     return null;
   }
   const result = await accept(
+    client.client.impactPreview({
+      params: { configId: dialog.configId },
+      query: { operation: "convert" },
+    }),
+    [200, 403, 404],
+    undefined,
+    { showErrorToast: false },
+  );
+  if (result.status === 200) {
+    return { ...result.body, memberNamesAvailable: true };
+  }
+  if (result.status === 403) {
+    return null;
+  }
+  // Until the API rollout completes, an older API has no named preview.
+  const legacy = await accept(
     client.client.conversionPreview({ params: { configId: dialog.configId } }),
     [200, 403, 404],
     undefined,
     { showErrorToast: false },
   );
-  return result.status === 200 ? result.body : null;
+  return legacy.status === 200
+    ? {
+        ...legacy.body,
+        ownHostCount: 0,
+        affectedOwners: [],
+        memberNamesAvailable: false,
+      }
+    : null;
 });
 
 interface ReviewedAccessDialog {
@@ -740,17 +766,45 @@ export const cloudflareAccessDeletionPreview$ = computed(async (get) => {
     return null;
   }
   const result = await accept(
+    client.client.impactPreview({
+      params: { configId: dialog.configId },
+      query: { operation: "delete" },
+    }),
+    [200, 403, 404],
+    undefined,
+    { showErrorToast: false },
+  );
+  if (result.status === 200) {
+    return { ...result.body, memberNamesAvailable: true };
+  }
+  if (result.status === 403) {
+    return null;
+  }
+  const legacy = await accept(
     client.client.deletionPreview({ params: { configId: dialog.configId } }),
     [200, 403, 404],
     undefined,
     { showErrorToast: false },
   );
-  return result.status === 200 ? result.body : null;
+  return legacy.status === 200
+    ? {
+        ...legacy.body,
+        otherHostCount: legacy.body.affectedOwners.reduce((total, owner) => {
+          return total + owner.hostCount;
+        }, 0),
+        affectedOwners: legacy.body.affectedOwners.map(
+          ({ userId, displayName }) => {
+            return { userId, displayName };
+          },
+        ),
+        memberNamesAvailable: true,
+      }
+    : null;
 });
 export const confirmCloudflareAccessDeletion$ = command(
   async (
     { get, set },
-    preview: CloudflareAccessDeletionPreview,
+    preview: CloudflareAccessImpactReview,
     signal: AbortSignal,
   ) => {
     const dialog = await get(cloudflareAccessDeletionDialog$);
@@ -761,7 +815,7 @@ export const confirmCloudflareAccessDeletion$ = command(
     }
     if (
       preview.ownHostCount > 0 ||
-      (preview.affectedOwners.length > 0 &&
+      (preview.otherHostCount > 0 &&
         get(deletionAcknowledged$) !== preview.impactSnapshot)
     ) {
       return;
@@ -804,7 +858,7 @@ export const confirmCloudflareAccessDeletion$ = command(
 export const confirmCloudflareAccessConversion$ = command(
   async (
     { get, set },
-    preview: CloudflareAccessConversionPreview,
+    preview: CloudflareAccessImpactReview,
     signal: AbortSignal,
   ) => {
     const dialog = await get(cloudflareAccessConversionDialog$);
