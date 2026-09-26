@@ -12,7 +12,7 @@ import { createDeferredPromise } from "../signals/utils";
 const waiterCountSchema = z.object({ waiterCount: z.number() });
 
 // Infrastructure-only observation: no API exposes when this request has
-// finished preparation and is about to acquire its final admission lock.
+// finished preparation and is about to enter final admission.
 export function observePreparedLaunchAdmissionFixture(args: {
   readonly orgId: string;
   readonly signal: AbortSignal;

@@ -14,7 +14,6 @@ import {
   ne,
   notExists,
   or,
-  sql,
 } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
@@ -36,7 +35,10 @@ import {
   loadOrgConcurrencyState,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import {
+  loadOrgPlanCapabilities,
+  type OrgPlanCapabilities,
+} from "./org-plan-entitlement-read.service";
 import type { Tx } from "../../lib/db-types";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
@@ -102,6 +104,11 @@ interface LockedQueuedRun {
   readonly userId: string;
   readonly modelProvider: string | null;
   readonly selectedModel: string | null;
+}
+
+interface LockedPromotionPlan {
+  readonly builtInModel: boolean;
+  readonly capabilities: OrgPlanCapabilities | null;
 }
 
 interface PromoteQueuedCandidateArgs {
@@ -301,33 +308,18 @@ async function loadDrainCandidates(
     .orderBy(agentRunQueue.createdAt);
 }
 
-async function acquirePromotionAdmissionLock(
-  tx: DbTransaction,
-  orgId: string,
-  timing: ApiDispatchTimingCollector,
-): Promise<number> {
-  await timing.measure(
-    "api_dispatch_queue_promotion_lock_wait",
-    "nested",
-    async () => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
-    },
-  );
-  return now();
-}
-
 function finalizePromoteQueuedCandidate(
   timing: ApiDispatchTimingCollector,
   committed: {
     readonly result: PromotionResult;
-    readonly lockHeldAt: number;
+    readonly startedAt: number;
   },
 ): PromoteQueuedCandidateResult {
   const transactionReturnedAt = now();
   timing.recordElapsed(
-    "api_dispatch_queue_promotion_lock_held",
+    "api_dispatch_queue_promotion_transaction",
     "nested",
-    committed.lockHeldAt,
+    committed.startedAt,
     transactionReturnedAt,
   );
   const result = committed.result;
@@ -393,20 +385,17 @@ async function failQueuedRunAdmission(
 async function promoteAdmittedQueuedRun(
   tx: DbTransaction,
   args: PromoteQueuedCandidateArgs,
-  lockedRun: LockedQueuedRun,
   payload: QueuedRunnerJobPayload,
+  lockedPlan: LockedPromotionPlan,
 ): Promise<PromotionResult> {
   const promotedAt = now();
-  const builtInModel = isBuiltInModelProviderType(lockedRun.modelProvider);
-  const capabilities = builtInModel
-    ? await loadOrgPlanCapabilities(tx, lockedRun.orgId, { forUpdate: true })
-    : null;
   const [updated] = await tx
     .update(agentRuns)
     .set({
       status: "pending",
       creditAdmitted:
-        builtInModel && isFreePlanForCreditAdmission(capabilities?.planKey),
+        lockedPlan.builtInModel &&
+        isFreePlanForCreditAdmission(lockedPlan.capabilities?.planKey),
       runnerGroup: payload.runnerGroup,
     })
     .where(
@@ -472,17 +461,14 @@ async function promoteAdmittedQueuedRun(
 async function promoteQueuedCandidateInTransaction(
   tx: DbTransaction,
   args: PromoteQueuedCandidateArgs,
-  timing: ApiDispatchTimingCollector,
-): Promise<{ readonly result: PromotionResult; readonly lockHeldAt: number }> {
-  const lockHeldAt = await acquirePromotionAdmissionLock(
-    tx,
-    args.orgId,
-    timing,
-  );
+): Promise<{ readonly result: PromotionResult; readonly startedAt: number }> {
+  const startedAt = now();
   const complete = (result: PromotionResult) => {
-    return { result, lockHeldAt };
+    return { result, startedAt };
   };
-  // One observation instant for this locked admission.
+  // Coarse capacity re-check without an org lock. Concurrent launches or
+  // promotions may overshoot the limit; the CAS below still promotes a queued
+  // run at most once.
   const admissionAt = nowDate();
   const concurrency = await effectiveOrgConcurrencyState(
     tx,
@@ -537,6 +523,14 @@ async function promoteQueuedCandidateInTransaction(
       `Queued run "${args.row.runId}" does not match its queue owner`,
     );
   }
+  // Match launch admission's lock order: org plan row, then `credit_`.
+  const builtInModel = isBuiltInModelProviderType(lockedRun.modelProvider);
+  const lockedPlan: LockedPromotionPlan = {
+    builtInModel,
+    capabilities: builtInModel
+      ? await loadOrgPlanCapabilities(tx, lockedRun.orgId, { forUpdate: true })
+      : null,
+  };
   const admissionFailure = await checkOrgCreditsForRunAdmissionInTransaction({
     db: tx,
     orgId: lockedRun.orgId,
@@ -551,7 +545,7 @@ async function promoteQueuedCandidateInTransaction(
         lockedRun,
         admissionFailure.body.error.message,
       )
-    : await promoteAdmittedQueuedRun(tx, args, lockedRun, args.payload);
+    : await promoteAdmittedQueuedRun(tx, args, args.payload, lockedPlan);
   return complete(result);
 }
 
@@ -562,7 +556,7 @@ async function promoteQueuedCandidate(
   // Promotion may outlive the create-run collector, so buffer timing until commit.
   const timing = new ApiDispatchTimingCollector();
   const committed = await db.transaction(async (tx) => {
-    return await promoteQueuedCandidateInTransaction(tx, args, timing);
+    return await promoteQueuedCandidateInTransaction(tx, args);
   });
   return finalizePromoteQueuedCandidate(timing, committed);
 }
@@ -643,9 +637,10 @@ async function promoteQueuedCandidateWithSideEffects(
  * can claim it. A queued run without that payload violates the owning writer's
  * invariant and fails before any state transition.
  *
- * Candidate discovery is an unlocked snapshot. Final promotion acquires
- * `pg_advisory_xact_lock(hashtext(orgId))` and revalidates concurrency and
- * queue ownership before changing state.
+ * Candidate discovery is an unlocked snapshot. Final promotion takes no org
+ * lock: it re-checks the coarse capacity count (concurrent admissions may
+ * overshoot), locks the queued run row, revalidates queue ownership, and
+ * promotes with a `status = 'queued'` compare-and-set.
  *
  * Returns the post-commit activation for one admitted run, the terminal
  * transition for one rejected run, or null when the queue is empty or

@@ -66,6 +66,7 @@ import {
   revokeChatEvent,
 } from "../signals/services/chat-event.service";
 import { createUserMessageDocument } from "../signals/services/chat-user-message.service";
+import { gatePreparedLaunchAdmissionForTest } from "../signals/services/prepared-launch-admission-lock.service";
 import { buildFeishuChatOpenUrl } from "../signals/services/feishu-config";
 import {
   createDeferredPromise,
@@ -1700,9 +1701,11 @@ export async function releaseBddBuiltInModelKey(args: {
 }
 
 /**
- * Holds the production org admission advisory lock and reports its waiter
- * count. No product API exposes database lock timing, so this fixture is the
- * narrow boundary exception for the queue-drain concurrency test.
+ * Pauses final run admission for this org on a held org advisory key and
+ * reports its waiter count. Ordinary launches take no org lock in production;
+ * the test-only admission gate makes them wait on this key while the fixture
+ * is registered. No product API exposes database lock timing, so this fixture
+ * is the narrow boundary exception for admission-ordering tests.
  */
 export async function holdOrgAdmissionLockFixture(args: {
   readonly orgId: string;
@@ -1716,23 +1719,26 @@ export async function holdOrgAdmissionLockFixture(args: {
 }> {
   const started = createDeferredPromise<number>(args.signal);
   const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const rows = await executeRawRows(
-      tx,
-      sql`
-        SELECT
-          pg_backend_pid() AS "pid",
-          pg_advisory_xact_lock(hashtext(${args.orgId}))
-      `,
-      databasePidRowSchema,
-    );
-    const holderPid = rows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the admission lock holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-  });
+  const ungate = gatePreparedLaunchAdmissionForTest(args.orgId);
+  const done = db()
+    .transaction(async (tx) => {
+      const rows = await executeRawRows(
+        tx,
+        sql`
+          SELECT
+            pg_backend_pid() AS "pid",
+            pg_advisory_xact_lock(hashtext(${args.orgId}))
+        `,
+        databasePidRowSchema,
+      );
+      const holderPid = rows[0]?.pid;
+      if (!holderPid) {
+        throw new Error("Expected the admission lock holder pid");
+      }
+      started.resolve(holderPid);
+      await released.promise;
+    })
+    .finally(ungate);
   const holderPid = await started.promise;
 
   return {
@@ -1922,8 +1928,8 @@ export async function holdChatEventQueueAdmissionLockFixture(args: {
  *
  * Waiting on this transaction is a precise barrier for "the run captured its
  * snapshot and reached commit". Counting waiters on the org admission key is
- * not: the background queue drain takes that same key, so it can satisfy the
- * barrier before the run has resolved its session at all.
+ * not: that key is taken only while a test gates admission, and waiting on it
+ * does not prove the run re-read this session row.
  */
 export async function holdThreadSessionConversationClearFixture(args: {
   readonly threadId: string;

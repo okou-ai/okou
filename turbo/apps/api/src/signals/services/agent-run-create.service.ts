@@ -331,7 +331,10 @@ import {
   type CapturedPersonalSubscriptionAccount,
 } from "./model-provider-account.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
-import { lockPreparedLaunchAdmission } from "./prepared-launch-admission-lock.service";
+import {
+  enterPreparedLaunchAdmission,
+  lockPreparedLaunchAdmission,
+} from "./prepared-launch-admission-lock.service";
 import {
   builtinConnectorRuntimeCredentialStatusWithMethod,
   type ConnectorCredentialStatus,
@@ -8499,8 +8502,8 @@ async function persistAtomicLaunchRows(
 }
 
 /**
- * Early rejection only. Final admission re-checks capacity under the
- * organization admission lock, so this read needs no lock or transaction.
+ * Early rejection only. Final admission re-checks the same coarse capacity
+ * count inside the launch transaction, so this read needs no lock.
  */
 async function checkRunConcurrencyPreflight(args: {
   readonly db: Db;
@@ -9064,7 +9067,7 @@ async function validateCapturedSubscriptionAccount(
   return undefined;
 }
 
-async function commitPreparedLaunchUnderLock(
+async function commitPreparedLaunchAdmission(
   tx: DbTransaction,
   args: PreparedCommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
@@ -9284,6 +9287,33 @@ async function finishAdmittedLaunch(
   });
 }
 
+/**
+ * Enter final admission. Ordinary launches take no organization lock: the
+ * capacity check is a coarse count of the org's sandbox-occupying runs, and
+ * concurrent launches may overshoot the limit. Official workflow runs keep the
+ * org lock as the lock-order fence against official workflow reconciliation,
+ * which locks the org plan row and then workflow/automation rows under this
+ * key, while official admission locks workflow/automation rows before the plan
+ * row in `persistAtomicLaunchRows`. Returns when the org lock was acquired.
+ */
+async function enterFinalLaunchAdmission(
+  tx: DbTransaction,
+  args: CommitPreparedLaunchArgs,
+): Promise<number | null> {
+  if (!args.context.officialWorkflowRun) {
+    await enterPreparedLaunchAdmission(tx, args.createArgs.orgId);
+    return null;
+  }
+  await args.timing.measure(
+    "api_dispatch_admission_lock_wait",
+    "nested",
+    async () => {
+      await lockPreparedLaunchAdmission(tx, args.createArgs.orgId);
+    },
+  );
+  return now();
+}
+
 async function commitPreparedLaunch(
   args: CommitPreparedLaunchArgs,
 ): Promise<AtomicLaunchCommitCompletion> {
@@ -9321,19 +9351,12 @@ async function commitPreparedLaunch(
           tx,
           preparedArgs.context.officialWorkflowRun,
         );
-        await preparedArgs.timing.measure(
-          "api_dispatch_admission_lock_wait",
-          "nested",
-          async () => {
-            await lockPreparedLaunchAdmission(
-              tx,
-              preparedArgs.createArgs.orgId,
-            );
-          },
+        const admissionLockHeldStartedAt = await enterFinalLaunchAdmission(
+          tx,
+          preparedArgs,
         );
-        const admissionLockHeldStartedAt = now();
-        admissionTiming.lockAcquired();
-        const result = await commitPreparedLaunchUnderLock(
+        admissionTiming.admissionStarted();
+        const result = await commitPreparedLaunchAdmission(
           tx,
           attemptArgs,
           payload,
@@ -9354,7 +9377,10 @@ async function commitPreparedLaunch(
     ? admissionAttemptOutcome(settledTransaction.value.result)
     : "rolled_back";
   const transactionReturnedAt = now();
-  if (settledTransaction.ok) {
+  if (
+    settledTransaction.ok &&
+    settledTransaction.value.admissionLockHeldStartedAt !== null
+  ) {
     args.timing.recordElapsed(
       "api_dispatch_admission_lock_held",
       "nested",

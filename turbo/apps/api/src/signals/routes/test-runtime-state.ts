@@ -74,6 +74,7 @@ import {
   setOfficialWorkflowBootstrapRequirementHookForTest,
   type OfficialWorkflowBootstrapRequirement,
 } from "../services/agent-runs-create.service";
+import { gatePreparedLaunchAdmissionForTest } from "../services/prepared-launch-admission-lock.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -186,6 +187,8 @@ async function holdOrgAdmissionLock(
   }
   const gate = createOrgAdmissionLockGate(signal);
   orgAdmissionLockGate.set(gate);
+  // Ordinary launches take the org key only while a test gates admission.
+  const ungate = gatePreparedLaunchAdmissionForTest(orgId);
   await onRejection(
     db.transaction(async (tx) => {
       const rows = await executeRawRows(
@@ -206,9 +209,11 @@ async function holdOrgAdmissionLock(
       await gate.released.promise;
     }),
     () => {
+      ungate();
       clearOrgAdmissionLockGate(gate);
     },
   );
+  ungate();
   clearOrgAdmissionLockGate(gate);
 }
 

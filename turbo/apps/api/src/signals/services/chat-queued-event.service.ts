@@ -756,8 +756,7 @@ async function loadQueueFirstAdmissionProjection(
 
 /**
  * Resolve the transaction-scoped thread admission consumed by queue claim.
- * Successful launches hold the organization admission lock; failed launches
- * preserve their existing thread-only arbitration.
+ * Both successful and failed launches arbitrate through the thread lock.
  */
 export async function resolveQueueFirstRunAdmission(
   db: DbTransaction,
