@@ -540,6 +540,7 @@ type BrowserUseCdpPhaseObserver = (
   phase: BrowserUseCdpPhase,
   outcome: BrowserUseCdpPhaseOutcome,
   durationMs: number,
+  attachReplyObserved?: boolean,
 ) => void;
 
 async function observeBrowserUseCdpPhase<T>(
@@ -571,7 +572,7 @@ function nativeInputCdpPhaseObserver(
   operation: "preflight" | "apply",
   attemptId: string,
 ): BrowserUseCdpPhaseObserver {
-  return (phase, outcome, durationMs) => {
+  return (phase, outcome, durationMs, attachReplyObserved) => {
     const fields = {
       type:
         operation === "preflight"
@@ -582,6 +583,9 @@ function nativeInputCdpPhaseObserver(
       phase,
       outcome,
       durationMs,
+      ...(phase === "attach" && attachReplyObserved !== undefined
+        ? { attachReplyObserved }
+        : {}),
     };
     const message =
       operation === "preflight"
@@ -1949,14 +1953,47 @@ async function openBrowserUseApplyPage(
   if (!targetInfo) {
     return null;
   }
-  const attached = await observeBrowserUseCdpPhase(
-    "attach",
-    signal,
-    observePhase,
-    async () => {
-      return await attachBrowserUsePage(socket, targetInfo, 2, signal);
-    },
+  let attachReplyObserved = false;
+  // Observe only whether the matching reply reaches this socket. Never retain
+  // or log the response body, which contains a provider session identifier.
+  const onAttachMessage = (event: MessageEvent) => {
+    if (
+      typeof event.data !== "string" ||
+      event.data.length > MAX_BROWSER_USE_CDP_RESPONSE_BYTES
+    ) {
+      return;
+    }
+    const response = browserUseCdpResponseSchema.safeParse(
+      safeJsonParse(event.data),
+    );
+    if (response.success && response.data.id === 2) {
+      attachReplyObserved = true;
+    }
+  };
+  if (observePhase) {
+    socket.addEventListener("message", onAttachMessage);
+  }
+  const attachment = await settleIncludingAbort(
+    observeBrowserUseCdpPhase(
+      "attach",
+      signal,
+      observePhase
+        ? (phase, outcome, durationMs) => {
+            observePhase(phase, outcome, durationMs, attachReplyObserved);
+          }
+        : undefined,
+      async () => {
+        return await attachBrowserUsePage(socket, targetInfo, 2, signal);
+      },
+    ),
   );
+  if (observePhase) {
+    socket.removeEventListener("message", onAttachMessage);
+  }
+  if (!attachment.ok) {
+    throw attachment.error;
+  }
+  const attached = attachment.value;
   const frameTree = await observeBrowserUseCdpPhase(
     "frame",
     signal,

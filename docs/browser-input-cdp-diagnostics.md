@@ -18,6 +18,14 @@ check is needed. An apply failure observation records only whether a write may
 have started (`writeStarted`). If `writeStarted` is true, treat website side
 effects as ambiguous and never automatically retry.
 
+An `attach` observation also reports `attachReplyObserved`, a Boolean captured
+by a short-lived, passive listener on the same WebSocket before the command is
+sent. `true` means a valid matching command reply reached the socket, even if
+the command waiter failed; `false` means the observer did not see one, **not**
+that the provider never sent it. Neither the reply nor any IDs are retained.
+This distinguishes a possible local receive-loop gap from an upstream missing
+reply without changing command handling or retries.
+
 These observations contain no CDP URLs, target/node/session IDs, selectors,
 request tokens, user input, file names/bytes or credentials. Fast successful
 stages are debug-level; slow or failed stages are warning-level. A missing
