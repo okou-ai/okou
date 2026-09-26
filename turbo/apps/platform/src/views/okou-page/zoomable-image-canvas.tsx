@@ -178,7 +178,8 @@ function ZoomableArtifactImageFrame({
 }) {
   return (
     <div className="relative shrink-0" hidden={!ready}>
-      <ZoomableArtifactImageElement {...element} />
+      {/* A resolved or refreshed URL owns its own native decode lifecycle. */}
+      <ZoomableArtifactImageElement key={element.src} {...element} />
       {overlay}
     </div>
   );
@@ -189,6 +190,7 @@ function ZoomableArtifactImageViewport({
   contentClassName,
   element,
   instance,
+  onCanvasPointerDown,
   overlay,
   ready,
 }: {
@@ -196,6 +198,7 @@ function ZoomableArtifactImageViewport({
   contentClassName?: string;
   element: ZoomableArtifactImageElementProps;
   instance: ReactZoomPanPinchContext;
+  onCanvasPointerDown: () => void;
   overlay?: ReactNode;
   ready: boolean;
 }) {
@@ -204,6 +207,13 @@ function ZoomableArtifactImageViewport({
       className="h-full min-h-0 w-full cursor-grab touch-none overscroll-contain active:cursor-grabbing"
       data-testid={canvasTestId}
       data-zoomable-image-canvas="true"
+      onPointerDown={(event) => {
+        // Panning cancels the native mousedown focus. Focus only this canvas's
+        // owner; zoom/navigation buttons are siblings of the viewport.
+        if (event.button === 0) {
+          onCanvasPointerDown();
+        }
+      }}
     >
       <TransformComponent
         contentStyle={{ height: "100%", width: "100%" }}
@@ -256,6 +266,7 @@ export function ZoomableArtifactImageCanvas({
     geometryLoadable.state === "hasData" ? geometryLoadable.data : null;
   const setDisplayZoom = useSet(signals.setZoom$);
   const imageRef = useSet(signals.imageRef$);
+  const focusNavigationOwner = useSet(signals.focusNavigationOwner$);
   const imageReady = imageGeometry !== null;
   const maxZoom = imageGeometry?.maxZoom ?? IMAGE_LIGHTBOX_MAX_ZOOM;
   const imageWidth = imageGeometry ? `${imageGeometry.fitWidth}px` : "0px";
@@ -334,6 +345,7 @@ export function ZoomableArtifactImageCanvas({
                 src,
               }}
               instance={instance}
+              onCanvasPointerDown={focusNavigationOwner}
               overlay={overlay}
               ready={imageReady}
             />

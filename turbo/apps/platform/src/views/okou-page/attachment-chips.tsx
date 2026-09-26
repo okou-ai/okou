@@ -64,7 +64,7 @@ import {
   lightboxDialogVisible$,
   lightboxDialogMountRef$,
   completeLightboxDialogExit$,
-  lightboxDialogElement$,
+  lightboxDialogInitialFocus$,
   navigateImageLightbox$,
   openAudioLightbox$,
   openDocumentLightbox$,
@@ -75,7 +75,7 @@ import {
   type AttachmentLightboxState,
 } from "../../signals/okou-page/attachment-chips.ts";
 import { openThreadArtifactSplitView$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
-import { bindLightboxImageNavigation$ } from "../../signals/okou-page/artifact-image-navigation.ts";
+import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
 import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import {
@@ -92,7 +92,6 @@ import { composerImageAnnotationEnabled$ } from "../../signals/external/feature-
 import {
   ArtifactActionSeparator,
   ArtifactDownloadMenu,
-  ArtifactImageNavigationControls,
   ArtifactImageZoomControls,
   ArtifactShareButton,
   type ArtifactDownloadSyncTarget,
@@ -629,10 +628,6 @@ function ArtifactDialogImageStage({
   resourceUrl: string | null;
 }) {
   const { t } = useTranslation();
-  const bindNavigation = useSet(bindLightboxImageNavigation$);
-  const hasNavigation = Boolean(
-    imageNavigation?.onPrevious || imageNavigation?.onNext,
-  );
   // Marks live on the draft rather than in the file, so the viewer has to draw
   // them too — otherwise reopening an annotated image shows a clean picture.
   const annotation = preview.annotationTarget?.annotations ?? null;
@@ -640,9 +635,11 @@ function ArtifactDialogImageStage({
   return (
     <ArtifactDialogStage flush scrollable={false}>
       <ArtifactDialogCard fillHeight>
-        <div
-          ref={hasNavigation ? bindNavigation : undefined}
-          className="relative h-full min-h-0"
+        <ArtifactImageNavigationRegion
+          signals={imageCanvasSignals}
+          filename={filename}
+          navigation={imageNavigation}
+          testIdPrefix="artifact-dialog"
         >
           {resourceUrl === null ? (
             <div
@@ -692,11 +689,7 @@ function ArtifactDialogImageStage({
               }}
             </ZoomableArtifactImageCanvas>
           )}
-          <ArtifactImageNavigationControls
-            navigation={imageNavigation}
-            testIdPrefix="artifact-dialog"
-          />
-        </div>
+        </ArtifactImageNavigationRegion>
       </ArtifactDialogCard>
     </ArtifactDialogStage>
   );
@@ -1399,7 +1392,7 @@ function ArtifactPreviewDialogContent({
 }) {
   const { t } = useTranslation();
   const dialogMountRef = useSet(lightboxDialogMountRef$);
-  const dialogElement = useSet(lightboxDialogElement$);
+  const initialFocus = useSet(lightboxDialogInitialFocus$);
   const completeDialogExit = useSet(completeLightboxDialogExit$);
   const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
   const connectionProgressActive = useGet(connectorConnectionProgressActive$);
@@ -1429,7 +1422,7 @@ function ArtifactPreviewDialogContent({
     >
       <DialogContent
         ref={dialogMountRef}
-        initialFocus={dialogElement}
+        initialFocus={initialFocus}
         showCloseButton={false}
         // The backdrop is fixed, so a standalone PWA clips it above the bottom
         // safe inset; extending `bottom` keeps it covering the screen edge.
