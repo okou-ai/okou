@@ -4,6 +4,9 @@ import { sql } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 
 const databaseNow = sql`timezone('UTC', clock_timestamp())`;
+// Keep each parameterized INSERT well below PostgreSQL's bind-parameter limit.
+// All chunks remain inside the caller's single financial transaction.
+const MAX_RUNS_PER_WRITE = 1024;
 
 /** Append only an opaque projection obligation to an already locked settlement. */
 export async function enqueueSettledRunUsageProjection(
@@ -25,31 +28,37 @@ export async function enqueueSettledRunUsageProjection(
     return;
   }
 
-  // A single set-based write per settlement, not a per-event or per-run query.
-  // The same DB transaction commits the work revision and the financial ledger.
-  const updated = await tx
-    .insert(usageChatProjectionWork)
-    .values(
-      runIds.map((runId) => {
-        return {
-          runId,
-          availableAt: databaseNow,
+  // One set-based write for ordinary settlements; only very large distinct-run
+  // sets need extra statements. A failed chunk rolls back every charge and
+  // obligation in the same transaction rather than committing partial work.
+  for (let offset = 0; offset < runIds.length; offset += MAX_RUNS_PER_WRITE) {
+    const chunk = runIds.slice(offset, offset + MAX_RUNS_PER_WRITE);
+    const updated = await tx
+      .insert(usageChatProjectionWork)
+      .values(
+        chunk.map((runId) => {
+          return {
+            runId,
+            availableAt: databaseNow,
+            updatedAt: databaseNow,
+          };
+        }),
+      )
+      .onConflictDoUpdate({
+        target: usageChatProjectionWork.runId,
+        set: {
+          desiredRevision: sql`${usageChatProjectionWork.desiredRevision} + 1`,
+          // A settlement racing an active claimant leaves it leased until
+          // expiry; the claimant's acknowledgement wakes any newer revision.
+          availableAt: sql`CASE WHEN ${usageChatProjectionWork.leaseExpiresAt} > ${databaseNow} THEN ${usageChatProjectionWork.leaseExpiresAt} ELSE ${databaseNow} END`,
           updatedAt: databaseNow,
-        };
-      }),
-    )
-    .onConflictDoUpdate({
-      target: usageChatProjectionWork.runId,
-      set: {
-        desiredRevision: sql`${usageChatProjectionWork.desiredRevision} + 1`,
-        // A settlement racing an active claimant leaves it leased until
-        // expiry; the claimant's acknowledgement wakes any newer revision.
-        availableAt: sql`CASE WHEN ${usageChatProjectionWork.leaseExpiresAt} > ${databaseNow} THEN ${usageChatProjectionWork.leaseExpiresAt} ELSE ${databaseNow} END`,
-        updatedAt: databaseNow,
-      },
-    })
-    .returning({ runId: usageChatProjectionWork.runId });
-  if (updated.length !== runIds.length) {
-    throw new Error("A committed run projection obligation was not persisted");
+        },
+      })
+      .returning({ runId: usageChatProjectionWork.runId });
+    if (updated.length !== chunk.length) {
+      throw new Error(
+        "A committed run projection obligation was not persisted",
+      );
+    }
   }
 }
