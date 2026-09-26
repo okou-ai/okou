@@ -15,8 +15,6 @@ import {
   lt,
   notExists,
   or,
-  sql,
-  type SQL,
 } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 
@@ -152,34 +150,6 @@ export async function revokedChatEventIds(
   );
 }
 
-async function openActiveInputDeliveryEventIds(
-  db: ChatQueueReadDb,
-  eventIds: readonly string[],
-): Promise<ReadonlySet<string>> {
-  if (eventIds.length === 0) {
-    return new Set();
-  }
-  const rows = await db
-    .select({ eventId: activeInputDeliveryItems.sourceEventId })
-    .from(activeInputDeliveryItems)
-    .innerJoin(
-      activeInputDeliveries,
-      eq(activeInputDeliveries.id, activeInputDeliveryItems.deliveryId),
-    )
-    .where(
-      and(
-        inArray(activeInputDeliveryItems.sourceEventId, [...eventIds]),
-        isNull(activeInputDeliveryItems.disposition),
-        eq(activeInputDeliveries.status, "open"),
-      ),
-    );
-  return new Set(
-    rows.map(({ eventId }) => {
-      return eventId;
-    }),
-  );
-}
-
 interface QueueEventIdentityColumns {
   readonly id: AnyPgColumn;
   readonly eventType: AnyPgColumn;
@@ -256,26 +226,16 @@ export function pendingChatQueueEventConditionFor(
   );
 }
 
-export function chatQueueEventPriority(): SQL {
-  return sql`CASE ${chatEvents.eventType}
-    WHEN 'input.prompt' THEN 0
-    WHEN 'input.automation' THEN 1
-    ELSE 2
-  END`;
-}
-
 /**
- * List one thread's pending queue in its authoritative database order. User
- * input keeps absolute priority over automation input. Each
- * class is FIFO by the original event timestamp and id. Keep the sort in
- * PostgreSQL so sub-millisecond timestamp precision matches the final
- * queue-claim queries.
+ * Load one thread's pending queue head. The queue is strict FIFO by the
+ * thread's event sequence: user messages and automation events interleave in
+ * the order they were appended.
  */
-export async function listPendingChatQueueEvents(
+export async function loadChatQueueHead(
   db: ChatQueueReadDb,
   chatThreadId: string,
   createdBefore?: Date,
-): Promise<readonly PendingChatQueueEvent[]> {
+): Promise<PendingChatQueueEvent | null> {
   const rows = await db
     .select({
       id: chatEvents.id,
@@ -292,29 +252,18 @@ export async function listPendingChatQueueEvents(
         createdBefore ? lt(chatEvents.createdAt, createdBefore) : undefined,
       ),
     )
-    .orderBy(
-      chatQueueEventPriority(),
-      asc(chatEvents.createdAt),
-      asc(chatEvents.id),
-    );
+    .orderBy(asc(chatEvents.seqId))
+    .limit(1);
 
-  return rows.flatMap((event) => {
-    if (
-      event.eventType !== "input.prompt" &&
-      event.eventType !== "input.automation"
-    ) {
-      return [];
-    }
-    return [
-      {
-        id: event.id,
-        chatThreadId: event.chatThreadId,
-        eventType: event.eventType,
-        seqId: event.seqId,
-        createdAt: event.createdAt,
-      },
-    ];
-  });
+  const [event] = rows;
+  if (
+    !event ||
+    (event.eventType !== "input.prompt" &&
+      event.eventType !== "input.automation")
+  ) {
+    return null;
+  }
+  return { ...event, eventType: event.eventType };
 }
 
 export async function loadPendingChatQueueEvent(
@@ -369,64 +318,4 @@ export async function lockChatQueueThread(
     .where(eq(chatThreads.id, chatThreadId))
     .for("no key update");
   return thread !== undefined;
-}
-
-/** Threads with recently stale runnable queue work for the safety sweep. */
-export async function staleChatEventQueueThreadIds(
-  db: ChatQueueReadDb,
-  args: RecentStaleChatQueueWindow & {
-    readonly limit: number;
-    readonly chatThreadIds?: readonly string[];
-  },
-  signal: AbortSignal,
-): Promise<readonly string[]> {
-  if (args.limit <= 0 || args.chatThreadIds?.length === 0) {
-    return [];
-  }
-
-  const chatThreadIds = new Set<string>();
-  let cursor: ChatQueueEventScanCursor | undefined;
-  while (chatThreadIds.size < args.limit) {
-    const candidates = await listChatQueueEventScanCandidatePage(db, {
-      createdAtOrAfter: args.createdAtOrAfter,
-      createdBefore: args.createdBefore,
-      cursor,
-      limit: CHAT_QUEUE_SCAN_PAGE_SIZE,
-      chatThreadIds: args.chatThreadIds,
-    });
-    signal.throwIfAborted();
-    if (candidates.length === 0) {
-      break;
-    }
-
-    const eventIds = candidates.map(({ id }) => {
-      return id;
-    });
-    const [revokedEventIds, activeDeliveryEventIds] = await Promise.all([
-      revokedChatEventIds(db, eventIds),
-      openActiveInputDeliveryEventIds(db, eventIds),
-    ]);
-    signal.throwIfAborted();
-    for (const candidate of candidates) {
-      if (
-        !revokedEventIds.has(candidate.id) &&
-        !activeDeliveryEventIds.has(candidate.id)
-      ) {
-        chatThreadIds.add(candidate.chatThreadId);
-        if (chatThreadIds.size === args.limit) {
-          break;
-        }
-      }
-    }
-
-    if (candidates.length < CHAT_QUEUE_SCAN_PAGE_SIZE) {
-      break;
-    }
-    const lastCandidate = candidates.at(-1);
-    if (!lastCandidate) {
-      break;
-    }
-    cursor = lastCandidate;
-  }
-  return [...chatThreadIds];
 }

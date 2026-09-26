@@ -2071,7 +2071,7 @@
       "aboutAutomationEvent": "關於這個自動化事件",
       "aboutQueuedMessage": "關於這條排隊訊息",
       "automationEvent": "自動化事件",
-      "automationEventDescription": "排在已有訊息之後，等當前執行結束後執行。",
+      "automationEventDescription": "排隊等待，可以開始時自動執行。",
       "cancellationRecoveryPending": "正在收尾已取消的執行，之後繼續處理排隊中的任務。",
       "event_one": "{{count}}個事件",
       "event_other": "{{count}}個事件",
@@ -2082,7 +2082,7 @@
       "message_other": "{{count}}條訊息",
       "pendingAutomationEvent": "待處理的自動化事件",
       "queuedMessage": "排隊訊息",
-      "queuedMessageDescription": "排隊等待，當前執行結束後傳送。",
+      "queuedMessageDescription": "排隊等待，可以開始時自動傳送。",
       "removeQueuedMessage": "移除排隊訊息",
       "skipAutomationEvent": "跳過自動化事件"
     },

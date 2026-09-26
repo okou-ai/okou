@@ -2071,7 +2071,7 @@
       "aboutAutomationEvent": "Tentang peristiwa otomatisasi ini",
       "aboutQueuedMessage": "Tentang pesan yang menunggu ini",
       "automationEvent": "Peristiwa otomatisasi",
-      "automationEventDescription": "Menunggu di belakang pesan yang menunggu dan dijalankan setelah eksekusi saat ini selesai.",
+      "automationEventDescription": "Menunggu giliran dan dijalankan otomatis saat dapat dimulai.",
       "cancellationRecoveryPending": "Menyelesaikan eksekusi yang dibatalkan sebelum melanjutkan pekerjaan dalam antrean.",
       "event_one": "{{count}} peristiwa",
       "event_other": "{{count}} peristiwa",
@@ -2082,7 +2082,7 @@
       "message_other": "{{count}} pesan",
       "pendingAutomationEvent": "Peristiwa otomatisasi tertunda",
       "queuedMessage": "Pesan dalam antrean",
-      "queuedMessageDescription": "Menunggu giliran dan dikirim setelah eksekusi saat ini selesai.",
+      "queuedMessageDescription": "Menunggu giliran dan dikirim otomatis saat dapat dimulai.",
       "removeQueuedMessage": "Hapus pesan dalam antrean",
       "skipAutomationEvent": "Lewati peristiwa otomatisasi"
     },

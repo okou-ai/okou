@@ -3927,15 +3927,25 @@ function autoSendAdmissionFailureArgs(
 }
 
 /**
+ * How one attempt on the thread's queue head ended: a run launched, the head
+ * input was consumed without a run, the head stays queued, or the head is not
+ * a user message.
+ */
+export type QueuedUserMessageLaunchOutcome =
+  | "launched"
+  | "consumed"
+  | "stopped"
+  | "none";
+
+/**
  * User-message half of the per-thread scheduler: when the thread has no
- * in-flight run, dispatch the oldest queued user message — whoever sent it.
- * The shared thread scheduler calls this before attempting the automation-event
- * half, preserving user-message priority.
+ * in-flight run and a user message is the queue head, dispatch it — whoever
+ * sent it.
  */
 async function autoSendQueuedMessageForThread(
   args: AutoSendQueuedMessageArgs,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<QueuedUserMessageLaunchOutcome> {
   const { chatThreadId: threadId, userId } = args;
 
   const queuedMessage = await measureChatCallbackPreCreateTiming(
@@ -3951,7 +3961,7 @@ async function autoSendQueuedMessageForThread(
     },
   );
   if (!queuedMessage) {
-    return;
+    return "none";
   }
 
   args.timing.recordElapsed({
@@ -3975,7 +3985,7 @@ async function autoSendQueuedMessageForThread(
       threadId,
       agentId: args.agentId,
     });
-    return;
+    return "stopped";
   }
 
   const runInput = await prepareAutoSendQueuedMessageRunInput(
@@ -3983,21 +3993,22 @@ async function autoSendQueuedMessageForThread(
     signal,
   );
   if (!runInput) {
-    return;
+    return "consumed";
   }
   const activeRunExists = await autoSendAdmissionBlocked(args, threadId);
   if (activeRunExists) {
-    return;
+    return "stopped";
   }
   if ("kind" in runInput) {
     await handleQueuedMessageAdmissionFailure(
       autoSendAdmissionFailureArgs(args, runInput),
       signal,
     );
-    return;
+    return "consumed";
   }
 
   let createdRunId: string | null = null;
+  let admissionFailed = false;
   const run = await onRejection(
     (async () => {
       const createdRun = await createAutoSentQueuedRun({
@@ -4009,6 +4020,7 @@ async function autoSendQueuedMessageForThread(
         return null;
       }
       if ("kind" in createdRun) {
+        admissionFailed = true;
         await handleQueuedMessageAdmissionFailure(
           autoSendAdmissionFailureArgs(args, createdRun),
           signal,
@@ -4042,31 +4054,42 @@ async function autoSendQueuedMessageForThread(
     }),
   );
   if (run) {
-    // The run exists, which is what makes this a use. Building the input does
-    // not: admission is re-checked after it and can leave the message queued
-    // for a later attempt that reports the same message again.
-    logTemplateUsage(
-      {
-        dispatchPath: "queued-claim",
-        orgId: runInput.orgId,
-        userId,
-        chatThreadId: threadId,
-      },
-      runInput.generationTemplateIdentities,
-    );
-    // Ingress channels never touch the web send route, so this is where their
-    // threads get an eager title instead of waiting for the run to finish.
-    scheduleChatThreadTitleGeneration({
-      db: args.db,
-      threadId,
-      userId,
-      orgId: runInput.orgId,
-      prompt: runInput.prompt,
-      includePriorRounds: true,
-    });
-    scheduleQueuedLaunchStatus(args.db, run.runId, runInput);
-    args.timing.flush(run.runId, runInput.triggerSource);
+    recordAutoSentQueuedRunLaunch(args, run, runInput);
+    return "launched";
   }
+  return admissionFailed ? "consumed" : "stopped";
+}
+
+function recordAutoSentQueuedRunLaunch(
+  args: AutoSendQueuedMessageArgs,
+  run: CreatedQueuedRun,
+  runInput: CreateQueuedChatRunInput,
+): void {
+  const { chatThreadId: threadId, userId } = args;
+  // The run exists, which is what makes this a use. Building the input does
+  // not: admission is re-checked after it and can leave the message queued
+  // for a later attempt that reports the same message again.
+  logTemplateUsage(
+    {
+      dispatchPath: "queued-claim",
+      orgId: runInput.orgId,
+      userId,
+      chatThreadId: threadId,
+    },
+    runInput.generationTemplateIdentities,
+  );
+  // Ingress channels never touch the web send route, so this is where their
+  // threads get an eager title instead of waiting for the run to finish.
+  scheduleChatThreadTitleGeneration({
+    db: args.db,
+    threadId,
+    userId,
+    orgId: runInput.orgId,
+    prompt: runInput.prompt,
+    includePriorRounds: true,
+  });
+  scheduleQueuedLaunchStatus(args.db, run.runId, runInput);
+  args.timing.flush(run.runId, runInput.triggerSource);
 }
 
 /** A launched queued input shows processing status before its Runner starts. */
@@ -5106,10 +5129,13 @@ const createQueuedRunForChatCallback$ = command(
     }
     if (runResult.status !== 201) {
       signal.throwIfAborted();
-      log.warn("Auto-send failed to create run", {
-        threadId: input.runInput.threadId,
-        status: runResult.status,
-      });
+      // At organization capacity the message stays queued for a later pick.
+      if (runResult.body.error.code !== "CONCURRENT_RUN_LIMIT") {
+        log.warn("Auto-send failed to create run", {
+          threadId: input.runInput.threadId,
+          status: runResult.status,
+        });
+      }
       return null;
     }
     if (!isCreatedQueuedRunStatus(runResult.body.status)) {
@@ -5490,7 +5516,7 @@ export const drainQueuedUserMessagesForThread$ = command(
       readonly timing?: ChatCallbackPreCreateTimingCollector;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<QueuedUserMessageLaunchOutcome> => {
     const db = set(writeDb$);
     const [thread] = await measureChatCallbackPreCreateTiming(
       args.timing,
@@ -5510,15 +5536,15 @@ export const drainQueuedUserMessagesForThread$ = command(
     );
     signal.throwIfAborted();
     if (!thread) {
-      return;
+      return "none";
     }
     const dependencies = set(buildChatCallbackDependencies$, { db });
     const createQueuedRun = dependencies.createQueuedRun;
     if (!createQueuedRun) {
-      return;
+      return "stopped";
     }
     const admissionTime = args.apiStartTime;
-    await autoSendQueuedMessageForThread(
+    const outcome = await autoSendQueuedMessageForThread(
       {
         db,
         chatThreadId: args.chatThreadId,
@@ -5555,6 +5581,7 @@ export const drainQueuedUserMessagesForThread$ = command(
       signal,
     );
     signal.throwIfAborted();
+    return outcome;
   },
 );
 

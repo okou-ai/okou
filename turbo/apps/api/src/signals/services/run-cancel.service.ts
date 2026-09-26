@@ -19,7 +19,10 @@ import {
   dispatchRunCallbacks$,
   undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
-import { drainChatThreadQueueForRun$ } from "./chat-thread-queue-drain.service";
+import {
+  drainChatThreadQueueForRun$,
+  pickOrgQueuedChatThreads$,
+} from "./chat-thread-queue-drain.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 import { drainOrgQueue$ } from "./agent-run-lifecycle.service";
 import {
@@ -391,6 +394,16 @@ export const dispatchCancelSideEffects$ = command(
     // next poll cycle. Queue dispatch (compose loading + sandbox
     // provisioning) lands in Stage 4.
     await set(drainOrgQueue$, { orgId: result.orgId }, signal);
+    signal.throwIfAborted();
+    await set(
+      pickOrgQueuedChatThreads$,
+      {
+        orgId: result.orgId,
+        untilFull: false,
+        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     // Reconcile credits when the cancelled run had been doing

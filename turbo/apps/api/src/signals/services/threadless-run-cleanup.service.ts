@@ -26,11 +26,15 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread } from "./agent-run-callback.service";
+import {
+  dispatchFailedRunCallbacks,
+  failPendingInlineOnlyDeliveryCallbacksForDeletedThread,
+} from "./agent-run-callback.service";
 import {
   dispatchCompleteSideEffects$,
   drainOrgQueue$,
 } from "./agent-run-lifecycle.service";
+import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
 import { cancelRun$, dispatchCancelSideEffects$ } from "./run-cancel.service";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 import {
@@ -401,6 +405,16 @@ const redriveTerminalLifecycle$ = command(
     // dispatchCompleteSideEffects$ treats queue publication as best effort for
     // normal webhooks. Deletion requires a strict durable reconciliation pass.
     await set(drainOrgQueue$, { orgId: candidate.orgId }, signal);
+    signal.throwIfAborted();
+    await set(
+      pickOrgQueuedChatThreads$,
+      {
+        orgId: candidate.orgId,
+        untilFull: false,
+        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+      },
+      signal,
+    );
     signal.throwIfAborted();
   },
 );

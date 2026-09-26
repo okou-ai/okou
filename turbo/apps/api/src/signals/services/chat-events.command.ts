@@ -70,6 +70,7 @@ import { isQueueFirstRunClaimLost } from "./agent-run-create.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { childAutonomyBudget } from "./autonomy-budget.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { markChatThreadQueued } from "./queued-chat-thread.service";
 import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
 import {
   ApiDispatchTimingCollector,
@@ -4244,6 +4245,22 @@ const sendQueueFirstNormalEvent$ = command(
     signal.throwIfAborted();
     if (result.status === 201) {
       return result;
+    }
+    if (result.body.error.code === "CONCURRENT_RUN_LIMIT") {
+      // The organization is at capacity: nothing was created, the message
+      // stays queued, and the thread's row lets a later pick launch it.
+      await markChatThreadQueued(prepared.db, {
+        chatThreadId: threadId,
+        orgId: args.orgId,
+      });
+      signal.throwIfAborted();
+      await publishChatEventCreated({
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId,
+      });
+      signal.throwIfAborted();
+      return response;
     }
     // Run creation failed validation before it could consume the queue item.
     // Discard the queued message so history matches the legacy direct-send

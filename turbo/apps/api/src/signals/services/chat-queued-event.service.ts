@@ -18,7 +18,6 @@ import {
   lt,
   not,
   notExists,
-  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -42,8 +41,7 @@ import {
 } from "./canonical-chat-event-read.service";
 import { chatThreadAdmissionBlockerCondition } from "./chat-active-run.service";
 import {
-  chatQueueEventPriority,
-  listPendingChatQueueEvents,
+  loadChatQueueHead,
   loadPendingChatQueueEvent,
   pendingChatQueueEventCondition,
   pendingChatQueueEventConditionFor,
@@ -402,11 +400,7 @@ export async function resolveWebChatQueueFirstDispatchPreflight(
           pendingChatQueueEventCondition(db),
         ),
       )
-      .orderBy(
-        chatQueueEventPriority(),
-        asc(chatEvents.createdAt),
-        asc(chatEvents.id),
-      )
+      .orderBy(asc(chatEvents.seqId))
       .limit(1),
   );
   const [projection] = await db
@@ -449,12 +443,7 @@ export async function loadNextUnclaimedQueuedUserMessage(
   threadId: string,
   queueItemCreatedBefore?: Date,
 ): Promise<QueuedUserMessage | null> {
-  const pending = await listPendingChatQueueEvents(
-    db,
-    threadId,
-    queueItemCreatedBefore,
-  );
-  const head = pending[0];
+  const head = await loadChatQueueHead(db, threadId, queueItemCreatedBefore);
   if (!head || head.eventType !== "input.prompt") {
     return null;
   }
@@ -497,7 +486,7 @@ async function loadNextUnclaimedQueuedUserMessageId(
   db: Db,
   threadId: string,
 ): Promise<string | null> {
-  const [head] = await listPendingChatQueueEvents(db, threadId);
+  const head = await loadChatQueueHead(db, threadId);
   return head?.eventType === "input.prompt" ? head.id : null;
 }
 
@@ -558,11 +547,7 @@ function queueFirstClaimHeadQuery(db: DbTransaction, threadId: string) {
         pendingChatQueueEventCondition(db),
       ),
     )
-    .orderBy(
-      chatQueueEventPriority(),
-      asc(chatEvents.createdAt),
-      asc(chatEvents.id),
-    )
+    .orderBy(asc(chatEvents.seqId))
     .for("update", { of: chatEvents })
     .limit(1);
 }
@@ -573,20 +558,6 @@ function queueFirstExpectedHeadQuery(
   association: QueueFirstRunAssociation,
 ) {
   const predecessor = alias(chatEvents, "queue_first_predecessor");
-  const earlierInClass = or(
-    lt(predecessor.createdAt, chatEvents.createdAt),
-    and(
-      eq(predecessor.createdAt, chatEvents.createdAt),
-      lt(predecessor.id, chatEvents.id),
-    ),
-  );
-  const precedesCandidate =
-    association.kind === "user_message"
-      ? and(eq(predecessor.eventType, "input.prompt"), earlierInClass)
-      : or(
-          eq(predecessor.eventType, "input.prompt"),
-          and(eq(predecessor.eventType, "input.automation"), earlierInClass),
-        );
   return queueFirstClaimHeadBase(db)
     .where(
       and(
@@ -607,7 +578,7 @@ function queueFirstExpectedHeadQuery(
               and(
                 eq(predecessor.chatThreadId, association.threadId),
                 pendingChatQueueEventConditionFor(db, predecessor),
-                precedesCandidate,
+                lt(predecessor.seqId, chatEvents.seqId),
               ),
             ),
         ),

@@ -1110,7 +1110,6 @@ function buildCreateAgentRunArgs(
     okouTokenComputerUseHostId: command.computerUseHostId,
     okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
     enforceBuiltInCredits: true,
-    queueOnConcurrencyLimit: true,
     injectSkillVolumes: { workflows: args.workflows },
     requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
     connectorScope: {
