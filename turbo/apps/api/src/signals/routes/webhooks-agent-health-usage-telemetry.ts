@@ -414,19 +414,15 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   signal.throwIfAborted();
   const result = await db
-    .update(agentRuns)
-    .set({ lastHeartbeatAt: heartbeatAt })
+    .select({ triggerSource: agentRuns.triggerSource })
+    .from(agentRuns)
     .where(
       and(
         eq(agentRuns.id, body.runId),
         eq(agentRuns.userId, auth.userId),
         inArray(agentRuns.status, ["pending", "running"]),
       ),
-    )
-    .returning({
-      id: agentRuns.id,
-      triggerSource: agentRuns.triggerSource,
-    });
+    );
   signal.throwIfAborted();
 
   if (result.length === 0) {

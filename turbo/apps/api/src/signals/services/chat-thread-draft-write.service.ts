@@ -3,7 +3,7 @@ import type {
   ChatThreadDraftUserMessage,
 } from "@okouai/db/jsonb-contracts/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 
@@ -17,9 +17,8 @@ interface ChatThreadDraftWrite {
 /**
  * Saves or clears one thread's composer draft in a single statement.
  *
- * The caller has already read the thread's owner outside any transaction. The
- * statement runs on its own and touches no other table: `chat_thread_drafts`
- * has no foreign key to `chat_threads`, so it takes no lock on the thread row.
+ * The row is keyed by the thread and the caller, so the statement touches no
+ * other table and takes no lock on the thread row.
  *
  * A cleared draft deletes the row, the same shape as `agent_drafts`. No reader
  * falls back to the retired `chat_threads` columns, so absence means "no
@@ -30,7 +29,14 @@ export async function persistChatThreadDraft(
   draft: ChatThreadDraftWrite,
 ): Promise<void> {
   if (draft.draftUserMessage === null) {
-    await deleteChatThreadDraft(db, draft.chatThreadId);
+    await db
+      .delete(chatThreadDrafts)
+      .where(
+        and(
+          eq(chatThreadDrafts.chatThreadId, draft.chatThreadId),
+          eq(chatThreadDrafts.userId, draft.userId),
+        ),
+      );
     return;
   }
   await db

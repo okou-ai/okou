@@ -1,4 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
@@ -130,11 +131,12 @@ function orgConcurrencyStateTotals(
     .select({
       count: count().as("active_run_count"),
     })
-    .from(agentRuns)
+    .from(activeAgentRuns)
+    .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
     .where(
       and(
-        eq(agentRuns.orgId, args.orgId),
-        sandboxCapacityPredicate(db, args.orgId, args.activePendingAfter),
+        eq(activeAgentRuns.orgId, args.orgId),
+        sandboxCapacityPredicate(args.activePendingAfter),
       ),
     )
     .as("active_concurrency_run_totals");

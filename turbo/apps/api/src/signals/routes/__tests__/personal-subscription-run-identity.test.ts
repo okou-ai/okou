@@ -907,6 +907,13 @@ describe("personal subscription run identity", () => {
       const pendingClaim = await f.claim(pending);
       expect(accountId(pendingClaim, f.type)).toBe(captured);
       await runs.requestCancelRun(f.actor, first, [200]);
+      // Cancellation alone does not release a started run's compute slot.
+      expect((await runs.readRun(f.actor, queued)).status).toBe("queued");
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: first, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${firstClaim.sandboxToken}` },
+        [200],
+      );
       await expect
         .poll(async () => {
           return (await runs.readRun(f.actor, queued)).status;

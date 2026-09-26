@@ -6,7 +6,7 @@ import {
   type ModelSettings,
   type ModelSettingsPatch,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { and, asc, eq, exists, gt, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gt, notExists, or, sql } from "drizzle-orm";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import type {
   ChatThreadEvent,
@@ -341,11 +341,16 @@ async function getChatThreadEventRowsAfterCursor(
         eq(pageChatThreadEvent.userId, args.userId),
         eq(pageChatThreadEvent.orgId, args.orgId),
         gt(pageChatThreadEvent.seqId, validCursor.seqId),
-        exists(
-          db
-            .select({ id: agents.id })
-            .from(agents)
-            .where(eq(agents.id, pageChatThreadEvent.agentId)),
+        // Tombstones for Agent deletion outlive the Agent itself. Other
+        // events still require a canonical Agent to be returned.
+        or(
+          eq(pageChatThreadEvent.kind, "deleted"),
+          exists(
+            db
+              .select({ id: agents.id })
+              .from(agents)
+              .where(eq(agents.id, pageChatThreadEvent.agentId)),
+          ),
         ),
       ),
     )
@@ -393,11 +398,14 @@ export async function getChatThreadEventsSince(
         and(
           eq(chatThreadEvents.userId, args.userId),
           eq(chatThreadEvents.orgId, args.orgId),
-          exists(
-            db
-              .select({ id: agents.id })
-              .from(agents)
-              .where(eq(agents.id, chatThreadEvents.agentId)),
+          or(
+            eq(chatThreadEvents.kind, "deleted"),
+            exists(
+              db
+                .select({ id: agents.id })
+                .from(agents)
+                .where(eq(agents.id, chatThreadEvents.agentId)),
+            ),
           ),
         ),
       )

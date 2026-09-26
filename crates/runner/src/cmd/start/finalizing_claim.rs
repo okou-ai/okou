@@ -73,7 +73,6 @@ use crate::executor::{
 use crate::resource_budget::BudgetLease;
 use crate::telemetry::JobTelemetry;
 use crate::workspace_image_cache::WorkspaceImagePrepareLockPolicy;
-use runner_lifecycle::active_runs::ActiveRunReuseState;
 use runner_provider::ClaimedJob;
 use runner_provider::RunCancellationRegistration;
 use runner_supervisor::claimed_activation::{
@@ -428,22 +427,17 @@ async fn run_finalizing_claim(
         }
     };
     drop(activation_transfer_guard);
-    let predecessor_state = admission.predecessor.state();
-    if fresh_fallback
-        && matches!(
-            predecessor_state,
-            ActiveRunReuseState::Pending
-                | ActiveRunReuseState::ExactSandboxPublished
-                | ActiveRunReuseState::ExactSandboxHandedOff
-        )
-    {
-        request.job_profile.workspace_image_prepare_lock_policy =
-            WorkspaceImagePrepareLockPolicy::ImmediateFallback;
-        info!(
-            run_id = %run_id,
-            ?predecessor_state,
-            "finalizing fallback will skip workspace cache lock retry"
-        );
+    if fresh_fallback {
+        let (predecessor_state, lock_policy) =
+            admission.fresh_fallback_workspace_prepare_lock_policy();
+        request.job_profile.workspace_image_prepare_lock_policy = lock_policy;
+        if lock_policy == WorkspaceImagePrepareLockPolicy::ImmediateFallback {
+            info!(
+                run_id = %run_id,
+                ?predecessor_state,
+                "finalizing fallback will skip workspace cache lock retry"
+            );
+        }
     }
     run_job(request, ctx).await
 }

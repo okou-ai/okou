@@ -1,6 +1,6 @@
 {
-  "id": "d777c3ab-bde8-4d19-bbe0-953f0eca91d6",
-  "prevId": "ae276968-c27f-4500-adbf-9f1293c8c092",
+  "id": "f62c7f81-4021-42ae-854b-c283cbef43b4",
+  "prevId": "3b6f219d-f7e9-4983-81b6-c85b6f6c721d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8417,35 +8417,15 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "uq_chat_thread_drafts_thread_user": {
-          "name": "uq_chat_thread_drafts_thread_user",
-          "columns": [
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "chat_thread_drafts_chat_thread_id_pk": {
-          "name": "chat_thread_drafts_chat_thread_id_pk",
+        "chat_thread_drafts_chat_thread_id_user_id_pk": {
+          "name": "chat_thread_drafts_chat_thread_id_user_id_pk",
           "columns": [
-            "chat_thread_id"
+            "chat_thread_id",
+            "user_id"
           ]
         }
       },
@@ -9157,18 +9137,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "draft_user_message": {
-          "name": "draft_user_message",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "draft_attachments": {
-          "name": "draft_attachments",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -9293,10 +9261,6 @@
         "chat_threads_computer_access_check": {
           "name": "chat_threads_computer_access_check",
           "value": "NOT (\"chat_threads\".\"cloud_browser_enabled\" AND \"chat_threads\".\"computer_use_host_id\" IS NOT NULL)"
-        },
-        "chat_threads_draft_user_message_check": {
-          "name": "chat_threads_draft_user_message_check",
-          "value": "\"chat_threads\".\"draft_user_message\" IS NOT NULL\n          OR COALESCE(\"chat_threads\".\"draft_attachments\", '[]'::jsonb) = '[]'::jsonb"
         }
       },
       "isRLSEnabled": false
@@ -18995,6 +18959,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_model_provider_accounts_provider_identity": {
+          "name": "idx_model_provider_accounts_provider_identity",
+          "columns": [
+            {
+              "expression": "model_provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "external_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -27547,148 +27532,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.run_activity_snapshots": {
-      "name": "run_activity_snapshots",
-      "schema": "",
-      "columns": {
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "entries": {
-          "name": "entries",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "activity_revision": {
-          "name": "activity_revision",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'empty'"
-        },
-        "message_cursor": {
-          "name": "message_cursor",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "(now() AT TIME ZONE 'UTC') + interval '24 hours'"
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "summary_revision": {
-          "name": "summary_revision",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "summary_sequence": {
-          "name": "summary_sequence",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "summary_message_cursor": {
-          "name": "summary_message_cursor",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "summarized_at": {
-          "name": "summarized_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "next_attempt_at": {
-          "name": "next_attempt_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claim_revision": {
-          "name": "claim_revision",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claim_expires_at": {
-          "name": "claim_expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "run_activity_snapshots_expiry_idx": {
-          "name": "run_activity_snapshots_expiry_idx",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "run_activity_snapshots_run_id_agent_runs_id_fk": {
-          "name": "run_activity_snapshots_run_id_agent_runs_id_fk",
-          "tableFrom": "run_activity_snapshots",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "run_activity_snapshots_entries_bound": {
-          "name": "run_activity_snapshots_entries_bound",
-          "value": "jsonb_typeof(\"run_activity_snapshots\".\"entries\") = 'array' AND jsonb_array_length(\"run_activity_snapshots\".\"entries\") <= 16 AND octet_length(\"run_activity_snapshots\".\"entries\"::text) <= 16384"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.run_built_in_admissions": {
