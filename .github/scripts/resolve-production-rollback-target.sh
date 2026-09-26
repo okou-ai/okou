@@ -9,9 +9,10 @@ readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
 readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70dab7ae6
 # #36960 stopped implicitly selecting computer_use_command_audit_events.approval_outcome.
-# Migration 1258 drops that column before promoting its API. Older API
+# Migration 1259 drops that column before promoting its API. Older API
 # artifacts would fail the audit list with 42703 after migration or rollback.
 readonly COMPUTER_USE_AUDIT_READER_COMMIT=41cc9918009622ccad7c64e433d09db1a8dfbe9c
+readonly COMPUTER_USE_AUDIT_CONTRACTION_PATH=turbo/packages/db/src/migrations/1259_drop_computer_use_audit_approval_outcome.sql
 # #36932 targets the (chat_thread_id, user_id) draft key and stopped mapping the
 # chat_threads draft columns. Migration drop_chat_thread_draft_columns makes that
 # pair the primary key and drops the columns, so earlier APIs fail draft saves
@@ -65,6 +66,17 @@ if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT" "$TAR
 fi
 if ! git merge-base --is-ancestor "$COMPUTER_USE_AUDIT_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the computer-use audit approval column reader cutover: ${COMPUTER_USE_AUDIT_READER_COMMIT}."
+fi
+# The outgoing API still names approval_outcome in audit INSERTs even after the
+# reader cutover. The bounded migration-to-promotion gap is accepted, but an
+# artifact rollback must never restore that writer after the column is dropped.
+computer_use_audit_contraction_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$COMPUTER_USE_AUDIT_CONTRACTION_PATH" | sed -n '1p')
+if [[ ! "$computer_use_audit_contraction_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged computer-use audit contraction on main."
+fi
+if ! git merge-base --is-ancestor "$computer_use_audit_contraction_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the computer-use audit column contraction: ${computer_use_audit_contraction_commit}."
 fi
 if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread draft owner key writer: ${CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT}."

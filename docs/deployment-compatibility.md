@@ -16,18 +16,26 @@ at 22:33:06 UTC had 11,258 audit rows with 0 non-null values; a fresh masked
 production aggregate subsequently counted 0 non-null values out of 11,248.
 The branch had no database objects depending on the column.
 
-Migration-before-promotion means the outgoing API must not implicitly select
-this column: the promoted `4ecb619b` API already selects explicit response
-fields; its audit INSERT omits the column. This release's new API omits the
-physical Drizzle mapping, so it works both before and after migration. The
-production rollback resolver now rejects API targets that predate the canonical
-#36960 reader cutover (`41cc9918`); rollback cannot restore the dropped column.
+Migration runs before API promotion. The outgoing API from #36960 explicitly
+selects only response fields, but its Drizzle audit INSERT still names
+`approval_outcome` with a `DEFAULT` value because the old physical mapping
+remains declared. Between the column DROP and promotion/drain of this PR's API,
+a write/plugin command completion or timeout may update the command state and
+then fail its audit INSERT with `42703`; the completion request can fail even
+though the state update committed. Ethan accepts this short API cutover window
+(estimated in tens of seconds, not a guaranteed duration). The new API removes
+the physical mapping: its generated audit INSERT and list SELECT do not name
+the dropped column. The production rollback resolver checks both the canonical
+#36960 reader cutover (`41cc9918`) and the first-parent main commit that adds
+migration `1259`; it cannot promote an older audit writer after DROP. Rollback
+does not restore the column. Recover forward if errors persist beyond the
+cutover; do not bypass the floor to restore an incompatible API.
+
 The preceding #36944 `1256/1257` and #36955 `1258` migrations must complete
 production promotion in an independent release before this contraction is
-queued for a later release. Do not roll back via a path that bypasses this
-floor. A failure to acquire the migration's bounded DDL lock stops promotion
-rather than running incompatible new code. This contraction is contingent on the preceding API having finished
-serving; a green PR or preview alone does not establish that gate.
+queued for a later release. A failure to acquire the migration's bounded DDL
+lock stops promotion rather than running incompatible new code. A green PR or
+preview alone does not establish the preceding release or bound the API drain.
 
 A production-derived Neon snapshot of 16,613 commands had 0 stored string
 screenshots (latest string time is null), so the historical valid-inline
@@ -228,14 +236,14 @@ full table row; other audit reads already select individual columns. The
 physical Drizzle schema and database still declare `approval_outcome`, so this
 release does **not** drop or migrate the column. The HTTP response is unchanged.
 
-Drop the column in a follow-up release **after** this reader cutover has shipped
-to production, outgoing API instances have drained, and the enforced production
-API rollback floor is at or above this reader-cutover commit. Otherwise an
-older API's unqualified Drizzle `SELECT` would name the dropped column and fail
-with `42703` between database migration and API promotion (or after rollback).
-Reconfirm zero non-null rows before the DROP, remove the physical schema
-mapping in that same follow-up, and validate the old/new API/DB combinations.
-The column drop is not authorized by this preparatory release alone.
+This preparatory release protects audit-list reads, not audit writes: its
+physical Drizzle mapping also names `approval_outcome` in an INSERT column list
+even when no value is provided. The follow-up contraction above removes the
+mapping and column in one release with an explicitly accepted brief
+migration-before-API-promotion write gap, and raises the rollback floor to its
+own canonical main commit. The reader cutover alone is not a safe rollback
+floor after DROP. Reconfirm zero non-null rows before contracting; this
+preparation did not itself authorize the column drop.
 
 ## Discord file deliveries become fire and forget (2026-09-25)
 
