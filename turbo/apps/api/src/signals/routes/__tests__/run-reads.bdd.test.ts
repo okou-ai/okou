@@ -315,7 +315,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       "automation-event",
       "automation-schedule",
       "automation-event",
-      "goal",
     ] as const;
     const sourceRuns = [];
     for (const triggerSource of triggerSources) {

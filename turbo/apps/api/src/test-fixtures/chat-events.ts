@@ -1,4 +1,3 @@
-import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { createHash, randomUUID } from "node:crypto";
 
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
@@ -2302,15 +2301,11 @@ interface CanonicalChatEventWriteFixture {
     readonly outputErrorId: string;
     readonly interruptId: string;
     readonly interruptTargetRunId: string;
-    readonly goalContextEventId: string;
-    readonly goalId: string;
-    readonly goalOpenId: string;
   };
   readonly batch: {
     readonly thinkingId: string;
     readonly runFailedId: string;
     readonly browserCloseId: string;
-    readonly goalCloseId: string;
     readonly usageId: string;
   };
   readonly replacement: {
@@ -2348,48 +2343,6 @@ async function insertCanonicalSingleWrites(
     chatThreadId: threadId,
     eventType: "control.interrupt",
     interruptsRunId: single.interruptTargetRunId,
-  });
-  await insertChatEvent(tx, {
-    id: single.goalContextEventId,
-    chatThreadId: threadId,
-    eventType: "output.message",
-    content: "goal output",
-    runId: randomUUID(),
-  });
-  // Current writers never emit Goal context; restore the historical pointer.
-  await tx
-    .update(chatEvents)
-    .set({ contextType: "goal", contextId: single.goalId })
-    .where(eq(chatEvents.id, single.goalContextEventId));
-  await appendHistoricalGoalMarker(tx, {
-    id: single.goalOpenId,
-    chatThreadId: threadId,
-    eventType: "goal.open",
-    content: "goal opened",
-  });
-}
-
-async function appendHistoricalGoalMarker(
-  tx: Tx,
-  event: {
-    readonly id: string;
-    readonly chatThreadId: string;
-    readonly eventType: "goal.open" | "goal.close";
-    readonly content?: string;
-  },
-) {
-  const thread = {
-    seqId: await reserveFixtureChatEventSequence(tx, event.chatThreadId, 1),
-  };
-  if (!thread) {
-    throw new Error("Missing historical marker thread");
-  }
-  await tx.insert(chatEvents).values({
-    id: event.id,
-    chatThreadId: event.chatThreadId,
-    eventType: event.eventType,
-    seqId: thread.seqId,
-    payload: event.content === undefined ? null : { content: event.content },
   });
 }
 
@@ -2439,11 +2392,6 @@ async function insertCanonicalBatchWrites(
       },
     },
   ]);
-  await appendHistoricalGoalMarker(tx, {
-    id: batch.goalCloseId,
-    chatThreadId: threadId,
-    eventType: "goal.close",
-  });
 }
 
 async function insertCanonicalReplacementWrite(
@@ -2485,15 +2433,11 @@ export async function insertCanonicalChatEventWritesFixture(args: {
     outputErrorId: randomUUID(),
     interruptId: randomUUID(),
     interruptTargetRunId: randomUUID(),
-    goalContextEventId: randomUUID(),
-    goalId: randomUUID(),
-    goalOpenId: randomUUID(),
   };
   const batch = {
     thinkingId: randomUUID(),
     runFailedId: randomUUID(),
     browserCloseId: randomUUID(),
-    goalCloseId: randomUUID(),
     usageId: randomUUID(),
   };
   const replacement = {
@@ -2525,12 +2469,9 @@ export async function insertCanonicalChatEventWritesFixture(args: {
       single.inputRejectedId,
       single.outputErrorId,
       single.interruptId,
-      single.goalContextEventId,
-      single.goalOpenId,
       batch.thinkingId,
       batch.runFailedId,
       batch.browserCloseId,
-      batch.goalCloseId,
       batch.usageId,
       replacement.targetId,
       replacement.replacementId,

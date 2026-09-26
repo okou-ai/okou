@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  readGoalQueueStateFixture,
-  seedGoalForRunFixture,
-  setLegacyGoalRunOriginFixture,
-} from "../../../test-fixtures/goal-queue";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
@@ -179,7 +174,7 @@ async function extractOwnedThreadPiMemory(
   await flushWaitUntilForTest();
 }
 
-describe("thread-bound Pi Automation and Goal execution", () => {
+describe("thread-bound Pi Automation execution", () => {
   it.each(
     (["gpt-5.6-terra", "deepseek-v4.1-flash"] as const).flatMap(
       (selectedModel) => {
@@ -645,14 +640,9 @@ describe("CHAT effort: automation launches", () => {
 });
 
 describe("thread-bound Pi terminal failures", () => {
-  it.each([
-    { source: "automation", status: "failed" },
-    { source: "automation", status: "cancelled" },
-    { source: "goal", status: "failed" },
-    { source: "goal", status: "cancelled" },
-  ] as const)(
-    "settles $source $status once without learning or Built-in fallback",
-    async ({ source, status }) => {
+  it.each([{ status: "failed" }, { status: "cancelled" }] as const)(
+    "settles automation $status once without learning or Built-in fallback",
+    async ({ status }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const orgId = requireOrgId(actor);
       await configureSubscriptionPiModel(
@@ -733,10 +723,6 @@ describe("thread-bound Pi terminal failures", () => {
         expect(claimed.claim.piModelConfig).toMatchObject({
           model: "gpt-5.6-luna",
         });
-        if (source === "goal") {
-          const goal = await seedGoalForRunFixture(runId, "in-flight Pi Goal");
-          await setLegacyGoalRunOriginFixture(runId, goal.id);
-        }
         if (status === "cancelled") {
           await cancelChatRun(actor, runId, claimed.sandboxHeaders);
         } else {
@@ -793,14 +779,6 @@ describe("thread-bound Pi terminal failures", () => {
           }),
       ).toStrictEqual([`run.${status}`]);
       expect(requests).toHaveLength(0);
-      if (source === "goal") {
-        expect(
-          (await readGoalQueueStateFixture(run.threadId)).runIds,
-        ).toStrictEqual([run.runId]);
-        expect(
-          (await readGoalQueueStateFixture(run.threadId)).eventIds,
-        ).toStrictEqual([]);
-      }
     },
     90_000,
   );

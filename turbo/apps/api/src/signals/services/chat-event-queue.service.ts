@@ -1,5 +1,4 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   activeInputDeliveries,
   activeInputDeliveryItems,
@@ -298,24 +297,4 @@ export async function loadPendingChatQueueEvent(
     return null;
   }
   return { ...event, eventType: event.eventType };
-}
-
-/**
- * Thread row lock for run admission and run termination.
- *
- * Consuming a pending event (claim, recall, rejection or discard) does not need
- * it: every consumer appends a replacement on the event's unique revoke edge,
- * so exactly one of them wins. `NO KEY UPDATE` does not conflict with a content
- * writer's identity-only `KEY SHARE` pin.
- */
-export async function lockChatQueueThread(
-  db: ChatQueueReadDb,
-  chatThreadId: string,
-): Promise<boolean> {
-  const [thread] = await db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, chatThreadId))
-    .for("no key update");
-  return thread !== undefined;
 }

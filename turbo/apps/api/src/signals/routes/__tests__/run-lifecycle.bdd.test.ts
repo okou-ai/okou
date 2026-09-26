@@ -99,10 +99,6 @@ import {
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
 import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
 import {
-  cleanupOwnedSkillsState,
-  seedCurrentSkillVersionsState,
-} from "./helpers/cron-sync-skills-state";
-import {
   readRunIdentityMismatchWriteCountsFixture,
   readRunModelRuntimeRouteFixture,
   readSessionHistoryBlobRefCountFixture,
@@ -1072,64 +1068,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(appendSystemPrompt).toContain(
       "do not pull or compare the registry copy",
     );
-  });
-
-  it("mounts shared skills without granting Goal authority to a fresh manual run", async () => {
-    const names = ["goal", "workflow-setup"];
-    const versions = names.map((name) => {
-      const fullPath = `okou-ai/okou-skills/tree/fixture-${randomUUID()}/${name}`;
-      return {
-        name,
-        url: `https://github.com/${fullPath}`,
-        full_path: fullPath,
-        storage_name: `agent-skills@${fullPath}`,
-        version_hash: createHash("sha256").update(randomUUID()).digest("hex"),
-        size: 1024,
-        archive_size: 1024,
-        file_count: 1,
-        frontmatter: { name, description: `Historical ${name} skill fixture` },
-      };
-    });
-    onTestFinished(async () => {
-      await cleanupOwnedSkillsState(context, {
-        skillUrls: versions.map((version) => {
-          return version.url;
-        }),
-        storageNames: versions.map((version) => {
-          return version.storage_name;
-        }),
-      });
-    });
-    await seedCurrentSkillVersionsState(context, {
-      staleCommitSha: "goal-retirement-fixture",
-      versions,
-    });
-    const api = createRunsApi(
-      context,
-      Object.fromEntries(
-        versions.map((version) => {
-          return [version.name, version.storage_name];
-        }),
-      ),
-    );
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "ordinary manual request",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-    const mounts = expectCanonicalStorageManifest(
-      claim.storageManifest,
-    )?.storageMounts.map((mount) => {
-      return mount.mountPath;
-    });
-    expect(mounts).toContain("/home/user/.claude/skills/workflow-setup");
-    expect(mounts).not.toContain("/home/user/.claude/skills/goal");
-    expect(claim.appendSystemPrompt).toContain("# Agent Tools");
-    expect(claim.appendSystemPrompt).not.toContain("# Thread Goal");
-    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("prefers the installed CLI while retaining the legacy package URL in new run claims", async () => {
@@ -14235,13 +14173,13 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("keeps goal tools allowed with callback guidance", async () => {
+  it("keeps the standard disallowed tools with callback guidance", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
     const run = await api.createRun(actor, {
       agentId,
-      prompt: "continue the goal",
+      prompt: "continue the task",
       modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
@@ -14251,8 +14189,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       EXPECTED_AGENT_RUN_DISALLOWED_TOOLS,
     );
     expect(claim.disallowedTools).not.toContain("WebFetch");
-    expect(claim.disallowedTools).not.toContain("goal");
-    expect(claim.disallowedTools).not.toContain("update_goal");
     expect(claim.appendSystemPrompt ?? "").toContain("okou scrape --help");
     expect(claim.appendSystemPrompt ?? "").toContain("okou web-search --help");
     expect(claim.appendSystemPrompt ?? "").toContain("--callback-prompt");
