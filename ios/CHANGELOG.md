@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/okou-ai/okou/compare/ios-v0.3.0...ios-v0.3.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **ios:** load remote chat snapshots and round sidebar shadow ([#36994](https://github.com/okou-ai/okou/issues/36994)) ([8a1af9b](https://github.com/okou-ai/okou/commit/8a1af9b1a3bbec1f8bea5ad5b903b9dd2d5a552e))
+
 ## [0.3.0](https://github.com/okou-ai/okou/compare/ios-v0.2.1...ios-v0.3.0) (2026-09-25)
 
 

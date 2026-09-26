@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.366.0](https://github.com/okou-ai/okou/compare/cli-v9.365.7...cli-v9.366.0) (2026-09-26)
+
+
+### Features
+
+* **browser:** support bounded native file input ([#36959](https://github.com/okou-ai/okou/issues/36959)) ([3479f0a](https://github.com/okou-ai/okou/commit/3479f0ac82563e817f74b71b094c01312a196e05))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.515.0
+    * @okouai/core bumped to 8.712.0
+    * @okouai/pi-agent-runtime bumped to 1.40.28
+
 ## [9.365.7](https://github.com/okou-ai/okou/compare/cli-v9.365.6...cli-v9.365.7) (2026-09-26)
 
 

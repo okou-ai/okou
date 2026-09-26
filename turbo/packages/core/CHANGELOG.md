@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.712.0](https://github.com/okou-ai/okou/compare/core-v8.711.1...core-v8.712.0) (2026-09-26)
+
+
+### Features
+
+* **platform:** import skills from claude code or codex into workflows ([#36923](https://github.com/okou-ai/okou/issues/36923)) ([733c1ee](https://github.com/okou-ai/okou/commit/733c1eefbce0ceca9add94efa63a27f5e5f0a856))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.515.0
+
 ## [8.711.1](https://github.com/okou-ai/okou/compare/core-v8.711.0...core-v8.711.1) (2026-09-26)
 
 
