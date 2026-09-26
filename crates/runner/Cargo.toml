@@ -53,9 +53,6 @@ runner-types.workspace = true
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 
-# Guest crates are also dev-dependencies for release-please version tracking:
-# cargo-workspace plugin includes dev-dependencies in its dependency graph,
-# so runner-rs gets auto-bumped when any guest crate version changes.
 [dev-dependencies]
 runner-executor = { workspace = true, features = ["test-support"] }
 runner-lifecycle = { workspace = true, features = ["test-support"] }
@@ -69,6 +66,17 @@ log = { workspace = true }
 # test build — no impact on the production binary.
 aws-sdk-s3 = { workspace = true, features = ["test-util"] }
 aws-smithy-mocks = { workspace = true }
+httpmock = { workspace = true, features = ["cookies"] }
+http-body = { workspace = true }
+sandbox-mock = { workspace = true }
+tokio = { workspace = true, features = ["process", "test-util"] }
+tracing-test-support.workspace = true
+
+# Release Please's pinned cargo-workspace plugin tracks these guest package
+# names (including target-specific dev-dependencies) to propagate versions to
+# runner-rs. They are not used by Runner tests; cfg(any()) keeps them out of
+# ordinary native test builds without removing the release graph edges.
+[target.'cfg(any())'.dev-dependencies]
 guest-agent = { workspace = true }
 guest-storage-apply = { workspace = true }
 guest-init = { workspace = true }
@@ -79,11 +87,6 @@ guest-tool-exec = { workspace = true }
 runner-rpc-client = { workspace = true }
 guest-write-file = { workspace = true }
 guest-workspace-mount = { workspace = true }
-httpmock = { workspace = true, features = ["cookies"] }
-http-body = { workspace = true }
-sandbox-mock = { workspace = true }
-tokio = { workspace = true, features = ["process", "test-util"] }
-tracing-test-support.workspace = true
 
 [lints]
 workspace = true
