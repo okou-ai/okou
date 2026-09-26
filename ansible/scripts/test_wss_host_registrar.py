@@ -142,11 +142,12 @@ class ProbeTest(unittest.TestCase):
         self.addCleanup(server.shutdown)
         origin = f"http://127.0.0.1:{server.server_address[1]}"
         token = "okou_wss_host_" + "x" * 43
-        returned = registrar.api_request(origin, token, RUNNER_ID, "PUT", {"nonce": "a" * 32})
+        proof = {"nonce": "a" * 32, "observedAt": "2026-09-26T10:00:00.000Z"}
+        returned = registrar.api_request(origin, token, RUNNER_ID, "PUT", proof)
         self.assertEqual(returned, lease)
         registrar.api_request(origin, token, RUNNER_ID, "DELETE", lease_expires_at=returned)
         self.assertEqual(requests, [
-            ("PUT", f"/api/runners/wss-readiness/{RUNNER_ID}", f"Bearer {token}", {"proof": {"nonce": "a" * 32}}),
+            ("PUT", f"/api/runners/wss-readiness/{RUNNER_ID}", f"Bearer {token}", {"proof": proof}),
             ("DELETE", f"/api/runners/wss-readiness/{RUNNER_ID}", f"Bearer {token}", {"leaseExpiresAt": lease}),
         ])
 
