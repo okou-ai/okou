@@ -920,7 +920,6 @@ describe("Browser user-action route", () => {
     );
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserNativeInput]: true,
-      [FeatureSwitchKey.BrowserNativeFileInput]: true,
     });
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
@@ -992,35 +991,6 @@ describe("Browser user-action route", () => {
         [201],
       );
     };
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-      [FeatureSwitchKey.BrowserNativeFileInput]: false,
-    });
-    const denied = await userActionClient().create({
-      headers: current.claim.browserHeaders,
-      body: {
-        kind: "input",
-        callbackPrompt: "Continue after selecting the file",
-        pageTargetId: "native-input-target",
-        fields: [
-          {
-            key: "document",
-            label: "Document",
-            fieldKind: "file",
-            required: false,
-            backendNodeId: 45,
-          },
-        ],
-      },
-    });
-    expect(denied).toMatchObject({
-      status: 403,
-      body: { error: { code: "FORBIDDEN" } },
-    });
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.BrowserNativeInput]: true,
-      [FeatureSwitchKey.BrowserNativeFileInput]: true,
-    });
     const created = await create();
     const token = created.body.action.requestToken;
     expect(created.body.action.fields[0]?.control).toMatchObject({

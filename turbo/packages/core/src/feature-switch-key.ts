@@ -83,7 +83,6 @@ export enum FeatureSwitchKey {
   OnboardingSourcesFirst = "onboardingSourcesFirst",
   UserMessageLinks = "userMessageLinks",
   BrowserNativeInput = "browserNativeInput",
-  BrowserNativeFileInput = "browserNativeFileInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
   ClaudeCodeUsageReset = "claudeCodeUsageReset",
   AgentResponsibilitySetup = "agentResponsibilitySetup",
