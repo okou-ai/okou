@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.682.1](https://github.com/okou-ai/okou/compare/api-v1.682.0...api-v1.682.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **access:** align admin impact preview disclosure ([#36991](https://github.com/okou-ai/okou/issues/36991)) ([b3119bb](https://github.com/okou-ai/okou/commit/b3119bb78e8523e6ce5dab33a541e4b5851aff81))
+
+
+### Refactoring
+
+* **api:** first advisory lock cleanup batch ([#36978](https://github.com/okou-ai/okou/issues/36978)) ([b125873](https://github.com/okou-ai/okou/commit/b12587347558fe6a5d4604849936e2725d281e0c))
+* **chat:** retire inline thread snapshot client compatibility ([#37000](https://github.com/okou-ai/okou/issues/37000)) ([418db77](https://github.com/okou-ai/okou/commit/418db77431c28c3f02ce708aef3aa999b55afcfc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.515.1
+    * @okouai/core bumped to 8.712.1
+    * @okouai/db bumped to 1.304.1
+    * @okouai/pi-agent-runtime bumped to 1.40.29
+
 ## [1.682.0](https://github.com/okou-ai/okou/compare/api-v1.681.4...api-v1.682.0) (2026-09-26)
 
 

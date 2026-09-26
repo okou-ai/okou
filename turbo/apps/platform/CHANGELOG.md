@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.970.1](https://github.com/okou-ai/okou/compare/app-v0.970.0...app-v0.970.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **access:** align admin impact preview disclosure ([#36991](https://github.com/okou-ai/okou/issues/36991)) ([b3119bb](https://github.com/okou-ai/okou/commit/b3119bb78e8523e6ce5dab33a541e4b5851aff81))
+
+
+### Refactoring
+
+* **chat:** retire inline thread snapshot client compatibility ([#37000](https://github.com/okou-ai/okou/issues/37000)) ([418db77](https://github.com/okou-ai/okou/commit/418db77431c28c3f02ce708aef3aa999b55afcfc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.515.1
+    * @okouai/core bumped to 8.712.1
+
 ## [0.970.0](https://github.com/okou-ai/okou/compare/app-v0.969.0...app-v0.970.0) (2026-09-26)
 
 

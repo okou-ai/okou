@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.366.1](https://github.com/okou-ai/okou/compare/cli-v9.366.0...cli-v9.366.1) (2026-09-26)
+
+
+### Refactoring
+
+* **chat:** retire inline thread snapshot client compatibility ([#37000](https://github.com/okou-ai/okou/issues/37000)) ([418db77](https://github.com/okou-ai/okou/commit/418db77431c28c3f02ce708aef3aa999b55afcfc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.515.1
+    * @okouai/core bumped to 8.712.1
+    * @okouai/pi-agent-runtime bumped to 1.40.29
+
 ## [9.366.0](https://github.com/okou-ai/okou/compare/cli-v9.365.7...cli-v9.366.0) (2026-09-26)
 
 
