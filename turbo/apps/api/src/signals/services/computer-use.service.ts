@@ -657,8 +657,8 @@ function offloadPluginContentForResult(
 
 /**
  * Map a stored result's screenshot pointer to its client-facing form, dropping
- * the internal `bucket`/`key` so storage layout never leaves the API. Inline
- * (legacy) string screenshots and pointer-free results pass through unchanged.
+ * the internal `bucket`/`key` so storage layout never leaves the API.
+ * Unrecognized values and pointer-free results pass through unchanged.
  */
 function toClientResult(
   result: Record<string, unknown>,
@@ -1587,12 +1587,6 @@ export const getComputerUseCommandScreenshot$ = command(
       );
       signal.throwIfAborted();
       return { buffer, contentType: screenshot.mimeType };
-    }
-    if (typeof screenshot === "string") {
-      const parsed = parseScreenshotDataUrl(screenshot);
-      if (parsed) {
-        return { buffer: parsed.buffer, contentType: parsed.mimeType };
-      }
     }
     return null;
   },

@@ -18,8 +18,9 @@ export interface ComputerUseScreenshotCleanupOptions {
 /**
  * Delete computer-use screenshots older than the retention window from object
  * storage and rewrite the result pointer to `{ type: "expired" }`. Also sheds
- * the bytes of legacy inline `data:` screenshots that predate object storage by
- * tombstoning them, removing existing JSONB bloat. Batched to avoid long locks.
+ * string screenshot values by tombstoning them: completion can still persist
+ * unrecognized strings, even though they cannot be downloaded. Batched to
+ * avoid long locks.
  */
 export const cleanupComputerUseScreenshots$ = command(
   async (
