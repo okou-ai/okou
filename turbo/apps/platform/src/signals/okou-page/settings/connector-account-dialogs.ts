@@ -12,10 +12,16 @@ import type {
   PlatformConnectorCatalogConnectItem,
   PlatformConnectorCatalogStatusItem,
 } from "../../connector-domain.ts";
-import { reloadConnectorAccountSummaries$ } from "../connector-accounts.ts";
+import {
+  connectorAccountSummaryByTarget$,
+  connectorAccountTargetKey,
+  reloadConnectorAccountSummaries$,
+} from "../connector-accounts.ts";
+import { onRef, onRejection, resetSignal } from "../../utils.ts";
 import {
   connectorAccountDeletionImpact$,
   readConnectorAccount$,
+  renameConnectorAccount$,
   settingsConnectorAccounts,
 } from "./connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./connectors.ts";
@@ -260,6 +266,7 @@ export const finishConnectorAccountConnection$ =
   withConnectorConnectionProgress(finishConnectorAccountConnectionCommand$);
 
 interface ConnectorAccountRenameDraft {
+  readonly phase: "closing-menu" | "editing";
   readonly account: ConnectorAccountConnection;
   readonly displayName: string;
 }
@@ -267,6 +274,39 @@ interface ConnectorAccountRenameDraft {
 const internalConnectorAccountRenameDraft$ =
   state<ConnectorAccountRenameDraft | null>(null);
 const internalConnectorAccountManagerDraftGeneration$ = state(0);
+const resetConnectorAccountRenameSave$ = resetSignal();
+const internalAccountManagerElement$ = state<HTMLDivElement | null>(null);
+const internalAccountRenameInput$ = state<HTMLInputElement | null>(null);
+const internalAccountActionsFocus$ = state<string | null>(null);
+
+export const connectorAccountManagerRef$ = onRef(
+  command(({ set }, element: HTMLDivElement, signal: AbortSignal) => {
+    set(internalAccountManagerElement$, element);
+    signal.addEventListener("abort", () => {
+      set(internalAccountManagerElement$, null);
+      set(resetConnectorAccountManagerDrafts$);
+    });
+  }),
+);
+
+export const connectorAccountRenameInputRef$ = onRef(
+  command(({ set }, element: HTMLInputElement, signal: AbortSignal) => {
+    set(internalAccountRenameInput$, element);
+    element.focus();
+    signal.addEventListener("abort", () => {
+      set(internalAccountRenameInput$, null);
+    });
+  }),
+);
+
+export const connectorAccountActionsRef$ = onRef(
+  command(({ get, set }, element: HTMLButtonElement, _signal: AbortSignal) => {
+    if (element.dataset.connectionId === get(internalAccountActionsFocus$)) {
+      set(internalAccountActionsFocus$, null);
+      element.focus();
+    }
+  }),
+);
 
 export const connectorAccountRenameDraft$ = computed((get) => {
   return get(internalConnectorAccountRenameDraft$);
@@ -274,13 +314,28 @@ export const connectorAccountRenameDraft$ = computed((get) => {
 
 export const startConnectorAccountRename$ = command(
   ({ set }, account: ConnectorAccountConnection) => {
+    set(resetConnectorAccountRenameSave$);
+    set(internalAccountActionsFocus$, null);
     set(internalConnectorAccountManagerDraftGeneration$, (generation) => {
       return generation + 1;
     });
     set(internalConnectorAccountDeletionDraft$, null);
     set(internalConnectorAccountRenameDraft$, {
+      phase: "closing-menu",
       account,
       displayName: account.displayName ?? "",
+    });
+  },
+);
+
+// Let Base UI finish closing the menu before replacing its trigger and popup.
+export const completeConnectorAccountRenameMenu$ = command(
+  ({ set }, connectionId: string) => {
+    set(internalConnectorAccountRenameDraft$, (draft) => {
+      return draft?.account.id === connectionId &&
+        draft.phase === "closing-menu"
+        ? { ...draft, phase: "editing" as const }
+        : draft;
     });
   },
 );
@@ -293,9 +348,94 @@ export const setConnectorAccountRenameValue$ = command(
   },
 );
 
-export const clearConnectorAccountRename$ = command(({ set }) => {
-  set(internalConnectorAccountRenameDraft$, null);
-});
+const finishConnectorAccountRename$ = command(
+  ({ get, set }, restoreAccount: boolean) => {
+    const draft = get(internalConnectorAccountRenameDraft$);
+    const manager = get(internalAccountManagerElement$);
+    if (!draft || !manager) {
+      return;
+    }
+    // A filtered-out or no-longer-loaded row cannot receive focus. Keep a
+    // stable destination inside the manager while React commits the new rows.
+    const search = manager.querySelector<HTMLInputElement>(
+      "[data-account-search]",
+    );
+    (search ?? manager).focus();
+    set(internalAccountActionsFocus$, restoreAccount ? draft.account.id : null);
+    set(internalConnectorAccountRenameDraft$, null);
+  },
+);
+
+export const clearConnectorAccountRename$ = command(
+  ({ set }, restoreAccount: boolean) => {
+    set(resetConnectorAccountRenameSave$);
+    set(finishConnectorAccountRename$, restoreAccount);
+  },
+);
+
+const saveConnectorAccountRenameCommand$ = command(
+  async ({ get, set }, target: ConnectorAccountTarget, signal: AbortSignal) => {
+    const draft = get(internalConnectorAccountRenameDraft$);
+    if (!draft) {
+      return;
+    }
+    await set(
+      renameConnectorAccount$,
+      {
+        target,
+        connectionId: draft.account.id,
+        displayName: draft.displayName.trim() || null,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    while (true) {
+      const accountsPromise = get(settingsConnectorAccounts.accounts$);
+      const summariesPromise = get(connectorAccountSummaryByTarget$);
+      const [accounts, summaries] = await Promise.all([
+        accountsPromise,
+        summariesPromise,
+      ]);
+      signal.throwIfAborted();
+      // Search or pagination may change while the mutation refresh is pending.
+      // Only the currently rendered query can determine the return destination.
+      if (
+        accountsPromise !== get(settingsConnectorAccounts.accounts$) ||
+        summariesPromise !== get(connectorAccountSummaryByTarget$)
+      ) {
+        continue;
+      }
+      const pinnedDefault =
+        !get(settingsConnectorAccounts.search$).trim() &&
+        (accounts.defaultConnection !== undefined
+          ? accounts.defaultConnection
+          : summaries.get(connectorAccountTargetKey(target))
+              ?.defaultConnection);
+      const restoreAccount =
+        accounts.available &&
+        ((pinnedDefault && pinnedDefault.id === draft.account.id) ||
+          accounts.connections.some((account) => {
+            return account.id === draft.account.id;
+          }));
+      set(finishConnectorAccountRename$, Boolean(restoreAccount));
+      return;
+    }
+  },
+);
+
+export const saveConnectorAccountRename$ = command(
+  ({ get, set }, target: ConnectorAccountTarget, pageSignal: AbortSignal) => {
+    const signal = set(resetConnectorAccountRenameSave$, pageSignal);
+    return onRejection(
+      set(saveConnectorAccountRenameCommand$, target, signal),
+      () => {
+        if (!signal.aborted) {
+          get(internalAccountRenameInput$)?.focus();
+        }
+      },
+    );
+  },
+);
 
 interface ConnectorAccountDeletionDraft {
   readonly account: ConnectorAccountConnection;
@@ -343,6 +483,8 @@ export const clearConnectorAccountDeletion$ = command(({ set }) => {
 });
 
 export const resetConnectorAccountManagerDrafts$ = command(({ set }) => {
+  set(resetConnectorAccountRenameSave$);
+  set(internalAccountActionsFocus$, null);
   set(internalConnectorAccountManagerDraftGeneration$, (generation) => {
     return generation + 1;
   });

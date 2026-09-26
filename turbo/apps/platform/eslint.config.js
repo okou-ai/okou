@@ -210,6 +210,16 @@ export default [
   },
   {
     files: [
+      "src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx",
+    ],
+    rules: {
+      // This regression exercises native Tab/Shift+Tab focus transfer through
+      // the account menu, inline form, and manager. Direct focus would mask it.
+      "ccstate/no-user-clear-tab": "off",
+    },
+  },
+  {
+    files: [
       "src/**/*.test.{ts,tsx}",
       "src/**/*.spec.{ts,tsx}",
       "src/**/__tests__/**/*.{ts,tsx}",
