@@ -544,14 +544,19 @@ The API no longer downloads and decompresses the R2 archive on behalf of a
 header-less client. A scope without a snapshot row still returns
 `{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
 
-The iOS TestFlight client currently decodes only inline `chatThreads`, so a
-header-less iOS build cannot load a non-empty compacted chat thread list from
-this API. Updating iOS to download the R2 URL remains separate work; this PR
-does not provide a minimum-version gate for iOS. Web App and CLI still send the
-capability header and accept inline responses for the existing API rollback
-window: an older API behind the current rollback floor still branches on that
-header. Keep the header in CORS and the shared inline response variant until
-the API rollback floor advances past that implementation.
+Pre-fix iOS TestFlight builds decode only inline `chatThreads`, so they cannot
+load a non-empty compacted chat thread list from this API. The updated native
+client downloads and decodes the R2 archive. It also accepts inline responses
+from a scope without a snapshot row or a rollback-window API. Installed pre-fix
+builds remain incompatible until users install a TestFlight build containing
+the native client fix. There is no iOS minimum-version gate. This preserves
+the explicitly accepted break rather
+than reintroducing API-side R2 download and decompression for header-less
+requests. Web App and CLI still send the capability header and accept inline
+responses for the existing API rollback window: an older API behind the
+current rollback floor still branches on that header. Keep the header in CORS
+and the shared inline response variant until the API rollback floor advances
+past that implementation.
 
 ## Thread draft contraction, release 2 (2026-09-25)
 
