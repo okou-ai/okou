@@ -64,10 +64,13 @@ import {
 import {
   mcpGetChatThreadInputSchema,
   mcpGetChatThreadOutputSchema,
+  mcpGetChatIndicatorsInputSchema,
+  mcpGetChatIndicatorsOutputSchema,
   mcpListChatThreadsInputSchema,
   mcpListChatThreadsOutputSchema,
   type McpGetChatThreadInput,
   type McpGetChatThreadOutput,
+  type McpGetChatIndicatorsOutput,
   type McpListChatThreadsInput,
   type McpListChatThreadsOutput,
   type McpThreadReadResult,
@@ -118,6 +121,10 @@ interface McpChatAccess {
     input: McpSearchChatMessagesInput,
     signal: AbortSignal,
   ) => Promise<McpChatSearchResult>;
+  readonly getIndicators: (signal: AbortSignal) => Promise<{
+    readonly kind: "ok";
+    readonly data: McpGetChatIndicatorsOutput;
+  }>;
   readonly listThreads: (
     input: McpListChatThreadsInput,
     signal: AbortSignal,
@@ -885,10 +892,34 @@ function createChatServer(
     registerDiscoveryTools(server, access, requestSignal);
     registerChatTool(
       server,
+      "get_chat_indicators",
+      {
+        description:
+          "Get active and unread Agent and chat thread indicators for your current organization. Active is not run completion. Reading does not mark read. Use get_chat_thread for details.",
+        inputSchema: mcpGetChatIndicatorsInputSchema,
+        outputSchema: mcpGetChatIndicatorsOutputSchema,
+        annotations: { ...readAnnotations, title: "Get Chat Indicators" },
+      },
+      async (_args, context) => {
+        const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+        return await readTool(
+          access,
+          () => {
+            return access.getIndicators(signal);
+          },
+          signal,
+          () => {
+            return "Read chat indicators.";
+          },
+        );
+      },
+    );
+    registerChatTool(
+      server,
       "list_chat_threads",
       {
         description:
-          "List your conversations newest-message first. Filter by Agent, literal title substring, lastMessageAt, activity, or unread; bounds, order, and continuation use lastMessageAt, while metadataUpdatedAt is the separate metadata clock. Continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Unread covers retained Run terminal events, not all archives; activity is not run completion. Reading does not mark read. Use get_chat_thread for details.",
+          "List your conversations newest-message first. Filter by Agent, literal title substring or lastMessageAt; bounds, order, and continuation use lastMessageAt, while metadataUpdatedAt is the separate metadata clock. Continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Reading does not mark read. Use get_chat_indicators for active and unread state, and get_chat_thread for details.",
         inputSchema: mcpListChatThreadsInputSchema,
         outputSchema: mcpListChatThreadsOutputSchema,
         annotations: { ...readAnnotations, title: "List Chat Threads" },
@@ -912,7 +943,7 @@ function createChatServer(
       "get_chat_thread",
       {
         description:
-          "Read one owned conversation's title, Agent, selected/effective model, activity, and unread state. createdAt is creation, metadataUpdatedAt is metadata change, and lastMessageAt is message activity. Model metadata is current policy; admission is checked on send. Unread covers retained Run terminal events. This neither reads messages nor marks read, and idle activity does not prove execution success.",
+          "Read one owned conversation's title, Agent, and selected/effective model. createdAt is creation, metadataUpdatedAt is metadata change, and lastMessageAt is message activity. Model metadata is current policy; admission is checked on send. This neither reads messages nor marks read. Use get_chat_indicators for active and unread state; absence of an active indicator does not prove execution success.",
         inputSchema: mcpGetChatThreadInputSchema,
         outputSchema: mcpGetChatThreadOutputSchema,
         annotations: { ...readAnnotations, title: "Get Chat Thread" },

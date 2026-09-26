@@ -2,7 +2,7 @@
 
 The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
 official MCP SDK and serves `list_agents`, `list_models`, `create_chat_thread`,
-`list_chat_threads`, `get_chat_thread`,
+`get_chat_indicators`, `list_chat_threads`, `get_chat_thread`,
 `get_chat_messages`, `search_chat_messages`, `get_chat_status`, `send_chat_message`,
 `revoke_queued_message`, `cancel_run` and `update_chat_thread`. The read tools query current
 user/organization-owned conversations; mutations reuse the existing input queue
@@ -239,19 +239,17 @@ commit.
 | `agentId`         | Restrict to one Agent UUID.                                                                   |
 | `title`           | Case-insensitive literal substring, up to 200 characters. `%` and `_` are literal characters. |
 | `since`, `before` | ISO timestamps filtering last-message time: inclusive lower and exclusive upper bounds.       |
-| `activity`        | `active` or `idle`, using the canonical queued/pending/running projection.                    |
-| `unread`          | Filter the canonical retained-watermark unread state.                                         |
 | `limit`           | Page size, default 20 and maximum 50.                                                         |
 | `cursor`          | Continuation from `nextCursor`; keep the same filters.                                        |
 
 For example, call `list_chat_threads` with `{"title":"release","limit":10}`,
 then pass a result's `threadId` to `get_chat_thread` as
-`{"threadId":"<thread UUID>"}`. Discovery returns `threads`, `nextCursor` and
-`unreadCoverage`; detail returns `thread` and `unreadCoverage`.
+`{"threadId":"<thread UUID>"}`. Discovery returns `threads` and `nextCursor`;
+detail returns `thread`.
 
 Each thread includes its current title, Agent identity/name, selected and
-effective model metadata, `createdAt`, `metadataUpdatedAt`, `lastMessageAt`,
-authenticated App URL, queued/pending/running activity flags and unread state.
+effective model metadata, `createdAt`, `metadataUpdatedAt`, `lastMessageAt`
+and authenticated App URL.
 `since`, `before`, ordering and continuation use `lastMessageAt`, not the
 metadata clock. Titles are bounded to 500 Unicode
 characters, with an explicit truncation flag. Agent names retain their existing
@@ -281,16 +279,19 @@ ordered reads, and read transactions enforce a three-second statement deadline.
 Selective filters can still inspect many candidates; a deadline failure returns
 a tool error, not a partial result. Retry or narrow the Agent/time filters.
 
-`unreadCoverage` is `retained_terminal_events_and_native_deliveries`. It combines
-retained run terminal events with durable native Morning Brief deliveries,
-compares the latest watermark to the user's read cursor, and suppresses unread
-while a queued/pending/running run with a trigger source exists. It has no sparse
-50-thread/seven-day cap, but terminal-event retention means it is not an
-archive-complete unread history. Missing activity does not prove a run succeeded;
-`unread: false` does not prove every historical result was read.
-
 Listing and reading never mark a thread read, change recency or reconcile model
 settings.
+
+## Activity and unread indicators
+
+Call `get_chat_indicators` with `{}` to get the same `agents`, `threads` and
+`unreadAt` response as `GET /api/indicators` for the authorized user and selected
+organization. It uses the same visibility, recency, read-cursor and active-Run
+rules as the App; it does not run a separate MCP unread query. A thread marked
+`active` has a queued, pending or running Run, not proof of a successful result.
+Use `get_chat_thread` to read metadata for an indicated thread, and
+`get_chat_status` to inspect execution. Reading indicators does not mark any
+thread read or change its lifecycle.
 
 ## Message history
 
