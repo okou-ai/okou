@@ -4442,10 +4442,11 @@ new route from an older API falls back to those legacy previews: it still hides
 per-owner counts in the UI, and conversion temporarily shows the old aggregate
 warning without asserting that member names were loaded. Both confirmation
 paths still submit and recheck the same opaque impact snapshot. A 403 is not
-retried through a legacy route. Once all older App bundles and supported App
-rollback targets have drained or been force-upgraded, retire the legacy
-per-owner-count projection in a separate compatibility removal. This is not a
-claim that the legacy response no longer exposes per-owner counts during rollout.
+retried through a legacy route. Once all serving APIs and supported API
+rollback targets implement the new route, and older App bundles and supported
+App rollback targets have drained or been force-upgraded, remove both
+compatibility paths under #36992. This is not a claim that the legacy response
+no longer exposes per-owner counts during rollout.
 
 ## Feishu and Lark integration identity
 
