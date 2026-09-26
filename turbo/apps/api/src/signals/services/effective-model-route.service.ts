@@ -1,8 +1,5 @@
 import {
-  getDefaultAuthMethod,
   getProvidersForModel,
-  getSecretNameForType,
-  getSecretNamesForAuthMethod,
   getRunModelAccess,
   getRunModelRouteAccess,
   isBuiltInModelProviderType,
@@ -23,8 +20,7 @@ import {
   modelProviderConnections,
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
-import { secrets } from "@okouai/db/schema/secret";
-import { and, eq, exists, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "../external/db";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
@@ -82,20 +78,6 @@ export interface PreparedMemberModelRouteContext {
 type ModelRouteMemberContext =
   | MemberModelRouteContext
   | PreparedMemberModelRouteContext;
-
-function personalSecretNames(type: PersonalType): readonly string[] {
-  const authMethod = getDefaultAuthMethod(type);
-  const name = getSecretNameForType(type);
-  const names = authMethod
-    ? getSecretNamesForAuthMethod(type, authMethod)
-    : name
-      ? [name]
-      : undefined;
-  if (!names?.length) {
-    throw new Error(`Personal subscription ${type} has no secret contract`);
-  }
-  return names;
-}
 
 export function prepareMemberModelRouteContext(
   db: Db,
@@ -158,107 +140,48 @@ export async function loadMemberModelRouteContext(
 }
 
 /** Request-local metadata only. This also runs under thread lifecycle locks.
- * Never call account list/ensure/capture, decrypt, or probe a provider here.
- * A retained parent is absent only after its connection AND mirror were cleared.
- * Actual old writers can recreate a mirror (even only the first Claude write)
- * before updating the parent; canonical A capture owns importing that identity.
- * #34010 owns removal after the serving-writer/context/rollback gates close. */
+ * Never call account list/capture, decrypt, or probe a provider here. A type is
+ * a candidate only while its logical provider has a connected account. */
 async function loadPersonalModelRouteSubscriptions(
   db: Db,
   orgId: string,
   userId: string,
 ): Promise<readonly PersonalCandidate[]> {
-  const accountOwner = and(
-    eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-    eq(modelProviderAccounts.orgId, orgId),
-    eq(modelProviderAccounts.userId, userId),
-    eq(modelProviderAccounts.type, modelProviders.type),
-  );
-  const rows = await db
+  const accounts = await db
     .select({
-      providerId: modelProviders.id,
-      type: modelProviders.type,
-      secretId: modelProviders.secretId,
-      authMethod: modelProviders.authMethod,
-      needsReconnect: modelProviders.needsReconnect,
-      hasAccounts: exists(
-        db
-          .select({ id: modelProviderAccounts.id })
-          .from(modelProviderAccounts)
-          .where(accountOwner),
-      ).mapWith(modelProviders.needsReconnect),
-      hasConnectedAccounts: exists(
-        db
-          .select({ id: modelProviderAccounts.id })
-          .from(modelProviderAccounts)
-          .where(
-            and(accountOwner, isNull(modelProviderAccounts.disconnectedAt)),
-          ),
-      ).mapWith(modelProviders.needsReconnect),
-      activeNeedsReconnect: exists(
-        db
-          .select({ id: modelProviderAccounts.id })
-          .from(modelProviderAccounts)
-          .where(
-            and(
-              accountOwner,
-              isNull(modelProviderAccounts.disconnectedAt),
-              eq(modelProviderAccounts.isActive, true),
-              eq(modelProviderAccounts.needsReconnect, true),
-            ),
-          ),
-      ).mapWith(modelProviders.needsReconnect),
+      type: modelProviderAccounts.type,
+      providerId: modelProviderAccounts.modelProviderId,
+      isActive: modelProviderAccounts.isActive,
+      needsReconnect: modelProviderAccounts.needsReconnect,
     })
-    .from(modelProviders)
+    .from(modelProviderAccounts)
     .where(
       and(
-        eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, userId),
-        inArray(modelProviders.type, [...PERSONAL_TYPES]),
+        eq(modelProviderAccounts.orgId, orgId),
+        eq(modelProviderAccounts.userId, userId),
+        inArray(modelProviderAccounts.type, [...PERSONAL_TYPES]),
+        isNull(modelProviderAccounts.disconnectedAt),
       ),
     );
-  const mirror = await db
-    .select({ name: secrets.name })
-    .from(secrets)
-    .where(
-      and(
-        eq(secrets.orgId, orgId),
-        eq(secrets.userId, userId),
-        eq(secrets.type, "model-provider"),
-        inArray(secrets.name, PERSONAL_TYPES.flatMap(personalSecretNames)),
-      ),
-    );
-  const subscriptions: PersonalCandidate[] = [];
-  for (const type of PERSONAL_TYPES) {
-    const provider = rows.find((row) => {
-      return row.type === type;
+  return PERSONAL_TYPES.flatMap((type) => {
+    const connected = accounts.filter((account) => {
+      return account.type === type;
     });
-    const names = personalSecretNames(type);
-    const hasMirror = mirror.some((secret) => {
-      return names.includes(secret.name);
-    });
-    const retainedOnly =
-      provider?.hasAccounts && !provider.hasConnectedAccounts;
-    if (
-      (!provider && !hasMirror) ||
-      (retainedOnly &&
-        provider.secretId === null &&
-        provider.authMethod === null &&
-        !hasMirror)
-    ) {
-      continue;
+    const first = connected[0];
+    if (!first) {
+      return [];
     }
-    subscriptions.push({
-      type,
-      // This is a logical candidate, never an admitted account ID. Historical
-      // replacement must be coordinated before A fixes a concrete identity.
-      providerId: provider?.providerId ?? null,
-      needsReconnect:
-        provider?.needsReconnect === true ||
-        provider?.activeNeedsReconnect === true,
-    });
-  }
-  return subscriptions;
+    return [
+      {
+        type,
+        // This is a logical candidate, never an admitted account ID.
+        providerId: first.providerId,
+        needsReconnect: connected.some((account) => {
+          return account.isActive && account.needsReconnect;
+        }),
+      },
+    ];
+  });
 }
 
 export function providerTypeForSurfaceProtocol(

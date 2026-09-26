@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.968.0](https://github.com/okou-ai/okou/compare/app-v0.967.2...app-v0.968.0) (2026-09-26)
+
+
+### Features
+
+* **platform:** render internal chat thread links as chat chips ([#36985](https://github.com/okou-ai/okou/issues/36985)) ([5270290](https://github.com/okou-ai/okou/commit/52702903e0d364fb0d6f2da71419634ef05accaa))
+
+
+### Performance Improvements
+
+* **app:** stop passing reserved i18next context option for workflow preference ([#36977](https://github.com/okou-ai/okou/issues/36977)) ([83a1d65](https://github.com/okou-ai/okou/commit/83a1d658b6374b0181cdba84a61d768b42de67c3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.3
+    * @okouai/core bumped to 8.711.0
+
 ## [0.967.2](https://github.com/okou-ai/okou/compare/app-v0.967.1...app-v0.967.2) (2026-09-26)
 
 

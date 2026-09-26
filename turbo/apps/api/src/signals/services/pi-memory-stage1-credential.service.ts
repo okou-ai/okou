@@ -342,17 +342,14 @@ async function codexCredential(
       ) {
         return false;
       }
-      const bundle = await readPersonalSubscriptionCredentialBundle(
-        {
-          db,
-          orgId: source.orgId,
-          userId: source.userId,
-          type: "codex-oauth-token",
-          sourceId: id,
-          featureSwitchContext: context,
-        },
-        validationSignal,
-      );
+      const bundle = await readPersonalSubscriptionCredentialBundle({
+        db,
+        orgId: source.orgId,
+        userId: source.userId,
+        type: "codex-oauth-token",
+        sourceId: id,
+        featureSwitchContext: context,
+      });
       validationSignal.throwIfAborted();
       return (
         bundle?.account.id === id &&

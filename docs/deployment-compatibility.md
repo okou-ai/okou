@@ -1,5 +1,52 @@
 # Deployment Compatibility
 
+## Personal subscription credentials become account-only (2026-09-26)
+
+Personal (`user_id <> '__org__'`) `claude-code-oauth-token` and
+`codex-oauth-token` credentials now live only in `model_provider_accounts` and
+`model_provider_account_secrets`. Organization subscriptions and API-key
+providers keep `model_providers` + `secrets` unchanged.
+
+Removed from the API:
+
+- the `secrets` mirror of the active account and the personal singleton fields
+  on `model_providers` (`token_expires_at`, `needs_reconnect`,
+  `last_refresh_error_code`, `secret_id`, `auth_method`, workspace/plan and
+  reset metadata are neither written nor read for personal rows; the columns
+  remain for organization providers);
+- lazy account seeding from legacy secrets, legacy bundle import, mirror/KMS
+  equivalence checks and the request-scoped coordination that existed only for
+  API 1.595.0 singleton writers (`docs/personal-subscription-run-identity.md`
+  formerly §A2), plus the sourceId-less personal reader;
+- every credential advisory and row lock on reads, run admission, connect,
+  reconnect, activation, disconnect and terminal cleanup. Token refresh keeps
+  the `model_provider_state` advisory lock.
+
+Migration `1260_personal_subscription_account_only` sets
+`model_providers.secret_id = NULL` for personal Claude/Codex providers, deletes
+their mirrored `secrets` rows (Claude token; Codex `CHATGPT_*`/`CODEX_AUTH_JSON`)
+and adds the unique index
+`idx_model_provider_accounts_provider_identity (model_provider_id, external_account_id)`
+(NULLs distinct). Connections merge by that identity with `INSERT ... ON
+CONFLICT`; concurrent conflicting account writes surface as `409`.
+
+Prerequisites: every personal Claude/Codex provider must own an account row
+before the migration (seeded 2026-09-26: 21 providers, 12 Claude + 9 Codex;
+the Codex seeds have NULL `external_account_id` until reconnect), and no
+duplicate non-NULL `(model_provider_id, external_account_id)` pair may exist.
+
+Overlap and rollback:
+
+- During the ~20s migration-to-promotion window (API overlap measured at
+  api-v1.673.0) the previous API still reads the mirror for some paths and may
+  report a personal subscription as unavailable or require reconnect. This is
+  accepted; no persisted data is lost because accounts are canonical.
+- This release is the API rollback floor for personal subscriptions. An older
+  API treats the missing mirror as an unavailable subscription and its legacy
+  import/seed paths could recreate or diverge from account state. The production
+  rollback resolver rejects API targets that predate the merge commit adding
+  `1260_personal_subscription_account_only.sql`; roll forward instead.
+
 ## Computer Use audit column: code-only read/write cutover (2026-09-26)
 
 The production database still has
@@ -27,8 +74,11 @@ merged into main with migration `1258_active_agent_runs_step2.sql` and shipped
 separately in release #36974. #36980's step-3 migration
 `1259_drop_agent_runs_last_heartbeat_at.sql` must ship alone in its own release
 (#36986), with the previous API drained. Only then may #36929 ship separately
-with migration `1260_active_agent_runs_chat_thread_slot.sql`. The rollback
-floor for #36929 is the deployed step-3 API.
+with migration `1261_active_agent_runs_chat_thread_slot.sql`, after #36976's
+`1260_personal_subscription_account_only.sql` in the migration journal.
+The slot rollout requires the deployed step-3 API as its predecessor; the
+effective rollback floor also inherits #36976's stricter account-only floor
+once migration `1260` has run.
 
 #36955 owns the backfill for queued, pending, running and started terminal runs
 still within the recovery grace or heartbeating. #36929 does **not** repeat

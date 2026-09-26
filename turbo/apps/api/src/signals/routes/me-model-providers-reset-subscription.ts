@@ -11,7 +11,6 @@ import {
 } from "../services/model-provider-subscription-usage.service";
 import type { RouteEntry } from "../route-entry";
 import { writeDb$ } from "../external/db";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { listPersonalModelProviderAccounts } from "../services/model-provider-account.service";
 
 const resetSubscriptionUsageInner$ = command(
@@ -37,16 +36,11 @@ const resetSubscriptionUsageInner$ = command(
       return bodyResult.response;
     }
 
-    const featureSwitchContext = await get(
-      userFeatureSwitchContext(auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
     const activeAccount = (
       await listPersonalModelProviderAccounts({
         db: set(writeDb$),
         orgId: auth.orgId,
         userId: auth.userId,
-        featureSwitchContext,
       })
     ).modelProviders.find((provider) => {
       return provider.type === params.type && provider.isActive;
