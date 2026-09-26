@@ -28,6 +28,7 @@ readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_reti
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
 readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1261_drop_chat_thread_snapshot_jsonb.sql
+readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 
 fail() {
   echo "::error::$*" >&2
@@ -132,6 +133,18 @@ if [[ ! "$snapshot_jsonb_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$snapshot_jsonb_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread snapshot JSONB drop: ${snapshot_jsonb_drop_commit}."
+fi
+
+# Removing the Stripe Portal brand metadata makes pre-cutover APIs unable to
+# find the existing configuration. Resolve the cutover from the canonical main
+# commit, not a branch-only SHA, before selecting a rollback API artifact.
+stripe_portal_purpose_only_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$STRIPE_PORTAL_PURPOSE_ONLY_PATH" | sed -n '1p')
+if [[ ! "$stripe_portal_purpose_only_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Stripe Portal purpose-only cutover on main."
+fi
+if ! git merge-base --is-ancestor "$stripe_portal_purpose_only_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Stripe Portal purpose-only cutover: ${stripe_portal_purpose_only_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

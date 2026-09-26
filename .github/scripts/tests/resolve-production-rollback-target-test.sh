@@ -44,6 +44,8 @@ case "${1:-}" in
       [ "${MOCK_PERSONAL_SUBSCRIPTION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5555555555555555555555555555555555555555" ]; then
       [ "${MOCK_SNAPSHOT_JSONB_DROP_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "6666666666666666666666666666666666666666" ]; then
+      [ "${MOCK_STRIPE_PORTAL_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -57,6 +59,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PERSONAL_SUBSCRIPTION_COMMIT-4444444444444444444444444444444444444444}"
     elif [[ "$*" == *1261_drop_chat_thread_snapshot_jsonb.sql* ]]; then
       printf '%s\n' "${MOCK_SNAPSHOT_JSONB_DROP_COMMIT-5555555555555555555555555555555555555555}"
+    elif [[ "$*" == *stripe-portal-purpose-only* ]]; then
+      printf '%s\n' "${MOCK_STRIPE_PORTAL_COMMIT-6666666666666666666666666666666666666666}"
     else
       exit 2
     fi
@@ -162,6 +166,7 @@ grep -Fxq "git merge-base --is-ancestor 4444444444444444444444444444444444444444
 grep -Fxq "git merge-base --is-ancestor cdeec36c168636b1a2e510e660eb6139c9c4e07a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the computer-use audit column cutover floor"
 grep -Fxq "git merge-base --is-ancestor 98b5515ae2874128734b19a17b96dc8c6c7afe47 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat search GIN maintenance removal floor"
 grep -Fxq "git merge-base --is-ancestor 5555555555555555555555555555555555555555 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
+grep -Fxq "git merge-base --is-ancestor 6666666666666666666666666666666666666666 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Stripe Portal purpose-only floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -194,6 +199,20 @@ grep -Fq '98b5515ae2874128734b19a17b96dc8c6c7afe47' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/chat-search-gin-floor.output" ] || fail "pre-removal API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-removal API target must fail before artifact or host access"
+fi
+
+for cutover_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Stripe Portal purpose-only cutover" \
+    run_resolver "${tmp_dir}/stripe-portal-history.output" "MOCK_STRIPE_PORTAL_COMMIT=${cutover_commit}"
+  [ ! -s "${tmp_dir}/stripe-portal-history.output" ] || fail "invalid Stripe Portal history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Stripe Portal purpose-only cutover" \
+  run_resolver "${tmp_dir}/stripe-portal-floor.output" MOCK_STRIPE_PORTAL_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/stripe-portal-floor.output" ] || fail "pre-cutover API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Stripe Portal cutover floor must fail before artifact or host access"
 fi
 
 for retirement_commit in "" invalid; do
