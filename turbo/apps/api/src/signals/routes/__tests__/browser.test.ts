@@ -4999,6 +4999,78 @@ describe("okou browser route", () => {
     );
   });
 
+  it("attaches concurrent requests to the same thread browser", async () => {
+    const { runs, chat, actor, agent } = await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Open this browser from concurrent requests",
+    );
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        const providerId = randomUUID();
+        acceptBrowserUseCdpSessions([providerId]);
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(
+          providerBrowser(String(params.id), { status: "stopped" }),
+        );
+      }),
+    );
+
+    const results = await Promise.all(
+      Array.from({ length: 3 }, () => {
+        return client().use({
+          headers: current.claim.browserHeaders,
+          body: {},
+        });
+      }),
+    );
+    expect(
+      results.some((result) => {
+        return result.status === 200;
+      }),
+    ).toBeTruthy();
+    const attached = await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    expect(attached.body.browser).toMatchObject({
+      threadId: current.threadId,
+      status: "active",
+    });
+    for (const result of results) {
+      expect([200, 409]).toContain(result.status);
+      if (result.status === 200) {
+        expect(result.body.browser).toMatchObject({
+          threadId: current.threadId,
+          status: "active",
+        });
+        expect(result.body.cdpUrl).toBe(attached.body.cdpUrl);
+      }
+    }
+
+    await chat.deleteThread(actor, current.threadId);
+    await flushWaitUntilForTest();
+  });
+
   it("isolates profiles across concurrent thread browser sessions", async () => {
     const { routeMocks, runs, chat, webhooks, actor, agent } =
       await setupBrowserScenario();

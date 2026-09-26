@@ -28,11 +28,13 @@ import {
   asc,
   desc,
   eq,
+  exists,
   inArray,
   isNotNull,
   isNull,
   lte,
   notExists,
+  or,
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
@@ -1035,6 +1037,8 @@ const scheduleBrowserScreenshotCapture$ = command(
   },
 );
 
+// Keep the deployed profile key until older cleanup requests and rollback
+// targets use conditional session retirement. Provider creation stays outside.
 async function lockBrowserProfileCreation(
   tx: DbTransaction,
   chatThreadId: string,
@@ -1352,14 +1356,26 @@ interface BrowserProfileCleanupTarget {
 
 async function latestBrowserProviderSessionId(
   db: Db,
-  chatThreadId: string,
+  target: BrowserProfileCleanupTarget,
 ): Promise<string | null> {
   const [instance] = await db
     .select({
       providerSessionId: browserSessionInstances.providerSessionId,
     })
     .from(browserSessionInstances)
-    .where(eq(browserSessionInstances.chatThreadId, chatThreadId))
+    .innerJoin(
+      browserThreadProfiles,
+      eq(
+        browserThreadProfiles.chatThreadId,
+        browserSessionInstances.chatThreadId,
+      ),
+    )
+    .where(
+      and(
+        eq(browserSessionInstances.chatThreadId, target.chatThreadId),
+        eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
+      ),
+    )
     .orderBy(desc(browserSessionInstances.createdAt))
     .limit(1);
   return instance?.providerSessionId ?? null;
@@ -1372,19 +1388,58 @@ async function retireBrowserProfileOwnership(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await lockBrowserProfileCreation(tx, target.chatThreadId);
-    const [profile] = await tx
+    const ownedBrowsers = await tx
       .select({
-        providerProfileId: browserThreadProfiles.providerProfileId,
+        id: browserSessions.id,
+        runId: browserSessions.runId,
+        status: browserSessions.status,
+        updatedAt: browserSessions.updatedAt,
       })
-      .from(browserThreadProfiles)
-      .where(eq(browserThreadProfiles.chatThreadId, target.chatThreadId))
-      .limit(1);
-    if (profile?.providerProfileId !== target.providerProfileId) {
-      return;
+      .from(browserSessions)
+      .innerJoin(
+        browserThreadProfiles,
+        eq(browserThreadProfiles.chatThreadId, browserSessions.chatThreadId),
+      )
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, target.chatThreadId),
+          eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
+        ),
+      );
+    if (ownedBrowsers.length > 0) {
+      // A profile-qualified snapshot identifies the exact rows being retired.
+      // A delayed DELETE must not adopt a replacement row or a resumed owner.
+      await tx.delete(browserSessions).where(
+        and(
+          exists(
+            tx
+              .select({ id: browserThreadProfiles.id })
+              .from(browserThreadProfiles)
+              .where(
+                and(
+                  eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
+                  eq(
+                    browserThreadProfiles.providerProfileId,
+                    target.providerProfileId,
+                  ),
+                ),
+              ),
+          ),
+          or(
+            ...ownedBrowsers.map((browser) => {
+              return and(
+                eq(browserSessions.id, browser.id),
+                browser.runId === null
+                  ? isNull(browserSessions.runId)
+                  : eq(browserSessions.runId, browser.runId),
+                eq(browserSessions.status, browser.status),
+                eq(browserSessions.updatedAt, browser.updatedAt),
+              );
+            }),
+          ),
+        ),
+      );
     }
-    await tx
-      .delete(browserSessions)
-      .where(eq(browserSessions.chatThreadId, target.chatThreadId));
     await tx
       .delete(browserThreadProfiles)
       .where(
@@ -1405,7 +1460,7 @@ async function cleanupBrowserProfile(
 ): Promise<void> {
   const retryProviderSessionId =
     providerSessionIds === undefined
-      ? await latestBrowserProviderSessionId(db, target.chatThreadId)
+      ? await latestBrowserProviderSessionId(db, target)
       : null;
   signal.throwIfAborted();
   const cleanupProviderSessionIds =
@@ -1451,7 +1506,7 @@ async function claimBrowserProfile(
     readonly providerProfileId: string;
   },
 ): Promise<{
-  readonly profile: BrowserThreadProfileRow;
+  readonly profile: BrowserThreadProfileRow | null;
   readonly created: boolean;
 }> {
   const [created] = await db
@@ -1465,9 +1520,6 @@ async function claimBrowserProfile(
     return { profile: created, created: true };
   }
   const existing = await loadOwnedThreadBrowserProfile(db, args);
-  if (!existing) {
-    throw new Error("Managed browser profile claim did not resolve an owner");
-  }
   return { profile: existing, created: false };
 }
 
@@ -1480,47 +1532,37 @@ async function getOrCreateBrowserProfile(
     return { kind: "ok", value: existing };
   }
 
-  let createdProviderProfileId: string | null = null;
-  let retainedCreatedProfile = false;
-  const transaction = await settle(
+  const provider = await providerCall(
+    createBrowserUseProfile(
+      context.chatThreadId,
+      AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
+    ),
+  );
+  if (provider.kind === "error") {
+    return provider;
+  }
+
+  const claimed = await settle(
     db.transaction(async (tx) => {
       await lockBrowserProfileCreation(tx, context.chatThreadId);
-      const lockedExisting = await loadOwnedThreadBrowserProfile(tx, context);
-      if (lockedExisting) {
-        return { kind: "ok" as const, value: lockedExisting };
-      }
-
-      const provider = await providerCall(
-        createBrowserUseProfile(
-          context.chatThreadId,
-          AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
-        ),
-      );
-      if (provider.kind === "error") {
-        return provider;
-      }
-      createdProviderProfileId = provider.value;
-
-      const claimed = await claimBrowserProfile(tx, {
+      return await claimBrowserProfile(tx, {
         orgId: context.orgId,
         userId: context.userId,
         chatThreadId: context.chatThreadId,
         providerProfileId: provider.value,
       });
-      retainedCreatedProfile = claimed.created;
-      return { kind: "ok" as const, value: claimed.profile };
     }),
   );
-  if (
-    createdProviderProfileId &&
-    (!transaction.ok || !retainedCreatedProfile)
-  ) {
-    await deleteUnusedProfile(createdProviderProfileId);
+  if (!claimed.ok || !claimed.value.created) {
+    await deleteUnusedProfile(provider.value);
   }
-  if (!transaction.ok) {
-    throw transaction.error;
+  if (!claimed.ok) {
+    throw claimed.error;
   }
-  return transaction.value;
+  // Cleanup can retire the winning claim before the losing request reads it.
+  return claimed.value.profile
+    ? { kind: "ok", value: claimed.value.profile }
+    : browserReclaiming();
 }
 
 async function persistStartedProviderInstance(
@@ -2977,16 +3019,6 @@ async function claimExpiredInactiveBrowser(
   const claimed = await db.transaction(async (tx) => {
     await lockBrowserThread(tx, target.chatThreadId);
     await lockBrowserProfileCreation(tx, target.chatThreadId);
-    const [profile] = await tx
-      .select({
-        providerProfileId: browserThreadProfiles.providerProfileId,
-      })
-      .from(browserThreadProfiles)
-      .where(eq(browserThreadProfiles.chatThreadId, target.chatThreadId))
-      .limit(1);
-    if ((profile?.providerProfileId ?? null) !== target.providerProfileId) {
-      return false;
-    }
     const [browser] = await tx
       .update(browserSessions)
       .set({
@@ -3001,6 +3033,32 @@ async function claimExpiredInactiveBrowser(
           eq(browserSessions.status, target.status),
           eq(browserSessions.updatedAt, target.updatedAt),
           lte(browserSessions.updatedAt, cutoff),
+          target.providerProfileId === null
+            ? notExists(
+                tx
+                  .select({ id: browserThreadProfiles.id })
+                  .from(browserThreadProfiles)
+                  .where(
+                    eq(browserThreadProfiles.chatThreadId, target.chatThreadId),
+                  ),
+              )
+            : exists(
+                tx
+                  .select({ id: browserThreadProfiles.id })
+                  .from(browserThreadProfiles)
+                  .where(
+                    and(
+                      eq(
+                        browserThreadProfiles.chatThreadId,
+                        target.chatThreadId,
+                      ),
+                      eq(
+                        browserThreadProfiles.providerProfileId,
+                        target.providerProfileId,
+                      ),
+                    ),
+                  ),
+              ),
           notExists(
             tx
               .select({
@@ -3117,9 +3175,19 @@ async function retireExpiredInactiveBrowser(
       return false;
     }
     if (browser) {
-      await tx
+      const [deleted] = await tx
         .delete(browserSessions)
-        .where(eq(browserSessions.chatThreadId, target.chatThreadId));
+        .where(
+          and(
+            eq(browserSessions.chatThreadId, target.chatThreadId),
+            eq(browserSessions.status, "stopping"),
+            eq(browserSessions.updatedAt, claimedAt),
+          ),
+        )
+        .returning({ chatThreadId: browserSessions.chatThreadId });
+      if (!deleted) {
+        return false;
+      }
     }
     if (target.providerProfileId !== null) {
       await tx

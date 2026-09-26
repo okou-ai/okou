@@ -2,6 +2,7 @@ import {
   getCustomSkillStorageName,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
+import { agents } from "@okouai/db/schema/agent";
 import { storages } from "@okouai/db/schema/storage";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
@@ -9,9 +10,7 @@ import { and, eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
-import { testOverride } from "../../lib/singleton";
 import { writeDb$ } from "../external/db";
-import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
@@ -22,25 +21,6 @@ import {
   piStableContextWorkflowPublicationKey,
   retirePiStableContextPublication,
 } from "./pi-stable-context-generation.service";
-
-interface WorkflowDeleteHooks {
-  readonly beforeAgentLock?: (tx: Tx) => Promise<void>;
-  readonly beforeStorageDelete?: (tx: Tx) => Promise<void>;
-}
-
-const workflowDeleteHooks = testOverride<WorkflowDeleteHooks>(() => {
-  return {};
-});
-
-export function setWorkflowDeleteHooksForTest(
-  hooks: WorkflowDeleteHooks,
-): void {
-  workflowDeleteHooks.set(hooks);
-}
-
-export function clearWorkflowDeleteHooksForTest(): void {
-  workflowDeleteHooks.clear();
-}
 
 interface DeleteWorkflowInput {
   readonly orgId: string;
@@ -174,6 +154,56 @@ export const deleteOrphanedWorkflowVolume$ = command(
   },
 );
 
+async function lockWorkflowForDeletion(tx: Tx, args: DeleteWorkflowInput) {
+  const [observed] = await tx
+    .select({ agentId: workflows.agentId })
+    .from(workflows)
+    .where(
+      and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
+    )
+    .limit(1);
+  if (!observed) {
+    return undefined;
+  }
+
+  if (args.serializeOfficialLifecycle === true) {
+    await tx.execute(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+      sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
+    );
+    await tx.execute(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+      sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
+    );
+  }
+  const [agent] = await tx
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.id, observed.agentId), eq(agents.orgId, args.orgId)))
+    .for("key share")
+    .limit(1);
+  if (!agent) {
+    return undefined;
+  }
+  const [workflow] = await tx
+    .select({
+      id: workflows.id,
+      agentId: workflows.agentId,
+      name: workflows.name,
+      ownerUserId: workflows.ownerUserId,
+      officialDefinitionName: workflows.officialDefinitionName,
+      officialInstallationState: workflows.officialInstallationState,
+    })
+    .from(workflows)
+    .where(
+      and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
+    )
+    .for("update")
+    .limit(1);
+
+  return workflow;
+}
+
 export const deleteWorkflow$ = command(
   async (
     { set },
@@ -183,51 +213,7 @@ export const deleteWorkflow$ = command(
     const writeDb = set(writeDb$);
 
     const result = await writeDb.transaction(async (tx) => {
-      const [observed] = await tx
-        .select({ agentId: workflows.agentId })
-        .from(workflows)
-        .where(
-          and(
-            eq(workflows.orgId, args.orgId),
-            eq(workflows.id, args.workflowId),
-          ),
-        )
-        .limit(1);
-      if (!observed) {
-        return { deleted: false as const };
-      }
-
-      if (args.serializeOfficialLifecycle === true) {
-        await tx.execute(
-          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-          sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-        );
-        await tx.execute(
-          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-          sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
-        );
-      }
-      await workflowDeleteHooks.get().beforeAgentLock?.(tx);
-      await lockCanonicalAgentMutation(tx, observed.agentId);
-      const [workflow] = await tx
-        .select({
-          id: workflows.id,
-          agentId: workflows.agentId,
-          name: workflows.name,
-          ownerUserId: workflows.ownerUserId,
-          officialDefinitionName: workflows.officialDefinitionName,
-          officialInstallationState: workflows.officialInstallationState,
-        })
-        .from(workflows)
-        .where(
-          and(
-            eq(workflows.orgId, args.orgId),
-            eq(workflows.id, args.workflowId),
-          ),
-        )
-        .for("update")
-        .limit(1);
-
+      const workflow = await lockWorkflowForDeletion(tx, args);
       if (!workflow) {
         return { deleted: false as const };
       }
@@ -274,7 +260,6 @@ export const deleteWorkflow$ = command(
         .limit(1);
 
       if (storage) {
-        await workflowDeleteHooks.get().beforeStorageDelete?.(tx);
         // Stable-context publishers lock resource parents before the head.
         // Delete in the same parent-before-head order so a publisher holding a
         // Storage key-share lock cannot deadlock with Workflow invalidation.

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "idx_feishu_org_installations_org_platform" ON "feishu_org_installations" USING btree ("org_id","platform");

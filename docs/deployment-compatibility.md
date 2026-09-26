@@ -50,6 +50,57 @@ transactions have drained; supported rollback targets must also retain this
 conflict recovery. That follow-up keeps the owner lock and removes the
 resource-ID lock, its exemption, and this rollout condition together.
 
+## Resource and lifecycle synchronization cleanup (2026-09-26)
+
+Connector refresh failures now use the existing single conditional UPDATE,
+matching the connector identity, owner, auth method, and exact state revision.
+It cannot mark a subsequently reconnected account as needing reconnection.
+Other connector-state writers keep their current coordination.
+
+Migration `1266_feishu_installation_org_platform_unique` adds the missing
+unique key on Feishu/Lark `(org_id, platform)`. Configuration uses this key and
+the existing global `app_id` key, with exact owner/platform/app predicates on
+updates. The migration runs before the new API and fails on historical duplicate
+installations instead of choosing or deleting a bot. Feishu and Lark remain
+non-GA, so an old concurrent create may receive a unique violation during
+cutover under the pre-GA policy. No compatibility fallback is added.
+
+The canonical Agent mutation advisory key is removed. Its Stage 6 database
+bridge was dropped by #28880 on August 24. Agent edits/deletion retain their
+existing row protection, and child mutations check parent existence with
+compatible KEY SHARE reads before updating their own resources and generations.
+The separate public-Agent quota key remains. No stored shape or API contract
+changes. An outgoing connector-selection writer can still leave an inert
+non-FK generation or publication row after deletion; Agent foreign keys and
+builder existence checks prevent that metadata from restoring a resource or
+authorizing a run. Conflicting outgoing writers retain the existing
+transaction rollback and deletion-conflict responses.
+
+Browser profile creation prepares the external profile outside a transaction,
+then uses the thread's unique profile key to select the owner. Unused external
+profiles are reclaimed. Cleanup checks the target profile and exact session
+identity/version before removing state. **The existing profile advisory key
+remains for the preparation release:** an older cleanup reads profile A and
+then deletes sessions by thread, so it can otherwise delete a replacement B.
+Old and new callers still share the key around their database mutations; new
+provider creation no longer holds it during the network request.
+
+The retired Native Morning Brief collector was the only production consumer
+of `chat_threads.provenance`. Its writes, service, and implementation-only
+tests are removed; the nullable column and historical migrations remain.
+Automation resolution now uses the existing unique owner binding and its row
+lock, without writing a reused destination thread. **Its existing resolver
+advisory key remains for the preparation release:** an outgoing resolver
+reads the destination before locking its binding and throws if a concurrent
+new resolver rebound it in that interval.
+
+Remove the Browser profile and automation resolver keys, their exemptions, and
+these two preparation requirements in a later release after this preparation
+version covers every serving writer, outgoing requests have drained, and all
+supported API rollback targets include these changes. Both are GA paths;
+Morning Brief's use of the shared resolver is not covered by the non-GA
+Official Workflows catalog switch. No new lock or fallback is introduced.
+
 ## Workflow import source column (2026-09-25)
 
 Migration `1264_workflow_import_source` adds the nullable

@@ -1,6 +1,7 @@
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import type { WorkflowUpdateRequest } from "@okouai/api-contracts/contracts/workflows";
+import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
@@ -17,7 +18,6 @@ import {
   SKILL_FILENAME,
 } from "./workflow-volume.service";
 import type { WorkflowRow } from "./workflow-data.service";
-import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
   beginPiStableContextPublication,
   piStableContextWorkflowInvalidationOptions,
@@ -37,7 +37,19 @@ async function commitWorkflowMetadata(
 ) {
   const { workflow, body } = args;
   return await db.transaction(async (tx) => {
-    await lockCanonicalAgentMutation(tx, workflow.agentId);
+    // Keep the parent alive until the source and its non-FK generation commit.
+    // Independent Workflow writes can share this parent protection.
+    const [agent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(eq(agents.id, workflow.agentId), eq(agents.orgId, workflow.orgId)),
+      )
+      .for("key share")
+      .limit(1);
+    if (!agent) {
+      return { updated: false as const };
+    }
     const [updated] = await tx
       .update(workflows)
       .set({

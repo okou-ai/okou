@@ -30,7 +30,6 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { onRejection, safeSync, settle } from "../utils";
 import { deleteWorkflow$ } from "./workflow-delete.service";
-import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
   readAcceptedOfficialWorkflowCatalog,
@@ -920,7 +919,20 @@ async function completeInstallation(
     );
     // The installing -> installed CAS below owns activation. Run admission,
     // reconciliation, and Copy only lock installed rows, so no org lock.
-    await lockCanonicalAgentMutation(tx, args.installation.agentId);
+    const [agent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, args.installation.agentId),
+          eq(agents.orgId, args.installation.orgId),
+        ),
+      )
+      .for("key share")
+      .limit(1);
+    if (!agent) {
+      return "lost" as const;
+    }
     signal.throwIfAborted();
     const currentCatalog = await readAcceptedOfficialWorkflowCatalog(
       tx,

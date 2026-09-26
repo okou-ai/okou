@@ -25,7 +25,6 @@ import {
   staleChatEventQueueThreadIds,
 } from "./chat-event-queue.service";
 import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
-import { recordOfficialWorkflowThreadProvenance } from "./morning-brief-thread-provenance.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   createUserMessageDocument,
@@ -244,18 +243,6 @@ async function attemptWorkflowQueueAdmission(
       return { kind: "schedule_unavailable", reason: "superseded" };
     }
 
-    // Acquire any provenance row lock before allocating the event sequence.
-    // Every fired automation passes through here, including the scheduler's
-    // bypass of thread creation when the binding already has a thread. The
-    // automation's own owner and workflow identity resolve the classification,
-    // which commits with the queue item it describes. A coalesced tick inserts
-    // nothing and reaches neither this write nor the event.
-    await recordOfficialWorkflowThreadProvenance(tx, {
-      chatThreadId: args.chatThreadId,
-      userId: automation.ownerUserId,
-      orgId: automation.orgId,
-      workflowIds: [automation.workflowId],
-    });
     const conflict = args.queueEventId === undefined ? "none" : "id";
     // Context commits with the admitted event; a coalesced or superseded tick
     // writes neither.

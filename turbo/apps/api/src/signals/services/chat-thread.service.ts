@@ -82,7 +82,6 @@ import {
   type PreparedChatThreadConnectorSelection,
 } from "./chat-thread-connector-selection.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
-import { ORDINARY_CHAT_THREAD_PROVENANCE } from "./morning-brief-thread-provenance.service";
 import {
   insertInitialRemoteAccessOverrides,
   ownsInitialRemoteAccessHosts,
@@ -804,7 +803,6 @@ export async function createChatThreadInTransaction(
     // Positive classification belongs to the INSERT itself. A conflicting
     // replay below returns the existing row without writing this value, so a
     // client id that already names an unknown or excluded thread keeps it.
-    provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
     lastReadAt: sql`NOW()`,
     modelProviderId: args.modelProviderId,
     modelProviderType:

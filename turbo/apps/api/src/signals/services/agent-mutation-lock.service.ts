@@ -2,17 +2,6 @@ import { sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 
-/** Serialize canonical mutations with the retained Stage 6 legacy bridge. */
-export async function lockCanonicalAgentMutation(
-  tx: Pick<Tx, "execute">,
-  agentId: string,
-): Promise<void> {
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtextextended('canonical-agent:' || ${agentId}::text, 0))`,
-  );
-}
-
 /**
  * Serialize the seven-public-Agent check, including an initially empty org.
  * Keep this key compatible with deployed writers. The quota needs no locks on

@@ -1317,6 +1317,13 @@
       "when": 1790398571102,
       "tag": "1265_drop_pgstattuple",
       "breakpoints": true
+    },
+    {
+      "idx": 1266,
+      "version": "7",
+      "when": 1790402938171,
+      "tag": "1266_feishu_installation_org_platform_unique",
+      "breakpoints": true
     }
   ]
 }

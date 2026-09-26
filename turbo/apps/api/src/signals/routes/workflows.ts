@@ -115,7 +115,6 @@ import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
-import { lockCanonicalAgentMutation } from "../services/agent-mutation-lock.service";
 import {
   invalidatePiStableContext,
   lockPiStableContextGenerationScopes,
@@ -2045,7 +2044,20 @@ async function applyVisibilityUpdate(
   },
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await lockCanonicalAgentMutation(tx, args.workflow.agentId);
+    const [agent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, args.workflow.agentId),
+          eq(agents.orgId, args.workflow.orgId),
+        ),
+      )
+      .for("key share")
+      .limit(1);
+    if (!agent) {
+      return false;
+    }
     const workflowCondition = and(
       eq(workflows.id, args.workflow.id),
       eq(workflows.orgId, args.workflow.orgId),

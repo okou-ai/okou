@@ -12,7 +12,6 @@ import { notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
 import { agentResponse } from "../services/agent-data.service";
-import { lockCanonicalAgentMutation } from "../services/agent-mutation-lock.service";
 import {
   beginPiStableContextPublication,
   PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
@@ -66,8 +65,6 @@ const updateAgentInstructionsInner$ = command(
 
     const writeDb = set(writeDb$);
     const result = await writeDb.transaction(async (tx) => {
-      await lockCanonicalAgentMutation(tx, params.id);
-
       const [current] = await tx
         .select({
           id: agents.id,
