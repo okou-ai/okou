@@ -1310,6 +1310,13 @@
       "when": 1790393687179,
       "tag": "1264_workflow_import_source",
       "breakpoints": true
+    },
+    {
+      "idx": 1265,
+      "version": "7",
+      "when": 1790398571102,
+      "tag": "1265_drop_pgstattuple",
+      "breakpoints": true
     }
   ]
 }

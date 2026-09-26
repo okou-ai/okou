@@ -1,5 +1,21 @@
 # Deployment Compatibility
 
+## pgstattuple extension dropped (2026-09-26)
+
+Migration `1265_drop_pgstattuple` runs `DROP EXTENSION IF EXISTS pgstattuple`.
+`1178` installed it only so the chat search projector could read
+`public.pgstatginindex`. `1263` turned `fastupdate` off on the remaining chat
+search GIN index and #36990 removed that projector maintenance; #36990 reached
+production on 2026-09-26T04:49Z (release `224656bd`). No current code calls a
+`pgstattuple` function.
+
+**API rollback floor: `98b5515ae2874128734b19a17b96dc8c6c7afe47`** (#36990's
+merge commit). Earlier API artifacts call `public.pgstatginindex` at the start
+of every chat search projection tick; after this migration that call fails with
+`42883` and the tick projects nothing. Rolling the API back does not reinstall
+the extension. `.github/scripts/resolve-production-rollback-target.sh` enforces
+the floor.
+
 ## Workflow import source column (2026-09-25)
 
 Migration `1264_workflow_import_source` adds the nullable
@@ -59,8 +75,8 @@ New API/old DB is compatible: until the migration runs, PostgreSQL still
 flushes a full 4 MiB pending list in the foreground. Old API/new DB is
 compatible for the index: an older API finds zero pending pages and skips
 cleanup. The audit column floor above bounds API rollback. The `pgstattuple`
-extension stays installed for rollback targets that still call
-`pgstatginindex`; removing it needs a separate API rollback floor.
+extension stayed installed for rollback targets that still call
+`pgstatginindex`; `1265` later drops it behind #36990's rollback floor.
 
 ## R2-only chat thread snapshot API rollback floor (2026-09-26)
 
