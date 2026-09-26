@@ -2343,7 +2343,7 @@ describe("CHAT-02: completed chat callback", () => {
       assistantMessages(whileFull.events).some((message) => {
         return message.runEventId === "queue:queued";
       }),
-    ).toBe(false);
+    ).toBeFalsy();
 
     // Freeing the org slot picks the waiting thread and launches its input.
     await api.requestCancelRun(actor, blocker.runId, [200]);

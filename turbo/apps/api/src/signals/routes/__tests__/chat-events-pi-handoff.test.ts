@@ -655,13 +655,12 @@ describe("CHAT-02: model-first provider policies", () => {
           );
         }),
       );
-      const { usagePricingResolution, launch } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "/skill:handoff-skill preserve  arguments",
-        });
+      const { launch } = await queueCapabilityProvenPiRun({
+        actor,
+        agentId,
+        runnerGroup,
+        prompt: "/skill:handoff-skill preserve  arguments",
+      });
       // The run id exists only once the pick launches the waiting input, so
       // match this test's only API-first session object by its key shape.
       const firstTurnPrefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/`;

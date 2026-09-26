@@ -55,7 +55,6 @@ const {
   sendWaitingChatInput,
   claimChatRun,
   waitForRunStatus,
-  completeChatRunOk,
   cancelChatRun,
   requestSendEventRaw,
   mockPiCheckpointObjectStore,
@@ -654,14 +653,12 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "replay the original pre-provider prompt in Sandbox";
-    const { usagePricingResolution, launch } = await queueCapabilityProvenPiRun(
-      {
-        actor,
-        agentId,
-        runnerGroup,
-        prompt,
-      },
-    );
+    const { launch } = await queueCapabilityProvenPiRun({
+      actor,
+      agentId,
+      runnerGroup,
+      prompt,
+    });
     const apiStartedAt = now();
     mockNow(apiStartedAt);
     onTestFinished(() => {

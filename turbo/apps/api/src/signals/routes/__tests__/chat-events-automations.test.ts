@@ -56,7 +56,6 @@ const {
   configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
-  waitForRunStatus,
   completeChatRunOk,
   failChatRun,
   cancelChatRun,

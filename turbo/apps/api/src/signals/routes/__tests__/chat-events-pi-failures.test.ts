@@ -42,7 +42,6 @@ const {
   sendChatRun,
   claimChatRun,
   waitForRunStatus,
-  completeChatRunOk,
   cancelChatRun,
   claimGptPiSandbox,
   mockPiCheckpointObjectStore,
@@ -121,13 +120,12 @@ describe("CHAT-02: model-first provider policies", () => {
         }),
       );
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const { usagePricingResolution, launch } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "stop after the provider expires its queue",
-        });
+      const { launch } = await queueCapabilityProvenPiRun({
+        actor,
+        agentId,
+        runnerGroup,
+        prompt: "stop after the provider expires its queue",
+      });
       const run = await launch();
       await waitForRunStatus(actor, run.runId, "failed");
       await flushWaitUntilForTest();
@@ -451,14 +449,12 @@ describe("CHAT-02: model-first provider policies", () => {
         );
       }),
     );
-    const { usagePricingResolution, launch } = await queueCapabilityProvenPiRun(
-      {
-        actor,
-        agentId,
-        runnerGroup,
-        prompt: "hold the incomplete API-first turn",
-      },
-    );
+    const { launch } = await queueCapabilityProvenPiRun({
+      actor,
+      agentId,
+      runnerGroup,
+      prompt: "hold the incomplete API-first turn",
+    });
     const run = await launch();
     await entered.promise;
     const claimed = await claimChatRun(runnerGroup, run.runId);
@@ -941,14 +937,12 @@ describe("CHAT-02: model-first provider policies", () => {
       }),
     );
     const objects = mockPiCheckpointObjectStore();
-    const { usagePricingResolution, launch } = await queueCapabilityProvenPiRun(
-      {
-        actor,
-        agentId,
-        runnerGroup,
-        prompt: "reject invalid provider usage without retrying the prompt",
-      },
-    );
+    const { launch } = await queueCapabilityProvenPiRun({
+      actor,
+      agentId,
+      runnerGroup,
+      prompt: "reject invalid provider usage without retrying the prompt",
+    });
     const run = await launch();
     await flushWaitUntilForTest();
     await waitForRunStatus(actor, run.runId, "failed");
@@ -984,13 +978,12 @@ describe("CHAT-02: model-first provider policies", () => {
         }),
       );
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const { usagePricingResolution, launch } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "surface the real publication failure",
-        });
+      const { launch } = await queueCapabilityProvenPiRun({
+        actor,
+        agentId,
+        runnerGroup,
+        prompt: "surface the real publication failure",
+      });
       const deadline = new AbortController();
       onTestFinished(() => {
         deadline.abort();
@@ -1121,13 +1114,12 @@ describe("CHAT-02: model-first provider policies", () => {
         }),
       );
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const { usagePricingResolution, launch } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "preserve explicit credential failure",
-        });
+      const { launch } = await queueCapabilityProvenPiRun({
+        actor,
+        agentId,
+        runnerGroup,
+        prompt: "preserve explicit credential failure",
+      });
       const run = await launch();
       await waitForRunStatus(actor, run.runId, "failed");
       await flushWaitUntilForTest();

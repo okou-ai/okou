@@ -870,7 +870,7 @@ describe("okou workflow automation scheduler", () => {
       mocks.clerk.session(member.userId, scenario.orgId, "org:member");
       // At capacity the scheduler input stays queued in the thread and no run
       // exists until a released slot picks the thread.
-      expect(await workflowRunMessages(threadId)).toHaveLength(
+      await expect(workflowRunMessages(threadId)).resolves.toHaveLength(
         queuedLaunch ? 0 : 1,
       );
       const later = await connectOwner(member, "later-owner-account");
