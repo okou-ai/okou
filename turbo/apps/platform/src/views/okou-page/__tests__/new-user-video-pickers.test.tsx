@@ -20,8 +20,7 @@ const BEFORE_CUTOFF = "2026-09-21T07:13:24.999Z";
 const AT_CUTOFF = "2026-09-21T07:13:25.000Z";
 const AFTER_CUTOFF = "2026-09-22T00:00:00.000Z";
 
-// Draw a deterministic card order that offers video and avatar entries when
-// permitted, so their absence cannot pass just because neither was sampled.
+// Draw a deterministic start-card order so every cohort sees the same row.
 vi.hoisted(() => {
   let sample = 1;
   vi.spyOn(Math, "random").mockImplementation(() => {
@@ -98,8 +97,9 @@ test.each([
       );
       expect(templateButtons).toHaveLength(3);
     });
+    // The start-card row never offers video or avatar, whatever the cohort.
     for (const title of ["Create a video", "Create an avatar"]) {
-      expect(within(cards).queryAllByText(title)).toHaveLength(visible ? 1 : 0);
+      expect(within(cards).queryByText(title)).not.toBeInTheDocument();
     }
 
     await openModels();
