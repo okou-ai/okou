@@ -337,8 +337,9 @@ table. Step 3 drops the old heartbeat column. Do not ship step 3 in this PR.
 
 ## Active run state: `agent_runs.last_heartbeat_at` dropped (step 3 of 3)
 
-**Release gate:** step 2 (#36955, `e62567d3`) must be promoted to production
-and the previous API drained before this change enters the merge queue. Step 2
+**Release gate:** step 2 (#36955, `e62567d3`) shipped alone in `api-v1.681.2`
+(release #36974). Promote the release carrying this change only after
+`api-v1.681.2` is live in production and the previous API has drained. Step 2
 is the first API that neither reads nor writes `agent_runs.last_heartbeat_at`;
 timeout cleanup, capacity and every heartbeat use `active_agent_runs`.
 
