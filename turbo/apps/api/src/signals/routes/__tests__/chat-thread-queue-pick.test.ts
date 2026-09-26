@@ -1,30 +1,38 @@
 import { randomUUID } from "node:crypto";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
-import {
-  claimQueuedChatThreadLeaseFixture,
-  readQueuedChatThreadFixture,
-} from "../../../test-fixtures/queued-chat-thread";
+import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
+import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { chatEventsRoutes } from "../chat-events";
+import { chatThreadRoutes } from "../chat-threads";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
+import { workflowAutomationsRoutes } from "../workflow-automations";
 import type { ApiTestUser } from "./helpers/api-bdd";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import { chatEventAutomationPart } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
   userMessages,
 } from "./helpers/chat-events-fixture";
 
 /**
- * CHAT-02: pending chat input waits in a per-thread queue row and a picker
- * launches the thread's FIFO head when a slot frees, the organization's
- * capacity grows, or the cron sweep finds a pickable row.
+ * CHAT-02: at organization capacity, chat input waits in its thread without a
+ * run. A pick launches the thread's FIFO head when a slot frees (the ending
+ * run's thread first, then the organization's oldest waiting thread) or when
+ * the cron sweep finds capacity.
  */
 const context = testContext({ connectorCatalog: true });
 const {
+  bdd,
   chat,
+  routeMocks,
   entitledNativeChatActor,
   sendChatRun,
   sendWaitingChatInput,
@@ -34,10 +42,18 @@ const {
   waitForRunStatus,
   chatCallbacks,
 } = createChatEventsFixture(context);
+const wf = createWorkflowsBddApi(context);
 
-const PICK_LEASE_TTL_MS = 60 * 1000;
+const WORKFLOW_NAME = "chat-thread-queue-pick-workflow";
 
-/** Run the cron queue sweep scoped to the given threads. */
+const WEBHOOK_APP_ROUTES = Object.freeze([
+  ...webhooksWorkflowAutomationsRoutes,
+  ...chatEventsRoutes,
+  ...chatThreadRoutes,
+  ...workflowAutomationsRoutes,
+]);
+
+/** Run the real cron sweep scoped to the given threads. */
 async function sweepQueuedThreads(chatThreadIds: string[]): Promise<void> {
   await accept(
     setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
@@ -47,6 +63,7 @@ async function sweepQueuedThreads(chatThreadIds: string[]): Promise<void> {
     }),
     [200],
   );
+  await flushWaitUntilForTest();
 }
 
 /** The run that launched a sent input, or undefined while it still waits. */
@@ -61,6 +78,21 @@ async function runOfInput(
       message.revokesEventId === clientEventId && message.runId !== undefined
     );
   })?.runId;
+}
+
+/** Runs launched on a thread, oldest first. */
+async function threadRunIds(
+  actor: ApiTestUser,
+  threadId: string,
+): Promise<readonly string[]> {
+  const page = await chat.listThreadEvents(actor, threadId);
+  return [
+    ...new Set(
+      userMessages(page.events).flatMap((message) => {
+        return message.runId === undefined ? [] : [message.runId];
+      }),
+    ),
+  ];
 }
 
 async function sendWaiting(
@@ -79,8 +111,108 @@ async function sendWaiting(
   return { ...waiting, clientEventId };
 }
 
+/** Claim a run through the Runner and complete it successfully. */
+async function finishRun(runnerGroup: string, runId: string): Promise<void> {
+  const { sandboxHeaders } = await claimChatRun(runnerGroup, runId);
+  chatCallbacks.mockChatOutputEvents([]);
+  await completeChatRunOk(runId, sandboxHeaders);
+  await flushWaitUntilForTest();
+}
+
+function clerkHeaders(actor: ApiTestUser) {
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  return { authorization: "Bearer clerk-session" };
+}
+
+async function createWebhookAutomation(
+  actor: ApiTestUser,
+  agentId: string,
+): Promise<{
+  readonly threadId: string;
+  readonly token: string;
+  readonly secret: string;
+}> {
+  bdd.acceptAgentStorageWrites();
+  const workflowId = await wf.createWorkflow(actor, {
+    agentId,
+    name: WORKFLOW_NAME,
+  });
+  const created = await accept(
+    setupApp({ context, routes: workflowAutomationsRoutes })(
+      workflowAutomationsContract,
+    ).create({
+      headers: clerkHeaders(actor),
+      params: { workflowId },
+      body: { kind: "event", eventType: "webhook-received" },
+    }),
+    [201],
+  );
+  if (
+    created.body.kind !== "event" ||
+    created.body.eventType !== "webhook-received" ||
+    !created.body.webhookUrl ||
+    !created.body.webhookSecret ||
+    !created.body.chatThreadId
+  ) {
+    throw new Error("Expected a thread-bound webhook automation with a secret");
+  }
+  const token = new URL(created.body.webhookUrl).pathname.split("/").at(-1);
+  if (!token) {
+    throw new Error("Expected webhook URL token");
+  }
+  return {
+    threadId: created.body.chatThreadId,
+    token,
+    secret: created.body.webhookSecret,
+  };
+}
+
+async function postWorkflowWebhook(
+  automation: { readonly token: string; readonly secret: string },
+  payload: string,
+): Promise<void> {
+  const rawBody = JSON.stringify({ event: payload });
+  const timestamp = Math.floor(now() / 1000);
+  const response = await createApp({
+    signal: context.signal,
+    routes: WEBHOOK_APP_ROUTES,
+  }).request(`/api/webhooks/workflow-automations/${automation.token}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Okou-Timestamp": String(timestamp),
+      "X-Okou-Signature": computeHmacSignature(
+        rawBody,
+        automation.secret,
+        timestamp,
+      ),
+    },
+    body: rawBody,
+  });
+  expect(response.status).toBe(200);
+  await flushWaitUntilForTest();
+}
+
+/** Run ids of automation-fired prompts, oldest first. */
+async function automationRunIds(
+  actor: ApiTestUser,
+  threadId: string,
+): Promise<readonly string[]> {
+  const page = await chat.listThreadEvents(actor, threadId);
+  return page.events.flatMap((event) => {
+    if (
+      event.eventType !== "input.prompt" ||
+      chatEventAutomationPart(event)?.workflowName !== WORKFLOW_NAME ||
+      !event.runId
+    ) {
+      return [];
+    }
+    return [event.runId];
+  });
+}
+
 describe("CHAT-02: queued chat thread picks", () => {
-  it("launches only the FIFO head of a queued thread and resumes its latest session", async () => {
+  it("launches only the FIFO head of a waiting thread and resumes its latest session", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -88,10 +220,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       agentId,
       prompt: "establish the thread session",
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
-    await flushWaitUntilForTest();
+    await finishRun(runnerGroup, first.runId);
 
     const blocker = await sendChatRun(actor, {
       agentId,
@@ -110,8 +239,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       first.threadId,
     );
 
-    await cancelChatRun(actor, blocker.runId);
-    await flushWaitUntilForTest();
+    await finishRun(runnerGroup, blocker.runId);
 
     const picked = await head.launchedRun();
     await expect(
@@ -135,7 +263,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     await cancelChatRun(actor, next.runId);
   }, 90_000);
 
-  it("gives the freed slot to the same thread before an older queued thread", async () => {
+  it("gives the freed slot to the same thread before an older waiting thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -163,131 +291,159 @@ describe("CHAT-02: queued chat thread picks", () => {
     await flushWaitUntilForTest();
 
     const takeover = await sameThread.launchedRun();
-    await waitForRunStatus(actor, takeover.runId, "pending");
     await expect(
       runOfInput(actor, olderThread.threadId, olderThread.clientEventId),
     ).resolves.toBeUndefined();
 
     // Once the same thread's run ends with nothing left, the older thread
     // gets the slot.
-    await cancelChatRun(actor, takeover.runId);
-    await flushWaitUntilForTest();
+    await finishRun(runnerGroup, takeover.runId);
     const older = await olderThread.launchedRun();
     await cancelChatRun(actor, older.runId);
   }, 90_000);
 
-  // The Stripe capacity path (untilFull=true) is covered in
-  // webhooks-callbacks.bdd.test.ts; here the cron sweep fills the raised
-  // limit and leaves the remaining thread queued.
-  it("launches queued threads up to a raised limit and no further", async () => {
+  it("launches an automation event appended before a user message first (strict FIFO)", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor(
+      {},
+      "team",
+    );
     chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const automation = await createWebhookAutomation(actor, agentId);
     const blocker = await sendChatRun(actor, {
       agentId,
       prompt: "occupy the only organization slot",
     });
-    const queued = [
-      await sendWaiting(actor, agentId, "queued thread one"),
-      await sendWaiting(actor, agentId, "queued thread two"),
-      await sendWaiting(actor, agentId, "queued thread three"),
-    ] as const;
-    const threadIds = queued.map(({ threadId }) => {
-      return threadId;
-    });
 
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
-    await sweepQueuedThreads(threadIds);
-
-    const launchedOne = await queued[0].launchedRun();
-    const launchedTwo = await queued[1].launchedRun();
-    await waitForRunStatus(actor, launchedOne.runId, "pending");
-    await waitForRunStatus(actor, launchedTwo.runId, "pending");
-    await expect(
-      runOfInput(actor, queued[2].threadId, queued[2].clientEventId),
-    ).resolves.toBeUndefined();
-    // The over-limit thread stays queued with its lease released.
-    await expect(
-      readQueuedChatThreadFixture(queued[2].threadId),
-    ).resolves.toStrictEqual({ leased: false });
-
-    await cancelChatRun(actor, launchedOne.runId);
-    await flushWaitUntilForTest();
-    const launchedThree = await queued[2].launchedRun();
-    await cancelChatRun(actor, launchedThree.runId);
-    await cancelChatRun(actor, launchedTwo.runId);
-    await cancelChatRun(actor, blocker.runId);
-  }, 90_000);
-
-  it("waits for an abandoned pick lease to expire before the sweep launches", async () => {
-    const start = now();
-    mockNow(start);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const blocker = await sendChatRun(actor, {
-      agentId,
-      prompt: "occupy the only organization slot",
-    });
-    const waiting = await sendWaiting(
+    await postWorkflowWebhook(automation, "automation before the user");
+    const user = await sendWaiting(
       actor,
       agentId,
-      "picked by a dead picker",
+      "user after automation",
+      automation.threadId,
     );
-    await claimQueuedChatThreadLeaseFixture(waiting.threadId);
-
-    // The freed slot's pick skips the leased thread, and so does the sweep.
-    await cancelChatRun(actor, blocker.runId);
-    await flushWaitUntilForTest();
-    await sweepQueuedThreads([waiting.threadId]);
     await expect(
-      runOfInput(actor, waiting.threadId, waiting.clientEventId),
+      automationRunIds(actor, automation.threadId),
+    ).resolves.toStrictEqual([]);
+
+    await finishRun(runnerGroup, blocker.runId);
+
+    await expect
+      .poll(() => {
+        return automationRunIds(actor, automation.threadId);
+      })
+      .toHaveLength(1);
+    const [automationRunId] = await automationRunIds(
+      actor,
+      automation.threadId,
+    );
+    if (!automationRunId) {
+      throw new Error("Expected the automation event to launch");
+    }
+    await expect(
+      runOfInput(actor, automation.threadId, user.clientEventId),
     ).resolves.toBeUndefined();
 
-    mockNow(start + PICK_LEASE_TTL_MS - 1);
-    await sweepQueuedThreads([waiting.threadId]);
-    await expect(
-      runOfInput(actor, waiting.threadId, waiting.clientEventId),
-    ).resolves.toBeUndefined();
-
-    mockNow(start + PICK_LEASE_TTL_MS + 1);
-    await sweepQueuedThreads([waiting.threadId]);
-    const launched = await waiting.launchedRun();
-    await waitForRunStatus(actor, launched.runId, "pending");
-    await expect(
-      readQueuedChatThreadFixture(waiting.threadId),
-    ).resolves.toBeNull();
-    await cancelChatRun(actor, launched.runId);
+    await finishRun(runnerGroup, automationRunId);
+    const userRun = await user.launchedRun();
+    expect(userRun.runId).not.toBe(automationRunId);
+    await cancelChatRun(actor, userRun.runId);
   }, 90_000);
 
-  it("releases the lease when the sweep finds the organization full", async () => {
+  it("takes over input sent while the thread's run was running", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const running = await sendChatRun(actor, {
+      agentId,
+      prompt: "the thread's running run",
+    });
+    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    await waitForRunStatus(actor, running.runId, "running");
+
+    // The send only steers the running run; the run end launches it.
+    const steered = await sendWaiting(
+      actor,
+      agentId,
+      "sent while the run is running",
+      running.threadId,
+    );
+
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(running.runId, runningClaim.sandboxHeaders);
+    await flushWaitUntilForTest();
+
+    const takeover = await steered.launchedRun();
+    expect(takeover.runId).not.toBe(running.runId);
+    await cancelChatRun(actor, takeover.runId);
+  }, 90_000);
+
+  it("keeps a waiting thread pickable after the cron sweep finds the organization full", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId } = await entitledNativeChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const blocker = await sendChatRun(actor, {
       agentId,
       prompt: "occupy the only organization slot",
     });
-    const waiting = await sendWaiting(actor, agentId, "waits for capacity");
+    const older = await sendWaiting(actor, agentId, "oldest waiting thread");
+    const waiting = await sendWaiting(actor, agentId, "waits for the sweep");
 
-    await sweepQueuedThreads([waiting.threadId]);
+    await sweepQueuedThreads([older.threadId, waiting.threadId]);
+    await expect(
+      runOfInput(actor, older.threadId, older.clientEventId),
+    ).resolves.toBeUndefined();
     await expect(
       runOfInput(actor, waiting.threadId, waiting.clientEventId),
     ).resolves.toBeUndefined();
-    await expect(
-      readQueuedChatThreadFixture(waiting.threadId),
-    ).resolves.toStrictEqual({ leased: false });
 
-    // Capacity grows without a run ending; the next sweep launches at once
-    // because the full-org pick released its lease.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
+    // The freed slot goes to the organization's oldest waiting thread.
+    await finishRun(runnerGroup, blocker.runId);
+    const olderRun = await older.launchedRun();
+    await expect(
+      runOfInput(actor, waiting.threadId, waiting.clientEventId),
+    ).resolves.toBeUndefined();
+
+    await finishRun(runnerGroup, olderRun.runId);
     await sweepQueuedThreads([waiting.threadId]);
     const launched = await waiting.launchedRun();
-    await waitForRunStatus(actor, launched.runId, "pending");
     await cancelChatRun(actor, launched.runId);
-    await cancelChatRun(actor, blocker.runId);
+  }, 90_000);
+
+  it("skips a recalled head and launches a later message on the thread", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const blocker = await sendChatRun(actor, {
+      agentId,
+      prompt: "occupy the only organization slot",
+    });
+    const recalled = await sendWaiting(actor, agentId, "recalled message");
+    const recall = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: recalled.threadId,
+        revokesEventId: recalled.clientEventId,
+        clientEventId: randomUUID(),
+      },
+      [201],
+    );
+    expect(recall.body.runId).toBeNull();
+
+    await finishRun(runnerGroup, blocker.runId);
+    await sweepQueuedThreads([recalled.threadId]);
+    await expect(threadRunIds(actor, recalled.threadId)).resolves.toStrictEqual(
+      [],
+    );
+
+    const later = await sendChatRun(actor, {
+      agentId,
+      threadId: recalled.threadId,
+      prompt: "sent after the recall",
+    });
+    await expect(threadRunIds(actor, recalled.threadId)).resolves.toStrictEqual(
+      [later.runId],
+    );
+    await cancelChatRun(actor, later.runId);
   }, 90_000);
 });

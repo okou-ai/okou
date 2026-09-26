@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { mockEnv } from "../../../lib/env";
-
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -8,8 +6,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import {
   seedOrgMetadata,
   seedUsagePricingRows,
@@ -23,10 +19,7 @@ import {
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  readRunFailureReasonFixture,
-  seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
-} from "./helpers/runtime-state";
+import { seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState } from "./helpers/runtime-state";
 import { encryptSecretForTests } from "./helpers/encrypt-secret";
 import {
   deleteRun$,
@@ -300,65 +293,6 @@ describe("Usage Allowance", () => {
       );
     },
   );
-
-  it.each(
-    runCreditExhaustionCases.filter(([tier]) => {
-      return tier === "free" || tier === "pro";
-    }),
-  )(
-    "allows or denies a promoted built-in run after exhaustion on %s",
-    async (tier, expectedFirewallStatus) => {
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-      const { actor, agentId } = await builtInAllowanceActor({
-        tier,
-        credits: 1,
-      });
-      const api = createRunsApi(context);
-      const first = await createBuiltInRun(actor, agentId, "active run");
-      const queued = await createLegacyQueuedRunFixture(async () => {
-        return await createBuiltInRun(actor, agentId, "queued built-in run");
-      });
-      expect(queued.status).toBe("queued");
-      await api.requestCancelRun(actor, first.runId, [200]);
-      await flushWaitUntilForTest();
-      await expect
-        .poll(async () => {
-          return (await api.readRun(actor, queued.runId)).status;
-        })
-        .toBe("pending");
-      await exhaustRunCredits(actor, queued.runId);
-      await expect(
-        billableFirewallAuthStatus(actor, queued.runId),
-      ).resolves.toBe(expectedFirewallStatus);
-    },
-  );
-
-  it("uses the current plan when promoting a previously free queued run", async () => {
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, orgId, agentId } = await builtInAllowanceActor({
-      tier: "free",
-      credits: 1,
-    });
-    const api = createRunsApi(context);
-    const first = await createBuiltInRun(actor, agentId, "free active run");
-    const queued = await createLegacyQueuedRunFixture(async () => {
-      return await createBuiltInRun(actor, agentId, "free queued run");
-    });
-    expect(queued.status).toBe("queued");
-    await seedOrgMetadata({ orgId, tier: "pro", credits: 1 });
-
-    await api.requestCancelRun(actor, first.runId, [200]);
-    await flushWaitUntilForTest();
-    await expect
-      .poll(async () => {
-        return (await api.readRun(actor, queued.runId)).status;
-      })
-      .toBe("pending");
-    await exhaustRunCredits(actor, queued.runId);
-    await expect(billableFirewallAuthStatus(actor, queued.runId)).resolves.toBe(
-      402,
-    );
-  });
 
   it("applies usage allowance before legacy org credits", async () => {
     const { actor, agentId } = await builtInAllowanceActor({
@@ -782,96 +716,6 @@ describe("Usage Allowance", () => {
     );
 
     expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
-  });
-
-  it("fails an unfunded built-in queue promotion and continues to BYOK", async () => {
-    // Two active runs keep the third queued, independent of the plan's own
-    // concurrency limit.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const { actor, agentId } = await builtInAllowanceActor({ credits: 1 });
-    const api = createRunsApi(context);
-    const first = await createBuiltInRun(actor, agentId, "active built-in one");
-    const second = await createBuiltInRun(
-      actor,
-      agentId,
-      "active built-in two",
-    );
-    const unfunded = await createLegacyQueuedRunFixture(async () => {
-      return await createBuiltInRun(
-        actor,
-        agentId,
-        "queued built-in loses admission",
-      );
-    });
-    expect(unfunded.status).toBe("queued");
-
-    await api.ensureOrgModelProvider(actor);
-    const byok = await createLegacyQueuedRunFixture(async () => {
-      return await api.createRun(actor, {
-        agentId,
-        prompt: "queued BYOK remains admissible",
-        modelProvider: "anthropic-api-key",
-      });
-    });
-    expect(byok.status).toBe("queued");
-
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: first.runId,
-      provider,
-      quantity: 1,
-    });
-    await processOrgUsageEvents(actor);
-    await expect(readOrgCredits(actor)).resolves.toBe(0);
-
-    await api.requestCancelRun(actor, first.runId, [200]);
-    await flushWaitUntilForTest();
-
-    await expect
-      .poll(async () => {
-        return (await api.readRun(actor, unfunded.runId)).status;
-      })
-      .toBe("failed");
-    await expect
-      .poll(async () => {
-        return (await api.readRun(actor, byok.runId)).status;
-      })
-      .toBe("pending");
-    await expect(
-      readRunFailureReasonFixture(context, unfunded.runId),
-    ).resolves.toBe("insufficient_credits");
-
-    const missingJob = await api.requestClaimRunnerJob(
-      true,
-      unfunded.runId,
-      [404],
-    );
-    expectApiError(missingJob.body);
-    expect(missingJob.body.error.message).toBe("Job not found in queue");
-    await api.claimRunnerJob(byok.runId);
-
-    const client = setupApp({
-      context,
-      routes: webhooksAgentFirewallAuthRoutes,
-    })(webhookFirewallAuthContract);
-    const denied = await accept(
-      client.resolve({
-        headers: {
-          authorization: `Bearer ${api.sandboxTokenForRun(actor, byok.runId)}`,
-        },
-        body: {
-          encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
-          authHeaders: { Authorization: "Bearer static-token" },
-          firewallBillable: true,
-        },
-      }),
-      [402],
-    );
-    expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
-
-    await api.requestCancelRun(actor, second.runId, [200]);
-    await api.requestCancelRun(actor, byok.runId, [200]);
   });
 
   it("backfills allowance windows during non-built-in usage settlement", async () => {

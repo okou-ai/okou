@@ -1,11 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
 } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -17,20 +15,13 @@ import {
   revokeReservedActiveInputFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { expectApiError } from "./helpers/api-bdd";
 import { cleanupTimedOutRun } from "./helpers/api-bdd-run-timeout";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import {
-  readThreadSessionBinding,
-  steerRunTimeBudgetFixture,
-} from "./helpers/runtime-state";
+import { steerRunTimeBudgetFixture } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
-  type PromptMessage,
-  userMessageWithTemplate,
-  assistantMessages,
   userMessages,
 } from "./helpers/chat-events-fixture";
 
@@ -1585,197 +1576,5 @@ describe("CHAT-02: queueing and recalling messages", () => {
       "must remain queued in the original thread",
     );
     await cancelChatRun(actor, promoted.runId);
-  }, 90_000);
-});
-
-describe("CHAT-02: org queue markers", () => {
-  it("marks legacy queued chat runs and revokes the marker on dequeue", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-
-    const blocker = await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "occupy org concurrency" },
-      [201],
-    );
-    if (blocker.status !== 201 || blocker.body.runId === null) {
-      throw new Error("Expected the blocking send to create a run");
-    }
-    expect(blocker.body.status).toBe("pending");
-
-    // Only earlier API versions queue a run at the capacity limit; the markers
-    // under test belong to those legacy queued runs.
-    const queuedRun = await createLegacyQueuedRunFixture(async () => {
-      return await chat.requestSendEvent(
-        actor,
-        { agentId, prompt: "wait behind the active run" },
-        [201],
-      );
-    });
-    if (queuedRun.status !== 201 || queuedRun.body.runId === null) {
-      throw new Error("Expected the second send to create a queued run");
-    }
-    expect(queuedRun.body.status).toBe("queued");
-    const queuedBinding = await readThreadSessionBinding(
-      context,
-      queuedRun.body.threadId,
-    );
-    expect(queuedBinding.agent_session_run_id).toBe(queuedRun.body.runId);
-    expect(queuedBinding.agent_session_id).toMatch(/[0-9a-f-]{36}/);
-    expect(queuedBinding.run_session_id).toBe(queuedBinding.agent_session_id);
-
-    const queuedThread = queuedRun.body.threadId;
-    const beforeDequeue = await waitForThreadMessages(
-      actor,
-      queuedThread,
-      (items) => {
-        return (
-          userMessages(items).some((message) => {
-            return message.runId === queuedRun.body.runId;
-          }) &&
-          assistantMessages(items).some((message) => {
-            return message.runEventId === "queue:queued";
-          })
-        );
-      },
-    );
-    const queuedRunUserRows = userMessages(beforeDequeue.events);
-    expect(queuedRunUserRows).toHaveLength(2);
-    const queuedRunMessage = queuedRunUserRows.find((message) => {
-      return message.runId === queuedRun.body.runId;
-    });
-    expect(queuedRunMessage).toMatchObject({
-      content: null,
-      runId: queuedRun.body.runId,
-    });
-    expect(chatEventDisplayText(queuedRunMessage!)).toBe(
-      "wait behind the active run",
-    );
-    expect(queuedRunMessage?.revokesEventId).toBeDefined();
-    const queuedRunOriginal = queuedRunUserRows.find((message) => {
-      return message.id === queuedRunMessage?.revokesEventId;
-    });
-    expect(queuedRunOriginal?.content).toBeNull();
-    expect(chatEventDisplayText(queuedRunOriginal!)).toBe(
-      "wait behind the active run",
-    );
-    expect(queuedRunOriginal?.runId).toBeUndefined();
-    const marker = assistantMessages(beforeDequeue.events).find((message) => {
-      return message.runEventId === "queue:queued";
-    });
-    if (!marker) {
-      throw new Error("Expected an assistant queue marker");
-    }
-    expect(marker).toMatchObject({
-      content: "Waiting in queue...",
-      runId: queuedRun.body.runId,
-    });
-
-    // The queued run still counts as the thread's active run, so a presentation
-    // runbook selection queues as an unassociated message carrying that
-    // selection.
-    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
-    if (!template) {
-      throw new Error("Expected a registered presentation runbook item");
-    }
-    const generationTemplate: GenerationTemplateRequest = {
-      type: "presentation",
-      selection: {
-        templateId: template.templateId,
-      },
-    };
-    const templateMessageId = randomUUID();
-    const queuedTemplate = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: queuedThread,
-        prompt: "template queued deck",
-        userMessage: userMessageWithTemplate(
-          "template queued deck",
-          generationTemplate,
-        ),
-        clientEventId: templateMessageId,
-      },
-      [201],
-    );
-    expect(queuedTemplate.body).toMatchObject({ runId: null });
-    const withTemplate = await chat.listThreadEvents(actor, queuedThread);
-    const templateMessage = userMessages(withTemplate.events).find(
-      (message): message is PromptMessage => {
-        return (
-          message.eventType === "input.prompt" &&
-          message.id === templateMessageId
-        );
-      },
-    );
-    expect(templateMessage?.userMessage?.parts).toContainEqual(
-      expect.objectContaining({
-        type: "template",
-        template: generationTemplate,
-      }),
-    );
-
-    const queueBefore = await api.readRunQueue(actor);
-    expect(queueBefore.body.queue).toHaveLength(1);
-    expect(queueBefore.body.queue[0]).toMatchObject({
-      runId: queuedRun.body.runId,
-    });
-
-    // Recall the queued template message so the dequeue does not auto-send it.
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: queuedThread,
-        revokesEventId: templateMessageId,
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-
-    // Interrupting the blocking run drains the org queue and revokes the
-    // queue marker on the dequeued run's thread.
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: blocker.body.threadId,
-        interruptsRunId: blocker.body.runId,
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-
-    await waitForRunStatus(actor, blocker.body.runId, "cancelled");
-    await waitForRunStatus(actor, queuedRun.body.runId, "pending");
-    const afterDequeue = await waitForThreadMessages(
-      actor,
-      queuedThread,
-      (items) => {
-        return assistantMessages(items).some((message) => {
-          return message.runEventId === "queue:dequeued";
-        });
-      },
-    );
-    const revoker = assistantMessages(afterDequeue.events).find((message) => {
-      return message.runEventId === "queue:dequeued";
-    });
-    if (!revoker) {
-      throw new Error("Expected an assistant queue-dequeued revoker");
-    }
-    expect(revoker).toMatchObject({
-      content: null,
-      runId: queuedRun.body.runId,
-      revokesEventId: marker.id,
-    });
-    const queueAfter = await api.readRunQueue(actor);
-    expect(queueAfter.body.queue).toHaveLength(0);
-
-    await cancelChatRun(actor, queuedRun.body.runId);
-    expect((await api.readRun(actor, queuedRun.body.runId)).status).toBe(
-      "cancelled",
-    );
   }, 90_000);
 });

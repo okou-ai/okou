@@ -51,7 +51,6 @@ import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import { createDeferredPromise, settle } from "../../utils";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -2385,52 +2384,6 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     );
     expect(replacementRunId).not.toBe(run.runId);
     await expectCancellationRecoveryPending(actor, run.threadId, false);
-
-    await api.requestCancelRun(actor, replacementRunId, [200]);
-    await waitForRunStatus(actor, replacementRunId, "cancelled");
-    await flushWaitUntilForTest();
-  }, 90_000);
-
-  it("preserves immediate release when a legacy org-queued run is cancelled", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const blocker = await startChatRun(actor, {
-      agentId,
-      prompt: "hold the only org run slot",
-    });
-    await waitForRunStatus(actor, blocker.runId, "pending");
-    // Only earlier API versions queue a run at the org cap; their queued runs
-    // can still be cancelled.
-    const queuedRun = await createLegacyQueuedRunFixture(async () => {
-      return await startChatRun(actor, {
-        agentId,
-        prompt: "cancel while waiting for the org slot",
-      });
-    });
-    await waitForRunStatus(actor, queuedRun.runId, "queued");
-    const queuedEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: queuedRun.threadId,
-      prompt: "continue after queued cancellation",
-    });
-
-    await api.requestCancelRun(actor, queuedRun.runId, [200]);
-    await waitForRunStatus(actor, queuedRun.runId, "cancelled");
-    await expectCancellationRecoveryPending(actor, queuedRun.threadId, false);
-
-    // The blocker still fills the org, so the follow-up waits as input until
-    // the slot frees and the thread is picked.
-    await api.requestCancelRun(actor, blocker.runId, [200]);
-    await waitForRunStatus(actor, blocker.runId, "cancelled");
-    await flushWaitUntilForTest();
-    const replacementRunId = await waitForQueuedEventReplacement(
-      actor,
-      queuedRun.threadId,
-      queuedEventId,
-    );
-    expect(replacementRunId).not.toBe(queuedRun.runId);
-    await expectCancellationRecoveryPending(actor, queuedRun.threadId, false);
 
     await api.requestCancelRun(actor, replacementRunId, [200]);
     await waitForRunStatus(actor, replacementRunId, "cancelled");
