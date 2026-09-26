@@ -13,8 +13,24 @@ actor ChatService {
     for attempt in 0..<2 {
       do {
         let snapshot: ThreadSnapshot = try await client.request("/api/chat-threads/snapshot")
-        var byID = Dictionary(uniqueKeysWithValues: snapshot.chatThreads.map { ($0.id, $0.thread) })
-        var cursor = snapshot.latestSeqId
+        let projections: [ThreadProjection]
+        var cursor: Int?
+        switch snapshot {
+        case .inline(let threads, let latestSeqId):
+          projections = threads
+          cursor = latestSeqId
+        case .remote(let url, let latestSeqId):
+          // The signed object carries only the projection; the API response owns its cursor.
+          let data = try await client.downloadSnapshot(url)
+          do {
+            projections = try APIClient.decoder().decode(ThreadSnapshotArchive.self, from: data)
+              .chatThreads
+          } catch {
+            throw APIClientError.incompatibleData
+          }
+          cursor = latestSeqId
+        }
+        var byID = Dictionary(uniqueKeysWithValues: projections.map { ($0.id, $0.thread) })
         while true {
           let query = cursor.map { [URLQueryItem(name: "sinceSeqId", value: String($0))] } ?? []
           let page: ThreadEventsPage = try await client.request(

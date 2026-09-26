@@ -2,7 +2,7 @@
 
 ## Workflow import source column (2026-09-25)
 
-Migration `1262_workflow_import_source` adds the nullable
+Migration `1263_workflow_import_source` adds the nullable
 `workflows.import_source` column. It is a metadata-only `ADD COLUMN` without a
 default, so it takes a brief `ACCESS EXCLUSIVE` lock under the default 1s lock
 timeout and rewrites no rows.
@@ -138,6 +138,43 @@ writers. The follow-up #36969 must remove the narrow migration-consistency
 test adapter for this retained nullable text column when it drops the physical
 column, and must raise the rollback floor to this cutover's canonical main
 merge commit. No screenshot decoder or index changes belong to this step.
+
+## Chat run admission moves to the `active_agent_runs` thread slot (pending)
+
+**Release ordering:** #36900 shipped separately in release #36948. #36955
+merged into main with migration `1258_active_agent_runs_step2.sql` and shipped
+separately in release #36974. #36980's step-3 migration
+`1259_drop_agent_runs_last_heartbeat_at.sql` must ship alone in its own release
+(#36986), with the previous API drained. #36975's
+`1261_drop_chat_thread_snapshot_jsonb.sql` must also ship independently and
+its previous API must drain before #36929 enters the merge queue. Only then
+may #36929 ship with migration `1262_active_agent_runs_chat_thread_slot.sql`,
+after #36976's `1260_personal_subscription_account_only.sql` and #36975's
+`1261` in the migration journal. The slot rollout requires the deployed
+step-3 API as its predecessor; the effective rollback floor also inherits the
+stricter #36976 account-only and #36975 snapshot-drop floors.
+
+#36955 owns the backfill for queued, pending, running and started terminal runs
+still within the recovery grace or heartbeating. #36929 does **not** repeat
+that backfill. Its migration keeps only the newest active row slotted per
+thread and adds the plain unique index on `active_agent_runs.chat_thread_id`.
+NULL thread IDs remain distinct. The new API's last launch statement inserts
+the active row with `ON CONFLICT (chat_thread_id) DO NOTHING`; a collision rolls
+back that launch as a lost queue claim and keeps the message queued. Queue-first
+admission, Web preflight and queue drain read the slot. Admission, completion,
+timeout and queued-run markers no longer lock the thread row; the session
+binding uses compare-and-set.
+
+**Mixed-version risk:** the step-3 API still inserts active rows without a
+thread-slot conflict handler. If its launch races a new API launch or a still-
+finishing terminal run, the unique index can reject its insert (`23505`): its
+launch rolls back and inline send returns a temporary HTTP 500. The separately
+enqueued input remains durable and can drain after slot release; no second run
+starts. This is a user-visible error, not seamless compatibility. The release
+owner must explicitly accept it and monitor errors and queue progress, or
+first provide an older-API conflict handler / avoid serving the older API
+after the index is created. Separating releases alone does not remove the
+rolling mixed-version window.
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
@@ -564,14 +601,19 @@ The API no longer downloads and decompresses the R2 archive on behalf of a
 header-less client. A scope without a snapshot row still returns
 `{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
 
-The iOS TestFlight client currently decodes only inline `chatThreads`, so a
-header-less iOS build cannot load a non-empty compacted chat thread list from
-this API. Updating iOS to download the R2 URL remains separate work; this PR
-does not provide a minimum-version gate for iOS. Web App and CLI still send the
-capability header and accept inline responses for the existing API rollback
-window: an older API behind the current rollback floor still branches on that
-header. Keep the header in CORS and the shared inline response variant until
-the API rollback floor advances past that implementation.
+Pre-fix iOS TestFlight builds decode only inline `chatThreads`, so they cannot
+load a non-empty compacted chat thread list from this API. The updated native
+client downloads and decodes the R2 archive. It also accepts inline responses
+from a scope without a snapshot row or a rollback-window API. Installed pre-fix
+builds remain incompatible until users install a TestFlight build containing
+the native client fix. There is no iOS minimum-version gate. This preserves
+the explicitly accepted break rather
+than reintroducing API-side R2 download and decompression for header-less
+requests. Web App and CLI still send the capability header and accept inline
+responses for the existing API rollback window: an older API behind the
+current rollback floor still branches on that header. Keep the header in CORS
+and the shared inline response variant until the API rollback floor advances
+past that implementation.
 
 ## Thread draft contraction, release 2 (2026-09-25)
 

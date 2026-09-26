@@ -19,7 +19,6 @@ import {
   holdAgentRunRowLockFixture,
   holdThreadSessionConversationClearFixture,
   readRunUsageEventsFixture,
-  timeoutRunWithoutCallbacksFixture,
 } from "../../../test-fixtures/chat-events";
 import {
   readPiConversationIdentityFixture,
@@ -1003,32 +1002,34 @@ describe("CHAT-02: model-first provider policies", () => {
       sha256: h2Hash,
     });
     expect(modelCalls).toBe(1);
-    const timedOutClaim = await claimChatRun(runnerGroup, retry.runId);
-    await timeoutRunWithoutCallbacksFixture({ runId: retry.runId });
-    await waitForRunStatus(actor, retry.runId, "timeout");
-    const lateTimedOutH2 = await webhooks.requestAgentCheckpoint(
+    const retryClaim = await claimChatRun(runnerGroup, retry.runId);
+    const retryFailure = await webhooks.requestAgentComplete(
+      {
+        runId: retry.runId,
+        exitCode: 1,
+        error: "guest reported Pi failure without a new checkpoint",
+      },
+      retryClaim.sandboxHeaders,
+      [200],
+    );
+    expect(retryFailure.body).toStrictEqual({
+      success: true,
+      status: "failed",
+    });
+    await waitForRunStatus(actor, retry.runId, "failed");
+    const retryLateFailedH2 = await webhooks.requestAgentCheckpoint(
       {
         runId: retry.runId,
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryHash: h2Hash,
       },
-      timedOutClaim.sandboxHeaders,
+      retryClaim.sandboxHeaders,
       [400],
     );
-    expect(JSON.stringify(lateTimedOutH2.body)).toContain(
+    expect(JSON.stringify(retryLateFailedH2.body)).toContain(
       "[PI_H2_RUN_TERMINAL]",
     );
-    const timedOutCompletion = await webhooks.requestAgentComplete(
-      { runId: retry.runId, exitCode: 0 },
-      timedOutClaim.sandboxHeaders,
-      [200],
-    );
-    expect(timedOutCompletion.body).toStrictEqual({
-      success: true,
-      status: "failed",
-    });
-    await waitForRunStatus(actor, retry.runId, "timeout");
     await expect(
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);

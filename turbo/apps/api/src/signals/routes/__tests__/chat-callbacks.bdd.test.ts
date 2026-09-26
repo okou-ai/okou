@@ -79,6 +79,11 @@ import {
  * app-internal dispatch does not depend on an HTTP self-call.
  */
 
+// The stale release also waits for the active row's last heartbeat, which the
+// runner claim stamps from the database clock. Move app time past the grace
+// plus a margin for the real time the test spends before and after the claim.
+const ACTIVE_ROW_RELEASE_AFTER_MS =
+  CANCELLATION_RECOVERY_STALE_AFTER_MS + 60_000;
 const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -2707,7 +2712,7 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     await expectCancellationRecoveryPending(actor, run.threadId, true);
 
     context.mocks.ably.publish.mockClear();
-    mockNow(startedAt + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
+    mockNow(startedAt + ACTIVE_ROW_RELEASE_AFTER_MS);
     await reconcileCancellationRecoveryFixtures(run.threadId);
     const replacementRunId = await waitForQueuedEventReplacement(
       actor,
@@ -2757,7 +2762,7 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     await api.requestCancelRun(actor, poisonedRun.runId, [200]);
     await api.requestCancelRun(actor, healthyRun.runId, [200]);
     await flushWaitUntilForTest();
-    mockNow(startedAt + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
+    mockNow(startedAt + ACTIVE_ROW_RELEASE_AFTER_MS);
     await reconcileCancellationRecoveryFixtures(
       poisonedRun.threadId,
       healthyRun.threadId,

@@ -1,6 +1,6 @@
 {
-  "id": "14349ff6-a2dd-4278-84c9-6328b8a5b2c2",
-  "prevId": "83d0dfc4-7248-4f50-88f7-ab511f9e3bd3",
+  "id": "2247d334-545c-4913-8d39-1dd573120e27",
+  "prevId": "14349ff6-a2dd-4278-84c9-6328b8a5b2c2",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -39266,6 +39266,12 @@
         },
         "official_installation_state": {
           "name": "official_installation_state",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "import_source": {
+          "name": "import_source",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": false

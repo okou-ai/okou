@@ -2259,11 +2259,6 @@
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "Crea un presentatore per il tuo prossimo contenuto",
-          "prompt": "Crea un presentatore avatar parlante per il mio prossimo video.",
-          "title": "Crea un avatar"
-        },
         "illustration": {
           "description": "Ottieni un visual finito nello stile che preferisci",
           "prompt": "Crea un'illustrazione nello stile che descrivo.",
@@ -2273,11 +2268,6 @@
           "description": "Trasforma un argomento o documento in slide",
           "prompt": "Crea una presentazione da un argomento o documento che ti fornisco.",
           "title": "Crea una presentazione"
-        },
-        "video": {
-          "description": "Trasforma la tua idea o i tuoi file in un video finito",
-          "prompt": "Trasforma la mia idea o i miei file in un video finito.",
-          "title": "Crea un video"
         },
         "website": {
           "description": "Crea e pubblica una pagina condivisibile",
