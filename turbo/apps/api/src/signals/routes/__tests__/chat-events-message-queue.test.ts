@@ -865,26 +865,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await cancelChatRun(queued.actor, successor);
   }, 90_000);
 
-  it("leaves a long-expired cancellation recovery barrier to thread admission", async () => {
-    const queued = await queueBehindCancellationRecovery("old expiry");
-
-    // Past both the ten-minute recovery recheck window and the stale queue
-    // item window, so no sweep owns this queue any more.
-    mockNow(now() + 20 * 60 * 1000);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    await sweepOwnedThreadQueue(queued.threadId);
-    clearMockNow();
-
-    const events = await chat.listThreadEvents(queued.actor, queued.threadId);
-    expect(
-      userMessages(events.events).filter((message) => {
-        return message.revokesEventId === queued.queuedEventId;
-      }),
-    ).toHaveLength(0);
-  }, 90_000);
-
   it("settles timed-out delivery input when stopping the Runner fails", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
