@@ -176,8 +176,8 @@ importers:
         specifier: ^2.1.2
         version: 2.1.2(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
       ably:
-        specifier: ^2.21.0
-        version: 2.21.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.8))(react@19.2.8)(utf-8-validate@6.0.6)
+        specifier: ^2.28.0
+        version: 2.28.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.8))(react@19.2.8)(utf-8-validate@6.0.6)
       archiver:
         specifier: ^8.0.0
         version: 8.0.0
@@ -189,7 +189,7 @@ importers:
         version: 9.1.0
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@cloudflare/workers-types@5.20260924.1)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
+        version: 0.45.2(@cloudflare/workers-types@5.20260923.1)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
       google-auth-library:
         specifier: ^10.9.0
         version: 10.9.0
@@ -350,7 +350,7 @@ importers:
         version: '@typescript/typescript6@6.0.2'
       wrangler:
         specifier: ^4.129.0
-        version: 4.129.0(@cloudflare/workers-types@5.20260924.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+        version: 4.129.0(@cloudflare/workers-types@5.20260923.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
   apps/cli:
     devDependencies:
@@ -403,8 +403,8 @@ importers:
         specifier: npm:typescript@7.0.2
         version: typescript@7.0.2
       ably:
-        specifier: ^2.21.0
-        version: 2.21.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(utf-8-validate@6.0.6)
+        specifier: ^2.28.0
+        version: 2.28.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(utf-8-validate@6.0.6)
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -574,7 +574,7 @@ importers:
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^5.20260903.1
-        version: 5.20260924.1
+        version: 5.20260923.1
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
@@ -604,7 +604,7 @@ importers:
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(@vitest/coverage-v8@5.0.0)(@vitest/ui@5.0.0)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2))(vite@8.0.16(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
       wrangler:
         specifier: ^4.129.0
-        version: 4.129.0(@cloudflare/workers-types@5.20260924.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+        version: 4.129.0(@cloudflare/workers-types@5.20260923.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
   apps/host-worker:
     dependencies:
@@ -632,7 +632,7 @@ importers:
         version: '@typescript/typescript6@6.0.2'
       wrangler:
         specifier: ^4.129.0
-        version: 4.129.0(@cloudflare/workers-types@5.20260924.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+        version: 4.129.0(@cloudflare/workers-types@5.20260923.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
   apps/platform:
     dependencies:
@@ -739,8 +739,8 @@ importers:
         specifier: 3.31.0
         version: 3.31.0(@floating-ui/dom@1.8.0)(@tiptap/core@3.31.0(@tiptap/pm@3.31.0))(@tiptap/pm@3.31.0)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       ably:
-        specifier: ^2.21.0
-        version: 2.21.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(utf-8-validate@6.0.6)
+        specifier: ^2.28.0
+        version: 2.28.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(utf-8-validate@6.0.6)
       anchorme:
         specifier: 3.0.8
         version: 3.0.8
@@ -1062,7 +1062,7 @@ importers:
         version: link:../core
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@cloudflare/workers-types@5.20260924.1)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
+        version: 0.45.2(@cloudflare/workers-types@5.20260923.1)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
@@ -1758,8 +1758,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@cloudflare/workers-types@5.20260924.1':
-    resolution: {integrity: sha512-puvr63PrfAFIkdh3FInGEgS0VTQ49WYNYDC2Eupd+qvwWwGpSRjxJD5Iz22oNHCmV1UEcsDz+OtGF++01vUloA==}
+  '@cloudflare/workers-types@5.20260923.1':
+    resolution: {integrity: sha512-zuOqyxfhzhN2LlxxcpnAS79aGVm9ku3ZcWKyvVLHyjPV6oHsuHSFidzSHhHE9ho9UTcUxU1IdtpdVuFXluKB+g==}
 
   '@commitlint/cli@20.5.0':
     resolution: {integrity: sha512-yNkyN/tuKTJS3wdVfsZ2tXDM4G4Gi7z+jW54Cki8N8tZqwKBltbIvUUrSbT4hz1bhW/h0CdR+5sCSpXD+wMKaQ==}
@@ -5482,8 +5482,8 @@ packages:
   '@types/node@12.20.55':
     resolution: {integrity: sha512-J8xLz7q2OFulZ2cyGTLE1TbbZcjpno7FaN6zdJNrgAdrJ+DZzh/uFR6YrTb4C+nXakvud8Q4+rbhoIWlYQbUFQ==}
 
-  '@types/node@22.20.2':
-    resolution: {integrity: sha512-xlvWf4Vs9n1PEVYwP1n4vvG07M6y8WgvJ2t0vbrWTmijsIHp1cS+uJ2kMIRdY3nHZK0nCYKrPeD171+SzF4/zw==}
+  '@types/node@22.20.4':
+    resolution: {integrity: sha512-zJRE40jpHtKqE/C4fgHrAKQLJuSpzEnP9ff9Y7YtoR3Wd2pwqzlekDeEuUQXjRd+QCYnVnNwuJYmhdk9XV8gvA==}
 
   '@types/node@24.13.4':
     resolution: {integrity: sha512-YJ7EqCstVTzIr0fMr7qul/977en+pQHrfmuKIo6Zr9i75Be21dr3MovcfvGtyvi2HAUrRerWps5sMO9I7WaxDw==}
@@ -5932,8 +5932,8 @@ packages:
   abbrev@1.1.1:
     resolution: {integrity: sha512-nne9/IiQ/hzIhY6pdDnbBtz7DjPTKrY00P/zvPSm5pOFkl6xuGrGnXn/VtTNNfNtAfZ9/1RtehkszU9qcTii0Q==}
 
-  ably@2.21.0:
-    resolution: {integrity: sha512-Zgs3O/hqhnTEoXeV1WxoQeLaww58JbnDVFbVeEDj2kCHeuLPeavTbyf2NQBkxAM3jooN5mILaP0PDm79NOcpKw==}
+  ably@2.28.0:
+    resolution: {integrity: sha512-VHWAWaPRt+ysEQryI9Y0xN/fr0db4rvvUvk6akC9dAu06Ytax3/Vc8te2Z4IOwe+2AK41JpLxEbamEQVlqraIw==}
     engines: {node: '>=16'}
     peerDependencies:
       react: '>=16.8.0'
@@ -10782,18 +10782,6 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
-  ws@8.21.0:
-    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
-        optional: true
-
   ws@8.21.1:
     resolution: {integrity: sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==}
     engines: {node: '>=10.0.0'}
@@ -11473,7 +11461,7 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260903.1':
     optional: true
 
-  '@cloudflare/workers-types@5.20260924.1': {}
+  '@cloudflare/workers-types@5.20260923.1': {}
 
   '@commitlint/cli@20.5.0(@types/node@24.13.4)(@typescript/typescript6@6.0.2)(conventional-commits-parser@6.3.0)':
     dependencies:
@@ -12842,7 +12830,7 @@ snapshots:
       '@inquirer/figures': 1.0.15
       '@inquirer/type': 2.0.0
       '@types/mute-stream': 0.0.4
-      '@types/node': 22.20.2
+      '@types/node': 22.20.4
       '@types/wrap-ansi': 3.0.0
       ansi-escapes: 4.3.2
       cli-width: 4.1.0
@@ -15204,7 +15192,7 @@ snapshots:
 
   '@types/node@12.20.55': {}
 
-  '@types/node@22.20.2':
+  '@types/node@22.20.4':
     dependencies:
       undici-types: 6.21.0
 
@@ -15503,7 +15491,7 @@ snapshots:
       obug: 2.1.4
       std-env: 4.2.0
       tinyrainbow: 3.1.1
-      vitest: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(@vitest/coverage-v8@5.0.0)(@vitest/ui@5.0.0)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2))(vite@8.0.16(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.0.0)(@vitest/ui@5.0.0)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.0.16(@types/node@24.3.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/istanbul-lib-coverage@1.0.1': {}
 
@@ -15545,7 +15533,7 @@ snapshots:
       pathe: 2.0.3
       sirv: 3.0.2
       tinyrainbow: 3.1.1
-      vitest: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(@vitest/coverage-v8@5.0.0)(@vitest/ui@5.0.0)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2))(vite@8.0.16(@types/node@24.13.4)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+      vitest: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.0.0)(@vitest/ui@5.0.0)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.0.16(@types/node@24.3.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
 
   '@vitest/utils@5.0.0':
     dependencies:
@@ -15671,14 +15659,14 @@ snapshots:
 
   abbrev@1.1.1: {}
 
-  ably@2.21.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(utf-8-validate@6.0.6):
+  ably@2.28.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(utf-8-validate@6.0.6):
     dependencies:
       '@ably/msgpack-js': 0.4.1
       dequal: 2.0.3
       fastestsmallesttextencoderdecoder: 1.0.22
       got: 11.8.6
       ulid: 2.4.0
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     optionalDependencies:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
@@ -15686,14 +15674,14 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  ably@2.21.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.8))(react@19.2.8)(utf-8-validate@6.0.6):
+  ably@2.28.0(bufferutil@4.1.0)(react-dom@19.2.6(react@19.2.8))(react@19.2.8)(utf-8-validate@6.0.6):
     dependencies:
       '@ably/msgpack-js': 0.4.1
       dequal: 2.0.3
       fastestsmallesttextencoderdecoder: 1.0.22
       got: 11.8.6
       ulid: 2.4.0
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     optionalDependencies:
       react: 19.2.8
       react-dom: 19.2.6(react@19.2.8)
@@ -16587,9 +16575,9 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.21.0
 
-  drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260924.1)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9):
+  drizzle-orm@0.45.2(@cloudflare/workers-types@5.20260923.1)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9):
     optionalDependencies:
-      '@cloudflare/workers-types': 5.20260924.1
+      '@cloudflare/workers-types': 5.20260923.1
       '@opentelemetry/api': 1.9.1
       '@types/pg': 8.21.0
       pg: 8.23.0
@@ -21211,7 +21199,7 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20260903.1
       '@cloudflare/workerd-windows-64': 1.20260903.1
 
-  wrangler@4.129.0(@cloudflare/workers-types@5.20260924.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6):
+  wrangler@4.129.0(@cloudflare/workers-types@5.20260923.1)(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.5.0
       '@cloudflare/unenv-preset': 2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260903.1)
@@ -21222,7 +21210,7 @@ snapshots:
       unenv: 2.0.0-rc.24
       workerd: 1.20260903.1
     optionalDependencies:
-      '@cloudflare/workers-types': 5.20260924.1
+      '@cloudflare/workers-types': 5.20260923.1
       fsevents: 2.3.3
     transitivePeerDependencies:
       - bufferutil
@@ -21247,11 +21235,6 @@ snapshots:
       strip-ansi: 7.2.0
 
   wrappy@1.0.2: {}
-
-  ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6):
-    optionalDependencies:
-      bufferutil: 4.1.0
-      utf-8-validate: 6.0.6
 
   ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     optionalDependencies:
