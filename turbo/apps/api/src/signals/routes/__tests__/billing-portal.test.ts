@@ -275,20 +275,13 @@ describe("POST /api/billing/portal", () => {
       { data: [RESTRICTED_PORTAL_CONFIGURATION], has_more: true },
     ],
   ] as const)("does not open a portal with %s", async (_reason, listed) => {
-    const fixture = await track(
-      store.set(
-        seedInvoicesOrg$,
-        {
-          stripeCustomerId: `cus-portal-${randomUUID().slice(0, 8)}`,
-          stripeSubscriptionId: `sub-portal-${randomUUID().slice(0, 8)}`,
-          subscriptionStatus: "active",
-          tier: "pro",
-        },
-        context.signal,
-      ),
-    );
+    const userId = `user_${randomUUID()}`;
+    const orgId = `org_${randomUUID()}`;
     mockEnv("APP_URL", APP_ORIGIN);
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    mocks.clerk.session(userId, orgId, "org:admin");
+    context.mocks.stripe.customers.create.mockResolvedValue({
+      id: `cus-portal-${randomUUID().slice(0, 8)}`,
+    });
     context.mocks.stripe.billingPortal.configurations.list.mockResolvedValue(
       listed,
     );
@@ -303,6 +296,9 @@ describe("POST /api/billing/portal", () => {
       [500],
     );
     expect(response.status).toBe(500);
+    expect(
+      context.mocks.stripe.billingPortal.configurations.list,
+    ).toHaveBeenCalledWith({ limit: 100 });
     expect(
       context.mocks.stripe.billingPortal.sessions.create,
     ).not.toHaveBeenCalled();
