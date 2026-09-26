@@ -8,6 +8,46 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.681.3](https://github.com/okou-ai/okou/compare/api-v1.681.2...api-v1.681.3) (2026-09-26)
+
+
+### Refactoring
+
+* **api:** unify mcp activity and unread with chat indicators ([#36982](https://github.com/okou-ai/okou/issues/36982)) ([3c71465](https://github.com/okou-ai/okou/commit/3c71465c87d72241858dd157cd98c8b73c54e818))
+
+
+### Performance Improvements
+
+* **db:** drop agent_runs.last_heartbeat_at (active run state step 3) ([#36980](https://github.com/okou-ai/okou/issues/36980)) ([52fd72a](https://github.com/okou-ai/okou/commit/52fd72ae38e294aeabdba5ab71963566b7c3cb6d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.3
+    * @okouai/core bumped to 8.711.0
+    * @okouai/db bumped to 1.303.3
+    * @okouai/pi-agent-runtime bumped to 1.40.26
+
+## [1.681.2](https://github.com/okou-ai/okou/compare/api-v1.681.1...api-v1.681.2) (2026-09-26)
+
+
+### Performance Improvements
+
+* **api:** bound chat thread read, draft and snapshot paths ([#36944](https://github.com/okou-ai/okou/issues/36944)) ([d170783](https://github.com/okou-ai/okou/commit/d1707833dc21daab82ed43510dc8cd462f5c28ac))
+* **api:** switch run liveness reads to active agent runs ([#36955](https://github.com/okou-ai/okou/issues/36955)) ([e62567d](https://github.com/okou-ai/okou/commit/e62567d36dfe3d087278f56d0a1a88f16c35fa4e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.2
+    * @okouai/core bumped to 8.710.13
+    * @okouai/db bumped to 1.303.2
+    * @okouai/pi-agent-runtime bumped to 1.40.25
+
 ## [1.681.1](https://github.com/okou-ai/okou/compare/api-v1.681.0...api-v1.681.1) (2026-09-26)
 
 

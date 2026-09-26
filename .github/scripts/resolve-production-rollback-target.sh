@@ -9,16 +9,17 @@ readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
 readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70dab7ae6
 # #36960 stopped implicitly selecting computer_use_command_audit_events.approval_outcome.
-# Migration 1259 drops that column before promoting its API. Older API
-# artifacts would fail the audit list with 42703 after migration or rollback.
+# #36984 also stopped naming it in audit INSERTs, before the physical DROP.
+# APIs older than either cutover can fail with 42703 after contraction.
 readonly COMPUTER_USE_AUDIT_READER_COMMIT=41cc9918009622ccad7c64e433d09db1a8dfbe9c
-readonly COMPUTER_USE_AUDIT_CONTRACTION_PATH=turbo/packages/db/src/migrations/1259_drop_computer_use_audit_approval_outcome.sql
+readonly COMPUTER_USE_AUDIT_WRITER_COMMIT=cdeec36c168636b1a2e510e660eb6139c9c4e07a
 # #36932 targets the (chat_thread_id, user_id) draft key and stopped mapping the
 # chat_threads draft columns. Migration drop_chat_thread_draft_columns makes that
 # pair the primary key and drops the columns, so earlier APIs fail draft saves
 # and thread inserts.
 readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
+readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -67,16 +68,10 @@ fi
 if ! git merge-base --is-ancestor "$COMPUTER_USE_AUDIT_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the computer-use audit approval column reader cutover: ${COMPUTER_USE_AUDIT_READER_COMMIT}."
 fi
-# The outgoing API still names approval_outcome in audit INSERTs even after the
-# reader cutover. The bounded migration-to-promotion gap is accepted, but an
-# artifact rollback must never restore that writer after the column is dropped.
-computer_use_audit_contraction_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- "$COMPUTER_USE_AUDIT_CONTRACTION_PATH" | sed -n '1p')
-if [[ ! "$computer_use_audit_contraction_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged computer-use audit contraction on main."
-fi
-if ! git merge-base --is-ancestor "$computer_use_audit_contraction_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the computer-use audit column contraction: ${computer_use_audit_contraction_commit}."
+# After the physical DROP, rollback must not restore an audit INSERT that
+# names approval_outcome. The code-only writer cutover shipped independently.
+if ! git merge-base --is-ancestor "$COMPUTER_USE_AUDIT_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the computer-use audit writer cutover: ${COMPUTER_USE_AUDIT_WRITER_COMMIT}."
 fi
 if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread draft owner key writer: ${CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT}."
@@ -92,6 +87,17 @@ if [[ ! "$public_brand_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$public_brand_retirement_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the public_brand retirement: ${public_brand_retirement_commit}."
+fi
+
+# Migration 1259 drops agent_runs.last_heartbeat_at. Earlier APIs still declare
+# it, so every agent_runs insert, bare select and bare returning names it.
+agent_run_heartbeat_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$AGENT_RUN_HEARTBEAT_DROP_PATH" | sed -n '1p')
+if [[ ! "$agent_run_heartbeat_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged agent_runs heartbeat column drop on main."
+fi
+if ! git merge-base --is-ancestor "$agent_run_heartbeat_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the agent_runs heartbeat column drop: ${agent_run_heartbeat_drop_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

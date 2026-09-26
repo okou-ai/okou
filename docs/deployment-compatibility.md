@@ -1,54 +1,67 @@
 # Deployment Compatibility
 
-## Computer Use audit column and inline screenshot reader contraction (2026-09-25)
+## Computer Use audit column contraction after independent writer release (2026-09-26)
 
-Migration `1259_drop_computer_use_audit_approval_outcome` drops only
-`computer_use_command_audit_events.approval_outcome`. The audit-list query was
-narrowed in canonical main commit `41cc9918` (#36960); no current writer sets
-this column and no API response includes it. The production API target
-`4ecb619b` contains that commit: its production promotion completed at
-2026-09-25 23:13:47 UTC (release run `36198938622`). Subsequently, release
-`36206008702` promoted API target `191d95c5` at 2026-09-26 00:50:52 UTC
-and completed `deploy-api-schema` at 00:51:03 UTC; the Vercel production
-deployment reports that SHA. Outgoing pre-reader API traffic must be drained
-before this migration runs. The temporary production-derived Neon branch taken
-at 22:33:06 UTC had 11,258 audit rows with 0 non-null values; a fresh masked
-production aggregate subsequently counted 0 non-null values out of 11,248.
-The branch had no database objects depending on the column.
+Migration `1260_drop_computer_use_audit_approval_outcome` drops only the retired
+`computer_use_command_audit_events.approval_outcome` column. #36960 narrowed the
+audit-list SELECT in main commit `41cc9918`; #36984 removed the Drizzle column
+mapping from audit INSERTs without changing the physical database, in main
+commit `cdeec36c168636b1a2e510e660eb6139c9c4e07a`. New INSERTs and SELECTs
+omit the column while the nullable physical column remains. #36984 shipped
+independently in release #36986 (`355e1acda73b9e89a47c2700c93d55052f9f92cb`):
+`promote-api-production` and `deploy-api-schema` succeeded, and the production
+Vercel API deployment became READY at 2026-09-26 02:28:35 UTC. At 02:35:42 UTC,
+the new deployment retained all four production API aliases, the previous
+`f08b39d0` deployment had none, and more than the API's configured 300-second
+maximum request lifetime had elapsed since first observing the alias switch.
+MaskDB still exposed the physical nullable text column before this PR's DROP.
+#36974 had already published the preceding `1256`–`1258` migrations separately;
+main subsequently assigned `1259` to the agent-runs heartbeat contraction.
 
-Migration runs before API promotion. The outgoing API from #36960 explicitly
-selects only response fields, but its Drizzle audit INSERT still names
-`approval_outcome` with a `DEFAULT` value because the old physical mapping
-remains declared. Between the column DROP and promotion/drain of this PR's API,
-a write/plugin command completion or timeout may update the command state and
-then fail its audit INSERT with `42703`; the completion request can fail even
-though the state update committed. Ethan accepts this short API cutover window
-(estimated in tens of seconds, not a guaranteed duration). The new API removes
-the physical mapping: its generated audit INSERT and list SELECT do not name
-the dropped column. The production rollback resolver checks both the canonical
-#36960 reader cutover (`41cc9918`) and the first-parent main commit that adds
-migration `1259`; it cannot promote an older audit writer after DROP. Rollback
-does not restore the column. Recover forward if errors persist beyond the
-cutover; do not bypass the floor to restore an incompatible API.
+On a production-derived Neon branch created after the writer release, an
+aggregate-only census found 0 string screenshots among 16,603 commands and 0
+non-null approval outcomes among 11,248 audit rows. No screenshot bytes or
+individual user records were read. The temporary branch was deleted and its
+absence confirmed. This supports retiring the historical valid-inline-string
+screenshot **download** decoder. The current completion path still offloads
+valid data URLs to private object storage before persistence, passes through
+unrecognized strings (which were never downloadable), and retains 30-day
+string tombstoning. Preserve `idx_computer_use_commands_host_status`,
+`idx_computer_use_commands_created` and the partial unique running-host index:
+branch-local `idx_scan=0` cannot establish zero production use, and index plans
+still support host-status and created-time access. Production index-use counts
+remain unknown.
 
-The preceding #36944 `1256/1257` and #36955 `1258` migrations must complete
-production promotion in an independent release before this contraction is
-queued for a later release. A failure to acquire the migration's bounded DDL
-lock stops promotion rather than running incompatible new code. A green PR or
-preview alone does not establish the preceding release or bound the API drain.
+Production migrations run before API promotion, so the independently promoted
+writer mapping must remain the rollback floor after the column DROP. The
+production rollback resolver enforces both #36960's reader floor and #36984's
+writer floor (`cdeec36c`), rather than using this migration's eventual merge
+commit; rollback never restores the dropped column. Before queue admission,
+reconfirm that no intervening migration PR occupies `1260`, current production
+API still contains the writer cutover, and all preceding migrations were
+independently released. A DDL lock-timeout failure must stop promotion rather
+than deploy incompatible code. The separate writer release and drain remove the
+known old-INSERT `42703` window; they do not guarantee zero deployment errors.
 
-A production-derived Neon snapshot of 16,613 commands had 0 stored string
-screenshots (latest string time is null), so the historical valid-inline
-screenshot download decoder is removed. The completion API still offloads a
-valid screenshot data URL to object storage before persistence; it can still
-persist an **unrecognized** string, which was never downloadable. Keep the
-existing result pass-through and 30-day string tombstoning for that reachable
-state. The snapshot's `pg_stat_user_indexes.idx_scan=0` is branch-local and
-not evidence of production zero use. Plans show `host_status` is available
-for host FK checks, while `created` supports created-time scans; retain both
-normal indexes and the partial unique running-host index. Production index
-usage counters were not obtained and remain unknown. The temporary branch
-`br-frosty-mouse-afgo16gt` was deleted after read-only evidence collection.
+## Computer Use audit column: code-only read/write cutover (2026-09-26)
+
+At the #36984 preparatory release, the production database still had
+`computer_use_command_audit_events.approval_outcome`. #36960 already changed
+the audit-list SELECT to project only response fields, but its Drizzle schema
+still declares the retired column. Drizzle therefore names it in audit INSERTs
+with `DEFAULT`, even though no writer supplies an approval outcome.
+
+This code-only release removes the Drizzle declaration without a migration.
+The new API's generated INSERT and SELECT no longer name the column; both work
+while the physical column still exists. Existing write-command and plugin
+audit route tests exercise the current endpoints against that retained schema.
+Older serving APIs can still insert because the column remains. Do not drop it
+until this version has been independently promoted to production, the old API
+instances have drained, and the production rollback floor excludes those old
+writers. The follow-up #36969 must remove the narrow migration-consistency
+test adapter for this retained nullable text column when it drops the physical
+column, and must raise the rollback floor to this cutover's canonical main
+merge commit. No screenshot decoder or index changes belong to this step.
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
@@ -226,8 +239,6 @@ capabilities describe the retired mechanism.
 
 ## Computer Use audit approval column: reader cutover (2026-09-25)
 
-Historical preparation: this release preceded the physical contraction above.
-
 `computer_use_command_audit_events.approval_outcome` belongs to the retired
 approval flow. No current writer sets it or response exposes it; a masked
 production census on 2026-09-25 found 0 non-null values across 11,258 audit
@@ -236,14 +247,14 @@ full table row; other audit reads already select individual columns. The
 physical Drizzle schema and database still declare `approval_outcome`, so this
 release does **not** drop or migrate the column. The HTTP response is unchanged.
 
-This preparatory release protects audit-list reads, not audit writes: its
-physical Drizzle mapping also names `approval_outcome` in an INSERT column list
-even when no value is provided. The follow-up contraction above removes the
-mapping and column in one release with an explicitly accepted brief
-migration-before-API-promotion write gap, and raises the rollback floor to its
-own canonical main commit. The reader cutover alone is not a safe rollback
-floor after DROP. Reconfirm zero non-null rows before contracting; this
-preparation did not itself authorize the column drop.
+Drop the column in a follow-up release **after** this reader cutover has shipped
+to production, outgoing API instances have drained, and the enforced production
+API rollback floor is at or above this reader-cutover commit. Otherwise an
+older API's unqualified Drizzle `SELECT` would name the dropped column and fail
+with `42703` between database migration and API promotion (or after rollback).
+Reconfirm zero non-null rows before the DROP, remove the physical schema
+mapping in that same follow-up, and validate the old/new API/DB combinations.
+The column drop is not authorized by this preparatory release alone.
 
 ## Discord file deliveries become fire and forget (2026-09-25)
 
@@ -386,6 +397,28 @@ Activity and summary already use `active_agent_runs`; migration `1258` drops
 **do not roll back to #36900**: its timeout cleanup reads the now-stale
 `agent_runs.last_heartbeat_at`, and older APIs write the dropped snapshot
 table. Step 3 drops the old heartbeat column. Do not ship step 3 in this PR.
+
+## Active run state: `agent_runs.last_heartbeat_at` dropped (step 3 of 3)
+
+**Release gate:** step 2 (#36955, `e62567d3`) shipped alone in `api-v1.681.2`
+(release #36974). Promote the release carrying this change only after
+`api-v1.681.2` is live in production and the previous API has drained. Step 2
+is the first API that neither reads nor writes `agent_runs.last_heartbeat_at`;
+timeout cleanup, capacity and every heartbeat use `active_agent_runs`.
+
+Migration `1259` drops the column and this release removes its Drizzle
+declaration. `test:migration-consistency` requires both to ship together (as in
+`1228` and `1257`). Step 2 still declares the column, so Drizzle names it in
+every `agent_runs` insert, bare select and bare returning. Migrations run
+before API promotion; until the previous API drains, those statements on the
+old instances fail with `42703`, including run creation. Release this change
+alone at low traffic. The drop is metadata-only; the two heartbeat indexes on
+the column were already removed by `1249`.
+
+Rollback promotes artifacts without restoring schema, so the production
+rollback resolver rejects API targets that predate the canonical main commit
+that added `1259_drop_agent_runs_last_heartbeat_at.sql`. Recovery past it needs
+a forward-fix migration that restores the nullable column.
 
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 

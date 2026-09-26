@@ -8,6 +8,9 @@
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
     "src/**/*.spec.ts",
-    "src/**/*.spec.tsx"
+    "src/**/*.spec.tsx",
+    "src/mocks/**",
+    "src/test/**",
+    "src/shared-database/test-bridge.ts"
   ]
 }

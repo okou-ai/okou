@@ -1,5 +1,29 @@
 # Changelog
 
+## [8.711.0](https://github.com/okou-ai/okou/compare/core-v8.710.13...core-v8.711.0) (2026-09-26)
+
+
+### Features
+
+* **core:** enable figma connector for all users ([#36987](https://github.com/okou-ai/okou/issues/36987)) ([366917f](https://github.com/okou-ai/okou/commit/366917fcd7843f701a81af050532b64398f3c1fc))
+* **platform:** render internal chat thread links as chat chips ([#36985](https://github.com/okou-ai/okou/issues/36985)) ([5270290](https://github.com/okou-ai/okou/commit/52702903e0d364fb0d6f2da71419634ef05accaa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.3
+
+## [8.710.13](https://github.com/okou-ai/okou/compare/core-v8.710.12...core-v8.710.13) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.2
+
 ## [8.710.12](https://github.com/okou-ai/okou/compare/core-v8.710.11...core-v8.710.12) (2026-09-26)
 
 

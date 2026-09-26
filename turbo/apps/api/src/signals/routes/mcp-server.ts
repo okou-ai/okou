@@ -18,6 +18,7 @@ import { writeDb$ } from "../external/db";
 import { serveMcpRequest } from "../external/mcp-server";
 import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
+import { chatIndicators } from "../services/chat-thread.service";
 import {
   getMcpChatThread,
   listMcpChatThreads,
@@ -231,6 +232,18 @@ const serveAuthorizedMcp$ = command(
           return await get(
             getMcpChatMessages(historyRuntime, principal, input, readSignal),
           );
+        },
+        getIndicators: async (readSignal) => {
+          const data = await awaitWithSignal(
+            get(
+              chatIndicators({
+                userId: principal.userId,
+                orgId: principal.orgId,
+              }),
+            ),
+            readSignal,
+          );
+          return { kind: "ok" as const, data };
         },
         listThreads: async (input, readSignal) => {
           return await awaitWithSignal(

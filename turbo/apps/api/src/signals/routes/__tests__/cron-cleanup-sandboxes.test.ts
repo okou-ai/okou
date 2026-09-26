@@ -257,8 +257,7 @@ async function insertRunFixture(args?: {
   readonly status?: string;
   readonly composeName?: string;
   readonly createdAt?: Date;
-  readonly lastHeartbeatAt?: Date | null;
-  readonly activeLastHeartbeatAt?: Date;
+  readonly lastHeartbeatAt?: Date;
   readonly completedAt?: Date | null;
   readonly cancellationRecoveryCompleted?: boolean;
   readonly threadless?: boolean;
@@ -274,11 +273,7 @@ async function insertRunFixture(args?: {
     status: fixture.status,
     compose_name: fixture.composeName,
     created_at: fixture.createdAt?.toISOString(),
-    last_heartbeat_at:
-      fixture.lastHeartbeatAt === undefined
-        ? undefined
-        : (fixture.lastHeartbeatAt?.toISOString() ?? null),
-    active_last_heartbeat_at: fixture.activeLastHeartbeatAt?.toISOString(),
+    last_heartbeat_at: fixture.lastHeartbeatAt?.toISOString(),
     completed_at:
       fixture.completedAt === undefined
         ? undefined
@@ -1276,42 +1271,6 @@ describe("sandbox cleanup", () => {
     await expect(findRun(fixture.runId)).resolves.toMatchObject({
       status: "running",
       error: null,
-    });
-  });
-
-  it("uses the active heartbeat even when the retained run heartbeat is stale", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "running",
-        createdAt: minutesAgo(10),
-        lastHeartbeatAt: minutesAgo(3),
-        activeLastHeartbeatAt: minutesAgo(1),
-      }),
-    );
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.results).toHaveLength(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "running",
-    });
-  });
-
-  it("expires a silent active row even when the retained run heartbeat is recent", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "running",
-        createdAt: minutesAgo(10),
-        lastHeartbeatAt: minutesAgo(1),
-        activeLastHeartbeatAt: minutesAgo(3),
-      }),
-    );
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "timeout",
     });
   });
 

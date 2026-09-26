@@ -16,7 +16,6 @@ import {
   advanceRunActivityClockFixture,
   deleteActiveAgentRunFixture,
   readActiveAgentRunFixture,
-  readRetainedRunHeartbeatFixture,
 } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -1029,11 +1028,8 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(0);
   });
 
-  it("heartbeats only the active row, not the retained run", async () => {
+  it("heartbeats the active row", async () => {
     const f = await fixture();
-    await expect(
-      readRetainedRunHeartbeatFixture(f.run.runId),
-    ).resolves.toBeNull();
     const heartbeatAt = now() + 30_000;
     mockNow(heartbeatAt);
 
@@ -1046,9 +1042,6 @@ describe("thread activity summary", () => {
     await expect(readActiveAgentRunFixture(f.run.runId)).resolves.toMatchObject(
       { lastHeartbeatAt: new Date(heartbeatAt) },
     );
-    await expect(
-      readRetainedRunHeartbeatFixture(f.run.runId),
-    ).resolves.toBeNull();
   });
 
   it("keeps a cancelled running run's active row until its runner reports completion", async () => {

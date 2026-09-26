@@ -782,6 +782,27 @@ async function validateChatEventContextPointerConstraints(
   }
 }
 
+// Keep the physical contraction visible in both historical migration replay
+// and a fresh schema, rather than adapting either disposable database.
+async function assertComputerUseAuditColumnAbsent(
+  dbUrl: string,
+): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  try {
+    const { rows } = await client.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'computer_use_command_audit_events'
+        AND column_name = 'approval_outcome'
+    `);
+    assert.deepEqual(rows, []);
+  } finally {
+    await client.end();
+  }
+}
+
 async function runNormalizedComparison(
   dbUrl1: string,
   dbUrl2: string,
@@ -3272,7 +3293,9 @@ async function main(): Promise<void> {
     await restoreMigrations();
     migrationsBackedUp = false;
 
-    // Step 5: Run normalized comparison (using pg library)
+    // Step 5: Both migration replay and fresh schema must exclude the retired column.
+    await assertComputerUseAuditColumnAbsent(dbUrl1);
+    await assertComputerUseAuditColumnAbsent(dbUrl2);
     console.log("=== Phase 4: Normalized schema comparison ===\n");
     const comparisonPassed = await runNormalizedComparison(dbUrl1, dbUrl2);
 

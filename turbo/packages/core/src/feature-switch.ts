@@ -183,7 +183,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.FigmaConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Figma design connector",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.ExpensifyConnector]: {
     maintainer: "yuma@okou.ai",
@@ -433,6 +433,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "linghan@okou.ai",
     description:
       "Require a responsibility when creating an Agent, then pin it and open a setup thread asking it to adopt that responsibility.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ChatThreadLinkChips]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Render links to internal chat threads in chat messages as chat chips",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

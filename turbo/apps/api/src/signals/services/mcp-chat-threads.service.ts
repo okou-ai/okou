@@ -10,27 +10,10 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import {
-  and,
-  desc,
-  eq,
-  exists,
-  gt,
-  gte,
-  ilike,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  not,
-  or,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, desc, eq, gte, ilike, lt, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -42,7 +25,6 @@ import { env } from "../../lib/env";
 import { now } from "../../lib/time";
 import type { Db } from "../external/db";
 import { safeJsonParse } from "../utils";
-import { latestReadWatermarkEventSubquery } from "./chat-thread-read-state-query";
 import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
 
 interface Principal {
@@ -54,7 +36,6 @@ const CURSOR_TTL_MS = 24 * 60 * 60 * 1000;
 // PostgreSQL counts characters, while JSON schema string limits count UTF-16
 // units. Five hundred code points fit the 1,000-unit response bound even for emoji.
 const TEXT_CHARACTER_LIMIT = 500;
-const UNREAD_COVERAGE = "retained_terminal_events";
 const cursorSchema = z.strictObject({
   version: z.literal(1),
   operation: z.literal("list_chat_threads"),
@@ -76,8 +57,6 @@ function filterIdentity(input: McpListChatThreadsInput): string {
         title: input.title?.trim() ?? null,
         since: input.since ?? null,
         before: input.before ?? null,
-        activity: input.activity ?? null,
-        unread: input.unread ?? null,
       }),
     )
     .digest("hex");
@@ -139,24 +118,6 @@ function decodeCursor(
     : null;
 }
 
-function activeRunCondition(
-  db: Db,
-  statuses: readonly ("queued" | "pending" | "running")[],
-) {
-  return exists(
-    db
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.chatThreadId, chatThreads.id),
-          inArray(agentRuns.status, [...statuses]),
-          isNotNull(agentRuns.triggerSource),
-        ),
-      ),
-  );
-}
-
 function literalTitlePattern(title: string): string {
   return `%${title.replace(/[\\%_]/gu, String.raw`\$&`)}%`;
 }
@@ -168,16 +129,6 @@ function threadQuery(
   cursor: Cursor | null,
   threadId?: string,
 ) {
-  const active = activeRunCondition(db, ["queued", "pending", "running"]);
-  const watermark = latestReadWatermarkEventSubquery(db, chatThreads.id);
-  const unread = sql`${and(
-    not(active),
-    isNotNull(watermark.createdAt),
-    or(
-      isNull(chatThreads.lastReadAt),
-      gt(watermark.createdAt, chatThreads.lastReadAt),
-    ),
-  )}`;
   const conditions: (SQL | undefined)[] = [
     eq(chatThreads.userId, principal.userId),
     eq(agents.orgId, principal.orgId),
@@ -194,16 +145,6 @@ function threadQuery(
     input.before === undefined
       ? undefined
       : lt(chatThreads.lastMessageAt, sql`${input.before}::timestamp`),
-    input.activity === undefined
-      ? undefined
-      : input.activity === "active"
-        ? active
-        : not(active),
-    input.unread === undefined
-      ? undefined
-      : input.unread
-        ? unread
-        : not(unread),
     cursor === null
       ? undefined
       : sql`(${chatThreads.lastMessageAt}, ${chatThreads.id}) < (${cursor.lastMessageAt}::timestamp, ${cursor.threadId}::uuid)`,
@@ -232,15 +173,10 @@ function threadQuery(
         sql`to_char(${chatThreads.lastMessageAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
           pgTextDecoder,
         ),
-      queued: activeRunCondition(db, ["queued"]).mapWith(pgBooleanDecoder),
-      pending: activeRunCondition(db, ["pending"]).mapWith(pgBooleanDecoder),
-      running: activeRunCondition(db, ["running"]).mapWith(pgBooleanDecoder),
-      unread: unread.mapWith(pgBooleanDecoder),
     })
     .from(chatThreads)
     .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
-    .leftJoinLateral(watermark, sql`true`)
     .where(and(...conditions))
     .orderBy(
       sql`${desc(chatThreads.lastMessageAt)} NULLS LAST`,
@@ -286,12 +222,6 @@ async function projectThreads(
       metadataUpdatedAt: formatMcpChatTimestamp(row.metadataUpdatedAt),
       lastMessageAt: formatMcpChatTimestamp(row.lastMessageAt),
       url: new URL(`/chats/${row.threadId}`, env("APP_URL")).toString(),
-      activity: {
-        queued: row.queued,
-        pending: row.pending,
-        running: row.running,
-      },
-      unread: row.unread,
     };
   });
 }
@@ -338,7 +268,6 @@ export async function listMcpChatThreads(
         data: {
           threads: await projectThreads(tx, principal, page),
           nextCursor,
-          unreadCoverage: UNREAD_COVERAGE,
         },
       };
     },
@@ -374,7 +303,7 @@ export async function getMcpChatThread(
       }
       return {
         kind: "ok" as const,
-        data: { thread, unreadCoverage: UNREAD_COVERAGE },
+        data: { thread },
       };
     },
     { isolationLevel: "repeatable read", accessMode: "read only" },
