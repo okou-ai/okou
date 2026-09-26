@@ -8,6 +8,25 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.682.3](https://github.com/okou-ai/okou/compare/api-v1.682.2...api-v1.682.3) (2026-09-26)
+
+
+### Bug Fixes
+
+* **browser:** retain cdp reply listener across events ([#37015](https://github.com/okou-ai/okou/issues/37015)) ([32b1da2](https://github.com/okou-ai/okou/commit/32b1da23235f93f8b5fd0acc569f23e3ae810cb4))
+
+
+### Refactoring
+
+* **api:** retire redundant advisory locks and narrow lifecycle coordination ([#37009](https://github.com/okou-ai/okou/issues/37009)) ([c639e33](https://github.com/okou-ai/okou/commit/c639e3397602b5c9b049315c7a99f5ed2e23e660))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.304.2
+
 ## [1.682.2](https://github.com/okou-ai/okou/compare/api-v1.682.1...api-v1.682.2) (2026-09-26)
 
 
