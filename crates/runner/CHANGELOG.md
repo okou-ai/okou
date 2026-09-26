@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.213.22](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.21...runner-rs-v0.213.22) (2026-09-26)
+
+
+### Refactoring
+
+* **runner:** move finalizing fallback lock policy to supervisor ([#36973](https://github.com/okou-ai/okou/issues/36973)) ([d7c10ee](https://github.com/okou-ai/okou/commit/d7c10eeaabd5380dd397b213a0481d3f5ed4dbe2))
+
 ## [0.213.21](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.20...runner-rs-v0.213.21) (2026-09-25)
 
 ## [0.213.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.19...runner-rs-v0.213.20) (2026-09-25)

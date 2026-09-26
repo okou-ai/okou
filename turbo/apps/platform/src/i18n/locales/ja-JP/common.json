@@ -2558,7 +2558,7 @@
         "back": "ワークフローを見る",
         "browse": "ワークフローを見る",
         "close": "閉じる",
-        "contextPrefix": "重視したいこと：{{context}}",
+        "contextPrefix": "重視したいこと：{{preference}}",
         "items": {
           "competitors": {
             "cadence": "毎日または毎週",

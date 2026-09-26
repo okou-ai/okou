@@ -2567,7 +2567,7 @@
         "back": "Browse workflows",
         "browse": "Browse workflows",
         "close": "Close",
-        "contextPrefix": "What matters to me: {{context}}",
+        "contextPrefix": "What matters to me: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Daily or weekly",

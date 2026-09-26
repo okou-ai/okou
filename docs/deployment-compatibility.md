@@ -52,6 +52,26 @@ READY in production, no pre-migration API target is eligible; recovery requires
 fixing forward. This is the accepted single-release compatibility trade-off.
 The R2 JSON archive and its response contract are unchanged.
 
+## Computer Use audit column: code-only read/write cutover (2026-09-26)
+
+The production database still has
+`computer_use_command_audit_events.approval_outcome`. #36960 already changed
+the audit-list SELECT to project only response fields, but its Drizzle schema
+still declares the retired column. Drizzle therefore names it in audit INSERTs
+with `DEFAULT`, even though no writer supplies an approval outcome.
+
+This code-only release removes the Drizzle declaration without a migration.
+The new API's generated INSERT and SELECT no longer name the column; both work
+while the physical column still exists. Existing write-command and plugin
+audit route tests exercise the current endpoints against that retained schema.
+Older serving APIs can still insert because the column remains. Do not drop it
+until this version has been independently promoted to production, the old API
+instances have drained, and the production rollback floor excludes those old
+writers. The follow-up #36969 must remove the narrow migration-consistency
+test adapter for this retained nullable text column when it drops the physical
+column, and must raise the rollback floor to this cutover's canonical main
+merge commit. No screenshot decoder or index changes belong to this step.
+
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
 **Draft columns and owner key.** Migration `1257_drop_chat_thread_draft_columns` drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`, and makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.
