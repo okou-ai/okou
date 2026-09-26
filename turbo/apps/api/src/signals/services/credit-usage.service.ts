@@ -11,7 +11,7 @@ import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { usageUnderbillingFields } from "../usage-underbilling";
-import { tapError } from "../utils";
+import { safeSync, tapError } from "../utils";
 import {
   resolveUsagePricingProvider,
   usagePricingResolution$,
@@ -216,6 +216,8 @@ interface SettlementWorkObservation {
   readonly lockWaitMs: number;
   readonly orgLockWaitMs: number;
   readonly settlementWorkMs: number;
+  // Standalone settlement only; inline managed callers own a larger transaction.
+  readonly transactionDurationMs?: number;
   readonly pendingEvents: number;
   readonly pricingRows: number;
   readonly affectedUsers: number;
@@ -598,7 +600,11 @@ export const completeProcessedOrgUsage$ = command(
     // Numerical fields and a fixed operation name keep the observation safe
     // for aggregation without cardinality from orgs, users or events.
     if (result.work.pendingEvents > 0) {
-      L.info("usage settlement work", result.work);
+      // The ledger has committed. Best-effort telemetry must not turn its
+      // receipt into a failed response; safeSync still propagates cancellation.
+      safeSync(() => {
+        L.info("usage settlement work", result.work);
+      });
     }
 
     if (sharedCreditsCharged > 0) {
@@ -645,6 +651,7 @@ export const processOrgUsageEvents$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const writeDb = set(writeDb$);
     const pricingResolution = get(usagePricingResolution$);
+    const transactionStartedAt = performance.now();
     const result = await writeDb.transaction((tx) => {
       return processOrgUsageEventsInTransaction(
         tx,
@@ -654,6 +661,16 @@ export const processOrgUsageEvents$ = command(
       );
     });
     signal.throwIfAborted();
-    await set(completeProcessedOrgUsage$, { orgId, result }, signal);
+    const transactionDurationMs = Math.round(
+      performance.now() - transactionStartedAt,
+    );
+    await set(
+      completeProcessedOrgUsage$,
+      {
+        orgId,
+        result: { ...result, work: { ...result.work, transactionDurationMs } },
+      },
+      signal,
+    );
   },
 );

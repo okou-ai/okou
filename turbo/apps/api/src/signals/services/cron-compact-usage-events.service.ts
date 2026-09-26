@@ -23,6 +23,7 @@ import {
 } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
+import { safeSync } from "../utils";
 import { timestampWithoutTimeZone } from "../../lib/time";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 
@@ -673,22 +674,26 @@ export const compactUsageEvents$ = command(
       durationMs: Math.round(performance.now() - startedAt),
     };
     const logicalInputRows = stats.rawRowsDeleted + stats.hourlyRowsDeleted;
-    L.info("usage event compaction work", {
-      durationMs: stats.durationMs,
-      lockWaitMs: stats.lockWaitMs,
-      rawSeedLimit: stats.rawSeedLimit,
-      seededRawRows: stats.seededRawRows,
-      selectedGrains: stats.selectedGrains,
-      rawRowsDeleted: stats.rawRowsDeleted,
-      hourlyRowsDeleted: stats.hourlyRowsDeleted,
-      hourlyRowsInserted: stats.hourlyRowsInserted,
-      billingErrorHeldRows: stats.billingErrorHeldRows,
-      logicalInputRows,
-      logicalCompressionRatio:
-        stats.hourlyRowsInserted === 0
-          ? null
-          : logicalInputRows / stats.hourlyRowsInserted,
-      hasMore: stats.hasMore,
+    // The batch has committed; ordinary logger failures cannot make its
+    // response ambiguous. Cancellation still propagates via safeSync.
+    safeSync(() => {
+      L.info("usage event compaction work", {
+        durationMs: stats.durationMs,
+        lockWaitMs: stats.lockWaitMs,
+        rawSeedLimit: stats.rawSeedLimit,
+        seededRawRows: stats.seededRawRows,
+        selectedGrains: stats.selectedGrains,
+        rawRowsDeleted: stats.rawRowsDeleted,
+        hourlyRowsDeleted: stats.hourlyRowsDeleted,
+        hourlyRowsInserted: stats.hourlyRowsInserted,
+        billingErrorHeldRows: stats.billingErrorHeldRows,
+        logicalInputRows,
+        logicalCompressionRatio:
+          stats.hourlyRowsInserted === 0
+            ? null
+            : logicalInputRows / stats.hourlyRowsInserted,
+        hasMore: stats.hasMore,
+      });
     });
     return stats;
   },

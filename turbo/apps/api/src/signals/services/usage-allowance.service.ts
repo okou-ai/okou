@@ -21,6 +21,7 @@ import {
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { safeSync } from "../utils";
 import { getStripeClient } from "../external/stripe-client";
 
 type UsageAllowanceStore = Pick<Db, "execute" | "insert" | "select" | "update">;
@@ -625,10 +626,14 @@ export async function resolveUsageAllowanceAvailability(
   });
   // This measures the advisory read including COMMIT; it does not claim
   // the later authoritative admission was accepted under the same lock.
-  L.info("usage allowance availability work", {
-    durationMs: Math.round(performance.now() - startedAt),
-    lockWaitMs,
-    available: availability !== null,
+  // Advisory availability already committed; ordinary logging failures
+  // cannot deny admission. Cancellation still propagates via safeSync.
+  safeSync(() => {
+    L.info("usage allowance availability work", {
+      durationMs: Math.round(performance.now() - startedAt),
+      lockWaitMs,
+      available: availability !== null,
+    });
   });
   return availability;
 }
