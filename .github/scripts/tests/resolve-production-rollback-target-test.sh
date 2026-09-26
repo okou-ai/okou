@@ -37,6 +37,8 @@ case "${1:-}" in
     elif [ "${3:-}" = "3333333333333333333333333333333333333333" ]; then
       [ "${MOCK_AGENT_RUN_HEARTBEAT_DROP_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4444444444444444444444444444444444444444" ]; then
+      [ "${MOCK_PERSONAL_SUBSCRIPTION_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5555555555555555555555555555555555555555" ]; then
       [ "${MOCK_SNAPSHOT_JSONB_DROP_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
@@ -47,8 +49,10 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
     elif [[ "$*" == *1259_drop_agent_runs_last_heartbeat_at.sql* ]]; then
       printf '%s\n' "${MOCK_AGENT_RUN_HEARTBEAT_DROP_COMMIT-3333333333333333333333333333333333333333}"
-    elif [[ "$*" == *1260_drop_chat_thread_snapshot_jsonb.sql* ]]; then
-      printf '%s\n' "${MOCK_SNAPSHOT_JSONB_DROP_COMMIT-4444444444444444444444444444444444444444}"
+    elif [[ "$*" == *1260_personal_subscription_account_only.sql* ]]; then
+      printf '%s\n' "${MOCK_PERSONAL_SUBSCRIPTION_COMMIT-4444444444444444444444444444444444444444}"
+    elif [[ "$*" == *1261_drop_chat_thread_snapshot_jsonb.sql* ]]; then
+      printf '%s\n' "${MOCK_SNAPSHOT_JSONB_DROP_COMMIT-5555555555555555555555555555555555555555}"
     else
       exit 2
     fi
@@ -150,7 +154,8 @@ grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
 grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
 grep -Fxq "git merge-base --is-ancestor 3d93ff8d4b4a07a5888e3030e69b340f40da0ad4 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the R2-only chat thread snapshot floor"
 grep -Fxq "git merge-base --is-ancestor 3333333333333333333333333333333333333333 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the agent_runs heartbeat column drop floor"
-grep -Fxq "git merge-base --is-ancestor 4444444444444444444444444444444444444444 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
+grep -Fxq "git merge-base --is-ancestor 4444444444444444444444444444444444444444 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the personal subscription account-only floor"
+grep -Fxq "git merge-base --is-ancestor 5555555555555555555555555555555555555555 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -193,6 +198,20 @@ assert_failure "Rollback target predates the agent_runs heartbeat column drop" \
 [ ! -s "${tmp_dir}/agent-run-heartbeat-floor.output" ] || fail "pre-drop API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "agent_runs heartbeat column drop floor must fail before artifact or host access"
+fi
+
+for account_only_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged personal subscription account-only migration" \
+    run_resolver "${tmp_dir}/personal-subscription-history.output" "MOCK_PERSONAL_SUBSCRIPTION_COMMIT=${account_only_commit}"
+  [ ! -s "${tmp_dir}/personal-subscription-history.output" ] || fail "invalid personal subscription history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the personal subscription account-only store" \
+  run_resolver "${tmp_dir}/personal-subscription-floor.output" MOCK_PERSONAL_SUBSCRIPTION_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/personal-subscription-floor.output" ] || fail "pre-account-only API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "personal subscription account-only floor must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

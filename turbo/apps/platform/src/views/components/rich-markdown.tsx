@@ -14,6 +14,7 @@ import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { cn } from "@okouai/ui";
 
@@ -21,6 +22,8 @@ import {
   escapeHtmlTags,
   parseMarkdownTree,
 } from "../../lib/markdown/pipeline.ts";
+import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -48,6 +51,7 @@ import {
   SitePreviewContent,
   SitePreviewViewport,
 } from "../okou-page/attachment-preview.tsx";
+import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
@@ -313,6 +317,27 @@ function MediaLinkRenderer(
   props: { children?: ReactNode } & MarkdownAnchorProps,
 ) {
   const { children, ...rest } = props;
+  const features = useLastResolved(featureSwitch$);
+  const node = props.node;
+  const chatThreadLink =
+    features?.[FeatureSwitchKey.ChatThreadLinkChips] === true &&
+    node !== undefined &&
+    node.data?.card === undefined &&
+    !containsMarkdownImage(node) &&
+    typeof props.href === "string"
+      ? parseChatThreadLink(props.href, window.location.origin)
+      : null;
+  if (chatThreadLink !== null && node !== undefined) {
+    // The chip reads as the link's own text: an autolinked URL shows itself,
+    // an authored label such as a serialized chat mention is kept.
+    return (
+      <ChatThreadLinkChip
+        {...chatThreadLink}
+        title={markdownNodeText(node)}
+        insideMarkdown
+      />
+    );
+  }
   return <MediaLink {...rest}>{children}</MediaLink>;
 }
 
@@ -417,6 +442,16 @@ function LinkedArtifactImage({
       resolutionFailed={thumbnail.state === "hasError"}
     />
   );
+}
+
+/** Whether a Markdown link wraps an image, which a chip would drop. */
+function containsMarkdownImage(node: Element): boolean {
+  return node.children.some((child) => {
+    return (
+      child.type === "element" &&
+      (child.tagName === "img" || containsMarkdownImage(child))
+    );
+  });
 }
 
 /** The words a Markdown node reads as, which is the label its author wrote. */

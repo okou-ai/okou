@@ -20,7 +20,7 @@ follow-up enters its release path.
 
 ## Chat thread snapshot JSONB column retired (2026-09-26)
 
-Migration `1260_drop_chat_thread_snapshot_jsonb` drops only
+Migration `1261_drop_chat_thread_snapshot_jsonb` drops only
 `chat_thread_snapshots.chat_threads`. The API already reads the snapshot cursor
 and scoped R2 `object_key`, not the old JSONB body; the archive in R2 and the
 empty response for a scope without a snapshot row remain unchanged. A masked
@@ -51,6 +51,53 @@ would fail and earlier APIs that still read JSONB. Until the new release is
 READY in production, no pre-migration API target is eligible; recovery requires
 fixing forward. This is the accepted single-release compatibility trade-off.
 The R2 JSON archive and its response contract are unchanged.
+
+## Personal subscription credentials become account-only (2026-09-26)
+
+Personal (`user_id <> '__org__'`) `claude-code-oauth-token` and
+`codex-oauth-token` credentials now live only in `model_provider_accounts` and
+`model_provider_account_secrets`. Organization subscriptions and API-key
+providers keep `model_providers` + `secrets` unchanged.
+
+Removed from the API:
+
+- the `secrets` mirror of the active account and the personal singleton fields
+  on `model_providers` (`token_expires_at`, `needs_reconnect`,
+  `last_refresh_error_code`, `secret_id`, `auth_method`, workspace/plan and
+  reset metadata are neither written nor read for personal rows; the columns
+  remain for organization providers);
+- lazy account seeding from legacy secrets, legacy bundle import, mirror/KMS
+  equivalence checks and the request-scoped coordination that existed only for
+  API 1.595.0 singleton writers (`docs/personal-subscription-run-identity.md`
+  formerly §A2), plus the sourceId-less personal reader;
+- every credential advisory and row lock on reads, run admission, connect,
+  reconnect, activation, disconnect and terminal cleanup. Token refresh keeps
+  the `model_provider_state` advisory lock.
+
+Migration `1260_personal_subscription_account_only` sets
+`model_providers.secret_id = NULL` for personal Claude/Codex providers, deletes
+their mirrored `secrets` rows (Claude token; Codex `CHATGPT_*`/`CODEX_AUTH_JSON`)
+and adds the unique index
+`idx_model_provider_accounts_provider_identity (model_provider_id, external_account_id)`
+(NULLs distinct). Connections merge by that identity with `INSERT ... ON
+CONFLICT`; concurrent conflicting account writes surface as `409`.
+
+Prerequisites: every personal Claude/Codex provider must own an account row
+before the migration (seeded 2026-09-26: 21 providers, 12 Claude + 9 Codex;
+the Codex seeds have NULL `external_account_id` until reconnect), and no
+duplicate non-NULL `(model_provider_id, external_account_id)` pair may exist.
+
+Overlap and rollback:
+
+- During the ~20s migration-to-promotion window (API overlap measured at
+  api-v1.673.0) the previous API still reads the mirror for some paths and may
+  report a personal subscription as unavailable or require reconnect. This is
+  accepted; no persisted data is lost because accounts are canonical.
+- This release is the API rollback floor for personal subscriptions. An older
+  API treats the missing mirror as an unavailable subscription and its legacy
+  import/seed paths could recreate or diverge from account state. The production
+  rollback resolver rejects API targets that predate the merge commit adding
+  `1260_personal_subscription_account_only.sql`; roll forward instead.
 
 ## Computer Use audit column: code-only read/write cutover (2026-09-26)
 

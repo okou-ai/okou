@@ -18,7 +18,8 @@ readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2b
 readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40da0ad4
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
-readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1260_drop_chat_thread_snapshot_jsonb.sql
+readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
+readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1261_drop_chat_thread_snapshot_jsonb.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -93,6 +94,18 @@ if [[ ! "$agent_run_heartbeat_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$agent_run_heartbeat_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the agent_runs heartbeat column drop: ${agent_run_heartbeat_drop_commit}."
+fi
+
+# Migration 1260 deletes the personal subscription secrets mirror. Earlier APIs
+# read that mirror, so they treat every personal Claude/Codex subscription as
+# unavailable and their legacy import paths diverge from the account store.
+personal_subscription_account_only_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH" | sed -n '1p')
+if [[ ! "$personal_subscription_account_only_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged personal subscription account-only migration on main."
+fi
+if ! git merge-base --is-ancestor "$personal_subscription_account_only_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the personal subscription account-only store: ${personal_subscription_account_only_commit}."
 fi
 
 # Once the snapshot JSONB column is dropped, earlier APIs still name it in

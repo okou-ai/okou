@@ -20,7 +20,6 @@ import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import type { AgentRunModelPin } from "./agent-run-create.service";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
-import { lockModelProviderState } from "./auth-state-lock.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
@@ -288,8 +287,7 @@ async function credentialSnapshot(db: ReadDb, source: CurrentCredential) {
           eq(modelProviderAccounts.needsReconnect, false),
           isNull(modelProviderAccounts.disconnectedAt),
         ),
-      )
-      .for("share");
+      );
     const externalAccountId = account?.externalAccountId;
     if (!account || !externalAccountId) {
       reject("credential_unavailable");
@@ -518,13 +516,6 @@ export async function resolvePiMemoryPhase2Credential(
         .for("share");
       if (!storage) {
         reject("storage_binding_changed");
-      }
-      if (selected.type === "codex-oauth-token") {
-        await lockModelProviderState(tx, {
-          orgId: selected.orgId,
-          userId: selected.userId,
-          type: selected.type,
-        });
       }
       if (
         JSON.stringify(await credentialSnapshot(tx, selected)) !==
