@@ -35,6 +35,43 @@ export const testUsageSettlementContract = c.router({
     },
     summary: "Process one organization's usage in API tests",
   },
+  processWithoutProjection: {
+    method: "POST",
+    path: "/api/test/usage-settlement/process-without-projection",
+    body: testUsageSettlementRequestSchema,
+    responses: {
+      200: testUsageSettlementResponseSchema,
+      400: apiErrorSchema,
+      404: z.string(),
+    },
+    summary:
+      "Commit financial usage but simulate a lost postcommit callback in API tests",
+  },
+  projectionFault: {
+    method: "POST",
+    path: "/api/test/usage-settlement/projection-fault",
+    body: z.object({
+      run_id: z.string().uuid(),
+      mode: z.enum(["expire-lease", "drop-ack", "force-due"]),
+    }),
+    responses: {
+      200: testUsageSettlementResponseSchema,
+      400: apiErrorSchema,
+      404: z.string(),
+    },
+    summary: "Inject a projection-only crash boundary in API tests",
+  },
+  legacyProject: {
+    method: "POST",
+    path: "/api/test/usage-settlement/legacy-project",
+    body: z.object({ run_id: z.string().uuid() }),
+    responses: {
+      200: testUsageSettlementResponseSchema,
+      400: apiErrorSchema,
+      404: z.string(),
+    },
+    summary: "Exercise the old postcommit usage emitter in API tests",
+  },
   rollback: {
     method: "POST",
     path: "/api/test/usage-settlement/rollback",

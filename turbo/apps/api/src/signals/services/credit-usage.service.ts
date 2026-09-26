@@ -18,7 +18,8 @@ import {
   usagePricingResolution$,
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
-import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
+import { projectCommittedRunUsage$ } from "./usage-chat-projection-worker.service";
+import { enqueueSettledRunUsageProjection } from "./usage-chat-projection-outbox.service";
 import {
   enqueueCreditLowBalanceAlert$,
   LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS,
@@ -225,6 +226,8 @@ interface SettlementWorkObservation {
   readonly grantRows: number;
   readonly expiredRows: number;
   readonly expiryRows: number;
+  readonly projectionRuns: number;
+  readonly projectionWriteMs: number;
 }
 
 export interface ProcessOrgUsageEventsResult {
@@ -401,6 +404,27 @@ function completedSettlementWork(
   };
 }
 
+function distinctRunIds(
+  records: readonly Pick<UsageEventRecord, "runId">[],
+): string[] {
+  return [
+    ...new Set(
+      records.flatMap((record) => {
+        return record.runId ? [record.runId] : [];
+      }),
+    ),
+  ];
+}
+
+async function enqueueProjectionWithObservation(
+  tx: WriteTx,
+  records: readonly Pick<UsageEventRecord, "runId">[],
+): Promise<number> {
+  const startedAt = performance.now();
+  await enqueueSettledRunUsageProjection(tx, records);
+  return Math.round(performance.now() - startedAt);
+}
+
 async function settleMemberGrants(
   tx: WriteTx,
   orgId: string,
@@ -448,6 +472,8 @@ async function acquireSettlementLocksWithObservation(
       grantRows: 0,
       expiredRows: 0,
       expiryRows: 0,
+      projectionRuns: 0,
+      projectionWriteMs: 0,
     },
   };
 }
@@ -491,13 +517,7 @@ export async function processOrgUsageEventsInTransaction(
       work: completedSettlementWork(work, startedAt),
     };
   }
-  const runIds = [
-    ...new Set(
-      pendingRecords.flatMap((record) => {
-        return record.runId ? [record.runId] : [];
-      }),
-    ),
-  ];
+  const runIds = distinctRunIds(pendingRecords);
 
   const pricingRecords = await tx.select().from(usagePricing);
   work.pricingRows = pricingRecords.length;
@@ -576,6 +596,13 @@ export async function processOrgUsageEventsInTransaction(
       };
     }
   }
+  // Commit the content-free presentation obligation with the financial result.
+  // No chat table, snapshot, or R2 read participates in this transaction.
+  work.projectionWriteMs = await enqueueProjectionWithObservation(
+    tx,
+    pendingRecords,
+  );
+  work.projectionRuns = runIds.length;
   signal.throwIfAborted();
   return {
     sharedCreditsCharged,
@@ -619,6 +646,16 @@ export const completeProcessedOrgUsage$ = command(
               grant_rows: work.grantRows,
               expired_rows: work.expiredRows,
               expiry_rows: work.expiryRows,
+              projection_runs: work.projectionRuns,
+            },
+          },
+          {
+            actionType: "api_billing_projection_outbox_write",
+            durationMs: work.projectionWriteMs,
+            success: true,
+            dimensions: {
+              timing_scope: timingScope,
+              projection_runs: work.projectionRuns,
             },
           },
           {
@@ -670,7 +707,7 @@ export const completeProcessedOrgUsage$ = command(
     }
 
     for (const runId of runIds) {
-      await tapError(set(maybeEmitRunUsageEvent$, runId, signal), (error) => {
+      await tapError(set(projectCommittedRunUsage$, runId, signal), (error) => {
         L.error("Failed to emit chat usage message after usage processing", {
           orgId,
           runId,

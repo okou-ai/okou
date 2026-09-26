@@ -172,6 +172,25 @@ describe("POST /api/test/usage-settlement/process", () => {
       [404],
     );
     expect(rollback.body).toBe("Not found");
+    const lostCallback = await accept(
+      client().processWithoutProjection({ body: { org_id: "org_test" } }),
+      [404],
+    );
+    expect(lostCallback.body).toBe("Not found");
+    for (const response of [
+      await accept(
+        client().projectionFault({
+          body: { run_id: randomUUID(), mode: "drop-ack" },
+        }),
+        [404],
+      ),
+      await accept(
+        client().legacyProject({ body: { run_id: randomUUID() } }),
+        [404],
+      ),
+    ]) {
+      expect(response.body).toBe("Not found");
+    }
   });
 
   it("prices every usage event from server-side pricing", async () => {

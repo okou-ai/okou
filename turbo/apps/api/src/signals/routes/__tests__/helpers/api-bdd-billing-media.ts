@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import type StripeSDK from "stripe";
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
+import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import { bankingContract } from "@okouai/api-contracts/contracts/banking";
 import {
   billingAutoRechargeContract,
@@ -48,6 +49,7 @@ import {
   mockStripeClient,
 } from "../../../external/stripe-client";
 import { testUsageSettlementRoutes } from "../../test-usage-settlement";
+import { cronProcessBackgroundJobsRoutes } from "../../cron-process-background-jobs";
 import type { ApiTestUser } from "./api-bdd";
 import { mockGoogleMapsGrounding } from "./google-maps-grounding";
 import { createRouteMocks } from "./route-test";
@@ -526,6 +528,68 @@ export function createBillingMediaApi(context: TestContext) {
       })(testUsageSettlementContract);
       return await accept(
         client.process({ body: { org_id: actor.orgId } }),
+        [200],
+      );
+    },
+
+    async rollbackUsageSettlement(actor: ApiTestUser) {
+      if (!actor.orgId) {
+        throw new Error("Cannot process usage without an organization");
+      }
+      const client = setupApp({ context, routes: testUsageSettlementRoutes })(
+        testUsageSettlementContract,
+      );
+      return await accept(
+        client.rollback({ body: { org_id: actor.orgId } }),
+        [200],
+      );
+    },
+
+    async processWithoutUsageProjection(actor: ApiTestUser) {
+      if (!actor.orgId) {
+        throw new Error("Cannot process usage without an organization");
+      }
+      const client = setupApp({ context, routes: testUsageSettlementRoutes })(
+        testUsageSettlementContract,
+      );
+      return await accept(
+        client.processWithoutProjection({ body: { org_id: actor.orgId } }),
+        [200],
+      );
+    },
+
+    async injectUsageProjectionFault(
+      runId: string,
+      mode: "expire-lease" | "drop-ack" | "force-due",
+    ) {
+      const client = setupApp({ context, routes: testUsageSettlementRoutes })(
+        testUsageSettlementContract,
+      );
+      return await accept(
+        client.projectionFault({ body: { run_id: runId, mode } }),
+        [200],
+      );
+    },
+
+    async projectUsageAsLegacyWriter(runId: string) {
+      const client = setupApp({ context, routes: testUsageSettlementRoutes })(
+        testUsageSettlementContract,
+      );
+      return await accept(
+        client.legacyProject({ body: { run_id: runId } }),
+        [200],
+      );
+    },
+
+    async drainUsageProjection() {
+      const secret = "test-chat-usage-projection-cron";
+      mockEnv("CRON_SECRET", secret);
+      const client = setupApp({
+        context,
+        routes: cronProcessBackgroundJobsRoutes,
+      })(cronProcessBackgroundJobsContract);
+      return await accept(
+        client.process({ headers: { authorization: `Bearer ${secret}` } }),
         [200],
       );
     },
