@@ -142,6 +142,19 @@ export type RunUsageProjectionResult =
   | "deferred"
   | "discarded";
 
+/** A replay may need to wake a client after its card committed. Duplicate wakeups only refetch canonical history. */
+async function notifyUsageProjection(target: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly chatThreadId: string;
+}): Promise<void> {
+  await publishChatThreadMessageCreatedSafely({
+    userId: target.userId,
+    orgId: target.orgId,
+    threadId: target.chatThreadId,
+  });
+}
+
 function logRunUsageProjection(emitted: {
   readonly action: "emitted" | "revised";
   readonly runId: string;
@@ -252,7 +265,12 @@ export const projectRunUsageEvent$ = command(
         existingUsageEvent &&
         isDeepStrictEqual(existingUsageEvent.payload?.usage, payload)
       ) {
-        return { state: "unchanged" as const };
+        return {
+          state: "matched" as const,
+          chatThreadId: context.chatThreadId,
+          orgId: context.orgId,
+          userId: context.userId,
+        };
       }
 
       const event = {
@@ -288,17 +306,16 @@ export const projectRunUsageEvent$ = command(
     });
     signal.throwIfAborted();
 
-    if (emitted.state !== "updated") {
+    if (emitted.state !== "updated" && emitted.state !== "matched") {
       return emitted.state;
     }
 
-    await publishChatThreadMessageCreatedSafely({
-      userId: emitted.userId,
-      orgId: emitted.orgId,
-      threadId: emitted.chatThreadId,
-    });
+    await notifyUsageProjection(emitted);
     signal.throwIfAborted();
 
+    if (emitted.state === "matched") {
+      return "unchanged";
+    }
     logRunUsageProjection({ ...emitted, runId });
 
     return "updated";
