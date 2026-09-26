@@ -335,6 +335,27 @@ Activity and summary already use `active_agent_runs`; migration `1258` drops
 `agent_runs.last_heartbeat_at`, and older APIs write the dropped snapshot
 table. Step 3 drops the old heartbeat column. Do not ship step 3 in this PR.
 
+## Active run state: `agent_runs.last_heartbeat_at` dropped (step 3 of 3)
+
+**Release gate:** step 2 (#36955, `e62567d3`) must be promoted to production
+and the previous API drained before this change enters the merge queue. Step 2
+is the first API that neither reads nor writes `agent_runs.last_heartbeat_at`;
+timeout cleanup, capacity and every heartbeat use `active_agent_runs`.
+
+Migration `1259` drops the column and this release removes its Drizzle
+declaration. `test:migration-consistency` requires both to ship together (as in
+`1228` and `1257`). Step 2 still declares the column, so Drizzle names it in
+every `agent_runs` insert, bare select and bare returning. Migrations run
+before API promotion; until the previous API drains, those statements on the
+old instances fail with `42703`, including run creation. Release this change
+alone at low traffic. The drop is metadata-only; the two heartbeat indexes on
+the column were already removed by `1249`.
+
+Rollback promotes artifacts without restoring schema, so the production
+rollback resolver rejects API targets that predate the canonical main commit
+that added `1259_drop_agent_runs_last_heartbeat_at.sql`. Recovery past it needs
+a forward-fix migration that restores the nullable column.
+
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 
 Issue #36551 removes the bounded rollout fallbacks added with #36480. The

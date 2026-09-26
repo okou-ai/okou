@@ -211,7 +211,6 @@ async function seedRunForAction(
         readOptionalString(body, "sandbox_id") ?? `sandbox-${randomUUID()}`,
       createdAt: readDate(body, "created_at") ?? undefined,
       completedAt: readNullableDate(body, "completed_at"),
-      lastHeartbeatAt: readNullableDate(body, "last_heartbeat_at"),
       runnerGroup: readOptionalString(body, "runner_group"),
       cancellationRecoveryCompleted: readOptionalBoolean(
         body,
@@ -230,7 +229,6 @@ async function seedRunForAction(
       orgId,
       userId,
       lastHeartbeatAt:
-        readDate(body, "active_last_heartbeat_at") ??
         readDate(body, "last_heartbeat_at") ??
         readDate(body, "created_at") ??
         nowDate(),

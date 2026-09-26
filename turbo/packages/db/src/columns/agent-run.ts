@@ -84,7 +84,6 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     creditAdmitted: boolean("credit_admitted").notNull().default(false),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
-    lastHeartbeatAt: timestamp("last_heartbeat_at"),
     // Immutable winning official claim attribution. ID/generation is the
     // authority; hostname/version are diagnostic snapshots. Null covers
     // historical, rollout-omitting, and non-official claims.
