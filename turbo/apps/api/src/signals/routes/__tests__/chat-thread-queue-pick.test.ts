@@ -428,7 +428,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       },
       [201],
     );
-    expect(recall.body.runId).toBeNull();
+    expect(recall.status === 201 ? recall.body.runId : undefined).toBeNull();
 
     await finishRun(runnerGroup, blocker.runId);
     await sweepQueuedThreads([recalled.threadId]);

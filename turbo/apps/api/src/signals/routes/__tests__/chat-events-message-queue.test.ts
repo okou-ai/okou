@@ -7,7 +7,6 @@ import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/con
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
   completeRunWithoutCallbacksFixture,
