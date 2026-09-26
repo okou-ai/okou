@@ -752,7 +752,7 @@ function CloudflareAccessConversionControls({
               }}
             />
             {t(($) => {
-              return $.cloudflareAccess.convertConfirm;
+              return $.cloudflareAccess.impactConfirm;
             })}
           </label>
         </div>
@@ -931,7 +931,7 @@ function CloudflareAccessDeletionReview({
               }}
             />
             {t(($) => {
-              return $.cloudflareAccess.deleteConfirm;
+              return $.cloudflareAccess.impactConfirm;
             })}
           </label>
         </div>
