@@ -1,4 +1,4 @@
-import { createRef } from "react";
+import { createRef, useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogTitle } from "../dialog";
 import { Button } from "../button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuCheckboxItemIndicator,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSub,
@@ -43,6 +45,81 @@ function TestMenu({
 }
 
 describe("DropdownMenu", () => {
+  it.each(["pointer", "Enter", "Space"])(
+    "preserves native checkbox state, change details and focus for %s activation",
+    async (activation) => {
+      const user = userEvent.setup();
+      const itemRef = createRef<HTMLElement>();
+      const indicatorRef = createRef<HTMLSpanElement>();
+      const onCheckedChange = vi.fn();
+
+      function CheckboxMenu() {
+        const [checked, setChecked] = useState(false);
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger>Types</DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuCheckboxItem
+                ref={itemRef}
+                checked={checked}
+                closeOnClick={false}
+                className={(state) => {
+                  return state.checked ? "font-semibold" : "font-normal";
+                }}
+                onCheckedChange={(nextChecked, details) => {
+                  onCheckedChange(nextChecked, details);
+                  setChecked(nextChecked);
+                }}
+              >
+                <DropdownMenuCheckboxItemIndicator ref={indicatorRef}>
+                  Selected
+                </DropdownMenuCheckboxItemIndicator>
+                HTTP
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      }
+
+      render(<CheckboxMenu />);
+      const trigger = screen.getByRole("button", { name: "Types" });
+      await user.click(trigger);
+      const item = await screen.findByRole("menuitemcheckbox", {
+        name: "HTTP",
+      });
+      expect(itemRef.current).toBe(item);
+      expect(item).toHaveAttribute("aria-checked", "false");
+      expect(screen.queryByText("Selected")).not.toBeInTheDocument();
+
+      if (activation === "pointer") {
+        await user.click(item);
+      } else {
+        await user.keyboard("{ArrowDown}");
+        expect(item).toHaveFocus();
+        await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+      }
+
+      expect(item).toHaveAttribute("aria-checked", "true");
+      expect(item).toHaveClass("font-semibold");
+      expect(indicatorRef.current).toBe(screen.getByText("Selected"));
+      expect(onCheckedChange).toHaveBeenCalledExactlyOnceWith(
+        true,
+        expect.objectContaining({
+          reason: "item-press",
+          event: expect.any(Event),
+          cancel: expect.any(Function),
+        }),
+      );
+      expect(screen.getByRole("menu")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+      await waitFor(() => {
+        expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+        expect(trigger).toHaveFocus();
+      });
+    },
+  );
+
   it("keeps the menu open when an item opts out of closing", async () => {
     render(<TestMenu keepOpen />);
 
