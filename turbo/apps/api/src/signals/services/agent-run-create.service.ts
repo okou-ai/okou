@@ -17,7 +17,6 @@ import {
 import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
-import { legacyQueuedRunAdmissionEnabledForTest } from "./legacy-queued-run-admission.service";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -11691,15 +11690,9 @@ const commitAndActivateAtomicLaunch$ = command(
 const createAtomicLaunchRun$ = command(
   async (
     { get, set },
-    launchInput: AtomicLaunchRunInput,
+    input: AtomicLaunchRunInput,
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
-    const input: AtomicLaunchRunInput = legacyQueuedRunAdmissionEnabledForTest()
-      ? {
-          ...launchInput,
-          args: { ...launchInput.args, queueOnConcurrencyLimit: true },
-        }
-      : launchInput;
     const identity = prepareLaunchRunIdentity({
       resolved: input.context.resolved,
     });
