@@ -907,7 +907,6 @@ export async function renameConnectorAccount(
   },
 ): Promise<Date | null> {
   return await db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, args);
     if (
       args.target.kind === "custom" &&
       !(await customTargetIsVisible(tx, {
@@ -923,7 +922,14 @@ export async function renameConnectorAccount(
     const [updated] = await tx
       .update(connectors)
       .set({ displayName: args.displayName, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, args.connectionId))
+      .where(
+        and(
+          eq(connectors.id, args.connectionId),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          targetCondition(args.target),
+        ),
+      )
       .returning({ updatedAt: connectors.updatedAt });
     return updated?.updatedAt ?? null;
   });

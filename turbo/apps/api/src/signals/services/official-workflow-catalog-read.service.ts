@@ -16,6 +16,7 @@ import {
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { and, asc, eq, or } from "drizzle-orm";
 
+import type { Tx } from "../../lib/db-types";
 import type { ReadonlyDb } from "../external/db";
 
 export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
@@ -69,6 +70,24 @@ function acceptedRevisionFromRow(
       storageVersion: row.storageVersion,
     },
   });
+}
+
+/** Keep the accepted pointer stable until the caller's transaction commits. */
+export async function lockAcceptedOfficialWorkflowCatalog(
+  tx: Tx,
+): Promise<void> {
+  // SHARE conflicts with the publisher's non-key pointer UPDATE. KEY SHARE
+  // would allow that update and would not preserve the accepted revision.
+  await tx
+    .select({ authority: officialWorkflowCatalogState.authority })
+    .from(officialWorkflowCatalogState)
+    .where(
+      eq(
+        officialWorkflowCatalogState.authority,
+        OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+      ),
+    )
+    .for("share");
 }
 
 export async function readAcceptedOfficialWorkflowCatalog(

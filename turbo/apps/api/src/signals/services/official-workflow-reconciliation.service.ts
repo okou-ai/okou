@@ -36,8 +36,8 @@ import {
 } from "./automation-event-watch-lifecycle.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
-import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
+  lockAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowRevision,
 } from "./official-workflow-catalog-read.service";
@@ -381,13 +381,10 @@ function accountProjectionMatchesPatch(
 }
 
 async function acquireReconciliationLocks(
-  db: Db,
+  db: Tx,
   orgId: string,
 ): Promise<void> {
-  await db.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-  );
+  await lockAcceptedOfficialWorkflowCatalog(db);
   // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
 }

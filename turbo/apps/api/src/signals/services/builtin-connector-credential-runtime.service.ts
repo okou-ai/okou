@@ -474,35 +474,27 @@ async function markConnectorCredentialNeedsReconnectAfterRefreshFailure(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  const updated = await args.db.transaction(async (tx) => {
-    await lockBuiltinConnectorState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: args.connection.connectorSlug,
-    });
-    signal.throwIfAborted();
-    const [row] = await tx
-      .update(connectors)
-      .set({
-        needsReconnect: true,
-        reconnectReason: args.reconnectReason,
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(
-        and(
-          eq(connectors.id, args.connection.connectorId),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          eq(connectors.connectorSlug, args.connection.connectorSlug),
-          eq(connectors.authMethod, args.connection.runtimeMethod.authMethodId),
-          eq(sql`${connectors.updatedAt}::text`, args.connection.stateRevision),
-        ),
-      )
-      .returning({ id: connectors.id });
-    return row !== undefined;
-  });
   signal.throwIfAborted();
-  return updated;
+  const [row] = await args.db
+    .update(connectors)
+    .set({
+      needsReconnect: true,
+      reconnectReason: args.reconnectReason,
+      updatedAt: sql`clock_timestamp()`,
+    })
+    .where(
+      and(
+        eq(connectors.id, args.connection.connectorId),
+        eq(connectors.orgId, args.orgId),
+        eq(connectors.userId, args.userId),
+        eq(connectors.connectorSlug, args.connection.connectorSlug),
+        eq(connectors.authMethod, args.connection.runtimeMethod.authMethodId),
+        eq(sql`${connectors.updatedAt}::text`, args.connection.stateRevision),
+      ),
+    )
+    .returning({ id: connectors.id });
+  signal.throwIfAborted();
+  return row !== undefined;
 }
 
 function terminalOAuthRefreshFailure(

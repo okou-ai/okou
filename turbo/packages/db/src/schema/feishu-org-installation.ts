@@ -50,6 +50,10 @@ export const feishuOrgInstallations = pgTable(
   (table) => {
     return [
       index("idx_feishu_org_installations_org").on(table.orgId),
+      uniqueIndex("idx_feishu_org_installations_org_platform").on(
+        table.orgId,
+        table.platform,
+      ),
       uniqueIndex("idx_feishu_org_installations_custom_connector").on(
         table.customConnectorId,
       ),

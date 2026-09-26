@@ -683,7 +683,14 @@ function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
   return {};
 }
 
-export function browserUseCdpHandler(url: string) {
+export function browserUseCdpHandler(
+  url: string,
+  eventsBeforeReply?: (
+    command: BrowserUseCdpCommand,
+  ) => readonly Readonly<Record<string, unknown>>[],
+  withholdReply?: (command: BrowserUseCdpCommand) => boolean,
+  afterReply?: (command: BrowserUseCdpCommand) => void,
+) {
   const cdp = ws.link(url);
   return cdp.addEventListener("connection", ({ client }) => {
     apiTestMocks.browserUseCdp.connect(url);
@@ -693,6 +700,12 @@ export function browserUseCdpHandler(url: string) {
       }
       const command = browserUseCdpCommandSchema.parse(JSON.parse(event.data));
       const mockedResult = apiTestMocks.browserUseCdp.command(command);
+      for (const beforeReply of eventsBeforeReply?.(command) ?? []) {
+        client.send(JSON.stringify(beforeReply));
+      }
+      if (withholdReply?.(command)) {
+        return;
+      }
       if (mockedResult instanceof Error) {
         client.send(
           JSON.stringify({
@@ -700,6 +713,7 @@ export function browserUseCdpHandler(url: string) {
             error: { message: mockedResult.message },
           }),
         );
+        afterReply?.(command);
         return;
       }
       client.send(
@@ -708,6 +722,7 @@ export function browserUseCdpHandler(url: string) {
           result: mockedResult ?? defaultBrowserUseCdpResult(command),
         }),
       );
+      afterReply?.(command);
     });
   });
 }

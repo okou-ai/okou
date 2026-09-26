@@ -23,7 +23,6 @@ import {
 } from "./chat-thread-event.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
-import { recordOfficialWorkflowThreadProvenance } from "./morning-brief-thread-provenance.service";
 import {
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
@@ -128,14 +127,6 @@ function workflowUserAutomationThreadOwnerCondition(
   );
 }
 
-/**
- * Read the binding without the lock thread deletion conflicts with.
- *
- * Deletion locks a thread and then every binding pointing at it. A reuse that
- * found its destination under the binding lock could only lock that thread
- * afterwards, which is the opposite order, so the destination is discovered
- * with an ordinary read and revalidated once both locks are held.
- */
 async function readWorkflowUserAutomationThreadBinding(
   db: Pick<ReadonlyDb, "select">,
   owner: WorkflowUserAutomationThreadOwner,
@@ -178,11 +169,9 @@ export async function disableThreadBoundWorkflowAutomations(
     "orgId" | "ownerUserId" | "eventType" | "eventConfig" | "eventConnectorId"
   >[]
 > {
-  // Automation creation locks the same binding before it returns, and only
-  // after locking the destination this caller already holds. Taking the binding
-  // lock here ensures an automation cannot join this thread between the disable
-  // update and the thread delete, without either side waiting on the other's
-  // first lock.
+  // Creation holds this binding until its automation INSERT commits. Reuse
+  // never writes the destination thread, so deletion can wait here and disable
+  // every automation that joined the binding before detaching it.
   const bindings = await db
     .select({ workflowId: workflowUserAutomationThreads.workflowId })
     .from(workflowUserAutomationThreads)
@@ -282,16 +271,9 @@ async function createAutomationChatThread(
   return thread.id;
 }
 
-/**
- * Serialize one owner's binding resolution for the rest of the transaction.
- *
- * The row locks below follow thread deletion's thread → binding order, so the
- * destination must be discovered before the binding row is locked. This key
- * keeps a second resolution from binding a destination inside that window: a
- * thread first seen under the binding lock could only be locked after it, which
- * is the inversion this function exists to prevent. Deletion never takes this
- * key, so it adds no new wait to that path.
- */
+// Coordinate with the outgoing resolver, which discovers a destination before
+// locking the binding and rejects a concurrent rebind. Remove this key after
+// those serving requests and rollback targets have retired.
 async function lockWorkflowUserAutomationThreadResolution(
   db: ChatThreadEventTransaction,
   owner: WorkflowUserAutomationThreadOwner,
@@ -299,54 +281,6 @@ async function lockWorkflowUserAutomationThreadResolution(
   const key = `workflow_user_automation_thread:${owner.orgId}:${owner.userId}:${owner.workflowId}`;
   // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
-}
-
-/**
- * Make the binding row exist and report the destination it currently holds.
- *
- * A concurrent creator is waited out by the insert itself, which takes no row
- * lock on the conflicting binding, so the destination it committed is visible
- * to the ordinary read that follows and can still be locked first.
- */
-async function discoverWorkflowUserAutomationThreadBinding(
-  db: ChatThreadEventTransaction,
-  args: WorkflowUserAutomationThreadOwner & { readonly currentTime: Date },
-): Promise<string | null> {
-  const existing = await readWorkflowUserAutomationThreadBinding(db, args);
-  if (existing) {
-    return existing.chatThreadId;
-  }
-  await db
-    .insert(workflowUserAutomationThreads)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.workflowId,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-    })
-    .onConflictDoNothing({
-      target: [
-        workflowUserAutomationThreads.orgId,
-        workflowUserAutomationThreads.userId,
-        workflowUserAutomationThreads.workflowId,
-      ],
-    });
-  const inserted = await readWorkflowUserAutomationThreadBinding(db, args);
-  return inserted?.chatThreadId ?? null;
-}
-
-/** Fence deletion and rebinding while allowing independent event FK checks. */
-async function lockBoundAutomationChatThread(
-  db: ChatThreadEventTransaction,
-  chatThreadId: string,
-): Promise<string | null> {
-  const [thread] = await db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, chatThreadId))
-    .for("no key update");
-  return thread?.id ?? null;
 }
 
 export async function ensureWorkflowUserAutomationThread(
@@ -383,16 +317,24 @@ export async function ensureWorkflowUserAutomationThread(
 
   await lockWorkflowUserAutomationThreadResolution(db, args);
 
-  const discovered = await discoverWorkflowUserAutomationThreadBinding(
-    db,
-    args,
-  );
-  const lockedThreadId =
-    discovered === null
-      ? null
-      : await lockBoundAutomationChatThread(db, discovered);
-  // The binding lock still serializes creation; it is now taken after the
-  // destination it names, so it can no longer close a cycle with deletion.
+  await db
+    .insert(workflowUserAutomationThreads)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: args.workflowId,
+      createdAt: args.currentTime,
+      updatedAt: args.currentTime,
+    })
+    .onConflictDoNothing({
+      target: [
+        workflowUserAutomationThreads.orgId,
+        workflowUserAutomationThreads.userId,
+        workflowUserAutomationThreads.workflowId,
+      ],
+    });
+  // The owner key arbitrates the first binding; its row serializes destination
+  // creation and deletion. Reusing it touches no existing thread row.
   const [binding] = await db
     .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
     .from(workflowUserAutomationThreads)
@@ -400,22 +342,6 @@ export async function ensureWorkflowUserAutomationThread(
     .limit(1)
     .for("update");
   if (binding?.chatThreadId) {
-    if (binding.chatThreadId !== lockedThreadId) {
-      // Only deleting a destination detaches a binding, and that deletion needs
-      // the row lock taken above; the resolution key keeps a concurrent rebind
-      // out of the window before it. Fail instead of locking out of order.
-      throw new Error(
-        "Workflow automation chat thread binding changed destination",
-      );
-    }
-    // A reused binding is as much a Morning Brief destination as a fresh one,
-    // and this thread may predate the classification column entirely.
-    await recordOfficialWorkflowThreadProvenance(db, {
-      chatThreadId: binding.chatThreadId,
-      userId: args.userId,
-      orgId: args.orgId,
-      workflowIds: [args.workflowId],
-    });
     return binding.chatThreadId;
   }
 
@@ -432,16 +358,6 @@ export async function ensureWorkflowUserAutomationThread(
     title,
     currentTime: args.currentTime,
   });
-  // An automation thread is not ordinary Chat, so it stays unknown unless this
-  // workflow is the official Morning Brief, whose destination is excluded from
-  // the moment it exists.
-  await recordOfficialWorkflowThreadProvenance(db, {
-    chatThreadId,
-    userId: args.userId,
-    orgId: args.orgId,
-    workflowIds: [args.workflowId],
-  });
-
   const [updated] = await db
     .update(workflowUserAutomationThreads)
     .set({ chatThreadId, updatedAt: args.currentTime })

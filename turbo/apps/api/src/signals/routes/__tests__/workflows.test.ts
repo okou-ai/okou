@@ -36,17 +36,6 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import {
-  assertUserStableContextGenerationUnlockedFixture,
-  beginWorkflowStableContextPublicationFixture,
-  clearAgentStableContextLifecycleFixture,
-  countAgentStableContextGenerationsFixture,
-  countAgentStableContextPublicationsFixture,
-  countUserStableContextGenerationsFixture,
-  holdAgentStableContextGenerationFixture,
-  holdUserStableContextGenerationFixture,
-} from "../../../test-fixtures/pi-stable-context";
-import { holdAgentDeletionAfterStableContextCleanupFixture } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { createDeferredPromise } from "../../utils";
 import { mockNow, now } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -1211,237 +1200,81 @@ describe("workflows", () => {
     ).resolves.toMatchObject({ body: { visibility: "public" } });
   });
 
-  it("takes both visibility generation scopes in canonical order", async () => {
+  it("keeps concurrent Workflow instruction updates on the same Agent", async () => {
     const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
     const agent = await createAgent(actor, {
-      displayName: "Visibility Lock Order Agent",
+      displayName: "Concurrent Workflow Agent",
       visibility: "public",
     });
-    await createWorkflow(actor, {
+    installVolumeS3Fixture();
+    const first = await createWorkflow(actor, {
       agentId: agent.agentId,
-      name: `public-lock-order-${randomUUID().slice(0, 8)}`,
-      visibility: "public",
-      instruction: "# settled public workflow",
+      name: `first-update-${randomUUID().slice(0, 8)}`,
+      instruction: "# first original",
     });
-    const privateWorkflow = await createWorkflow(actor, {
+    const second = await createWorkflow(actor, {
       agentId: agent.agentId,
-      name: `private-lock-order-${randomUUID().slice(0, 8)}`,
-      instruction: "# private workflow",
-    });
-    const signal = AbortSignal.timeout(10_000);
-    const held = await holdAgentStableContextGenerationFixture(
-      { orgId: actor.orgId, agentId: agent.agentId },
-      signal,
-    );
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
+      name: `second-update-${randomUUID().slice(0, 8)}`,
+      instruction: "# second original",
     });
 
-    const publication = visibilityClient().publish({
-      headers: authHeaders(actor),
-      params: { workflowId: privateWorkflow.body.id },
-    });
-    await expect
-      .poll(async () => {
-        return (await held.blockedPids()).length;
-      })
-      .toBeGreaterThan(0);
-    await expect(
-      assertUserStableContextGenerationUnlockedFixture({
-        orgId: actor.orgId,
-        agentId: agent.agentId,
-        userId: actor.userId,
+    await Promise.all([
+      updateWorkflow(actor, first.body.id, { instruction: "# first updated" }),
+      updateWorkflow(actor, second.body.id, {
+        instruction: "# second updated",
       }),
-    ).resolves.toBeUndefined();
+    ]);
 
-    held.release();
-    await expect(held.done).resolves.toBeUndefined();
-    await expect(accept(publication, [200])).resolves.toMatchObject({
-      body: { visibility: "public" },
-    });
-  });
-
-  it("serializes deletion before publish when the Agent generation is initially absent", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    const agent = await createAgent(actor, {
-      displayName: "Missing Agent Generation Lock Order",
-      visibility: "public",
-    });
-    const deletedWorkflow = await createWorkflow(actor, {
-      agentId: agent.agentId,
-      name: `deleted-private-${randomUUID().slice(0, 8)}`,
-      instruction: "# private workflow to delete",
-    });
-    const publishedWorkflow = await createWorkflow(actor, {
-      agentId: agent.agentId,
-      name: `published-private-${randomUUID().slice(0, 8)}`,
-      instruction: "# private workflow to publish",
-    });
-    await expect(
-      countAgentStableContextGenerationsFixture(agent.agentId),
-    ).resolves.toBe(0);
-
-    const signal = AbortSignal.timeout(10_000);
-    const held = await holdUserStableContextGenerationFixture(
-      {
-        orgId: actor.orgId,
-        agentId: agent.agentId,
-        userId: actor.userId,
-      },
-      signal,
-    );
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-
-    const deletion = miscApi.deleteWorkflow(
-      actor,
-      deletedWorkflow.body.id,
-      [204],
-    );
-    await expect
-      .poll(async () => {
-        return (await held.blockedPids()).length;
-      })
-      .toBe(1);
-    const deletionPid = (await held.blockedPids())[0];
-    if (deletionPid === undefined) {
-      throw new Error("Expected deletion to wait for the user generation");
-    }
-    const publication = visibilityClient().publish({
-      headers: authHeaders(actor),
-      params: { workflowId: publishedWorkflow.body.id },
-    });
-    await expect
-      .poll(async () => {
-        return (await held.blockedByPid(deletionPid)).length;
-      })
-      .toBeGreaterThan(0);
-    // Delete holds the newly materialized Agent generation and waits for this
-    // user holder. Publish therefore waits behind delete at Agent scope rather
-    // than becoming a second direct user waiter.
-    await expect(held.blockedPids()).resolves.toHaveLength(1);
-
-    held.release();
-    await expect(held.done).resolves.toBeUndefined();
-    await expect(deletion).resolves.toBeDefined();
-    await expect(accept(publication, [200])).resolves.toMatchObject({
-      body: { visibility: "public" },
-    });
-  });
-
-  it("prevents a generation after Agent deletion's first lifecycle scan", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    const agent = await createAgent(actor, {
-      displayName: "Late Workflow Generation Agent",
-      visibility: "public",
-    });
-    const workflow = await createWorkflow(actor, {
-      agentId: agent.agentId,
-      name: `late-generation-${randomUUID().slice(0, 8)}`,
-      instruction: "# before deletion",
-    });
-    // Model the supported additive-rollout state: the Workflow predates the
-    // new projection tables, so the lifecycle scan starts with no keys.
-    await clearAgentStableContextLifecycleFixture(agent.agentId);
-
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    holdAgentDeletionAfterStableContextCleanupFixture(
-      agent.agentId,
-      async () => {
-        entered.resolve();
-        await release.promise;
-      },
-    );
-    onTestFinished(() => {
-      if (!release.settled()) {
-        release.resolve();
-      }
-    });
-
-    const deletion = bdd.requestDeleteAgent(actor, agent.agentId, [204]);
-    await entered.promise;
-    await expect(
-      countUserStableContextGenerationsFixture({
-        agentId: agent.agentId,
-        userId: actor.userId,
-      }),
-    ).resolves.toBe(0);
-
-    const update = requestUpdateWorkflow(
-      actor,
-      workflow.body.id,
-      { instruction: "# must wait behind Agent deletion" },
-      [404, 409],
-    );
-    await expect(
-      countUserStableContextGenerationsFixture({
-        agentId: agent.agentId,
-        userId: actor.userId,
-      }),
-    ).resolves.toBe(0);
-
-    release.resolve();
-    await deletion;
-    await update;
-    await expect(
-      countUserStableContextGenerationsFixture({
-        agentId: agent.agentId,
-        userId: actor.userId,
-      }),
-    ).resolves.toBe(0);
-    await expect(
-      countAgentStableContextPublicationsFixture(agent.agentId),
-    ).resolves.toBe(0);
-  });
-
-  it("retires an abandoned opposite-scope publication during a valid visibility transition", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    const agent = await createAgent(actor, {
-      displayName: "Opposite Publication Agent",
-      visibility: "public",
-    });
-    const workflow = await createWorkflow(actor, {
-      agentId: agent.agentId,
-      name: `opposite-publication-${randomUUID().slice(0, 8)}`,
-      instruction: "# private workflow with stale public fence",
-    });
-    await beginWorkflowStableContextPublicationFixture({
-      orgId: actor.orgId,
-      agentId: agent.agentId,
-      workflowId: workflow.body.id,
-    });
-    await expect(
-      countAgentStableContextPublicationsFixture(agent.agentId),
-    ).resolves.toBe(1);
-
-    await expect(
-      accept(
-        visibilityClient().publish({
+    for (const [workflowId, instruction] of [
+      [first.body.id, "# first updated"],
+      [second.body.id, "# second updated"],
+    ] as const) {
+      const current = await accept(
+        detailClient().get({
           headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
+          params: { workflowId },
         }),
         [200],
-      ),
-    ).resolves.toMatchObject({ body: { visibility: "public" } });
-    await expect(
-      countAgentStableContextPublicationsFixture(agent.agentId),
-    ).resolves.toBe(0);
+      );
+      expect(current.body).toMatchObject({ instruction });
+    }
+  });
+
+  it("makes a deleted Agent's Workflow unavailable for reading, editing and publishing", async () => {
+    const actor = user();
+    const agent = await createAgent(actor, {
+      displayName: "Deleted Workflow Agent",
+      visibility: "public",
+    });
+    const workflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `deleted-agent-${randomUUID().slice(0, 8)}`,
+      instruction: "# removed with its Agent",
+    });
+
+    await bdd.deleteAgent(actor, agent.agentId);
+
+    const missing = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [404],
+    );
+    expect(missing.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    await requestUpdateWorkflow(
+      actor,
+      workflow.body.id,
+      { instruction: "# cannot restore a deleted Workflow" },
+      [404],
+    );
+    await accept(
+      visibilityClient().publish({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [404],
+    );
   });
 
   it("rejects copying a workflow when the caller already has that private slug on the target agent", async () => {

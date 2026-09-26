@@ -1805,7 +1805,7 @@ export function registerFeishuIntegrationTests(
         );
       });
 
-      it("serializes concurrent Feishu app creation per organization", async () => {
+      it("accepts one concurrent Feishu app creation per organization", async () => {
         const actor = authOrgApi.user({
           userId: `user_${randomUUID()}`,
           orgId: `org_${randomUUID()}`,
@@ -1821,32 +1821,7 @@ export function registerFeishuIntegrationTests(
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
         );
-        const bothTokenRequestsStarted = createDeferredPromise<void>(
-          context.signal,
-        );
-        const releaseTokenRequests = createDeferredPromise<void>(
-          context.signal,
-        );
-        let tokenRequestCount = 0;
-        server.use(
-          http.post(
-            `${provider.apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
-            async () => {
-              tokenRequestCount += 1;
-              if (tokenRequestCount === 2) {
-                bothTokenRequestsStarted.resolve();
-              }
-              await releaseTokenRequests.promise;
-              return HttpResponse.json({
-                code: 0,
-                tenant_access_token: "tenant-access-token",
-                expire: 7200,
-              });
-            },
-          ),
-        );
-
-        const setupResponsesPromise = Promise.all(
+        const setupResponses = await Promise.all(
           [`cli_${randomUUID()}`, `cli_${randomUUID()}`].map((appId) => {
             return client.setup({
               headers: { authorization: "Bearer clerk-session" },
@@ -1860,20 +1835,22 @@ export function registerFeishuIntegrationTests(
             });
           }),
         );
-        await bothTokenRequestsStarted.promise;
-        releaseTokenRequests.resolve();
-        const setupResponses = await setupResponsesPromise;
-
         expect(
-          setupResponses.map((response) => {
-            return response.status;
-          }),
-        ).toContain(200);
-        expect(
-          setupResponses.map((response) => {
-            return response.status;
-          }),
-        ).toContain(409);
+          setupResponses
+            .map((response) => {
+              return response.status;
+            })
+            .sort(),
+        ).toStrictEqual([200, 409]);
+        const rejected = setupResponses.find((response) => {
+          return response.status === 409;
+        });
+        if (!rejected || rejected.status !== 409) {
+          throw new Error("Expected one rejected Feishu setup");
+        }
+        expect(rejected.body.error.message).toBe(
+          `This workspace already has a ${provider.name} bot`,
+        );
 
         const status = await accept(
           client.getStatus({
@@ -1893,6 +1870,191 @@ export function registerFeishuIntegrationTests(
           }),
           [200],
         );
+      });
+
+      it("converges concurrent setup retries for the same Feishu app", async () => {
+        const actor = authOrgApi.user({
+          userId: `user_${randomUUID()}`,
+          orgId: `org_${randomUUID()}`,
+          orgRole: "org:admin",
+        });
+        authOrgApi.acceptAgentStorageWrites();
+        await enableFeishuIntegration(platform, actor);
+        const agent = await authOrgApi.createAgent(actor, {
+          displayName: "Feishu replay setup agent",
+          visibility: "public",
+        });
+        mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+        const client = feishuConnectClient(platform);
+        const headers = { authorization: "Bearer clerk-session" };
+        const body = {
+          appId: `cli_${randomUUID()}`,
+          appSecret: APP_SECRET,
+          verificationToken: VERIFICATION_TOKEN,
+          defaultAgentId: agent.agentId,
+        };
+        const responses = await Promise.all([
+          accept(client.setup({ headers, body }), [200]),
+          accept(client.setup({ headers, body }), [200]),
+        ]);
+        const status = await accept(client.getStatus({ headers }), [200]);
+        expect(status.body.installations).toHaveLength(1);
+        const installation = requireValue(
+          status.body.installations?.[0],
+          "Expected one Feishu installation after concurrent setup retries",
+        );
+        expect(installation.appId).toBe(body.appId);
+        expect(
+          responses.map((response) => {
+            return response.body.installationId;
+          }),
+        ).toStrictEqual([installation.id, installation.id]);
+        const listed = await accept(
+          setupApp({ context, routes: customConnectorsRoutes })(
+            customConnectorsContract,
+          ).list({ headers }),
+          [200],
+        );
+        expect(listed.body.connectors).toHaveLength(1);
+        await accept(
+          client.removeInstallation({
+            headers,
+            params: { installationId: installation.id },
+          }),
+          [200],
+        );
+      });
+
+      it("keeps a concurrently registered Feishu app in its winning organization", async () => {
+        authOrgApi.acceptAgentStorageWrites();
+        const owners: {
+          readonly actor: ApiTestUser;
+          readonly agent: { readonly agentId: string };
+        }[] = [];
+        for (let index = 0; index < 2; index += 1) {
+          const actor = authOrgApi.user({
+            userId: `user_${randomUUID()}`,
+            orgId: `org_${randomUUID()}`,
+            orgRole: "org:admin",
+          });
+          await enableFeishuIntegration(platform, actor);
+          const agent = await authOrgApi.createAgent(actor, {
+            displayName: "Feishu competing setup agent",
+            visibility: "public",
+          });
+          owners.push({ actor, agent });
+        }
+        context.mocks.clerk.authenticateRequest.mockImplementation(
+          (request) => {
+            if (!(request instanceof Request)) {
+              throw new Error("Expected a Clerk authentication request");
+            }
+            const authorization = request.headers.get("authorization");
+            const owner = owners.find(({ actor }) => {
+              return authorization === `Bearer ${actor.userId}`;
+            });
+            if (!owner) {
+              throw new Error("Expected a Feishu setup owner token");
+            }
+            return Promise.resolve({
+              isAuthenticated: true,
+              toAuth: () => {
+                return {
+                  userId: owner.actor.userId,
+                  orgId: owner.actor.orgId,
+                  orgRole: "org:admin",
+                };
+              },
+            });
+          },
+        );
+        context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+          (input) => {
+            if (
+              typeof input !== "object" ||
+              input === null ||
+              !("organizationId" in input)
+            ) {
+              throw new Error(
+                "Expected a Clerk organization membership request",
+              );
+            }
+            return Promise.resolve({
+              data: owners
+                .filter(({ actor }) => {
+                  return actor.orgId === input.organizationId;
+                })
+                .map(({ actor }) => {
+                  return { publicUserData: { userId: actor.userId } };
+                }),
+            });
+          },
+        );
+        const client = feishuConnectClient(platform);
+        const appId = `cli_${randomUUID()}`;
+        const outcomes = await Promise.all(
+          owners.map(async ({ actor, agent }) => {
+            const headers = { authorization: `Bearer ${actor.userId}` };
+            const response = await accept(
+              client.setup({
+                headers,
+                body: {
+                  appId,
+                  appSecret: APP_SECRET,
+                  verificationToken: VERIFICATION_TOKEN,
+                  defaultAgentId: agent.agentId,
+                  createNew: true,
+                },
+              }),
+              [200, 409],
+            );
+            return { headers, response };
+          }),
+        );
+        expect(
+          outcomes
+            .map(({ response }) => {
+              return response.status;
+            })
+            .sort(),
+        ).toStrictEqual([200, 409]);
+        const finalStates = await Promise.all(
+          outcomes.map(async (outcome) => {
+            return {
+              ...outcome,
+              status: await accept(
+                client.getStatus({ headers: outcome.headers }),
+                [200],
+              ),
+            };
+          }),
+        );
+        for (const { headers, response, status } of finalStates) {
+          if (response.status === 409) {
+            expect(response.body.error.message).toBe(
+              `This ${provider.name} App ID is already registered in Okou`,
+            );
+            expect(status.body.isInstalled).toBeFalsy();
+            expect(status.body.installations).toStrictEqual([]);
+          } else {
+            expect(status.body.installations).toHaveLength(1);
+            const installation = requireValue(
+              status.body.installations?.[0],
+              "Expected the winning organization to retain its Feishu app",
+            );
+            expect(installation).toMatchObject({
+              id: response.body.installationId,
+              appId,
+            });
+            await accept(
+              client.removeInstallation({
+                headers,
+                params: { installationId: installation.id },
+              }),
+              [200],
+            );
+          }
+        }
       });
 
       it("converges concurrent managed connector retries after skill publication fails", async () => {

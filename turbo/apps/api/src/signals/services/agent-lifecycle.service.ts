@@ -13,7 +13,6 @@ import { and, asc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import type { Tx } from "../../lib/db-types";
-import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
   deleteLockedRuns,
   deleteRunConversations,
@@ -252,36 +251,12 @@ async function deleteClerkOrganizationLifecycleData(
     // atomically and retain their locks through that commit.
     await deleteOrgUsageData(tx, orgId);
     const agentScope = eq(agents.orgId, orgId);
-    const candidates = await tx
+    const ownedAgents = await tx
       .select({ id: agents.id })
       .from(agents)
       .where(agentScope)
-      .orderBy(asc(agents.id));
-    for (const agent of candidates) {
-      await lockCanonicalAgentMutation(tx, agent.id);
-    }
-    // Revalidate locked ownership before children can escape the accounted cascade.
-    const ownedAgents =
-      candidates.length === 0
-        ? []
-        : await tx
-            .select({ id: agents.id })
-            .from(agents)
-            .where(
-              and(
-                agentScope,
-                eq(
-                  agents.id,
-                  sql`ANY(${sql.param(
-                    candidates.map((agent) => {
-                      return agent.id;
-                    }),
-                  )}::uuid[])`,
-                ),
-              ),
-            )
-            .orderBy(asc(agents.id))
-            .for("update");
+      .orderBy(asc(agents.id))
+      .for("update");
     const agentIds = ownedAgents.map((agent) => {
       return agent.id;
     });
@@ -333,7 +308,7 @@ async function deleteClerkOrganizationLifecycleData(
         );
       // Agent cascades drain child-row writers that could initialize non-FK
       // lifecycle metadata after the first sweep. Remove that late state while
-      // the canonical Agent locks are still held.
+      // the Agent rows remain locked for deletion.
       await deleteClerkStableContextLifecycleData(tx, scope, agentIds);
     }
     return await releaseDeletedConversationReferences(tx, removed);

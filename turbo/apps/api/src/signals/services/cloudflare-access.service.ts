@@ -15,13 +15,16 @@ import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { and, asc, eq, ne, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import {
   publishCloudflareAccessClientInvalidation,
   publishCloudflareAccessMutationInvalidation,
 } from "./cloudflare-access-client-invalidation.service";
-import { lockSshOwner } from "./ssh-credential.service";
-import { checkSshCreationId } from "./ssh-creation.service";
+import {
+  checkSshCreationId,
+  resolveSshCreationConflict,
+} from "./ssh-creation.service";
 import { publishSshRunnerInvalidation } from "./ssh-runtime-wakeup.service";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 
@@ -235,29 +238,49 @@ export async function createCloudflareAccessConfig(args: {
     args.body,
     args.featureContext,
   );
-  const config = await args.db.transaction(async (tx) => {
-    await lockSshOwner(tx, args.owner);
-    const creation = await checkSshCreationId(
-      tx,
-      {
-        orgId: args.owner.orgId,
-        userId: scope === "organization" ? null : args.owner.userId,
-      },
+  const owner = {
+    orgId: args.owner.orgId,
+    userId: scope === "organization" ? null : args.owner.userId,
+  };
+  const transaction = await settle(
+    args.db.transaction(async (tx) => {
+      const creation = await checkSshCreationId(
+        tx,
+        owner,
+        cloudflareAccessConfigs,
+        args.id,
+      );
+      if (!creation.ok) {
+        return cloudflareAccessFailure("resourceIdConflict");
+      }
+      if (!creation.value) {
+        return { ok: true as const, value: undefined };
+      }
+      const value = await insertCloudflareAccessConfig(
+        tx,
+        args.owner,
+        prepared,
+        {
+          id: args.id,
+          scope,
+        },
+      );
+      return { ok: true as const, value };
+    }),
+  );
+  if (!transaction.ok) {
+    const creation = await resolveSshCreationConflict(
+      args.db,
+      owner,
       cloudflareAccessConfigs,
       args.id,
+      transaction.error,
     );
-    if (!creation.ok) {
-      return cloudflareAccessFailure("resourceIdConflict");
-    }
-    if (!creation.value) {
-      return { ok: true as const, value: undefined };
-    }
-    const value = await insertCloudflareAccessConfig(tx, args.owner, prepared, {
-      id: args.id,
-      scope,
-    });
-    return { ok: true as const, value };
-  });
+    return creation.ok
+      ? creation
+      : cloudflareAccessFailure("resourceIdConflict");
+  }
+  const config = transaction.value;
   if (config.ok && config.value) {
     await publishCloudflareAccessClientInvalidation(args.owner, scope);
   }

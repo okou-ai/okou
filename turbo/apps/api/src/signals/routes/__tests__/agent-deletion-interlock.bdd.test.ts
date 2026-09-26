@@ -1,22 +1,9 @@
-import { randomUUID } from "node:crypto";
-
 import { createStore } from "ccstate";
-import { onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import {
-  holdAgentDeletionRowLockFixture,
-  holdAgentRunInsertFixture,
-  holdAgentRunLocksFixture,
-  holdAgentRunPromotionFixture,
-  holdAgentSessionInsertFixture,
-  holdChatThreadThenSessionFixture,
-  holdUsageEventMutationFixture,
   readAgentLifecycleCountsFixture,
-  readAgentLifecycleIdsFixture,
-  readDatabaseLockTimeoutFixture,
   readUsageEventRunIdFixture,
-  setAgentLifecycleOrgFixture,
   setAgentRunStatusFixture,
 } from "../../../test-fixtures/agent-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -27,7 +14,6 @@ import {
   insertUsageEvent$,
   materializeHourlyUsage$,
   readUsageStorageCounts$,
-  seedChatThread$,
 } from "./helpers/usage-state";
 
 const context = testContext();
@@ -35,18 +21,6 @@ const store = createStore();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
-
-interface HeldBoundary {
-  readonly release: () => void;
-  readonly done: Promise<void>;
-}
-
-function registerHeldBoundary(boundary: HeldBoundary): void {
-  onTestFinished(async () => {
-    boundary.release();
-    await boundary.done;
-  });
-}
 
 function orgIdOf(actor: ApiTestUser): string {
   if (!actor.orgId) {
@@ -75,19 +49,6 @@ async function prepareRunCreation(
   }
 }
 
-function expectRetryConflict(response: {
-  readonly status: number;
-  readonly body: unknown;
-}): void {
-  expect(response.status).toBe(409);
-  expect(response.body).toStrictEqual({
-    error: {
-      message: "Cannot delete agent right now; retry shortly",
-      code: "CONFLICT",
-    },
-  });
-}
-
 async function expectActiveCheckpointRejected(
   actor: ApiTestUser,
   runId: string,
@@ -108,7 +69,7 @@ async function expectActiveCheckpointRejected(
   );
 }
 
-describe("DELETE /api/agents/:id bounded deletion interlock", () => {
+describe("DELETE /api/agents/:id lifecycle cleanup", () => {
   it("deletes the exact canonical lifecycle while retaining billing and unrelated Runs", async () => {
     const actor = bdd.user();
     await prepareRunCreation(actor);
@@ -136,7 +97,6 @@ describe("DELETE /api/agents/:id bounded deletion interlock", () => {
       },
       context.signal,
     );
-    const lockTimeoutBefore = await readDatabaseLockTimeoutFixture();
 
     const response = await bdd.requestDeleteAgent(actor, target.agentId, [204]);
 
@@ -160,9 +120,6 @@ describe("DELETE /api/agents/:id bounded deletion interlock", () => {
     });
     await expectActiveCheckpointRejected(actor, survivorRun.runId);
     await expect(readUsageEventRunIdFixture(usageEventId)).resolves.toBeNull();
-    await expect(readDatabaseLockTimeoutFixture()).resolves.toBe(
-      lockTimeoutBefore,
-    );
     await api.requestCancelRun(actor, survivorRun.runId, [200]);
   });
 
@@ -293,341 +250,5 @@ describe("DELETE /api/agents/:id bounded deletion interlock", () => {
       ),
     ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
     await api.requestCancelRun(survivorOwner, survivorRun.runId, [200]);
-  });
-
-  it.each(["session", "run"] as const)(
-    "fails closed when a target %s carries another org identity",
-    async (kind) => {
-      const actor = bdd.user();
-      await prepareRunCreation(actor);
-      const target = await createAgent(actor, `Org ${kind} Target`);
-      const run = await api.createRun(actor, {
-        agentId: target.agentId,
-        prompt: `corrupt ${kind} org identity`,
-        modelProvider: "anthropic-api-key",
-      });
-      await api.requestCancelRun(actor, run.runId, [200]);
-      const lifecycle = await readAgentLifecycleIdsFixture(target.agentId);
-      const id =
-        kind === "session" ? lifecycle.sessionIds[0] : lifecycle.runIds[0];
-      if (!id) {
-        throw new Error(`Expected a target ${kind}`);
-      }
-      await setAgentLifecycleOrgFixture({
-        kind,
-        id,
-        orgId: `org_corrupt_${randomUUID()}`,
-      });
-
-      const response = await bdd.requestDeleteAgent(
-        actor,
-        target.agentId,
-        [409],
-      );
-
-      expect(response.body).toStrictEqual({
-        error: {
-          message:
-            "Cannot delete agent because its lifecycle ownership is inconsistent",
-          code: "CONFLICT",
-        },
-      });
-      await expect(
-        readAgentLifecycleCountsFixture(target.agentId),
-      ).resolves.toStrictEqual({ agents: 1, sessions: 1, runs: 1 });
-      await expect(bdd.readAgent(actor, target.agentId)).resolves.toMatchObject(
-        {
-          agentId: target.agentId,
-        },
-      );
-    },
-  );
-
-  it.each(["agent", "session", "run"] as const)(
-    "returns a retryable conflict without waiting on a locked target %s",
-    async (kind) => {
-      const actor = bdd.user();
-      await prepareRunCreation(actor);
-      const target = await createAgent(actor, `Lock ${kind} Target`);
-      const run = await api.createRun(actor, {
-        agentId: target.agentId,
-        prompt: `lock target ${kind}`,
-        modelProvider: "anthropic-api-key",
-      });
-      await api.requestCancelRun(actor, run.runId, [200]);
-      const lifecycle = await readAgentLifecycleIdsFixture(target.agentId);
-      const id =
-        kind === "agent"
-          ? target.agentId
-          : kind === "session"
-            ? lifecycle.sessionIds[0]
-            : lifecycle.runIds[0];
-      if (!id) {
-        throw new Error(`Expected a target ${kind}`);
-      }
-      const lockTimeoutBefore = await readDatabaseLockTimeoutFixture();
-      const held = await holdAgentDeletionRowLockFixture({
-        kind,
-        id,
-        signal: context.signal,
-      });
-      registerHeldBoundary(held);
-      context.mocks.s3.send.mockClear();
-
-      const response = await bdd.requestDeleteAgent(
-        actor,
-        target.agentId,
-        [409],
-      );
-      expectRetryConflict(response);
-      await expect(held.blockedWaiterCount()).resolves.toBe(0);
-      expect(context.mocks.s3.send).not.toHaveBeenCalled();
-      await expect(
-        readAgentLifecycleCountsFixture(target.agentId),
-      ).resolves.toStrictEqual({ agents: 1, sessions: 1, runs: 1 });
-      await expect(readDatabaseLockTimeoutFixture()).resolves.toBe(
-        lockTimeoutBefore,
-      );
-
-      held.release();
-      await held.done;
-      await bdd.deleteAgent(actor, target.agentId);
-    },
-  );
-
-  it.each([
-    ["session", [204], undefined],
-    [
-      "run",
-      [409],
-      {
-        error: {
-          message: "Cannot delete agent: agent is currently running",
-          code: "CONFLICT",
-        },
-      },
-    ],
-  ] as const)(
-    "serializes a concurrent target %s insert without partial deletion",
-    async (kind, afterReleaseStatuses, expectedAfterReleaseBody) => {
-      const actor = bdd.user();
-      const orgId = orgIdOf(actor);
-      await prepareRunCreation(actor);
-      const target = await createAgent(actor, `Insert ${kind} Target`);
-      const run = await api.createRun(actor, {
-        agentId: target.agentId,
-        prompt: `hold target ${kind} insert`,
-        modelProvider: "anthropic-api-key",
-      });
-      await api.requestCancelRun(actor, run.runId, [200]);
-      const lifecycle = await readAgentLifecycleIdsFixture(target.agentId);
-      const sessionId = lifecycle.sessionIds[0];
-      if (!sessionId) {
-        throw new Error("Expected a target Session");
-      }
-      const held =
-        kind === "session"
-          ? await holdAgentSessionInsertFixture({
-              agentId: target.agentId,
-              orgId,
-              userId: actor.userId,
-              signal: context.signal,
-            })
-          : await holdAgentRunInsertFixture({
-              sessionId,
-              orgId,
-              userId: actor.userId,
-              signal: context.signal,
-            });
-      registerHeldBoundary(held);
-
-      const response = await bdd.requestDeleteAgent(
-        actor,
-        target.agentId,
-        [409],
-      );
-
-      expectRetryConflict(response);
-      await expect(held.blockedWaiterCount()).resolves.toBe(0);
-      await expect(
-        readAgentLifecycleCountsFixture(target.agentId),
-      ).resolves.toStrictEqual({ agents: 1, sessions: 1, runs: 1 });
-      held.release();
-      await held.done;
-
-      const retry = await bdd.requestDeleteAgent(
-        actor,
-        target.agentId,
-        afterReleaseStatuses,
-      );
-      expect(retry.body).toStrictEqual(expectedAfterReleaseBody);
-    },
-  );
-
-  it("fails fast across reverse Run locks and a queued promotion", async () => {
-    const actor = bdd.user();
-    await prepareRunCreation(actor);
-    const target = await createAgent(actor, "Reverse Lock Target");
-    const first = await api.createRun(actor, {
-      agentId: target.agentId,
-      prompt: "first queued Run",
-      modelProvider: "anthropic-api-key",
-    });
-    const second = await api.createRun(actor, {
-      agentId: target.agentId,
-      prompt: "second queued Run",
-      modelProvider: "anthropic-api-key",
-    });
-    await setAgentRunStatusFixture(first.runId, "queued");
-    await setAgentRunStatusFixture(second.runId, "queued");
-    const lifecycle = await readAgentLifecycleIdsFixture(target.agentId);
-    const reverseRunIds = [...lifecycle.runIds].reverse();
-    const reverseLocks = await holdAgentRunLocksFixture({
-      runIds: reverseRunIds,
-      signal: context.signal,
-    });
-    registerHeldBoundary(reverseLocks);
-
-    const reverseResponse = await bdd.requestDeleteAgent(
-      actor,
-      target.agentId,
-      [409],
-    );
-
-    expectRetryConflict(reverseResponse);
-    await expect(reverseLocks.blockedWaiterCount()).resolves.toBe(0);
-    reverseLocks.release();
-    await reverseLocks.done;
-
-    const promotion = await holdAgentRunPromotionFixture({
-      runId: lifecycle.runIds[0] ?? first.runId,
-      signal: context.signal,
-    });
-    registerHeldBoundary(promotion);
-    const promotionResponse = await bdd.requestDeleteAgent(
-      actor,
-      target.agentId,
-      [409],
-    );
-    expectRetryConflict(promotionResponse);
-    await expect(promotion.blockedWaiterCount()).resolves.toBe(0);
-    promotion.release();
-    await promotion.done;
-
-    const activeResponse = await bdd.requestDeleteAgent(
-      actor,
-      target.agentId,
-      [409],
-    );
-    expect(activeResponse.body).toMatchObject({
-      error: { message: "Cannot delete agent: agent is currently running" },
-    });
-  });
-
-  it("bounds the Session and ChatThread reverse path without a deadlock", async () => {
-    const actor = bdd.user();
-    await prepareRunCreation(actor);
-    const target = await createAgent(actor, "ChatThread Cycle Target");
-    const run = await api.createRun(actor, {
-      agentId: target.agentId,
-      prompt: "terminal ChatThread cycle Run",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.requestCancelRun(actor, run.runId, [200]);
-    const lifecycle = await readAgentLifecycleIdsFixture(target.agentId);
-    const sessionId = lifecycle.sessionIds[0];
-    if (!sessionId) {
-      throw new Error("Expected a target Session");
-    }
-    const threadId = await store.set(
-      seedChatThread$,
-      { userId: actor.userId, composeId: target.agentId },
-      context.signal,
-    );
-    const lockTimeoutBefore = await readDatabaseLockTimeoutFixture();
-    const held = await holdChatThreadThenSessionFixture({
-      threadId,
-      sessionId,
-      signal: context.signal,
-    });
-    registerHeldBoundary(held);
-
-    const deletion = bdd.requestDeleteAgent(actor, target.agentId, [409]);
-    await expect
-      .poll(held.blockedWaiterCount, { interval: 2, timeout: 500 })
-      .toBeGreaterThan(0);
-    held.startSessionLock();
-    const response = await deletion;
-    expectRetryConflict(response);
-    await held.sessionLocked;
-    await expect(
-      readAgentLifecycleCountsFixture(target.agentId),
-    ).resolves.toStrictEqual({ agents: 1, sessions: 1, runs: 1 });
-    await expect(readDatabaseLockTimeoutFixture()).resolves.toBe(
-      lockTimeoutBefore,
-    );
-    held.release();
-    await held.done;
-    await bdd.deleteAgent(actor, target.agentId);
-  });
-
-  it("rolls back a cascade-child timeout and retains billing on retry", async () => {
-    const actor = bdd.user();
-    const orgId = orgIdOf(actor);
-    await prepareRunCreation(actor);
-    const target = await createAgent(actor, "Cascade Child Target");
-    const run = await api.createRun(actor, {
-      agentId: target.agentId,
-      prompt: "terminal cascade-child Run",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.requestCancelRun(actor, run.runId, [200]);
-    await flushWaitUntilForTest();
-    const usageEventId = await store.set(
-      insertUsageEvent$,
-      {
-        orgId,
-        userId: actor.userId,
-        runId: run.runId,
-        status: "pending",
-        creditsCharged: 7,
-      },
-      context.signal,
-    );
-    const lockTimeoutBefore = await readDatabaseLockTimeoutFixture();
-    const held = await holdUsageEventMutationFixture({
-      usageEventId,
-      signal: context.signal,
-    });
-    registerHeldBoundary(held);
-
-    const deletion = bdd.requestDeleteAgent(actor, target.agentId, [409]);
-    await expect
-      .poll(held.blockedWaiterCount, { interval: 2, timeout: 500 })
-      .toBeGreaterThan(0);
-    const response = await deletion;
-    expectRetryConflict(response);
-    await expect(
-      readAgentLifecycleCountsFixture(target.agentId),
-    ).resolves.toStrictEqual({ agents: 1, sessions: 1, runs: 1 });
-    await expect(readUsageEventRunIdFixture(usageEventId)).resolves.toBe(
-      run.runId,
-    );
-    await expect(readDatabaseLockTimeoutFixture()).resolves.toBe(
-      lockTimeoutBefore,
-    );
-    held.release();
-    await held.done;
-
-    await bdd.deleteAgent(actor, target.agentId);
-
-    await expect(readUsageEventRunIdFixture(usageEventId)).resolves.toBeNull();
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "organization", id: orgId },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 1, hourly: 0 });
   });
 });

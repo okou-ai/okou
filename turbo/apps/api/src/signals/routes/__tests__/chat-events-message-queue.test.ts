@@ -10,7 +10,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
   completeRunWithoutCallbacksFixture,
-  holdChatThreadRowLockFixture,
   revokeReservedActiveInputFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -110,55 +109,6 @@ async function steerOwnedRunAtElapsedTime(
 }
 
 describe("CHAT-02: queueing and recalling messages", () => {
-  it("returns an empty active-input poll without waiting for the thread row", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const active = await sendChatRun(actor, {
-      agentId,
-      prompt: "keep the empty active-input poll observational",
-    });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
-    const threadLock = await holdChatThreadRowLockFixture({
-      threadId: active.threadId,
-      signal: context.signal,
-    });
-    let reserveSettled = false;
-    const reserveOutcome = api
-      .reserveRunnerActiveInputs(claimed.claim.sandboxToken, active.runId)
-      .then(
-        (value) => {
-          reserveSettled = true;
-          return { ok: true as const, value };
-        },
-        (error: unknown) => {
-          reserveSettled = true;
-          return { ok: false as const, error };
-        },
-      );
-    onTestFinished(async () => {
-      threadLock.release();
-      await threadLock.done;
-      await reserveOutcome;
-    });
-
-    await expect
-      .poll(() => {
-        return reserveSettled;
-      })
-      .toBeTruthy();
-    const outcome = await reserveOutcome;
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
-    expect(outcome.value).toStrictEqual({ outcome: "empty" });
-    await expect(threadLock.blockedWaiterCount()).resolves.toBe(0);
-
-    threadLock.release();
-    await threadLock.done;
-    await cancelChatRun(actor, active.runId);
-  }, 30_000);
-
   it("reserves rich inputs one at a time and settles concurrent receipts once", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();

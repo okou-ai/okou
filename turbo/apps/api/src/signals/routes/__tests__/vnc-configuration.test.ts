@@ -1393,6 +1393,91 @@ describe("VNC owner configuration", () => {
     ).toStrictEqual([winner.body]);
   });
 
+  it("rejects a concurrent creation by another owner without leaving an inline credential", async () => {
+    useSecretKmsProbe();
+    const owners = [await owner(), await owner()];
+    context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
+      if (!(request instanceof Request)) {
+        throw new Error("Expected a Clerk authentication request");
+      }
+      const authorization = request.headers.get("authorization");
+      const authenticatedOwner = owners.find((candidate) => {
+        return authorization === `Bearer ${candidate.userId}`;
+      });
+      if (!authenticatedOwner) {
+        throw new Error("Expected a VNC creation owner token");
+      }
+      return Promise.resolve({
+        isAuthenticated: true,
+        toAuth: () => {
+          return { ...authenticatedOwner, orgRole: "org:admin" };
+        },
+      });
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: owners.map((candidate) => {
+          return {
+            id: `member_${candidate.orgId}_${candidate.userId}`,
+            publicUserData: { userId: candidate.userId },
+            organization: { id: candidate.orgId },
+            role: "org:admin",
+          };
+        }),
+        totalCount: owners.length,
+      },
+    );
+
+    const body = hostBody();
+    const outcomes = await Promise.all(
+      owners.map(async (candidate, index) => {
+        const ownerHeaders = { authorization: `Bearer ${candidate.userId}` };
+        const response = await accept(
+          connections().create({
+            headers: ownerHeaders,
+            body: {
+              ...body,
+              id: index === 0 ? body.id : body.id.toUpperCase(),
+            },
+          }),
+          [201, 409],
+        );
+        return { headers: ownerHeaders, response };
+      }),
+    );
+    expect(
+      outcomes
+        .map(({ response }) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 409]);
+
+    for (const outcome of outcomes) {
+      const [hosts, logins] = await Promise.all([
+        accept(connections().list({ headers: outcome.headers }), [200]),
+        accept(credentials().list({ headers: outcome.headers }), [200]),
+      ]);
+      if (outcome.response.status === 409) {
+        expect(outcome.response.body.error.code).toBe(
+          "VNC_RESOURCE_ID_CONFLICT",
+        );
+        expect(hosts.body.connections).toStrictEqual([]);
+        expect(logins.body.credentials).toStrictEqual([]);
+      } else {
+        expect(outcome.response.body.id).toBe(body.id);
+        expect(hosts.body.connections).toStrictEqual([outcome.response.body]);
+        expect(logins.body.credentials).toStrictEqual([
+          expect.objectContaining({
+            id: outcome.response.body.credentialId,
+            name: "Desktop password",
+            hosts: [{ id: body.id, displayName: "Desktop" }],
+          }),
+        ]);
+      }
+    }
+  });
+
   it("serializes concurrent duplicate creation and binding against credential deletion", async () => {
     useSecretKmsProbe();
     await owner();

@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 
-import { testOverride } from "../../lib/singleton";
 import { writeDb$, type Db } from "../external/db";
 import {
   commitPreparedVolumeServerSide,
@@ -32,25 +31,7 @@ export function isStalePiStableContextPublicationError(
   return error instanceof StalePiStableContextPublicationError;
 }
 
-interface StorageVolumeUploadHooks {
-  readonly afterStorageCommit?: (db: Db) => Promise<void>;
-}
-
-const storageVolumeUploadHooks = testOverride<StorageVolumeUploadHooks>(() => {
-  return {};
-});
-
-export function setStorageVolumeUploadHooksForTest(
-  hooks: StorageVolumeUploadHooks,
-): void {
-  storageVolumeUploadHooks.set(hooks);
-}
-
-export function clearStorageVolumeUploadHooksForTest(): void {
-  storageVolumeUploadHooks.clear();
-}
-
-export async function commitPreparedVolumeUpload(
+async function commitPreparedVolumeUpload(
   args: {
     readonly db: Db;
     readonly volume: PreparedServerSideVolume;
@@ -66,7 +47,6 @@ export async function commitPreparedVolumeUpload(
     { db: args.db, volume: args.volume },
     signal,
   );
-  await storageVolumeUploadHooks.get().afterStorageCommit?.(args.db);
   if (
     args.stableContextPublication &&
     !(await lockPiStableContextPublication(
