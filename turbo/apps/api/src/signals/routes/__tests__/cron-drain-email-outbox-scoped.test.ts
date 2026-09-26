@@ -6,12 +6,7 @@ import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
-import {
-  holdEmailOutboxClaim,
-  holdEmailOutboxRemoval,
-  rejectEmailOutboxCompletion,
-  waitForEmailOutboxBlocked,
-} from "../../../test-fixtures/email-outbox";
+import { rejectEmailOutboxCompletion } from "../../../test-fixtures/email-outbox";
 import { createDeferredPromise } from "../../utils";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 
@@ -27,11 +22,6 @@ function providerKey(itemId: string): string {
 // inside that window.
 const SEND_LEASE_MS = 60_000;
 const FIRST_BACKOFF_MS = 1000;
-// A row is deliverable for 15 minutes after it was enqueued, whichever attempt
-// reaches it.
-const OUTBOX_TTL_MS = 15 * 60 * 1000;
-const EXPIRED_BEFORE_PROVIDER_ERROR =
-  "Email outbox item expired before contacting the provider";
 const DRAIN_ROUTE = "POST /api/test/email-outbox-state/drain";
 
 const providerOptionsSchema = z.object({ idempotencyKey: z.string() });
@@ -531,115 +521,6 @@ describe("email outbox provider replay", () => {
 
     await expect(outbox.cleanupExpiredItems([expired.id])).resolves.toBe(1);
     await expect(outbox.readItem(expired.id)).resolves.toBeNull();
-  });
-
-  it("expires an item that reaches its deadline while its request is prepared", async () => {
-    const baseTime = pinTime();
-    const deadlineMs = baseTime + 1000;
-    const crossing = await seedItem({
-      status: "pending",
-      createdAt: new Date(deadlineMs - OUTBOX_TTL_MS),
-    });
-    const sibling = await seedItem({ status: "pending", createdAt: nowDate() });
-    context.mocks.resend.send.mockResolvedValue({
-      data: { id: "resend-sibling" },
-      error: null,
-    });
-
-    const claim = await holdEmailOutboxClaim(crossing.id, context.signal);
-    const [drained] = await Promise.all([
-      outbox.drainItems([crossing.id, sibling.id]),
-      (async () => {
-        await claim.waitForBlocked();
-        // Preparation already admitted the row against the clock. Its deadline
-        // is reached before the claim commits.
-        mockNow(deadlineMs);
-        await claim.release();
-      })(),
-    ]);
-
-    expect(drained).toBe(2);
-    // Equality at the deadline expires the item, so only the still-valid
-    // sibling reaches the provider.
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(providerCall(0).payload).toMatchObject({ to: sibling.toAddress });
-    await expect(outbox.readItem(crossing.id)).resolves.toMatchObject({
-      status: "failed",
-      attempts: 1,
-      resend_id: null,
-      // The committed request and key stay on the row: they are the only record
-      // of the delivery identity this claim prepared.
-      has_provider_request: true,
-      provider_idempotency_key: providerKey(crossing.id),
-      last_error: EXPIRED_BEFORE_PROVIDER_ERROR,
-    });
-    await expect(outbox.readItem(sibling.id)).resolves.toMatchObject({
-      status: "sent",
-      resend_id: "resend-sibling",
-    });
-  });
-
-  it("never revives a row removed while its expired attempt was resolving", async () => {
-    const baseTime = pinTime();
-    const deadlineMs = baseTime + 1000;
-    const item = await seedItem({
-      status: "pending",
-      createdAt: new Date(deadlineMs - OUTBOX_TTL_MS),
-    });
-
-    const claim = await holdEmailOutboxClaim(item.id, context.signal);
-    const [drained] = await Promise.all([
-      outbox.drainItems([item.id]),
-      (async () => {
-        const claimingSession = await claim.waitForBlocked();
-        mockNow(deadlineMs);
-
-        const [removal] = await Promise.all([
-          holdEmailOutboxRemoval(item.id, context.signal),
-          (async () => {
-            // Prove the removal overlaps preparation before releasing the claim.
-            await waitForEmailOutboxBlocked(claimingSession);
-            await claim.release();
-          })(),
-        ]);
-        // PostgreSQL may complete the expired write before the queued DELETE
-        // locks the newly committed row version. In that valid ordering there
-        // is no writer left to block on removal. Commit it and join both
-        // operations; either ordering must leave the row absent.
-        await removal.release();
-      })(),
-    ]);
-
-    expect(drained).toBe(1);
-    expect(context.mocks.resend.send).not.toHaveBeenCalled();
-    await expect(outbox.readItem(item.id)).resolves.toBeNull();
-  });
-
-  it("never revives a row removed before its expired attempt completes", async () => {
-    const baseTime = pinTime();
-    const deadlineMs = baseTime + 1000;
-    const item = await seedItem({
-      status: "pending",
-      createdAt: new Date(deadlineMs - OUTBOX_TTL_MS),
-    });
-
-    const claim = await holdEmailOutboxClaim(item.id, context.signal, {
-      removeBeforeCommit: true,
-    });
-    const [drained] = await Promise.all([
-      outbox.drainItems([item.id]),
-      (async () => {
-        await claim.waitForBlocked();
-        mockNow(deadlineMs);
-        // The claim resumes, removes its row and commits before the expired
-        // completion runs. No ordering between competing lock waiters is assumed.
-        await claim.release();
-      })(),
-    ]);
-
-    expect(drained).toBe(1);
-    expect(context.mocks.resend.send).not.toHaveBeenCalled();
-    await expect(outbox.readItem(item.id)).resolves.toBeNull();
   });
 
   it("replays one delivery after its completion write fails", async () => {

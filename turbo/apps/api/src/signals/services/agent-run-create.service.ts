@@ -331,10 +331,7 @@ import {
   type CapturedPersonalSubscriptionAccount,
 } from "./model-provider-account.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
-import {
-  enterPreparedLaunchAdmission,
-  lockPreparedLaunchAdmission,
-} from "./prepared-launch-admission-lock.service";
+import { lockPreparedLaunchAdmission } from "./prepared-launch-admission-lock.service";
 import {
   builtinConnectorRuntimeCredentialStatusWithMethod,
   type ConnectorCredentialStatus,
@@ -9302,7 +9299,6 @@ async function enterFinalLaunchAdmission(
   args: CommitPreparedLaunchArgs,
 ): Promise<number | null> {
   if (!args.context.officialWorkflowRun) {
-    await enterPreparedLaunchAdmission(tx, args.createArgs.orgId);
     return null;
   }
   await args.timing.measure(

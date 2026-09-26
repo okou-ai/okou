@@ -10,16 +10,9 @@ import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
-import {
-  holdUsageEventCompactionLockFixture,
-  makeUsageBillingLegacyFixture,
-  backfillUsageBillingFixture,
-} from "../../../test-fixtures/usage-event-compaction";
 import { nowDate } from "../../../lib/time";
 import {
   attachUsageAllowance$,
-  deleteUsageData$,
   deleteUsageStateFixture$,
   deleteRun$,
   insertUsageEvent$,
@@ -35,9 +28,7 @@ import {
 } from "./helpers/usage-state";
 import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 
-const context = testContext({
-  dbFixtures: [usageEventCompactionDbFixture],
-});
+const context = testContext({});
 const store = createStore();
 const CRON_SECRET = "test-compact-usage-events-secret";
 const RAW_SEED_LIMIT = 500;
@@ -96,33 +87,6 @@ async function seedZeroUsageEvents(
     },
     context.signal,
   );
-}
-
-type UsageCompactionLockFixture = Awaited<
-  ReturnType<typeof holdUsageEventCompactionLockFixture>
->;
-
-async function startUsageCompactionLockGate(): Promise<UsageCompactionLockFixture> {
-  const gate = await holdUsageEventCompactionLockFixture(context.signal);
-  onTestFinished(async () => {
-    gate.release();
-    await gate.done;
-  });
-  return gate;
-}
-
-async function waitForUsageCompactionLockWaiters(
-  gate: UsageCompactionLockFixture,
-  minimum: number,
-): Promise<void> {
-  await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(minimum);
-}
-
-async function releaseUsageCompactionLockGate(
-  gate: UsageCompactionLockFixture,
-): Promise<void> {
-  gate.release();
-  await gate.done;
 }
 
 async function seedRunContext(fixture: UsageStateFixture): Promise<{
@@ -688,76 +652,6 @@ describe("usage event compaction cron", () => {
     });
   });
 
-  it.each(["before", "after"] as const)(
-    "preserves mixed billing grains with backfill %s compaction",
-    async (order) => {
-      const fixture = await seedFixture();
-      const run = await seedRunContext(fixture);
-      const processedAt = new Date("2026-08-02T00:15:00.000Z");
-      const insert = async (quantity: number, creditsCharged: number) => {
-        await store.set(
-          insertUsageEvent$,
-          {
-            ...fixture,
-            runId: run.runId,
-            status: "processed",
-            quantity,
-            creditsCharged,
-            processedAt,
-          },
-          context.signal,
-        );
-      };
-      await insert(2, 3);
-      await store.set(
-        materializeHourlyUsage$,
-        { ...fixture, runId: run.runId },
-        context.signal,
-      );
-      await insert(5, 7);
-      // The migration-only legacy shape has no production endpoint; the fixture
-      // affects this owned org only. Both actions under test are real entry points.
-      await makeUsageBillingLegacyFixture(fixture.orgId, context.signal);
-      await insert(11, 13);
-      if (order === "before") {
-        await backfillUsageBillingFixture(fixture.orgId, context.signal);
-      }
-      const first = await compactOwnedUsage(fixture);
-      expect(first.body).toMatchObject({
-        rawRowsDeleted: 2,
-        hourlyRowsDeleted: 1,
-        hourlyRowsInserted: order === "before" ? 1 : 2,
-        quantity: "18",
-        creditsCharged: "23",
-        allowanceUnits: "0",
-        reconciled: true,
-      });
-      await backfillUsageBillingFixture(fixture.orgId, context.signal);
-      await backfillUsageBillingFixture(fixture.orgId, context.signal);
-      // Late usage reconsolidates the populated hourly grains in either ordering.
-      await insert(1, 2);
-      const late = await compactOwnedUsage(fixture);
-      expect(late.body).toMatchObject({
-        rawRowsDeleted: 1,
-        hourlyRowsInserted: 1,
-        quantity: "19",
-        creditsCharged: "25",
-        allowanceUnits: "0",
-        reconciled: true,
-      });
-      await expect(readStorage(fixture)).resolves.toStrictEqual({
-        raw: 0,
-        processedRaw: 0,
-        hourly: 1,
-      });
-      expect((await compactOwnedUsage(fixture)).body).toMatchObject({
-        rawRowsDeleted: 0,
-        hourlyRowsInserted: 0,
-        reconciled: true,
-      });
-    },
-  );
-
   it("serializes overlapping invocations without duplicating facts", async () => {
     const fixture = await seedFixture();
     await store.set(
@@ -803,101 +697,6 @@ describe("usage event compaction cron", () => {
       raw: 0,
       processedRaw: 0,
       hourly: 2,
-    });
-  });
-
-  it("lets organization cleanup remove a batch aggregated ahead of it", async () => {
-    const fixture = await seedFixture();
-    const quantity = 8_000_000_000_000_123;
-    await store.set(
-      insertUsageEvent$,
-      {
-        ...fixture,
-        status: "processed",
-        quantity,
-        processedAt: new Date("2026-08-01T00:15:00.000Z"),
-      },
-      context.signal,
-    );
-    const gate = await startUsageCompactionLockGate();
-
-    const compaction = compactOwnedUsage(fixture);
-    await waitForUsageCompactionLockWaiters(gate, 1);
-    const cleanup = createStore().set(
-      deleteUsageData$,
-      { scope: "organization", id: fixture.orgId },
-      context.signal,
-    );
-    await waitForUsageCompactionLockWaiters(gate, 2);
-    await releaseUsageCompactionLockGate(gate);
-    const [response] = await Promise.all([compaction, cleanup]);
-
-    expect(response.body).toMatchObject({
-      rawRowsDeleted: 1,
-      hourlyRowsInserted: 1,
-      quantity: String(quantity),
-    });
-    await expect(readStorage(fixture)).resolves.toStrictEqual({
-      raw: 0,
-      processedRaw: 0,
-      hourly: 0,
-    });
-  });
-
-  it("keeps compaction from reviving usage deleted ahead of it", async () => {
-    const fixture = await seedFixture();
-    const survivingUserId = `user_${randomUUID()}`;
-    onTestFinished(async () => {
-      await store.set(
-        deleteUsageData$,
-        { scope: "user", id: survivingUserId },
-        context.signal,
-      );
-    });
-    const quantity = 7_000_000_000_000_321;
-    await store.set(
-      insertUsageEvent$,
-      {
-        ...fixture,
-        status: "processed",
-        quantity,
-        processedAt: new Date("2026-08-01T00:15:00.000Z"),
-      },
-      context.signal,
-    );
-    await store.set(
-      insertUsageEvent$,
-      {
-        ...fixture,
-        userId: survivingUserId,
-        status: "processed",
-        quantity: 1001,
-        processedAt: new Date("2026-08-01T01:15:00.000Z"),
-      },
-      context.signal,
-    );
-    const gate = await startUsageCompactionLockGate();
-
-    const cleanup = createStore().set(
-      deleteUsageData$,
-      { scope: "user", id: fixture.userId },
-      context.signal,
-    );
-    await waitForUsageCompactionLockWaiters(gate, 1);
-    const compaction = compactOwnedUsage(fixture);
-    await waitForUsageCompactionLockWaiters(gate, 2);
-    await releaseUsageCompactionLockGate(gate);
-    const [, response] = await Promise.all([cleanup, compaction]);
-
-    expect(response.body).toMatchObject({
-      rawRowsDeleted: 1,
-      hourlyRowsInserted: 1,
-      quantity: "1001",
-    });
-    await expect(readStorage(fixture)).resolves.toStrictEqual({
-      raw: 0,
-      processedRaw: 0,
-      hourly: 1,
     });
   });
 

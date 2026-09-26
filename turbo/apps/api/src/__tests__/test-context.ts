@@ -1,19 +1,9 @@
-import { randomUUID } from "node:crypto";
-
-import {
-  afterAll,
-  afterEach,
-  aroundEach,
-  beforeAll,
-  beforeEach,
-  expect,
-} from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect } from "vitest";
 
 import { closeDbPool } from "../lib/db";
 import { clearMockedEnv } from "../lib/env";
 import { clearMockListStripeInvoices } from "../signals/external/stripe-client";
 import { clearAllDetached } from "../signals/utils";
-import type { DbFixture } from "../test-fixtures/db-fixture";
 import { getApiTestMocks, type ApiTestMocks } from "./mocks";
 
 export interface TestContext {
@@ -24,7 +14,6 @@ export interface TestContext {
 
 interface TestContextOptions {
   readonly connectorCatalog?: boolean;
-  readonly dbFixtures?: readonly DbFixture[];
 }
 
 function formatBody(body: unknown): string {
@@ -55,26 +44,8 @@ export async function accept<
   return result as Extract<TResponse, { status: TStatus }>;
 }
 
-async function runWithDbFixtures(
-  fixtures: readonly DbFixture[],
-  scope: string,
-  runTest: () => Promise<void>,
-  index = 0,
-): Promise<void> {
-  const fixture = fixtures[index];
-  if (!fixture) {
-    await runTest();
-    return;
-  }
-
-  await fixture(scope, async () => {
-    await runWithDbFixtures(fixtures, scope, runTest, index + 1);
-  });
-}
-
 export function testContext({
   connectorCatalog = false,
-  dbFixtures = [],
 }: TestContextOptions = {}): TestContext {
   let controller = new AbortController();
 
@@ -100,12 +71,6 @@ export function testContext({
       const { mockApiTestConnectorProviderConfiguration } =
         await import("../test-fixtures/connector-catalog");
       mockApiTestConnectorProviderConfiguration();
-    });
-  }
-
-  if (dbFixtures.length > 0) {
-    aroundEach(async (runTest) => {
-      await runWithDbFixtures(dbFixtures, randomUUID(), runTest);
     });
   }
 

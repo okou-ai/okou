@@ -138,16 +138,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     checkpoint_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("hold-org-admission-lock"),
-    org_id: z.string(),
-  }),
-  z.object({
-    action: z.literal("read-org-admission-lock-state"),
-  }),
-  z.object({
-    action: z.literal("release-org-admission-lock"),
-  }),
-  z.object({
     action: z.literal("read-run-uploaded-file-sources"),
     run_id: z.uuid(),
   }),
@@ -210,28 +200,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
       .string()
       .regex(/^[0-9a-f]{64}$/)
       .optional(),
-  }),
-  z.object({
-    action: z.literal("retarget-workflow-automation"),
-    automation_id: z.uuid(),
-    workflow_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal(
-      "assert-official-workflow-automation-final-admission-rejected",
-    ),
-    automation_id: z.uuid(),
-    official_workflow_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("hold-official-workflow-run-gate"),
-    gate: z.enum(["observation", "final-admission", "bootstrap-requirement"]),
-  }),
-  z.object({
-    action: z.literal("read-official-workflow-run-gate-state"),
-  }),
-  z.object({
-    action: z.literal("release-official-workflow-run-gate"),
   }),
   z.object({
     action: z.literal("read-thread-session-binding"),
@@ -300,8 +268,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
     })
     .nullable()
     .optional(),
-  admission_lock_held: z.boolean().optional(),
-  admission_lock_waiting: z.boolean().optional(),
   uploaded_file_sources: z.array(z.string()).optional(),
   chat_event_snapshot_head: z
     .object({
@@ -410,25 +376,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
       runner_job_count: z.int().nonnegative(),
       launch_queue_count: z.int().nonnegative(),
     })
-    .optional(),
-  official_workflow_run_gate_state: z
-    .object({
-      gate: z.enum(["observation", "final-admission", "bootstrap-requirement"]),
-      arrivals: z.int().nonnegative(),
-      shared_catalog_holder_count: z.int().nonnegative(),
-      exclusive_catalog_waiter_count: z.int().nonnegative(),
-      blocked_waiter_count: z.int().nonnegative(),
-      bootstrap_requirement: z
-        .object({
-          workflow_ids: z.array(z.uuid()),
-          queue_first_kind: z
-            .enum(["user_message", "automation_event"])
-            .nullable(),
-          workflow_automation_id: z.uuid().nullable(),
-        })
-        .nullable(),
-    })
-    .nullable()
     .optional(),
   thread_session_binding: z
     .object({

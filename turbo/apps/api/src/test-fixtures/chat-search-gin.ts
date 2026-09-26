@@ -5,14 +5,14 @@ import { onTestFinished } from "vitest";
 import { z } from "zod";
 import { closeDbPool, db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
-import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
+import { settleIncludingAbort } from "../signals/utils";
 import {
   barrierQueryBinds,
   barrierQueryText,
 } from "./database-transaction-barrier";
 
 /** GIN storage/maintenance cannot be controlled through the message API. Each
- * fixture owns a separate table, index and advisory-lock key; concurrent suites
+ * fixture owns a separate table and index; concurrent suites
  * keep their own pending lists and never change the shared projection index.
  */
 export async function createChatSearchGinFixture() {
@@ -45,38 +45,6 @@ export async function createChatSearchGinFixture() {
         throw new Error("Missing fixture GIN statistics");
       }
       return row.pending_pages;
-    },
-    async hold(kind: "maintenance" | "index", signal: AbortSignal) {
-      const ready = createDeferredPromise<void>(signal);
-      const released = createDeferredPromise<void>(signal);
-      const done = settleIncludingAbort(
-        db().transaction(async (tx) => {
-          if (kind === "maintenance") {
-            await tx.execute(
-              // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-              sql`SELECT pg_advisory_xact_lock(hashtext('chat-search-gin'), hashtext(${indexName}))`,
-            );
-          } else {
-            // REINDEX retains its exclusive index lock until this owned
-            // transaction ends, without locking any shared product table.
-            await tx.execute(sql`REINDEX INDEX ${sql.identifier(indexName)}`);
-          }
-          ready.resolve();
-          await released.promise;
-        }),
-      );
-      const release = async () => {
-        if (!released.settled()) {
-          released.resolve();
-        }
-        const result = await done;
-        if (!result.ok && result.error !== signal.reason) {
-          throw result.error;
-        }
-      };
-      onTestFinished(release);
-      await ready.promise;
-      return release;
     },
   };
 }

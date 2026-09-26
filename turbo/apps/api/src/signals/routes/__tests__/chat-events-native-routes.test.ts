@@ -26,7 +26,6 @@ import {
   readPiMemoryStage1CandidateFixture,
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -65,10 +64,7 @@ const {
   postThreadPiAutomationEvent,
   lastThreadPiAutomationRun,
   expectThreadPiTerminal,
-  cancelBeforeLatePiResult,
   mockPiCheckpointObjectStore,
-  expectNoPiApiFirstTurnArtifacts,
-  expectPiApiFirstTurnTerminalWithoutOutput,
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
@@ -1117,73 +1113,6 @@ describe("shared native Pi route activation", () => {
         status: 400,
       });
       expect(calls).toBe(0);
-    },
-    90_000,
-  );
-
-  it.each(["in-flight", "late-result"] as const)(
-    "keeps native cancellation and billing owned at the %s boundary",
-    async (phase) => {
-      const { actor, agentId } = await entitledChatActor();
-      configureNativeCliArtifact();
-      const model = "claude-sonnet-5";
-      await configureBuiltInPiModel(actor, model);
-
-      const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
-      mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      let requests = 0;
-      server.use(
-        http.post("https://api.anthropic.com/v1/messages", async () => {
-          requests += 1;
-          if (!entered.settled()) {
-            entered.resolve(undefined);
-          }
-          await release.promise;
-          return nativeMessagesResponse(
-            model,
-            "discard cancelled native output",
-          );
-        }),
-      );
-      const run = await sendChatRun(
-        actor,
-        { agentId, model, prompt: "cancel the native request" },
-        pricing,
-      );
-      await entered.promise;
-      if (phase === "late-result") {
-        await cancelBeforeLatePiResult(
-          actor,
-          run.runId,
-          () => {
-            release.resolve(undefined);
-          },
-          pricing,
-        );
-      } else {
-        await api.requestCancelRun(actor, run.runId, [200], pricing);
-        release.resolve(undefined);
-      }
-      await flushWaitUntilForTest();
-      await expectPiApiFirstTurnTerminalWithoutOutput(actor, run, "cancelled");
-      expectNoPiApiFirstTurnArtifacts(run.runId, objects);
-      if (phase === "late-result") {
-        await expectPiApiUsage(run.runId, model, "", {
-          input: 5,
-          output: 3,
-          cacheRead: 3,
-          cacheCreation: 2,
-        });
-      } else {
-        await expectNoBuiltInModelUsage(run.runId);
-      }
-      await api.requestClaimRunnerJob(true, run.runId, [404], {
-        capabilities: { piModelConfigGenerations: [4] },
-      });
-      expect(requests).toBe(1);
     },
     90_000,
   );

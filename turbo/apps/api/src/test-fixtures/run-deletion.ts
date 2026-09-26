@@ -90,44 +90,6 @@ export async function readRunCallbackFixture(callbackId: string): Promise<{
   return callback ?? null;
 }
 
-/** Holds the same per-org credit reconciliation lock as terminal side effects. */
-export async function holdOrgCreditLockFixture(args: {
-  readonly orgId: string;
-  readonly signal: AbortSignal;
-}): Promise<HeldDatabaseBoundary> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const pidRows = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS "pid"`,
-      databasePidRowSchema,
-    );
-    const pid = pidRows[0]?.pid;
-    if (!pid) {
-      throw new Error("Expected the credit lock holder pid");
-    }
-    await tx.execute(
-      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-      sql`SELECT pg_advisory_xact_lock(hashtext('credit_' || ${args.orgId}))`,
-    );
-    started.resolve(pid);
-    await released.promise;
-  });
-  const pid = await started.promise;
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await directBlockedWaiterCount(pid);
-    },
-  };
-}
-
 /**
  * Locks one root, then deletes it in the holding transaction when released.
  * This lets a route test deterministically put a runner write behind the root

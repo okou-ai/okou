@@ -75,8 +75,6 @@ database transaction.
   hostname allowlist. `DEV_BENCH_SEED_ALLOW_NON_LOCAL=1` explicitly overrides that
   gate; it is not unconditionally production-safe and is not a production
   deletion entry point.
-- `packages/db/scripts/test-billing-attribution.ts` creates its own temporary
-  schema and sets `search_path` before deleting synthetic runs.
 - Direct deletes in test suites belong to isolated fixtures. The candidate
   accounting suite uses per-test schemas with the real relevant FK definitions.
 

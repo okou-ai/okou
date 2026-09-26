@@ -227,32 +227,6 @@ type AnyCreateAgentRunCommandArgs =
   | CreateAgentRunCommandArgs
   | CreateQueueFirstAgentRunCommandArgs;
 
-export interface OfficialWorkflowBootstrapRequirement {
-  readonly workflowIds: readonly string[];
-  readonly queueFirstKind: QueueFirstRunAssociation["kind"] | null;
-  readonly workflowAutomationId: string | null;
-}
-
-type OfficialWorkflowBootstrapRequirementHook = (
-  requirement: OfficialWorkflowBootstrapRequirement,
-) => Promise<void>;
-
-const officialWorkflowBootstrapRequirementHook = testOverride<
-  OfficialWorkflowBootstrapRequirementHook | undefined
->(() => {
-  return undefined;
-});
-
-export function setOfficialWorkflowBootstrapRequirementHookForTest(
-  hook: OfficialWorkflowBootstrapRequirementHook,
-): void {
-  officialWorkflowBootstrapRequirementHook.set(hook);
-}
-
-export function clearOfficialWorkflowBootstrapRequirementHookForTest(): void {
-  officialWorkflowBootstrapRequirementHook.clear();
-}
-
 export interface AgentRunPiExecutionSnapshot {
   readonly userId: string;
   readonly orgId: string;
@@ -1573,15 +1547,6 @@ const createAgentRunInternal$ = command(
     }
 
     if (args.requiredOfficialWorkflowIds?.length) {
-      await officialWorkflowBootstrapRequirementHook.get()?.({
-        workflowIds: args.requiredOfficialWorkflowIds,
-        queueFirstKind:
-          "queueFirstAssociation" in args
-            ? args.queueFirstAssociation.kind
-            : null,
-        workflowAutomationId:
-          args.agentRunMetadata?.workflowAutomationId ?? null,
-      });
       signal.throwIfAborted();
     }
 

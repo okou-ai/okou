@@ -87,16 +87,18 @@ first-append initialization, concurrent and cross-thread batches, idempotent
 conflicts, gaps, statement rollback, retention, event FK lock compatibility and
 cascade cleanup against the current schema.
 
-### Active transition validators
+### Retired lock-driven validators (2026-09-26)
 
-- `scripts/test-marketing-privacy-retirement.ts` protects migration
-  `1139_retire_marketing_privacy_storage` (#33747): populated/empty storage,
-  unrelated state preservation, restrictive external dependencies, shared
-  cleanup/table locks, default lock timeout, retry and journal-failure rollback.
-  Keep it until the production journal and completed prepared-cleanup rollout
-  satisfy the three retirement conditions. Current schema equivalence and exact
-  trigger/function inventory remain permanent. Historical 1108–1110 SQL and the
-  A–D 1132 transition controls remain unchanged.
+The marketing privacy retirement validator for migration 1139 was retired.
+Production API 1.681.3 (`355e1acda73b`) includes the contraction; the
+[production promotion job](https://github.com/okou-ai/okou/actions/runs/36211542983/job/108319416479)
+completed both its migration smoke test and production migrations. Historical
+SQL, generated-schema equivalence and the permanent trigger/function inventory
+remain. The dedicated billing-attribution backfill validator was also removed
+from CI; this does not certify production backfill completion or retire the
+operator tool and its two documented reader fallbacks.
+
+### Active transition validators
 
 - `scripts/test-pi-inference-lifecycle.ts` protects migrations
   `1134_pi_inference_lifecycle` and `1135_validate_pi_inference_launch` (#34242):

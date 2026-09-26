@@ -36,7 +36,6 @@ import { clearMockNow, mockNow } from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
 import {
   holdAgentRunDeletionFixture,
-  holdOrgCreditLockFixture,
   insertPendingInlineDeliveryCallbackFixture,
   readRunCallbackFixture,
   readHistoryBlobReferenceCountFixture,
@@ -123,10 +122,6 @@ interface RunOwnershipFixture {
   readonly hostedSiteId: string;
   readonly hostedDeploymentId: string;
   readonly hostedArtifactId: string;
-}
-
-interface ChatThreadFixture {
-  readonly threadId: string;
 }
 
 function minutesAgo(minutes: number): Date {
@@ -244,15 +239,6 @@ async function cleanupRunOwnershipFixture(
   });
 }
 
-async function cleanupChatThreadFixture(
-  fixture: ChatThreadFixture,
-): Promise<void> {
-  await postCronCleanupState({
-    action: "delete-run-thread",
-    thread_id: fixture.threadId,
-  });
-}
-
 async function insertRunFixture(args?: {
   readonly status?: string;
   readonly composeName?: string;
@@ -328,16 +314,6 @@ async function insertRunOwnership(
     hostedDeploymentId: stringField(response, "hosted_deployment_id"),
     hostedArtifactId: stringField(response, "hosted_artifact_id"),
   };
-}
-
-async function attachRunThread(
-  fixture: RunFixture,
-): Promise<ChatThreadFixture> {
-  const response = await postCronCleanupState({
-    action: "attach-run-thread",
-    run_id: fixture.runId,
-  });
-  return { threadId: stringField(response, "thread_id") };
 }
 
 async function findRunOwnership(
@@ -532,9 +508,6 @@ describe("sandbox cleanup", () => {
   );
   const trackRunOwnership = createFixtureTracker<RunOwnershipFixture>(
     cleanupRunOwnershipFixture,
-  );
-  const trackChatThread = createFixtureTracker<ChatThreadFixture>(
-    cleanupChatThreadFixture,
   );
   let registeredRunIds: string[] = [];
   let registeredOrgIds: string[] = [];
@@ -1127,40 +1100,6 @@ describe("sandbox cleanup", () => {
     });
     deleting.release();
     await deleting.done;
-  });
-
-  it("skips deletion when the threadless state changes before the write transaction", async () => {
-    mockNow(THREADLESS_TEST_NOW_MS);
-    const fixture = await trackRun(
-      insertRunFixture({
-        status: "completed",
-        createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
-        completedAt: new Date(
-          THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
-        ),
-        threadless: true,
-      }),
-    );
-    const held = await holdOrgCreditLockFixture({
-      orgId: fixture.orgId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-    const cleanupRequest = cleanupRegisteredFixtures();
-    await expect.poll(held.blockedWaiterCount).toBeGreaterThan(0);
-
-    await trackChatThread(attachRunThread(fixture));
-    held.release();
-    await held.done;
-    const cleanup = await cleanupRequest;
-    expect(cleanup.body.threadlessRuns.discovered).toBe(1);
-    expect(cleanup.body.threadlessRuns.waiting).toBe(1);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "completed",
-    });
   });
 
   it("acknowledges completion when root deletion wins the row-lock race", async () => {

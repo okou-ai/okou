@@ -179,20 +179,16 @@ test catalog once for that file and restores provider configuration before each
 test. Do not enable it for unrelated route tests or create a smaller implicit
 global catalog.
 
-Tests that hold usage-compaction admission across concurrent operations opt in
-through `testContext({ dbFixtures: [...] })`. That fixture provides a UUID-owned
-async-local lock namespace around the complete test, including its hooks and
-background work. Shared and exclusive participants still contend through real
-PostgreSQL locks; unrelated tests do not load that fixture. Without it, the
-production compaction lock key is unchanged.
+Do not hold advisory locks, inspect `pg_locks`, or install internal admission
+gates to construct or assert an API scenario. Exercise concurrent requests and
+assert their responses and subsequent user-visible state. A production lock
+removal must not require preserving a test-only pause point.
 
 Compaction behavior tests must call the organization-scoped test route so a
-scoped lock never protects a global sweep over another test's rows. The operator
-billing-backfill subprocess retains its production lock and explicit owned
-organization filter; its sequential tests do not establish concurrent admission
-with a scoped API call. X-resource retention tests use the resource-ID-scoped
-test route to construct historical rows and a request-scoped database clock;
-never invoke a successful production-global cleanup in a shared test database.
+global sweep never touches another test's rows. X-resource retention tests use
+the resource-ID-scoped test route to construct historical rows and a
+request-scoped database clock; never invoke a successful production-global
+cleanup in a shared test database.
 
 ## Commands
 

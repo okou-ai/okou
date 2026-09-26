@@ -75,7 +75,6 @@ import {
   makeCodexAuthJson,
 } from "../../routes/__tests__/helpers/api-bdd-auth-device";
 import { executePhase2Runtime } from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
-import { useSecretKmsProbe } from "../../routes/__tests__/helpers/secret-kms-probe";
 
 async function deleteRunSessionsForScope(scope: {
   readonly orgId: string;
@@ -1942,57 +1941,4 @@ test("requires ordinary credit admission before builtin quota", async () => {
   );
   await seedOrgMetadata({ orgId: job.scope.orgId, tier: "pro", credits: 0 });
   await expectNoDispatch(job, "source_admission_denied");
-});
-
-test("admits native maintenance without asking KMS under the organization admission lock", async () => {
-  const job = await createPhase2WorkerFixture("quota-proof-lock-ownership");
-  const native = await createPhase2Provider(
-    testContext(),
-    job.scope,
-    "codex-oauth-token",
-    "member",
-  );
-  await insertPhase2Candidates(
-    job.scope,
-    [{ piSessionId: randomUUID() }],
-    native.binding,
-  );
-  // Infrastructure exception: only a real separate PostgreSQL connection can
-  // observe the admission lock during an external KMS callback. The transaction
-  // lock is released when this single probe statement commits, without waiting.
-  const lockProbe = new Pool({ connectionString: env("DATABASE_URL"), max: 1 });
-  onTestFinished(async () => {
-    await lockProbe.end();
-  });
-  useSecretKmsProbe(undefined, async () => {
-    const result = await lockProbe.query<{ available: unknown }>(
-      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-      "SELECT pg_try_advisory_xact_lock(hashtext($1)) AS available",
-      [job.scope.orgId],
-    );
-    if (result.rows[0]?.available !== true) {
-      throw new Error("KMS requested while organization admission is locked");
-    }
-    return Buffer.from("0123456789abcdef0123456789abcdef");
-  });
-  server.use(
-    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-      return HttpResponse.json({
-        rate_limit: { primary_window: { used_percent: 75 } },
-      });
-    }),
-  );
-  const result = await job.work(nowDate());
-  expect(result.outcome).toBe("dispatched");
-  if (result.outcome !== "dispatched") {
-    throw new Error("Expected native maintenance");
-  }
-  const runtime = await executePhase2Runtime(testContext(), result.runId);
-  expect(runtime.requests).toHaveLength(3);
-  expect(runtime.requests[0]?.headers.get("authorization")).toBe(
-    `Bearer ${native.key}`,
-  );
-  expect(runtime.requests[0]?.headers.get("chatgpt-account-id")).toBe(
-    native.account,
-  );
 });

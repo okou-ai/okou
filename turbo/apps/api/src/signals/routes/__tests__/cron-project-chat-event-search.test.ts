@@ -394,59 +394,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
     await expect(gin.pendingPages()).resolves.toBe(0);
   });
 
-  it("keeps projecting while another worker owns GIN maintenance", async () => {
-    const gin = await createChatSearchGinFixture();
-    await gin.insert(600);
-    const pending = await gin.pendingPages();
-    expect(pending).toBeGreaterThanOrEqual(64);
-    const { threadId } = await createProjectionFixture();
-    await seedProjectionContent(threadId, `busymaintainer ${randomUUID()}`);
-    const release = await gin.hold("maintenance", context.signal);
-    await expect(
-      projectOwnedChatEventSearch([threadId], [gin.indexName]),
-    ).resolves.toMatchObject({ threads: 1, deferredThreads: 0 });
-    await expect(gin.pendingPages()).resolves.toBe(pending);
-    await release();
-    await insertSearchablePromptFixture({
-      chatThreadId: threadId,
-      text: `released ${randomUUID()}`,
-    });
-    await projectOwnedChatEventSearch([threadId], [gin.indexName]);
-    await expect(gin.pendingPages()).resolves.toBe(0);
-  });
-
-  it("defers the remaining candidates once maintenance hits its lock deadline", async () => {
-    const gin = await createChatSearchGinFixture();
-    const first = await createProjectionFixture();
-    const second = await createProjectionFixture();
-    await seedProjectionContent(first.threadId, `ginlocka ${randomUUID()}`);
-    await seedProjectionContent(second.threadId, `ginlockb ${randomUUID()}`);
-    const release = await gin.hold("index", context.signal);
-    const deferred = await projectOwnedChatEventSearch(
-      [first.threadId, second.threadId],
-      [gin.indexName],
-    );
-    expect(deferred).toMatchObject({
-      threads: 0,
-      indexedEvents: 0,
-      deferredThreads: 2,
-      convergence: { eligibleThreads: 2, durableCaughtUpThreads: 0 },
-    });
-    await expectNoProjection(first.threadId);
-    await expectNoProjection(second.threadId);
-    await release();
-    await expect(
-      projectOwnedChatEventSearch(
-        [first.threadId, second.threadId],
-        [gin.indexName],
-      ),
-    ).resolves.toMatchObject({
-      threads: 2,
-      indexedEvents: 4,
-      deferredThreads: 0,
-    });
-  });
-
   it("removes a later projection that races orphan cleanup", async () => {
     const chatThreadId = randomUUID();
     await insertOrphanedChatEventSearchProjectionFixture({
