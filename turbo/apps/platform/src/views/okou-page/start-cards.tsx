@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Play } from "lucide-react";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import { surfaceVariants, Button } from "@okouai/ui";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
@@ -37,12 +36,6 @@ function kindAccent(kind: StartCardKind): string {
     }
     case "illustration": {
       return "#EDC43E";
-    }
-    case "video": {
-      return "#FF81B2";
-    }
-    case "avatar": {
-      return "#C77242";
     }
     case "workflow": {
       return "#97918A";
@@ -160,59 +153,6 @@ function IllustrationArt({ accent }: { accent: string }) {
             "polygon(0 100%, 0 60%, 27% 26%, 49% 58%, 69% 18%, 100% 62%, 100% 100%)",
         }}
       />
-    </div>
-  );
-}
-
-function VideoArt({ accent }: { accent: string }) {
-  return (
-    <div
-      className="grid h-[30px] w-[42px] place-items-center rounded-md border bg-card"
-      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-    >
-      <span
-        className="grid size-4 place-items-center rounded-full"
-        style={{ backgroundColor: `${accent}${SOFT_ALPHA}`, color: accent }}
-      >
-        <Play size={7} fill="currentColor" />
-      </span>
-    </div>
-  );
-}
-
-function AvatarArt({ accent }: { accent: string }) {
-  return (
-    // A round portrait chip beside a small waveform: the bust alone is the
-    // account glyph every product has, and it is the speaking that makes this
-    // an avatar video.
-    <div className="flex items-center gap-[5px]">
-      <span
-        className="relative size-[32px] shrink-0 overflow-hidden rounded-full border bg-card"
-        style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-      >
-        <span
-          className="absolute left-1/2 top-[7px] size-[10px] -translate-x-1/2 rounded-full"
-          style={{ backgroundColor: accent }}
-        />
-        <span
-          className="absolute bottom-0 left-1/2 h-[13px] w-[21px] -translate-x-1/2 rounded-t-full"
-          style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-        />
-      </span>
-      <span className="flex items-center gap-[2px]">
-        <span
-          className="h-[7px] w-[2px] rounded-full"
-          style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-        />
-        <span
-          className="h-[13px] w-[2px] rounded-full"
-          style={{ backgroundColor: accent }}
-        />
-        <span
-          className="h-[9px] w-[2px] rounded-full"
-          style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-        />
-      </span>
     </div>
   );
 }
@@ -412,8 +352,7 @@ export function StartCards({
   onSelectPrompt: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
-  const kindsLoadable = useLoadable(startCardKinds$);
-  const kinds = kindsLoadable.state === "hasData" ? kindsLoadable.data : [];
+  const kinds = useGet(startCardKinds$);
   const workflowTemplate = useGet(startCardWorkflowTemplate$);
   const composerSignals = useGet(agentChatComposerSignals$);
   const setTemplateCategory = useSet(
@@ -471,8 +410,6 @@ export function StartCards({
       slides: <SlidesArt accent={accent} />,
       website: <WebsiteArt accent={accent} />,
       illustration: <IllustrationArt accent={accent} />,
-      video: <VideoArt accent={accent} />,
-      avatar: <AvatarArt accent={accent} />,
       workflow: <WorkflowArt accent={accent} />,
     };
     return art[kind];
