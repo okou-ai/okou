@@ -26,6 +26,9 @@ const SCHEMA = {
   SECRETS_ENCRYPTION_KEY: z.string().length(64),
   SECRETS_KMS_KEY_ID: z.string().min(1).optional(),
   OFFICIAL_RUNNER_SECRET: z.string().length(64),
+  // Optional, operator-pinned host IDs/FQDNs and SHA-256 credential digests.
+  // Without it, no host can publish local WSS readiness. Never put raw tokens here.
+  OKOU_WSS_HOST_PROOFS: z.string().optional(),
   OPENAI_API_KEY: z.string().min(1),
   FAL_KEY: z.string().min(1).optional(),
   // Validated together at the Google LLM operation boundary.
