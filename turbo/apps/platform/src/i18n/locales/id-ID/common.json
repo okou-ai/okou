@@ -4254,9 +4254,7 @@
       "common": {
         "back": "Kembali",
         "continue": "Lanjutkan",
-        "finish": "Selesaikan penyiapan",
-        "notNow": "Nanti saja",
-        "skip": "Lewati dulu"
+        "notNow": "Nanti saja"
       },
       "compliance": {
         "frameworks": {

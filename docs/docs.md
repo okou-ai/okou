@@ -23,11 +23,8 @@ surface; the index does not replace their detailed rules.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
-  concrete account ownership, bounded disconnect retention and activation gates.
-- [Subscription decryption experiment](./subscription-decryption-experiment.md):
-  bounded KMS concurrency, provider-lock measurements and failure trade-offs.
-- [Subscription equivalence experiment](./subscription-equivalence-experiment.md):
-  paired canonical/mirror proof decryption and complete caller measurements.
+  concrete account ownership, bounded disconnect retention and credential
+  storage/locking.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.

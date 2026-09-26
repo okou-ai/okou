@@ -4271,9 +4271,7 @@
       "common": {
         "back": "वापस",
         "continue": "आगे बढ़ें",
-        "finish": "सेटअप पूरा करें",
-        "notNow": "अभी नहीं",
-        "skip": "अभी छोड़ें"
+        "notNow": "अभी नहीं"
       },
       "compliance": {
         "frameworks": {

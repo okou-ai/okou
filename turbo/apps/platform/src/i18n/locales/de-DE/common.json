@@ -4271,9 +4271,7 @@
       "common": {
         "back": "Zurück",
         "continue": "Weiter",
-        "finish": "Einrichtung abschließen",
-        "notNow": "Jetzt nicht",
-        "skip": "Vorerst überspringen"
+        "notNow": "Jetzt nicht"
       },
       "compliance": {
         "frameworks": {

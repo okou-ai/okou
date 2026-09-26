@@ -1279,8 +1279,22 @@
     {
       "idx": 1260,
       "version": "7",
-      "when": 1790390498717,
-      "tag": "1260_drop_computer_use_audit_approval_outcome",
+      "when": 1790388503838,
+      "tag": "1260_personal_subscription_account_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 1261,
+      "version": "7",
+      "when": 1790389782946,
+      "tag": "1261_drop_chat_thread_snapshot_jsonb",
+      "breakpoints": true
+    },
+    {
+      "idx": 1262,
+      "version": "7",
+      "when": 1790390968974,
+      "tag": "1262_drop_computer_use_audit_approval_outcome",
       "breakpoints": true
     }
   ]

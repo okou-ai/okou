@@ -2,7 +2,7 @@
 
 ## Computer Use audit column contraction after independent writer release (2026-09-26)
 
-Migration `1260_drop_computer_use_audit_approval_outcome` drops only the retired
+Migration `1262_drop_computer_use_audit_approval_outcome` drops only the retired
 `computer_use_command_audit_events.approval_outcome` column. #36960 narrowed the
 audit-list SELECT in main commit `41cc9918`; #36984 removed the Drizzle column
 mapping from audit INSERTs without changing the physical database, in main
@@ -16,7 +16,9 @@ the new deployment retained all four production API aliases, the previous
 maximum request lifetime had elapsed since first observing the alias switch.
 MaskDB still exposed the physical nullable text column before this PR's DROP.
 #36974 had already published the preceding `1256`–`1258` migrations separately;
-main subsequently assigned `1259` to the agent-runs heartbeat contraction.
+main subsequently assigned `1259` to agent-runs heartbeat, `1260` to personal
+subscription credentials and `1261` to chat thread snapshots. The latter two
+migrations need their own completed production release before this PR is queued.
 
 On a production-derived Neon branch created after the writer release, an
 aggregate-only census found 0 string screenshots among 16,603 commands and 0
@@ -37,11 +39,110 @@ writer mapping must remain the rollback floor after the column DROP. The
 production rollback resolver enforces both #36960's reader floor and #36984's
 writer floor (`cdeec36c`), rather than using this migration's eventual merge
 commit; rollback never restores the dropped column. Before queue admission,
-reconfirm that no intervening migration PR occupies `1260`, current production
+reconfirm that no intervening migration PR occupies `1262`, current production
 API still contains the writer cutover, and all preceding migrations were
 independently released. A DDL lock-timeout failure must stop promotion rather
 than deploy incompatible code. The separate writer release and drain remove the
 known old-INSERT `42703` window; they do not guarantee zero deployment errors.
+
+## R2-only chat thread snapshot API rollback floor (2026-09-26)
+
+The production API rollback resolver now rejects targets before the #36945
+main merge commit `3d93ff8d4b4a07a5888e3030e69b340f40da0ad4`. That API
+returns an R2 URL for every existing snapshot row, regardless of the request
+header; older rollback-window APIs can still return non-empty inline snapshots.
+The commit preceded release #36948 (`4ecb619b5c409396edd5815a1ce65941cb29cd74`),
+whose production API promotion succeeded on 2026-09-25 at 23:13:47 UTC
+([release run](https://github.com/okou-ai/okou/actions/runs/36198938622/job/108284233073)).
+
+This floor must be deployed before a separate follow-up removes Web App and CLI
+non-empty inline readers, the capability request header, and the inline
+contract variant for non-empty rows. The empty inline response for a scope
+without a snapshot row is permanent and stays supported. Removing client
+compatibility in this floor-setting release would not establish that the floor
+was already active in production. Recheck the serving API and floor before the
+follow-up enters its release path.
+
+## Chat thread snapshot JSONB column retired (2026-09-26)
+
+Migration `1261_drop_chat_thread_snapshot_jsonb` drops only
+`chat_thread_snapshots.chat_threads`. The API already reads the snapshot cursor
+and scoped R2 `object_key`, not the old JSONB body; the archive in R2 and the
+empty response for a scope without a snapshot row remain unchanged. A masked
+production census on 2026-09-26 00:14 UTC visited all 5,549 snapshot scopes
+in stable key order and observed no null `object_key` (paginated reads, not a
+single-transaction snapshot). This does not establish that every R2 object
+exists. The migration discards the old JSONB column and its contents, but
+leaves all R2 objects and their pointers untouched.
+
+Outgoing API artifacts still write an empty JSONB array on snapshot
+publication (via raw SQL or Drizzle). The owner explicitly accepts a temporary
+failure of that job while
+migrations run before the replacement API is promoted. It may upload an
+unreferenced immutable R2 object before its publish statement fails with
+`42703`; that invocation does not proceed to lifecycle-event pruning or R2
+snapshot garbage collection. Existing snapshot pointers, their R2 downloads,
+and the separate lifecycle-events API do not read the column. A new scope
+without a published snapshot takes the existing empty-snapshot plus event-tail
+path until the new compactor catches up. Verify the outgoing API is already an
+R2-only reader and that no older JSONB reader is still serving at migration
+time. The new API omits the column from both INSERT and UPDATE, so its
+compaction works against either side of the migration.
+
+Rollback does not restore the dropped column. The production rollback resolver
+therefore finds the first-parent main commit adding this migration and rejects
+all API targets before it, including the previous release whose compactor
+would fail and earlier APIs that still read JSONB. Until the new release is
+READY in production, no pre-migration API target is eligible; recovery requires
+fixing forward. This is the accepted single-release compatibility trade-off.
+The R2 JSON archive and its response contract are unchanged.
+
+## Personal subscription credentials become account-only (2026-09-26)
+
+Personal (`user_id <> '__org__'`) `claude-code-oauth-token` and
+`codex-oauth-token` credentials now live only in `model_provider_accounts` and
+`model_provider_account_secrets`. Organization subscriptions and API-key
+providers keep `model_providers` + `secrets` unchanged.
+
+Removed from the API:
+
+- the `secrets` mirror of the active account and the personal singleton fields
+  on `model_providers` (`token_expires_at`, `needs_reconnect`,
+  `last_refresh_error_code`, `secret_id`, `auth_method`, workspace/plan and
+  reset metadata are neither written nor read for personal rows; the columns
+  remain for organization providers);
+- lazy account seeding from legacy secrets, legacy bundle import, mirror/KMS
+  equivalence checks and the request-scoped coordination that existed only for
+  API 1.595.0 singleton writers (`docs/personal-subscription-run-identity.md`
+  formerly §A2), plus the sourceId-less personal reader;
+- every credential advisory and row lock on reads, run admission, connect,
+  reconnect, activation, disconnect and terminal cleanup. Token refresh keeps
+  the `model_provider_state` advisory lock.
+
+Migration `1260_personal_subscription_account_only` sets
+`model_providers.secret_id = NULL` for personal Claude/Codex providers, deletes
+their mirrored `secrets` rows (Claude token; Codex `CHATGPT_*`/`CODEX_AUTH_JSON`)
+and adds the unique index
+`idx_model_provider_accounts_provider_identity (model_provider_id, external_account_id)`
+(NULLs distinct). Connections merge by that identity with `INSERT ... ON
+CONFLICT`; concurrent conflicting account writes surface as `409`.
+
+Prerequisites: every personal Claude/Codex provider must own an account row
+before the migration (seeded 2026-09-26: 21 providers, 12 Claude + 9 Codex;
+the Codex seeds have NULL `external_account_id` until reconnect), and no
+duplicate non-NULL `(model_provider_id, external_account_id)` pair may exist.
+
+Overlap and rollback:
+
+- During the ~20s migration-to-promotion window (API overlap measured at
+  api-v1.673.0) the previous API still reads the mirror for some paths and may
+  report a personal subscription as unavailable or require reconnect. This is
+  accepted; no persisted data is lost because accounts are canonical.
+- This release is the API rollback floor for personal subscriptions. An older
+  API treats the missing mirror as an unavailable subscription and its legacy
+  import/seed paths could recreate or diverge from account state. The production
+  rollback resolver rejects API targets that predate the merge commit adding
+  `1260_personal_subscription_account_only.sql`; roll forward instead.
 
 ## Computer Use audit column: code-only read/write cutover (2026-09-26)
 

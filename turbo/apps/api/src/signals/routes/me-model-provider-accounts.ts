@@ -104,20 +104,14 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.activate),
   );
-  const result = await activatePersonalModelProviderAccount(
-    {
-      featureSwitchContext,
-      db: set(writeDb$),
-      orgId: auth.orgId,
-      userId: auth.userId,
-      id: params.id,
-    },
-    signal,
-  );
+  const result = await activatePersonalModelProviderAccount({
+    db: set(writeDb$),
+    orgId: auth.orgId,
+    userId: auth.userId,
+    id: params.id,
+  });
   signal.throwIfAborted();
-  return isNotFoundResponse(result)
-    ? result
-    : { status: 200 as const, body: result };
+  return "status" in result ? result : { status: 200 as const, body: result };
 });
 
 const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -148,9 +142,7 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  return isNotFoundResponse(result)
-    ? result
-    : { status: 204 as const, body: undefined };
+  return result ?? { status: 204 as const, body: undefined };
 });
 
 function resetAccountSubscriptionUsage(

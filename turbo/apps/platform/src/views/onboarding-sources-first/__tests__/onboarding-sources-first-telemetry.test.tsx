@@ -182,7 +182,7 @@ test("Each step reports its own funnel event, counting invitees rather than nami
   click(getButtonByName("Send invite"));
 
   await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
-  click(getButtonByName("Not now"));
+  click(getButtonByName("Continue"));
 
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
@@ -221,8 +221,11 @@ test("Each step reports its own funnel event, counting invitees rather than nami
         step_key: "team",
         invite_count: 1,
       }),
-      onboardingEvent("Skip", { step_key: "team" }),
     ]),
+  );
+  // An invite was sent, so leaving the step is not a skip.
+  expect(posthog.events).not.toStrictEqual(
+    expect.arrayContaining([onboardingEvent("Skip", { step_key: "team" })]),
   );
   // Who was invited stays in the browser; the funnel only counts them.
   expect(JSON.stringify(posthog.events)).not.toContain(TEAMMATE_EMAIL);
