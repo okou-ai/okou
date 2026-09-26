@@ -263,8 +263,9 @@ a scope without a snapshot row is permanent and stays supported.
 
 The API keeps `X-Chat-Thread-Snapshot-R2` in its CORS preflight allowlist for
 previously loaded Web App bundles, which still send it on every request. The
-Web client floor is `0.963.3`, below those builds, and a browser cannot receive
-`426 Upgrade Required` if preflight rejects the request first. This allowance
+Web client floor is now `0.970.1` (previously `0.963.3`), above those builds.
+A browser cannot receive `426 Upgrade Required` if preflight rejects the
+request first. This allowance
 does not restore inline snapshot responses or cause new clients to send the
 header. Remove it under #36375 only in a later release, after the header-free
 App is live at a distinct version and an enforced Web client floor excludes
@@ -812,8 +813,8 @@ event replay and the Platform metadata projection are gone.
 
 Evidence for each gate:
 
-- Web clients: the force-upgrade floor is 0.963.3; #36480 first shipped in
-  App 0.955.0.
+- Web clients: the force-upgrade floor at this retirement was `0.963.3`;
+  #36480 first shipped in App `0.955.0`.
 - API rollback: the production rollback floor is `32e48c76` (#36885), which
   contains #36480, so no API from before archiving is serving or retained as a
   rollback target.
@@ -832,7 +833,8 @@ and rebuilds it. No database migration is included.
 Issue #36375 removes the rollout fallbacks that #36320 added. Evidence for the
 removal gates:
 
-- The Web App client floor is 0.963.3. #36320 first shipped in App 0.950.0.
+- The Web App client floor at this retirement was `0.963.3`. #36320 first
+  shipped in App `0.950.0`.
 - The owner confirmed that no CLI builds from before R2 support remain in use.
 - A MaskDB census found 5536 `chat_thread_snapshots` rows, none with
   `object_key IS NULL`. Compaction writes only rows that have an object key.
@@ -4586,9 +4588,10 @@ identified-App minimum version to `0.954.0`, so older identified Apps receive
 It also retires the bounded personal-only Access response projection; current
 App requests already use `view=scoped`.
 
-The original conversion-preview endpoint contains only an aggregate count of
-other owners' SSH hosts and an opaque impact snapshot. The action requires a current organization
-admin, expected Access revision, and unchanged impact. The transaction locks
+Before #36992, the original conversion-preview endpoint contained only an
+aggregate count of other owners' SSH hosts and an opaque impact snapshot. The
+action requires a current organization admin, expected Access revision, and
+unchanged impact. The transaction locks
 the Access row before host rows, detaches other owners' references into
 `needs_rebind`, advances effective generations, then makes the same Access row
 personal to the admin without decrypting or replacing its Service Token.
@@ -4618,9 +4621,9 @@ compatible with scope-aware clients. Older API binaries remain compatible with
 the expanded trigger until new state is written; they do not offer the new
 promotion or reviewed delete operations.
 
-The legacy deletion-preview endpoint lets a current admin review Organization
-deletion impact with owner identity and per-owner host counts. The optional opaque snapshot is required only when
-other owners' hosts are affected. DELETE rechecks the exact revision and host
+Before #36992, the legacy deletion-preview endpoint let a current admin review
+Organization deletion impact with owner identity and per-owner host counts. The
+optional opaque snapshot is required only when other owners' hosts are affected. DELETE rechecks the exact revision and host
 set under the Access-before-host lock, blocks any actor-owned reference, and
 atomically detaches only other owners' references into `needs_rebind` before
 deleting the config (the same-org FK remains restrictive). Profiles missing
@@ -4651,19 +4654,40 @@ membership. The App shows an ID suffix only to disambiguate missing or duplicate
 names and never normally prints complete raw member IDs. Neither operation
 sends notifications or changes `needs_rebind`/Run/VNC behavior.
 
-The API deploys before the App. Old or already-open Apps continue to use their
-original `/conversion-preview` (aggregate-only) and `/deletion-preview`
-(per-owner counts) endpoints, which retain their **exact original response
-shapes** during this compatibility window. A new App receiving `404` for the
-new route from an older API falls back to those legacy previews: it still hides
-per-owner counts in the UI, and conversion temporarily shows the old aggregate
-warning without asserting that member names were loaded. Both confirmation
-paths still submit and recheck the same opaque impact snapshot. A 403 is not
-retried through a legacy route. Once all serving APIs and supported API
-rollback targets implement the new route, and older App bundles and supported
-App rollback targets have drained or been force-upgraded, remove both
-compatibility paths under #36992. This is not a claim that the legacy response
-no longer exposes per-owner counts during rollout.
+### Legacy Access impact-preview retirement (#36992)
+
+The first named-preview App, `app-v0.970.1`, targets
+`56980b16a2d241acd05d29de63d5ff7d0a9a8019` and includes #36991 merge
+`b3119bb78e8523e6ce5dab33a541e4b5851aff81`. Production App Worker
+[deployment 6676046456](https://github.com/okou-ai/okou/deployments/6676046456)
+succeeded at `54f7df05ceb1446b8ff7db129dac302ac2d9fb94` with App `0.970.2`
+on 2026-09-26 07:23 UTC. Production API
+[deployment 6676030640](https://github.com/okou-ai/okou/deployments/6676030640)
+succeeded at that same commit on 2026-09-26 07:21 UTC; the later
+[deployment 6678761353](https://github.com/okou-ai/okou/deployments/6678761353)
+succeeded at descendant `00d9e144332c817636eeba3932fc86922d3c6db4`
+on 2026-09-26 12:23 UTC. All these releases include the new route.
+
+#36992 raises the identified-App minimum from `0.963.3` to `0.970.1` in the
+API, so an older App advertising a parseable version receives `426` **before**
+route matching on its next handled API request. An already-open tab must choose
+to reload; there is no forced background refresh. The general minimum-version
+mechanism does not force-upgrade a missing or unparseable version or a non-App
+client. The legacy `/conversion-preview` and `/deletion-preview` routes and
+response contracts are removed, as are the new App's 404 retries to those
+routes. The new `impact-preview` remains admin-only and returns identities and
+aggregate SSH host usage; conversion and deletion still recheck the exact
+snapshot and revision. A client that calls a removed route no longer obtains
+per-owner usage from it.
+
+At the requester's explicit direction, **older production rollback artifacts
+are not supported by this cleanup**. The production rollback dashboard still
+records older API/App releases; this change does not prove them compatible or
+remove them from history. Rolling API or App back below the #36991 and `0.970.1`
+boundaries requires a separate coordinated compatibility decision. Production
+API promotes before App; the capable App has already been confirmed live before
+this minimum is raised. Neither VNC enablement nor a production deployment is
+performed by the issue implementation PR.
 
 ## Feishu and Lark integration identity
 

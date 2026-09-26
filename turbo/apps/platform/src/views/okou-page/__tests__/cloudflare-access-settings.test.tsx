@@ -727,7 +727,7 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
 });
 
-test("an older API's aggregate-only conversion preview remains usable after a missing new route", async () => {
+test("uncertain conversion result requires a fresh named impact review", async () => {
   const shared: ScopedCloudflareAccessConfig = {
     ...config,
     scope: "organization",
@@ -737,19 +737,15 @@ test("an older API's aggregate-only conversion preview remains usable after a mi
     return respond(200, { configs: [shared] });
   });
   context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
-    return respond(404, { error: { code: "NOT_FOUND", message: "No route" } });
+    previewCount += 1;
+    return respond(200, {
+      expectedRevision: 1,
+      ownHostCount: 0,
+      otherHostCount: 1,
+      affectedOwners: [{ userId: "user-member-1", displayName: "Member One" }],
+      impactSnapshot: (previewCount === 1 ? "a" : "b").repeat(64),
+    });
   });
-  context.mocks.api(
-    cloudflareAccessContract.conversionPreview,
-    ({ respond }) => {
-      previewCount += 1;
-      return respond(200, {
-        expectedRevision: 1,
-        otherHostCount: 1,
-        impactSnapshot: (previewCount === 1 ? "a" : "b").repeat(64),
-      });
-    },
-  );
   context.mocks.api(
     cloudflareAccessContract.convertToPersonal,
     ({ respond }) => {
@@ -765,8 +761,8 @@ test("an older API's aggregate-only conversion preview remains usable after a mi
   await within(organization).findByText(shared.name);
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
-  await within(dialog).findByText(/SSH hosts affected: 1/u);
-  expect(dialog).not.toHaveTextContent("Name unavailable");
+  await within(dialog).findByText(/1 member and 1 SSH host/u);
+  expect(dialog).toHaveTextContent("Member One");
   await userEvent.click(within(dialog).getByRole("checkbox"));
   click(getAction("button", "Make personal", dialog));
   await within(dialog).findByText(/could not confirm the conversion/u);
@@ -780,9 +776,8 @@ test("an older API's aggregate-only conversion preview remains usable after a mi
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
 });
 
-test("conversion preview 403 never falls back to the legacy route", async () => {
+test("conversion preview 403 blocks conversion", async () => {
   const shared = { ...config, scope: "organization" as const };
-  let legacyCalls = 0;
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [shared] });
   });
@@ -791,17 +786,6 @@ test("conversion preview 403 never falls back to the legacy route", async () => 
       error: { code: "CLOUDFLARE_ACCESS_FORBIDDEN", message: "Forbidden" },
     });
   });
-  context.mocks.api(
-    cloudflareAccessContract.conversionPreview,
-    ({ respond }) => {
-      legacyCalls += 1;
-      return respond(200, {
-        expectedRevision: 1,
-        otherHostCount: 1,
-        impactSnapshot: "a".repeat(64),
-      });
-    },
-  );
   await page(undefined, "admin");
   const organization = await screen.findByRole("region", {
     name: "Organization",
@@ -809,7 +793,6 @@ test("conversion preview 403 never falls back to the legacy route", async () => 
   click(getAction("button", "Make personal", organization));
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
   await within(dialog).findByText(/no longer available/u);
-  expect(legacyCalls).toBe(0);
   expect(queryAction("button", "Make personal", dialog)).toBeNull();
 });
 
@@ -892,61 +875,14 @@ test("equal member names are disambiguated without showing per-person host count
   expect(getAction("button", "Make personal", dialog)).toBeDisabled();
 });
 
-test("older deletion preview stays usable without rendering its per-owner counts", async () => {
+test("deletion preview 403 blocks deletion", async () => {
   const shared = { ...config, scope: "organization" as const };
-  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: [shared] });
-  });
-  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
-    return respond(404, { error: { code: "NOT_FOUND", message: "No route" } });
-  });
-  context.mocks.api(cloudflareAccessContract.deletionPreview, ({ respond }) => {
-    return respond(200, {
-      expectedRevision: 1,
-      ownHostCount: 0,
-      impactSnapshot: "d".repeat(64),
-      affectedOwners: [
-        { userId: "user_member_1", displayName: "Member One", hostCount: 3 },
-      ],
-    });
-  });
-  await page(undefined, "admin");
-  const organization = await screen.findByRole("region", {
-    name: "Organization",
-  });
-  click(getAction("button", "Delete Cloudflare Access", organization));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Delete Cloudflare Access",
-  });
-  await within(dialog).findByText(/1 member and 3 SSH hosts/u);
-  expect(dialog).toHaveTextContent("Member One");
-  expect(dialog.textContent).not.toContain("user_member_1");
-  expect(dialog.textContent).not.toContain("Member One: 3 SSH hosts");
-  expect(
-    getAction("button", "Delete Cloudflare Access", dialog),
-  ).toBeDisabled();
-});
-
-test("deletion preview 403 never falls back to the legacy route", async () => {
-  const shared = { ...config, scope: "organization" as const };
-  let legacyCalls = 0;
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [shared] });
   });
   context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
     return respond(403, {
       error: { code: "CLOUDFLARE_ACCESS_FORBIDDEN", message: "Forbidden" },
-    });
-  });
-  context.mocks.api(cloudflareAccessContract.deletionPreview, ({ respond }) => {
-    legacyCalls += 1;
-    return respond(200, {
-      expectedRevision: 1,
-      ownHostCount: 0,
-      affectedOwners: [
-        { userId: "user_member_1", displayName: "Member One", hostCount: 3 },
-      ],
-      impactSnapshot: "a".repeat(64),
     });
   });
   await page(undefined, "admin");
@@ -958,7 +894,6 @@ test("deletion preview 403 never falls back to the legacy route", async () => {
     name: "Delete Cloudflare Access",
   });
   await within(dialog).findByText(/no longer available/u);
-  expect(legacyCalls).toBe(0);
   expect(queryAction("button", "Delete Cloudflare Access", dialog)).toBeNull();
 });
 

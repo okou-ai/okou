@@ -197,9 +197,10 @@ test("admin conversion retains the config and hosts while other owners must rebi
 
   await expect(
     accept(
-      configs().conversionPreview({
+      configs().impactPreview({
         headers,
         params: { configId: shared.id },
+        query: { operation: "convert" },
       }),
       [403],
     ),
@@ -210,9 +211,10 @@ test("admin conversion retains the config and hosts while other owners must rebi
   mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
   const preview = (
     await accept(
-      configs().conversionPreview({
+      configs().impactPreview({
         headers,
         params: { configId: shared.id },
+        query: { operation: "convert" },
       }),
       [200],
     )
@@ -222,10 +224,15 @@ test("admin conversion retains the config and hosts while other owners must rebi
     otherHostCount: 2,
     impactSnapshot: expect.stringMatching(/^[a-f0-9]{64}$/u),
   });
+  expect(preview.affectedOwners).toStrictEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ userId: member.userId }),
+      expect.objectContaining({ userId: secondMember.userId }),
+    ]),
+  );
+  expect(JSON.stringify(preview)).not.toContain("hostCount");
   expect(JSON.stringify(preview)).not.toContain(memberHost.id);
-  expect(JSON.stringify(preview)).not.toContain(member.userId);
   expect(JSON.stringify(preview)).not.toContain(secondMemberHost.id);
-  expect(JSON.stringify(preview)).not.toContain(secondMember.userId);
   mocks.clerk.session(member.userId, member.orgId, "org:member");
   await expect(
     accept(
@@ -315,9 +322,10 @@ test("conversion requires a fresh preview after binding or revision drift", asyn
   const shared = await createShared();
   const initial = (
     await accept(
-      configs().conversionPreview({
+      configs().impactPreview({
         headers,
         params: { configId: shared.id },
+        query: { operation: "convert" },
       }),
       [200],
     )
@@ -342,9 +350,10 @@ test("conversion requires a fresh preview after binding or revision drift", asyn
   });
   const updated = (
     await accept(
-      configs().conversionPreview({
+      configs().impactPreview({
         headers,
         params: { configId: shared.id },
+        query: { operation: "convert" },
       }),
       [200],
     )
@@ -389,9 +398,10 @@ test("conversion and concurrent host binding retain a valid admin-owned referenc
   const shared = await createShared();
   const preview = (
     await accept(
-      configs().conversionPreview({
+      configs().impactPreview({
         headers,
         params: { configId: shared.id },
+        query: { operation: "convert" },
       }),
       [200],
     )
@@ -414,9 +424,10 @@ test("conversion and concurrent host binding retain a valid admin-owned referenc
     expect(converted.body.error.code).toBe("CLOUDFLARE_ACCESS_IMPACT_CONFLICT");
     const latest = (
       await accept(
-        configs().conversionPreview({
+        configs().impactPreview({
           headers,
           params: { configId: shared.id },
+          query: { operation: "convert" },
         }),
         [200],
       )

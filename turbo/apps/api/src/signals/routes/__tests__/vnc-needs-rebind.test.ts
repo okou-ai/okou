@@ -185,9 +185,10 @@ describe("VNC depends on current SSH binding", () => {
       api.authenticate(admin);
       if (transition === "convert") {
         const preview = await accept(
-          configs().conversionPreview({
+          configs().impactPreview({
             headers: vncSessionHeaders,
             params: { configId: config.body.id },
+            query: { operation: "convert" },
           }),
           [200],
         );
@@ -204,9 +205,10 @@ describe("VNC depends on current SSH binding", () => {
         );
       } else {
         const preview = await accept(
-          configs().deletionPreview({
+          configs().impactPreview({
             headers: vncSessionHeaders,
             params: { configId: config.body.id },
+            query: { operation: "delete" },
           }),
           [200],
         );
