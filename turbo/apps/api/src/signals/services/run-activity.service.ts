@@ -28,8 +28,8 @@ const STALE_RELEASE_LIMIT = 500;
 
 /**
  * Best-effort activity capture: one primary-key read, then one compare-and-set
- * UPDATE on the run's active row. A run without an active row (terminal, or
- * created before the row existed) simply has no activity. Losing the race to
+ * UPDATE on the run's active row. A run without an active row simply has no
+ * activity. Losing the race to
  * a concurrent delivery is acceptable; the next delivery merges again.
  */
 export const captureRunActivity$ = command(

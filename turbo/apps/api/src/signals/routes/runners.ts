@@ -1165,7 +1165,6 @@ function buildClaimTransitionSql(
             SET
               status = 'running',
               started_at = claim_clock."claimedAt",
-              last_heartbeat_at = claim_clock."claimedAt",
               cancellation_recovery_completed = false,
               runner_id = ${runnerId},
               runner_heartbeat_generation = ${runnerHeartbeatGeneration},

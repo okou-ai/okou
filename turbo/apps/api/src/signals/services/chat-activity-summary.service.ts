@@ -8,7 +8,7 @@ import type { Db } from "../external/db";
 import { FAST_PATH_MODEL, generateText } from "../external/openrouter";
 import { settleIncludingAbort } from "../utils";
 import { generateAuxiliary } from "./auxiliary-generation.service";
-import { activityClock } from "./run-activity-snapshot.service";
+import { activityClock } from "./run-activity.service";
 
 const ATTEMPT_INTERVAL_MS = 15_000;
 // The lease must outlive one whole generation attempt. A completion that lands

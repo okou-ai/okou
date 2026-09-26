@@ -313,14 +313,27 @@ stale-terminal sweep once its heartbeat and completion age past the grace; no
 reader treats it as more than activity for a run the summary already reports as
 ineligible, so none of these states needs a runtime fallback.
 
-Step 2's migration seeds the missing rows for active runs, including runs
-cancelled while running whose recovery grace has not passed, and deletes only
-rows the stale-terminal sweep would release (terminal, completed and silent past
-the grace); it then switches
-heartbeat readers to `active_agent_runs`, stops writing
-`agent_runs.last_heartbeat_at` and drops `run_activity_snapshots`. After step 2,
-rolling back to this release is not supported because its timeout cleanup would
-read a stale heartbeat column. Step 3 drops `agent_runs.last_heartbeat_at`.
+## Active run state: readers and old storage retired (step 2 of 3)
+
+**Release gate:** #36900 / `c0a46af5` reached production in release #36948
+(run 36198938622); step 2 may enter the merge queue. Migration `1258` backfills
+missing active rows created by pre-#36900 API instances; it includes started
+terminal runs still within the 120-second recovery window or still heartbeating
+(except cancelled runs with completed recovery). It removes terminal rows only
+when _both_ completion and heartbeat are more than 120 seconds old, matching
+the existing stale-terminal sweep. The insert is idempotent on `run_id`.
+#36929 must rebase after this migration and remove its duplicate backfill;
+its own migration owns the unique `chat_thread_id` index and slot admission.
+
+Timeout cleanup now checks the active row's heartbeat (including its locked-run
+recheck); capacity excludes queued runs and expired pending runs but counts
+started terminal runs while their active row still exists. Launch, promotion,
+claim and sandbox heartbeats no longer write `agent_runs.last_heartbeat_at`.
+Activity and summary already use `active_agent_runs`; migration `1258` drops
+`run_activity_snapshots` and its ORM declaration. Once this release deploys,
+**do not roll back to #36900**: its timeout cleanup reads the now-stale
+`agent_runs.last_heartbeat_at`, and older APIs write the dropped snapshot
+table. Step 3 drops the old heartbeat column. Do not ship step 3 in this PR.
 
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 

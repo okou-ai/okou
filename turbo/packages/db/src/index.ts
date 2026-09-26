@@ -1,6 +1,5 @@
 import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
-import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
 import * as artifactShareSchema from "./schema/artifact-share";
@@ -173,7 +172,6 @@ import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config
 
 export const schema = {
   ...getStartedClaimSchema,
-  ...runActivitySnapshotSchema,
   ...activeAgentRunSchema,
   ...homeTaskRecommendationSchema,
   ...userSchema,
