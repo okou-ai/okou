@@ -4,12 +4,14 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { command } from "ccstate";
 import {
   and,
-  desc,
+  asc,
   eq,
+  exists,
   inArray,
   isNotNull,
   lt,
   notInArray,
+  or,
   sql,
 } from "drizzle-orm";
 import { eventConsumerPayload$ } from "../../lib/event-consumer/route";
@@ -91,52 +93,64 @@ export const captureRunActivity$ = command(
  * A run that reached `running` keeps its active row after it turns terminal
  * until the runner reports completion. When the runner never does, release the
  * row once the run has been terminal and its sandbox silent for the
- * cancellation-recovery grace. Three bounded statements, no transaction.
+ * cancellation-recovery grace. Two bounded statements, no transaction.
  */
 export const releaseStaleTerminalActiveAgentRuns$ = command(
-  async ({ set }, runIds: readonly string[] | null, signal: AbortSignal) => {
+  async (
+    { set },
+    scope: {
+      readonly runIds: readonly string[];
+      readonly chatThreadIds: readonly string[];
+    } | null,
+    signal: AbortSignal,
+  ) => {
     const db = set(writeDb$);
     const staleBefore = new Date(
       nowDate().getTime() - CANCELLATION_RECOVERY_STALE_AFTER_MS,
     );
     const outcome = await settleIncludingAbort(
       (async () => {
-        // Newest silence first: long-queued rows never heartbeat and must not
-        // crowd out runs that just ended.
+        // Only terminal, silent rows enter the oldest-first bounded batch.
+        // Filtering terminal status after LIMIT would let queued/pending rows
+        // starve a leaked thread slot indefinitely. The correlated PK lookup
+        // avoids a JOIN or CTE and excludes terminal rows with a recent heartbeat.
         const silent = await db
           .select({ runId: activeAgentRuns.runId })
           .from(activeAgentRuns)
           .where(
             and(
               lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
-              runIds === null
+              scope === null
                 ? undefined
-                : inArray(activeAgentRuns.runId, runIds),
+                : or(
+                    inArray(activeAgentRuns.runId, scope.runIds),
+                    inArray(activeAgentRuns.chatThreadId, scope.chatThreadIds),
+                  ),
+              exists(
+                db
+                  .select({ id: agentRuns.id })
+                  .from(agentRuns)
+                  .where(
+                    and(
+                      eq(agentRuns.id, activeAgentRuns.runId),
+                      notInArray(agentRuns.status, [
+                        "queued",
+                        "pending",
+                        "running",
+                      ]),
+                      lt(agentRuns.completedAt, staleBefore),
+                    ),
+                  ),
+              ),
             ),
           )
-          .orderBy(desc(activeAgentRuns.lastHeartbeatAt))
+          .orderBy(
+            asc(activeAgentRuns.lastHeartbeatAt),
+            asc(activeAgentRuns.runId),
+          )
           .limit(STALE_RELEASE_LIMIT);
         signal.throwIfAborted();
         if (silent.length === 0) {
-          return;
-        }
-        const ended = await db
-          .select({ id: agentRuns.id })
-          .from(agentRuns)
-          .where(
-            and(
-              inArray(
-                agentRuns.id,
-                silent.map((row) => {
-                  return row.runId;
-                }),
-              ),
-              notInArray(agentRuns.status, ["queued", "pending", "running"]),
-              lt(agentRuns.completedAt, staleBefore),
-            ),
-          );
-        signal.throwIfAborted();
-        if (ended.length === 0) {
           return;
         }
         // Recheck the silence: a sandbox that resumed heartbeating since the
@@ -145,8 +159,8 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
           and(
             inArray(
               activeAgentRuns.runId,
-              ended.map((row) => {
-                return row.id;
+              silent.map((row) => {
+                return row.runId;
               }),
             ),
             lt(activeAgentRuns.lastHeartbeatAt, staleBefore),

@@ -6,7 +6,6 @@ import { alias } from "drizzle-orm/pg-core";
 import { revokeChatEvent, insertChatEvent } from "./chat-event.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import type { Tx } from "../../lib/db-types";
-import { lockChatQueueThread } from "./chat-event-queue.service";
 
 type DbTransaction = Tx;
 
@@ -35,9 +34,8 @@ export async function appendQueuedRunAssistantMarker(
     readonly createdAfter?: Date;
   },
 ): Promise<QueuedRunMarkerAppendResult> {
-  // Queue maintenance owns thread -> run -> provider. Marker insertion also
-  // writes the thread sequence, so it must acquire the same thread first.
-  await lockChatQueueThread(tx, args.chatThreadId);
+  // The run row lock and queued recheck serialize against promotion and
+  // queue timeouts, which revoke the marker under the same run lock.
   const [run] = await tx
     .select({ status: agentRuns.status })
     .from(agentRuns)

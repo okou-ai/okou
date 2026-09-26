@@ -119,6 +119,43 @@ test adapter for this retained nullable text column when it drops the physical
 column, and must raise the rollback floor to this cutover's canonical main
 merge commit. No screenshot decoder or index changes belong to this step.
 
+## Chat run admission moves to the `active_agent_runs` thread slot (pending)
+
+**Release ordering:** #36900 shipped separately in release #36948. #36955
+merged into main with migration `1258_active_agent_runs_step2.sql` and shipped
+separately in release #36974. #36980's step-3 migration
+`1259_drop_agent_runs_last_heartbeat_at.sql` must ship alone in its own release
+(#36986), with the previous API drained. #36975's
+`1261_drop_chat_thread_snapshot_jsonb.sql` must also ship independently and
+its previous API must drain before #36929 enters the merge queue. Only then
+may #36929 ship with migration `1262_active_agent_runs_chat_thread_slot.sql`,
+after #36976's `1260_personal_subscription_account_only.sql` and #36975's
+`1261` in the migration journal. The slot rollout requires the deployed
+step-3 API as its predecessor; the effective rollback floor also inherits the
+stricter #36976 account-only and #36975 snapshot-drop floors.
+
+#36955 owns the backfill for queued, pending, running and started terminal runs
+still within the recovery grace or heartbeating. #36929 does **not** repeat
+that backfill. Its migration keeps only the newest active row slotted per
+thread and adds the plain unique index on `active_agent_runs.chat_thread_id`.
+NULL thread IDs remain distinct. The new API's last launch statement inserts
+the active row with `ON CONFLICT (chat_thread_id) DO NOTHING`; a collision rolls
+back that launch as a lost queue claim and keeps the message queued. Queue-first
+admission, Web preflight and queue drain read the slot. Admission, completion,
+timeout and queued-run markers no longer lock the thread row; the session
+binding uses compare-and-set.
+
+**Mixed-version risk:** the step-3 API still inserts active rows without a
+thread-slot conflict handler. If its launch races a new API launch or a still-
+finishing terminal run, the unique index can reject its insert (`23505`): its
+launch rolls back and inline send returns a temporary HTTP 500. The separately
+enqueued input remains durable and can drain after slot release; no second run
+starts. This is a user-visible error, not seamless compatibility. The release
+owner must explicitly accept it and monitor errors and queue progress, or
+first provide an older-API conflict handler / avoid serving the older API
+after the index is created. Separating releases alone does not remove the
+rolling mixed-version window.
+
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
 **Draft columns and owner key.** Migration `1257_drop_chat_thread_draft_columns` drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`, and makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.
