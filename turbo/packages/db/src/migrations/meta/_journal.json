@@ -1251,8 +1251,22 @@
     {
       "idx": 1256,
       "version": "7",
-      "when": 1790382049522,
-      "tag": "1256_active_agent_runs_step2",
+      "when": 1790382132921,
+      "tag": "1256_drop_redundant_chat_thread_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1257,
+      "version": "7",
+      "when": 1790382154084,
+      "tag": "1257_drop_chat_thread_draft_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1258,
+      "version": "7",
+      "when": 1790383932521,
+      "tag": "1258_active_agent_runs_step2",
       "breakpoints": true
     }
   ]

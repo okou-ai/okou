@@ -4,13 +4,8 @@ import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-thr
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { notFound } from "../../lib/error";
 import { updateChatThreadDraft$ } from "../services/chat-thread.service";
 import type { RouteEntry } from "../route-entry";
-
-function chatThreadNotFound() {
-  return notFound("Chat thread not found");
-}
 
 const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(authContext$);
@@ -21,7 +16,7 @@ const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
-  const result = await set(
+  await set(
     updateChatThreadDraft$,
     {
       threadId: params.id,
@@ -32,10 +27,6 @@ const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-
-  if (!result.updated) {
-    return chatThreadNotFound();
-  }
 
   return { status: 204 as const, body: undefined };
 });
