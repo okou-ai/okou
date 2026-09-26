@@ -548,7 +548,6 @@ function queueFirstClaimHeadQuery(db: DbTransaction, threadId: string) {
       ),
     )
     .orderBy(asc(chatEvents.seqId))
-    .for("update", { of: chatEvents })
     .limit(1);
 }
 
@@ -584,7 +583,6 @@ function queueFirstExpectedHeadQuery(
         ),
       ),
     )
-    .for("update", { of: chatEvents })
     .limit(1);
 }
 
@@ -810,10 +808,10 @@ export async function claimQueueFirstRunAssociation(
         },
         claimDimensions,
       );
+      // The replacement's unique revoke edge is the claim's only mutual
+      // exclusion: a concurrent claim, recall or rejection that appended first
+      // makes this insert a no-op, and this launch loses its claim.
       if (!claimed) {
-        if (args.kind !== "user_message") {
-          throw new Error(`Claimed ${args.kind} queue event disappeared`);
-        }
         outcome = "lost";
         return { kind: "lost" };
       }

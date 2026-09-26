@@ -155,11 +155,12 @@ const dispatchInternalCallback$ = command(
           handleChatInternalCallback$,
           {
             callback: input.envelope,
-            drainThreadQueue: async (chatThreadId, inputSignal, timing) => {
+            drainThreadQueue: async (target, inputSignal, timing) => {
               await set(
                 takeOverChatThreadQueue$,
                 {
-                  chatThreadId,
+                  chatThreadId: target.chatThreadId,
+                  orgId: target.orgId,
                   dispatchFailedCallbacks: dispatchFailedRunCallbacks,
                   timing,
                 },

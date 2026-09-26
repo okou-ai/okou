@@ -3928,7 +3928,7 @@ const createNormalChatRun$ = command(
       readonly prepared: PreparedNormalSend;
       /** Queue-first sends replace this queued message at dispatch time. */
       readonly queueFirstEventId: string;
-      /** Optimistic preparation only; final queue authority remains locked. */
+      /** Optimistic preparation only; the claim's revoke edge stays authoritative. */
       readonly preloadedQueuedMessage?: QueuedUserMessage;
     },
     signal: AbortSignal,
@@ -4203,6 +4203,7 @@ const sendQueueFirstNormalEvent$ = command(
         drainChatThreadQueueForThread$,
         {
           chatThreadId: threadId,
+          orgId: args.orgId,
           dispatchFailedCallbacks: dispatchFailedRunCallbacks,
         },
         signal,
@@ -4224,6 +4225,7 @@ const sendQueueFirstNormalEvent$ = command(
         drainChatThreadQueueForThread$,
         {
           chatThreadId: threadId,
+          orgId: args.orgId,
           dispatchFailedCallbacks: dispatchFailedRunCallbacks,
         },
         signal,

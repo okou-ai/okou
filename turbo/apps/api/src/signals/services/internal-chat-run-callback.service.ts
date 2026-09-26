@@ -658,7 +658,11 @@ interface ChatCallbackDependencies {
   ) => Promise<void>;
   readonly createQueuedRun?: CreateQueuedRun;
   readonly drainThreadQueue?: (
-    chatThreadId: string,
+    target: {
+      readonly chatThreadId: string;
+      /** Null only when the finished run row no longer exists. */
+      readonly orgId: string | null;
+    },
     signal: AbortSignal,
     timing: ChatCallbackPreCreateTimingCollector | undefined,
   ) => Promise<void>;
@@ -4125,6 +4129,7 @@ async function readTerminalChatCallbackRun(db: Db, runId: string) {
   const [run] = await db
     .select({
       threadId: agentRuns.chatThreadId,
+      orgId: agentRuns.orgId,
       triggerSource: agentRuns.triggerSource,
     })
     .from(agentRuns)
@@ -4402,6 +4407,7 @@ async function maybeDrainThreadQueueForTerminalCallback(
   args: {
     readonly enabled: boolean;
     readonly chatThreadId: string;
+    readonly orgId: string;
     readonly dependencies: ChatCallbackDependencies;
     readonly timing: ChatCallbackPreCreateTimingCollector;
   },
@@ -4412,7 +4418,11 @@ async function maybeDrainThreadQueueForTerminalCallback(
   }
 
   const result = await settle(
-    args.dependencies.drainThreadQueue(args.chatThreadId, signal, args.timing),
+    args.dependencies.drainThreadQueue(
+      { chatThreadId: args.chatThreadId, orgId: args.orgId },
+      signal,
+      args.timing,
+    ),
     signal,
   );
   return result.ok ? { ok: true } : { ok: false, error: result.error };
@@ -4517,7 +4527,7 @@ async function recoverTerminalChatCallback(
       signal.throwIfAborted();
       if (exists) {
         await callback.dependencies.drainThreadQueue(
-          threadId,
+          { chatThreadId: threadId, orgId: current?.orgId ?? null },
           signal,
           args.timing,
         );
@@ -4747,6 +4757,7 @@ async function drainAndClearTerminalChatThread(
   args: {
     readonly callback: TerminalChatCallbackArgs;
     readonly chatThreadId: string;
+    readonly orgId: string;
     readonly timing: ChatCallbackPreCreateTimingCollector;
     readonly work: TerminalChatCallbackWork;
   },
@@ -4759,6 +4770,7 @@ async function drainAndClearTerminalChatThread(
           enabled:
             args.work.outcome === "written" || args.work.outcome === "replayed",
           chatThreadId: args.chatThreadId,
+          orgId: args.orgId,
           dependencies: args.callback.dependencies,
           timing: args.timing,
         },
@@ -4778,6 +4790,7 @@ async function drainAndClearTerminalChatThread(
 async function drainTerminalChatThreadInBackground(args: {
   readonly callback: TerminalChatCallbackArgs;
   readonly chatThreadId: string;
+  readonly orgId: string;
   readonly timing: ChatCallbackPreCreateTimingCollector;
   readonly work: TerminalChatCallbackWork;
 }): Promise<void> {
@@ -4827,6 +4840,7 @@ async function finishTerminalChatCallbackAfterProjection(
   waitUntil(
     drainTerminalChatThreadInBackground({
       chatThreadId: args.chatThread.chatThreadId,
+      orgId: args.chatThread.orgId,
       callback: args.callback,
       timing: args.timing,
       work: args.work,

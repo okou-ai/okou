@@ -32,7 +32,6 @@ import {
 } from "./chat-event-queue.service";
 import {
   chatThreadHasActiveRun,
-  chatThreadOrgId,
   claimQueuedChatThread,
   deleteQueuedChatThread,
   listPickableQueuedChatThreads,
@@ -46,6 +45,8 @@ const L = logger("ChatThreadQueueDrain");
 interface DrainChatThreadQueueInput {
   readonly apiStartTime?: number;
   readonly chatThreadId: string;
+  /** The thread's organization, known to every caller; no thread lookup. */
+  readonly orgId: string;
   readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
   readonly timing?: ChatCallbackPreCreateTimingCollector;
   readonly automationEventLaunch?: {
@@ -54,6 +55,9 @@ interface DrainChatThreadQueueInput {
     readonly timing: ApiDispatchTimingCollector;
   };
 }
+
+/** Pickers read the organization from the leased row, not from the caller. */
+type QueueLaunchInput = Omit<DrainChatThreadQueueInput, "orgId">;
 
 export async function notifyRunningChatRunOfPendingInput(
   db: Db,
@@ -123,7 +127,7 @@ interface QueueHeadLaunch {
 const launchChatThreadQueueHead$ = command(
   async (
     { set },
-    input: DrainChatThreadQueueInput & { readonly apiStartTime: number },
+    input: QueueLaunchInput & { readonly apiStartTime: number },
     signal: AbortSignal,
   ): Promise<QueueHeadLaunch> => {
     const db = set(writeDb$);
@@ -153,7 +157,7 @@ const launchChatThreadQueueHead$ = command(
 const launchQueueHeadOnce$ = command(
   async (
     { set },
-    input: DrainChatThreadQueueInput & {
+    input: QueueLaunchInput & {
       readonly apiStartTime: number;
       readonly headEventType: "input.prompt" | "input.automation";
     },
@@ -229,7 +233,7 @@ interface PickResult {
 export const pickQueuedChatThread$ = command(
   async (
     { set },
-    input: DrainChatThreadQueueInput,
+    input: QueueLaunchInput,
     signal: AbortSignal,
   ): Promise<PickResult> => {
     const db = set(writeDb$);
@@ -292,12 +296,10 @@ export const drainChatThreadQueueForThread$ = command(
       return null;
     }
 
-    const orgId = await chatThreadOrgId(db, input.chatThreadId);
-    signal.throwIfAborted();
-    if (orgId === null) {
-      return null;
-    }
-    await markChatThreadQueued(db, { chatThreadId: input.chatThreadId, orgId });
+    await markChatThreadQueued(db, {
+      chatThreadId: input.chatThreadId,
+      orgId: input.orgId,
+    });
     signal.throwIfAborted();
     const picked = await set(pickQueuedChatThread$, input, signal);
     return picked.automationResult;
@@ -314,7 +316,13 @@ export const drainChatThreadQueueForThread$ = command(
 export const takeOverChatThreadQueue$ = command(
   async (
     { set },
-    input: DrainChatThreadQueueInput,
+    input: QueueLaunchInput & {
+      /**
+       * Null only when the finished run row is gone: the takeover still
+       * launches, but leaves unstarted input without a queue row.
+       */
+      readonly orgId: string | null;
+    },
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
@@ -331,12 +339,10 @@ export const takeOverChatThreadQueue$ = command(
       signal.throwIfAborted();
       return;
     }
-    const orgId = await chatThreadOrgId(db, input.chatThreadId);
-    signal.throwIfAborted();
-    if (orgId !== null) {
+    if (input.orgId !== null) {
       await markChatThreadQueued(db, {
         chatThreadId: input.chatThreadId,
-        orgId,
+        orgId: input.orgId,
       });
       signal.throwIfAborted();
     }
@@ -403,7 +409,10 @@ export const drainChatThreadQueueForRun$ = command(
   ): Promise<void> => {
     const db = set(writeDb$);
     const [run] = await db
-      .select({ chatThreadId: agentRuns.chatThreadId })
+      .select({
+        chatThreadId: agentRuns.chatThreadId,
+        orgId: agentRuns.orgId,
+      })
       .from(agentRuns)
       .where(
         and(eq(agentRuns.id, input.runId), isNotNull(agentRuns.triggerSource)),
@@ -417,6 +426,7 @@ export const drainChatThreadQueueForRun$ = command(
       takeOverChatThreadQueue$,
       {
         chatThreadId: run.chatThreadId,
+        orgId: run.orgId,
         apiStartTime: input.apiStartTime,
         dispatchFailedCallbacks: input.dispatchFailedCallbacks,
       },
@@ -460,6 +470,7 @@ export const drainStaleChatThreadQueues$ = command(
           drainChatThreadQueueForThread$,
           {
             chatThreadId: candidate.chatThreadId,
+            orgId: candidate.orgId,
             dispatchFailedCallbacks: input.dispatchFailedCallbacks,
           },
           signal,

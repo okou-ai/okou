@@ -790,6 +790,7 @@ export const processCanonicalFeishuIngress$ = command(
       drainChatThreadQueueForThread$,
       {
         chatThreadId: result.value.chatThreadId,
+        orgId: result.value.orgId,
         dispatchFailedCallbacks: dispatchFailedRunCallbacks,
       },
       signal,

@@ -395,14 +395,23 @@ export const dispatchCancelSideEffects$ = command(
     // provisioning) lands in Stage 4.
     await set(drainOrgQueue$, { orgId: result.orgId }, signal);
     signal.throwIfAborted();
-    await set(
-      pickOrgQueuedChatThreads$,
-      {
-        orgId: result.orgId,
-        untilFull: false,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+    await tapError(
+      set(
+        pickOrgQueuedChatThreads$,
+        {
+          orgId: result.orgId,
+          untilFull: false,
+          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+        },
+        signal,
+      ),
+      (error) => {
+        L.error("Failed to pick queued chat thread after cancel", {
+          runId: result.runId,
+          orgId: result.orgId,
+          error,
+        });
       },
-      signal,
     );
     signal.throwIfAborted();
 

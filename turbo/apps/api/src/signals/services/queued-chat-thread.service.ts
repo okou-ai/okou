@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
 
@@ -23,7 +21,12 @@ function leaseFree(at: Date) {
   );
 }
 
-/** Record that the thread has pending input; an existing row keeps its age. */
+/**
+ * Record that the thread has pending input; an existing row keeps its age.
+ * New input also clears any lease: a picker that read the queue as empty
+ * before this input committed then deletes or releases zero rows, the row
+ * survives, and the enqueuer's own pick can take the lease.
+ */
 export async function markChatThreadQueued(
   db: Db,
   args: { readonly chatThreadId: string; readonly orgId: string },
@@ -35,21 +38,10 @@ export async function markChatThreadQueued(
       orgId: args.orgId,
       queuedAt: nowDate(),
     })
-    .onConflictDoNothing({ target: queuedChatThreads.chatThreadId });
-}
-
-/** Resolve the owning organization of a thread for its queue row. */
-export async function chatThreadOrgId(
-  db: ReadDb,
-  chatThreadId: string,
-): Promise<string | null> {
-  const [thread] = await db
-    .select({ orgId: agents.orgId })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(eq(chatThreads.id, chatThreadId))
-    .limit(1);
-  return thread?.orgId ?? null;
+    .onConflictDoUpdate({
+      target: queuedChatThreads.chatThreadId,
+      set: { claimId: null, claimExpiresAt: null },
+    });
 }
 
 export interface QueuedChatThreadClaim {
