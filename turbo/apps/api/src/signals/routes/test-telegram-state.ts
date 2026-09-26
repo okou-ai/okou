@@ -1277,7 +1277,6 @@ async function seedRunningRunForAction(
       status: "running",
       prompt: "existing running telegram run",
       startedAt,
-      lastHeartbeatAt: startedAt,
       ...metadata,
     })
     .returning({ id: agentRuns.id });
