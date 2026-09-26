@@ -395,7 +395,14 @@ async function sendBrowserUseCdpCommand(
       });
     }
   }
-  return await promise;
+  // An abort can follow the matching message in the same event turn, before
+  // this command resumes. Preserve cancellation precedence after settlement.
+  const result = await settleIncludingAbort(promise);
+  signal.throwIfAborted();
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
 }
 
 async function withBrowserUseCdpSocket<T>(

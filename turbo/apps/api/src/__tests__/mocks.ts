@@ -689,6 +689,7 @@ export function browserUseCdpHandler(
     command: BrowserUseCdpCommand,
   ) => readonly Readonly<Record<string, unknown>>[],
   withholdReply?: (command: BrowserUseCdpCommand) => boolean,
+  afterReply?: (command: BrowserUseCdpCommand) => void,
 ) {
   const cdp = ws.link(url);
   return cdp.addEventListener("connection", ({ client }) => {
@@ -712,6 +713,7 @@ export function browserUseCdpHandler(
             error: { message: mockedResult.message },
           }),
         );
+        afterReply?.(command);
         return;
       }
       client.send(
@@ -720,6 +722,7 @@ export function browserUseCdpHandler(
           result: mockedResult ?? defaultBrowserUseCdpResult(command),
         }),
       );
+      afterReply?.(command);
     });
   });
 }
