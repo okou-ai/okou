@@ -46,7 +46,11 @@ const renew$ = command(async ({ get, set }, signal: AbortSignal) => {
     return error(400, "BAD_REQUEST", "Stale local listener proof");
   }
   if (result.status === "host-conflict") {
-    return error(409, "CONFLICT", "Runner ID is bound to a different host");
+    return error(
+      409,
+      "CONFLICT",
+      "Runner ID has conflicting host claims or is quarantined",
+    );
   }
   return {
     status: 200 as const,

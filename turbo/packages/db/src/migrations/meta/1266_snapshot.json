@@ -1,5 +1,5 @@
 {
-  "id": "1ed97302-07b6-4a82-acaf-52bc0e67a088",
+  "id": "4917e47b-21b5-4286-9682-279898161d20",
   "prevId": "4b5fdf74-3349-417e-b2a9-1a27fed28acf",
   "version": "7",
   "dialect": "postgresql",
@@ -28698,38 +28698,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "runner_wss_endpoints_host_idx": {
-          "name": "runner_wss_endpoints_host_idx",
-          "columns": [
-            {
-              "expression": "host_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "runner_wss_endpoints_lease_idx": {
-          "name": "runner_wss_endpoints_lease_idx",
-          "columns": [
-            {
-              "expression": "lease_expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

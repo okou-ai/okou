@@ -8,6 +8,3 @@ CREATE TABLE "runner_wss_endpoints" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
---> statement-breakpoint
-CREATE INDEX "runner_wss_endpoints_host_idx" ON "runner_wss_endpoints" USING btree ("host_id");--> statement-breakpoint
-CREATE INDEX "runner_wss_endpoints_lease_idx" ON "runner_wss_endpoints" USING btree ("lease_expires_at");
