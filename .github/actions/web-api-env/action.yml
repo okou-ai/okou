@@ -213,7 +213,10 @@ runs:
           axiom_dataset_suffix="dev"
           deploy_env="preview"
           runner_default_group="vm0/development-${INPUT_JOB_REF}"
-          concurrent_run_limit_cap="0"
+          # TEMPORARY (PR #37034 browser verification only): enforce a real
+          # preview capacity so queued chat input can be observed. Revert
+          # before this PR leaves Draft.
+          concurrent_run_limit_cap="2"
           slack_redirect_base_url="$INPUT_WEB_URL"
           strapi_url=""
           private_artifacts_bucket="user-artifact-private-dev"
