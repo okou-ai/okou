@@ -1841,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.16.294"
+version = "0.16.295"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -3461,7 +3461,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.213.22"
+version = "0.213.23"
 dependencies = [
  "api-contracts",
  "async-trait",

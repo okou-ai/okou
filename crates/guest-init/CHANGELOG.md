@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.295](https://github.com/okou-ai/okou/compare/guest-init-v0.16.294...guest-init-v0.16.295) (2026-09-26)
+
+
+### Bug Fixes
+
+* **guest-init:** mount devpts for pseudo-terminals ([#37020](https://github.com/okou-ai/okou/issues/37020)) ([81afd16](https://github.com/okou-ai/okou/commit/81afd166e897fc06cdcf7561202594b73c30e939))
+
 ## [0.16.294](https://github.com/okou-ai/okou/compare/guest-init-v0.16.293...guest-init-v0.16.294) (2026-09-25)
 
 ## [0.16.293](https://github.com/okou-ai/okou/compare/guest-init-v0.16.292...guest-init-v0.16.293) (2026-09-25)

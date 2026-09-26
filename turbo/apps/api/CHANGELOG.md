@@ -8,6 +8,19 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.682.2](https://github.com/okou-ai/okou/compare/api-v1.682.1...api-v1.682.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **api:** identify payment portal by neutral purpose ([#37031](https://github.com/okou-ai/okou/issues/37031)) ([9b87903](https://github.com/okou-ai/okou/commit/9b87903895f1211bbaee1d89462f27193c4d74b0))
+
+
+### Performance Improvements
+
+* **api:** append chat events outside redundant outer transactions ([#37010](https://github.com/okou-ai/okou/issues/37010)) ([f1eb91c](https://github.com/okou-ai/okou/commit/f1eb91c19e302fc0bcc271f9966abf288c8a98ca))
+* **api:** drop timing CTEs from the chat-event append statement ([#37023](https://github.com/okou-ai/okou/issues/37023)) ([588c970](https://github.com/okou-ai/okou/commit/588c9703b0defed05874cbed3be1cbe7de9a16ac))
+
 ## [1.682.1](https://github.com/okou-ai/okou/compare/api-v1.682.0...api-v1.682.1) (2026-09-26)
 
 
