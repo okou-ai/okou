@@ -3602,10 +3602,17 @@ describe("CHAT-03 run usage events", () => {
     expect(first).toHaveLength(1);
     expect(first[0]?.usage.totalCredits).toBe(6);
 
-    // The card committed, but the worker's ack was lost. Redrive must detect
-    // the same payload instead of appending a second visible revision.
+    // The card committed, but the worker's ack or realtime wakeup was lost.
+    // Redrive must notify the client without appending a second revision.
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
     await billing.injectUsageProjectionFault(runId, "drop-ack");
     await billing.drainUsageProjection();
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      `chatThreadMessageCreated:${threadId}`,
+      null,
+    );
     await expect(
       usageEventsForRun(actor, threadId, runId),
     ).resolves.toStrictEqual(first);
