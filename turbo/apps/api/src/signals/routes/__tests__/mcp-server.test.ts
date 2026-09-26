@@ -3641,8 +3641,10 @@ describe("MCP chat mutations", () => {
       }),
     );
     // Infrastructure exception: separate requests cannot choose where their
-    // transactions pause. Owned row locks make both senders reach the write
-    // boundary before either identity can commit, without changing any rows.
+    // writes pause. Owned row locks make both senders reach the write boundary
+    // before either identity can commit, without changing any rows. A sender
+    // may wait on its own thread's lock or on the other sender's uncommitted
+    // insert of the shared identity, so readiness counts both locks together.
     const locks = await Promise.all(
       threads.map((thread) => {
         return holdChatThreadRowLockFixture({
@@ -3673,9 +3675,18 @@ describe("MCP chat mutations", () => {
       );
       await Promise.allSettled(pending);
     });
-    for (const lock of locks) {
-      await expect.poll(lock.blockedWaiterCount).toBeGreaterThan(0);
-    }
+    await expect
+      .poll(async () => {
+        const counts = await Promise.all(
+          locks.map((lock) => {
+            return lock.blockedWaiterCount();
+          }),
+        );
+        return counts.reduce((total, count) => {
+          return total + count;
+        }, 0);
+      })
+      .toBe(threads.length);
     for (const lock of locks) {
       lock.release();
     }
