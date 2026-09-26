@@ -66,6 +66,27 @@ touch "$marker/sandbox-reuse-marker"
 awk '$2 == "/sys/fs/cgroup" && $3 == "cgroup2" && $4 ~ /(^|,)favordynmods(,|$)/ { found = 1 } END { exit !found }' /proc/mounts \
   || { echo "guest cgroup2 mount is missing favordynmods" >&2; exit 1; }
 
+# Guest tools need real pseudo-terminals even though this shell has pipe-based
+# stdio. Check the mounted filesystem and allocate a PTY as the tool user.
+awk '$2 == "/dev/pts" && $3 == "devpts" { found = 1 } END { exit !found }' /proc/mounts \
+  || { echo "guest /dev/pts is not mounted as devpts" >&2; exit 1; }
+python3 - <<'PY'
+import os
+import pty
+
+if os.geteuid() == 0:
+    raise RuntimeError("PTY check must run as the ordinary guest tool user")
+master, slave = pty.openpty()
+try:
+    if not os.isatty(master) or not os.isatty(slave):
+        raise RuntimeError("allocated PTY endpoints are not terminals")
+    if not os.ttyname(slave).startswith("/dev/pts/"):
+        raise RuntimeError("PTY slave is not under /dev/pts")
+finally:
+    os.close(master)
+    os.close(slave)
+PY
+
 expected_path="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/bin"
 if [ "$PATH" != "$expected_path" ]; then
   echo "Guest Agent CLI child PATH changed: expected=$expected_path actual=$PATH" >&2

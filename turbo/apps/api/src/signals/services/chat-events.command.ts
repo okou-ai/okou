@@ -2025,40 +2025,25 @@ function assertOfficialSourceClaim(
   }
 }
 
-async function resolveLockedMcpSubmission(
-  tx: ChatThreadEventTransaction,
+async function resolveExistingMcpSubmission(
+  db: Pick<Db, "select">,
   params: AppendUnassociatedUserMessageParams,
 ): Promise<ClientEventIdResolution | undefined> {
-  if (params.mcpSubmission) {
-    const [thread] = await tx
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, params.threadId),
-          eq(chatThreads.userId, params.userId),
-          chatThreadOrganizationCondition(tx, params.orgId),
-        ),
-      )
-      .for("no key update");
-    if (!thread) {
-      return { kind: "conflict" };
-    }
-    const existing = await resolveMcpSubmission(
-      tx,
-      params.mcpSubmission,
-      params,
-    );
-    if (existing.kind === "accepted") {
-      return {
-        kind: "queued",
-        createdAt: existing.receipt.acceptedAt,
-        inserted: false,
-      };
-    }
-    if (existing.kind !== "missing") {
-      return { kind: "conflict" };
-    }
+  if (!params.mcpSubmission) {
+    return undefined;
+  }
+  // The request ID is the event ID, so the primary key arbitrates concurrent
+  // submissions; a loser is resolved after its append inserts nothing.
+  const existing = await resolveMcpSubmission(db, params.mcpSubmission, params);
+  if (existing.kind === "accepted") {
+    return {
+      kind: "queued",
+      createdAt: existing.receipt.acceptedAt,
+      inserted: false,
+    };
+  }
+  if (existing.kind !== "missing") {
+    return { kind: "conflict" };
   }
   return undefined;
 }
@@ -2108,7 +2093,7 @@ async function appendUnassociatedUserMessageTransaction(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
 ): Promise<ClientEventIdResolution> {
-  const existing = await resolveLockedMcpSubmission(tx, params);
+  const existing = await resolveExistingMcpSubmission(tx, params);
   if (existing) {
     return existing;
   }
@@ -2228,24 +2213,13 @@ async function appendUnassociatedUserMessage(
     orgId: params.orgId,
     files: params.attachFileMetadata ?? [],
   });
-  const append = async (writer: Db | ChatThreadEventTransaction) => {
-    return params.revokesEventId
-      ? await replaceChatEvent(writer, params.revokesEventId, event)
-      : await insertChatEvent(writer, event, "id");
-  };
-  const result = params.mcpSubmission
-    ? await db.transaction(async (tx) => {
-        const existing = await resolveLockedMcpSubmission(tx, params);
-        if (existing) {
-          return { existing };
-        }
-        return { inserted: await append(tx) };
-      })
-    : { inserted: await append(db) };
-  if (result.existing) {
-    return result.existing;
+  const existing = await resolveExistingMcpSubmission(db, params);
+  if (existing) {
+    return existing;
   }
-  const inserted = result.inserted;
+  const inserted = params.revokesEventId
+    ? await replaceChatEvent(db, params.revokesEventId, event)
+    : await insertChatEvent(db, event, "id");
   if (!inserted) {
     if (!params.clientEventId) {
       throw new Error("Failed to insert unassociated user message");
@@ -2361,127 +2335,122 @@ async function appendAssociatedUserMessage(params: {
   return inserted !== null;
 }
 
-function appendRecallChatEvent(params: {
+async function appendRecallChatEvent(params: {
   readonly db: Db;
   readonly threadId: string;
   readonly revokesEventId: string;
   readonly clientEventId: string | undefined;
 }): Promise<AppendEventResult> {
-  return params.db.transaction(async (tx) => {
-    const pendingTarget = await loadPendingChatQueueEvent(tx, {
-      chatThreadId: params.threadId,
-      eventId: params.revokesEventId,
-    });
-    const wasPending =
-      pendingTarget?.eventType === "input.prompt" ||
-      pendingTarget?.eventType === "input.automation";
+  const db = params.db;
+  const pendingTarget = await loadPendingChatQueueEvent(db, {
+    chatThreadId: params.threadId,
+    eventId: params.revokesEventId,
+  });
+  const wasPending =
+    pendingTarget?.eventType === "input.prompt" ||
+    pendingTarget?.eventType === "input.automation";
 
-    const [existingRevoker] = await tx
-      .select({
-        eventType: chatEvents.eventType,
-        content: canonicalChatEventContent(),
-        createdAt: chatEvents.createdAt,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, params.threadId),
-          eq(chatEvents.revokesEventId, params.revokesEventId),
-        ),
-      )
-      .limit(1);
-    if (existingRevoker) {
-      if (
-        existingRevoker.eventType === "control.revoke" &&
-        existingRevoker.content === null
-      ) {
-        return { ok: true, createdAt: existingRevoker.createdAt };
-      }
-      return {
-        ok: false,
-        message: "Only queued user messages can be recalled",
-      };
+  const [existingRevoker] = await db
+    .select({
+      eventType: chatEvents.eventType,
+      content: canonicalChatEventContent(),
+      createdAt: chatEvents.createdAt,
+    })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, params.threadId),
+        eq(chatEvents.revokesEventId, params.revokesEventId),
+      ),
+    )
+    .limit(1);
+  if (existingRevoker) {
+    if (
+      existingRevoker.eventType === "control.revoke" &&
+      existingRevoker.content === null
+    ) {
+      return { ok: true, createdAt: existingRevoker.createdAt };
     }
+    return {
+      ok: false,
+      message: "Only queued user messages can be recalled",
+    };
+  }
 
-    const [target] = await tx
-      .select({
-        error: canonicalChatEventError(),
-        revokesEventId: chatEvents.revokesEventId,
-      })
+  const [target] = await db
+    .select({
+      error: canonicalChatEventError(),
+      revokesEventId: chatEvents.revokesEventId,
+    })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.id, params.revokesEventId),
+        eq(chatEvents.chatThreadId, params.threadId),
+        chatEventTypeIn(["input.prompt", "input.automation", "input.rejected"]),
+      ),
+    )
+    .limit(1);
+  if (
+    !target ||
+    (!wasPending && target.error !== INSUFFICIENT_CREDITS_MARKER) ||
+    (target.revokesEventId !== null &&
+      target.error !== INSUFFICIENT_CREDITS_MARKER)
+  ) {
+    if (wasPending) {
+      throw new Error("Queued message is not recallable");
+    }
+    const [exists] = await db
+      .select({ id: chatEvents.id })
       .from(chatEvents)
       .where(
         and(
           eq(chatEvents.id, params.revokesEventId),
           eq(chatEvents.chatThreadId, params.threadId),
-          chatEventTypeIn([
-            "input.prompt",
-            "input.automation",
-            "input.rejected",
-          ]),
         ),
       )
       .limit(1);
-    if (
-      !target ||
-      (!wasPending && target.error !== INSUFFICIENT_CREDITS_MARKER) ||
-      (target.revokesEventId !== null &&
-        target.error !== INSUFFICIENT_CREDITS_MARKER)
-    ) {
-      if (wasPending) {
-        throw new Error("Queued message is not recallable");
-      }
-      const [exists] = await tx
-        .select({ id: chatEvents.id })
-        .from(chatEvents)
-        .where(
-          and(
-            eq(chatEvents.id, params.revokesEventId),
-            eq(chatEvents.chatThreadId, params.threadId),
-          ),
-        )
-        .limit(1);
-      if (!exists) {
-        // Older queue-first recalls deleted the message row, so a repeated
-        // request can still find nothing during rollout.
-        return { ok: true, createdAt: nowDate() };
-      }
-      return {
-        ok: false,
-        message: "Only queued user messages can be recalled",
-      };
+    if (!exists) {
+      // Older queue-first recalls deleted the message row, so a repeated
+      // request can still find nothing during rollout.
+      return { ok: true, createdAt: nowDate() };
     }
+    return {
+      ok: false,
+      message: "Only queued user messages can be recalled",
+    };
+  }
 
-    const inserted = await revokeChatEvent(tx, params.revokesEventId, {
-      ...(params.clientEventId ? { id: params.clientEventId } : {}),
-      chatThreadId: params.threadId,
-      eventType: "control.revoke",
-      runId: null,
-    });
-    if (inserted) {
-      return { ok: true, createdAt: inserted.createdAt };
-    }
-    const [resolved] = await tx
-      .select({ createdAt: chatEvents.createdAt })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, params.threadId),
-          eq(chatEvents.revokesEventId, params.revokesEventId),
-          chatEventTypeIn(["control.revoke"]),
-          isNull(canonicalChatEventContent()),
-          isNull(canonicalChatEventError()),
-        ),
-      )
-      .limit(1);
-    if (!resolved) {
-      // A concurrent claim or rejection won the revoke edge.
-      return {
-        ok: false,
-        message: "Only queued user messages can be recalled",
-      };
-    }
-    return { ok: true, createdAt: resolved.createdAt };
+  const inserted = await revokeChatEvent(db, params.revokesEventId, {
+    ...(params.clientEventId ? { id: params.clientEventId } : {}),
+    chatThreadId: params.threadId,
+    eventType: "control.revoke",
+    runId: null,
   });
+  if (inserted) {
+    return { ok: true, createdAt: inserted.createdAt };
+  }
+  const [resolved] = await db
+    .select({ createdAt: chatEvents.createdAt })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, params.threadId),
+        eq(chatEvents.revokesEventId, params.revokesEventId),
+        chatEventTypeIn(["control.revoke"]),
+        isNull(canonicalChatEventContent()),
+        isNull(canonicalChatEventError()),
+      ),
+    )
+    .limit(1);
+  if (!resolved) {
+    // A concurrent claim or rejection won the revoke edge.
+    return {
+      ok: false,
+      message: "Only queued user messages can be recalled",
+    };
+  }
+  return { ok: true, createdAt: resolved.createdAt };
 }
 
 async function validateNormalRevocationTarget(params: {
@@ -2528,91 +2497,90 @@ async function validateNormalRevocationTarget(params: {
   return undefined;
 }
 
-function appendInterruptUserMessage(params: {
+async function appendInterruptUserMessage(params: {
   readonly db: Db;
   readonly threadId: string;
   readonly interruptsRunId: string;
   readonly clientEventId: string | undefined;
 }): Promise<AppendEventResult> {
-  return params.db.transaction(async (tx) => {
-    const [existingInterrupter] = await tx
-      .select({
-        eventType: chatEvents.eventType,
-        content: canonicalChatEventContent(),
-        createdAt: chatEvents.createdAt,
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, params.threadId),
-          eq(chatEvents.runId, params.interruptsRunId),
-          chatEventTypeIn(["control.interrupt"]),
-        ),
-      )
-      .limit(1);
-    if (existingInterrupter) {
-      if (
-        existingInterrupter.eventType === "control.interrupt" &&
-        existingInterrupter.content === null
-      ) {
-        return { ok: true, createdAt: existingInterrupter.createdAt };
-      }
-      return {
-        ok: false,
-        message: "Only active chat runs can be interrupted",
-      };
+  const db = params.db;
+  const [existingInterrupter] = await db
+    .select({
+      eventType: chatEvents.eventType,
+      content: canonicalChatEventContent(),
+      createdAt: chatEvents.createdAt,
+    })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, params.threadId),
+        eq(chatEvents.runId, params.interruptsRunId),
+        chatEventTypeIn(["control.interrupt"]),
+      ),
+    )
+    .limit(1);
+  if (existingInterrupter) {
+    if (
+      existingInterrupter.eventType === "control.interrupt" &&
+      existingInterrupter.content === null
+    ) {
+      return { ok: true, createdAt: existingInterrupter.createdAt };
     }
+    return {
+      ok: false,
+      message: "Only active chat runs can be interrupted",
+    };
+  }
 
-    const [targetRun] = await tx
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.id, params.interruptsRunId),
-          eq(agentRuns.chatThreadId, params.threadId),
-          inArray(agentRuns.status, ["queued", "pending", "running"]),
-          isNotNull(agentRuns.triggerSource),
-        ),
-      )
-      .limit(1);
-    if (!targetRun) {
-      return {
-        ok: false,
-        message: "Only active chat runs can be interrupted",
-      };
-    }
+  const [targetRun] = await db
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.id, params.interruptsRunId),
+        eq(agentRuns.chatThreadId, params.threadId),
+        inArray(agentRuns.status, ["queued", "pending", "running"]),
+        isNotNull(agentRuns.triggerSource),
+      ),
+    )
+    .limit(1);
+  if (!targetRun) {
+    return {
+      ok: false,
+      message: "Only active chat runs can be interrupted",
+    };
+  }
 
-    const inserted = await insertChatEvent(
-      tx,
-      {
-        ...(params.clientEventId ? { id: params.clientEventId } : {}),
-        chatThreadId: params.threadId,
-        eventType: "control.interrupt",
-        content: null,
-        interruptsRunId: params.interruptsRunId,
-      },
-      "any",
-    );
-    if (inserted) {
-      return { ok: true, createdAt: inserted.createdAt };
-    }
-    const [resolved] = await tx
-      .select({ createdAt: chatEvents.createdAt })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, params.threadId),
-          eq(chatEvents.runId, params.interruptsRunId),
-          chatEventTypeIn(["control.interrupt"]),
-          isNull(canonicalChatEventContent()),
-        ),
-      )
-      .limit(1);
-    if (!resolved) {
-      return { ok: false, message: "Failed to insert interrupt user message" };
-    }
-    return { ok: true, createdAt: resolved.createdAt };
-  });
+  const inserted = await insertChatEvent(
+    db,
+    {
+      ...(params.clientEventId ? { id: params.clientEventId } : {}),
+      chatThreadId: params.threadId,
+      eventType: "control.interrupt",
+      content: null,
+      interruptsRunId: params.interruptsRunId,
+    },
+    "any",
+  );
+  if (inserted) {
+    return { ok: true, createdAt: inserted.createdAt };
+  }
+  const [resolved] = await db
+    .select({ createdAt: chatEvents.createdAt })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, params.threadId),
+        eq(chatEvents.runId, params.interruptsRunId),
+        chatEventTypeIn(["control.interrupt"]),
+        isNull(canonicalChatEventContent()),
+      ),
+    )
+    .limit(1);
+  if (!resolved) {
+    return { ok: false, message: "Failed to insert interrupt user message" };
+  }
+  return { ok: true, createdAt: resolved.createdAt };
 }
 
 async function publishChatEventCreated(args: {

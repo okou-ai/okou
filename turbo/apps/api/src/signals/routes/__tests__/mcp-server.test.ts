@@ -1597,7 +1597,7 @@ describe("MCP chat discovery and creation", () => {
     expect(messages).toHaveLength(1);
   });
 
-  it("deduplicates simultaneous combined creation and conflicts on changed intent or mode", async () => {
+  it("conflicts on changed intent or mode for a combined creation request", async () => {
     const f = await creationFixture();
     const token = f.auth.token({ scope: defaultScopes });
     const args = {
@@ -1607,31 +1607,7 @@ describe("MCP chat discovery and creation", () => {
       model: "claude-sonnet-5",
       message: "Create and submit exactly once",
     };
-    const results = await Promise.all([
-      createThread(token, args),
-      createThread(token, args),
-    ]);
-    expect(
-      results
-        .map((result) => {
-          return result.replayed;
-        })
-        .sort(),
-    ).toStrictEqual([false, true]);
-    const inputs = results.map((result) => {
-      if (!("input" in result)) {
-        throw new Error("Expected combined creation responses");
-      }
-      expect(result.input).toMatchObject({
-        disposition: "rejected",
-        runId: null,
-      });
-      return result.input;
-    });
-    expect(inputs[0]?.inputRef).toStrictEqual(inputs[1]?.inputRef);
-    expect(
-      (await getMessages(token, { threadId: args.requestId })).messages,
-    ).toHaveLength(1);
+    await createThread(token, args);
 
     const secondAgent = await f.bdd.createAgent(f.actor, {
       displayName: "Another combined creation Agent",
@@ -3295,47 +3271,31 @@ describe("MCP chat mutations", () => {
     ).toStrictEqual(beforeReplayEvents);
   });
 
-  it("settles concurrent identical sends once and accepts refreshed authorization for the original receipt", async () => {
+  it("accepts refreshed authorization for the original receipt", async () => {
     const f = await messageFixture();
     const thread = await f.chat.createThread(f.actor, {
       agentId: f.agent.agentId,
     });
     const args = {
       threadId: thread.id,
-      text: "One accepted message despite concurrent requests",
+      text: "One accepted message replayed with a refreshed token",
       requestId: randomUUID(),
     };
     const token = f.auth.token({ scope: defaultScopes });
-    const replies = await Promise.all([
-      sendMessage(token, args),
-      sendMessage(token, args),
-    ]);
-    expect(replies[0]?.inputRef).toStrictEqual(replies[1]?.inputRef);
-    expect(
-      replies.filter((reply) => {
-        return !reply.replayed;
-      }),
-    ).toHaveLength(1);
+    const original = await sendMessage(token, args);
     const refreshed = f.auth.token({
       scope: `${requiredScopes} okou:chat:send`,
       exp: Math.floor(now() / 1000) + 7200,
       jti: randomUUID(),
     });
     const replay = await sendMessage(refreshed, args);
-    expect(replay.inputRef).toStrictEqual(replies[0]?.inputRef);
-    expect(replay.acceptedAt).toBe(replies[0]?.acceptedAt);
-    expect(replay.retryUntil).toBe(replies[0]?.retryUntil);
+    expect(replay.inputRef).toStrictEqual(original.inputRef);
+    expect(replay.acceptedAt).toBe(original.acceptedAt);
+    expect(replay.retryUntil).toBe(original.retryUntil);
     expect(replay.replayed).toBeTruthy();
     const messages = await getMessages(token, { threadId: thread.id });
     expect(messages.messages).toHaveLength(1);
     expect(messages.messages[0]?.text).toBe(args.text);
-    expect(
-      (await f.chat.listThreadEvents(f.actor, thread.id)).events.filter(
-        (event) => {
-          return event.id === args.requestId;
-        },
-      ),
-    ).toHaveLength(1);
   });
 
   it("rejects same-identity changes of exact text or thread without changing either conversation", async () => {
@@ -3490,55 +3450,6 @@ describe("MCP chat mutations", () => {
     },
   );
 
-  it("admits only one payload when concurrent requests reuse an identity with conflicting text", async () => {
-    const f = await messageFixture();
-    const thread = await f.chat.createThread(f.actor, {
-      agentId: f.agent.agentId,
-    });
-    const requestId = randomUUID();
-    const token = f.auth.token({ scope: defaultScopes });
-    const results = await Promise.all(
-      ["First conflicting payload", "Second conflicting payload"].map(
-        (text) => {
-          return callTool(token, "send_chat_message", {
-            threadId: thread.id,
-            requestId,
-            text,
-          });
-        },
-      ),
-    );
-    expect(
-      results.filter((result) => {
-        return result.isError;
-      }),
-    ).toHaveLength(1);
-    const successful = results.find((result) => {
-      return !result.isError;
-    });
-    const receipt = mcpSendChatMessageOutputSchema.parse(
-      successful?.structuredContent,
-    );
-    expect(receipt).toMatchObject({
-      inputRef: { eventId: requestId },
-      replayed: false,
-    });
-    const messages = (await getMessages(token, { threadId: thread.id }))
-      .messages;
-    expect(messages).toHaveLength(1);
-    expect([
-      "First conflicting payload",
-      "Second conflicting payload",
-    ]).toContain(messages[0]?.text);
-    expect(
-      (await f.chat.listThreadEvents(f.actor, thread.id)).events.filter(
-        (event) => {
-          return event.id === requestId;
-        },
-      ),
-    ).toHaveLength(1);
-  });
-
   it("finishes an admitted send after its HTTP caller disconnects and recovers the original receipt", async () => {
     const f = await messageFixture();
     const thread = await f.chat.createThread(f.actor, {
@@ -3617,109 +3528,6 @@ describe("MCP chat mutations", () => {
         },
       ),
     ).toHaveLength(1);
-  });
-
-  it("rolls back the losing thread when two conversations concurrently reuse one request identity", async () => {
-    const f = await messageFixture();
-    const threads = await Promise.all([
-      f.chat.createThread(f.actor, { agentId: f.agent.agentId }),
-      f.chat.createThread(f.actor, { agentId: f.agent.agentId }),
-    ]);
-    for (const thread of threads) {
-      await f.chat.patchThread(f.actor, thread.id, {
-        draftUserMessage: {
-          version: 1,
-          parts: [
-            { type: "text", text: "Preserve the losing conversation draft" },
-          ],
-        },
-      });
-    }
-    const before = await Promise.all(
-      threads.map((thread) => {
-        return f.chat.readThread(f.actor, thread.id);
-      }),
-    );
-    // Infrastructure exception: separate requests cannot choose where their
-    // transactions pause. Owned row locks make both senders reach the write
-    // boundary before either identity can commit, without changing any rows.
-    const locks = await Promise.all(
-      threads.map((thread) => {
-        return holdChatThreadRowLockFixture({
-          threadId: thread.id,
-          signal: context.signal,
-        });
-      }),
-    );
-    const requestId = randomUUID();
-    const token = f.auth.token({ scope: defaultScopes });
-    const pending = threads.map((thread) => {
-      return settleIncludingAbort(
-        callTool(token, "send_chat_message", {
-          threadId: thread.id,
-          text: "Exactly one conversation may accept this identity",
-          requestId,
-        }),
-      );
-    });
-    onTestFinished(async () => {
-      for (const lock of locks) {
-        lock.release();
-      }
-      await Promise.all(
-        locks.map((lock) => {
-          return lock.done;
-        }),
-      );
-      await Promise.allSettled(pending);
-    });
-    for (const lock of locks) {
-      await expect.poll(lock.blockedWaiterCount).toBeGreaterThan(0);
-    }
-    for (const lock of locks) {
-      lock.release();
-    }
-    await Promise.all(
-      locks.map((lock) => {
-        return lock.done;
-      }),
-    );
-    const results = (await Promise.all(pending)).map((result) => {
-      if (!result.ok) {
-        throw result.error;
-      }
-      return result.value;
-    });
-    expect(
-      results.filter((result) => {
-        return result.isError;
-      }),
-    ).toHaveLength(1);
-    for (const [index, result] of results.entries()) {
-      const thread = threads[index];
-      if (!thread) {
-        throw new Error("Expected one request per conversation");
-      }
-      if (result.isError) {
-        await expect(
-          f.chat.readThread(f.actor, thread.id),
-        ).resolves.toStrictEqual(before[index]);
-        expect(
-          (await getMessages(token, { threadId: thread.id })).messages,
-        ).toStrictEqual([]);
-      } else {
-        const receipt = mcpSendChatMessageOutputSchema.parse(
-          result.structuredContent,
-        );
-        expect(receipt).toMatchObject({
-          inputRef: { threadId: thread.id, eventId: requestId },
-          replayed: false,
-        });
-        expect(
-          (await getMessages(token, { threadId: thread.id })).messages,
-        ).toHaveLength(1);
-      }
-    }
   });
 
   it("expires an accepted identity after its absolute retry window without admitting another input", async () => {

@@ -520,6 +520,33 @@ that added `1255_retire_public_brand.sql`. Recovering past that commit requires
 a forward-fix migration that restores the columns and the old layout column
 name, not an artifact rollback.
 
+## Stripe payment-method Portal brand metadata retirement (2026-09-26)
+
+The restricted payment-method Billing Portal configuration is stored in Stripe,
+not in Postgres. The existing live Stripe account has one matching active
+configuration with `metadata.purpose=payment_method_management`, an old
+`metadata.managed_by=vm0` key and a legacy display name. The API now selects
+it by `purpose` alone; it does not select by brand or name. A fresh configuration
+writes only the purpose and uses a new brand-neutral idempotency key. An
+incomplete list or multiple matching configurations fail closed instead of
+choosing a different Portal configuration. Existing features, disabled login
+page and configuration ID are
+preserved. No database migration is needed.
+
+This code release does **not** remove Stripe's existing `managed_by` key:
+Stripe metadata updates merge omitted keys, and the old API still requires that
+key to find the same configuration. Wait until the purpose-only API is serving,
+all older API instances have drained, and the production rollback resolver
+excludes every pre-cutover API (using the first-parent main commit that adds
+`.github/rollback-floors/stripe-portal-purpose-only`). Only then update that
+same Stripe configuration in place: remove `metadata.managed_by`, rename its
+legacy display name to `Okou payment methods`, and leave
+`metadata.purpose=payment_method_management`, active status, and the restricted
+feature set unchanged. Read back the Stripe configuration and open a Portal
+session to verify that the same configuration ID remains in use and no second
+configuration was created. An older API restored outside the protected rollback
+path cannot be used after that provider update without a forward fix.
+
 ## Account erasure retirement (2026-09-25)
 
 The whole account-erasure mechanism from EPIC #33745 is removed. It will be

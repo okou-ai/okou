@@ -437,52 +437,50 @@ export async function rejectWorkflowQueueEvent(
     readonly reason: string;
   },
 ): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    // The rejected replacement is the atomic consume: it conflicts on the
-    // event's revoke edge with any concurrent claim, recall or rejection.
-    // The event owned the runnable head before launch. A user message or run
-    // may win the thread while launch is in flight, but a permanent conflict
-    // must still consume this trigger instead of making it retry later.
-    if (!(await pendingAutomationEventStillExists(tx, args))) {
-      return false;
-    }
-    const payload = await loadAutomationRejectionPayload(tx, args.eventId);
-    if (!payload) {
-      return false;
-    }
-    const userMessage =
-      payload.userMessage ??
-      (payload.workflowName === null
-        ? null
-        : createUserMessageDocument({
-            text: null,
-            nonContentPart: {
-              type: "automation",
-              workflowName: payload.workflowName,
-              ...(payload.workflowId === null
-                ? {}
-                : { workflowId: payload.workflowId }),
-              ...(payload.triggerBrief === null
-                ? {}
-                : { automationBrief: payload.triggerBrief }),
-            },
-          }));
-    if (!userMessage) {
-      return false;
-    }
-    const rejected = await replaceChatEvent(tx, args.eventId, {
-      chatThreadId: args.chatThreadId,
-      eventType: "input.rejected",
-      userMessage,
-      runId: null,
-      error: args.reason,
-      ...(payload.automationId === null
-        ? {}
-        : { automationId: payload.automationId }),
-      triggerBrief: payload.triggerBrief,
-    });
-    return rejected !== null;
+  // The rejected replacement is the atomic consume: it conflicts on the
+  // event's revoke edge with any concurrent claim, recall or rejection.
+  // The event owned the runnable head before launch. A user message or run
+  // may win the thread while launch is in flight, but a permanent conflict
+  // must still consume this trigger instead of making it retry later.
+  if (!(await pendingAutomationEventStillExists(db, args))) {
+    return false;
+  }
+  const payload = await loadAutomationRejectionPayload(db, args.eventId);
+  if (!payload) {
+    return false;
+  }
+  const userMessage =
+    payload.userMessage ??
+    (payload.workflowName === null
+      ? null
+      : createUserMessageDocument({
+          text: null,
+          nonContentPart: {
+            type: "automation",
+            workflowName: payload.workflowName,
+            ...(payload.workflowId === null
+              ? {}
+              : { workflowId: payload.workflowId }),
+            ...(payload.triggerBrief === null
+              ? {}
+              : { automationBrief: payload.triggerBrief }),
+          },
+        }));
+  if (!userMessage) {
+    return false;
+  }
+  const rejected = await replaceChatEvent(db, args.eventId, {
+    chatThreadId: args.chatThreadId,
+    eventType: "input.rejected",
+    userMessage,
+    runId: null,
+    error: args.reason,
+    ...(payload.automationId === null
+      ? {}
+      : { automationId: payload.automationId }),
+    triggerBrief: payload.triggerBrief,
   });
+  return rejected !== null;
 }
 
 export async function staleChatThreadQueueThreadIds(

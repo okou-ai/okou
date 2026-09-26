@@ -40,10 +40,7 @@ const RESTRICTED_PORTAL_CONFIGURATION = {
     subscription_update: { enabled: false },
   },
   login_page: { enabled: false },
-  metadata: {
-    managed_by: "vm0",
-    purpose: "payment_method_management",
-  },
+  metadata: { purpose: "payment_method_management" },
 } as const;
 const BYTEPLUS_ASR_FLASH_URL =
   "https://byteplus-proxy.vm0.ai/api/v3/auc/bigmodel/recognize/flash";

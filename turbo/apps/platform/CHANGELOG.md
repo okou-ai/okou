@@ -11,6 +11,13 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.970.2](https://github.com/okou-ai/okou/compare/app-v0.970.1...app-v0.970.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **platform:** normalize localized run duration spacing ([#36888](https://github.com/okou-ai/okou/issues/36888)) ([e4d86bb](https://github.com/okou-ai/okou/commit/e4d86bb912c5f9bc911a564920b5b3ecfed2f815))
+
 ## [0.970.1](https://github.com/okou-ai/okou/compare/app-v0.970.0...app-v0.970.1) (2026-09-26)
 
 

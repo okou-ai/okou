@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.213.23](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.22...runner-rs-v0.213.23) (2026-09-26)
+
+
+### Performance Improvements
+
+* **runner:** exclude release-only guest crates from native tests ([#37017](https://github.com/okou-ai/okou/issues/37017)) ([a30d899](https://github.com/okou-ai/okou/commit/a30d899c70e768349e1ff8f35b92ca56225069d5))
+
 ## [0.213.22](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.21...runner-rs-v0.213.22) (2026-09-26)
 
 
