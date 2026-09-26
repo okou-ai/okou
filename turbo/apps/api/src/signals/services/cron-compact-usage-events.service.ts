@@ -23,6 +23,8 @@ import {
 } from "../../lib/db-raw-rows";
 import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
+import { recordBillingOperationTimings } from "../external/sandbox-op-log";
+import { safeSync } from "../utils";
 import { timestampWithoutTimeZone } from "../../lib/time";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 
@@ -673,13 +675,36 @@ export const compactUsageEvents$ = command(
       durationMs: Math.round(performance.now() - startedAt),
     };
     const logicalInputRows = stats.rawRowsDeleted + stats.hourlyRowsDeleted;
-    L.debug("usage event compaction completed", {
-      ...stats,
-      logicalInputRows,
-      logicalCompressionRatio:
-        stats.hourlyRowsInserted === 0
-          ? null
-          : logicalInputRows / stats.hourlyRowsInserted,
+    // The batch has committed; telemetry failure cannot make its response
+    // ambiguous. Cancellation still propagates via safeSync.
+    safeSync(() => {
+      recordBillingOperationTimings([
+        {
+          actionType: "api_billing_usage_compaction_batch",
+          durationMs: stats.durationMs,
+          success: true,
+          dimensions: {
+            raw_seed_limit: stats.rawSeedLimit,
+            seeded_raw_rows: stats.seededRawRows,
+            selected_grains: stats.selectedGrains,
+            raw_rows_deleted: stats.rawRowsDeleted,
+            hourly_rows_deleted: stats.hourlyRowsDeleted,
+            hourly_rows_inserted: stats.hourlyRowsInserted,
+            billing_error_held_rows: stats.billingErrorHeldRows,
+            logical_input_rows: logicalInputRows,
+            logical_compression_ratio:
+              stats.hourlyRowsInserted === 0
+                ? null
+                : logicalInputRows / stats.hourlyRowsInserted,
+            has_more: stats.hasMore,
+          },
+        },
+        {
+          actionType: "api_billing_usage_compaction_lock_wait",
+          durationMs: stats.lockWaitMs,
+          success: true,
+        },
+      ]);
     });
     return stats;
   },

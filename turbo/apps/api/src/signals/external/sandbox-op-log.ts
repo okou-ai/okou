@@ -14,14 +14,21 @@ interface AxiomIngestClient {
   ) => Promise<unknown> | unknown;
 }
 
-interface SandboxOperationAttrs {
-  readonly sandboxType: "runner" | "docker" | "chat";
+interface OperationTimingAttrs {
   readonly actionType: string;
   readonly durationMs: number;
   readonly success: boolean;
-  readonly runId: string;
   readonly timestamp?: string;
   readonly dimensions?: Record<string, unknown>;
+}
+
+interface SandboxOperationAttrs extends OperationTimingAttrs {
+  readonly sandboxType: "runner" | "docker" | "chat";
+  readonly runId: string;
+}
+
+interface BillingOperationAttrs extends OperationTimingAttrs {
+  readonly operationDomain: "billing";
 }
 
 const telemetryAxiomClient = singleton((): Axiom => {
@@ -43,6 +50,23 @@ export function recordSandboxOperation(attrs: SandboxOperationAttrs): void {
 export function recordSandboxOperations(
   attrsList: readonly SandboxOperationAttrs[],
 ): void {
+  recordOperationTimings(attrsList);
+}
+
+/** Billing work shares the operation-timing dataset but has no sandbox or run. */
+export function recordBillingOperationTimings(
+  attrsList: readonly OperationTimingAttrs[],
+): void {
+  recordOperationTimings(
+    attrsList.map((attrs) => {
+      return { ...attrs, operationDomain: "billing" as const };
+    }),
+  );
+}
+
+function recordOperationTimings(
+  attrsList: readonly (SandboxOperationAttrs | BillingOperationAttrs)[],
+): void {
   if (attrsList.length === 0) {
     return;
   }
@@ -58,10 +82,11 @@ export function recordSandboxOperations(
       _time: attrs.timestamp ?? nowDate().toISOString(),
       source: "api",
       op_type: attrs.actionType,
-      sandbox_type: attrs.sandboxType,
       duration_ms: attrs.durationMs,
       success: attrs.success,
-      run_id: attrs.runId,
+      ...("operationDomain" in attrs
+        ? { operation_domain: attrs.operationDomain }
+        : { sandbox_type: attrs.sandboxType, run_id: attrs.runId }),
       ...attrs.dimensions,
     };
   });

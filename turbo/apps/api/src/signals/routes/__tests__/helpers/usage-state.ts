@@ -74,6 +74,9 @@ interface UsageEventState {
   readonly status: string;
   readonly creditsCharged: number | null;
   readonly billingError: string | null;
+  readonly allowance?: UsageAllowanceWindowPair & {
+    readonly unitsApplied: number;
+  };
 }
 
 interface UsageAllowanceWindowPair {
@@ -369,15 +372,32 @@ export const readUsageEventState$ = command(
       !response.usage_event_id ||
       !response.usage_event_status ||
       response.usage_event_credits_charged === undefined ||
-      response.usage_event_billing_error === undefined
+      response.usage_event_billing_error === undefined ||
+      response.usage_event_short_window_id === undefined ||
+      response.usage_event_weekly_window_id === undefined ||
+      response.usage_event_allowance_units === undefined
     ) {
       throw new Error("readUsageEventState$: response missing event state");
+    }
+    const shortWindowId = response.usage_event_short_window_id;
+    const weeklyWindowId = response.usage_event_weekly_window_id;
+    const unitsApplied = response.usage_event_allowance_units;
+    if (
+      (shortWindowId === null) !== (weeklyWindowId === null) ||
+      (shortWindowId === null) !== (unitsApplied === null)
+    ) {
+      throw new Error("readUsageEventState$: incomplete allowance allocation");
     }
     return {
       id: response.usage_event_id,
       status: response.usage_event_status,
       creditsCharged: response.usage_event_credits_charged,
       billingError: response.usage_event_billing_error,
+      ...(shortWindowId === null ||
+      weeklyWindowId === null ||
+      unitsApplied === null
+        ? {}
+        : { allowance: { shortWindowId, weeklyWindowId, unitsApplied } }),
     };
   },
 );

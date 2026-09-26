@@ -7,11 +7,12 @@ import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
 
+import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { usageUnderbillingFields } from "../usage-underbilling";
-import { tapError } from "../utils";
+import { safeSync, tapError } from "../utils";
 import {
   resolveUsagePricingProvider,
   usagePricingResolution$,
@@ -78,7 +79,7 @@ async function expireCredits(
   tx: WriteTx,
   orgId: string,
   at: Date,
-): Promise<number> {
+): Promise<{ readonly credits: number; readonly rows: number }> {
   const expired = await tx
     .select({
       id: creditExpiresRecord.id,
@@ -95,7 +96,7 @@ async function expireCredits(
     .for("update");
 
   if (expired.length === 0) {
-    return 0;
+    return { credits: 0, rows: 0 };
   }
 
   let totalExpired = 0;
@@ -118,7 +119,7 @@ async function expireCredits(
   }
 
   L.debug("expired credits settled", { orgId, totalExpired });
-  return totalExpired;
+  return { credits: totalExpired, rows: expired.length };
 }
 
 async function deductFromExpiresRecords(
@@ -126,9 +127,9 @@ async function deductFromExpiresRecords(
   orgId: string,
   amount: number,
   at: Date,
-): Promise<void> {
+): Promise<number> {
   if (amount <= 0) {
-    return;
+    return 0;
   }
 
   const records = await tx
@@ -160,6 +161,7 @@ async function deductFromExpiresRecords(
     left -= deduct;
   }
   // If left > 0, the excess comes from non-expiring credits — that's fine.
+  return records.length;
 }
 
 async function deductFromUsagePackCredits(
@@ -170,9 +172,9 @@ async function deductFromUsagePackCredits(
     readonly amount: number;
     readonly at: Date;
   },
-): Promise<number> {
+): Promise<{ readonly sharedCredits: number; readonly grantRows: number }> {
   if (args.amount <= 0) {
-    return 0;
+    return { sharedCredits: 0, grantRows: 0 };
   }
 
   const grants = await tx
@@ -208,13 +210,28 @@ async function deductFromUsagePackCredits(
       .where(eq(usagePackCreditGrants.id, grant.id));
     remainingCharge -= deduction;
   }
-  return remainingCharge;
+  return { sharedCredits: remainingCharge, grantRows: grants.length };
+}
+
+interface SettlementWorkObservation {
+  readonly lockWaitMs: number;
+  readonly orgLockWaitMs: number;
+  readonly settlementWorkMs: number;
+  // Standalone settlement only; inline managed callers own a larger transaction.
+  readonly transactionDurationMs?: number;
+  readonly pendingEvents: number;
+  readonly pricingRows: number;
+  readonly affectedUsers: number;
+  readonly grantRows: number;
+  readonly expiredRows: number;
+  readonly expiryRows: number;
 }
 
 export interface ProcessOrgUsageEventsResult {
   readonly sharedCreditsCharged: number;
   readonly runIds: readonly string[];
   readonly lowBalanceAlert: CreditLowBalanceAlertArgs | null;
+  readonly work: SettlementWorkObservation;
 }
 
 interface UsageEventRecord {
@@ -374,16 +391,77 @@ async function markUsageEventsProcessed(
     .where(eq(usageEvent.id, sql`settlement.usage_event_id`));
 }
 
+function completedSettlementWork(
+  work: SettlementWorkObservation,
+  startedAt: number,
+): SettlementWorkObservation {
+  return {
+    ...work,
+    settlementWorkMs: Math.round(performance.now() - startedAt),
+  };
+}
+
+async function settleMemberGrants(
+  tx: WriteTx,
+  orgId: string,
+  charges: ReadonlyMap<string, number>,
+  at: Date,
+): Promise<{ readonly sharedCredits: number; readonly grantRows: number }> {
+  let sharedCredits = 0;
+  let grantRows = 0;
+  const sortedCharges = [...charges.entries()].sort(([left], [right]) => {
+    return left.localeCompare(right);
+  });
+  for (const [userId, amount] of sortedCharges) {
+    const deduction = await deductFromUsagePackCredits(tx, {
+      orgId,
+      userId,
+      amount,
+      at,
+    });
+    sharedCredits += deduction.sharedCredits;
+    grantRows += deduction.grantRows;
+  }
+  return { sharedCredits, grantRows };
+}
+
+async function acquireSettlementLocksWithObservation(
+  tx: WriteTx,
+  orgId: string,
+) {
+  // Count already-read rows, not additional queries under the financial lock.
+  // Inline managed callers may have taken these locks before this function.
+  const startedAt = performance.now();
+  await lockUsageEventCompaction(tx, "shared");
+  const compactionLockAcquiredAt = performance.now();
+  await lockOrgCredits(tx, orgId);
+  const orgLockAcquiredAt = performance.now();
+  return {
+    startedAt,
+    work: {
+      lockWaitMs: Math.round(compactionLockAcquiredAt - startedAt),
+      orgLockWaitMs: Math.round(orgLockAcquiredAt - compactionLockAcquiredAt),
+      settlementWorkMs: 0,
+      pendingEvents: 0,
+      pricingRows: 0,
+      affectedUsers: 0,
+      grantRows: 0,
+      expiredRows: 0,
+      expiryRows: 0,
+    },
+  };
+}
+
 export async function processOrgUsageEventsInTransaction(
   tx: WriteTx,
   orgId: string,
   pricingResolution: UsagePricingResolution,
   signal: AbortSignal,
 ): Promise<ProcessOrgUsageEventsResult> {
-  // Maintenance must drain settlement before taking ledger or Run locks.
-  // Share this admission across orgs, and take it before the credit lock.
-  await lockUsageEventCompaction(tx, "shared");
-  await lockOrgCredits(tx, orgId);
+  const { startedAt, work } = await acquireSettlementLocksWithObservation(
+    tx,
+    orgId,
+  );
 
   const pendingRecords = await tx
     .select({
@@ -404,11 +482,13 @@ export async function processOrgUsageEventsInTransaction(
     .from(usageEvent)
     .where(and(eq(usageEvent.orgId, orgId), eq(usageEvent.status, "pending")));
 
+  work.pendingEvents = pendingRecords.length;
   if (pendingRecords.length === 0) {
     return {
       sharedCreditsCharged: 0,
       runIds: [],
       lowBalanceAlert: null,
+      work: completedSettlementWork(work, startedAt),
     };
   }
   const runIds = [
@@ -420,6 +500,7 @@ export async function processOrgUsageEventsInTransaction(
   ];
 
   const pricingRecords = await tx.select().from(usagePricing);
+  work.pricingRows = pricingRecords.length;
   const pricedEvents = priceUsageEvents(
     pendingRecords,
     pricingRecords,
@@ -458,31 +539,27 @@ export async function processOrgUsageEventsInTransaction(
   signal.throwIfAborted();
 
   const settlementTime = nowDate();
-  let sharedCreditsCharged = 0;
-  const memberCharges = [...billableCreditsByUser.entries()].sort(
-    ([leftUserId], [rightUserId]) => {
-      return leftUserId.localeCompare(rightUserId);
-    },
+  work.affectedUsers = billableCreditsByUser.size;
+  const grantDeduction = await settleMemberGrants(
+    tx,
+    orgId,
+    billableCreditsByUser,
+    settlementTime,
   );
-  for (const [userId, amount] of memberCharges) {
-    sharedCreditsCharged += await deductFromUsagePackCredits(tx, {
-      orgId,
-      userId,
-      amount,
-      at: settlementTime,
-    });
-  }
+  const sharedCreditsCharged = grantDeduction.sharedCredits;
+  work.grantRows = grantDeduction.grantRows;
   signal.throwIfAborted();
 
   let lowBalanceAlert: CreditLowBalanceAlertArgs | null = null;
   if (sharedCreditsCharged > 0) {
     // Order matters: settle expired credits BEFORE the new deduction.
     const beforeCredits = await getOrgCredits(tx, orgId);
-    const totalExpired = await expireCredits(tx, orgId, settlementTime);
-    const effectiveBeforeCredits = Math.max(beforeCredits - totalExpired, 0);
+    const expired = await expireCredits(tx, orgId, settlementTime);
+    work.expiredRows = expired.rows;
+    const effectiveBeforeCredits = Math.max(beforeCredits - expired.credits, 0);
     await deductOrgCredits(tx, orgId, sharedCreditsCharged);
     const afterCredits = await getOrgCredits(tx, orgId);
-    await deductFromExpiresRecords(
+    work.expiryRows = await deductFromExpiresRecords(
       tx,
       orgId,
       sharedCreditsCharged,
@@ -500,7 +577,12 @@ export async function processOrgUsageEventsInTransaction(
     }
   }
   signal.throwIfAborted();
-  return { sharedCreditsCharged, runIds, lowBalanceAlert };
+  return {
+    sharedCreditsCharged,
+    runIds,
+    lowBalanceAlert,
+    work: completedSettlementWork(work, startedAt),
+  };
 }
 
 export const completeProcessedOrgUsage$ = command(
@@ -515,6 +597,55 @@ export const completeProcessedOrgUsage$ = command(
     const { orgId, result } = args;
     const { sharedCreditsCharged, runIds, lowBalanceAlert } = result;
     signal.throwIfAborted();
+    // Postcommit only: a rollback is not reported as a completed settlement.
+    // No org, user, run or event ID is sent with these timing operations.
+    if (result.work.pendingEvents > 0) {
+      // The ledger has committed. Best-effort telemetry must not turn its
+      // receipt into a failed response; safeSync still propagates cancellation.
+      safeSync(() => {
+        const work = result.work;
+        const timingScope =
+          work.transactionDurationMs === undefined ? "inline" : "standalone";
+        recordBillingOperationTimings([
+          {
+            actionType: "api_billing_settlement_work",
+            durationMs: work.settlementWorkMs,
+            success: true,
+            dimensions: {
+              timing_scope: timingScope,
+              pending_events: work.pendingEvents,
+              pricing_rows: work.pricingRows,
+              affected_users: work.affectedUsers,
+              grant_rows: work.grantRows,
+              expired_rows: work.expiredRows,
+              expiry_rows: work.expiryRows,
+            },
+          },
+          {
+            actionType: "api_billing_settlement_compaction_lock_wait",
+            durationMs: work.lockWaitMs,
+            success: true,
+            dimensions: { timing_scope: timingScope },
+          },
+          {
+            actionType: "api_billing_settlement_org_lock_wait",
+            durationMs: work.orgLockWaitMs,
+            success: true,
+            dimensions: { timing_scope: timingScope },
+          },
+          ...(work.transactionDurationMs === undefined
+            ? []
+            : [
+                {
+                  actionType: "api_billing_settlement_transaction",
+                  durationMs: work.transactionDurationMs,
+                  success: true,
+                  dimensions: { timing_scope: "standalone" },
+                },
+              ]),
+        ]);
+      });
+    }
 
     if (sharedCreditsCharged > 0) {
       // Auto-recharge runs OUTSIDE the deduction transaction (Stripe
@@ -560,6 +691,7 @@ export const processOrgUsageEvents$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const writeDb = set(writeDb$);
     const pricingResolution = get(usagePricingResolution$);
+    const transactionStartedAt = performance.now();
     const result = await writeDb.transaction((tx) => {
       return processOrgUsageEventsInTransaction(
         tx,
@@ -569,6 +701,16 @@ export const processOrgUsageEvents$ = command(
       );
     });
     signal.throwIfAborted();
-    await set(completeProcessedOrgUsage$, { orgId, result }, signal);
+    const transactionDurationMs = Math.round(
+      performance.now() - transactionStartedAt,
+    );
+    await set(
+      completeProcessedOrgUsage$,
+      {
+        orgId,
+        result: { ...result, work: { ...result.work, transactionDurationMs } },
+      },
+      signal,
+    );
   },
 );

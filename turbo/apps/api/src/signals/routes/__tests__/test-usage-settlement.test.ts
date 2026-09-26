@@ -7,6 +7,7 @@ import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { clearMockNow, mockNow, nowDate } from "../../../lib/time";
 import {
   createUsagePricingFixture,
   deleteUsagePricingRows,
@@ -166,6 +167,11 @@ describe("POST /api/test/usage-settlement/process", () => {
     );
 
     expect(response.body).toBe("Not found");
+    const rollback = await accept(
+      client().rollback({ body: { org_id: "org_test" } }),
+      [404],
+    );
+    expect(rollback.body).toBe("Not found");
   });
 
   it("prices every usage event from server-side pricing", async () => {
@@ -475,33 +481,37 @@ describe("POST /api/test/usage-settlement/process", () => {
     const lateBonusKey = `bonus-late-${randomUUID()}`;
     const earlyPurchasedKey = `purchased-early-${randomUUID()}`;
     const latePurchasedKey = `purchased-late-${randomUUID()}`;
+    const expiryBase = nowDate().getTime();
+    const futureExpiry = (days: number): string => {
+      return new Date(expiryBase + days * 86_400_000).toISOString();
+    };
     await createGrant({
       fixture,
       grantType: "bonus",
       idempotencyKey: earlyBonusKey,
       amount: 5,
-      expiresAt: "2028-01-01T00:00:00.000Z",
+      expiresAt: futureExpiry(365),
     });
     await createGrant({
       fixture,
       grantType: "bonus",
       idempotencyKey: lateBonusKey,
       amount: 6,
-      expiresAt: "2031-01-01T00:00:00.000Z",
+      expiresAt: futureExpiry(1460),
     });
     await createGrant({
       fixture,
       grantType: "purchased",
       idempotencyKey: latePurchasedKey,
       amount: 4,
-      expiresAt: "2030-01-01T00:00:00.000Z",
+      expiresAt: futureExpiry(1095),
     });
     await createGrant({
       fixture,
       grantType: "purchased",
       idempotencyKey: earlyPurchasedKey,
       amount: 3,
-      expiresAt: "2029-01-01T00:00:00.000Z",
+      expiresAt: futureExpiry(730),
     });
 
     await insertCharge({ fixture, provider, amount: 5 });
@@ -706,6 +716,158 @@ describe("POST /api/test/usage-settlement/process", () => {
     await expect(
       store.set(readUsageEventState$, eventKey, context.signal),
     ).resolves.toMatchObject({ status: "processed", creditsCharged: 10 });
+  });
+
+  it("rolls back a precommit failure and settles the pending obligation on retry", async () => {
+    const fixture = await setupSettlementFixture(20);
+    const provider = await seedSettlementPricing();
+    const grantKey = `rollback-${randomUUID()}`;
+    await createGrant({
+      fixture,
+      grantType: "purchased",
+      idempotencyKey: grantKey,
+      amount: 5,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    const eventKey = await insertCharge({
+      fixture,
+      provider,
+      amount: 8,
+    });
+
+    // No production caller can intentionally fail after the wallet writes but
+    // before COMMIT; the guarded test endpoint injects that fault through the
+    // real transaction, rather than mocking the ledger or reading DB rows.
+    const aborted = await accept(
+      client().rollback({ body: { org_id: fixture.orgId } }),
+      [200],
+    );
+    expect(aborted.body).toStrictEqual({ rolled_back: true });
+    await expect(
+      store.set(readUsageEventState$, eventKey, context.signal),
+    ).resolves.toMatchObject({
+      status: "pending",
+      creditsCharged: null,
+    });
+    const afterAbort = await readSettlementState(fixture.orgId);
+    expect(afterAbort.body.org_credits).toBe(20);
+    expect(afterAbort.body.grants[0]?.remaining_amount).toBe(5);
+
+    await processSettlement(fixture.orgId);
+    await expect(
+      store.set(readUsageEventState$, eventKey, context.signal),
+    ).resolves.toMatchObject({ status: "processed", creditsCharged: 8 });
+    const afterRetry = await readSettlementState(fixture.orgId);
+    expect(afterRetry.body.org_credits).toBe(17);
+    expect(afterRetry.body.grants[0]?.remaining_amount).toBe(0);
+  });
+
+  it("uses live unsnapshotted pricing and grant expiry on delayed first settlement", async () => {
+    onTestFinished(clearMockNow);
+    const before = nowDate();
+    mockNow(before);
+    const fixture = await setupSettlementFixture(100);
+    const provider = `settlement-late-${randomUUID()}`;
+    await seedUsagePricingRows([
+      {
+        kind: "model",
+        provider,
+        category: "tokens.input",
+        unitPrice: 1,
+        unitSize: 1,
+      },
+    ]);
+    onTestFinished(async () => {
+      await deleteUsagePricingRows({
+        kind: "model",
+        provider,
+        categories: ["tokens.input"],
+      });
+    });
+    const eventKey = await insertCharge({
+      fixture,
+      provider,
+      amount: 3,
+    });
+    const grantKey = `expires-before-first-settlement-${randomUUID()}`;
+    await createGrant({
+      fixture,
+      grantType: "purchased",
+      idempotencyKey: grantKey,
+      amount: 20,
+      expiresAt: new Date(
+        before.getTime() + 2 * 24 * 60 * 60 * 1000,
+      ).toISOString(),
+    });
+    // The event was incurred while the grant and original price were active;
+    // it has not been committed, so neither is frozen for the first retry.
+    mockNow(new Date(before.getTime() + 8 * 24 * 60 * 60 * 1000));
+    await seedUsagePricingRows([
+      {
+        kind: "model",
+        provider,
+        category: "tokens.input",
+        unitPrice: 4,
+        unitSize: 1,
+      },
+    ]);
+    await processSettlement(fixture.orgId);
+
+    await expect(
+      store.set(readUsageEventState$, eventKey, context.signal),
+    ).resolves.toMatchObject({ status: "processed", creditsCharged: 12 });
+    const state = await readSettlementState(fixture.orgId);
+    expect(state.body.org_credits).toBe(88);
+    expect(state.body.grants).toHaveLength(1);
+    expect(state.body.grants[0]).toMatchObject({
+      idempotency_key: grantKey,
+      remaining_amount: 20,
+    });
+  });
+
+  it("recovers the committed charge across a late settlement retry without another debit", async () => {
+    onTestFinished(clearMockNow);
+    const before = nowDate();
+    mockNow(before);
+    const fixture = await setupSettlementFixture(100);
+    const provider = await seedSettlementPricing();
+    const idempotencyKey = await insertCharge({
+      fixture,
+      provider,
+      amount: 12,
+    });
+    const purchasedKey = `retry-${randomUUID()}`;
+    await createGrant({
+      fixture,
+      grantType: "purchased",
+      idempotencyKey: purchasedKey,
+      amount: 4,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    // The first successful transaction has committed, but the original
+    // caller may have lost its HTTP acknowledgement. A later retry must
+    // find the same processed event rather than settle a second charge.
+    await processSettlement(fixture.orgId);
+    const first = await store.set(
+      readUsageEventState$,
+      idempotencyKey,
+      context.signal,
+    );
+    const firstFunds = await readSettlementState(fixture.orgId);
+    expect(first).toMatchObject({ status: "processed", creditsCharged: 12 });
+    expect(firstFunds.body.org_credits).toBe(92);
+    expect(firstFunds.body.grants[0]?.remaining_amount).toBe(0);
+
+    mockNow(new Date(before.getTime() + 8 * 24 * 60 * 60 * 1000));
+    await processSettlement(fixture.orgId);
+    const replay = await store.set(
+      readUsageEventState$,
+      idempotencyKey,
+      context.signal,
+    );
+    const replayFunds = await readSettlementState(fixture.orgId);
+    expect(replay).toStrictEqual(first);
+    expect(replayFunds.body).toStrictEqual(firstFunds.body);
   });
 
   it("keeps switch-off organizations without allocations on shared credits", async () => {

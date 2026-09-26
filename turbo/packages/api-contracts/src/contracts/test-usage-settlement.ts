@@ -35,6 +35,17 @@ export const testUsageSettlementContract = c.router({
     },
     summary: "Process one organization's usage in API tests",
   },
+  rollback: {
+    method: "POST",
+    path: "/api/test/usage-settlement/rollback",
+    body: testUsageSettlementRequestSchema,
+    responses: {
+      200: z.object({ rolled_back: z.literal(true) }),
+      400: apiErrorSchema,
+      404: z.string(),
+    },
+    summary: "Inject a precommit usage settlement rollback in API tests",
+  },
   setup: {
     method: "POST",
     path: "/api/test/usage-settlement/setup",

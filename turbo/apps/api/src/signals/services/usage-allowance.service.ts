@@ -21,6 +21,8 @@ import {
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { recordBillingOperationTimings } from "../external/sandbox-op-log";
+import { safeSync } from "../utils";
 import { getStripeClient } from "../external/stripe-client";
 
 type UsageAllowanceStore = Pick<Db, "execute" | "insert" | "select" | "update">;
@@ -616,17 +618,34 @@ export async function resolveUsageAllowanceAvailability(
   db: Db,
   orgId: string,
 ): Promise<UsageAllowanceAvailability | null> {
-  return await db.transaction(async (tx) => {
-    return await resolveUsageAllowanceAvailabilityInTransaction(tx, orgId);
+  const startedAt = performance.now();
+  let lockWaitMs = 0;
+  const availability = await db.transaction(async (tx) => {
+    const lockStartedAt = performance.now();
+    await lockOrgCredits(tx, orgId);
+    lockWaitMs = Math.round(performance.now() - lockStartedAt);
+    return await resolveUsageAllowanceAvailabilityForLockedOrg(tx, orgId);
   });
-}
-
-async function resolveUsageAllowanceAvailabilityInTransaction(
-  tx: UsageAllowanceStore,
-  orgId: string,
-): Promise<UsageAllowanceAvailability | null> {
-  await lockOrgCredits(tx, orgId);
-  return await resolveUsageAllowanceAvailabilityForLockedOrg(tx, orgId);
+  // This measures the advisory read including COMMIT; it does not claim
+  // the later authoritative admission was accepted under the same lock.
+  // Advisory availability already committed; telemetry failure cannot deny
+  // admission. Cancellation still propagates via safeSync.
+  safeSync(() => {
+    recordBillingOperationTimings([
+      {
+        actionType: "api_billing_allowance_availability",
+        durationMs: Math.round(performance.now() - startedAt),
+        success: true,
+        dimensions: { available: availability !== null },
+      },
+      {
+        actionType: "api_billing_allowance_org_lock_wait",
+        durationMs: lockWaitMs,
+        success: true,
+      },
+    ]);
+  });
+  return availability;
 }
 
 export async function resolveUsageAllowanceAvailabilityForLockedOrg(

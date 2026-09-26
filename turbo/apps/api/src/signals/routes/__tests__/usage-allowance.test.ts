@@ -27,7 +27,11 @@ import {
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
 } from "./helpers/runtime-state";
 import { encryptSecretForTests } from "./helpers/encrypt-secret";
-import { deleteRun$ } from "./helpers/usage-state";
+import {
+  deleteRun$,
+  insertUsageEvent$,
+  readUsageEventState$,
+} from "./helpers/usage-state";
 import {
   generatedStripeCustomerId,
   postUsageAllowanceInvoicePaid,
@@ -161,7 +165,7 @@ async function recordPendingUsageEvents(args: {
   readonly runId: string;
   readonly provider: string;
   readonly quantities: readonly number[];
-}): Promise<void> {
+}): Promise<readonly string[]> {
   const api = createRunsApi(context);
   const webhooks = createWebhookCallbackApi(context);
   await seedUsagePricingRows([
@@ -173,24 +177,25 @@ async function recordPendingUsageEvents(args: {
       unitSize: 1,
     },
   ]);
+  const events = args.quantities.map((quantity) => {
+    return {
+      idempotencyKey: randomUUID(),
+      kind: "connector" as const,
+      provider: args.provider,
+      category: "credits",
+      quantity,
+    };
+  });
   await webhooks.requestAgentUsageEvent(
-    {
-      runId: args.runId,
-      events: args.quantities.map((quantity) => {
-        return {
-          idempotencyKey: randomUUID(),
-          kind: "connector",
-          provider: args.provider,
-          category: "credits",
-          quantity,
-        };
-      }),
-    },
+    { runId: args.runId, events },
     {
       authorization: `Bearer ${api.sandboxTokenForRun(args.actor, args.runId)}`,
     },
     [200],
   );
+  return events.map((event) => {
+    return event.idempotencyKey;
+  });
 }
 
 async function recordPendingUsage(args: {
@@ -198,13 +203,18 @@ async function recordPendingUsage(args: {
   readonly runId: string;
   readonly provider: string;
   readonly quantity: number;
-}): Promise<void> {
-  await recordPendingUsageEvents({
+}): Promise<string> {
+  const keys = await recordPendingUsageEvents({
     actor: args.actor,
     runId: args.runId,
     provider: args.provider,
     quantities: [args.quantity],
   });
+  const key = keys[0];
+  if (!key) {
+    throw new Error("Expected a pending usage event key");
+  }
+  return key;
 }
 
 async function processOrgUsageEvents(actor: ApiTestUser): Promise<void> {
@@ -1019,8 +1029,11 @@ describe("Usage Allowance", () => {
     const canceledAt = addHours(startedAt, 1);
     mockNow(canceledAt);
     await cancelUsageAllowanceSubscription(orgId);
+    // The old run's already-issued windows remain the allowance authority even
+    // when the first charge is settled well after both window lengths.
+    mockNow(addDays(startedAt, 8));
     const provider = usageProvider();
-    await recordPendingUsage({
+    const key = await recordPendingUsage({
       actor,
       runId: run.runId,
       provider,
@@ -1031,6 +1044,205 @@ describe("Usage Allowance", () => {
 
     await expect(readOrgCredits(actor)).resolves.toBe(100);
     await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
+    await expect(
+      createStore().set(readUsageEventState$, key, context.signal),
+    ).resolves.toMatchObject({
+      status: "processed",
+      creditsCharged: 0,
+      allowance: {
+        shortWindowId: expect.any(String),
+        weeklyWindowId: expect.any(String),
+        unitsApplied: 80,
+      },
+    });
+  });
+
+  it("reports late first settlement in the new period while retaining old-window allowance and old receipts", async () => {
+    onTestFinished(clearMockNow);
+    // The current reporting reader rounds period bounds up to full hours.
+    // Use a whole-hour boundary; document the fractional-hour gap separately.
+    const startedAt = new Date(
+      Math.floor(nowDate().getTime() / 3_600_000) * 3_600_000,
+    );
+    mockNow(startedAt);
+    const { actor, orgId, agentId } = await builtInAllowanceActor({
+      credits: 100,
+      allowance: { shortWindowUnits: 100, weeklyWindowUnits: 200 },
+    });
+    const run = await createBuiltInRun(
+      actor,
+      agentId,
+      "issued windows survive period rollover",
+    );
+    const provider = usageProvider();
+    const priorKey = await recordPendingUsage({
+      actor,
+      runId: run.runId,
+      provider,
+      quantity: 10,
+    });
+    await processOrgUsageEvents(actor);
+    const billing = createBillingMediaApi(context);
+    const oldPeriod = await billing.readUsageRecord(actor, "billingPeriod");
+    expect(oldPeriod.body.period).toStrictEqual({
+      start: startedAt.toISOString(),
+      end: addDays(startedAt, 365).toISOString(),
+    });
+    expect(oldPeriod.body.totalCredits).toBe(10);
+    const priorEvent = await createStore().set(
+      readUsageEventState$,
+      priorKey,
+      context.signal,
+    );
+    expect(priorEvent).toMatchObject({
+      status: "processed",
+      creditsCharged: 0,
+      allowance: {
+        shortWindowId: expect.any(String),
+        weeklyWindowId: expect.any(String),
+        unitsApplied: 10,
+      },
+    });
+    if (!priorEvent.allowance) {
+      throw new Error("Expected old run's issued allowance windows");
+    }
+
+    mockNow(addHours(startedAt, 1));
+    const lateKey = await recordPendingUsage({
+      actor,
+      runId: run.runId,
+      provider,
+      quantity: 20,
+    });
+    // An owned invoice fixture rolls the billing-period start forward without
+    // deleting the windows that were issued to the earlier run.
+    const nextPeriod = addDays(startedAt, 8);
+    mockNow(nextPeriod);
+    await postUsageAllowanceInvoicePaid(context.signal, {
+      orgId,
+      userId: actor.userId,
+      customerId: generatedStripeCustomerId(),
+      subscriptionId: usageAllowanceSubscriptionId(orgId),
+      effectiveAt: nextPeriod,
+      expiresAt: addDays(nextPeriod, 365),
+      shortWindowSeconds: 5 * 60 * 60,
+      shortWindowUnits: 100,
+      weeklyWindowSeconds: 7 * 24 * 60 * 60,
+      weeklyWindowUnits: 200,
+    });
+    await processOrgUsageEvents(actor);
+    const newPeriod = await billing.readUsageRecord(actor, "billingPeriod");
+    expect(newPeriod.body.period?.start).toBe(nextPeriod.toISOString());
+    expect(newPeriod.body.totalCredits).toBe(20);
+    await expect(readOrgCredits(actor)).resolves.toBe(100);
+    const lateEvent = await createStore().set(
+      readUsageEventState$,
+      lateKey,
+      context.signal,
+    );
+    expect(lateEvent).toMatchObject({ status: "processed", creditsCharged: 0 });
+    expect(lateEvent.allowance).toStrictEqual({
+      shortWindowId: priorEvent.allowance.shortWindowId,
+      weeklyWindowId: priorEvent.allowance.weeklyWindowId,
+      unitsApplied: 20,
+    });
+
+    // Reprocessing after the successful commit must neither move the old row
+    // into the new period nor charge the already processed late event twice.
+    await processOrgUsageEvents(actor);
+    const replay = await billing.readUsageRecord(actor, "billingPeriod");
+    expect(replay.body.totalCredits).toBe(20);
+    await expect(readOrgCredits(actor)).resolves.toBe(100);
+  });
+
+  it("does not recreate a missing old window after entitlement cancellation", async () => {
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const startedAt = nowDate();
+    mockNow(startedAt);
+    const { actor, orgId, agentId } = await builtInAllowanceActor({
+      credits: 100,
+      allowance: { shortWindowUnits: 100, weeklyWindowUnits: 200 },
+    });
+    const api = createRunsApi(context);
+    api.acceptStorageDownloads();
+    api.acceptTelemetryIngest();
+    await api.ensureOrgModelProvider(actor);
+    // A BYOK run starts during entitlement but does not issue built-in
+    // allowance windows at admission. First settlement must not backdate one.
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "run before canceled entitlement without issued windows",
+      modelProvider: "anthropic-api-key",
+    });
+    mockNow(addHours(startedAt, 1));
+    await cancelUsageAllowanceSubscription(orgId);
+    mockNow(addDays(startedAt, 8));
+    const key = await recordPendingUsage({
+      actor,
+      runId: run.runId,
+      provider: usageProvider(),
+      quantity: 80,
+    });
+
+    await processOrgUsageEvents(actor);
+
+    await expect(readOrgCredits(actor)).resolves.toBe(20);
+    await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
+    const event = await createStore().set(
+      readUsageEventState$,
+      key,
+      context.signal,
+    );
+    expect(event).toMatchObject({ status: "processed", creditsCharged: 80 });
+    expect(event.allowance).toBeUndefined();
+  });
+
+  it("uses the original occurrence for runless legacy pending usage on late first settlement", async () => {
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const startedAt = nowDate();
+    mockNow(startedAt);
+    const { actor, orgId } = await builtInAllowanceActor({
+      credits: 100,
+      allowance: { shortWindowUnits: 100, weeklyWindowUnits: 200 },
+    });
+    const provider = usageProvider();
+    await seedUsagePricingRows([
+      {
+        kind: "connector",
+        provider,
+        category: "credits",
+        unitPrice: 1,
+        unitSize: 1,
+      },
+    ]);
+    const idempotencyKey = randomUUID();
+    await createStore().set(
+      insertUsageEvent$,
+      {
+        orgId,
+        userId: actor.userId,
+        runId: null,
+        kind: "connector",
+        provider,
+        category: "credits",
+        quantity: 80,
+        idempotencyKey,
+        createdAt: startedAt,
+      },
+      context.signal,
+    );
+    mockNow(addDays(startedAt, 8));
+
+    await processOrgUsageEvents(actor);
+
+    await expect(readOrgCredits(actor)).resolves.toBe(100);
+    await expect(
+      createStore().set(readUsageEventState$, idempotencyKey, context.signal),
+    ).resolves.toMatchObject({ status: "processed", creditsCharged: 0 });
   });
 
   it("does not apply existing allowance windows after entitlement is canceled", async () => {
