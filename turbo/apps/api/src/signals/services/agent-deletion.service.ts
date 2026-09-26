@@ -7,12 +7,13 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { conflict } from "../../lib/error";
+import { logger } from "../../lib/log";
 import { isLockNotAvailable } from "../../lib/pg-errors";
 import { testOverride } from "../../lib/singleton";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
@@ -38,6 +39,11 @@ import {
   revokeMorningBriefNativeAuthority,
 } from "./morning-brief-native-schedule.service";
 import { nowDate } from "../../lib/time";
+import { appendChatThreadEvent } from "./chat-thread-event.service";
+
+const log = logger("api:agent-deletion");
+const THREAD_DELETION_READ_PAGE_SIZE = 500;
+const THREAD_DELETION_EVENT_BATCH_SIZE = 16;
 
 export function agentExistsInOrg(args: {
   readonly orgId: string;
@@ -322,9 +328,90 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   };
 }
 
+async function readAgentThreadEventOwners(
+  db: Pick<Db, "select">,
+  agentId: string,
+  orgId: string,
+): Promise<readonly { id: string; userId: string; orgId: string }[]> {
+  const owners: { id: string; userId: string; orgId: string }[] = [];
+  let afterId: string | null = null;
+  for (;;) {
+    const page = await db
+      .select({ id: chatThreads.id, userId: chatThreads.userId })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.agentId, agentId),
+          afterId === null ? undefined : gt(chatThreads.id, afterId),
+        ),
+      )
+      .orderBy(asc(chatThreads.id))
+      .limit(THREAD_DELETION_READ_PAGE_SIZE);
+    owners.push(
+      ...page.map((thread) => {
+        return { ...thread, orgId };
+      }),
+    );
+    const last = page.at(-1);
+    if (!last || page.length < THREAD_DELETION_READ_PAGE_SIZE) {
+      break;
+    }
+    afterId = last.id;
+  }
+  return owners;
+}
+
+/** Best-effort lifecycle notifications, never part of the Agent's deletion transaction. */
+async function appendDeletedAgentThreadEvents(
+  db: Db,
+  agentId: string,
+  owners: readonly { id: string; userId: string; orgId: string }[],
+): Promise<void> {
+  for (
+    let offset = 0;
+    offset < owners.length;
+    offset += THREAD_DELETION_EVENT_BATCH_SIZE
+  ) {
+    const batch = owners.slice(
+      offset,
+      offset + THREAD_DELETION_EVENT_BATCH_SIZE,
+    );
+    const results = await Promise.allSettled(
+      batch.map(async (thread) => {
+        await appendChatThreadEvent(db, {
+          kind: "deleted",
+          userId: thread.userId,
+          orgId: thread.orgId,
+          chatThreadId: thread.id,
+          agentId,
+        });
+      }),
+    );
+    const failed = results.filter((result) => {
+      return result.status === "rejected";
+    });
+    if (failed.length > 0) {
+      log.error("Failed to append deleted Agent thread events", {
+        agentId,
+        offset,
+        failed: failed.length,
+        error: failed[0]?.reason,
+      });
+    }
+  }
+}
+
 export const deleteAgentById$ = command(
   async ({ set }, args: DeleteAgentArgs, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
+    // The cascade destroys these rows. Read them in bounded keyset pages
+    // before it starts; a concurrent creation missed by this read is tolerated.
+    const threadEventOwners = await readAgentThreadEventOwners(
+      writeDb,
+      args.agentId,
+      args.orgId,
+    );
+    signal.throwIfAborted();
 
     const transaction = await settle(
       writeDb.transaction(async (tx) => {
@@ -341,6 +428,13 @@ export const deleteAgentById$ = command(
     const result = transaction.value;
     if (result.kind === "deleted") {
       logCommittedConversationDeletion("agent", result.conversationDeletion);
+      // Single-statement appends run only after the delete commits. An event
+      // failure must not retry or roll back the already committed deletion.
+      await appendDeletedAgentThreadEvents(
+        writeDb,
+        args.agentId,
+        threadEventOwners,
+      );
     }
     signal.throwIfAborted();
 

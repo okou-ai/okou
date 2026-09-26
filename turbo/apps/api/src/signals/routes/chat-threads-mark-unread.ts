@@ -19,27 +19,37 @@ const markUnreadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const writeDb = set(writeDb$);
 
+  // One single-row UPDATE outside any transaction, then a primary-key read of
+  // the Agent's organization for the publication. Like mark-read, the route
+  // keeps its user-only authorization, and clearing stays unconditional so a
+  // repeated request keeps its success and publication.
   const [cleared] = await writeDb
     .update(chatThreads)
     .set({ lastReadAt: null })
-    .from(agents)
     .where(
       and(
         eq(chatThreads.id, params.id),
         eq(chatThreads.userId, auth.userId),
-        eq(agents.id, chatThreads.agentId),
         isNotNull(chatThreads.agentId),
       ),
     )
-    .returning({ agentId: agents.id, orgId: agents.orgId });
+    .returning({ agentId: chatThreads.agentId });
   signal.throwIfAborted();
-
-  if (!cleared) {
+  if (!cleared?.agentId) {
+    return notFound("Chat thread not found");
+  }
+  const [agent] = await writeDb
+    .select({ orgId: agents.orgId })
+    .from(agents)
+    .where(eq(agents.id, cleared.agentId))
+    .limit(1);
+  signal.throwIfAborted();
+  if (!agent) {
     return notFound("Chat thread not found");
   }
 
   await publishChatThreadReadCursorUpdatedSafely(
-    { userId: auth.userId, orgId: cleared.orgId },
+    { userId: auth.userId, orgId: agent.orgId },
     {
       threadId: params.id,
       agentId: cleared.agentId,

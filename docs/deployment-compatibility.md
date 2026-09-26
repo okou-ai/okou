@@ -2,13 +2,15 @@
 
 ## Computer Use audit column and inline screenshot reader contraction (2026-09-25)
 
-Migration `1256_drop_computer_use_audit_approval_outcome` drops only
+Migration `1258_drop_computer_use_audit_approval_outcome` drops only
 `computer_use_command_audit_events.approval_outcome`. The audit-list query was
 narrowed in canonical main commit `41cc9918` (#36960); no current writer sets
 this column and no API response includes it. The production API target
 `4ecb619b` contains that commit: its production promotion completed at
-2026-09-25 23:13:47 UTC (release run `36198938622`), and Vercel's production
-alias points to that target. Outgoing pre-reader API traffic must be drained
+2026-09-25 23:13:47 UTC (release run `36198938622`). Subsequently, release
+`36206008702` promoted API target `191d95c5` at 2026-09-26 00:50:52 UTC
+and completed `deploy-api-schema` at 00:51:03 UTC; the Vercel production
+deployment reports that SHA. Outgoing pre-reader API traffic must be drained
 before this migration runs. The temporary production-derived Neon branch taken
 at 22:33:06 UTC had 11,258 audit rows with 0 non-null values; a fresh masked
 production aggregate subsequently counted 0 non-null values out of 11,248.
@@ -37,6 +39,34 @@ for host FK checks, while `created` supports created-time scans; retain both
 normal indexes and the partial unique running-host index. Production index
 usage counters were not obtained and remain unknown. The temporary branch
 `br-frosty-mouse-afgo16gt` was deleted after read-only evidence collection.
+
+## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
+
+**Draft columns and owner key.** Migration `1257_drop_chat_thread_draft_columns` drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`, and makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.
+
+`PATCH /api/chat-threads/:id` no longer reads the thread. It upserts or deletes the caller's own row and always returns `204`; the contract no longer declares `404`. A write to a missing or foreign thread lands in a row keyed to the caller that nobody else reads.
+
+**Rollback floor: `7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38`** (#36932). Older APIs name the dropped columns in thread inserts or upsert `ON CONFLICT (chat_thread_id)`. The resolver enforces this floor. #36932 entered production in release #36941 before this contraction. The account-erasure retirement below also independently prohibits rolling back to pre-#36927 APIs.
+
+**Read cursor.** mark-read, mark-unread and mark-agent-read run without a transaction or account-erasure admission:
+
+- mark-read reads the thread and Agent by primary key, reads the newest terminal marker, then advances the cursor with one single-row compare-and-set;
+- mark-unread is one single-row `UPDATE`;
+- mark-agent-read takes the same bounded candidates as the unread indicators (last message within seven days and newer than the cursor, newest 128) and advances each with its own compare-and-set. Older unread threads under the Agent are not bulk-marked read.
+
+Responses are unchanged.
+
+**Indexes.** Migration `1256_drop_redundant_chat_thread_indexes` (non-transactional) drops `idx_chat_threads_user_agent_updated` and `idx_chat_threads_user_last_read` with `CONCURRENTLY`. The planner serves their prefixes from `idx_chat_threads_user_agent_last_message` and `idx_chat_threads_user_last_message_id`. Read-cursor-only updates become HOT-eligible. No API names these indexes.
+
+**Snapshot compaction.** The cron no longer unions every thread, event and snapshot scope:
+
+- it pages `chat_thread_event_sequences` by primary key and reads snapshot heads by user;
+- it builds each projection from the org's Agent ids and the user's threads, with no join;
+- it skips the R2 upload when the projection's content hash is unchanged;
+- it publishes with one single-row compare-and-set;
+- it prunes compacted events with bounded reads and one `DELETE` by id.
+
+Agent deletion reads the affected thread ids and owners in bounded keyset pages before the deletion transaction. After commit it appends `deleted` lifecycle events in small batches using the single-statement sequence allocator, with the captured org id (the Agent is already gone). Batch failures are logged, not retried, and never roll back deletion; as with `sort_touched`, an occasional missing event is accepted. Event-page reads keep `deleted` tombstones visible after the Agent is gone while continuing to filter other events by live Agent. With these events driving snapshot invalidation, the 24-hour full refresh and repeated empty-scope publication are removed. A scope with no visible event and no snapshot remains empty. The projection's timestamp strings keep the exact `jsonb_build_object` format.
 
 ## Public brand retirement contraction (2026-09-25)
 

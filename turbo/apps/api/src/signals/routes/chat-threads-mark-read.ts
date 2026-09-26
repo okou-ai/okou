@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, eq, gt, isNotNull, isNull, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { chatThreadMarkReadContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -10,7 +10,10 @@ import { pathParamsOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
-import { latestReadWatermarkEventSubquery } from "../services/chat-thread-read-state-query";
+import {
+  advanceChatThreadReadCursor,
+  loadLatestReadWatermarks,
+} from "../services/chat-thread-read-state-query";
 import type { RouteEntry } from "../route-entry";
 
 const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -20,57 +23,56 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const writeDb = set(writeDb$);
 
+  // Bounded primary-key reads outside any transaction, then one single-row
+  // compare-and-set. The route keeps its user-only authorization: it needs no
+  // organization, and publishes to the Agent's own organization.
   const [thread] = await writeDb
     .select({
+      agentId: chatThreads.agentId,
       lastReadAt: chatThreads.lastReadAt,
-      agentId: agents.id,
-      orgId: agents.orgId,
     })
     .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(
       and(eq(chatThreads.id, params.id), eq(chatThreads.userId, auth.userId)),
     )
     .limit(1);
   signal.throwIfAborted();
-
-  if (!thread) {
+  if (!thread?.agentId) {
+    return notFound("Chat thread not found");
+  }
+  const agentId = thread.agentId;
+  const [agent] = await writeDb
+    .select({ orgId: agents.orgId })
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+  signal.throwIfAborted();
+  if (!agent) {
     return notFound("Chat thread not found");
   }
 
-  const latestReadWatermark = latestReadWatermarkEventSubquery(
-    writeDb,
+  const watermark = (await loadLatestReadWatermarks(writeDb, [params.id])).get(
     params.id,
   );
-  const [updated] = await writeDb
-    .update(chatThreads)
-    .set({ lastReadAt: latestReadWatermark.createdAt })
-    .from(latestReadWatermark)
-    .where(
-      and(
-        eq(chatThreads.id, params.id),
-        eq(chatThreads.userId, auth.userId),
-        isNotNull(chatThreads.agentId),
-        or(
-          isNull(chatThreads.lastReadAt),
-          gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
-        ),
-      ),
-    )
-    .returning({ lastReadAt: chatThreads.lastReadAt });
   signal.throwIfAborted();
+  const advanced =
+    watermark !== undefined &&
+    (thread.lastReadAt === null || watermark > thread.lastReadAt) &&
+    (await advanceChatThreadReadCursor(writeDb, {
+      threadId: params.id,
+      userId: auth.userId,
+      watermark,
+    }));
+  signal.throwIfAborted();
+  const lastReadAt =
+    (advanced ? watermark : thread.lastReadAt)?.toISOString() ?? null;
 
-  const lastReadAt = (updated ?? thread).lastReadAt?.toISOString() ?? null;
-  if (updated) {
+  if (advanced) {
     // Read-state invalidation only. Thread-list shape is unchanged, and the
     // SharedWorker fans the user-org signal out to every matching tab.
     await publishChatThreadReadCursorUpdatedSafely(
-      { userId: auth.userId, orgId: thread.orgId },
-      {
-        threadId: params.id,
-        agentId: thread.agentId,
-        lastReadAt,
-      },
+      { userId: auth.userId, orgId: agent.orgId },
+      { threadId: params.id, agentId, lastReadAt },
     );
     signal.throwIfAborted();
   }

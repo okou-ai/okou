@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.681.1](https://github.com/okou-ai/okou/compare/api-v1.681.0...api-v1.681.1) (2026-09-26)
+
+
+### Refactoring
+
+* retire public brand columns and types ([#36909](https://github.com/okou-ai/okou/issues/36909)) ([99f320c](https://github.com/okou-ai/okou/commit/99f320ca41fdedafbf9cecaad34ebfa61235ccdb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.1
+    * @okouai/core bumped to 8.710.12
+    * @okouai/db bumped to 1.303.1
+    * @okouai/pi-agent-runtime bumped to 1.40.24
+
 ## [1.681.0](https://github.com/okou-ai/okou/compare/api-v1.680.2...api-v1.681.0) (2026-09-25)
 
 
