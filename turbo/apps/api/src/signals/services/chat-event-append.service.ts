@@ -23,8 +23,6 @@ const resultSchema = z.object({
   createdAt: pgTimestampWithoutTimezoneToDateSchema,
   seqId: pgInt8ToSafeIntegerSchema,
   sequenceNumber: z.number().int().nullable(),
-  allocationDurationMs: z.number(),
-  insertDurationMs: z.number(),
 });
 
 function conflictClause(conflict: ChatEventAppendConflict): SQL {
@@ -76,18 +74,14 @@ export async function appendCanonicalChatEvents(
     ), counts AS MATERIALIZED (
       SELECT "chatThreadId" AS chat_thread_id, count(*) AS event_count
       FROM input GROUP BY "chatThreadId"
-    ), append_started AS MATERIALIZED (
-      SELECT clock_timestamp() AS started_at
     ), reserved AS (
       INSERT INTO chat_event_sequences (chat_thread_id, last_seq_id)
       SELECT counts.chat_thread_id, counts.event_count
-      FROM counts CROSS JOIN append_started
+      FROM counts
       ORDER BY counts.chat_thread_id
       ON CONFLICT (chat_thread_id) DO UPDATE
         SET last_seq_id = chat_event_sequences.last_seq_id + EXCLUDED.last_seq_id
       RETURNING chat_thread_id, last_seq_id
-    ), allocation_finished AS MATERIALIZED (
-      SELECT clock_timestamp() AS finished_at FROM (SELECT count(*) FROM reserved) AS completed
     ), inserted AS (
       INSERT INTO chat_events (
         id, chat_thread_id, run_id, revokes_event_id, event_type, payload,
@@ -104,16 +98,13 @@ export async function appendCanonicalChatEvents(
       FROM input
       JOIN counts ON counts.chat_thread_id = input."chatThreadId"
       LEFT JOIN reserved ON reserved.chat_thread_id = input."chatThreadId"
-      CROSS JOIN allocation_finished
       ORDER BY input.ordinal
       ${conflictClause(conflict)}
       RETURNING id, created_at, seq_id, run_event_sequence_number
     )
     SELECT inserted.id, inserted.created_at::text AS "createdAt",
-      inserted.seq_id AS "seqId", inserted.run_event_sequence_number AS "sequenceNumber",
-      (EXTRACT(epoch FROM allocation_finished.finished_at - append_started.started_at) * 1000)::float8 AS "allocationDurationMs",
-      (EXTRACT(epoch FROM clock_timestamp() - allocation_finished.finished_at) * 1000)::float8 AS "insertDurationMs"
-    FROM inserted CROSS JOIN allocation_finished CROSS JOIN append_started
+      inserted.seq_id AS "seqId", inserted.run_event_sequence_number AS "sequenceNumber"
+    FROM inserted
   `,
     resultSchema,
   );

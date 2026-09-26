@@ -1087,13 +1087,11 @@ async function persistPreparedChatEventContext(
   await insertDisplayContext(db, context, prepared.row.createdAt);
 }
 
-/** Slow-path telemetry separates allocation/lock wait from event insertion. */
+/** Slow-path telemetry for the single append statement. */
 function recordChatEventAppendTiming(timing: {
   readonly attemptedEvents?: number;
   readonly insertedEvents: number;
   readonly statementDurationMs: number;
-  readonly allocationDurationMs?: number;
-  readonly insertDurationMs?: number;
 }): void {
   log.debug("Chat event append statement finished", timing);
   if (timing.statementDurationMs >= 250) {
@@ -1112,8 +1110,6 @@ async function appendPreparedChatEvent(
   recordChatEventAppendTiming({
     insertedEvents: rows.length,
     statementDurationMs: performance.now() - startedAt,
-    allocationDurationMs: rows[0]?.allocationDurationMs,
-    insertDurationMs: rows[0]?.insertDurationMs,
   });
   const inserted = rows[0];
   return inserted
@@ -1156,8 +1152,6 @@ export async function insertChatEvents(
     attemptedEvents: values.length,
     insertedEvents: rows.length,
     statementDurationMs: performance.now() - startedAt,
-    allocationDurationMs: rows[0]?.allocationDurationMs,
-    insertDurationMs: rows[0]?.insertDurationMs,
   });
   return rows.map(({ id, createdAt, seqId, sequenceNumber }) => {
     return { id, createdAt, seqId, sequenceNumber };
