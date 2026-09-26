@@ -11,6 +11,23 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.970.0](https://github.com/okou-ai/okou/compare/app-v0.969.0...app-v0.970.0) (2026-09-26)
+
+
+### Features
+
+* **browser:** support bounded native file input ([#36959](https://github.com/okou-ai/okou/issues/36959)) ([3479f0a](https://github.com/okou-ai/okou/commit/3479f0ac82563e817f74b71b094c01312a196e05))
+* **platform:** hide start cards on mobile and drop video cards on desktop ([#36995](https://github.com/okou-ai/okou/issues/36995)) ([9c87925](https://github.com/okou-ai/okou/commit/9c879250993c1de46e7ac637e2f92580fbdb1939))
+* **platform:** import skills from claude code or codex into workflows ([#36923](https://github.com/okou-ai/okou/issues/36923)) ([733c1ee](https://github.com/okou-ai/okou/commit/733c1eefbce0ceca9add94efa63a27f5e5f0a856))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.515.0
+    * @okouai/core bumped to 8.712.0
+
 ## [0.969.0](https://github.com/okou-ai/okou/compare/app-v0.968.0...app-v0.969.0) (2026-09-26)
 
 

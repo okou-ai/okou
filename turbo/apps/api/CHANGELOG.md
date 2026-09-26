@@ -8,6 +8,35 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.682.0](https://github.com/okou-ai/okou/compare/api-v1.681.4...api-v1.682.0) (2026-09-26)
+
+
+### Features
+
+* **browser:** support bounded native file input ([#36959](https://github.com/okou-ai/okou/issues/36959)) ([3479f0a](https://github.com/okou-ai/okou/commit/3479f0ac82563e817f74b71b094c01312a196e05))
+* **platform:** import skills from claude code or codex into workflows ([#36923](https://github.com/okou-ai/okou/issues/36923)) ([733c1ee](https://github.com/okou-ai/okou/commit/733c1eefbce0ceca9add94efa63a27f5e5f0a856))
+
+
+### Refactoring
+
+* **api:** remove retired inline computer use screenshot reader ([#36969](https://github.com/okou-ai/okou/issues/36969)) ([d6333aa](https://github.com/okou-ai/okou/commit/d6333aa6e2ed658172d3258cbe3bc82cdaa7fbc3))
+
+
+### Performance Improvements
+
+* **api:** admit chat runs through the active_agent_runs thread slot ([#36929](https://github.com/okou-ai/okou/issues/36929)) ([7463dfb](https://github.com/okou-ai/okou/commit/7463dfbdc2280e283a91195b5b1db74b943b61a2))
+* **db:** turn off chat search gin fastupdate and drop the audit approval column ([#36990](https://github.com/okou-ai/okou/issues/36990)) ([98b5515](https://github.com/okou-ai/okou/commit/98b5515ae2874128734b19a17b96dc8c6c7afe47))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.515.0
+    * @okouai/core bumped to 8.712.0
+    * @okouai/db bumped to 1.304.0
+    * @okouai/pi-agent-runtime bumped to 1.40.28
+
 ## [1.681.4](https://github.com/okou-ai/okou/compare/api-v1.681.3...api-v1.681.4) (2026-09-26)
 
 
