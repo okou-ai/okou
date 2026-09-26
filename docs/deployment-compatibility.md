@@ -1,5 +1,57 @@
 # Deployment Compatibility
 
+## R2-only chat thread snapshot API rollback floor (2026-09-26)
+
+The production API rollback resolver now rejects targets before the #36945
+main merge commit `3d93ff8d4b4a07a5888e3030e69b340f40da0ad4`. That API
+returns an R2 URL for every existing snapshot row, regardless of the request
+header; older rollback-window APIs can still return non-empty inline snapshots.
+The commit preceded release #36948 (`4ecb619b5c409396edd5815a1ce65941cb29cd74`),
+whose production API promotion succeeded on 2026-09-25 at 23:13:47 UTC
+([release run](https://github.com/okou-ai/okou/actions/runs/36198938622/job/108284233073)).
+
+This floor must be deployed before a separate follow-up removes Web App and CLI
+non-empty inline readers, the capability request header, and the inline
+contract variant for non-empty rows. The empty inline response for a scope
+without a snapshot row is permanent and stays supported. Removing client
+compatibility in this floor-setting release would not establish that the floor
+was already active in production. Recheck the serving API and floor before the
+follow-up enters its release path.
+
+## Chat thread snapshot JSONB column retired (2026-09-26)
+
+Migration `1261_drop_chat_thread_snapshot_jsonb` drops only
+`chat_thread_snapshots.chat_threads`. The API already reads the snapshot cursor
+and scoped R2 `object_key`, not the old JSONB body; the archive in R2 and the
+empty response for a scope without a snapshot row remain unchanged. A masked
+production census on 2026-09-26 00:14 UTC visited all 5,549 snapshot scopes
+in stable key order and observed no null `object_key` (paginated reads, not a
+single-transaction snapshot). This does not establish that every R2 object
+exists. The migration discards the old JSONB column and its contents, but
+leaves all R2 objects and their pointers untouched.
+
+Outgoing API artifacts still write an empty JSONB array on snapshot
+publication (via raw SQL or Drizzle). The owner explicitly accepts a temporary
+failure of that job while
+migrations run before the replacement API is promoted. It may upload an
+unreferenced immutable R2 object before its publish statement fails with
+`42703`; that invocation does not proceed to lifecycle-event pruning or R2
+snapshot garbage collection. Existing snapshot pointers, their R2 downloads,
+and the separate lifecycle-events API do not read the column. A new scope
+without a published snapshot takes the existing empty-snapshot plus event-tail
+path until the new compactor catches up. Verify the outgoing API is already an
+R2-only reader and that no older JSONB reader is still serving at migration
+time. The new API omits the column from both INSERT and UPDATE, so its
+compaction works against either side of the migration.
+
+Rollback does not restore the dropped column. The production rollback resolver
+therefore finds the first-parent main commit adding this migration and rejects
+all API targets before it, including the previous release whose compactor
+would fail and earlier APIs that still read JSONB. Until the new release is
+READY in production, no pre-migration API target is eligible; recovery requires
+fixing forward. This is the accepted single-release compatibility trade-off.
+The R2 JSON archive and its response contract are unchanged.
+
 ## Personal subscription credentials become account-only (2026-09-26)
 
 Personal (`user_id <> '__org__'`) `claude-code-oauth-token` and
@@ -73,12 +125,14 @@ merge commit. No screenshot decoder or index changes belong to this step.
 merged into main with migration `1258_active_agent_runs_step2.sql` and shipped
 separately in release #36974. #36980's step-3 migration
 `1259_drop_agent_runs_last_heartbeat_at.sql` must ship alone in its own release
-(#36986), with the previous API drained. Only then may #36929 ship separately
-with migration `1261_active_agent_runs_chat_thread_slot.sql`, after #36976's
-`1260_personal_subscription_account_only.sql` in the migration journal.
-The slot rollout requires the deployed step-3 API as its predecessor; the
-effective rollback floor also inherits #36976's stricter account-only floor
-once migration `1260` has run.
+(#36986), with the previous API drained. #36975's
+`1261_drop_chat_thread_snapshot_jsonb.sql` must also ship independently and
+its previous API must drain before #36929 enters the merge queue. Only then
+may #36929 ship with migration `1262_active_agent_runs_chat_thread_slot.sql`,
+after #36976's `1260_personal_subscription_account_only.sql` and #36975's
+`1261` in the migration journal. The slot rollout requires the deployed
+step-3 API as its predecessor; the effective rollback floor also inherits the
+stricter #36976 account-only and #36975 snapshot-drop floors.
 
 #36955 owns the backfill for queued, pending, running and started terminal runs
 still within the recovery grace or heartbeating. #36929 does **not** repeat

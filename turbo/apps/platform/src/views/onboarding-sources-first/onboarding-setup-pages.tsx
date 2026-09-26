@@ -260,6 +260,9 @@ export function OnboardingTeamPage() {
   const pageSignal = useGet(pageSignal$);
   const address = ui.inviteEmail.trim();
   const sendable = sourcesFirstInviteSendable(flow.draft.invites, address);
+  const invited = flow.draft.invites.some((entry) => {
+    return entry.status === "invited";
+  });
 
   const invite = (): void => {
     if (!sendable) {
@@ -293,7 +296,9 @@ export function OnboardingTeamPage() {
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
+      // Continue waits for an accepted invite; Not now leaves without one.
       onPrimary={flow.goNext}
+      primaryDisabled={!invited}
       secondaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.notNow;
       })}

@@ -224,7 +224,6 @@ export async function setChatThreadSnapshotBoundaryFixture(args: {
       orgId: args.orgId,
       latestEventId: args.latestEventId,
       latestEventSeqId: args.latestEventSeqId,
-      chatThreads: [],
       createdAt: args.updatedAt,
       updatedAt: args.updatedAt,
     })
@@ -233,7 +232,6 @@ export async function setChatThreadSnapshotBoundaryFixture(args: {
       set: {
         latestEventId: args.latestEventId,
         latestEventSeqId: args.latestEventSeqId,
-        chatThreads: [],
         updatedAt: args.updatedAt,
       },
     });
@@ -255,27 +253,6 @@ export async function setChatThreadSnapshotObjectKeyFixture(args: {
         eq(chatThreadSnapshots.orgId, args.orgId),
       ),
     );
-}
-
-/** Confirms R2 publication retires the inline JSONB projection. */
-export async function readChatThreadSnapshotStorageFixture(args: {
-  readonly userId: string;
-  readonly orgId: string;
-}) {
-  const [snapshot] = await db()
-    .select({
-      objectKey: chatThreadSnapshots.objectKey,
-      chatThreads: chatThreadSnapshots.chatThreads,
-    })
-    .from(chatThreadSnapshots)
-    .where(
-      and(
-        eq(chatThreadSnapshots.userId, args.userId),
-        eq(chatThreadSnapshots.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  return snapshot;
 }
 
 /** Reads exact physical lifecycle rows, including rows hidden by the reader. */

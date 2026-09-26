@@ -452,7 +452,6 @@ async function publishChatThreadSnapshot(
         orgId: candidate.orgId,
         latestEventId: candidate.latestEventId,
         latestEventSeqId: candidate.latestSeqId,
-        chatThreads: [],
         objectKey,
         createdAt: updatedAt,
         updatedAt,
@@ -467,7 +466,6 @@ async function publishChatThreadSnapshot(
     .set({
       latestEventId: candidate.latestEventId,
       latestEventSeqId: candidate.latestSeqId,
-      chatThreads: [],
       objectKey,
       updatedAt,
     })
