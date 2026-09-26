@@ -33,7 +33,8 @@ deployed = [
     'cli-e2e-01-serial', 'cli-e2e-02-browser', 'cli-e2e-02-playwright',
 ]
 finalizers = ['cli-e2e-02-playwright-finalize', 'cli-e2e-03-runner-cleanup']
-runner_e2e = ['cli-e2e-03-runner-prepare', 'cli-e2e-03-runner-bootstrap', 'cli-e2e-03-runner']
+runner_e2e = ['cli-e2e-03-runner-prepare', 'cli-e2e-03-runner-bootstrap',
+              'cli-e2e-03-runner', 'cli-e2e-03-runner-codex-oauth']
 
 
 def needs(job):

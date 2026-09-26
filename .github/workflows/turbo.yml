@@ -41,6 +41,8 @@ on:
         required: false
       CLERK_WEBHOOK_SIGNING_SECRET:
         required: false
+      CODEX_OAUTH_E2E_AUTH_JSON:
+        required: false
       CODECOV_TOKEN:
         required: false
       CRON_SECRET:
@@ -3015,6 +3017,55 @@ jobs:
           path: e2e/results/runner-${{ matrix.index }}/
           retention-days: 7
 
+  cli-e2e-03-runner-codex-oauth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      # One shared auth.json can rotate its refresh token during a run.
+      group: cli-e2e-codex-oauth-account
+      cancel-in-progress: false
+    needs:
+      - prepare
+      - deploy-api
+      - deploy-runner-start
+      - cli-e2e-03-runner-prepare
+      - cli-e2e-03-runner
+    if: |
+      always() &&
+      needs.prepare.outputs.job-ref != '' &&
+      needs.prepare.outputs.turbo-runner-consumer-needed == 'true' &&
+      needs.deploy-api.result == 'success' &&
+      needs.deploy-runner-start.result == 'success' &&
+      needs.cli-e2e-03-runner-prepare.result == 'success' &&
+      needs.cli-e2e-03-runner.result == 'success'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          submodules: recursive
+      - name: Download runner E2E API tokens
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: e2e-tokens
+          path: /tmp
+      - name: Validate Codex OAuth E2E API credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          credentials=/tmp/e2e-api-credentials-runner-real-codex.json
+          token="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")"
+          jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials" >/dev/null
+          echo "::add-mask::$token"
+      - name: Run real Codex OAuth E2E
+        shell: bash
+        env:
+          CODEX_OAUTH_E2E_AUTH_JSON: ${{ secrets.CODEX_OAUTH_E2E_AUTH_JSON }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          BATS_TEST_TIMEOUT=300 ./e2e/test/libs/bats/bin/bats -T \
+            ./e2e/tests/03-runner-oauth/codex-oauth.bats
+
   cli-e2e-03-runner-cleanup:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -3030,6 +3081,7 @@ jobs:
       - cli-e2e-02-playwright
       - cli-e2e-03-runner-prepare
       - cli-e2e-03-runner
+      - cli-e2e-03-runner-codex-oauth
     if: |
       always() &&
       needs.prepare.outputs.job-ref != '' &&
@@ -3045,13 +3097,14 @@ jobs:
         env:
           PREPARE_RESULT: ${{ needs.cli-e2e-03-runner-prepare.result }}
           RUNNER_RESULT: ${{ needs.cli-e2e-03-runner.result }}
+          CODEX_OAUTH_RESULT: ${{ needs.cli-e2e-03-runner-codex-oauth.result }}
         run: |
           set -euo pipefail
           if [[ "$PREPARE_RESULT" == "skipped" ]]; then
             scope="none"
           elif [[ "$PREPARE_RESULT" != "success" ]]; then
             scope="generation"
-          elif [[ "$RUNNER_RESULT" == "success" ]]; then
+          elif [[ "$RUNNER_RESULT" == "success" && "$CODEX_OAUTH_RESULT" == "success" ]]; then
             scope="run"
           else
             scope="retain"
@@ -3221,6 +3274,7 @@ jobs:
       - cli-e2e-03-runner-prepare
       - cli-e2e-03-runner-bootstrap
       - cli-e2e-03-runner
+      - cli-e2e-03-runner-codex-oauth
       - deploy-runner-prepare
       - deploy-runner-start
     # Always run so the gate reports an explicit result (not "skipped").
@@ -3340,6 +3394,7 @@ jobs:
           check_result "cli-e2e-03-runner-prepare" "${{ needs.cli-e2e-03-runner-prepare.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner-bootstrap" "${{ needs.cli-e2e-03-runner-bootstrap.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner" "${{ needs.cli-e2e-03-runner.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
+          check_result "cli-e2e-03-runner-codex-oauth" "${{ needs.cli-e2e-03-runner-codex-oauth.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "deploy-runner-prepare" "${{ needs.deploy-runner-prepare.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
           check_result "deploy-runner-start" "${{ needs.deploy-runner-start.result }}" "$RUNNER_DEPLOY_SKIP_ALLOWED"
 
