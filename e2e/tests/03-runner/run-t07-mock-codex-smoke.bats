@@ -1,13 +1,13 @@
 #!/usr/bin/env bats
 
-# Codex smoke test through the supported agent and chat APIs.
+# Mock Codex smoke test through the supported agent and chat APIs.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup_file() {
-    runner_e2e_use_native_codex_account
+    runner_e2e_use_mock_codex_profile
     require_runner_api_credentials
 
     export RUNNER_AGENT_ID
@@ -19,18 +19,18 @@ setup_file() {
 }
 
 setup() {
-    runner_e2e_use_native_codex_account
+    runner_e2e_use_mock_codex_profile
 }
 
 teardown_file() {
-    runner_e2e_use_native_codex_account
+    runner_e2e_use_mock_codex_profile
     if [[ -n "${RUNNER_AGENT_ID:-}" ]]; then
         delete_runner_agent_for_stage0_teardown "$RUNNER_AGENT_ID"
     fi
 }
 
-@test "basic codex chat run returns a completed response" {
-    run runner_chat_start "$RUNNER_AGENT_ID" "echo from codex"
+@test "mock codex chat run returns a completed response" {
+    run runner_chat_start_mock_codex "$RUNNER_AGENT_ID" "echo from codex"
 
     assert_success
     assert_output --partial '"status":"completed"'

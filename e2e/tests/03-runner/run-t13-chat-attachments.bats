@@ -7,7 +7,7 @@ load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
-    runner_e2e_use_native_codex_account
+    runner_e2e_use_mock_codex_profile
     runner_e2e_require_environment
     runner_e2e_setup_test
 }
@@ -91,7 +91,7 @@ EOF
         "$shell_prompt" \
         "$parts" \
         "" \
-        "$E2E_NATIVE_CODEX_MODEL"
+        "$E2E_MOCK_CODEX_MODEL"
     echo "$output"
     assert_success
     local first_run_id

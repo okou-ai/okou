@@ -6,16 +6,19 @@ runner_e2e_require_environment() {
     command -v jq >/dev/null
 }
 
-# Firewall and protocol probes need deterministic shell output from the Codex
-# mock, not an expensive real Astra completion that paraphrases stdout. The
-# mock-Claude organization also exposes a native Astra route in preview; its
-# Claude route and the separate real-model billing account remain untouched.
-runner_e2e_use_native_codex_account() {
+# Behavioral probes need deterministic shell output from the mock Codex
+# runtime, not a real model completion. The existing mock-Claude organization
+# also exposes this native Codex route; its Claude route and the separate
+# real-model accounts remain untouched.
+runner_e2e_use_mock_codex_profile() {
     local credentials="/tmp/e2e-api-credentials-runner-mock-claude.json"
-    export E2E_API_TOKEN E2E_API_URL E2E_NATIVE_CODEX_MODEL
-    E2E_NATIVE_CODEX_MODEL="gpt-6-astra"
-    E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")" || return
-    E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")" || return
+    local token api_url
+    # An unsuccessful selection must not leave a stale mock marker behind.
+    unset E2E_RUNNER_PROFILE E2E_MOCK_CODEX_MODEL
+    token="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")" || return 1
+    api_url="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")" || return 1
+    export E2E_API_TOKEN="$token" E2E_API_URL="$api_url"
+    export E2E_RUNNER_PROFILE="mock-codex" E2E_MOCK_CODEX_MODEL="gpt-6-astra"
 }
 
 runner_e2e_setup_test() {
@@ -201,17 +204,18 @@ runner_e2e_shell_prompt() {
     printf '@shell@\nexport npm_config_audit=false\n%s\n@end-shell@' "$script"
 }
 
-runner_e2e_start_chat_run() {
+runner_e2e_start_mock_shell_chat_run() {
     local agent_id="$1"
     local prompt="$2"
     local capture_network_bodies="${3:-false}"
     local shell_prompt
+    runner_e2e_require_mock_codex_profile || return 1
     shell_prompt=$(runner_e2e_shell_prompt "$prompt")
     runner_chat_send \
         "$agent_id" \
         "$shell_prompt" \
         "" \
-        "${E2E_NATIVE_CODEX_MODEL:-deepseek-v4-flash}" \
+        "$E2E_MOCK_CODEX_MODEL" \
         "" \
         "$capture_network_bodies"
 }
@@ -225,15 +229,16 @@ runner_e2e_continue_chat_run() {
     runner_chat_send "$agent_id" "$shell_prompt" "$thread_id" ""
 }
 
-runner_e2e_start_checkpointed_chat_run() {
+runner_e2e_start_mock_checkpointed_chat_run() {
     local agent_id="$1"
     local checkpoint_script="$2"
     local continuation_script="$3"
     local shell_prompt
+    runner_e2e_require_mock_codex_profile || return 1
     shell_prompt=$(printf '@shell-checkpoint@\n%s\n@continue@\n%s' \
         "$checkpoint_script" \
         "$continuation_script")
-    runner_chat_send "$agent_id" "$shell_prompt" "" "${E2E_NATIVE_CODEX_MODEL:-deepseek-v4-flash}"
+    runner_chat_send "$agent_id" "$shell_prompt" "" "$E2E_MOCK_CODEX_MODEL"
 }
 
 runner_e2e_delete_chat_thread() {

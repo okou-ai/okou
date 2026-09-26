@@ -5,7 +5,7 @@ load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
-    runner_e2e_use_native_codex_account
+    runner_e2e_use_mock_codex_profile
     runner_e2e_require_environment
     runner_e2e_setup_test
 }
@@ -48,7 +48,7 @@ curl --ipv4 --silent --show-error --max-time 15 \
 printf 'TWILIO_REQUEST_SENT\n'
 EOF
 )
-    run runner_e2e_start_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
     echo "$output"
     assert_success
     public_surfaces+="$output"$'\n'

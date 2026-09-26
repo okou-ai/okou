@@ -107,9 +107,14 @@ The number is a stable file identifier, not an execution order. Test titles
 should describe behavior without repeating the file identifier.
 
 The workflow prepares separate real Codex BYOK, real Codex built-in, and
-real Claude/Pi identities. Bootstrap disables Pi for the shared Runner, mock
-Claude, Codex BYOK, and Codex built-in identities so their tests retain Runner
-execution. The real Claude/Pi account enables Pi in its dedicated smoke test.
+real Claude/Pi identities. The mock-Claude identity also hosts the native
+Codex mock: shell-driven runner BATS select it with
+`runner_e2e_use_mock_codex_profile`, while Claude mock coverage uses the same
+identity's Claude route. Mock-only chat start helpers reject a missing profile
+rather than silently selecting a real model. Bootstrap disables Pi for the
+shared Runner, mock Claude, Codex BYOK, and Codex built-in identities so their
+tests retain Runner execution. The real Claude/Pi account enables Pi in its
+dedicated smoke test.
 The shared mock-runner identity starts with `UTC` as its timezone.
 Runner BATS must not mutate shared account-level preferences from parallel
 shards. Coverage that needs mutable account-level state requires a dedicated
