@@ -8,6 +8,10 @@ readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
 readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70dab7ae6
+# #36960 stopped implicitly selecting computer_use_command_audit_events.approval_outcome.
+# Migration 1255 drops that column before promoting its API. Older API
+# artifacts would fail the audit list with 42703 after migration or rollback.
+readonly COMPUTER_USE_AUDIT_READER_COMMIT=41cc9918009622ccad7c64e433d09db1a8dfbe9c
 
 fail() {
   echo "::error::$*" >&2
@@ -52,6 +56,9 @@ fi
 # document. Only APIs with the child-only draft writer satisfy that.
 if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread draft child-only writer: ${CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$COMPUTER_USE_AUDIT_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the computer-use audit approval column reader cutover: ${COMPUTER_USE_AUDIT_READER_COMMIT}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

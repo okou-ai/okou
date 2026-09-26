@@ -12,7 +12,6 @@ import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { withMockNowForTest } from "../../../lib/time";
-import { createLegacyInlineScreenshotFixture } from "../../../test-fixtures/computer-use-content-get";
 import {
   createBddApi,
   expectApiError,
@@ -417,35 +416,6 @@ describe("Computer Use binary content reads", () => {
         [404],
       );
       expectOpaqueNotFound(kind, pointerNull.body);
-      expect(fake.gets).toStrictEqual([]);
-    },
-  );
-
-  it(
-    "retains the legacy inline screenshot decoder without an S3 read",
-    { timeout: CASE_TIMEOUT_MS },
-    async () => {
-      const fake = computerUse.installComputerUseS3Fake();
-      const actor = orgScoped(bdd.user());
-      const host = await computerUse.startComputerUseHost(actor, {
-        hostName: "Legacy Desktop",
-      });
-      const bytes = Buffer.from("retained legacy inline bytes 中文🙂");
-      const legacy = await createLegacyInlineScreenshotFixture({
-        orgId: actor.orgId,
-        userId: actor.userId,
-        hostId: host.hostId,
-        screenshot: `data:image/webp;base64,${bytes.toString("base64")}`,
-        createdAt: new Date(STARTED_AT_MS),
-      });
-      const downloaded = await computerUse.downloadComputerUseScreenshot(
-        actor,
-        legacy.commandId,
-      );
-      expect(downloaded.bytes.equals(bytes)).toBeTruthy();
-      expect(downloaded.contentType).toBe("image/webp");
-      expect(downloaded.contentLength).toBe(String(bytes.length));
-      expect(downloaded.cacheControl).toBe("private, no-store");
       expect(fake.gets).toStrictEqual([]);
     },
   );

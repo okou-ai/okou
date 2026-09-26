@@ -117,10 +117,6 @@ export const computerUseCommandAuditEvents = pgTable(
     kind: text("kind").notNull(),
     app: text("app"),
     event: text("event").notNull(),
-    // Physical schema only: no current writer or reader uses this retired
-    // approval-flow column. Keep it declared until a separate migration drops
-    // it after old APIs and rollback targets stop selecting the full row.
-    approvalOutcome: text("approval_outcome"),
     redactedResult:
       jsonb("redacted_result").$type<ComputerUseCommandAuditRedactedResult>(),
     error: jsonb("error").$type<ComputerUseCommandAuditError>(),

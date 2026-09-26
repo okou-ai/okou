@@ -1,5 +1,43 @@
 # Deployment Compatibility
 
+## Computer Use audit column and inline screenshot reader contraction (2026-09-25)
+
+Migration `1255_drop_computer_use_audit_approval_outcome` drops only
+`computer_use_command_audit_events.approval_outcome`. The audit-list query was
+narrowed in canonical main commit `41cc9918` (#36960); no current writer sets
+this column and no API response includes it. The production API target
+`4ecb619b` contains that commit: its production promotion completed at
+2026-09-25 23:13:47 UTC (release run `36198938622`), and Vercel's production
+alias points to that target. Outgoing pre-reader API traffic must be drained
+before this migration runs. The temporary production-derived Neon branch taken
+at 22:33:06 UTC had 11,258 audit rows with 0 non-null values; a fresh masked
+production aggregate subsequently counted 0 non-null values out of 11,248.
+The branch had no database objects depending on the column.
+
+Migration-before-promotion means the outgoing API must not implicitly select
+this column: the promoted `4ecb619b` API already selects explicit response
+fields; its audit INSERT omits the column. This release's new API omits the
+physical Drizzle mapping, so it works both before and after migration. The
+production rollback resolver now rejects API targets that predate the canonical
+#36960 reader cutover (`41cc9918`); rollback cannot restore the dropped column.
+Do not roll back via a path that bypasses this floor. A failure to acquire the
+migration's bounded DDL lock stops promotion rather than running incompatible
+new code. This contraction is contingent on the preceding API having finished
+serving; a green PR or preview alone does not establish that gate.
+
+A production-derived Neon snapshot of 16,613 commands had 0 stored string
+screenshots (latest string time is null), so the historical valid-inline
+screenshot download decoder is removed. The completion API still offloads a
+valid screenshot data URL to object storage before persistence; it can still
+persist an **unrecognized** string, which was never downloadable. Keep the
+existing result pass-through and 30-day string tombstoning for that reachable
+state. The snapshot's `pg_stat_user_indexes.idx_scan=0` is branch-local and
+not evidence of production zero use. Plans show `host_status` is available
+for host FK checks, while `created` supports created-time scans; retain both
+normal indexes and the partial unique running-host index. Production index
+usage counters were not obtained and remain unknown. The temporary branch
+`br-frosty-mouse-afgo16gt` was deleted after read-only evidence collection.
+
 ## Account erasure retirement (2026-09-25)
 
 The whole account-erasure mechanism from EPIC #33745 is removed. It will be
@@ -74,6 +112,8 @@ relational sweep, collectors, the Clerk erasure bridge or deletion-status
 capabilities describe the retired mechanism.
 
 ## Computer Use audit approval column: reader cutover (2026-09-25)
+
+Historical preparation: this release preceded the physical contraction above.
 
 `computer_use_command_audit_events.approval_outcome` belongs to the retired
 approval flow. No current writer sets it or response exposes it; a masked
