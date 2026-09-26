@@ -1368,10 +1368,6 @@ async function insertAgentPhoneChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      // Rollback compatibility (#36766): the agentphone:chat reader released
-      // with Phase 1 still requires this literal. Current readers strip it.
-      // Stop writing it once no serving or rollback-target API requires it.
-      publicBrand: "okou",
     },
   });
 }
