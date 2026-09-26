@@ -4254,9 +4254,7 @@
       "common": {
         "back": "返回",
         "continue": "继续",
-        "finish": "完成设置",
-        "notNow": "暂不",
-        "skip": "先跳过"
+        "notNow": "暂不"
       },
       "compliance": {
         "frameworks": {
