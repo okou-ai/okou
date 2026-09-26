@@ -15,6 +15,7 @@ import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-s
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
+import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
 import { writeDb$ } from "../signals/external/db";
 import {
@@ -454,3 +455,24 @@ export const setRetentionRunStatus$ = command(
     signal.throwIfAborted();
   },
 );
+
+/** Delete hot chat events already covered by the thread's published snapshot. */
+export async function removeSnapshottedRunEvents(
+  threadId: string,
+): Promise<void> {
+  const [head] = await db()
+    .select({ lastSeqId: chatEventSnapshots.lastSeqId })
+    .from(chatEventSnapshots)
+    .where(eq(chatEventSnapshots.chatThreadId, threadId));
+  if (!head) {
+    throw new Error("Expected a published snapshot before removing hot rows");
+  }
+  await db()
+    .delete(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, threadId),
+        lte(chatEvents.seqId, head.lastSeqId),
+      ),
+    );
+}

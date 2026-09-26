@@ -42,7 +42,6 @@ const {
   sendChatRun,
   claimChatRun,
   waitForRunStatus,
-  completeChatRunOk,
   cancelChatRun,
   claimGptPiSandbox,
   mockPiCheckpointObjectStore,
@@ -121,16 +120,13 @@ describe("CHAT-02: model-first provider policies", () => {
         }),
       );
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const { anchor, anchorClaim, run, usagePricingResolution } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "stop after the provider expires its queue",
-        });
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-        usagePricingResolution,
+      const { launch } = await queueCapabilityProvenPiRun({
+        actor,
+        agentId,
+        runnerGroup,
+        prompt: "stop after the provider expires its queue",
       });
+      const run = await launch();
       await waitForRunStatus(actor, run.runId, "failed");
       await flushWaitUntilForTest();
       expect(modelCalls).toBe(1);
@@ -179,14 +175,14 @@ describe("CHAT-02: model-first provider policies", () => {
       }),
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
-    const { anchor, anchorClaim, run } = await queueCapabilityProvenPiRun({
+    const { launch } = await queueCapabilityProvenPiRun({
       actor,
       agentId,
       runnerGroup,
       prompt: "cancel before the provider boundary",
     });
 
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    const run = await launch();
     await resourceEntered.promise;
     await cancelChatRun(actor, run.runId);
     releaseResource.resolve(undefined);
@@ -453,16 +449,13 @@ describe("CHAT-02: model-first provider policies", () => {
         );
       }),
     );
-    const { anchor, anchorClaim, run, usagePricingResolution } =
-      await queueCapabilityProvenPiRun({
-        actor,
-        agentId,
-        runnerGroup,
-        prompt: "hold the incomplete API-first turn",
-      });
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-      usagePricingResolution,
+    const { launch } = await queueCapabilityProvenPiRun({
+      actor,
+      agentId,
+      runnerGroup,
+      prompt: "hold the incomplete API-first turn",
     });
+    const run = await launch();
     await entered.promise;
     const claimed = await claimChatRun(runnerGroup, run.runId);
     const activeInputEventId = randomUUID();
@@ -514,7 +507,7 @@ describe("CHAT-02: model-first provider policies", () => {
       throw new Error("Expected undelivered input to retain queue ownership");
     }
     expect(successor.runId).not.toBe(run.runId);
-    // Terminal failure releases the accepted input into its own queued run.
+    // Terminal failure releases the accepted input into its own run.
     // That explicit input owns the second request; the failed turn is not retried.
     await waitForRunStatus(actor, successor.runId, "completed");
     expect(eventBackedContents(events, successor.runId)).toMatchObject([
@@ -695,16 +688,14 @@ describe("CHAT-02: model-first provider policies", () => {
       );
       const checkpointObjects = mockPiCheckpointObjectStore();
       const prompt = "keep the original input for one Sandbox handoff";
-      const { anchor, anchorClaim, run, usagePricingResolution } =
+      const { usagePricingResolution, launch } =
         await queueCapabilityProvenPiRun({
           actor,
           agentId,
           runnerGroup,
           prompt,
         });
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-        usagePricingResolution,
-      });
+      const run = await launch();
       await flushWaitUntilForTest();
       const prefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/`;
       const manifest = piApiFirstTurnManifestSchema.parse(
@@ -946,16 +937,13 @@ describe("CHAT-02: model-first provider policies", () => {
       }),
     );
     const objects = mockPiCheckpointObjectStore();
-    const { anchor, anchorClaim, run, usagePricingResolution } =
-      await queueCapabilityProvenPiRun({
-        actor,
-        agentId,
-        runnerGroup,
-        prompt: "reject invalid provider usage without retrying the prompt",
-      });
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-      usagePricingResolution,
+    const { launch } = await queueCapabilityProvenPiRun({
+      actor,
+      agentId,
+      runnerGroup,
+      prompt: "reject invalid provider usage without retrying the prompt",
     });
+    const run = await launch();
     await flushWaitUntilForTest();
     await waitForRunStatus(actor, run.runId, "failed");
     expect(modelCalls).toBe(1);
@@ -990,13 +978,12 @@ describe("CHAT-02: model-first provider policies", () => {
         }),
       );
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const { anchor, anchorClaim, run, usagePricingResolution } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "surface the real publication failure",
-        });
+      const { launch } = await queueCapabilityProvenPiRun({
+        actor,
+        agentId,
+        runnerGroup,
+        prompt: "surface the real publication failure",
+      });
       const deadline = new AbortController();
       onTestFinished(() => {
         deadline.abort();
@@ -1019,7 +1006,9 @@ describe("CHAT-02: model-first provider policies", () => {
         const key = piS3ObjectKey(candidate);
         if (
           candidate.constructor?.name === "PutObjectCommand" &&
-          key?.includes(`/pi-api-first-turn/${run.runId}/`)
+          // The run id exists only once the pick launches the waiting input;
+          // this test's only API-first turn owns every such object.
+          key?.includes("/pi-api-first-turn/")
         ) {
           if (key.endsWith("session.jsonl")) {
             if (!(candidate.input?.Body instanceof Uint8Array)) {
@@ -1046,9 +1035,7 @@ describe("CHAT-02: model-first provider policies", () => {
         }
         return store?.(command) ?? Promise.resolve({});
       });
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-        usagePricingResolution,
-      });
+      const run = await launch();
       await flushWaitUntilForTest();
       await waitForRunStatus(actor, run.runId, "failed");
       expect(modelCalls).toBe(1);
@@ -1127,16 +1114,13 @@ describe("CHAT-02: model-first provider policies", () => {
         }),
       );
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const { anchor, anchorClaim, run, usagePricingResolution } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "preserve explicit credential failure",
-        });
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-        usagePricingResolution,
+      const { launch } = await queueCapabilityProvenPiRun({
+        actor,
+        agentId,
+        runnerGroup,
+        prompt: "preserve explicit credential failure",
       });
+      const run = await launch();
       await waitForRunStatus(actor, run.runId, "failed");
       await flushWaitUntilForTest();
       expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);

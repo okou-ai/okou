@@ -295,6 +295,7 @@ const admitChatRunFinishedAutomation$ = command(
         drainChatThreadQueueForThread$,
         {
           chatThreadId,
+          orgId: automation.orgId,
           dispatchFailedCallbacks: dispatchFailedRunCallbacks,
         },
         signal,
@@ -376,6 +377,7 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
             drainChatThreadQueueForThread$,
             {
               chatThreadId: row.chatThreadId,
+              orgId: row.automation.orgId,
               dispatchFailedCallbacks: dispatchFailedRunCallbacks,
             },
             signal,

@@ -1142,7 +1142,16 @@ export interface CreateAgentRunArgs {
   readonly connectorScope: ExplicitConnectorScope;
   readonly validateEnvironmentReferences?: boolean;
   readonly agentRunMetadata?: AgentRunMetadata;
+  /**
+   * Legacy queued-run admission. No production launch sets it; it remains
+   * only while promotion drains queued runs left by earlier API versions.
+   */
   readonly queueOnConcurrencyLimit?: boolean;
+  /**
+   * Admit without the organization capacity check. The run still occupies an
+   * active slot and counts toward later capacity checks.
+   */
+  readonly ignoreConcurrencyLimit?: boolean;
   /** Require initial Built-in credits; this does not grant deficit continuation. */
   readonly enforceBuiltInCredits?: boolean;
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
@@ -5925,6 +5934,17 @@ async function checkRunConcurrencyLimit(
   return state.activeRunCount >= limit ? concurrentRunLimit() : null;
 }
 
+/**
+ * Lock-free coarse capacity read for queue pickers. Concurrent pickers may
+ * both see a free slot; the launch's own final count stays authoritative.
+ */
+export async function orgHasRunCapacity(
+  db: Pick<Db, "select">,
+  orgId: string,
+): Promise<boolean> {
+  return (await checkRunConcurrencyLimit(db, orgId)) === null;
+}
+
 async function checkFinalRunAdmission(
   db: Db,
   args: {
@@ -9189,7 +9209,9 @@ async function commitValidatedPreparedLaunch(
         "api_dispatch_check_concurrency_limit",
         "nested",
         async () => {
-          return await checkRunConcurrencyLimit(tx, args.createArgs.orgId);
+          return args.createArgs.ignoreConcurrencyLimit
+            ? null
+            : await checkRunConcurrencyLimit(tx, args.createArgs.orgId);
         },
       );
     },
@@ -11682,7 +11704,10 @@ const createAtomicLaunchRun$ = command(
     const identity = prepareLaunchRunIdentity({
       resolved: input.context.resolved,
     });
-    if (!input.args.queueOnConcurrencyLimit) {
+    if (
+      !input.args.queueOnConcurrencyLimit &&
+      !input.args.ignoreConcurrencyLimit
+    ) {
       const preflightConcurrency = await checkRunConcurrencyPreflight({
         db: input.db,
         orgId: input.args.orgId,

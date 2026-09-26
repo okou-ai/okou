@@ -261,6 +261,51 @@ function customOauthConnectorBodyForTeardown(
   };
 }
 
+/**
+ * At the organization's run capacity a chat send creates no run: the input
+ * stays pending in its thread until a pick launches it. The model routes to a
+ * native runner so the picked run waits for a runner claim instead of running
+ * an API-first provider turn.
+ */
+async function sendChatInputAtCapacity(
+  actor: ApiTestUser,
+  agentId: string,
+  prompt: string,
+): Promise<string> {
+  const sent = await createChatFilesBddApi(context).requestSendEvent(
+    actor,
+    { agentId, prompt, model: "claude-fable-5-1" },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected the chat send to be accepted");
+  }
+  expect(sent.body.runId).toBeNull();
+  return sent.body.threadId;
+}
+
+async function waitForPickedThreadRun(
+  actor: ApiTestUser,
+  threadId: string,
+): Promise<string> {
+  const chat = createChatFilesBddApi(context);
+  let runId: string | null = null;
+  await expect
+    .poll(async () => {
+      const { events } = await chat.listThreadEvents(actor, threadId);
+      runId =
+        events.find((event) => {
+          return event.eventType === "input.prompt" && Boolean(event.runId);
+        })?.runId ?? null;
+      return runId;
+    })
+    .not.toBeNull();
+  if (runId === null) {
+    throw new Error("Expected the picked thread input to start a run");
+  }
+  return runId;
+}
+
 function epochSeconds(offsetDays: number): number {
   return Math.floor(now() / 1000) + offsetDays * 86_400;
 }
@@ -4334,7 +4379,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(afterTrialCheckout.credits).toBe(20_000);
   });
 
-  it("upgrades to team, drains the queue, and cancels the replaced pro subscription", async () => {
+  it("upgrades to team, picks queued chat threads, and cancels the replaced pro subscription", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const billing = createBillingMediaApi(context);
@@ -4345,7 +4390,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     const granted = await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Team Upgrade Agent",
       visibility: "private",
@@ -4366,15 +4411,26 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       prompt: "team upgrade run three",
       modelProvider: "anthropic-api-key",
     });
-    const fourth = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "team upgrade run four",
-      modelProvider: "anthropic-api-key",
+    const rejected = await runs.requestCreateRun(
+      actor,
+      {
+        agentId: agent.agentId,
+        prompt: "team upgrade run over the pro limit",
+        modelProvider: "anthropic-api-key",
+      },
+      [429],
+    );
+    expect(rejected.body).toMatchObject({
+      error: { code: "CONCURRENT_RUN_LIMIT" },
     });
-    expect(fourth.status).toBe("queued");
+    const queuedThreadId = await sendChatInputAtCapacity(
+      actor,
+      agent.agentId,
+      "team upgrade queued chat input",
+    );
     const queuedBefore = await runs.readRunQueue(actor);
     expect(queuedBefore.body.concurrency.active).toBe(3);
-    expect(queuedBefore.body.queue).toHaveLength(1);
+    expect(queuedBefore.body.queue).toHaveLength(0);
 
     const suffix = randomUUID().slice(0, 8);
     const teamSubscriptionId = `sub_bdd_team_${suffix}`;
@@ -4468,6 +4524,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       expiresAt: null,
     });
 
+    const pickedRunId = await waitForPickedThreadRun(actor, queuedThreadId);
+    expect((await runs.readRun(actor, pickedRunId)).status).toBe("pending");
     const drained = await runs.readRunQueue(actor);
     expect(drained.body.concurrency.tier).toBe("team");
     expect(drained.body.queue).toHaveLength(0);
@@ -4645,7 +4703,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     await runs.requestCancelRun(actor, first.runId, [200]);
     await runs.requestCancelRun(actor, second.runId, [200]);
     await runs.requestCancelRun(actor, third.runId, [200]);
-    await runs.requestCancelRun(actor, fourth.runId, [200]);
+    await runs.requestCancelRun(actor, pickedRunId, [200]);
     const settled = await runs.readRunQueue(actor);
     expect(settled.body.concurrency.active).toBe(0);
   });
@@ -4879,7 +4937,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(suspended.hasSubscription).toBeFalsy();
   });
 
-  it("grants concurrency slots from Stripe subscription and drains the queue", async () => {
+  it("grants concurrency slots from Stripe subscription and picks queued chat threads until full", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const billing = createBillingMediaApi(context);
@@ -4890,7 +4948,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     const granted = await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Concurrency Add-on Agent",
       visibility: "private",
@@ -4911,16 +4969,22 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       prompt: "concurrency add-on run three",
       modelProvider: "anthropic-api-key",
     });
-    const queued = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "concurrency add-on queued run",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(queued.status).toBe("queued");
+    const queuedThreadIds = [
+      await sendChatInputAtCapacity(
+        actor,
+        agent.agentId,
+        "concurrency add-on queued chat one",
+      ),
+      await sendChatInputAtCapacity(
+        actor,
+        agent.agentId,
+        "concurrency add-on queued chat two",
+      ),
+    ];
     const before = await runs.readRunQueue(actor);
     expect(before.body.concurrency.limit).toBe(3);
     expect(before.body.concurrency.active).toBe(3);
-    expect(before.body.queue).toHaveLength(1);
+    expect(before.body.queue).toHaveLength(0);
 
     const suffix = randomUUID().slice(0, 8);
     const lineId = `il_bdd_concurrency_${suffix}`;
@@ -5001,20 +5065,29 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       }),
     ]);
 
+    // The capacity increase keeps picking queued threads until the org is
+    // full, so both queued inputs start runs.
+    for (const threadId of queuedThreadIds) {
+      const pickedRunId = await waitForPickedThreadRun(actor, threadId);
+      expect((await runs.readRun(actor, pickedRunId)).status).toBe("pending");
+    }
     const after = await runs.readRunQueue(actor);
     expect(after.body.concurrency.limit).toBe(5);
-    expect(after.body.concurrency.active).toBe(4);
+    expect(after.body.concurrency.active).toBe(5);
     expect(after.body.queue).toHaveLength(0);
 
-    const admitted = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "concurrency add-on admitted run",
-      modelProvider: "anthropic-api-key",
+    const full = await runs.requestCreateRun(
+      actor,
+      {
+        agentId: agent.agentId,
+        prompt: "concurrency add-on run over the new limit",
+        modelProvider: "anthropic-api-key",
+      },
+      [429],
+    );
+    expect(full.body).toMatchObject({
+      error: { code: "CONCURRENT_RUN_LIMIT" },
     });
-    expect(admitted.status).toBe("pending");
-    const afterAdmitted = await runs.readRunQueue(actor);
-    expect(afterAdmitted.body.concurrency.active).toBe(5);
-    expect(afterAdmitted.body.queue).toHaveLength(0);
 
     // Replaying the same invoice event must not grant additional slots.
     await api.postStripeEvent(

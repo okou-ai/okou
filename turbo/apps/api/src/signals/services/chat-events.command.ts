@@ -70,6 +70,7 @@ import { isQueueFirstRunClaimLost } from "./agent-run-create.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { childAutonomyBudget } from "./autonomy-budget.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { markChatThreadQueued } from "./queued-chat-thread.service";
 import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
 import {
   ApiDispatchTimingCollector,
@@ -3889,7 +3890,7 @@ const createNormalChatRun$ = command(
       readonly prepared: PreparedNormalSend;
       /** Queue-first sends replace this queued message at dispatch time. */
       readonly queueFirstEventId: string;
-      /** Optimistic preparation only; final queue authority remains locked. */
+      /** Optimistic preparation only; the claim's revoke edge stays authoritative. */
       readonly preloadedQueuedMessage?: QueuedUserMessage;
     },
     signal: AbortSignal,
@@ -4164,6 +4165,7 @@ const sendQueueFirstNormalEvent$ = command(
         drainChatThreadQueueForThread$,
         {
           chatThreadId: threadId,
+          orgId: args.orgId,
           dispatchFailedCallbacks: dispatchFailedRunCallbacks,
         },
         signal,
@@ -4185,6 +4187,7 @@ const sendQueueFirstNormalEvent$ = command(
         drainChatThreadQueueForThread$,
         {
           chatThreadId: threadId,
+          orgId: args.orgId,
           dispatchFailedCallbacks: dispatchFailedRunCallbacks,
         },
         signal,
@@ -4193,6 +4196,13 @@ const sendQueueFirstNormalEvent$ = command(
       return response;
     }
 
+    // Queued input always has a row, including input this send launches
+    // itself; a later pick deletes the row once it finds the queue empty.
+    await markChatThreadQueued(prepared.db, {
+      chatThreadId: threadId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
     const result = await set(
       createNormalChatRun$,
       {
@@ -4206,6 +4216,17 @@ const sendQueueFirstNormalEvent$ = command(
     signal.throwIfAborted();
     if (result.status === 201) {
       return result;
+    }
+    if (result.body.error.code === "CONCURRENT_RUN_LIMIT") {
+      // The organization is at capacity: nothing was created, the message
+      // stays queued, and the thread's row lets a later pick launch it.
+      await publishChatEventCreated({
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId,
+      });
+      signal.throwIfAborted();
+      return response;
     }
     // Run creation failed validation before it could consume the queue item.
     // Discard the queued message so history matches the legacy direct-send

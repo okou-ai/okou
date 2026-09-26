@@ -249,13 +249,8 @@ factory prevented divergent non-Goal columns. S4 preserved physical
 removed those definitions. Migration consistency still generates and compares
 the complete current physical schema.
 
-The retained `goal-schema-contraction.test.ts` fixture now runs the complete
-current migration sequence in a test-owned database. Real failed-launch INSERT and
-successful launch CTE, run reads/metadata, claimed terminal callback and late
-usage execute there. OpenTelemetry captures the actual application statements;
-the test verifies both insertion forms and the absence of obsolete SQL names.
-This fixture preserves current-schema consumer and accounting coverage; it does
-not perform a production migration.
+The Goal current-schema API tests (`goal-schema-contraction.test.ts`) and their
+fixtures were removed in #37034 after Goal went fully offline.
 
 ### Historical provenance and accounting
 

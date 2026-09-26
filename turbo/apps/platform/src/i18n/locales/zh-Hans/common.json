@@ -2071,7 +2071,7 @@
       "aboutAutomationEvent": "关于这个自动化事件",
       "aboutQueuedMessage": "关于这条排队消息",
       "automationEvent": "自动化事件",
-      "automationEventDescription": "排在已有消息之后，等当前运行结束后执行。",
+      "automationEventDescription": "排队等待，可以开始时自动执行。",
       "cancellationRecoveryPending": "正在收尾已取消的运行，之后继续处理排队中的任务。",
       "event_one": "{{count}}个事件",
       "event_other": "{{count}}个事件",
@@ -2082,7 +2082,7 @@
       "message_other": "{{count}}条消息",
       "pendingAutomationEvent": "待处理的自动化事件",
       "queuedMessage": "排队消息",
-      "queuedMessageDescription": "排队等待，当前运行结束后发送。",
+      "queuedMessageDescription": "排队等待，可以开始时自动发送。",
       "removeQueuedMessage": "移除排队消息",
       "skipAutomationEvent": "跳过自动化事件"
     },

@@ -10,6 +10,8 @@ import {
   dispatchCompleteSideEffectsCore$,
   type DispatchCompleteSideEffectsInput,
 } from "./agent-webhook-complete.service";
+import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
+import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
 import { piApiFirstTurnObjectKey } from "./pi-api-first-turn-config";
 import {
   promoteNextQueuedRun$,
@@ -112,10 +114,22 @@ export const drainOrgQueueToCapacity$ = command(
       const promoted = await set(drainOrgQueue$, args, signal);
       signal.throwIfAborted();
       if (promoted === 0) {
-        return drained;
+        break;
       }
       drained += promoted;
     }
+    // Queued threads take the raised capacity after legacy queued runs.
+    drained += await set(
+      pickOrgQueuedChatThreads$,
+      {
+        orgId: args.orgId,
+        untilFull: true,
+        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return drained;
   },
 );
 
@@ -170,6 +184,27 @@ export const dispatchCompleteSideEffects$ = command(
       set(drainOrgQueue$, { orgId: input.orgId }, signal),
       (error) => {
         L.error("Failed to drain org queue", {
+          runId: input.runId,
+          orgId: input.orgId,
+          error,
+        });
+      },
+    );
+    signal.throwIfAborted();
+    // The run's own thread took its slot over during terminal callbacks; a
+    // slot still free goes to the organization's oldest queued thread.
+    await tapError(
+      set(
+        pickOrgQueuedChatThreads$,
+        {
+          orgId: input.orgId,
+          untilFull: false,
+          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+        },
+        signal,
+      ),
+      (error) => {
+        L.error("Failed to pick queued chat thread", {
           runId: input.runId,
           orgId: input.orgId,
           error,

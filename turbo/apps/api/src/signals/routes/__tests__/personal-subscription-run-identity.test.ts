@@ -206,25 +206,11 @@ async function fixture(type: SubscriptionType, accountsEnabled = true) {
     await runs.heartbeatRunner(runnerGroup);
     return await runs.claimRunnerJob(runId);
   };
-  // Queued admission needs the plan's concurrency filled first. Read the limit
-  // the billing API reports so a plan change cannot silently turn a queued case
-  // into an admitted one.
-  const { concurrencyLimit } = await runs.readBillingStatus(actor);
-  /** Fill the plan's remaining concurrency after `started` admitted runs. */
-  const saturate = async (started = 0) => {
-    const fillers: string[] = [];
-    while (started + fillers.length < concurrencyLimit) {
-      fillers.push(await start());
-    }
-    return fillers;
-  };
   return {
     actor,
     connected,
     start,
     claim,
-    saturate,
-    concurrencyLimit,
     agentId: agent.agentId,
     type,
     model,
@@ -330,14 +316,9 @@ async function finish(
 }
 
 describe("personal subscription run identity", () => {
-  it.each([
-    ["claude-code-oauth-token", "pending"],
-    ["claude-code-oauth-token", "queued"],
-    ["codex-oauth-token", "pending"],
-    ["codex-oauth-token", "queued"],
-  ] as const)(
-    "preserves proven recovery identity for %s %s admission",
-    async (type, admissionStatus) => {
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "preserves proven recovery identity for %s pending admission",
+    async (type) => {
       const f = await fixture(type);
       const admitted: string[] = [];
       const owner = createFixtureOperationOwner(async () => {
@@ -346,17 +327,11 @@ describe("personal subscription run identity", () => {
         }
       });
       await owner.run(async () => {
-        const admissionCount =
-          admissionStatus === "queued" ? f.concurrencyLimit + 1 : 2;
-        for (let index = 0; index < admissionCount; index += 1) {
-          admitted.push(await f.start());
-        }
-        const target = admitted.at(-1);
-        if (!target) {
-          throw new Error("Expected the target subscription admission");
-        }
+        admitted.push(await f.start());
+        const target = await f.start();
+        admitted.push(target);
         await expect(runs.readRun(f.actor, target)).resolves.toMatchObject({
-          status: admissionStatus,
+          status: "pending",
           source: { account: { status: "connected", id: f.connected.id } },
         });
 
@@ -755,7 +730,7 @@ describe("personal subscription run identity", () => {
   });
 
   it.each([false, true])(
-    "retains pending and queued bindings when a replacement changes the active identity (organization API: %s)",
+    "retains pending bindings when a replacement changes the active identity (organization API: %s)",
     async (organizationApi) => {
       const f = await fixture("codex-oauth-token");
       if (organizationApi) {
@@ -763,9 +738,6 @@ describe("personal subscription run identity", () => {
       }
       const first = await f.start();
       const pending = await f.start();
-      const fillers = await f.saturate(2);
-      const queued = await f.start();
-      expect((await runs.readRun(f.actor, queued)).status).toBe("queued");
       const firstClaim = await f.claim(first);
       const captured = accountId(firstClaim, f.type);
       await connect(f.actor, f.type, "identity-b");
@@ -774,29 +746,11 @@ describe("personal subscription run identity", () => {
       });
       const pendingClaim = await f.claim(pending);
       expect(accountId(pendingClaim, f.type)).toBe(captured);
-      await runs.requestCancelRun(f.actor, first, [200]);
-      // Cancellation alone does not release a started run's compute slot.
-      expect((await runs.readRun(f.actor, queued)).status).toBe("queued");
-      await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: first, exitCode: 1, error: "Run cancelled" },
-        { authorization: `Bearer ${firstClaim.sandboxToken}` },
-        [200],
-      );
-      await expect
-        .poll(async () => {
-          return (await runs.readRun(f.actor, queued)).status;
-        })
-        .toBe("pending");
-      const queuedClaim = await f.claim(queued);
-      expect(accountId(queuedClaim, f.type)).toBe(captured);
-      await expect(resolve(queuedClaim, f.type)).resolves.toMatchObject({
+      await expect(resolve(pendingClaim, f.type)).resolves.toMatchObject({
         "ChatGPT-Account-ID": "identity-a",
       });
+      await runs.requestCancelRun(f.actor, first, [200]);
       await runs.requestCancelRun(f.actor, pending, [200]);
-      await runs.requestCancelRun(f.actor, queued, [200]);
-      for (const filler of fillers) {
-        await runs.requestCancelRun(f.actor, filler, [200]);
-      }
       expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
         captured,
       );
@@ -853,37 +807,6 @@ describe("personal subscription run identity", () => {
         return account.id;
       }),
     ).toStrictEqual([accountB]);
-    await runs.requestCancelRun(f.actor, first, [200]);
-    await runs.requestCancelRun(f.actor, second, [200]);
-  }, 20_000);
-
-  it("cleans the last retained account when its queued run expires", async () => {
-    const f = await fixture("codex-oauth-token");
-    if (!f.actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const orgId = f.actor.orgId;
-    await connect(f.actor, f.type, "identity-b");
-    const first = await f.start();
-    const second = await f.start();
-    await f.saturate(2);
-    const queuedAccount = await connect(f.actor, f.type, "identity-a");
-    const queued = await f.start();
-    expect((await runs.readRun(f.actor, queued)).status).toBe("queued");
-    await support.deletePersonalModelProviderAccount(f.actor, queuedAccount.id);
-    // Infrastructure exception: only the scheduler can advance wall-clock
-    // expiry. Invoke its scoped cleanup, then observe the production run API.
-    await withMockNowForTest(now() + 25 * 60 * 60 * 1000, async () => {
-      await cleanupTimedOutRun(context, {
-        runId: queued,
-        orgId,
-        chatThreadId: randomUUID(),
-      });
-    });
-    expect((await runs.readRun(f.actor, queued)).status).toBe("timeout");
-    expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
-      queuedAccount.id,
-    );
     await runs.requestCancelRun(f.actor, first, [200]);
     await runs.requestCancelRun(f.actor, second, [200]);
   }, 20_000);

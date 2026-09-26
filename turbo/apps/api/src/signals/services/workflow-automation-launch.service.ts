@@ -866,6 +866,10 @@ export const launchQueuedWorkflowAutomation$ = command(
     }
     if (result.status !== 201) {
       signal.throwIfAborted();
+      // At organization capacity the event stays queued for a later pick.
+      if (result.body.error.code === "CONCURRENT_RUN_LIMIT") {
+        return { kind: "enqueued" };
+      }
       return { kind: "run_error", response: result };
     }
     await awaitCommittedRunTestHook(automation.id, result.body);

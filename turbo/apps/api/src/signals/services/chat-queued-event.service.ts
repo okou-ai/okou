@@ -9,19 +9,7 @@ import {
 } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import {
-  and,
-  asc,
-  eq,
-  exists,
-  isNull,
-  lt,
-  not,
-  notExists,
-  or,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, eq, exists, isNull, notExists, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import {
@@ -42,11 +30,8 @@ import {
 } from "./canonical-chat-event-read.service";
 import { chatThreadAdmissionBlockerCondition } from "./chat-active-run.service";
 import {
-  chatQueueEventPriority,
-  listPendingChatQueueEvents,
+  loadChatQueueHead,
   loadPendingChatQueueEvent,
-  pendingChatQueueEventCondition,
-  pendingChatQueueEventConditionFor,
 } from "./chat-event-queue.service";
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -361,85 +346,20 @@ export async function resolveWebChatQueueFirstDispatchPreflight(
   | { readonly kind: "drain" }
   | { readonly kind: "self"; readonly queuedMessage: QueuedUserMessage }
 > {
-  const admission = db.$with("queue_first_dispatch_admission").as(
-    db
-      .select({
-        blocked: sql`${chatThreadAdmissionBlockerCondition(db, {
-          threadId,
-        })}`
-          .mapWith(pgBooleanDecoder)
-          .as("blocked"),
-        selectedModel: chatThreads.selectedModel,
-      })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, threadId))
-      .limit(1),
-  );
-  const head = db.$with("queue_first_dispatch_head").as(
-    db
-      .select({
-        id: chatEvents.id,
-        createdAt: chatEvents.createdAt,
-        eventType: chatEvents.eventType,
-        payload: chatEvents.payload,
-        requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
-        contextType: chatEvents.contextType,
-        contextId: chatEvents.contextId,
-        sourceAutonomyBudget: agentRuns.autonomyBudget,
-      })
-      .from(chatEvents)
-      .innerJoin(admission, not(admission.blocked))
-      .leftJoin(
-        agentRuns,
-        and(
-          eq(chatEvents.contextType, "agent_run"),
-          eq(agentRuns.id, chatEvents.contextId),
-        ),
-      )
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, threadId),
-          pendingChatQueueEventCondition(db),
-        ),
-      )
-      .orderBy(
-        chatQueueEventPriority(),
-        asc(chatEvents.createdAt),
-        asc(chatEvents.id),
-      )
-      .limit(1),
-  );
-  const [projection] = await db
-    .with(admission, head)
+  const [admission] = await db
     .select({
-      blocked: admission.blocked,
-      selectedModel: admission.selectedModel,
-      head: {
-        id: head.id,
-        createdAt: head.createdAt,
-        eventType: head.eventType,
-        userMessage: canonicalChatEventUserMessage(head.payload),
-        requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
-        contextType: head.contextType,
-        contextId: head.contextId,
-        sourceAutonomyBudget: head.sourceAutonomyBudget,
-      },
+      blocked: sql`${chatThreadAdmissionBlockerCondition(db, {
+        threadId,
+      })}`.mapWith(pgBooleanDecoder),
     })
-    .from(admission)
-    .leftJoin(head, sql`true`)
+    .from(chatThreads)
+    .where(eq(chatThreads.id, threadId))
     .limit(1);
-
-  if (projection?.blocked) {
+  if (admission?.blocked) {
     return { kind: "wait" };
   }
-  if (!projection?.head || projection.head.eventType !== "input.prompt") {
-    return { kind: "drain" };
-  }
-  const queuedMessage = await materializeQueuedUserMessage(db, {
-    ...projection.head,
-    selectedModel: projection.selectedModel,
-  });
-  return queuedMessage.id === queuedEventId
+  const queuedMessage = await loadNextUnclaimedQueuedUserMessage(db, threadId);
+  return queuedMessage?.id === queuedEventId
     ? { kind: "self", queuedMessage }
     : { kind: "drain" };
 }
@@ -447,14 +367,8 @@ export async function resolveWebChatQueueFirstDispatchPreflight(
 export async function loadNextUnclaimedQueuedUserMessage(
   db: Db,
   threadId: string,
-  queueItemCreatedBefore?: Date,
 ): Promise<QueuedUserMessage | null> {
-  const pending = await listPendingChatQueueEvents(
-    db,
-    threadId,
-    queueItemCreatedBefore,
-  );
-  const head = pending[0];
+  const head = await loadChatQueueHead(db, threadId);
   if (!head || head.eventType !== "input.prompt") {
     return null;
   }
@@ -497,7 +411,7 @@ async function loadNextUnclaimedQueuedUserMessageId(
   db: Db,
   threadId: string,
 ): Promise<string | null> {
-  const [head] = await listPendingChatQueueEvents(db, threadId);
+  const head = await loadChatQueueHead(db, threadId);
   return head?.eventType === "input.prompt" ? head.id : null;
 }
 
@@ -550,76 +464,23 @@ function queueFirstClaimHeadBase(db: DbTransaction) {
     );
 }
 
-function queueFirstClaimHeadQuery(db: DbTransaction, threadId: string) {
-  return queueFirstClaimHeadBase(db)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, threadId),
-        pendingChatQueueEventCondition(db),
-      ),
-    )
-    .orderBy(
-      chatQueueEventPriority(),
-      asc(chatEvents.createdAt),
-      asc(chatEvents.id),
-    )
-    .for("update", { of: chatEvents })
-    .limit(1);
-}
-
-/** The association names a candidate; prove it is still the first pending item. */
-function queueFirstExpectedHeadQuery(
+async function loadQueueFirstClaimHeadById(
   db: DbTransaction,
-  association: QueueFirstRunAssociation,
+  threadId: string,
+  eventId: string,
 ) {
-  const predecessor = alias(chatEvents, "queue_first_predecessor");
-  const earlierInClass = or(
-    lt(predecessor.createdAt, chatEvents.createdAt),
-    and(
-      eq(predecessor.createdAt, chatEvents.createdAt),
-      lt(predecessor.id, chatEvents.id),
-    ),
-  );
-  const precedesCandidate =
-    association.kind === "user_message"
-      ? and(eq(predecessor.eventType, "input.prompt"), earlierInClass)
-      : or(
-          eq(predecessor.eventType, "input.prompt"),
-          and(eq(predecessor.eventType, "input.automation"), earlierInClass),
-        );
-  return queueFirstClaimHeadBase(db)
+  const [head] = await queueFirstClaimHeadBase(db)
     .where(
-      and(
-        eq(chatEvents.chatThreadId, association.threadId),
-        eq(chatEvents.id, association.eventId),
-        eq(
-          chatEvents.eventType,
-          association.kind === "user_message"
-            ? "input.prompt"
-            : "input.automation",
-        ),
-        pendingChatQueueEventCondition(db),
-        notExists(
-          db
-            .select({ id: predecessor.id })
-            .from(predecessor)
-            .where(
-              and(
-                eq(predecessor.chatThreadId, association.threadId),
-                pendingChatQueueEventConditionFor(db, predecessor),
-                precedesCandidate,
-              ),
-            ),
-        ),
-      ),
+      and(eq(chatEvents.id, eventId), eq(chatEvents.chatThreadId, threadId)),
     )
-    .for("update", { of: chatEvents })
     .limit(1);
+  return head ?? null;
 }
 
+/** The thread's FIFO head with the fields its claim replacement needs. */
 async function loadQueueFirstClaimHead(db: DbTransaction, threadId: string) {
-  const [head] = await queueFirstClaimHeadQuery(db, threadId);
-  return head ?? null;
+  const head = await loadChatQueueHead(db, threadId);
+  return head ? await loadQueueFirstClaimHeadById(db, threadId, head.id) : null;
 }
 
 type QueueFirstClaimHead = Awaited<ReturnType<typeof loadQueueFirstClaimHead>>;
@@ -713,32 +574,33 @@ async function loadQueueFirstAdmissionProjection(
   readonly admissionBlocked: boolean;
   readonly head: QueueFirstClaimHead;
 } | null> {
-  const head = db
-    .$with("queue_first_admission_head")
-    .as(queueFirstExpectedHeadQuery(db, args.association));
-  const [projection] = await db
-    .with(head)
+  const { threadId, eventId } = args.association;
+  const [thread] = await db
     .select({
       admissionBlocked: sql`${chatThreadAdmissionBlockerCondition(db, {
-        threadId: args.association.threadId,
+        threadId,
       })}`.mapWith(pgBooleanDecoder),
-      head: {
-        id: head.id,
-        chatThreadId: head.chatThreadId,
-        createdAt: head.createdAt,
-        eventType: head.eventType,
-        contextType: head.contextType,
-        contextId: head.contextId,
-        automationId: head.automationId,
-        automationKind: head.automationKind,
-        userMessage: head.userMessage,
-      },
     })
     .from(chatThreads)
-    .leftJoin(head, sql`true`)
-    .where(eq(chatThreads.id, args.association.threadId))
+    .where(eq(chatThreads.id, threadId))
     .limit(1);
-  return projection ?? null;
+  if (!thread || thread.admissionBlocked) {
+    return thread ? { admissionBlocked: true, head: null } : null;
+  }
+  // The association names a candidate; it must still be the FIFO head.
+  const pendingHead = await loadChatQueueHead(db, threadId);
+  const expectedEventType =
+    args.association.kind === "user_message"
+      ? "input.prompt"
+      : "input.automation";
+  const isExpectedHead =
+    pendingHead?.id === eventId && pendingHead.eventType === expectedEventType;
+  return {
+    admissionBlocked: false,
+    head: isExpectedHead
+      ? await loadQueueFirstClaimHeadById(db, threadId, eventId)
+      : null,
+  };
 }
 
 /**
@@ -839,10 +701,10 @@ export async function claimQueueFirstRunAssociation(
         },
         claimDimensions,
       );
+      // The replacement's unique revoke edge is the claim's only mutual
+      // exclusion: a concurrent claim, recall or rejection that appended first
+      // makes this insert a no-op, and this launch loses its claim.
       if (!claimed) {
-        if (args.kind !== "user_message") {
-          throw new Error(`Claimed ${args.kind} queue event disappeared`);
-        }
         outcome = "lost";
         return { kind: "lost" };
       }

@@ -1,11 +1,3 @@
-import {
-  setHistoricalGoalStatusFixture,
-  historicalGoalStatusFixture,
-  readGoalQueueStateFixture,
-  seedGoalForRunFixture,
-  setLegacyGoalRunOriginFixture,
-} from "../../../test-fixtures/goal-queue";
-
 import { http, HttpResponse } from "msw";
 import { createStore } from "ccstate";
 import {
@@ -295,29 +287,6 @@ async function queueChatEvent(
   return messageId;
 }
 
-async function enableGoalWorkflows(actor: ApiTestUser): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected an org-scoped actor for goal workflows");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    {
-      userId: actor.userId,
-      orgId: actor.orgId,
-      orgRole: actor.orgRole,
-    },
-    {},
-  );
-}
-
-async function createGoalForRun(
-  _actor: ApiTestUser,
-  runId: string,
-  objective: string,
-): Promise<void> {
-  await seedGoalForRunFixture(runId, objective);
-}
-
 async function claimChatRunJob(runnerGroup: string, runId: string) {
   await api.heartbeatRunner(runnerGroup);
   let claim: Awaited<ReturnType<typeof api.requestClaimRunnerJob>> | undefined;
@@ -501,14 +470,6 @@ async function waitForRunContext(actor: ApiTestUser, runId: string) {
     throw new Error("Expected the auto-send run context to be readable");
   }
   return response;
-}
-
-async function goalQueueEventIds(threadId: string): Promise<readonly string[]> {
-  return (await readGoalQueueStateFixture(threadId)).eventIds;
-}
-
-async function goalRunIds(threadId: string): Promise<readonly string[]> {
-  return (await readGoalQueueStateFixture(threadId)).runIds;
 }
 
 function chatRunCheckpoint(runId: string): {
@@ -2196,112 +2157,14 @@ describe("CHAT-02: completed chat callback", () => {
     await flushWaitUntilForTest();
   }, 90_000);
 
-  it("continues a queued prompt while a historical Goal remains active", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await enableGoalWorkflows(actor);
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const first = await startChatRun(actor, {
-      agentId,
-      prompt: "finish before queued goal interruption",
-    });
-    const goalBrief = "Continue after the queued prompt";
-    await createGoalForRun(actor, first.runId, goalBrief);
-    const queuedMessageId = await queueChatEvent(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "run before the admitted goal",
-    });
-    chatCallbacks.mockChatOutputEvents([
-      assistantEvent(0, "completed before queued goal interruption"),
-    ]);
-
-    const sandboxHeaders = await claimChatRun(runnerGroup, first.runId);
-    await completeChatRunOk(first.runId, sandboxHeaders, {
-      lastEventSequence: 0,
-    });
-
-    const messages = await waitForThreadMessages(
-      actor,
-      first.threadId,
-      (items) => {
-        return userMessages(items).some((message) => {
-          return (
-            message.revokesEventId === queuedMessageId &&
-            message.runId !== undefined
-          );
-        });
-      },
-    );
-    const claimedPrompt = userMessages(messages.events).find((message) => {
-      return message.revokesEventId === queuedMessageId;
-    });
-    if (!claimedPrompt?.runId) {
-      throw new Error("Expected the queued prompt to win goal priority");
-    }
-    expect(chatEventDisplayText(claimedPrompt)).toBe(
-      "run before the admitted goal",
-    );
-    await expect(goalRunIds(first.threadId)).resolves.toHaveLength(0);
-    await expect(goalQueueEventIds(first.threadId)).resolves.toHaveLength(0);
-
-    await api.requestCancelRun(actor, claimedPrompt.runId, [200]);
-    await waitForRunStatus(actor, claimedPrompt.runId, "cancelled");
-    await flushWaitUntilForTest();
-  }, 90_000);
-
-  it("prepares a resumed manual run without paused Goal authority", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await enableGoalWorkflows(actor);
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const first = await startChatRun(actor, {
-      agentId,
-      prompt: "pause this goal before finishing",
-    });
-    const goalBrief = "Keep improving the paused goal context";
-    await createGoalForRun(actor, first.runId, goalBrief);
-    await setHistoricalGoalStatusFixture(first.runId, "paused");
-
-    chatCallbacks.mockChatOutputEvents([
-      assistantEvent(0, "finished after pausing the goal"),
-    ]);
-    const sandboxHeaders = await claimChatRun(runnerGroup, first.runId);
-    await completeChatRunOk(first.runId, sandboxHeaders, {
-      lastEventSequence: 0,
-    });
-    await flushWaitUntilForTest();
-
-    const second = await startChatRun(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "handle a new user request",
-    });
-    const runContext = await waitForRunContext(actor, second.runId);
-    const appendSystemPrompt = runContext.body.appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).not.toContain("# Thread Goal");
-    expect(appendSystemPrompt).not.toContain("okou goal");
-    const claimed = await claimChatRunJob(runnerGroup, second.runId);
-    expect(
-      claimed.storageManifest?.storageMounts.map((mount) => {
-        return mount.mountPath;
-      }),
-    ).not.toContain("/home/user/.claude/skills/goal");
-    expect(claimed.resumeSession).not.toBeNull();
-
-    await api.requestCancelRun(actor, second.runId, [200]);
-    await waitForRunStatus(actor, second.runId, "cancelled");
-    await flushWaitUntilForTest();
-  }, 90_000);
-
-  it("marks an auto-sent follow-up when org concurrency queues the new run", async () => {
+  it("keeps an auto-sent follow-up pending until org concurrency frees a slot", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
 
     const first = await startChatRun(actor, {
       agentId,
-      prompt: "finish before auto-send queues",
+      prompt: "finish before auto-send meets the org cap",
     });
     const blocker = await startChatRun(actor, {
       agentId,
@@ -2310,21 +2173,11 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, first.runId, "pending");
     await waitForRunStatus(actor, blocker.runId, "pending");
 
-    await queueChatEvent(actor, {
+    const queuedEventId = await queueChatEvent(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "queued while org cap is full",
     });
-    const queuedBeforeComplete = await chat.listThreadEvents(
-      actor,
-      first.threadId,
-    );
-    const queued = userMessages(queuedBeforeComplete.events).find((message) => {
-      return chatEventDisplayText(message) === "queued while org cap is full";
-    });
-    if (!queued) {
-      throw new Error("Expected the queued user message to be listed");
-    }
 
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const sandboxHeaders = await claimChatRun(runnerGroup, first.runId);
@@ -2332,52 +2185,41 @@ describe("CHAT-02: completed chat callback", () => {
     await completeChatRunOk(first.runId, sandboxHeaders, {
       lastEventSequence: 0,
     });
-
-    const afterAutoSend = await waitForThreadMessages(
-      actor,
-      first.threadId,
-      (messages) => {
-        const claimed = userMessages(messages).find((message) => {
-          return (
-            message.revokesEventId === queued.id && message.runId !== undefined
-          );
-        });
-        return (
-          claimed !== undefined &&
-          assistantMessages(messages).some((message) => {
-            return (
-              message.runId === claimed.runId &&
-              message.runEventId === "queue:queued"
-            );
-          })
-        );
-      },
-    );
-    const claimed = userMessages(afterAutoSend.events).find((message) => {
-      return message.revokesEventId === queued.id;
-    });
-    if (!claimed?.runId) {
-      throw new Error("Expected the queued message to auto-send");
-    }
-    const marker = assistantMessages(afterAutoSend.events).find((message) => {
-      return (
-        message.runId === claimed.runId && message.runEventId === "queue:queued"
-      );
-    });
-    if (!marker) {
-      throw new Error("Expected an assistant queue marker");
-    }
-    expect(marker).toMatchObject({
-      content: "Waiting in queue...",
-      runId: claimed.runId,
-    });
+    await waitForRunStatus(actor, first.runId, "completed");
     await flushWaitUntilForTest();
 
+    // At the org cap the auto-send starts no run: the input stays pending in
+    // the thread and no queued-run marker is written.
+    const whileFull = await chat.listThreadEvents(actor, first.threadId);
+    expect(
+      userMessages(whileFull.events).filter((message) => {
+        return message.revokesEventId === queuedEventId;
+      }),
+    ).toHaveLength(0);
+    expect(
+      userMessages(whileFull.events).find((message) => {
+        return message.id === queuedEventId;
+      }),
+    ).toBeDefined();
+    expect(
+      assistantMessages(whileFull.events).some((message) => {
+        return message.runEventId === "queue:queued";
+      }),
+    ).toBeFalsy();
+
+    // Freeing the org slot picks the waiting thread and launches its input.
     await api.requestCancelRun(actor, blocker.runId, [200]);
     await waitForRunStatus(actor, blocker.runId, "cancelled");
-    await waitForRunStatus(actor, claimed.runId, "pending");
-    await api.requestCancelRun(actor, claimed.runId, [200]);
-    await waitForRunStatus(actor, claimed.runId, "cancelled");
+    await flushWaitUntilForTest();
+    const pickedRunId = await waitForQueuedEventReplacement(
+      actor,
+      first.threadId,
+      queuedEventId,
+    );
+    expect(pickedRunId).not.toBe(first.runId);
+    await waitForRunStatus(actor, pickedRunId, "pending");
+    await api.requestCancelRun(actor, pickedRunId, [200]);
+    await waitForRunStatus(actor, pickedRunId, "cancelled");
     await flushWaitUntilForTest();
   }, 90_000);
 });
@@ -2408,42 +2250,6 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
 
     await api.requestCancelRun(actor, replacementRunId, [200]);
     await waitForRunStatus(actor, replacementRunId, "cancelled");
-    await flushWaitUntilForTest();
-  }, 90_000);
-
-  it("preserves immediate release when an org-queued run is cancelled", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const blocker = await startChatRun(actor, {
-      agentId,
-      prompt: "hold the only org run slot",
-    });
-    await waitForRunStatus(actor, blocker.runId, "pending");
-    const queuedRun = await startChatRun(actor, {
-      agentId,
-      prompt: "cancel while waiting for the org slot",
-    });
-    await waitForRunStatus(actor, queuedRun.runId, "queued");
-    const queuedEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: queuedRun.threadId,
-      prompt: "continue after queued cancellation",
-    });
-
-    await api.requestCancelRun(actor, queuedRun.runId, [200]);
-    const replacementRunId = await waitForQueuedEventReplacement(
-      actor,
-      queuedRun.threadId,
-      queuedEventId,
-    );
-    expect(replacementRunId).not.toBe(queuedRun.runId);
-    await expectCancellationRecoveryPending(actor, queuedRun.threadId, false);
-
-    await api.requestCancelRun(actor, replacementRunId, [200]);
-    await waitForRunStatus(actor, replacementRunId, "cancelled");
-    await api.requestCancelRun(actor, blocker.runId, [200]);
-    await waitForRunStatus(actor, blocker.runId, "cancelled");
     await flushWaitUntilForTest();
   }, 90_000);
 
@@ -6299,52 +6105,6 @@ describe("CHAT-02: push notification gating", () => {
         },
       });
     }
-  }, 60_000);
-
-  it("delivers completed run pushes once while a historical Goal remains active", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    chatCallbacks.enableVapid();
-    await chatCallbacks.registerPushSubscription(actor);
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "complete while Goal remains active",
-    });
-    const goal = await seedGoalForRunFixture(run.runId, "historical objective");
-    chatCallbacks.mockChatOutputEvents([]);
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    await setLegacyGoalRunOriginFixture(run.runId, goal.id);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-    await flushWaitUntilForTest();
-    await completeChatRunOk(run.runId, sandboxHeaders);
-    await flushWaitUntilForTest();
-    expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
-    await expect(goalQueueEventIds(run.threadId)).resolves.toStrictEqual([]);
-    await expect(goalRunIds(run.threadId)).resolves.toStrictEqual([run.runId]);
-  }, 60_000);
-
-  it("delivers failed run pushes while a historical Goal remains active", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await enableGoalWorkflows(actor);
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    chatCallbacks.enableVapid();
-    await chatCallbacks.registerPushSubscription(actor);
-
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "fail while goal remains active",
-    });
-    await createGoalForRun(actor, run.runId, "pause after this failure");
-    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-    await failChatRun(run.runId, sandboxHeaders, "goal iteration failed");
-
-    await expect
-      .poll(async () => {
-        return await historicalGoalStatusFixture(run.runId);
-      })
-      .toBe("active");
-    await flushWaitUntilForTest();
-    expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
   }, 60_000);
 
   it("withholds pushes without VAPID keys and deletes stale subscriptions after gone responses", async () => {

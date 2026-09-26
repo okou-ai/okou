@@ -964,6 +964,74 @@ export function createChatEventsFixture(context: TestContext) {
     return { runId, threadId: sent.body.threadId };
   }
 
+  /**
+   * Send a chat prompt while the organization is at its run limit. The input
+   * is accepted without a run; `launchedRun` waits until a later pick launches
+   * it as the thread head and returns that run.
+   */
+  async function sendWaitingChatInput(
+    actor: ApiTestUser,
+    body: ChatRunSendBody,
+    usagePricingResolution?: UsagePricingFixture["resolution"],
+  ): Promise<{
+    readonly threadId: string;
+    readonly launchedRun: () => Promise<{
+      readonly runId: string;
+      readonly threadId: string;
+    }>;
+  }> {
+    const { template, ...canonicalBody } = body;
+    const clientEventId = body.clientEventId ?? randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        ...canonicalBody,
+        ...(template === undefined
+          ? {}
+          : { userMessage: userMessageWithTemplate(body.prompt, template) }),
+        clientEventId,
+      },
+      [201],
+      { usagePricingResolution },
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the at-capacity chat send to be accepted");
+    }
+    // At capacity the input waits in the thread without a run.
+    expect(sent.body.runId).toBeNull();
+    const threadId = sent.body.threadId;
+    const waiting = await chat.listThreadEvents(actor, threadId);
+    expect(
+      userMessages(waiting.events).filter((message) => {
+        return (
+          message.revokesEventId === clientEventId &&
+          message.runId !== undefined
+        );
+      }),
+    ).toStrictEqual([]);
+    const launchedRun = async (): Promise<{
+      readonly runId: string;
+      readonly threadId: string;
+    }> => {
+      const messages = await waitForThreadMessages(actor, threadId, (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === clientEventId &&
+            message.runId !== undefined
+          );
+        });
+      });
+      const runId = userMessages(messages.events).find((message) => {
+        return message.revokesEventId === clientEventId;
+      })?.runId;
+      if (runId === undefined) {
+        throw new Error("Expected the picked thread head to launch a run");
+      }
+      return { runId, threadId };
+    };
+    return { threadId, launchedRun };
+  }
+
   async function expectThreadCreatedModelEvent(
     actor: ApiTestUser,
     threadId: string,
@@ -1749,6 +1817,12 @@ export function createChatEventsFixture(context: TestContext) {
     await flushWaitUntilForTest();
   }
 
+  /**
+   * Hold the organization's only run slot with a native anchor and send a Pi
+   * prompt on a new thread. At capacity the send is accepted without a run;
+   * `launch` completes the anchor so the org pick starts the queued thread
+   * head as the Pi run and returns that run.
+   */
   async function queueCapabilityProvenPiRun(args: {
     readonly actor: ApiTestUser;
     readonly agentId: string;
@@ -1760,8 +1834,11 @@ export function createChatEventsFixture(context: TestContext) {
   }): Promise<{
     readonly anchor: { readonly runId: string; readonly threadId: string };
     readonly anchorClaim: Awaited<ReturnType<typeof claimChatRun>>;
-    readonly run: { readonly runId: string; readonly threadId: string };
+    readonly threadId: string;
     readonly usagePricingResolution: UsagePricingFixture["resolution"];
+    readonly launch: (
+      options?: ChatRunCompletionOptions,
+    ) => Promise<{ readonly runId: string; readonly threadId: string }>;
   }> {
     if (!args.actor.orgId) {
       throw new Error("Expected entitled chat actor to have an org");
@@ -1781,7 +1858,7 @@ export function createChatEventsFixture(context: TestContext) {
     const anchor = await sendChatRun(args.actor, {
       agentId: args.agentId,
       prompt: "hold capacity for a capability-proven Pi launch",
-      // The anchor must stay on the native Runner while the queued target
+      // The anchor must stay on the native Runner while the waiting target
       // proves Pi admission; Sonnet 5 now uses the Pi checkpoint format.
       model: "claude-fable-5-1",
     });
@@ -1808,8 +1885,8 @@ export function createChatEventsFixture(context: TestContext) {
 
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(selectedModel);
-    const run = await withModelRoute(async () => {
-      return await sendChatRun(
+    const waiting = await withModelRoute(async () => {
+      return await sendWaitingChatInput(
         args.actor,
         {
           agentId: args.agentId,
@@ -1822,8 +1899,22 @@ export function createChatEventsFixture(context: TestContext) {
         usagePricingResolution,
       );
     });
-    await waitForRunStatus(args.actor, run.runId, "queued");
-    return { anchor, anchorClaim, run, usagePricingResolution };
+    const threadId = waiting.threadId;
+
+    const launch = async (
+      options: ChatRunCompletionOptions = {},
+    ): Promise<{ readonly runId: string; readonly threadId: string }> => {
+      // Do not flush background work here: callers may block the launched
+      // run's preparation and release it only after this returns.
+      await withModelRoute(async () => {
+        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
+          usagePricingResolution,
+          ...options,
+        });
+      });
+      return await waiting.launchedRun();
+    };
+    return { anchor, anchorClaim, threadId, usagePricingResolution, launch };
   }
 
   return {
@@ -1848,6 +1939,7 @@ export function createChatEventsFixture(context: TestContext) {
     configureSubscriptionPiModel,
     configureBuiltInPiModelOnOpenRouter,
     sendChatRun,
+    sendWaitingChatInput,
     expectThreadCreatedModelEvent,
     expectNoThreadModelUpdateEvent,
     claimChatRun,

@@ -1,5 +1,4 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   activeInputDeliveries,
   activeInputDeliveryItems,
@@ -15,11 +14,10 @@ import {
   lt,
   notExists,
   or,
-  sql,
-  type SQL,
 } from "drizzle-orm";
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 
+import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
 
@@ -29,6 +27,7 @@ type ChatQueueEventContextType = NonNullable<
 >;
 
 const queueEventRevoker = alias(chatEvents, "queue_event_revoker");
+const log = logger("ChatEventQueue");
 
 export const CHAT_QUEUE_STALE_AFTER_MS = 5 * 60 * 1000;
 export const CHAT_QUEUE_STALE_RECHECK_WINDOW_MS = 10 * 60 * 1000;
@@ -152,34 +151,6 @@ export async function revokedChatEventIds(
   );
 }
 
-async function openActiveInputDeliveryEventIds(
-  db: ChatQueueReadDb,
-  eventIds: readonly string[],
-): Promise<ReadonlySet<string>> {
-  if (eventIds.length === 0) {
-    return new Set();
-  }
-  const rows = await db
-    .select({ eventId: activeInputDeliveryItems.sourceEventId })
-    .from(activeInputDeliveryItems)
-    .innerJoin(
-      activeInputDeliveries,
-      eq(activeInputDeliveries.id, activeInputDeliveryItems.deliveryId),
-    )
-    .where(
-      and(
-        inArray(activeInputDeliveryItems.sourceEventId, [...eventIds]),
-        isNull(activeInputDeliveryItems.disposition),
-        eq(activeInputDeliveries.status, "open"),
-      ),
-    );
-  return new Set(
-    rows.map(({ eventId }) => {
-      return eventId;
-    }),
-  );
-}
-
 interface QueueEventIdentityColumns {
   readonly id: AnyPgColumn;
   readonly eventType: AnyPgColumn;
@@ -245,7 +216,7 @@ export function pendingChatQueueEventCondition(db: ChatQueueReadDb) {
 }
 
 /** Apply the authoritative pending-queue predicate to a queue-event alias. */
-export function pendingChatQueueEventConditionFor(
+function pendingChatQueueEventConditionFor(
   db: ChatQueueReadDb,
   event: QueueEventIdentityColumns,
 ) {
@@ -256,27 +227,34 @@ export function pendingChatQueueEventConditionFor(
   );
 }
 
-export function chatQueueEventPriority(): SQL {
-  return sql`CASE ${chatEvents.eventType}
-    WHEN 'input.prompt' THEN 0
-    WHEN 'input.automation' THEN 1
-    ELSE 2
-  END`;
+const SLOW_PENDING_INPUT_READ_MS = 250;
+
+export interface PendingChatInput {
+  readonly id: string;
+  readonly chatThreadId: string;
+  readonly eventType: "input.prompt" | "input.automation" | "input.budget";
+  readonly seqId: number;
+  readonly createdAt: Date;
 }
 
 /**
- * List one thread's pending queue in its authoritative database order. User
- * input keeps absolute priority over automation input. Each
- * class is FIFO by the original event timestamp and id. Keep the sort in
- * PostgreSQL so sub-millisecond timestamp precision matches the final
- * queue-claim queries.
+ * One thread's pending (run-less, unrevoked) input in sequence order, read in
+ * two bounded steps scoped to the thread: its run-less input rows through the
+ * (chat_thread_id, seq_id) index, then the revocations of exactly those rows
+ * through the revokes_event_id index. The revoked rows are dropped here, so
+ * the read needs no transaction, CTE or subquery. `budgetForRunId` adds the
+ * budget input that targets that run.
  */
-export async function listPendingChatQueueEvents(
+export async function listPendingChatInputs(
   db: ChatQueueReadDb,
-  chatThreadId: string,
-  createdBefore?: Date,
-): Promise<readonly PendingChatQueueEvent[]> {
-  const rows = await db
+  args: {
+    readonly chatThreadId: string;
+    readonly eventTypes: readonly ("input.prompt" | "input.automation")[];
+    readonly budgetForRunId?: string;
+  },
+): Promise<readonly PendingChatInput[]> {
+  const startedAt = performance.now();
+  const candidates = await db
     .select({
       id: chatEvents.id,
       chatThreadId: chatEvents.chatThreadId,
@@ -287,34 +265,69 @@ export async function listPendingChatQueueEvents(
     .from(chatEvents)
     .where(
       and(
-        eq(chatEvents.chatThreadId, chatThreadId),
-        pendingChatQueueEventCondition(db),
-        createdBefore ? lt(chatEvents.createdAt, createdBefore) : undefined,
+        eq(chatEvents.chatThreadId, args.chatThreadId),
+        isNull(chatEvents.runId),
+        or(
+          inArray(chatEvents.eventType, [...args.eventTypes]),
+          args.budgetForRunId === undefined
+            ? undefined
+            : and(
+                eq(chatEvents.eventType, "input.budget"),
+                eq(chatEvents.contextType, "agent_run"),
+                eq(chatEvents.contextId, args.budgetForRunId),
+              ),
+        ),
       ),
-    )
-    .orderBy(
-      chatQueueEventPriority(),
-      asc(chatEvents.createdAt),
-      asc(chatEvents.id),
     );
+  const revoked = await revokedChatEventIds(
+    db,
+    candidates.map(({ id }) => {
+      return id;
+    }),
+  );
+  const durationMs = performance.now() - startedAt;
+  if (durationMs >= SLOW_PENDING_INPUT_READ_MS) {
+    log.warn("Pending chat input read exceeded 250 ms", {
+      chatThreadId: args.chatThreadId,
+      scannedRows: candidates.length,
+      durationMs,
+    });
+  }
+  return candidates
+    .flatMap((event): PendingChatInput[] => {
+      if (
+        revoked.has(event.id) ||
+        (event.eventType !== "input.prompt" &&
+          event.eventType !== "input.automation" &&
+          event.eventType !== "input.budget")
+      ) {
+        return [];
+      }
+      return [{ ...event, eventType: event.eventType }];
+    })
+    .sort((left, right) => {
+      return left.seqId - right.seqId;
+    });
+}
 
-  return rows.flatMap((event) => {
-    if (
-      event.eventType !== "input.prompt" &&
-      event.eventType !== "input.automation"
-    ) {
-      return [];
-    }
-    return [
-      {
-        id: event.id,
-        chatThreadId: event.chatThreadId,
-        eventType: event.eventType,
-        seqId: event.seqId,
-        createdAt: event.createdAt,
-      },
-    ];
+/**
+ * Load one thread's pending queue head. The queue is strict FIFO by the
+ * thread's event sequence: user messages and automation events interleave in
+ * the order they were appended.
+ */
+export async function loadChatQueueHead(
+  db: ChatQueueReadDb,
+  chatThreadId: string,
+): Promise<PendingChatQueueEvent | null> {
+  const pending = await listPendingChatInputs(db, {
+    chatThreadId,
+    eventTypes: ["input.prompt", "input.automation"],
   });
+  const [head] = pending;
+  if (!head || head.eventType === "input.budget") {
+    return null;
+  }
+  return { ...head, eventType: head.eventType };
 }
 
 export async function loadPendingChatQueueEvent(
@@ -349,84 +362,4 @@ export async function loadPendingChatQueueEvent(
     return null;
   }
   return { ...event, eventType: event.eventType };
-}
-
-/**
- * Thread row lock for run admission and run termination.
- *
- * Consuming a pending event (claim, recall, rejection or discard) does not need
- * it: every consumer appends a replacement on the event's unique revoke edge,
- * so exactly one of them wins. `NO KEY UPDATE` does not conflict with a content
- * writer's identity-only `KEY SHARE` pin.
- */
-export async function lockChatQueueThread(
-  db: ChatQueueReadDb,
-  chatThreadId: string,
-): Promise<boolean> {
-  const [thread] = await db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, chatThreadId))
-    .for("no key update");
-  return thread !== undefined;
-}
-
-/** Threads with recently stale runnable queue work for the safety sweep. */
-export async function staleChatEventQueueThreadIds(
-  db: ChatQueueReadDb,
-  args: RecentStaleChatQueueWindow & {
-    readonly limit: number;
-    readonly chatThreadIds?: readonly string[];
-  },
-  signal: AbortSignal,
-): Promise<readonly string[]> {
-  if (args.limit <= 0 || args.chatThreadIds?.length === 0) {
-    return [];
-  }
-
-  const chatThreadIds = new Set<string>();
-  let cursor: ChatQueueEventScanCursor | undefined;
-  while (chatThreadIds.size < args.limit) {
-    const candidates = await listChatQueueEventScanCandidatePage(db, {
-      createdAtOrAfter: args.createdAtOrAfter,
-      createdBefore: args.createdBefore,
-      cursor,
-      limit: CHAT_QUEUE_SCAN_PAGE_SIZE,
-      chatThreadIds: args.chatThreadIds,
-    });
-    signal.throwIfAborted();
-    if (candidates.length === 0) {
-      break;
-    }
-
-    const eventIds = candidates.map(({ id }) => {
-      return id;
-    });
-    const [revokedEventIds, activeDeliveryEventIds] = await Promise.all([
-      revokedChatEventIds(db, eventIds),
-      openActiveInputDeliveryEventIds(db, eventIds),
-    ]);
-    signal.throwIfAborted();
-    for (const candidate of candidates) {
-      if (
-        !revokedEventIds.has(candidate.id) &&
-        !activeDeliveryEventIds.has(candidate.id)
-      ) {
-        chatThreadIds.add(candidate.chatThreadId);
-        if (chatThreadIds.size === args.limit) {
-          break;
-        }
-      }
-    }
-
-    if (candidates.length < CHAT_QUEUE_SCAN_PAGE_SIZE) {
-      break;
-    }
-    const lastCandidate = candidates.at(-1);
-    if (!lastCandidate) {
-      break;
-    }
-    cursor = lastCandidate;
-  }
-  return [...chatThreadIds];
 }

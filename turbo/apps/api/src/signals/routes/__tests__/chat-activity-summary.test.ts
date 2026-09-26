@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
@@ -308,28 +308,10 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   });
 
-  it("rejects queued and superseded run identities before cached or model output", async () => {
+  it("rejects a superseded run identity before cached or model output", async () => {
     const f = await fixture();
     const inputs = provider();
     await summarize(f.actor, f.run);
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const queued = await chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agentId, prompt: "Wait for capacity" },
-      [201],
-    );
-    if (queued.status !== 201 || !queued.body.runId) {
-      throw new Error("Expected queued run identity");
-    }
-    expect(queued.body.status).toBe("queued");
-    await expect(
-      summarize(f.actor, {
-        runId: queued.body.runId,
-        threadId: queued.body.threadId,
-      }),
-    ).resolves.toMatchObject({ status: "ineligible", messages: [] });
-    expect(inputs).toHaveLength(1);
-    await runs.requestCancelRun(f.actor, queued.body.runId, [200]);
     await runs.requestCancelRun(f.actor, f.run.runId, [200]);
     await webhooks.requestAgentComplete(
       { runId: f.run.runId, exitCode: 1, error: "Run cancelled" },
@@ -1071,29 +1053,6 @@ describe("thread activity summary", () => {
       readActiveAgentRunFixture(f.run.runId),
     ).resolves.toBeUndefined();
     expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-  });
-
-  it("releases a queued run's active row when it is cancelled", async () => {
-    const f = await fixture();
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const queued = await chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agentId, prompt: "Wait for capacity" },
-      [201],
-    );
-    if (queued.status !== 201 || !queued.body.runId) {
-      throw new Error("Expected queued run identity");
-    }
-    expect(queued.body.status).toBe("queued");
-    const queuedRunId = queued.body.runId;
-    await expect(readActiveAgentRunFixture(queuedRunId)).resolves.toMatchObject(
-      { chatThreadId: queued.body.threadId },
-    );
-    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
-    await runs.requestCancelRun(f.actor, queuedRunId, [200]);
-    await expect(
-      readActiveAgentRunFixture(queuedRunId),
-    ).resolves.toBeUndefined();
   });
 
   it("releases a silent terminal run's row after the recovery grace", async () => {

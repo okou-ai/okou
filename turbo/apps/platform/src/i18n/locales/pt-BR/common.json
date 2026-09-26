@@ -2117,7 +2117,7 @@
       "aboutAutomationEvent": "Sobre este evento de automação",
       "aboutQueuedMessage": "Sobre esta mensagem na fila",
       "automationEvent": "Evento de automação",
-      "automationEventDescription": "Aguarda atrás das mensagens na fila e é executado quando a execução atual termina.",
+      "automationEventDescription": "Aguarda na fila e é executado automaticamente quando puder começar.",
       "cancellationRecoveryPending": "Finalizando a execução cancelada antes de continuar o trabalho na fila.",
       "event_one": "{{count}} evento",
       "event_many": "{{count}} eventos",
@@ -2130,7 +2130,7 @@
       "message_other": "{{count}} mensagens",
       "pendingAutomationEvent": "Evento de automação pendente",
       "queuedMessage": "Mensagem na fila",
-      "queuedMessageDescription": "Aguarda na fila e é enviada quando a execução atual termina.",
+      "queuedMessageDescription": "Aguarda na fila e é enviada automaticamente quando puder começar.",
       "removeQueuedMessage": "Remover mensagem da fila",
       "skipAutomationEvent": "Ignorar evento de automação"
     },

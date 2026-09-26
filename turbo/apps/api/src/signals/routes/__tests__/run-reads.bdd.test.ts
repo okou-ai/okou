@@ -315,7 +315,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       "automation-event",
       "automation-schedule",
       "automation-event",
-      "goal",
     ] as const;
     const sourceRuns = [];
     for (const triggerSource of triggerSources) {
@@ -433,8 +432,8 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     ).not.toContain(lifecycleRun.runId);
   });
 
-  it("lists, reads, and queues direct runs with status, agent, and window filters", async () => {
-    // Keep this queue-behavior scenario independent of the product-tier limit.
+  it("lists and reads direct runs with status, agent, and window filters", async () => {
+    // Keep this capacity scenario independent of the product-tier limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const actor = await entitledActor();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
@@ -445,23 +444,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD run reads agent",
-      description: "Queue privacy and session links.",
+      description: "Direct create at the concurrency limit.",
       visibility: "private",
     });
-    const memberAgent = await bdd.createAgent(member, {
-      displayName: "BDD member agent",
-      description: "Foreign queue entries.",
-      visibility: "private",
-    });
-
-    // Seed a terminal agent-run session so a later queued run can carry a
-    // continuation session link.
-    const seedRun = await api.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "seed a session",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.requestCancelRun(actor, seedRun.runId, [200]);
 
     const runA = await api.createDirectRun(actor, {
       agentId: target.agentId,
@@ -637,47 +622,21 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     });
     expect(agentQueue.body.estimatedTimePerRun).not.toBeNull();
 
-    const longPrompt = "q".repeat(220);
-    const queuedOwn = await api.createRun(actor, {
-      agentId: agent.agentId,
-      sessionId: seedRun.sessionId,
-      prompt: longPrompt,
-      modelProvider: "anthropic-api-key",
-    });
-    expect(queuedOwn.status).toBe("queued");
-    const queuedForeign = await api.createRun(member, {
-      agentId: memberAgent.agentId,
-      prompt: "member queued secret",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(queuedForeign.status).toBe("queued");
-
-    const privacyQueue = await api.readRunQueue(actor);
-    expect(privacyQueue.body.queue).toHaveLength(2);
-    expect(privacyQueue.body.queue[0]).toMatchObject({
-      position: 1,
-      isOwner: true,
-      runId: queuedOwn.runId,
-      prompt: `${"q".repeat(200)}...`,
-      userEmail: actor.email,
-      sessionLink: `/chat/${seedRun.sessionId}`,
-    });
-    expect(privacyQueue.body.queue[1]).toMatchObject({
-      position: 2,
-      isOwner: false,
-      runId: null,
-      prompt: null,
-      agentName: null,
-      userEmail: null,
-      triggerSource: null,
-      sessionLink: null,
-    });
-    expect(JSON.stringify(privacyQueue.body)).not.toContain(
-      "member queued secret",
+    const rejected = await api.requestCreateRun(
+      actor,
+      {
+        agentId: agent.agentId,
+        prompt: "run over the concurrency limit",
+        modelProvider: "anthropic-api-key",
+      },
+      [429],
     );
+    expect(rejected.body).toMatchObject({
+      error: { code: "CONCURRENT_RUN_LIMIT" },
+    });
+    const atLimit = await api.readRunQueue(actor);
+    expect(atLimit.body.queue).toStrictEqual([]);
 
-    await api.requestCancelRun(actor, queuedOwn.runId, [200]);
-    await api.requestCancelRun(member, queuedForeign.runId, [200]);
     await api.requestCancelRun(actor, runA.runId, [200]);
     await api.requestCancelRun(member, runM.runId, [200]);
     // Started runs still occupy capacity until the runner reports completion.
@@ -788,95 +747,19 @@ describe("RUN-03: cancel through the run cancel route", () => {
     expectApiError(crossOrg.body);
     expect(crossOrg.body.error.code).toBe("NOT_FOUND");
   });
-
-  it("removes a cancelled queued agent run from the visible queue", async () => {
-    // Two slots keep the third run queued for the cancellation assertion.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const { actor, compose } = await cancelFixture();
-    await api.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD cancel agent",
-      description: "Queued cancellation through the agent route.",
-      visibility: "private",
-    });
-    const d1 = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "occupy slot one",
-    });
-    const d2 = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "occupy slot two",
-    });
-    const queued = await api.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "queued run to cancel",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(queued.status).toBe("queued");
-    const queuedCancelled = await api.requestCancelRun(
-      actor,
-      queued.runId,
-      [200],
-    );
-    expect(queuedCancelled.body).toMatchObject({ status: "cancelled" });
-    const queueAfter = await api.readRunQueue(actor);
-    expect(queueAfter.body.queue).toStrictEqual([]);
-
-    await api.requestCancelRun(actor, d1.runId, [200]);
-    await api.requestCancelRun(actor, d2.runId, [200]);
-  });
 });
 
 describe("RUN-03: queue position", () => {
-  it("reports queue position for queued, running, and foreign runs", async () => {
-    // Queue-position behavior needs a full two-slot test cap, not a Pro limit.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
+  it("reports no queue position for admitted runs and hides unknown ones", async () => {
     const actor = await entitledActor();
-    const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     const compose = await createClaudeAgent(actor, "bdd-position");
     await api.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD position agent",
-      description: "Queue position reads.",
-      visibility: "private",
-    });
-    const memberAgent = await bdd.createAgent(member, {
-      displayName: "BDD member position agent",
-      description: "Foreign queue position reads.",
-      visibility: "private",
-    });
 
     const running = await api.createDirectRun(actor, {
       agentId: compose.agentId,
       prompt: "running run",
     });
     await api.claimRunnerJob(running.runId);
-    const pending = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "pending run",
-    });
-    const queued = await api.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "queued run",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(queued.status).toBe("queued");
-    const memberQueued = await api.createRun(member, {
-      agentId: memberAgent.agentId,
-      prompt: "member queued run",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(memberQueued.status).toBe("queued");
-
-    const first = await reads.requestQueuePosition(actor, queued.runId, [200]);
-    expect(first.body).toStrictEqual({ position: 1, total: 1 });
-
-    const second = await reads.requestQueuePosition(
-      member,
-      memberQueued.runId,
-      [200],
-    );
-    expect(second.body).toStrictEqual({ position: 2, total: 2 });
 
     const unqueued = await reads.requestQueuePosition(
       actor,
@@ -885,18 +768,10 @@ describe("RUN-03: queue position", () => {
     );
     expect(unqueued.body).toStrictEqual({ position: 0, total: 0 });
 
-    const foreignUser = await reads.requestQueuePosition(
-      actor,
-      memberQueued.runId,
-      [404],
-    );
-    expectApiError(foreignUser.body);
-    expect(foreignUser.body.error.code).toBe("NOT_FOUND");
-
     const outsider = bdd.user();
     const foreignOrg = await reads.requestQueuePosition(
       outsider,
-      queued.runId,
+      running.runId,
       [404],
     );
     expectApiError(foreignOrg.body);
@@ -914,9 +789,6 @@ describe("RUN-03: queue position", () => {
     expect(missingRunId.status).toBe(400);
     expect(JSON.stringify(missingRunId.body)).toContain("runId");
 
-    await api.requestCancelRun(actor, queued.runId, [200]);
-    await api.requestCancelRun(member, memberQueued.runId, [200]);
-    await api.requestCancelRun(actor, pending.runId, [200]);
     await api.requestCancelRun(actor, running.runId, [200]);
   });
 });

@@ -6,7 +6,7 @@ import {
 } from "@okouai/db/schema/org-usage-allowance";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { env, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   builtinMemoryQuotaCases,
   seedMemoryQuotaCase,
@@ -40,7 +40,10 @@ import {
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
-import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
+import {
+  configureNativeCliArtifact,
+  createChatEventsFixture,
+} from "../../routes/__tests__/helpers/chat-events-fixture";
 import {
   failPiMemoryPhase2Job,
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
@@ -205,6 +208,103 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       retryCount: 1,
       retryAt: null,
       lastErrorClass: null,
+    });
+  });
+
+  it("launches maintenance while the organization is at its run limit", async () => {
+    // Real time keeps the maintenance heartbeat fresh for later capacity checks.
+    const now = nowDate();
+    const scope = await createPhase2TestScope("sandbox-at-capacity", {
+      emptyBase: true,
+    });
+    await enablePiMemoryForScope(scope);
+    await seedOrgMetadata({
+      orgId: scope.orgId,
+      tier: "pro",
+      credits: 100_000,
+    });
+    const agentId = randomUUID();
+    const sourceSessionId = randomUUID();
+    const sourceRunId = randomUUID();
+    await db().insert(agents).values({
+      id: agentId,
+      orgId: scope.orgId,
+      owner: scope.userId,
+      name: "capacity-pi-agent",
+    });
+    await db().insert(agentSessions).values({
+      id: sourceSessionId,
+      orgId: scope.orgId,
+      userId: scope.userId,
+      agentId,
+    });
+    await db().insert(agentRuns).values({
+      id: sourceRunId,
+      sessionId: sourceSessionId,
+      orgId: scope.orgId,
+      userId: scope.userId,
+      status: "completed",
+      prompt: "Remember this while the organization is busy.",
+      modelProvider: "built-in",
+      modelProviderId: null,
+      modelProviderCredentialScope: "org",
+      triggerSource: "agent",
+      autonomyBudget: 0,
+      completedAt: now,
+    });
+    onTestFinished(async () => {
+      await deleteRunSessionsForScope(scope);
+      await db().delete(agents).where(eq(agents.id, agentId));
+    });
+    // A chat send fills the organization's only slot.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const chatFixture = createChatEventsFixture(testContext());
+    const chatActor = await chatFixture.entitledNativeChatActor({
+      orgId: scope.orgId,
+      userId: scope.userId,
+      orgRole: "org:admin",
+    });
+    const blocker = await chatFixture.sendChatRun(chatActor.actor, {
+      agentId: chatActor.agentId,
+      prompt: "Hold the organization's only slot.",
+    });
+    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    configureNativeCliArtifact();
+    await insertPhase2Candidates(scope, [
+      {
+        piSessionId: randomUUID(),
+        sourceRunId,
+        rawMemory: "maintenance does not wait for chat capacity",
+        rolloutSummary: "maintenance does not wait for chat capacity",
+      },
+    ]);
+    await insertPendingPhase2Job(scope, { updatedAt: now });
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
+    const store = createStore();
+
+    const result = await withMockNowForTest(now, async () => {
+      return await store.set(
+        executePiMemoryPhase2Work$,
+        { scope, currentTime: now },
+        testContext().signal,
+      );
+    });
+
+    expect(result.outcome).toBe("dispatched");
+    if (result.outcome !== "dispatched") {
+      throw new Error("Expected maintenance run dispatch at capacity");
+    }
+    const [run] = await db()
+      .select({ status: agentRuns.status, error: agentRuns.error })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, result.runId));
+    expect(run).toStrictEqual({ status: "pending", error: null });
+    // Maintenance still holds a slot: once the chat run is cancelled, a new
+    // chat input waits instead of launching.
+    await chatFixture.cancelChatRun(chatActor.actor, blocker.runId);
+    await chatFixture.sendWaitingChatInput(chatActor.actor, {
+      agentId: chatActor.agentId,
+      prompt: "Wait behind the maintenance run.",
     });
   });
 

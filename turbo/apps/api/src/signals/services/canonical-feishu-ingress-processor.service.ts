@@ -1,8 +1,6 @@
 import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
@@ -49,7 +47,7 @@ import {
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
 import { insertChatEvent } from "./chat-event.service";
-import { chatInputPromptDispatchCondition } from "./chat-event-type.service";
+import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import {
@@ -502,22 +500,22 @@ const persistCanonicalFeishuIngress$ = command(
   },
 );
 
+/** Tell the sender when the pick left their message waiting in the queue. */
 async function notifyQueuedFeishuRun(
   args: {
     readonly db: Db;
     readonly ingressId: string;
+    readonly chatThreadId: string;
     readonly message: CanonicalFeishuInboundMessage;
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const [run] = await args.db
-    .select({ status: agentRuns.status })
-    .from(chatEvents)
-    .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
-    .where(chatInputPromptDispatchCondition({ eventId: args.ingressId }))
-    .limit(1);
+  const pending = await loadPendingChatQueueEvent(args.db, {
+    chatThreadId: args.chatThreadId,
+    eventId: args.ingressId,
+  });
   signal.throwIfAborted();
-  if (run?.status !== "queued") {
+  if (!pending) {
     return;
   }
   const message = buildFeishuNoticeMessage({
@@ -792,6 +790,7 @@ export const processCanonicalFeishuIngress$ = command(
       drainChatThreadQueueForThread$,
       {
         chatThreadId: result.value.chatThreadId,
+        orgId: result.value.orgId,
         dispatchFailedCallbacks: dispatchFailedRunCallbacks,
       },
       signal,
@@ -801,6 +800,7 @@ export const processCanonicalFeishuIngress$ = command(
       {
         db,
         ingressId: args.ingressId,
+        chatThreadId: result.value.chatThreadId,
         message: result.value.message,
       },
       signal,

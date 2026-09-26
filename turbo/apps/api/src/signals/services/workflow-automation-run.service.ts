@@ -89,6 +89,7 @@ export const runWorkflowAutomationNow$ = command(
       drainChatThreadQueueForThread$,
       {
         chatThreadId,
+        orgId: automation.orgId,
         dispatchFailedCallbacks: args.dispatchFailedCallbacks,
         ...(admission.kind === "inserted"
           ? {
