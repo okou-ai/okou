@@ -14,9 +14,12 @@ control tests retain their standard-library Python boundary.
 
 ## Running Tests
 
-Use the `local` profile for routine local validation. It retains source locations in backtraces
-while omitting full debug information and incremental artifacts to reduce resource and disk use.
-Omit `--profile local` when full debug information or incremental compilation is more useful.
+Use the `local` profile for routine local validation. It retains source locations in
+backtraces for workspace crates and omits full debug information and incremental
+artifacts. Non-workspace dependencies omit debug information entirely to reduce
+build output and file-cache pressure, so their frames may lack source lines.
+Omit `--profile local` when dependency source lines, full debug information, or
+incremental compilation are more useful.
 
 ```bash
 # All crates
