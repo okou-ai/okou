@@ -614,6 +614,92 @@ async function resolveAvailabilityInLockedTransaction(
   };
 }
 
+/** Read one admission snapshot without taking credit or allowance-window locks. */
+export async function readUsageAllowanceAvailabilitySnapshot(
+  db: Pick<Db, "select">,
+  orgId: string,
+): Promise<UsageAllowanceAvailability | "allowance_refresh_required" | null> {
+  const at = nowDate();
+  const rows = await db
+    .select({
+      entitlement: {
+        status: orgUsageAllowanceEntitlements.status,
+        expiresAt: orgUsageAllowanceEntitlements.expiresAt,
+        shortWindowUnits: orgUsageAllowanceEntitlements.shortWindowUnits,
+        weeklyWindowUnits: orgUsageAllowanceEntitlements.weeklyWindowUnits,
+      },
+      window: {
+        kind: orgUsageAllowanceWindows.kind,
+        unitLimit: orgUsageAllowanceWindows.unitLimit,
+        consumedUnits: orgUsageAllowanceWindows.consumedUnits,
+      },
+    })
+    .from(orgUsageAllowanceEntitlements)
+    .leftJoin(
+      orgUsageAllowanceWindows,
+      and(
+        eq(
+          orgUsageAllowanceWindows.entitlementId,
+          orgUsageAllowanceEntitlements.id,
+        ),
+        eq(orgUsageAllowanceWindows.orgId, orgId),
+        inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
+        gte(
+          orgUsageAllowanceWindows.startsAt,
+          orgUsageAllowanceEntitlements.effectiveAt,
+        ),
+        lte(orgUsageAllowanceWindows.startsAt, at),
+        gt(orgUsageAllowanceWindows.expiresAt, at),
+        or(
+          isNull(orgUsageAllowanceEntitlements.expiresAt),
+          gt(orgUsageAllowanceEntitlements.expiresAt, at),
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(orgUsageAllowanceEntitlements.orgId, orgId),
+        inArray(orgUsageAllowanceEntitlements.status, [
+          ...ACTIVE_ALLOWANCE_STATUSES,
+        ]),
+        lte(orgUsageAllowanceEntitlements.effectiveAt, at),
+        or(
+          isNull(orgUsageAllowanceEntitlements.expiresAt),
+          gt(orgUsageAllowanceEntitlements.expiresAt, at),
+          isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
+        ),
+      ),
+    )
+    .orderBy(desc(orgUsageAllowanceWindows.startsAt));
+  const entitlement = rows[0]?.entitlement;
+  if (!entitlement) {
+    return null;
+  }
+  if (
+    entitlement.expiresAt &&
+    entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
+  ) {
+    return "allowance_refresh_required";
+  }
+  const shortWindow = rows.find((row) => {
+    return row.window?.kind === "short";
+  })?.window;
+  const weeklyWindow = rows.find((row) => {
+    return row.window?.kind === "weekly";
+  })?.window;
+  const shortRemainingUnits = shortWindow
+    ? remainingUnits(shortWindow)
+    : entitlement.shortWindowUnits;
+  const weeklyRemainingUnits = weeklyWindow
+    ? remainingUnits(weeklyWindow)
+    : entitlement.weeklyWindowUnits;
+  return {
+    shortRemainingUnits,
+    weeklyRemainingUnits,
+    remainingUnits: Math.min(shortRemainingUnits, weeklyRemainingUnits),
+  };
+}
+
 export async function resolveUsageAllowanceAvailability(
   db: Db,
   orgId: string,

@@ -223,7 +223,6 @@ export async function createSshCredential(args: {
   const prepared = await prepareCredential(args.body, args.featureContext);
   const transaction = await settle(
     args.db.transaction(async (tx) => {
-      await lockSshOwner(tx, args.owner);
       const creation = await checkSshCreationId(
         tx,
         args.owner,

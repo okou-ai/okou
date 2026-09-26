@@ -10,12 +10,12 @@ import type {
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { ReadonlyDb } from "../external/db";
-import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
+  lockAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowRevisions,
 } from "./official-workflow-catalog-read.service";
@@ -255,10 +255,7 @@ export async function acquireOfficialWorkflowRunCatalogAdmissionLock(
   if (!observation) {
     return;
   }
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-  );
+  await lockAcceptedOfficialWorkflowCatalog(tx);
 }
 
 function lockedInstallationMatches(

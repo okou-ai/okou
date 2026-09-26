@@ -190,3 +190,29 @@ strings, and SQL migration files. Six acquisition sites in shipped SQL
 migration files are outside this inventory; it is not a census of installed
 database functions. The table is a dated PR snapshot, not a claim that all
 remaining calls are necessary or that the cleanup has already shipped.
+
+## Follow-up cleanup in PR #37009
+
+[PR #37009](https://github.com/okou-ai/okou/pull/37009), as prepared on
+2026-09-26, reduces the main-branch inventory from 56 acquisition sites to 46:
+44 API production sites, one catalog test-isolation site, and one attribution
+operator-tool site. The ten removed SQL sites belong to VNC creation, Banking
+Connect, Feishu installation, canonical Agent mutations, five shared Official
+catalog readers, and Social job admission. This is a proposed PR inventory,
+not evidence of production deployment.
+
+Additional caller removals do not delete the shared helpers themselves:
+connector refresh failure; queue-head SELECT; screenshot UPSERT; four SSH
+creation/deletion/reset entries; account rename; VNC defaults; and failed
+Official installation cleanup. Private Agent creation and metadata-only edits
+also stop entering the public quota key. Count these separately from literal
+SQL sites and runtime key acquisitions.
+
+The retained GA preparation keys have concrete outgoing-writer or reader
+constraints: Browser profile cleanup, automation destination resolution, SSH
+creation-ID replay, export-job admission, built-in generation quotas, and
+Official catalog publication/organization lock ordering. Their replacement
+protocols and removal conditions are recorded in
+[deployment compatibility](./deployment-compatibility.md#scoped-advisory-cleanup-and-owner-row-preparation-2026-09-26).
+Do not infer necessity from the remaining count or from a test that waits for a
+lock.

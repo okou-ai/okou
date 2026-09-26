@@ -21,7 +21,6 @@ import {
   publishCloudflareAccessClientInvalidation,
   publishCloudflareAccessMutationInvalidation,
 } from "./cloudflare-access-client-invalidation.service";
-import { lockSshOwner } from "./ssh-credential.service";
 import {
   checkSshCreationId,
   resolveSshCreationConflict,
@@ -245,7 +244,6 @@ export async function createCloudflareAccessConfig(args: {
   };
   const transaction = await settle(
     args.db.transaction(async (tx) => {
-      await lockSshOwner(tx, args.owner);
       const creation = await checkSshCreationId(
         tx,
         owner,

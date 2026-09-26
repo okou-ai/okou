@@ -9341,10 +9341,9 @@ async function finishAdmittedLaunch(
  * Enter final admission. Ordinary launches take no organization lock: the
  * capacity check is a coarse count of the org's sandbox-occupying runs, and
  * concurrent launches may overshoot the limit. Official workflow runs keep the
- * org lock as the lock-order fence against official workflow reconciliation,
- * which locks the org plan row and then workflow/automation rows under this
- * key, while official admission locks workflow/automation rows before the plan
- * row in `persistAtomicLaunchRows`. Returns when the org lock was acquired.
+ * org lock until outgoing writers drain: they lock workflow/automation rows
+ * before the plan row. New admission takes its credit plan lock first, matching
+ * reconciliation. Returns when the org lock was acquired.
  */
 async function enterFinalLaunchAdmission(
   tx: DbTransaction,
@@ -9360,7 +9359,16 @@ async function enterFinalLaunchAdmission(
       await lockPreparedLaunchAdmission(tx, args.createArgs.orgId);
     },
   );
-  return now();
+  const acquiredAt = now();
+  if (args.enforceBuiltInCredits) {
+    // Reconciliation and plan changes lock the entitlement before Automation
+    // rows. Acquire the same plan row before validating Official installations;
+    // persistAtomicLaunchRows rereads it without changing the lock order.
+    await loadOrgPlanCapabilities(tx, args.createArgs.orgId, {
+      forUpdate: true,
+    });
+  }
+  return acquiredAt;
 }
 
 async function commitPreparedLaunch(

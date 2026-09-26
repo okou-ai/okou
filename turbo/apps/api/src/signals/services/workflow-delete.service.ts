@@ -12,7 +12,7 @@ import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
-import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
+import { lockAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
   invalidatePiStableContext,
@@ -167,10 +167,7 @@ async function lockWorkflowForDeletion(tx: Tx, args: DeleteWorkflowInput) {
   }
 
   if (args.serializeOfficialLifecycle === true) {
-    await tx.execute(
-      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-      sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-    );
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     await tx.execute(
       // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,

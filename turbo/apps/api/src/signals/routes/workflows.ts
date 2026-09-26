@@ -101,11 +101,9 @@ import {
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
 import type { Tx } from "../../lib/db-types";
+import { OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE } from "../services/official-workflow-constants";
 import {
-  OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK,
-  OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE,
-} from "../services/official-workflow-constants";
-import {
+  lockAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
 } from "../services/official-workflow-catalog-read.service";
@@ -1295,10 +1293,7 @@ async function lockWorkflowCopyInputs(
   prepared?: WorkflowCopySource,
 ): Promise<boolean> {
   if (args.sourceWorkflow.officialDefinitionName !== null) {
-    await tx.execute(
-      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-      sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-    );
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     await tx.execute(
       // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,

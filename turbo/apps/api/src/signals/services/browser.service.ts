@@ -984,24 +984,21 @@ const captureAndStoreBrowserScreenshot$ = command(
             signal,
           );
         }
-        await db.transaction(async (tx) => {
-          await lockBrowserThread(tx, browser.chatThreadId);
-          await tx
-            .insert(browserSessionScreenshots)
-            .values({
-              chatThreadId: browser.chatThreadId,
+        await db
+          .insert(browserSessionScreenshots)
+          .values({
+            chatThreadId: browser.chatThreadId,
+            objectKey: artifact.key,
+            url: artifact.url,
+          })
+          .onConflictDoUpdate({
+            target: browserSessionScreenshots.chatThreadId,
+            set: {
               objectKey: artifact.key,
               url: artifact.url,
-            })
-            .onConflictDoUpdate({
-              target: browserSessionScreenshots.chatThreadId,
-              set: {
-                objectKey: artifact.key,
-                url: artifact.url,
-                updatedAt: nowDate(),
-              },
-            });
-        });
+              updatedAt: nowDate(),
+            },
+          });
 
         // Persistence is the success boundary; a deadline after commit must
         // not turn an available preview into a failed capture metric.

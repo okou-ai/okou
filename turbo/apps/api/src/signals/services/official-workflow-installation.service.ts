@@ -22,7 +22,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -30,8 +30,8 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { onRejection, safeSync, settle } from "../utils";
 import { deleteWorkflow$ } from "./workflow-delete.service";
-import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
+  lockAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowRevision,
 } from "./official-workflow-catalog-read.service";
@@ -913,10 +913,7 @@ async function completeInstallation(
     }
   }
   const activation = await args.db.transaction(async (tx) => {
-    await tx.execute(
-      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-      sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-    );
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     // The installing -> installed CAS below owns activation. Run admission,
     // reconciliation, and Copy only lock installed rows, so no org lock.
     const [agent] = await tx
@@ -1005,7 +1002,6 @@ export const installOfficialWorkflow$ = command(
           workflowId,
           allowOfficialInstallationDeletion: true,
           requiredOfficialInstallationState: "installing",
-          serializeOfficialLifecycle: true,
         },
         cleanupSignal,
       );

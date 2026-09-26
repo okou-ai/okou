@@ -257,27 +257,26 @@ export async function updateRemoteHostDefault(
   protocol: RemoteAccessProtocol,
   enabled: boolean,
 ): Promise<RemoteHostDefault | null> {
-  const result = await db.transaction(async (tx) => {
-    await enterRemoteAccessWrite(tx, owner, protocol);
-    if (protocol === "ssh") {
-      const [row] = await tx
-        .update(sshConnections)
-        .set({ defaultEnabledForChats: enabled, updatedAt: nowDate() })
-        .where(
-          and(
-            eq(sshConnections.id, owner.connectionId),
-            eq(sshConnections.orgId, owner.orgId),
-            eq(sshConnections.userId, owner.userId),
-          ),
-        )
-        .returning({
-          id: sshConnections.id,
-          displayName: sshConnections.displayName,
-          defaultEnabledForChats: sshConnections.defaultEnabledForChats,
-        });
-      return row ? toHostDefault(row) : null;
-    }
-    const [row] = await tx
+  let result: RemoteHostDefault | null;
+  if (protocol === "ssh") {
+    const [row] = await db
+      .update(sshConnections)
+      .set({ defaultEnabledForChats: enabled, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(sshConnections.id, owner.connectionId),
+          eq(sshConnections.orgId, owner.orgId),
+          eq(sshConnections.userId, owner.userId),
+        ),
+      )
+      .returning({
+        id: sshConnections.id,
+        displayName: sshConnections.displayName,
+        defaultEnabledForChats: sshConnections.defaultEnabledForChats,
+      });
+    result = row ? toHostDefault(row) : null;
+  } else {
+    const [row] = await db
       .update(vncConnections)
       .set({ defaultEnabledForChats: enabled, updatedAt: nowDate() })
       .where(
@@ -292,8 +291,8 @@ export async function updateRemoteHostDefault(
         displayName: vncConnections.displayName,
         defaultEnabledForChats: vncConnections.defaultEnabledForChats,
       });
-    return row ? toHostDefault(row) : null;
-  });
+    result = row ? toHostDefault(row) : null;
+  }
   if (result) {
     await notifyRemoteAccessChange(db, owner, protocol);
   }

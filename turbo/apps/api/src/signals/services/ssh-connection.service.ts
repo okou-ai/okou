@@ -351,7 +351,8 @@ async function lockOwnerHostForUpdate(
 ): Promise<SshConnectionResult<SshConnectionRow>> {
   await lockSshOwner(tx, args);
   // A previous request may have changed the binding after the optimistic
-  // preflight. The owner lock makes this fresh read stable against host writes.
+  // preflight. The owner lock serializes binding changes; the row lock below
+  // rechecks the host after a concurrent deletion or host-key reset.
   const currentBinding = await findOwnerConnection(tx, args);
   if (!currentBinding) {
     return failure("notFound");
@@ -739,7 +740,6 @@ export async function deleteSshConnection(args: {
 }): Promise<SshConnectionResult<undefined>> {
   const transaction = await settle(
     args.db.transaction<SshConnectionResult<undefined>>(async (tx) => {
-      await lockSshOwner(tx, args);
       const [current] = await tx
         .select()
         .from(sshConnections)
@@ -812,7 +812,6 @@ export async function resetSshConnectionHostKey(args: {
   const result = await args.db.transaction<
     SshConnectionResult<SshConnectionResponse>
   >(async (tx) => {
-    await lockSshOwner(tx, args);
     const [current] = await tx
       .select()
       .from(sshConnections)

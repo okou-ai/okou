@@ -29,6 +29,7 @@ import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { resolveActiveRunCreditAdmission } from "./run-admission.service";
 import {
   lockOrgCredits,
+  readUsageAllowanceAvailabilitySnapshot,
   resolveUsageAllowanceAvailability,
 } from "./usage-allowance.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
@@ -141,12 +142,17 @@ type ManagedUsageReceipt = Pick<
   | "creditsCharged"
 >;
 
-export async function checkManagedCreditsInDb(
+interface ManagedUsageUncoveredBalance {
+  readonly requiredCredits: bigint;
+  readonly spendableCredits: bigint;
+}
+
+async function checkManagedCreditBalance(
   writeDb: Db,
   args: ManagedUsageCreditCheckArgs,
   pricingResolution: UsagePricingResolution,
   signal: AbortSignal,
-): Promise<ManagedUsageErrorResponse | null> {
+): Promise<ManagedUsageErrorResponse | ManagedUsageUncoveredBalance | null> {
   const pricingProvider = resolveUsagePricingProvider(
     pricingResolution,
     args.resource.kind,
@@ -238,16 +244,67 @@ export async function checkManagedCreditsInDb(
     return null;
   }
 
+  return {
+    requiredCredits,
+    spendableCredits:
+      usagePackCredits + (spendableCredits > 0n ? spendableCredits : 0n),
+  };
+}
+
+export async function checkManagedCreditsInDb(
+  writeDb: Db,
+  args: ManagedUsageCreditCheckArgs,
+  pricingResolution: UsagePricingResolution,
+  signal: AbortSignal,
+): Promise<ManagedUsageErrorResponse | null> {
+  const balance = await checkManagedCreditBalance(
+    writeDb,
+    args,
+    pricingResolution,
+    signal,
+  );
+  if (!balance || "status" in balance) {
+    return balance;
+  }
   const allowance = await resolveUsageAllowanceAvailability(
     writeDb,
     args.orgId,
   );
   signal.throwIfAborted();
-  const spendableUnits =
-    usagePackCredits +
-    (spendableCredits > 0n ? spendableCredits : 0n) +
-    BigInt(allowance?.remainingUnits ?? 0);
-  return spendableUnits >= requiredCredits ? null : insufficientCredits();
+  return balance.spendableCredits + BigInt(allowance?.remainingUnits ?? 0) >=
+    balance.requiredCredits
+    ? null
+    : insufficientCredits();
+}
+
+/** The caller releases its owner row before performing any allowance refresh. */
+export async function checkManagedCreditsSnapshotInDb(
+  writeDb: Db,
+  args: ManagedUsageCreditCheckArgs,
+  pricingResolution: UsagePricingResolution,
+  signal: AbortSignal,
+): Promise<ManagedUsageErrorResponse | "allowance_refresh_required" | null> {
+  const balance = await checkManagedCreditBalance(
+    writeDb,
+    args,
+    pricingResolution,
+    signal,
+  );
+  if (!balance || "status" in balance) {
+    return balance;
+  }
+  const allowance = await readUsageAllowanceAvailabilitySnapshot(
+    writeDb,
+    args.orgId,
+  );
+  signal.throwIfAborted();
+  if (allowance === "allowance_refresh_required") {
+    return allowance;
+  }
+  return balance.spendableCredits + BigInt(allowance?.remainingUnits ?? 0) >=
+    balance.requiredCredits
+    ? null
+    : insufficientCredits();
 }
 
 export const checkManagedCredits$ = command(
