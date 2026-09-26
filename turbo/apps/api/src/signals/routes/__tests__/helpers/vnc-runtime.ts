@@ -37,24 +37,26 @@ export const vncSecurity = Object.freeze({
   type: "x509_vnc" as const,
   trust: Object.freeze({ mode: "system" as const }),
 });
-export const vncX509VncProfiles = Object.freeze([
-  { authMethod: "vnc_password" as const, securityType: "x509_vnc" as const },
-]);
-export const vncProfiles = Object.freeze([
-  ...vncX509VncProfiles,
-  {
-    authMethod: "username_password" as const,
-    securityType: "x509_plain" as const,
-  },
-]);
-export const vncTransportProfiles = Object.freeze(
-  vncProfiles.flatMap((profile) => {
-    return [
-      { ...profile, transportType: "direct" as const },
-      { ...profile, transportType: "ssh" as const },
-    ];
+const vncTransportTypes = ["direct", "ssh"] as const;
+export const vncX509VncProfiles = Object.freeze(
+  vncTransportTypes.map((transportType) => {
+    return {
+      authMethod: "vnc_password" as const,
+      securityType: "x509_vnc" as const,
+      transportType,
+    };
   }),
 );
+export const vncProfiles = Object.freeze([
+  ...vncX509VncProfiles,
+  ...vncTransportTypes.map((transportType) => {
+    return {
+      authMethod: "username_password" as const,
+      securityType: "x509_plain" as const,
+      transportType,
+    };
+  }),
+]);
 export const vncPassword = " secret ";
 type Owner = { readonly orgId: string; readonly userId: string };
 type RuntimeBody = Extract<
@@ -267,7 +269,7 @@ export function createVncRuntimeApi(context: TestContext) {
   }
   async function resolved(f: Parameters<typeof resolve>[0]) {
     const result = await resolve(f);
-    if (result.outcome !== "resolved") {
+    if (result.outcome !== "resolved_transport") {
       throw new Error(`VNC fixture did not resolve: ${result.outcome}`);
     }
     return result;

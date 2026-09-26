@@ -27,7 +27,6 @@ import {
   vncRunnerHeaders,
   vncSecurity,
   vncSessionHeaders,
-  vncTransportProfiles,
   vncX509VncProfiles,
   type VncRuntimeFixture,
 } from "./helpers/vnc-runtime";
@@ -50,6 +49,7 @@ function check(
         connectionId: f.connectionId,
         runnerIdentity: f.runnerIdentity,
         expectedGeneration,
+        expectedTransport: { type: "direct" },
         ...override,
       },
     }),
@@ -88,7 +88,7 @@ describe("private Runner VNC authority", () => {
       [200],
     );
     await expect(api.resolve(f)).resolves.toMatchObject({
-      outcome: "resolved",
+      outcome: "resolved_transport",
     });
     expect((await check(f, 1)).body).toStrictEqual({ outcome: "valid" });
     await accept(
@@ -137,7 +137,7 @@ describe("private Runner VNC authority", () => {
       [200],
     );
     await expect(
-      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
     await accept(
       remote.updateHostDefault({
@@ -148,7 +148,7 @@ describe("private Runner VNC authority", () => {
       [200],
     );
     await expect(
-      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toMatchObject({ outcome: "resolved_transport" });
     await accept(
       remote.setThreadOverride({
@@ -159,7 +159,7 @@ describe("private Runner VNC authority", () => {
       [200],
     );
     await expect(
-      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
     expect((await check(f, 2)).body).toStrictEqual({ outcome: "unavailable" });
   });
@@ -186,7 +186,7 @@ describe("private Runner VNC authority", () => {
     );
     expect(result.headers.get("cache-control")).toBe("no-store");
     expect(result.body).toMatchObject({
-      outcome: "resolved",
+      outcome: "resolved_transport",
       host: "vnc.example.com",
       port: 5900,
       authentication: { method: "vnc_password", password: vncPassword },
@@ -244,6 +244,7 @@ describe("private Runner VNC authority", () => {
           connectionId: f.connectionId,
           runnerIdentity: f.runnerIdentity,
           expectedGeneration: generation,
+          expectedTransport: { type: "direct" },
         },
       });
       expect(checked.status).toBe(401);
@@ -269,6 +270,7 @@ describe("private Runner VNC authority", () => {
           connectionId: f.connectionId,
           runnerIdentity: f.runnerIdentity,
           expectedGeneration: generation,
+          expectedTransport: { type: "direct" },
         },
       }),
       [403],
@@ -390,18 +392,10 @@ describe("private Runner VNC authority", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
-  it("preserves the legacy direct response and returns an explicit direct snapshot to a capable Runner", async () => {
+  it("returns an explicit direct snapshot to a capable Runner", async () => {
     const f = await api.fixture();
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "resolved",
-      host: "vnc.example.com",
-      port: 5900,
-      generation: 1,
-      authentication: { method: "vnc_password", password: vncPassword },
-      security: vncSecurity,
-    });
     await expect(
-      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toStrictEqual({
       outcome: "resolved_transport",
       host: "vnc.example.com",
@@ -509,13 +503,13 @@ describe("private Runner VNC authority", () => {
     await api.grantSsh(f, false);
     const kms = useSecretKmsProbe();
     await expect(
-      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
     expect(kms.decryptCalls).toBe(0);
 
     await api.grantSsh(f, true);
     const resolved = await api.resolve(f, {
-      supportedProfiles: [...vncTransportProfiles],
+      supportedProfiles: [...vncProfiles],
     });
     expect(resolved).toStrictEqual({
       outcome: "resolved_transport",
@@ -568,7 +562,7 @@ describe("private Runner VNC authority", () => {
       return release.promise;
     });
     const pending = api.resolve(f, {
-      supportedProfiles: [...vncTransportProfiles],
+      supportedProfiles: [...vncProfiles],
     });
     await entered.promise;
     const rotated = await accept(
@@ -592,7 +586,7 @@ describe("private Runner VNC authority", () => {
       outcome: "configuration_changed",
     });
     await expect(
-      api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
+      api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toMatchObject({
       outcome: "resolved_transport",
       generation: 2,
@@ -1304,10 +1298,12 @@ describe("private Runner VNC authority", () => {
     await expect(
       api.resolve(f, { connectionId: plain.body.id }),
     ).resolves.toStrictEqual({
-      outcome: "resolved",
+      outcome: "resolved_transport",
       host: "plain.example.com",
       port: 5900,
       generation: 1,
+      serverName: "plain.example.com",
+      transport: { type: "direct" },
       authentication: {
         method: "username_password",
         username: "operator",
@@ -1356,7 +1352,9 @@ describe("private Runner VNC authority", () => {
         triggerSource,
         chat: false,
       });
-      expect((await api.resolve({ ...f, ...other })).outcome).toBe("resolved");
+      expect((await api.resolve({ ...f, ...other })).outcome).toBe(
+        "resolved_transport",
+      );
     }
   });
 
@@ -1571,7 +1569,7 @@ describe("private Runner VNC authority", () => {
     });
     api.authenticate(peer);
     await expect(api.resolve(peer)).resolves.toMatchObject({
-      outcome: "resolved",
+      outcome: "resolved_transport",
     });
   }, 20_000);
 });

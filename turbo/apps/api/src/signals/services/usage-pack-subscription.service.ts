@@ -27,10 +27,8 @@ import {
   notExists,
   notInArray,
   or,
-  sql,
 } from "drizzle-orm";
 
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
@@ -456,21 +454,6 @@ export async function loadUsagePackCatalog(): Promise<
       totalCredits: item.totalCredits,
     };
   });
-}
-
-export async function usagePackSubscriptionSchemaAvailable(
-  db: Pick<Db, "select">,
-): Promise<boolean> {
-  const [state] = await db
-    .select({
-      available:
-        sql`to_regclass('public.usage_pack_subscriptions') IS NOT NULL AND to_regclass('public.usage_pack_allocations') IS NOT NULL AND to_regclass('public.usage_pack_invoice_fulfillments') IS NOT NULL`.mapWith(
-          pgBooleanDecoder,
-        ),
-    })
-    .from(sql`(SELECT 1) AS schema_probe`)
-    .limit(1);
-  return state?.available ?? false;
 }
 
 export async function activeUsagePackBillingContext(
@@ -1786,12 +1769,6 @@ function unixDate(value: number | null | undefined): Date | null {
   return new Date(value * 1000);
 }
 
-async function requireUsagePackSubscriptionSchema(db: Db): Promise<void> {
-  if (!(await usagePackSubscriptionSchemaAvailable(db))) {
-    throw new Error("Usage pack subscription schema is unavailable");
-  }
-}
-
 async function loadUsagePackContext(
   db: Pick<Db, "select">,
   usagePackSubscriptionId: string,
@@ -2229,7 +2206,6 @@ export async function handleUsagePackCheckoutCompleted(
   if (!usagePackSubscriptionId) {
     return { handled: false, orgId: null };
   }
-  await requireUsagePackSubscriptionSchema(db);
 
   const customerId = stripeObjectId(session.customer);
   const subscriptionId = stripeObjectId(session.subscription);
@@ -2333,13 +2309,6 @@ async function handleUsagePackSubscriptionChanged(
   eventSubscription: UsagePackSubscriptionInput,
   invalidShape: "throw" | "deactivate",
 ): Promise<UsagePackLifecycleOutcome> {
-  if (!(await usagePackSubscriptionSchemaAvailable(db))) {
-    const metadataId = oneUsagePackSubscriptionId(eventSubscription.metadata);
-    if (metadataId) {
-      throw new Error("Usage pack subscription schema is unavailable");
-    }
-    return { handled: false, orgId: null };
-  }
   const usagePackSubscriptionId = await resolveUsagePackSubscriptionId(db, {
     stripeSubscriptionId: eventSubscription.id,
     metadata: [eventSubscription.metadata],
@@ -2469,13 +2438,6 @@ export async function handleUsagePackSubscriptionDeleted(
   db: Db,
   subscription: Pick<UsagePackSubscriptionInput, "id" | "metadata">,
 ): Promise<UsagePackLifecycleOutcome> {
-  if (!(await usagePackSubscriptionSchemaAvailable(db))) {
-    const metadataId = oneUsagePackSubscriptionId(subscription.metadata);
-    if (metadataId) {
-      throw new Error("Usage pack subscription schema is unavailable");
-    }
-    return { handled: false, orgId: null };
-  }
   const usagePackSubscriptionId = await resolveUsagePackSubscriptionId(db, {
     stripeSubscriptionId: subscription.id,
     metadata: [subscription.metadata],
@@ -3116,7 +3078,6 @@ async function activateUsagePackPlanFromSubscription(
   db: Db,
   subscription: UsagePackSubscriptionInput,
 ): Promise<UsagePackLifecycleOutcome> {
-  await requireUsagePackSubscriptionSchema(db);
   const usagePackSubscriptionId = await resolveUsagePackSubscriptionId(db, {
     stripeSubscriptionId: subscription.id,
     metadata: [subscription.metadata],
@@ -3235,16 +3196,6 @@ export async function handleUsagePackInvoicePaid(
   invoice: UsagePackInvoiceInput,
 ): Promise<UsagePackLifecycleOutcome> {
   const hasUsagePackLine = invoiceHasUsagePackLine(invoice);
-  if (!(await usagePackSubscriptionSchemaAvailable(db))) {
-    const metadataId = oneUsagePackSubscriptionId(
-      invoice.metadata,
-      invoice.parent?.subscription_details?.metadata,
-    );
-    if (!metadataId && !hasUsagePackLine) {
-      return { handled: false, orgId: null };
-    }
-    throw new Error("Usage pack subscription schema is unavailable");
-  }
   const usagePackSubscriptionId = await resolveUsagePackSubscriptionId(db, {
     stripeSubscriptionId: invoiceSubscriptionId(invoice),
     metadata: [
@@ -3505,9 +3456,6 @@ export async function reconcileUsagePackSubscriptions(
   scope: BillingReconciliationScope | undefined,
   signal: AbortSignal,
 ): Promise<ReconcileUsagePackSubscriptionResult> {
-  if (!(await usagePackSubscriptionSchemaAvailable(db))) {
-    return { reconciled: 0, orgIds: [] };
-  }
   signal.throwIfAborted();
 
   const subscriptionChanges = await reconcileUsagePackSubscriptionChanges(

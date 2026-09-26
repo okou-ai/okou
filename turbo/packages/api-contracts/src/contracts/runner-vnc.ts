@@ -59,7 +59,7 @@ const supportedProfileSchema = z
       "apple_srp",
       "apple_rsa_srp",
     ]),
-    transportType: z.enum(["direct", "ssh"]).optional(),
+    transportType: z.enum(["direct", "ssh"]),
   })
   .strict()
   .refine((profile) => {
@@ -96,16 +96,6 @@ const configurationChangedSchema = z
 const resolveResponseSchema = z.discriminatedUnion("outcome", [
   unavailableSchema,
   z.object({ outcome: z.literal("unsupported_profile") }).strict(),
-  z
-    .object({
-      outcome: z.literal("resolved"),
-      host: z.string().min(1).max(VNC_HOST_MAX_LENGTH),
-      port: z.int().min(1).max(65_535),
-      generation: generationSchema,
-      authentication: vncAuthenticationSchema,
-      security: runnerVncSecuritySchema,
-    })
-    .strict(),
   z
     .object({
       outcome: z.literal("resolved_transport"),
@@ -166,7 +156,7 @@ const resolveResponseSchema = z.discriminatedUnion("outcome", [
 
 const checkRequestSchema = commonRequestSchema.extend({
   expectedGeneration: generationSchema,
-  expectedTransport: transportSnapshotSchema.optional(),
+  expectedTransport: transportSnapshotSchema,
 });
 const checkResponseSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("valid") }).strict(),

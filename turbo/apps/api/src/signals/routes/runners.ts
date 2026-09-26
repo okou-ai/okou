@@ -1,7 +1,4 @@
 import {
-  NATIVE_CLAUDE_OPUS_5_5_HEADER,
-  NATIVE_GPT_6_SOL_HEADER,
-  NATIVE_GPT_6_LUNA_HEADER,
   claimCompatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   elapsedSinceApiStartMs,
@@ -764,38 +761,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     eq(agentRuns.status, "pending"),
   ];
 
-  if (get(request$).header(NATIVE_GPT_6_SOL_HEADER) !== "1") {
-    // Filter before the bounded candidate lookup so an unsupported Sol job
-    // cannot hide existing models behind it from an older Runner.
-    whereConditions.push(sql`(
-      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "codex")}
-      AND ${inArray(
-        sql`${runnerJobQueue.executionContext}->'environment'->>'OPENAI_MODEL'`,
-        ["gpt-6-sol", "openai/gpt-6-sol"],
-      )}
-    ) IS NOT TRUE`);
-  }
-  if (get(request$).header(NATIVE_CLAUDE_OPUS_5_5_HEADER) !== "1") {
-    // The logical billing identity remains stable across direct, gateway and
-    // opaque cloud deployment model IDs.
-    whereConditions.push(sql`(
-      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "claude-code")}
-      AND ${eq(
-        sql`${runnerJobQueue.executionContext}->>'modelUsageProvider'`,
-        "claude-opus-5-5",
-      )}
-    ) IS NOT TRUE`);
-  }
-  if (get(request$).header(NATIVE_GPT_6_LUNA_HEADER) !== "1") {
-    // Filter before the bounded lookup, including during Runner rollback.
-    whereConditions.push(sql`(
-      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "codex")}
-      AND ${inArray(
-        sql`${runnerJobQueue.executionContext}->'environment'->>'OPENAI_MODEL'`,
-        ["gpt-6-luna", "openai/gpt-6-luna"],
-      )}
-    ) IS NOT TRUE`);
-  }
   if (auth.type === "official-runner") {
     if (!isOfficialRunnerGroup(group)) {
       return forbidden("Official runners can only poll vm0/* groups");
@@ -2538,9 +2503,6 @@ async function resolveStoredExecutionContextForClaim(
     readonly orgId: string;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
-    readonly supportsNativeGpt6Sol: boolean;
-    readonly supportsNativeClaudeOpus55: boolean;
-    readonly supportsNativeGpt6Luna: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2567,44 +2529,6 @@ async function resolveStoredExecutionContextForClaim(
     return {
       compatible: false as const,
       response: await failClaimForInvalidStoredExecutionContext(args, signal),
-    };
-  }
-  const storedContext = storedContextResult.data;
-  const nativeModel = storedContext.environment?.OPENAI_MODEL;
-  if (
-    !args.supportsNativeGpt6Sol &&
-    storedContext.cliAgentType === "codex" &&
-    (nativeModel === "gpt-6-sol" || nativeModel === "openai/gpt-6-sol")
-  ) {
-    // Old Runner artifacts bundle a Guest that rejects Sol's native effort.
-    // Keep the job queued for a capable claimant, including during rollback.
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
-    };
-  }
-  if (
-    !args.supportsNativeClaudeOpus55 &&
-    storedContext.cliAgentType === "claude-code" &&
-    storedContext.modelUsageProvider === "claude-opus-5-5"
-  ) {
-    // Old Runner artifacts bundle a Guest that rejects Opus 5.5's native
-    // effort. Keep the job queued for a capable claimant during rollout and
-    // rollback, independent of the provider's concrete runtime model ID.
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
-    };
-  }
-  if (
-    !args.supportsNativeGpt6Luna &&
-    storedContext.cliAgentType === "codex" &&
-    (nativeModel === "gpt-6-luna" || nativeModel === "openai/gpt-6-luna")
-  ) {
-    // Older Runner artifacts bundle a Guest without Luna native support.
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
     };
   }
   const piModelConfigResolution = resolvePiModelConfigForClaim({
@@ -2648,9 +2572,6 @@ const claimAuthorizedJob$ = command(
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
-      readonly supportsNativeGpt6Sol: boolean;
-      readonly supportsNativeClaudeOpus55: boolean;
-      readonly supportsNativeGpt6Luna: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2668,9 +2589,6 @@ const claimAuthorizedJob$ = command(
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
-        supportsNativeGpt6Sol: args.supportsNativeGpt6Sol,
-        supportsNativeClaudeOpus55: args.supportsNativeClaudeOpus55,
-        supportsNativeGpt6Luna: args.supportsNativeGpt6Luna,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs);
@@ -2833,12 +2751,6 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       authType: auth.type,
       runnerAttribution,
       capabilities: body.data.capabilities,
-      supportsNativeGpt6Sol:
-        get(request$).header(NATIVE_GPT_6_SOL_HEADER) === "1",
-      supportsNativeClaudeOpus55:
-        get(request$).header(NATIVE_CLAUDE_OPUS_5_5_HEADER) === "1",
-      supportsNativeGpt6Luna:
-        get(request$).header(NATIVE_GPT_6_LUNA_HEADER) === "1",
       jobWithRun,
       telemetry: body.data.telemetry,
       claimRequestStartedAtMs,

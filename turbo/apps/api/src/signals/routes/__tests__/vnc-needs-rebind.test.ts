@@ -24,7 +24,7 @@ import {
   vncRunnerHeaders,
   vncSecurity,
   vncSessionHeaders,
-  vncTransportProfiles,
+  vncProfiles,
 } from "./helpers/vnc-runtime";
 
 describe("VNC depends on current SSH binding", () => {
@@ -178,7 +178,7 @@ describe("VNC depends on current SSH binding", () => {
         }),
       );
       await expect(
-        api.resolve(target, { supportedProfiles: [...vncTransportProfiles] }),
+        api.resolve(target, { supportedProfiles: [...vncProfiles] }),
       ).resolves.toMatchObject({ outcome: "resolved_transport" });
       await expect(check()).resolves.toStrictEqual({ outcome: "valid" });
 
@@ -261,12 +261,12 @@ describe("VNC depends on current SSH binding", () => {
         }),
       );
       await expect(
-        api.resolve(target, { supportedProfiles: [...vncTransportProfiles] }),
+        api.resolve(target, { supportedProfiles: [...vncProfiles] }),
       ).resolves.toStrictEqual({ outcome: "unavailable" });
       await expect(check()).resolves.toStrictEqual({ outcome: "unavailable" });
       expect(kms.decryptCalls).toBe(0);
       await expect(api.resolve(f)).resolves.toMatchObject({
-        outcome: "resolved",
+        outcome: "resolved_transport",
       });
 
       await accept(
@@ -291,7 +291,7 @@ describe("VNC depends on current SSH binding", () => {
         }),
       );
       await expect(
-        api.resolve(target, { supportedProfiles: [...vncTransportProfiles] }),
+        api.resolve(target, { supportedProfiles: [...vncProfiles] }),
       ).resolves.toMatchObject({
         outcome: "resolved_transport",
         transport: {

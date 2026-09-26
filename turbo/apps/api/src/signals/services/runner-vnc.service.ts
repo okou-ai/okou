@@ -89,13 +89,10 @@ function matchesExpectedTransport(
   expected: RunnerVncCheckRequest["expectedTransport"],
 ) {
   if (current.type === "direct") {
-    // Old Runner -> new API: pre-transport Runners omit this snapshot. Remove
-    // omission support after the replacement fleet and its two-hour Runs have
-    // drained; #35894 owns that rollout evidence and retirement gate.
-    return expected === undefined || expected.type === "direct";
+    return expected.type === "direct";
   }
   return (
-    expected?.type === "ssh" &&
+    expected.type === "ssh" &&
     expected.connectionId === current.connectionId &&
     expected.generation === current.generation
   );
@@ -114,17 +111,8 @@ function selectedCapability(
       profile.securityType === row.securityType
     );
   };
-  const explicit = profiles.find((profile) => {
-    return matchesProfile(profile) && profile.transportType === transport.type;
-  });
-  if (explicit || transport.type === "ssh") {
-    return explicit;
-  }
-  // Old Runner -> new API: pre-transport Runners advertise only the profile
-  // pair. Remove this legacy direct selection and response after the replacement
-  // fleet and its two-hour Runs have drained; #35894 owns the retirement gate.
   return profiles.find((profile) => {
-    return matchesProfile(profile) && profile.transportType === undefined;
+    return matchesProfile(profile) && profile.transportType === transport.type;
   });
 }
 
@@ -250,7 +238,6 @@ async function decryptRunnerAuthentication(
 function resolvedRunnerResponse(
   row: CurrentVncAuthority,
   transport: TransportSnapshot,
-  legacyDirect: boolean,
   security: ReturnType<typeof storedRunnerSecurity>,
   authentication: Awaited<ReturnType<typeof decryptRunnerAuthentication>>,
 ): RunnerVncResolveResponse {
@@ -329,9 +316,6 @@ function resolvedRunnerResponse(
       transport,
     };
   }
-  if (legacyDirect) {
-    return { outcome: "resolved", ...resolved };
-  }
   return {
     outcome: "resolved_transport",
     ...resolved,
@@ -374,11 +358,5 @@ export async function resolveRunnerVnc(
   if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
     return { outcome: "unavailable" };
   }
-  return resolvedRunnerResponse(
-    row,
-    transport,
-    capability.transportType === undefined,
-    security,
-    authentication,
-  );
+  return resolvedRunnerResponse(row, transport, security, authentication);
 }

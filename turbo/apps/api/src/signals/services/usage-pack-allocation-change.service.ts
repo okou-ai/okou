@@ -28,7 +28,6 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -291,21 +290,6 @@ function openManagementChangeStatus(
       throw new Error(`Invalid open usage pack change status: ${status}`);
     }
   }
-}
-
-export async function usagePackAllocationChangeSchemaAvailable(
-  db: Pick<Db, "select">,
-): Promise<boolean> {
-  const [state] = await db
-    .select({
-      available:
-        sql`to_regclass('public.usage_pack_allocation_changes') IS NOT NULL`.mapWith(
-          pgBooleanDecoder,
-        ),
-    })
-    .from(sql`(SELECT 1) AS schema_probe`)
-    .limit(1);
-  return state?.available ?? false;
 }
 
 export async function failScheduledUsagePackAllocationChangesForSchedule(
@@ -937,7 +921,6 @@ async function expireStaleUsagePackPreviews(
 export async function getUsagePackManagement(
   db: Pick<Db, "select">,
   orgId: string,
-  supportsMemberAdditions = false,
 ): Promise<UsagePackManagementResponse | null> {
   const context = await loadUsagePackChangeContextForOrg(db, orgId);
   if (!context) {
@@ -957,7 +940,7 @@ export async function getUsagePackManagement(
     supportsFreeMembers: true,
     currentPeriodEnd:
       context.subscription.currentPeriodEnd?.toISOString() ?? null,
-    ...(supportsMemberAdditions ? { supportsMemberAdditions: true } : {}),
+    supportsMemberAdditions: true,
     allocations: activeMemberAllocations(context).map((allocation) => {
       const change = changesByUserId.get(allocation.userId ?? "");
       return {
@@ -1798,9 +1781,6 @@ export async function reserveUsagePackMemberRemoval(
   },
   signal: AbortSignal,
 ): Promise<string | null> {
-  if (!(await usagePackAllocationChangeSchemaAvailable(db))) {
-    return null;
-  }
   signal.throwIfAborted();
   const at = nowDate();
   const reservationId = await db.transaction(async (tx) => {
@@ -2275,22 +2255,6 @@ export async function removeUsagePackMemberAllocation(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (!(await usagePackAllocationChangeSchemaAvailable(db))) {
-    await db.transaction(async (tx) => {
-      await prepareUsagePackMemberCreditRefunds(tx, args);
-      await tx
-        .update(usagePackCreditGrants)
-        .set({ remainingAmount: 0 })
-        .where(
-          and(
-            eq(usagePackCreditGrants.orgId, args.orgId),
-            eq(usagePackCreditGrants.userId, args.userId),
-          ),
-        );
-    });
-    signal.throwIfAborted();
-    return false;
-  }
   const prepared = await prepareUsagePackMemberRemoval(db, args);
   signal.throwIfAborted();
   if (!prepared) {
@@ -2738,9 +2702,6 @@ export async function reconcileUsagePackAllocationChangeSubscription(
   db: Db,
   subscription: UsagePackChangeSubscriptionInput,
 ): Promise<{ readonly reconciled: number; readonly orgId: string | null }> {
-  if (!(await usagePackAllocationChangeSchemaAvailable(db))) {
-    return { reconciled: 0, orgId: null };
-  }
   const boundId = await boundUsagePackSubscriptionId(db, subscription.id);
   const usagePackSubscriptionId =
     boundId ??
@@ -2802,9 +2763,6 @@ export async function reconcileUsagePackAllocationChangeSubscriptionDeleted(
     readonly metadata?: Readonly<Record<string, string>> | null;
   },
 ): Promise<void> {
-  if (!(await usagePackAllocationChangeSchemaAvailable(db))) {
-    return;
-  }
   const boundId = await boundUsagePackSubscriptionId(db, subscription.id);
   const usagePackSubscriptionId =
     boundId ??
@@ -3492,9 +3450,6 @@ export async function handleUsagePackAllocationChangeInvoicePaid(
   db: Db,
   invoice: UsagePackChangeInvoiceInput,
 ): Promise<UsagePackChangeInvoiceOutcome> {
-  if (!(await usagePackAllocationChangeSchemaAvailable(db))) {
-    return { handled: false, orgId: null };
-  }
   const usagePackSubscriptionId = await invoiceUsagePackSubscriptionId(
     db,
     invoice,
@@ -3834,9 +3789,6 @@ export async function reconcileUsagePackAllocationChanges(
   readonly reconciled: number;
   readonly orgIds: readonly string[];
 }> {
-  if (!(await usagePackAllocationChangeSchemaAvailable(db))) {
-    return { reconciled: 0, orgIds: [] };
-  }
   signal.throwIfAborted();
   const at = nowDate();
   const staleBefore = new Date(at.getTime() - CHANGE_RECONCILIATION_DELAY_MS);

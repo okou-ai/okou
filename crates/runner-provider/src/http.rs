@@ -209,38 +209,6 @@ impl ApiRequestBuilder {
         self
     }
 
-    pub fn native_gpt_6_reader(self) -> Self {
-        let Self {
-            client,
-            builder,
-            client_headers,
-            query,
-        } = self;
-        Self {
-            client,
-            builder: builder
-                .header("X-Native-Gpt-6-Sol", "1")
-                .header("X-Native-Gpt-6-Luna", "1"),
-            client_headers,
-            query,
-        }
-    }
-
-    pub fn native_claude_opus_5_5_reader(self) -> Self {
-        let Self {
-            client,
-            builder,
-            client_headers,
-            query,
-        } = self;
-        Self {
-            client,
-            builder: builder.header("X-Native-Claude-Opus-5-5", "1"),
-            client_headers,
-            query,
-        }
-    }
-
     pub async fn send(self, endpoint_label: &'static str) -> ProviderResult<Response> {
         self.prepare(endpoint_label)?.send().await
     }

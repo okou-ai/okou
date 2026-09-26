@@ -26,7 +26,6 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -200,39 +199,6 @@ type UsagePackSubscriptionChangeInvoiceOutcome =
       readonly orgId: string;
       readonly subscription: StripeSubscription;
     };
-
-export async function usagePackSubscriptionChangeSchemaAvailable(
-  db: Pick<Db, "select">,
-): Promise<boolean> {
-  const [state] = await db
-    .select({
-      available:
-        sql`to_regclass('public.usage_pack_subscription_changes') IS NOT NULL`.mapWith(
-          pgBooleanDecoder,
-        ),
-    })
-    .from(sql`(SELECT 1) AS schema_probe`)
-    .limit(1);
-  return state?.available ?? false;
-}
-
-export async function usagePackMemberAdditionSchemaAvailable(
-  db: Pick<Db, "select">,
-): Promise<boolean> {
-  const [state] = await db
-    .select({
-      available: sql`EXISTS (
-          SELECT 1
-          FROM pg_attribute
-          WHERE attrelid = to_regclass('public.usage_pack_allocation_changes')
-            AND attname = 'source_allocation_id'
-            AND NOT attnotnull
-        )`.mapWith(pgBooleanDecoder),
-    })
-    .from(sql`(SELECT 1) AS schema_probe`)
-    .limit(1);
-  return state?.available ?? false;
-}
 
 async function loadUsagePackSubscriptionChangeContext(
   db: Pick<Db, "select">,
@@ -3454,9 +3420,6 @@ export async function handleUsagePackSubscriptionChangeInvoicePaid(
   db: Db,
   invoice: UsagePackSubscriptionChangeInvoiceInput,
 ): Promise<UsagePackSubscriptionChangeInvoiceOutcome> {
-  if (!(await usagePackSubscriptionChangeSchemaAvailable(db))) {
-    return { handled: false, orgId: null };
-  }
   const root = await findSubscriptionChangeForInvoice(db, invoice);
   if (!root) {
     return { handled: false, orgId: null };
@@ -3790,9 +3753,6 @@ export async function reconcileUsagePackSubscriptionChanges(
   readonly reconciled: number;
   readonly orgIds: readonly string[];
 }> {
-  if (!(await usagePackSubscriptionChangeSchemaAvailable(db))) {
-    return { reconciled: 0, orgIds: [] };
-  }
   signal.throwIfAborted();
   const at = nowDate();
   const staleBefore = new Date(at.getTime() - RECONCILIATION_DELAY_MS);
