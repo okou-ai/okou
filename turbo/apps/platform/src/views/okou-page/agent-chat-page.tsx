@@ -21,6 +21,7 @@ import {
 
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
+import { StartCards } from "./start-cards.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import { HomeTaskRecommendations } from "./home-task-recommendations.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
@@ -411,17 +412,25 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
 export function AgentChatPage() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
+  const pageSignal = useGet(pageSignal$);
   const user = useLastResolved(user$);
   const userFirstName =
     user === undefined ? undefined : (user.firstName ?? null);
 
   const composerSignals = useGet(agentChatComposerSignals$);
   const taskChipsEnabled = useGet(composerSignals.taskChips.enabled$);
+  const setInput = useSet(composerSignals.draft.setDraftInput$);
+  const saveDraft = useSet(composerSignals.draft.save$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
   const tagline = useTagline(userFirstName, taglineIndex);
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
+
+  const handleInputChange = (value: string) => {
+    setInput(value);
+    detach(saveDraft(pageSignal), Reason.DomCallback);
+  };
 
   return (
     <div className="relative flex flex-1 flex-col min-h-0">
@@ -515,11 +524,20 @@ export function AgentChatPage() {
               The ordering the wrapper carried moved onto the section itself. */}
           <HomeTaskRecommendations agentId={currentChatAgentId} />
 
-          {taskChipsEnabled && (
-            <div className="order-2 sm:order-none">
+          {/* Start cards are desktop-only. `hidden` rather than skipping the
+              render: a `display: none` wrapper leaves the flex flow, so the
+              phone column does not pay a `gap` for an empty box. */}
+          <div
+            className={
+              taskChipsEnabled ? "order-2 sm:order-none" : "hidden sm:block"
+            }
+          >
+            {taskChipsEnabled ? (
               <ComposerTaskChips signals={composerSignals} />
-            </div>
-          )}
+            ) : (
+              <StartCards onSelectPrompt={handleInputChange} />
+            )}
+          </div>
         </div>
       </main>
       <PersonalClaudeCodeDeviceAuthDialog />

@@ -2257,6 +2257,28 @@
       "unread": "Non lu",
       "unreadOnly": "Non lu"
     },
+    "startCards": {
+      "kinds": {
+        "illustration": {
+          "description": "Obtenez un visuel fini dans le style voulu",
+          "prompt": "Crée une illustration dans le style que je décris.",
+          "title": "Créer une illustration"
+        },
+        "slides": {
+          "description": "Transformez un sujet ou un document en deck",
+          "prompt": "Crée une présentation à partir d'un sujet ou d'un document que je te donne.",
+          "title": "Créer une présentation"
+        },
+        "website": {
+          "description": "Créez et publiez une page partageable",
+          "prompt": "Crée et publie une page web que je peux partager.",
+          "title": "Créer un site web"
+        }
+      },
+      "openTemplatesAria": "Parcourir les modèles",
+      "startWithPrompt": "Créer",
+      "templates": "Modèles"
+    },
     "taskChips": {
       "chooseTask": "Choisir une tâche",
       "ideas": {

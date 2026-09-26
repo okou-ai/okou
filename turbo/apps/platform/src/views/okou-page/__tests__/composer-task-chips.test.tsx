@@ -167,11 +167,10 @@ test("A task moves into the composer and can be removed without losing the draft
   expect(editor).toHaveTextContent("Keep my draft");
 });
 
-test("No starting points render when task chips are disabled", async () => {
+test("The original start cards remain when task chips are disabled", async () => {
   mockTemplateChat();
   await setupChips(false);
-  expect(screen.queryByTestId("start-cards")).toBeNull();
-  expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
+  expect(screen.getByTestId("start-cards")).toBeInTheDocument();
   expect(
     document.querySelector('[data-slot="workflow-recommendation-tile"]'),
   ).toBeNull();

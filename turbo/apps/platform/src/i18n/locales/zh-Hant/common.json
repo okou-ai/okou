@@ -2201,6 +2201,28 @@
       "unread": "未讀",
       "unreadOnly": "未讀"
     },
+    "startCards": {
+      "kinds": {
+        "illustration": {
+          "description": "按你想要的風格做出成品畫面",
+          "prompt": "按我描述的風格創作一張插畫。",
+          "title": "創作插畫"
+        },
+        "slides": {
+          "description": "把一個主題或文件變成精緻的簡報",
+          "prompt": "根據我提供的主題或文件建立一份簡報。",
+          "title": "建立簡報"
+        },
+        "website": {
+          "description": "建立並發布一個可分享的頁面",
+          "prompt": "為我搭建並發布一個可分享的網頁。",
+          "title": "搭建網站"
+        }
+      },
+      "openTemplatesAria": "瀏覽模板",
+      "startWithPrompt": "建立",
+      "templates": "模板"
+    },
     "taskChips": {
       "chooseTask": "選擇任務",
       "ideas": {

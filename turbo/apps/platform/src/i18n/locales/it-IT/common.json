@@ -2257,6 +2257,28 @@
       "unread": "Non letto",
       "unreadOnly": "Non letto"
     },
+    "startCards": {
+      "kinds": {
+        "illustration": {
+          "description": "Ottieni un visual finito nello stile che preferisci",
+          "prompt": "Crea un'illustrazione nello stile che descrivo.",
+          "title": "Crea un'illustrazione"
+        },
+        "slides": {
+          "description": "Trasforma un argomento o documento in slide",
+          "prompt": "Crea una presentazione da un argomento o documento che ti fornisco.",
+          "title": "Crea una presentazione"
+        },
+        "website": {
+          "description": "Crea e pubblica una pagina condivisibile",
+          "prompt": "Crea e pubblica una pagina web che posso condividere.",
+          "title": "Crea un sito web"
+        }
+      },
+      "openTemplatesAria": "Sfoglia i modelli",
+      "startWithPrompt": "Crea",
+      "templates": "Modelli"
+    },
     "taskChips": {
       "chooseTask": "Scegli un’attività",
       "ideas": {

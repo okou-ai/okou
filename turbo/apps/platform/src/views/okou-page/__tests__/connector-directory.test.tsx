@@ -115,6 +115,7 @@ function dialogButton(dialog: HTMLElement, name: string): HTMLElement {
 async function openDirectory(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<HTMLElement> {
+  await expect(screen.findByTestId("start-cards")).resolves.toBeVisible();
   await user.click(await findFastControl("button", "Connectors"));
   await user.click(await findFastControl("button", "Add connectors"));
   const dialog = await screen.findByRole("dialog", { name: "Connectors" });
@@ -232,6 +233,7 @@ test("Keep the existing dialog when the directory switch is off", async () => {
 
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
 
+  await expect(screen.findByTestId("start-cards")).resolves.toBeVisible();
   await user.click(await findFastControl("button", "Connectors"));
   await user.click(await findFastControl("button", "Add connectors"));
 

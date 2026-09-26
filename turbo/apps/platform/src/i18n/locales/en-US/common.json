@@ -2210,6 +2210,28 @@
       "unread": "Unread",
       "unreadOnly": "Unread"
     },
+    "startCards": {
+      "kinds": {
+        "illustration": {
+          "description": "Make a finished visual in the style you want",
+          "prompt": "Create an illustration in the style I describe.",
+          "title": "Create an illustration"
+        },
+        "slides": {
+          "description": "Turn a topic or document into a polished deck",
+          "prompt": "Create a presentation from a topic or document I give you.",
+          "title": "Create a presentation"
+        },
+        "website": {
+          "description": "Create and publish a shareable page",
+          "prompt": "Build and publish a shareable web page for me.",
+          "title": "Build a website"
+        }
+      },
+      "openTemplatesAria": "Browse templates",
+      "startWithPrompt": "Create",
+      "templates": "Templates"
+    },
     "taskChips": {
       "chooseTask": "Choose a task",
       "ideas": {

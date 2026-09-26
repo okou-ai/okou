@@ -2201,6 +2201,28 @@
       "unread": "읽지 않음",
       "unreadOnly": "읽지 않음"
     },
+    "startCards": {
+      "kinds": {
+        "illustration": {
+          "description": "원하는 스타일의 완성된 비주얼을 만드세요",
+          "prompt": "제가 설명하는 스타일로 일러스트를 만들어 주세요.",
+          "title": "일러스트 만들기"
+        },
+        "slides": {
+          "description": "주제나 문서를 완성도 높은 덱으로 만드세요",
+          "prompt": "제가 주는 주제나 문서로 프레젠테이션을 만들어 주세요.",
+          "title": "프레젠테이션 만들기"
+        },
+        "website": {
+          "description": "공유할 수 있는 페이지를 만들어 게시하세요",
+          "prompt": "공유할 수 있는 웹 페이지를 만들어 게시해 주세요.",
+          "title": "웹사이트 만들기"
+        }
+      },
+      "openTemplatesAria": "템플릿 둘러보기",
+      "startWithPrompt": "만들기",
+      "templates": "템플릿"
+    },
     "taskChips": {
       "chooseTask": "작업 선택",
       "ideas": {
