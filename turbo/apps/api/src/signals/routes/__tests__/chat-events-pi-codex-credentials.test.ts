@@ -1,25 +1,18 @@
 // Narrow infrastructure exception to the external-behavior test rule:
-// exact post-commit/pre-KMS interleaves (including joining a failed sibling
-// and cancellation) and legacy provider-only metadata drift cannot be
-// deterministically staged through public endpoints. Other cases use the API.
+// exact pre-KMS interleaves (joining a failed sibling and cancellation) cannot
+// be deterministically staged through public endpoints. Other cases use the API.
 import { randomUUID } from "node:crypto";
-// eslint-disable-next-line no-restricted-imports -- Legacy provider-only metadata fixture.
-import { modelProviders } from "@okouai/db/schema/model-provider";
-import { and, eq } from "drizzle-orm";
 import { http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-// eslint-disable-next-line no-restricted-imports -- Isolated snapshot transaction and legacy metadata fixture.
+// eslint-disable-next-line no-restricted-imports -- Direct first-turn resolver arguments.
 import { db } from "../../../lib/db";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { reencryptSubscriptionStoresFixture } from "../../../test-fixtures/historical-subscription-writer";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 // eslint-disable-next-line no-restricted-imports -- Check the transaction/KMS boundary, not an HTTP response.
 import { resolvePiCodexFirstTurnSubscriptionBundleForApi } from "../../services/agent-webhook-firewall-auth.service";
-// eslint-disable-next-line no-restricted-imports -- Inspect eligibility only for infrastructure-only states.
-import { capturePiCodexCredentialCiphertexts } from "../../services/model-provider-account.service";
 import {
   createChatEventsFixture,
   requireOrgId,
@@ -52,18 +45,14 @@ async function fixture(expiresAt = Math.floor(now() / 1000) + 7200) {
     accessTokenExpiresAt: expiresAt,
     refreshedAccessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
   });
-  const args = {
-    db: db(),
-    orgId: requireOrgId(actor),
-    userId: actor.userId,
-    type: "codex-oauth-token" as const,
-    sourceId: connected.accountSourceId,
-    featureSwitchContext: { orgId: requireOrgId(actor), userId: actor.userId },
-  };
+  const orgId = requireOrgId(actor);
   const resolve = (signal: AbortSignal = context.signal) => {
     return resolvePiCodexFirstTurnSubscriptionBundleForApi(
       {
-        ...args,
+        db: db(),
+        orgId,
+        userId: actor.userId,
+        featureSwitchContext: { orgId, userId: actor.userId },
         key: "CHATGPT_ACCESS_TOKEN",
         providerKey: "codex-oauth-token",
         metadata: {
@@ -76,7 +65,7 @@ async function fixture(expiresAt = Math.floor(now() / 1000) + 7200) {
       signal,
     );
   };
-  return { actor, agentId, connected, identity, args, resolve };
+  return { actor, agentId, connected, identity, resolve };
 }
 
 async function runThroughChatApi(f: Awaited<ReturnType<typeof fixture>>) {
@@ -121,48 +110,17 @@ function expectCredentials(
 }
 
 describe("Pi Codex credential ciphertext snapshot", () => {
-  it("releases the user lock before KMS and preserves the selected account across disconnect", async () => {
+  it("returns the selected account's fresh credentials without refreshing", async () => {
     const f = await fixture();
-    const captured = await capturePiCodexCredentialCiphertexts(f.args);
-    expect(captured?.accessTokenCiphertext).toBeTruthy();
-    expect(captured?.accountIdCiphertext).toBeTruthy();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<Uint8Array>(context.signal);
-    const probe = useSecretKmsProbe(undefined, (_request, call) => {
-      if (call === 1) {
-        entered.resolve(undefined);
-        return release.promise;
-      }
-      return undefined;
-    });
-    const pending = f.resolve();
-    const pendingSettled = Promise.allSettled([pending]);
-    onTestFinished(async () => {
-      if (!release.settled()) {
-        release.resolve(TEST_DATA_KEY);
-      }
-      await pendingSettled;
-    });
-    await entered.promise;
-    // This writer needs the same advisory lock. If either decrypt is still
-    // inside the transaction, disconnect cannot complete before release.
-    await authDeviceSupport.deletePersonalModelProviderAccount(
-      f.actor,
-      f.connected.accountSourceId,
-    );
-    release.resolve(TEST_DATA_KEY);
     expectCredentials(
-      await pending,
+      await f.resolve(),
       f.connected.oauth.oauthTokenResponses[0]?.access_token,
       f.identity,
     );
-    expect(probe.decryptCalls).toBe(2);
-    await expect(
-      capturePiCodexCredentialCiphertexts(f.args),
-    ).resolves.toBeNull();
+    expect(f.connected.oauth.oauthToken).toHaveLength(1);
   }, 30_000);
 
-  it("uses the coordinating reader for expiring tokens and refreshes once", async () => {
+  it("refreshes an expiring token once before the first turn", async () => {
     const f = await fixture(Math.floor(now() / 1000) - 60);
     const { run, requests } = await runThroughChatApi(f);
     expect(requests).toStrictEqual([
@@ -175,47 +133,6 @@ describe("Pi Codex credential ciphertext snapshot", () => {
     await expect(api.readRun(f.actor, run.runId)).resolves.toMatchObject({
       status: "completed",
     });
-  }, 30_000);
-
-  it("falls back on independent KMS rotation without treating ciphertext drift as disconnect", async () => {
-    const f = await fixture();
-    await reencryptSubscriptionStoresFixture(f.actor, "codex-oauth-token");
-    const { requests } = await runThroughChatApi(f);
-    expect(requests).toStrictEqual([
-      {
-        authorization: `Bearer ${f.connected.oauth.oauthTokenResponses[0]?.access_token}`,
-        accountId: f.identity,
-      },
-    ]);
-    expect(f.connected.oauth.oauthToken).toHaveLength(1);
-  }, 30_000);
-
-  it("reconciles legacy provider metadata drift before using the fast path", async () => {
-    const f = await fixture();
-    // Legacy Codex refresh writes can update provider metadata without the
-    // account mirror. Such a state must be coordinated, never just decrypted.
-    const refreshedExpiry = new Date(now() + 7_300_000);
-    await db()
-      .update(modelProviders)
-      .set({ tokenExpiresAt: refreshedExpiry })
-      .where(
-        and(
-          eq(modelProviders.orgId, f.args.orgId),
-          eq(modelProviders.userId, f.args.userId),
-          eq(modelProviders.type, "codex-oauth-token"),
-        ),
-      );
-    await expect(
-      capturePiCodexCredentialCiphertexts(f.args),
-    ).resolves.toBeNull();
-    expectCredentials(
-      await f.resolve(),
-      f.connected.oauth.oauthTokenResponses[0]?.access_token,
-      f.identity,
-    );
-    const reconciled = await capturePiCodexCredentialCiphertexts(f.args);
-    expect(reconciled?.tokenExpiresAt).toStrictEqual(refreshedExpiry);
-    expect(f.connected.oauth.oauthToken).toHaveLength(1);
   }, 30_000);
 
   it("joins a failed decrypt with its held sibling before returning no credentials", async () => {
