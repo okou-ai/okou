@@ -2894,6 +2894,7 @@
       "empty": "Senden Sie eine Nachricht, um das Gespräch zu beginnen",
       "frequentlyUsed": "Häufig verwendet",
       "icon": "Chat-Thread-Symbol",
+      "linkedChatFallback": "Chat",
       "locator": {
         "you": "Du"
       },

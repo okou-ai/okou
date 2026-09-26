@@ -2885,6 +2885,7 @@
       "empty": "メッセージを送信して会話を始めましょう",
       "frequentlyUsed": "頻繁に使用される",
       "icon": "チャットスレッドアイコン",
+      "linkedChatFallback": "チャット",
       "locator": {
         "you": "あなた"
       },

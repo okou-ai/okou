@@ -2,8 +2,10 @@ import { useLastResolved } from "ccstate-react";
 import type { ReactNode } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
+import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { LinkedChatThreadChip } from "./chat-thread-link-chip.tsx";
 
 /**
  * User-authored text with its plain http(s) URLs made clickable.
@@ -12,16 +14,36 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
  * whitespace keep reading exactly as the author typed them. Links follow the
  * treatment the App stylesheet gives Markdown links, and carry the same
  * `target`/`rel` pair.
+ *
+ * `chatThreadChips` is for surfaces inside the signed-in App: there a link to
+ * one of its chat threads becomes a chat chip that opens in place. Public
+ * surfaces such as a shared thread leave it off, since their reader has no
+ * thread list to name the chat and may not be able to open it.
  */
-export function PlainTextWithLinks({ text }: { text: string }): ReactNode {
+export function PlainTextWithLinks({
+  text,
+  chatThreadChips = false,
+}: {
+  text: string;
+  chatThreadChips?: boolean;
+}): ReactNode {
   const features = useLastResolved(featureSwitch$);
   if (features?.[FeatureSwitchKey.UserMessageLinks] !== true) {
     return <span>{text}</span>;
   }
+  const showChatThreadChips =
+    chatThreadChips && features[FeatureSwitchKey.ChatThreadLinkChips] === true;
   return (
     <>
       {splitPlainTextUrls(text).map((segment, index) => {
         const key = `${String(index)}:${segment.value}`;
+        const threadId =
+          showChatThreadChips && segment.type === "url"
+            ? parseChatThreadLink(segment.value, window.location.origin)
+            : null;
+        if (threadId !== null) {
+          return <LinkedChatThreadChip key={key} threadId={threadId} />;
+        }
         return segment.type === "url" ? (
           <a
             key={key}

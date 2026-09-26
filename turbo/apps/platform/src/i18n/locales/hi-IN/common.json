@@ -2894,6 +2894,7 @@
       "empty": "बातचीत शुरू करने के लिए एक संदेश भेजें",
       "frequentlyUsed": "बहुधा प्रयुक्त",
       "icon": "चैट थ्रेड आइकन",
+      "linkedChatFallback": "चैट",
       "locator": {
         "you": "आप"
       },

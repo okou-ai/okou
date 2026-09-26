@@ -2885,6 +2885,7 @@
       "empty": "대화를 시작하려면 메시지를 보내세요",
       "frequentlyUsed": "자주 사용하는 항목",
       "icon": "채팅 스레드 아이콘",
+      "linkedChatFallback": "채팅",
       "locator": {
         "you": "나"
       },

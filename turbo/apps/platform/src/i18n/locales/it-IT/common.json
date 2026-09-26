@@ -2941,6 +2941,7 @@
       "empty": "Invia un messaggio per avviare la conversazione",
       "frequentlyUsed": "Usato frequentemente",
       "icon": "Icona del thread di chat",
+      "linkedChatFallback": "Chat",
       "locator": {
         "you": "Tu"
       },

@@ -2885,6 +2885,7 @@
       "empty": "发条消息开始对话",
       "frequentlyUsed": "常用",
       "icon": "聊天会话图标",
+      "linkedChatFallback": "聊天",
       "locator": {
         "you": "你"
       },

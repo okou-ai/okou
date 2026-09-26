@@ -2885,6 +2885,7 @@
       "empty": "Kirim pesan untuk memulai percakapan",
       "frequentlyUsed": "Sering digunakan",
       "icon": "Ikon thread chat",
+      "linkedChatFallback": "Chat",
       "locator": {
         "you": "Anda"
       },
