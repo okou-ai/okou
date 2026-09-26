@@ -6,7 +6,7 @@ import {
 } from "@okouai/db/schema/org-usage-allowance";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { env, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   builtinMemoryQuotaCases,
   seedMemoryQuotaCase,
@@ -19,6 +19,7 @@ import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/st
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -206,6 +207,121 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       retryAt: null,
       lastErrorClass: null,
     });
+  });
+
+  it("launches maintenance while the organization is at its run limit", async () => {
+    const now = new Date("2026-09-05T02:00:00.000Z");
+    const scope = await createPhase2TestScope("sandbox-at-capacity", {
+      emptyBase: true,
+    });
+    await enablePiMemoryForScope(scope);
+    await seedOrgMetadata({
+      orgId: scope.orgId,
+      tier: "pro",
+      credits: 100_000,
+    });
+    const agentId = randomUUID();
+    const sourceSessionId = randomUUID();
+    const sourceRunId = randomUUID();
+    const blockerRunId = randomUUID();
+    await db().insert(agents).values({
+      id: agentId,
+      orgId: scope.orgId,
+      owner: scope.userId,
+      name: "capacity-pi-agent",
+    });
+    await db().insert(agentSessions).values({
+      id: sourceSessionId,
+      orgId: scope.orgId,
+      userId: scope.userId,
+      agentId,
+    });
+    await db()
+      .insert(agentRuns)
+      .values([
+        {
+          id: sourceRunId,
+          sessionId: sourceSessionId,
+          orgId: scope.orgId,
+          userId: scope.userId,
+          status: "completed",
+          prompt: "Remember this while the organization is busy.",
+          modelProvider: "built-in",
+          modelProviderId: null,
+          modelProviderCredentialScope: "org",
+          triggerSource: "agent",
+          autonomyBudget: 0,
+          completedAt: now,
+        },
+        {
+          id: blockerRunId,
+          sessionId: sourceSessionId,
+          orgId: scope.orgId,
+          userId: scope.userId,
+          status: "running",
+          prompt: "Hold the organization's only slot.",
+          modelProvider: "built-in",
+          modelProviderId: null,
+          modelProviderCredentialScope: "org",
+          triggerSource: "agent",
+          autonomyBudget: 0,
+        },
+      ]);
+    // The only slot is held by a running run of the same organization.
+    await db().insert(activeAgentRuns).values({
+      runId: blockerRunId,
+      orgId: scope.orgId,
+      userId: scope.userId,
+      lastHeartbeatAt: now,
+    });
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    onTestFinished(async () => {
+      await deleteRunSessionsForScope(scope);
+      await db().delete(agents).where(eq(agents.id, agentId));
+    });
+    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    configureNativeCliArtifact();
+    await insertPhase2Candidates(scope, [
+      {
+        piSessionId: randomUUID(),
+        sourceRunId,
+        rawMemory: "maintenance does not wait for chat capacity",
+        rolloutSummary: "maintenance does not wait for chat capacity",
+      },
+    ]);
+    await insertPendingPhase2Job(scope, { updatedAt: now });
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
+    const store = createStore();
+
+    const result = await withMockNowForTest(now, async () => {
+      return await store.set(
+        executePiMemoryPhase2Work$,
+        { scope, currentTime: now },
+        testContext().signal,
+      );
+    });
+
+    expect(result.outcome).toBe("dispatched");
+    if (result.outcome !== "dispatched") {
+      throw new Error("Expected maintenance run dispatch at capacity");
+    }
+    const [run] = await db()
+      .select({ status: agentRuns.status, error: agentRuns.error })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, result.runId));
+    expect(run).toStrictEqual({ status: "pending", error: null });
+    // Maintenance still holds a slot that later capacity checks count.
+    const active = await db()
+      .select({ runId: activeAgentRuns.runId })
+      .from(activeAgentRuns)
+      .where(eq(activeAgentRuns.orgId, scope.orgId));
+    expect(
+      active
+        .map(({ runId }) => {
+          return runId;
+        })
+        .sort(),
+    ).toStrictEqual([blockerRunId, result.runId].sort());
   });
 
   it("does not claim when no control job is ready", async () => {
