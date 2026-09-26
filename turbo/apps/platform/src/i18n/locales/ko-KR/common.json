@@ -2558,7 +2558,7 @@
         "back": "워크플로 둘러보기",
         "browse": "워크플로 둘러보기",
         "close": "닫기",
-        "contextPrefix": "중요한 사항: {{context}}",
+        "contextPrefix": "중요한 사항: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "매일 또는 매주",

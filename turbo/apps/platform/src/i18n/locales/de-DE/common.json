@@ -2567,7 +2567,7 @@
         "back": "Workflows entdecken",
         "browse": "Workflows entdecken",
         "close": "Schließen",
-        "contextPrefix": "Das ist mir wichtig: {{context}}",
+        "contextPrefix": "Das ist mir wichtig: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Täglich oder wöchentlich",
