@@ -5,11 +5,11 @@
 //! `run()`, the main reactor for discovery, heartbeats, job execution,
 //! idle-pool maintenance, mitmproxy restart, and teardown.
 //!
-//! The sibling modules keep focused responsibilities out of this orchestration
-//! file:
+//! The sibling modules and domain owners keep focused responsibilities out of
+//! this orchestration file:
 //! - `factory_lifecycle`: sandbox factory creation and shutdown.
 //! - `runner-supervisor`: idle-pool, heartbeat, claimed activation ownership, completion settlement, and orphan-recovery policy.
-//! - `identity`: persistent runner id storage.
+//! - `runner-host::runner_process_identity`: persistent runner identity storage.
 //! - `job_discovery`: discovery branch handling and idle-reuse admission.
 //! - `job_spawn`: claimed job task spawning, completion, and panic cleanup.
 //! - `job_terminal_log`: terminal outcome tracing and diagnostic projection.
