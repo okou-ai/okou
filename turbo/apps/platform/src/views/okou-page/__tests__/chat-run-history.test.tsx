@@ -1,7 +1,8 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { now } from "../../../lib/time.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
@@ -194,11 +195,11 @@ test("Summarize completed work by conversation phase", async () => {
   await setupCompletedConversationPhases();
   expect(
     assistantGroupFor(screen.getByText("Phase one outline")),
-  ).toHaveTextContent("Worked for 1m");
+  ).toHaveTextContent("Worked for 1 min");
   expect(
     assistantGroupFor(screen.getByText("Phase one final plan")),
-  ).toHaveTextContent("Worked for 1m");
-  expect(screen.getByText("Worked for 2m")).toBeVisible();
+  ).toHaveTextContent("Worked for 1 min");
+  expect(screen.getByText("Worked for 2 min")).toBeVisible();
   expect(screen.getByText("Phase one outline")).toBeVisible();
   expect(screen.getByText("Phase one final plan")).toBeVisible();
   expect(screen.getByText("Phase two final plan")).toBeVisible();
@@ -290,6 +291,239 @@ test.each([
       assistantGroupFor(main),
     );
     expectTextOrder(workMessage(0), workMessage(1), workMessage(2));
+  },
+);
+
+test.each([
+  {
+    locale: "zh-Hans" as const,
+    active: false,
+    durationMs: 30_000,
+    expected: "共工作 30 秒",
+    steps: "1 个步骤",
+  },
+  {
+    locale: "zh-Hans" as const,
+    active: false,
+    durationMs: 60_000,
+    expected: "共工作 1 分钟",
+    steps: "1 个步骤",
+  },
+  {
+    locale: "zh-Hans" as const,
+    active: false,
+    durationMs: 60 * 60_000,
+    expected: "共工作 1 小时",
+    steps: "1 个步骤",
+  },
+  {
+    locale: "id-ID" as const,
+    active: false,
+    durationMs: 30_000,
+    expected: "Dikerjakan selama 30 detik",
+    steps: "1 langkah",
+  },
+  {
+    locale: "id-ID" as const,
+    active: false,
+    durationMs: 60_000,
+    expected: "Dikerjakan selama 1 menit",
+    steps: "1 langkah",
+  },
+  {
+    locale: "id-ID" as const,
+    active: false,
+    durationMs: 60 * 60_000,
+    expected: "Dikerjakan selama 1 jam",
+    steps: "1 langkah",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: false,
+    durationMs: 30_000,
+    expected: "30秒で働いていました",
+    steps: "1 ステップ",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: false,
+    durationMs: 60_000,
+    expected: "1分で働いていました",
+    steps: "1 ステップ",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: false,
+    durationMs: 60 * 60_000,
+    expected: "1時間で働いていました",
+    steps: "1 ステップ",
+  },
+  {
+    locale: "en-US" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Worked for 1 hr 29 min",
+    steps: "1 step",
+  },
+  {
+    locale: "pt-BR" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Trabalhou por 1 h 29 min",
+    steps: "1 etapa",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "1時間29分で働いていました",
+    steps: "1 ステップ",
+  },
+  {
+    locale: "ja-JP" as const,
+    active: true,
+    durationMs: 89 * 60_000,
+    expected: "1時間29分作業中",
+    steps: "1 ステップ",
+  },
+  {
+    locale: "ko-KR" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "1시간 29분 동안 작업 완료",
+    steps: "1 단계",
+  },
+  {
+    locale: "id-ID" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Dikerjakan selama 1 jam 29 menit",
+    steps: "1 langkah",
+  },
+  {
+    locale: "de-DE" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Ausgeführt in 1 h 29 min",
+    steps: "1 Schritt",
+  },
+  {
+    locale: "es-ES" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Trabajo realizado durante 1 h 29 min",
+    steps: "1 paso",
+  },
+  {
+    locale: "it-IT" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Ha lavorato per 1 h 29 min",
+    steps: "1 passo",
+  },
+  {
+    locale: "fr-FR" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "Fonctionné pendant 1 h 29 min",
+    steps: "1 étape",
+  },
+  {
+    locale: "hi-IN" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "1 घं॰ 29 मि॰ के लिए काम किया",
+    steps: "1 स्टेप",
+  },
+  {
+    locale: "zh-Hans" as const,
+    active: false,
+    durationMs: 89 * 60_000,
+    expected: "共工作 1 小时 29 分钟",
+    steps: "1 个步骤",
+  },
+  {
+    locale: "zh-Hans" as const,
+    active: true,
+    durationMs: 69 * 60_000,
+    expected: "已工作 1 小时 9 分钟",
+    steps: "1 个步骤",
+  },
+  {
+    locale: "zh-Hant" as const,
+    active: false,
+    durationMs: 69 * 60_000,
+    expected: "共工作 1 小時 9 分鐘",
+    steps: "1 個步驟",
+  },
+  {
+    locale: "zh-Hant" as const,
+    active: true,
+    durationMs: 89 * 60_000,
+    expected: "已工作 1 小時 29 分鐘",
+    steps: "1 個步驟",
+  },
+])(
+  "Render localized $locale $expected work duration",
+  async ({ locale, active, durationMs, expected, steps }) => {
+    context.mocks.browser.language(locale);
+    context.mocks.data.userPreferences({ locale });
+    // ElapsedTime uses Date.now directly for active runs; allow time to advance
+    // naturally while keeping the completed-run timestamps deterministic.
+    const startedAt = active
+      ? now() - durationMs
+      : new Date(createdAt(0)).getTime();
+    installRunChat({
+      activeRunIds: active ? [RUN_A] : [],
+      chatEvents: [
+        promptEvent({
+          id: "localized-work-user",
+          runId: RUN_A,
+          seqId: 1,
+          text: "Prepare the report",
+          createdAt: new Date(startedAt).toISOString(),
+        }),
+        assistantEvent({
+          id: "localized-work-first",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Collected data",
+          createdAt: new Date(startedAt + 5000).toISOString(),
+        }),
+        assistantEvent({
+          id: "localized-work-second",
+          runId: RUN_A,
+          seqId: 3,
+          text: "Prepared report",
+          createdAt: new Date(startedAt + 10_000).toISOString(),
+        }),
+        ...(active
+          ? []
+          : [
+              completedEvent({
+                id: "localized-work-complete",
+                runId: RUN_A,
+                seqId: 4,
+                createdAt: new Date(startedAt + durationMs).toISOString(),
+              }),
+            ]),
+      ],
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+    await screen.findByText("Prepared report");
+    await waitFor(() => {
+      expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
+        expected,
+      );
+    });
+    expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
+      steps,
+    );
+    // Check raw spacing too: toHaveTextContent normalizes non-breaking spaces.
+    expect(
+      document.querySelector("[data-chat-run-work]")?.textContent,
+    ).toContain(locale === "fr-FR" ? "1\u00a0h\u00a029\u00a0min" : expected);
   },
 );
 

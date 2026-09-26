@@ -135,7 +135,7 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
   await openChat(12);
   expect(screen.getByText(STEER)).toBeVisible();
   expectWaitingAfter(STEER);
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12s");
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
 
   mockNow(new Date(createdAt(20)), context.signal);
   events.push(
@@ -155,7 +155,7 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
   await expectRetainedResult();
   expect(queryButton("Copy message", mainResult(NEXT_RESULT))).toBeVisible();
   expectTextOrder(RESULT, STEER, NEXT_RESULT);
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12s");
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
   expect(workSummary(NEXT_RESULT)).toHaveTextContent("Working for");
 
   chat.completeRun();
@@ -163,8 +163,8 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
   await waitFor(() => {
     expect(workSummary(NEXT_RESULT)).toHaveTextContent("Worked for");
   });
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12s");
-  expect.soft(workSummary(NEXT_RESULT)).toHaveTextContent("Worked for 8s");
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
+  expect.soft(workSummary(NEXT_RESULT)).toHaveTextContent("Worked for 8 sec");
 });
 
 test("Keep separate histories, artifacts and actions on both sides of a steer in the same run", async () => {

@@ -2126,12 +2126,13 @@
         "wrappedUp": "{{time}} पर समाप्त हुआ"
       },
       "duration": {
-        "hoursShort_one": "{{count}}h",
-        "hoursShort_other": "{{count}}h",
-        "minutesShort_one": "{{count}}m",
-        "minutesShort_other": "{{count}}m",
-        "secondsShort_one": "{{count}}s",
-        "secondsShort_other": "{{count}}s"
+        "hoursMinutesShort": "{{hours}} घं॰ {{minutes}} मि॰",
+        "hoursShort_one": "{{count}} घं॰",
+        "hoursShort_other": "{{count}} घं॰",
+        "minutesShort_one": "{{count}} मि॰",
+        "minutesShort_other": "{{count}} मि॰",
+        "secondsShort_one": "{{count}} से॰",
+        "secondsShort_other": "{{count}} से॰"
       },
       "expandWorkHistory": "कार्य इतिहास का विस्तार करें",
       "fastModelName": "{{model}} Fast",

@@ -2118,12 +2118,13 @@
         "wrappedUp": "{{time}}已收尾"
       },
       "duration": {
-        "hoursShort_one": "{{count}}小時",
-        "hoursShort_other": "{{count}}小時",
-        "minutesShort_one": "{{count}}分鐘",
-        "minutesShort_other": "{{count}}分鐘",
-        "secondsShort_one": "{{count}}秒",
-        "secondsShort_other": "{{count}}秒"
+        "hoursMinutesShort": "{{hours}} 小時 {{minutes}} 分鐘",
+        "hoursShort_one": "{{count}} 小時",
+        "hoursShort_other": "{{count}} 小時",
+        "minutesShort_one": "{{count}} 分鐘",
+        "minutesShort_other": "{{count}} 分鐘",
+        "secondsShort_one": "{{count}} 秒",
+        "secondsShort_other": "{{count}} 秒"
       },
       "expandWorkHistory": "展開工作記錄",
       "fastModelName": "{{model}}快速模式",
@@ -2147,8 +2148,8 @@
       "viewLangfuseTrace": "檢視Langfuse追蹤",
       "viewLogs": "檢視執行日誌",
       "waitingIn": "正在等待",
-      "workedFor": "共工作{{duration}}",
-      "workingFor": "已工作{{duration}}"
+      "workedFor": "共工作 {{duration}}",
+      "workingFor": "已工作 {{duration}}"
     },
     "sharing": {
       "cancel": "取消",
