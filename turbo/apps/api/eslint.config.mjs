@@ -750,10 +750,6 @@ export default [
       // D explicitly requires immutable billing/compaction snapshot infrastructure.
       "src/signals/services/__tests__/pi-memory-stage1-usage.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // HTTP callers cannot select hard/preserve transaction inputs, legacy
-      // NULL recovery, partial claims, rollback or a closed DB pool. Route
-      // suites separately cover all externally constructible stop writers.
-      "src/signals/services/__tests__/run-cancellation-state.service.test.ts",
       // #34693 and #34711 need the persisted membership fence in both
       // overlapping commit orders, the foreign-key cascades that invalidate a
       // copy, account deletion and the refresh outcome, none of which any
@@ -940,9 +936,6 @@ export default [
       // The logger is the subject here, not a diagnostic: this suite covers the
       // app factory's log wiring and flush ownership, which no route exposes.
       "src/__tests__/app-factory.test.ts",
-      // Finite stop-intent transaction/history matrix, outside HTTP inputs;
-      // retains the diagnostics restrictions in the named service block.
-      "src/signals/services/__tests__/run-cancellation-state.service.test.ts",
       // #34693 and #34711's persisted membership fence, foreign-key cascades,
       // account deletion and refresh outcome have no HTTP ingress; the Settings
       // routes own everything else.
