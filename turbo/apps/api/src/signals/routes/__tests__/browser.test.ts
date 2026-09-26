@@ -240,7 +240,10 @@ function nativePasswordRequest(callbackPrompt: string) {
   };
 }
 
-async function createNativePasswordActionForPreflightTest(): Promise<{
+async function createNativePasswordActionForPreflightTest(
+  eventsBeforeReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[1]>,
+  withholdReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[2]>,
+): Promise<{
   readonly token: string;
   readonly providerId: string;
 }> {
@@ -256,7 +259,7 @@ async function createNativePasswordActionForPreflightTest(): Promise<{
     [FeatureSwitchKey.BrowserNativeInput]: true,
   });
   const providerId = randomUUID();
-  acceptBrowserUseCdpSessions([providerId]);
+  acceptBrowserUseCdpSessions([providerId], eventsBeforeReply, withholdReply);
   mockNativeInputTarget();
   server.use(
     http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
@@ -1241,6 +1244,109 @@ describe("Browser user-action route", () => {
       status: 503,
       body: { error: { code: "BROWSER_USE_TIMEOUT" } },
     });
+  });
+
+  it("keeps a preflight pending when its attach reply is withheld until the deadline", async () => {
+    const attachStarted = createDeferredPromise<void>(context.signal);
+    let holdAttachReply = false;
+    const { token } = await createNativePasswordActionForPreflightTest(
+      (command) => {
+        if (holdAttachReply && command.method === "Target.attachToTarget") {
+          attachStarted.resolve();
+          return [{ method: "Target.attachedToTarget", params: {} }];
+        }
+        return [];
+      },
+      (command) => {
+        return holdAttachReply && command.method === "Target.attachToTarget";
+      },
+    );
+    const deadline = new AbortController();
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      return milliseconds === 15_000 ? deadline.signal : undefined;
+    });
+    holdAttachReply = true;
+    const preflight = userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    await attachStarted.promise;
+    deadline.abort(new DOMException("CDP deadline", "TimeoutError"));
+    const failed = await preflight;
+    expect(failed).toMatchObject({
+      status: 503,
+      body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+    });
+    const pending = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+      }),
+      [200],
+    );
+    expect(pending.body.state).toBe("pending");
+  });
+
+  it("preflights when an attach event and reply arrive back-to-back", async () => {
+    let emitAttachEvent = false;
+    const { token } = await createNativePasswordActionForPreflightTest(
+      (command) => {
+        return emitAttachEvent && command.method === "Target.attachToTarget"
+          ? [{ method: "Target.attachedToTarget", params: {} }]
+          : [];
+      },
+    );
+    emitAttachEvent = true;
+    const checked = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: {},
+      }),
+      [200],
+    );
+    expect(checked.body.state).toBe("pending");
+  });
+
+  it("keeps an input request pending when an interleaved attach reply is a CDP error", async () => {
+    let emitAttachEvent = false;
+    const { token } = await createNativePasswordActionForPreflightTest(
+      (command) => {
+        return emitAttachEvent && command.method === "Target.attachToTarget"
+          ? [{ method: "Target.attachedToTarget", params: {} }]
+          : [];
+      },
+    );
+    const originalCommand =
+      context.mocks.browserUseCdp.command.getMockImplementation();
+    if (!originalCommand) {
+      throw new Error("Browser CDP mock has no command implementation");
+    }
+    context.mocks.browserUseCdp.command.mockImplementation((command) => {
+      if (command.method === "Target.attachToTarget") {
+        return new Error("Synthetic attach failure");
+      }
+      return originalCommand(command);
+    });
+    emitAttachEvent = true;
+    const failed = await userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    expect(failed).toMatchObject({
+      status: 502,
+      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+    });
+    const pending = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+      }),
+      [200],
+    );
+    expect(pending.body.state).toBe("pending");
   });
 
   it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
@@ -4634,6 +4740,9 @@ function browserUseCdpWebSocketUrl(providerSessionId: string): string {
 
 function acceptBrowserUseCdpSessions(
   providerSessionIds: readonly string[],
+  eventsBeforeReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[1]>,
+  withholdReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[2]>,
+  afterReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[3]>,
 ): void {
   for (const providerSessionId of providerSessionIds) {
     const webSocketUrl = browserUseCdpWebSocketUrl(providerSessionId);
@@ -4644,7 +4753,12 @@ function acceptBrowserUseCdpSessions(
           return HttpResponse.json({ webSocketDebuggerUrl: webSocketUrl });
         },
       ),
-      browserUseCdpHandler(webSocketUrl),
+      browserUseCdpHandler(
+        webSocketUrl,
+        eventsBeforeReply,
+        withholdReply,
+        afterReply,
+      ),
     );
   }
 }
@@ -5421,62 +5535,94 @@ describe("okou browser route", () => {
     ).toHaveLength(2);
   }, 120_000);
 
-  it("fails browser start when its initial size cannot be applied", async () => {
-    const { runs, chat, actor, agent } = await setupBrowserScenario();
-    const first = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Open a managed browser whose window cannot be resized",
-    );
-    const providerId = randomUUID();
-    acceptBrowserUseCdpSessions([providerId]);
-    context.mocks.browserUseCdp.command.mockImplementation((command) => {
-      return command.method === "Browser.setContentsSize"
-        ? new Error("test resize failure")
-        : undefined;
-    });
-    let providerStops = 0;
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
+  it.each([
+    { caseName: "provider rejects resize", abortAfterReply: false },
+    { caseName: "deadline aborts after resize reply", abortAfterReply: true },
+  ])(
+    "fails browser start when its initial size cannot be applied: $caseName",
+    async ({ abortAfterReply }) => {
+      const { runs, chat, actor, agent } = await setupBrowserScenario();
+      const first = await createClaimedChatRun(
+        chat,
+        runs,
+        actor,
+        agent.agentId,
+        "Open a managed browser whose window cannot be resized",
+      );
+      const providerId = randomUUID();
+      const deadline = new AbortController();
+      if (abortAfterReply) {
+        context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+          return milliseconds === 15_000 ? deadline.signal : undefined;
         });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        providerStops += 1;
-        return HttpResponse.json(
-          providerBrowser(String(params.id), { status: "stopped" }),
-        );
-      }),
-    );
+      }
+      acceptBrowserUseCdpSessions(
+        [providerId],
+        undefined,
+        undefined,
+        abortAfterReply
+          ? (command) => {
+              if (command.method === "Browser.setContentsSize") {
+                // MSW queues the reply dispatch first. Abort after its listener
+                // settles, before the command's awaiting continuation resumes.
+                queueMicrotask(() => {
+                  deadline.abort(
+                    new DOMException("CDP deadline", "TimeoutError"),
+                  );
+                });
+              }
+            }
+          : undefined,
+      );
+      context.mocks.browserUseCdp.command.mockImplementation((command) => {
+        return !abortAfterReply && command.method === "Browser.setContentsSize"
+          ? new Error("test resize failure")
+          : undefined;
+      });
+      let providerStops = 0;
+      server.use(
+        http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+          const body = z
+            .strictObject({ name: z.string() })
+            .parse(await request.json());
+          return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+            status: 201,
+          });
+        }),
+        http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+          return HttpResponse.json(providerBrowser(providerId), {
+            status: 201,
+          });
+        }),
+        http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+          providerStops += 1;
+          return HttpResponse.json(
+            providerBrowser(String(params.id), { status: "stopped" }),
+          );
+        }),
+      );
 
-    const failed = await requestBrowserUse(first.claim.browserHeaders);
-    expect(failed.status).toBe(502);
-    await expect(failed.json()).resolves.toMatchObject({
-      error: { code: "BROWSER_USE_RESIZE_ERROR" },
-    });
-    await flushWaitUntilForTest();
-    expect(providerStops).toBe(1);
+      const failed = await requestBrowserUse(first.claim.browserHeaders);
+      expect(failed.status).toBe(502);
+      await expect(failed.json()).resolves.toMatchObject({
+        error: { code: "BROWSER_USE_RESIZE_ERROR" },
+      });
+      await flushWaitUntilForTest();
+      expect(providerStops).toBe(1);
 
-    const current = await accept(
-      client().current({ headers: first.claim.browserHeaders }),
-      [200],
-    );
-    expect(current.body.browser.status).toBe("error");
-    expect(current.body.browser).not.toHaveProperty("screen");
+      const current = await accept(
+        client().current({ headers: first.claim.browserHeaders }),
+        [200],
+      );
+      expect(current.body.browser.status).toBe("error");
+      expect(current.body.browser).not.toHaveProperty("screen");
 
-    await chat.deleteThread(actor, first.threadId);
-    await flushWaitUntilForTest();
-    expect(providerStops).toBe(1);
-  }, 120_000);
+      await chat.deleteThread(actor, first.threadId);
+      await flushWaitUntilForTest();
+      expect(providerStops).toBe(1);
+    },
+    120_000,
+  );
 
   it("reclaims the earliest idle lease before starting past org concurrency", async () => {
     // Two managed browsers keep the third start past the limit, independent of
