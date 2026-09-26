@@ -412,6 +412,7 @@ async function lockDeviceAuthSessionOwner(
   },
 ): Promise<void> {
   await args.writeDb.execute(
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtext('oauth_device_authorization:' || ${args.orgId} || ':' || ${args.userId} || ':' || ${args.connectorSlug} || ':' || ${args.authMethod}))`,
   );
 }

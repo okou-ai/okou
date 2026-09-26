@@ -265,6 +265,7 @@ try {
   );
 
   for (const lock of [
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     "SELECT pg_advisory_xact_lock_shared(hashtext('marketing_privacy_storage_retirement'))",
     "LOCK TABLE privacy_choices IN ROW EXCLUSIVE MODE",
   ]) {

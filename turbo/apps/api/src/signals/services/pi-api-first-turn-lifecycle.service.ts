@@ -13,6 +13,7 @@ export async function lockPiApiFirstTurnLifecycle(
   runId: string,
 ): Promise<void> {
   await tx.execute(
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`pi_api_first_turn:${runId}`}, 0))`,
   );
 }

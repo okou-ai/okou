@@ -193,6 +193,7 @@ async function holdOrgAdmissionLock(
     db.transaction(async (tx) => {
       const rows = await executeRawRows(
         tx,
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         sql`
           SELECT
             pg_backend_pid() AS "holderPid",
@@ -2163,6 +2164,7 @@ async function assertOfficialWorkflowAutomationFinalAdmissionRejected(
   const rejection = await db.transaction(async (tx) => {
     await acquireOfficialWorkflowRunCatalogAdmissionLock(tx, observation);
     await tx.execute(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`SELECT pg_advisory_xact_lock(hashtext(${workflow.orgId}))`,
     );
     return await validateOfficialWorkflowRunForInsert(tx, {

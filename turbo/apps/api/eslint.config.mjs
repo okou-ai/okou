@@ -249,7 +249,13 @@ export default [
       "api/signal-check-await": "error",
       "ccstate/no-accessor-escape": "error",
       "ccstate/no-command-in-command": "error",
+      "api/no-new-advisory-lock": "error",
     },
+  },
+  {
+    files: ["scripts/**/*.ts"],
+    plugins: { api: apiLintPlugin },
+    rules: { "api/no-new-advisory-lock": "error" },
   },
   {
     files: ["src/**/*.ts"],

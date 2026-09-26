@@ -210,6 +210,7 @@ export const startUserExport$ = command(
       // Serialize admission and cooldown for this owner, not execution. This also
       // covers a previous job completing while another POST is being admitted.
       await tx.execute(
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         sql`select pg_advisory_xact_lock(hashtextextended(${`user-export:${args.userId}`}, 0))`,
       );
       signal.throwIfAborted();

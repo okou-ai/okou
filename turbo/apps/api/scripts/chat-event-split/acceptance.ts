@@ -376,8 +376,10 @@ try {
       await barrier.connect();
       const lockKey = 29_384_621;
       await barrier.query("BEGIN");
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       await barrier.query("SELECT pg_advisory_xact_lock($1)", [lockKey]);
       await pool.query(
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         `CREATE FUNCTION pause_direct_append() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.chat_thread_id = '${f.threadId}'::uuid THEN PERFORM pg_advisory_xact_lock(${lockKey}); END IF; RETURN NEW; END $$; CREATE TRIGGER pause_direct_append BEFORE INSERT ON chat_events FOR EACH ROW EXECUTE FUNCTION pause_direct_append()`,
       );
       let writerSettled = false;
@@ -484,8 +486,10 @@ try {
     await barrier.connect();
     const lockKey = 29_384_623;
     await barrier.query("BEGIN");
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     await barrier.query("SELECT pg_advisory_xact_lock($1)", [lockKey]);
     await pool.query(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       `CREATE FUNCTION pause_agent_cascade_append() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.chat_thread_id = '${f.threadId}'::uuid THEN PERFORM pg_advisory_xact_lock(${lockKey}); END IF; RETURN NEW; END $$; CREATE TRIGGER pause_agent_cascade_append BEFORE INSERT ON chat_events FOR EACH ROW EXECUTE FUNCTION pause_agent_cascade_append()`,
     );
     let writerSettled = false;
@@ -586,8 +590,10 @@ try {
     await barrier.connect();
     const lockKey = 29_384_622;
     await barrier.query("BEGIN");
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     await barrier.query("SELECT pg_advisory_xact_lock($1)", [lockKey]);
     await pool.query(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       `CREATE FUNCTION pause_thread_deletion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.id = '${f.threadId}'::uuid THEN PERFORM pg_advisory_xact_lock(${lockKey}); END IF; RETURN OLD; END $$; CREATE TRIGGER pause_thread_deletion BEFORE DELETE ON chat_threads FOR EACH ROW EXECUTE FUNCTION pause_thread_deletion()`,
     );
     let deletionSettled = false;

@@ -49,6 +49,7 @@ async function lockOrgAdmission(
   db: Pick<Db, "execute">,
   orgId: string,
 ): Promise<void> {
+  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
 }
 

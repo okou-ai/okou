@@ -45,11 +45,13 @@ export async function lockUsageEventCompaction(
       : `usage_event_compaction:test:${scope}`;
   await db.execute(
     mode === "shared"
-      ? sql`SELECT pg_advisory_xact_lock_shared(
+      ? // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+        sql`SELECT pg_advisory_xact_lock_shared(
       hashtext('vm0'),
       hashtext(${lockKey})
     )`
-      : sql`SELECT pg_advisory_xact_lock(
+      : // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+        sql`SELECT pg_advisory_xact_lock(
       hashtext('vm0'),
       hashtext(${lockKey})
     )`,

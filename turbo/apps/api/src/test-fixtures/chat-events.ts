@@ -1724,6 +1724,7 @@ export async function holdOrgAdmissionLockFixture(args: {
     .transaction(async (tx) => {
       const rows = await executeRawRows(
         tx,
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         sql`
           SELECT
             pg_backend_pid() AS "pid",
@@ -1808,6 +1809,7 @@ export async function holdPiApiFirstTurnLifecycleLockFixture(args: {
   const done = db().transaction(async (tx) => {
     const rows = await executeRawRows(
       tx,
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`
         SELECT
           pg_backend_pid() AS "pid",
@@ -1875,6 +1877,7 @@ export async function holdChatEventQueueAdmissionLockFixture(args: {
     const lockKey = `chat_event_queue:${args.threadId}`;
     const rows = await executeRawRows(
       tx,
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`
         SELECT
           pg_backend_pid() AS "pid",

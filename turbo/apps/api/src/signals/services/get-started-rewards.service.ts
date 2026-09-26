@@ -162,6 +162,7 @@ async function lockRedemption(
   ].sort();
   for (const key of keys) {
     await tx.execute(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`,
     );
   }

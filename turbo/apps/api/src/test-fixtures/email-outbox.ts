@@ -81,6 +81,7 @@ export async function holdEmailOutboxClaim(
   const dropTrigger = await installEmailOutboxTrigger(
     itemId,
     functionName,
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`
       CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
       LANGUAGE plpgsql AS $$
@@ -101,6 +102,7 @@ export async function holdEmailOutboxClaim(
 
   const held = await holdDeferredRow(signal, async (tx) => {
     await tx.execute(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${`email-outbox-claim:${itemId}`}, 0))`,
     );
   });

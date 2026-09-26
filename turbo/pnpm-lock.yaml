@@ -1070,6 +1070,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../eslint-rules
       '@okouai/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config

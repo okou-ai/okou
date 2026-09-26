@@ -63,6 +63,7 @@ async function concurrentFirstUsage(): Promise<void> {
       [identity],
     );
     await client.query("SET session_replication_role = origin");
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     await client.query(`CREATE FUNCTION pause_billing_capture() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         IF current_setting('application_name') = '${schema}_operator' THEN
@@ -76,6 +77,7 @@ async function concurrentFirstUsage(): Promise<void> {
     // insertion. An independently owned usage writer must still commit its FK.
     // The operator's backend PID is discovered before releasing its global lock.
     await client.query(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       "SELECT pg_advisory_lock(hashtext('vm0'), hashtext('usage_event_compaction'))",
     );
     work = Promise.allSettled([
@@ -110,11 +112,13 @@ async function concurrentFirstUsage(): Promise<void> {
       });
     }
     assert.ok(operatorPid, "operator must reach the actual compaction lock");
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     await client.query("SELECT pg_advisory_lock($1, $2)", [
       operatorPid,
       lockId,
     ]);
     await client.query(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       "SELECT pg_advisory_unlock(hashtext('vm0'), hashtext('usage_event_compaction'))",
     );
     let captureWaiting = false;
@@ -137,6 +141,7 @@ async function concurrentFirstUsage(): Promise<void> {
       "INSERT INTO usage_event(run_id, org_id, user_id, quantity) VALUES ($1, 'org', 'user', 19)",
       [identity],
     );
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     await client.query("SELECT pg_advisory_unlock($1, $2)", [
       operatorPid,
       lockId,
@@ -154,6 +159,7 @@ async function concurrentFirstUsage(): Promise<void> {
       [{ billing_run_id: identity, quantity: "19" }],
     );
   } finally {
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     await client.query("SELECT pg_advisory_unlock_all()");
     if (work) await work;
     await client.query(

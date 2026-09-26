@@ -1966,6 +1966,7 @@ test("admits native maintenance without asking KMS under the organization admiss
   });
   useSecretKmsProbe(undefined, async () => {
     const result = await lockProbe.query<{ available: unknown }>(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       "SELECT pg_try_advisory_xact_lock(hashtext($1)) AS available",
       [job.scope.orgId],
     );

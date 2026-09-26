@@ -335,6 +335,7 @@ async function lockPurchase(
   purchaseId: string,
 ): Promise<void> {
   await tx.execute(
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`usage_pack_invitation:${purchaseId}`}, 0))`,
   );
 }
@@ -345,6 +346,7 @@ async function lockInvitationEmail(
   email: string,
 ): Promise<void> {
   await tx.execute(
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`usage_pack_invitation_email:${orgId}:${email}`}, 0))`,
   );
 }

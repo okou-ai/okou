@@ -27,6 +27,7 @@ export async function maintainChatSearchGin(
     signal.throwIfAborted();
     const [lock] = await executeRawRows(
       tx,
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`SELECT pg_try_advisory_xact_lock(hashtext('chat-search-gin'), hashtext(${indexName})) AS acquired`,
       z.object({ acquired: z.boolean() }),
     );

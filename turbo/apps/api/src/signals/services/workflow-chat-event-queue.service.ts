@@ -50,6 +50,7 @@ async function chatEventQueueAdmissionLock(
 ): Promise<void> {
   // Serialize every admission and claim transaction for the same chat thread.
   const lockKey = `chat_event_queue:${chatThreadId}`;
+  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 
