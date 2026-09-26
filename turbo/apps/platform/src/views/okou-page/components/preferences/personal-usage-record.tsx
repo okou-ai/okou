@@ -28,6 +28,7 @@ import { orgMembers$ } from "../../../../signals/external/org-members.ts";
 import { closeSettingsModal$ } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { nowDate } from "../../../../lib/time.ts";
 import { Link } from "../../../router/link.tsx";
+import { shouldHandleLinkClick } from "../../../router/link-click.ts";
 import { MemberUsageTable } from "../org-manage/org-usage-tab.tsx";
 import { emptyUsageImg } from "../../platform-assets.ts";
 import { useTranslation } from "react-i18next";
@@ -185,7 +186,7 @@ function UsageRow({ row, max }: { row: UsageRecordRow; max: number }) {
       });
 
   const closeOnNavigate = (e: MouseEvent<HTMLAnchorElement>) => {
-    if (e.metaKey || e.ctrlKey || e.shiftKey) {
+    if (!shouldHandleLinkClick(e)) {
       return;
     }
     closeSettings();
