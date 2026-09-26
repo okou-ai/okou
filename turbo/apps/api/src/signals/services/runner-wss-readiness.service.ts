@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
 import { runnerWssEndpoints } from "@okouai/db/schema/runner-wss-endpoint";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, lte, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
@@ -98,7 +98,8 @@ export async function renewLocalWssEndpoint(
   ) {
     return { status: "invalid-proof" };
   }
-  const expiresAt = new Date(now.getTime() + LEASE_MS);
+  // A delayed HTTP request must not extend the time since the actual probe.
+  const expiresAt = new Date(observed.getTime() + LEASE_MS);
   return await db.transaction(async (transaction) => {
     const rows = await transaction
       .insert(runnerWssEndpoints)
@@ -121,16 +122,38 @@ export async function renewLocalWssEndpoint(
         setWhere: and(
           eq(runnerWssEndpoints.hostId, host.id),
           isNull(runnerWssEndpoints.quarantinedAt),
+          lte(runnerWssEndpoints.lastProbedAt, observed),
+          or(
+            isNull(runnerWssEndpoints.withdrawnAt),
+            lt(runnerWssEndpoints.withdrawnAt, observed),
+          ),
         ),
       })
       .returning({ runnerId: runnerWssEndpoints.runnerId });
     if (rows.length === 0) {
-      // A copied ID makes *both* locations unusable. Never let the winner of
-      // a race remain eligible for a ticket while the collision is unresolved.
-      await transaction
-        .update(runnerWssEndpoints)
-        .set({ quarantinedAt: now, withdrawnAt: now, updatedAt: now })
-        .where(eq(runnerWssEndpoints.runnerId, runnerId));
+      // ON CONFLICT locks the existing row even when the WHERE condition is
+      // false. Classify a stale same-host proof without quarantining its owner.
+      const [existing] = await transaction
+        .select({
+          hostId: runnerWssEndpoints.hostId,
+          quarantinedAt: runnerWssEndpoints.quarantinedAt,
+        })
+        .from(runnerWssEndpoints)
+        .where(eq(runnerWssEndpoints.runnerId, runnerId))
+        .limit(1);
+      if (!existing) {
+        throw new Error("Conflicting Runner WSS endpoint row is missing");
+      }
+      if (existing.hostId === host.id && !existing.quarantinedAt) {
+        return { status: "invalid-proof" as const };
+      }
+      if (!existing.quarantinedAt) {
+        // A copied ID makes *both* locations unusable until operator review.
+        await transaction
+          .update(runnerWssEndpoints)
+          .set({ quarantinedAt: now, withdrawnAt: now, updatedAt: now })
+          .where(eq(runnerWssEndpoints.runnerId, runnerId));
+      }
       return { status: "host-conflict" as const };
     }
     return { status: "ready" as const, expiresAt };
@@ -141,6 +164,7 @@ export async function withdrawLocalWssEndpoint(
   db: Db,
   host: Host,
   runnerId: string,
+  leaseExpiresAt: string,
 ): Promise<void> {
   const now = nowDate();
   await db
@@ -150,6 +174,8 @@ export async function withdrawLocalWssEndpoint(
       and(
         eq(runnerWssEndpoints.runnerId, runnerId),
         eq(runnerWssEndpoints.hostId, host.id),
+        // A delayed withdrawal for an earlier probe cannot erase a newer lease.
+        eq(runnerWssEndpoints.leaseExpiresAt, new Date(leaseExpiresAt)),
       ),
     );
 }

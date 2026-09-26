@@ -48,8 +48,16 @@ function fixture() {
       body: { proof: { nonce: randomBytes(16).toString("hex"), observedAt } },
     });
   }
+  function withdraw(runnerId: string, leaseExpiresAt: string, headers = authA) {
+    return client().withdraw({
+      params: { runnerId },
+      headers,
+      body: { leaseExpiresAt },
+    });
+  }
   configure();
   return {
+    withdraw,
     hostA,
     hostB,
     tokenA,
@@ -98,7 +106,7 @@ describe("host-bound Runner WSS local readiness", () => {
   });
 
   it("renews only an owned endpoint, expires, withdraws, and allows a fresh same-host probe", async () => {
-    const { renew, authA, authB } = fixture();
+    const { renew, withdraw, authA, authB } = fixture();
     const runnerId = randomUUID();
     const p = { params: { runnerId }, headers: authA };
     expect((await accept(client().status(p), [200])).body).toStrictEqual({
@@ -122,21 +130,78 @@ describe("host-bound Runner WSS local readiness", () => {
       (await accept(client().status(p), [200])).body.localReady,
     ).toBeFalsy();
     await accept(renew(runnerId, authA, new Date(nowMs).toISOString()), [400]);
-    await accept(
+    const renewed = await accept(
       renew(runnerId, authA, new Date(nowMs + 15_001).toISOString()),
       [200],
     );
-    await accept(client().withdraw(p), [200]);
+    await accept(withdraw(runnerId, renewed.body.leaseExpiresAt), [200]);
     expect(
       (await accept(client().status(p), [200])).body.localReady,
     ).toBeFalsy();
+    mockNow(new Date(nowMs + 15_002));
     await accept(
-      renew(runnerId, authA, new Date(nowMs + 15_001).toISOString()),
+      renew(runnerId, authA, new Date(nowMs + 15_002).toISOString()),
       [200],
     );
     expect(
       (await accept(client().status(p), [200])).body.localReady,
     ).toBeTruthy();
+  });
+
+  it("bounds a delayed lease to its probe and rejects a stale proof after withdrawal", async () => {
+    const { renew, withdraw, authA } = fixture();
+    const runnerId = randomUUID();
+    const p = { params: { runnerId }, headers: authA };
+    mockNow(new Date(nowMs + 9000));
+    const delayed = await accept(renew(runnerId), [200]);
+    expect(delayed.body.leaseExpiresAt).toBe(
+      new Date(nowMs + 15_000).toISOString(),
+    );
+    await accept(withdraw(runnerId, delayed.body.leaseExpiresAt), [200]);
+    await accept(renew(runnerId), [400]);
+    expect(
+      (await accept(client().status(p), [200])).body.localReady,
+    ).toBeFalsy();
+    mockNow(new Date(nowMs + 9001));
+    const fresh = await accept(
+      renew(runnerId, authA, new Date(nowMs + 9001).toISOString()),
+      [200],
+    );
+    expect(fresh.body.leaseExpiresAt).toBe(
+      new Date(nowMs + 24_001).toISOString(),
+    );
+    mockNow(new Date(nowMs + 24_002));
+    expect(
+      (await accept(client().status(p), [200])).body.localReady,
+    ).toBeFalsy();
+  });
+
+  it("does not let a delayed or foreign withdrawal erase a newer same-host lease", async () => {
+    const { renew, withdraw, authA, authB } = fixture();
+    const runnerId = randomUUID();
+    const p = { params: { runnerId }, headers: authA };
+    const oldLease = await accept(renew(runnerId), [200]);
+    mockNow(new Date(nowMs + 5000));
+    const freshLease = await accept(
+      renew(runnerId, authA, new Date(nowMs + 5000).toISOString()),
+      [200],
+    );
+    await accept(
+      renew(runnerId, authA, new Date(nowMs + 1000).toISOString()),
+      [400],
+    );
+    await accept(withdraw(runnerId, oldLease.body.leaseExpiresAt), [200]);
+    await accept(
+      withdraw(runnerId, freshLease.body.leaseExpiresAt, authB),
+      [200],
+    );
+    expect(
+      (await accept(client().status(p), [200])).body.localReady,
+    ).toBeTruthy();
+    await accept(withdraw(runnerId, freshLease.body.leaseExpiresAt), [200]);
+    expect(
+      (await accept(client().status(p), [200])).body.localReady,
+    ).toBeFalsy();
   });
 
   it("rejects duplicate host bindings and future-dated listener proofs", async () => {

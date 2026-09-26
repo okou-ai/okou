@@ -96,8 +96,18 @@ const withdraw$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (identity.status === "unauthorized") {
     return error(401, "UNAUTHORIZED", "WSS host authentication required");
   }
+  const body = await get(bodyResultOf(runnerWssReadinessContract.withdraw));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
   const { runnerId } = get(pathParamsOf(runnerWssReadinessContract.withdraw));
-  await withdrawLocalWssEndpoint(set(writeDb$), identity.host, runnerId);
+  await withdrawLocalWssEndpoint(
+    set(writeDb$),
+    identity.host,
+    runnerId,
+    body.data.leaseExpiresAt,
+  );
   signal.throwIfAborted();
   return { status: 200 as const, body: { ok: true as const } };
 });

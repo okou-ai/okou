@@ -57,8 +57,14 @@ export const runnerWssReadinessContract = c.router({
     path: "/api/runners/wss-readiness/:runnerId",
     pathParams,
     headers: authHeadersSchema,
+    // Conditional on the lease issued to this registrar. A stale DELETE must
+    // not erase readiness from a newer successful probe on the same host.
+    body: z
+      .object({ leaseExpiresAt: z.string().datetime({ offset: true }) })
+      .strict(),
     responses: {
       200: z.object({ ok: z.literal(true) }).strict(),
+      400: apiErrorSchema,
       401: apiErrorSchema,
       503: apiErrorSchema,
     },

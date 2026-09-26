@@ -1,6 +1,7 @@
 """Focused local-probe tests: python3 -m unittest ansible/scripts/test_wss_host_registrar.py"""
 
 import importlib.util
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
@@ -107,6 +108,47 @@ class ProbeTest(unittest.TestCase):
         self.socket_dir.chmod(0o777)
         with self.assertRaisesRegex(ValueError, "unsafe WSS socket directory"):
             registrar.probe_socket(RUNNER_ID, os.getuid(), self.socket_dir)
+
+    def test_api_roundtrip_returns_and_conditionally_withdraws_its_lease(self):
+        requests = []
+        lease = "2026-09-26T10:00:15.000Z"
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_PUT(self):
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                requests.append((self.command, self.path, self.headers["Authorization"], payload))
+                response = json.dumps({"leaseExpiresAt": lease}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(response)))
+                self.end_headers()
+                self.wfile.write(response)
+
+            def do_DELETE(self):
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                requests.append((self.command, self.path, self.headers["Authorization"], payload))
+                self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, _format, *_args):
+                # Keep even synthetic bearer tokens out of test-server logs.
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(lambda: worker.join(timeout=3))
+        self.addCleanup(server.shutdown)
+        origin = f"http://127.0.0.1:{server.server_address[1]}"
+        token = "okou_wss_host_" + "x" * 43
+        returned = registrar.api_request(origin, token, RUNNER_ID, "PUT", {"nonce": "a" * 32})
+        self.assertEqual(returned, lease)
+        registrar.api_request(origin, token, RUNNER_ID, "DELETE", lease_expires_at=returned)
+        self.assertEqual(requests, [
+            ("PUT", f"/api/runners/wss-readiness/{RUNNER_ID}", f"Bearer {token}", {"proof": {"nonce": "a" * 32}}),
+            ("DELETE", f"/api/runners/wss-readiness/{RUNNER_ID}", f"Bearer {token}", {"leaseExpiresAt": lease}),
+        ])
 
 
 if __name__ == "__main__":

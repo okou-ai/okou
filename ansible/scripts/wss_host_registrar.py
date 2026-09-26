@@ -86,11 +86,23 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def api_request(origin: str, token: str, runner_id: str, method: str, proof: dict | None = None) -> None:
-    data = json.dumps({"proof": proof}).encode("utf-8") if proof else None
+def api_request(
+    origin: str,
+    token: str,
+    runner_id: str,
+    method: str,
+    proof: dict | None = None,
+    lease_expires_at: str | None = None,
+) -> str | None:
+    if method == "PUT" and proof is not None:
+        payload = {"proof": proof}
+    elif method == "DELETE" and lease_expires_at is not None:
+        payload = {"leaseExpiresAt": lease_expires_at}
+    else:
+        raise ValueError("missing WSS readiness request evidence")
     request = Request(
         f"{origin}/api/runners/wss-readiness/{runner_id}",
-        data=data,
+        data=json.dumps(payload).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -100,6 +112,16 @@ def api_request(origin: str, token: str, runner_id: str, method: str, proof: dic
     with build_opener(NoRedirect()).open(request, timeout=PROBE_TIMEOUT_SECONDS + 1) as response:
         if response.status != 200:
             raise ValueError("WSS readiness API unavailable")
+        if method == "PUT":
+            body = response.read(513)
+            if len(body) > 512:
+                raise ValueError("oversized WSS readiness API response")
+            parsed = json.loads(body)
+            lease = parsed.get("leaseExpiresAt") if isinstance(parsed, dict) else None
+            if not isinstance(lease, str):
+                raise ValueError("missing WSS readiness lease")
+            return lease
+    return None
 
 
 def main() -> int:
@@ -128,6 +150,7 @@ def main() -> int:
     if not re.fullmatch(r"okou_wss_host_[A-Za-z0-9_-]{43}", token):
         parser.error("invalid host credential")
     stop = False
+    current_lease: str | None = None
 
     def shutdown(_signum: int, _frame: object) -> None:
         nonlocal stop
@@ -138,25 +161,37 @@ def main() -> int:
     while not stop:
         try:
             nonce = probe_socket(args.runner_id, args.runner_uid)
-            api_request(
+            lease = api_request(
                 args.api_origin,
                 token,
                 args.runner_id,
                 "PUT",
                 {"nonce": nonce, "observedAt": datetime.now(timezone.utc).isoformat()},
             )
-        except (OSError, ValueError, json.JSONDecodeError) as error:
+            if lease is None:
+                raise ValueError("missing WSS readiness lease")
+            current_lease = lease
+        except (OSError, ValueError) as error:
             # Never print URL credentials, request body, token or listener payload.
             print(f"WSS local readiness unavailable: {type(error).__name__}", file=sys.stderr)
-            try:
-                api_request(args.api_origin, token, args.runner_id, "DELETE")
-            except (OSError, ValueError):
-                pass  # Short API lease expires without a successful renewal.
+            if current_lease is not None:
+                try:
+                    api_request(
+                        args.api_origin, token, args.runner_id, "DELETE",
+                        lease_expires_at=current_lease,
+                    )
+                except (OSError, ValueError):
+                    pass  # Short API lease expires without a successful renewal.
+                current_lease = None
         time.sleep(RENEW_EVERY_SECONDS)
-    try:
-        api_request(args.api_origin, token, args.runner_id, "DELETE")
-    except (OSError, ValueError):
-        pass  # Best effort on exit; an unrenewed short API lease still expires.
+    if current_lease is not None:
+        try:
+            api_request(
+                args.api_origin, token, args.runner_id, "DELETE",
+                lease_expires_at=current_lease,
+            )
+        except (OSError, ValueError):
+            pass  # Best effort on exit; an unrenewed short API lease still expires.
     return 0
 
 
