@@ -1,10 +1,6 @@
 import { sql } from "drizzle-orm";
-import { check, index, jsonb, pgTable, unique } from "drizzle-orm/pg-core";
+import { check, index, pgTable, unique } from "drizzle-orm/pg-core";
 import { chatThreadColumns } from "../columns/chat-thread";
-import type {
-  ChatThreadDraftAttachments,
-  ChatThreadDraftUserMessage,
-} from "@okouai/db/jsonb-contracts/chat-thread";
 /**
  * Server-private origin classification for a whole chat thread.
  *
@@ -23,39 +19,13 @@ export type ChatThreadProvenance = "ordinary" | "morning_brief";
  */
 export const chatThreads = pgTable(
   "chat_threads",
-  {
-    ...chatThreadColumns(),
-    /**
-     * Retired composer draft columns, declared here only so the schema matches
-     * the database until they are dropped. The runtime mapping omits them, so
-     * no API names them in an implicit INSERT, SELECT or RETURNING; the next
-     * contract release drops them. The draft lives in `chat_thread_drafts`.
-     */
-    draftUserMessage:
-      jsonb("draft_user_message").$type<ChatThreadDraftUserMessage>(),
-    draftAttachments:
-      jsonb("draft_attachments").$type<ChatThreadDraftAttachments>(),
-  },
+  chatThreadColumns(),
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),
       check(
         "chat_threads_computer_access_check",
         sql`NOT (${table.cloudBrowserEnabled} AND ${table.computerUseHostId} IS NOT NULL)`,
-      ),
-      check(
-        "chat_threads_draft_user_message_check",
-        sql`${table.draftUserMessage} IS NOT NULL
-          OR COALESCE(${table.draftAttachments}, '[]'::jsonb) = '[]'::jsonb`,
-      ),
-      index("idx_chat_threads_user_agent_updated").on(
-        table.userId,
-        table.agentId,
-        table.updatedAt.desc(),
-      ),
-      index("idx_chat_threads_user_last_read").on(
-        table.userId,
-        table.lastReadAt,
       ),
       index("idx_chat_threads_user_agent_pinned")
         .on(table.userId, table.agentId)

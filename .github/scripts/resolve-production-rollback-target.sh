@@ -8,6 +8,11 @@ readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
 readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70dab7ae6
+# #36932 targets the (chat_thread_id, user_id) draft key and stopped mapping the
+# chat_threads draft columns. Migration drop_chat_thread_draft_columns makes that
+# pair the primary key and drops the columns, so earlier APIs fail draft saves
+# and thread inserts.
+readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 
 fail() {
@@ -53,6 +58,9 @@ fi
 # document. Only APIs with the child-only draft writer satisfy that.
 if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread draft child-only writer: ${CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread draft owner key writer: ${CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames
