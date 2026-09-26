@@ -156,7 +156,7 @@ def main() -> int:
     try:
         api_request(args.api_origin, token, args.runner_id, "DELETE")
     except (OSError, ValueError):
-        pass
+        pass  # Best effort on exit; an unrenewed short API lease still expires.
     return 0
 
 
