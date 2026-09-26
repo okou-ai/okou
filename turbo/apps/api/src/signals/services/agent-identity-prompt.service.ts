@@ -1,4 +1,4 @@
-import { agentDisplayName } from "@okouai/core/public-brand";
+import { agentDisplayName } from "@okouai/core/brand-presentation";
 
 const TONE_INSTRUCTIONS: Readonly<Record<string, string>> = {
   professional:

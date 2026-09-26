@@ -25,7 +25,7 @@ const site: Site = {
   user_id: "owner",
   slug: "example",
   requested_slug: null,
-  public_brand: "okou",
+  link_layout_segment: "okou",
   public_slug: "example",
   active_deployment_id: null,
   created_at: new Date("2026-09-18T00:00:00Z"),
@@ -35,7 +35,7 @@ const share: Share = {
   id: shareId,
   org_id: orgId,
   user_id: "owner",
-  public_brand: "okou",
+  link_layout_segment: "okou",
   target_kind: "html",
   target_id: siteId,
 };

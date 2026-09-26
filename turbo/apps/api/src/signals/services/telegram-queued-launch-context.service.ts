@@ -1,6 +1,4 @@
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
@@ -23,7 +21,6 @@ import { buildTelegramPrompt } from "./telegram-prompt";
 export interface TelegramQueuedLaunchMaterial {
   readonly prompt: string;
   readonly appendSystemPrompt: string;
-  readonly publicBrand: PublicBrand;
   readonly telegramDelivery: TelegramDeliveryTarget;
   readonly userInfoExtras: {
     readonly telegramDisplayName?: string;
@@ -244,7 +241,6 @@ export async function loadTelegramQueuedLaunchMaterial(
       }),
       context.threadContext,
     ),
-    publicBrand: PUBLIC_BRAND,
     telegramDelivery: telegramDeliveryTargetSchema.parse({
       installationId: deliveryInstallationId,
       chatId: context.chatId,

@@ -1,7 +1,7 @@
 import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { command, computed, type Computed } from "ccstate";
 import type { SlackConnectLinkStatus } from "@okouai/api-contracts/contracts/slack-connect";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -667,7 +667,7 @@ export const notifySlackConnect$ = command(
       ? await getWorkspaceAgentName(writeDb, defaultAgentId)
       : undefined;
     signal.throwIfAborted();
-    const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+    const { assistantName } = BRAND_PRESENTATION;
 
     const blocks = buildSuccessMessage(
       `You're connected to ${assistantName}! :tada:\nMention ${officialSlackBotMention(args.installation.botUserId)} in any channel or send a DM to start chatting with your agent.`,

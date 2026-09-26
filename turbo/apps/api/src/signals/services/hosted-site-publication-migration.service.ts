@@ -78,7 +78,7 @@ function validateSnapshotPolicy(
     policy.shareId !== record.shareId ||
     policy.ownerId !== site.userId ||
     policy.orgId !== site.orgId ||
-    policy.publicBrand !== site.publicBrand ||
+    policy.publicBrand !== site.linkLayoutSegment ||
     !retainedAudience ||
     (policy.publicSlug !== undefined &&
       policy.publicSlug !== site.publicSlug) ||
@@ -115,14 +115,14 @@ const preserveSnapshotToken$ = command(
       share.targetId !== site.id ||
       share.orgId !== site.orgId ||
       share.userId !== site.userId ||
-      share.publicBrand !== site.publicBrand ||
+      share.linkLayoutSegment !== site.linkLayoutSegment ||
       record.targetKind !== "html" ||
-      record.publicBrand !== site.publicBrand ||
+      record.publicBrand !== site.linkLayoutSegment ||
       record.publicToken === site.publicSlug
     ) {
       aliasConflict();
     }
-    const key = `artifact-shares/${site.publicBrand}/${share.id}.json`;
+    const key = `artifact-shares/${site.linkLayoutSegment}/${share.id}.json`;
     const stored = await get(storedObject(args.bucket, key, signal));
     signal.throwIfAborted();
     if (!stored) {
@@ -141,7 +141,10 @@ const preserveSnapshotToken$ = command(
           eq(privateHostedDeployments.siteId, site.id),
           eq(privateHostedDeployments.userId, site.userId),
           eq(privateHostedDeployments.orgId, site.orgId),
-          eq(privateHostedDeployments.publicBrand, site.publicBrand),
+          eq(
+            privateHostedDeployments.linkLayoutSegment,
+            site.linkLayoutSegment,
+          ),
           eq(privateHostedDeployments.status, "ready"),
         ),
       );
@@ -153,7 +156,7 @@ const preserveSnapshotToken$ = command(
       storedObject(
         args.bucket,
         artifactDeliveryKey(
-          storedLinkLayoutSegment(site.publicBrand),
+          storedLinkLayoutSegment(site.linkLayoutSegment),
           "html",
           record.publicToken,
         ),
@@ -200,7 +203,8 @@ async function retainedPointer(
     current.siteId !== site.id ||
     current.publicSlug !== site.publicSlug ||
     // Pointers written before the layout marker are legacy-layout pointers.
-    (current.publicBrand ?? linkLayoutSegment("legacy")) !== site.publicBrand
+    (current.publicBrand ?? linkLayoutSegment("legacy")) !==
+      site.linkLayoutSegment
   ) {
     aliasConflict();
   }
@@ -229,7 +233,7 @@ async function retainedPointer(
         eq(hostedDeployments.siteId, site.id),
         eq(hostedDeployments.orgId, site.orgId),
         eq(hostedDeployments.userId, site.userId),
-        eq(hostedDeployments.publicBrand, site.publicBrand),
+        eq(hostedDeployments.linkLayoutSegment, site.linkLayoutSegment),
       ),
     );
   if (
@@ -261,7 +265,7 @@ export const publishHostedSitePointer$ = command(
     signal: AbortSignal,
   ): Promise<HostedSitePointer> => {
     const { site } = args;
-    const segment = storedLinkLayoutSegment(site.publicBrand);
+    const segment = storedLinkLayoutSegment(site.linkLayoutSegment);
     const namespace = hostedSitePointerNamespace(
       linkLayoutFromSegment(segment),
     );

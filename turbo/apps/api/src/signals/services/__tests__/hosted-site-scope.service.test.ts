@@ -83,12 +83,12 @@ async function createHarness(retainTriggers: boolean) {
             sql`CREATE TABLE private_hosted_deployments (LIKE public.private_hosted_deployments INCLUDING ALL)`,
           );
           await tx.execute(sql`
-      ALTER TABLE hosted_deployments ADD FOREIGN KEY (site_id, public_brand)
-      REFERENCES hosted_sites (id, public_brand) ON DELETE CASCADE
+      ALTER TABLE hosted_deployments ADD FOREIGN KEY (site_id, link_layout_segment)
+      REFERENCES hosted_sites (id, link_layout_segment) ON DELETE CASCADE
     `);
           await tx.execute(sql`
-      ALTER TABLE private_hosted_deployments ADD FOREIGN KEY (site_id, public_brand)
-      REFERENCES hosted_sites (id, public_brand) ON DELETE CASCADE
+      ALTER TABLE private_hosted_deployments ADD FOREIGN KEY (site_id, link_layout_segment)
+      REFERENCES hosted_sites (id, link_layout_segment) ON DELETE CASCADE
     `);
           if (retainTriggers) {
             await installPreparedDomainLegacyFunctions(setupClient, [
@@ -127,7 +127,6 @@ function deploymentArgs(runId?: string, orgId = `org_${randomUUID()}`) {
     orgId,
     userId: `user_${randomUUID()}`,
     runId,
-    publicBrand: "okou" as const,
     body: {
       site: `scope-${randomUUID().slice(0, 8)}`,
       artifactKind: "hosted-site" as const,
@@ -254,7 +253,7 @@ describe.each([true, false])(
               userId: args.userId,
               slug: args.body.site,
               publicSlug: args.body.site,
-              publicBrand: "okou",
+              linkLayoutSegment: "okou",
               createdFromRunId: runId,
               ...scope,
             })
@@ -450,7 +449,7 @@ describe.each([true, false])(
           userId: args.userId,
           slug: args.body.site,
           publicSlug: args.body.site,
-          publicBrand: "okou",
+          linkLayoutSegment: "okou",
           createdFromRunId: runId,
         })
         .returning();

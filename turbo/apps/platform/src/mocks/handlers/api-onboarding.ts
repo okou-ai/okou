@@ -3,7 +3,7 @@ import {
   onboardingStatusContract,
   type OnboardingStatusResponse,
 } from "@okouai/api-contracts/contracts/onboarding";
-import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/public-brand";
+import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
 import { mockApi } from "../msw-contract.ts";
 
 const DEFAULT_ONBOARDING_STATUS: OnboardingStatusResponse = {

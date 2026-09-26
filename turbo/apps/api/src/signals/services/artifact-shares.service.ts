@@ -75,7 +75,7 @@ function policyBucket(): string {
 }
 
 function policyKey(row: ShareIdentity): string {
-  return `artifact-shares/${row.publicBrand}/${row.id}.json`;
+  return `artifact-shares/${row.linkLayoutSegment}/${row.id}.json`;
 }
 
 function policyFor(row: ShareIdentity, signal: AbortSignal) {
@@ -104,7 +104,7 @@ function policyFor(row: ShareIdentity, signal: AbortSignal) {
       policy.shareId !== row.id ||
       policy.ownerId !== row.userId ||
       policy.orgId !== row.orgId ||
-      policy.publicBrand !== row.publicBrand ||
+      policy.publicBrand !== row.linkLayoutSegment ||
       policy.target.kind !== row.targetKind ||
       targetId !== row.targetId
     ) {
@@ -174,7 +174,7 @@ function ownedShareTarget(
     return {
       targetId: deployment.siteId,
       ownerUrl: new URL(deployment.artifactUrl, env("APP_URL")).href,
-      layout: linkLayoutFromSegment(deployment.publicBrand),
+      layout: linkLayoutFromSegment(deployment.linkLayoutSegment),
       candidateVersion: deploymentVersion,
       target: {
         kind: "html" as const,
@@ -435,7 +435,7 @@ export const updateArtifactShare$ = command(
       .values({
         userId: args.userId,
         orgId: args.orgId,
-        publicBrand: linkLayoutSegment(candidate.layout),
+        linkLayoutSegment: linkLayoutSegment(candidate.layout),
         targetKind: args.target.kind,
         targetId: candidate.targetId,
       })
@@ -483,7 +483,7 @@ export const updateArtifactShare$ = command(
         shareId: row.id,
         ownerId: row.userId,
         orgId: row.orgId,
-        publicBrand: row.publicBrand,
+        publicBrand: row.linkLayoutSegment,
         audience: args.audience,
         status: args.audience === "private" ? "revoked" : "active",
         publicToken:

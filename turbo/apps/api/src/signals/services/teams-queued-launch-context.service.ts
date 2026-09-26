@@ -1,5 +1,3 @@
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
@@ -19,7 +17,6 @@ import { appendTeamsFilesToPrompt, buildTeamsPrompt } from "./teams-prompt";
 export interface TeamsQueuedLaunchMaterial {
   readonly prompt: string;
   readonly appendSystemPrompt: string;
-  readonly publicBrand: PublicBrand;
   readonly teamsDelivery: TeamsDeliveryTarget;
   readonly userInfoExtras: {
     readonly teamsUserDisplayName?: string;
@@ -221,7 +218,6 @@ export async function loadTeamsQueuedLaunchMaterial(
       }),
       threadContext: context.threadContext,
     }),
-    publicBrand: PUBLIC_BRAND,
     teamsDelivery: teamsDeliveryTargetSchema.parse({
       tenantId: context.tenantId,
       tenantName: context.tenantName,

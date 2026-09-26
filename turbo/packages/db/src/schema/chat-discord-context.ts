@@ -27,11 +27,6 @@ export const chatDiscordContext = pgTable(
     channelId: text("channel_id").notNull(),
     messageId: text("message_id").notNull(),
     botUserId: text("bot_user_id").notNull(),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou").notNull(),
     conversationContext: text("conversation_context"),
     messageText: text("message_text").notNull(),
     messageFiles: jsonb("message_files")

@@ -29,11 +29,6 @@ export const chatFeishuContext = pgTable(
      * must continue to project only the explicitly required columns.
      */
     conversationHistory: text("conversation_history"),
-    /**
-     * Retired (#36766): current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou"),
     messageText: text("message_text"),
     messageFiles: jsonb("message_files").$type<ChatFeishuMessageFiles>(),
     chatType: text("chat_type").$type<"group" | "p2p" | "topic_group">(),

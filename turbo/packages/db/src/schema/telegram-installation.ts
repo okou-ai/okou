@@ -36,11 +36,6 @@ export const telegramInstallations = pgTable(
     ownerUserId: text("owner_user_id").notNull(),
     // Org anchor: snapshot of the owner's current org at registration time.
     orgId: text("org_id").notNull(),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

@@ -38,7 +38,6 @@ export const chatGithubContext = pgTable(
     messageText: text("message_text"),
     triggerReactionId: text("trigger_reaction_id"),
     triggerCommentBody: text("trigger_comment_body"),
-    publicBrand: text("public_brand").default("okou").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

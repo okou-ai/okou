@@ -34,7 +34,6 @@ export const chatAutomationContext = pgTable(
      * recorded source is no longer usable.
      */
     connectorSourceId: uuid("connector_source_id"),
-    publicBrand: text("public_brand").default("okou").notNull(),
     /**
      * Server-private workflow automation launch material retained permanently.
      * Raw third-party content is intentionally retained as its only database

@@ -7,7 +7,7 @@ import type {
 } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { mcpChatOutputTimestampSchema } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
-import { agentDisplayName } from "@okouai/core/public-brand";
+import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { computed, type Computed } from "ccstate";
 import { sql } from "drizzle-orm";
 import { z } from "zod";

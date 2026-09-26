@@ -28,8 +28,6 @@ export const githubInstallations = pgTable(
     encryptedAccessToken: text("encrypted_access_token"),
     status: varchar("status", { length: 20 }).notNull().default("active"),
     orgId: text("org_id").notNull(),
-    publicBrand: text("public_brand").default("okou").notNull(),
-    setupPublicBrand: text("setup_public_brand").default("okou").notNull(),
     targetType: varchar("target_type", { length: 20 }),
     targetId: varchar("target_id", { length: 255 }),
     targetName: varchar("target_name", { length: 255 }),

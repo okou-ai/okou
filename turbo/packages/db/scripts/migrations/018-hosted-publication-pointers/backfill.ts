@@ -211,7 +211,7 @@ async function identity(
 ) {
   const sites = await rows(
     db,
-    `SELECT id, org_id, user_id, slug, requested_slug, public_brand,
+    `SELECT id, org_id, user_id, slug, requested_slug, link_layout_segment,
       public_slug, active_deployment_id, created_at, deleted_at
      FROM hosted_sites WHERE id = $1 AND org_id = $2${lock ? " FOR UPDATE" : ""}`,
     [siteId, orgId],
@@ -221,7 +221,7 @@ async function identity(
   // The production API takes the site lock before this share lock as well.
   const shares = await rows(
     db,
-    `SELECT id, org_id, user_id, public_brand, target_kind, target_id
+    `SELECT id, org_id, user_id, link_layout_segment, target_kind, target_id
      FROM artifact_shares WHERE target_kind = 'html' AND target_id = $1${lock ? " FOR UPDATE" : ""}`,
     [siteId],
   );
@@ -251,7 +251,7 @@ async function privateSource(
 ) {
   const sourceRows = await rows(
     db,
-    `SELECT id, site_id, org_id, user_id, public_brand, status, manifest,
+    `SELECT id, site_id, org_id, user_id, link_layout_segment, status, manifest,
       manifest_hash, content_hash, r2_prefix, artifact_url, url, file_count,
       size_bytes::text, spa_fallback, entrypoint, run_id
      FROM private_hosted_deployments WHERE id = $1`,
@@ -263,7 +263,7 @@ async function privateSource(
     source.site_id === policy.target.siteId &&
       source.org_id === orgId &&
       source.user_id === ownerId &&
-      source.public_brand === policy.publicBrand &&
+      source.link_layout_segment === policy.publicBrand &&
       source.status === "ready" &&
       source.manifest.deploymentVersion === policy.target.deploymentVersion,
     "private_source_scope_mismatch",
@@ -288,7 +288,7 @@ async function bootstrapRow(
 ): Promise<Deployment | null> {
   const result = await rows(
     db,
-    `SELECT id, site_id, org_id, user_id, public_brand, status, manifest,
+    `SELECT id, site_id, org_id, user_id, link_layout_segment, status, manifest,
       manifest_hash, content_hash, r2_prefix, artifact_url, url, file_count,
       size_bytes::text, spa_fallback, entrypoint, run_id
      FROM hosted_deployments WHERE id = $1`,
@@ -371,13 +371,17 @@ async function preflight(
   planned?: PlanSite,
 ) {
   const { site, share } = await identity(db, orgId, siteId, false);
-  const { policy } = await readPolicy(storage, site.public_brand, share.id);
+  const { policy } = await readPolicy(
+    storage,
+    site.link_layout_segment,
+    share.id,
+  );
   validateIdentity(orgId, site, share, policy);
   const artifactKind = await privateSource(db, orgId, site.user_id, policy);
   const candidate: PlanSite = planned ?? {
     siteId,
     ownerId: site.user_id,
-    publicBrand: site.public_brand,
+    publicBrand: site.link_layout_segment,
     publicSlug: site.public_slug,
     requestedSlug: site.requested_slug ?? site.slug,
     shareId: share.id,
@@ -472,7 +476,7 @@ async function reserveDeployment(
     // scans max(public, private), so every already pending newer upload wins.
     await db.query(
       `INSERT INTO hosted_deployments
-        (id, site_id, org_id, user_id, run_id, public_brand, status, artifact_url,
+        (id, site_id, org_id, user_id, run_id, link_layout_segment, status, artifact_url,
          r2_prefix, manifest, manifest_hash, content_hash, entrypoint, spa_fallback,
          file_count, size_bytes, url, created_at, updated_at)
        VALUES ($1, $2, $3, $4, NULL, $5, 'uploading', $6, $7, $8::jsonb,

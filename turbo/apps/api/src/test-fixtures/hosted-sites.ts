@@ -37,7 +37,7 @@ export async function insertLegacyHostedSiteFixture(args: {
       slug: args.site,
       requestedSlug: args.site,
       publicSlug: args.site,
-      publicBrand: linkLayoutSegment(args.layout ?? "legacy"),
+      linkLayoutSegment: linkLayoutSegment(args.layout ?? "legacy"),
     })
     .returning({ id: hostedSites.id });
   if (!site) {
@@ -88,7 +88,7 @@ export async function insertLegacyHostedSiteHistoryFixture(args: {
       siteId,
       orgId: args.orgId,
       userId: args.userId,
-      publicBrand: "okou",
+      linkLayoutSegment: "okou",
       artifactUrl,
       r2Prefix,
       manifest,
@@ -122,19 +122,19 @@ export async function insertLegacyHostedSitePublicationFixture(args: {
   readonly layout?: LinkLayout;
 }) {
   const layout = args.layout ?? "current";
-  const publicBrand = linkLayoutSegment(layout);
+  const layoutSegment = linkLayoutSegment(layout);
   const siteId = await insertLegacyHostedSiteFixture({ ...args, layout });
   const deploymentId = randomUUID();
   const shareId = randomUUID();
   const snapshotId = randomUUID();
   const publicToken = randomBytes(12).toString("hex");
-  const privatePrefix = `private-sites/${publicBrand}/${deploymentId}`;
-  const snapshotPrefix = `shared-artifacts/${publicBrand}/${snapshotId}/${deploymentId}`;
-  const policyKey = `artifact-shares/${publicBrand}/${shareId}.json`;
+  const privatePrefix = `private-sites/${layoutSegment}/${deploymentId}`;
+  const snapshotPrefix = `shared-artifacts/${layoutSegment}/${snapshotId}/${deploymentId}`;
+  const policyKey = `artifact-shares/${layoutSegment}/${shareId}.json`;
   const manifest = {
     version: 1,
     access: "owner-private-v1",
-    publicBrand,
+    publicBrand: layoutSegment,
     deploymentId,
     siteId,
     site: args.site,
@@ -158,7 +158,7 @@ export async function insertLegacyHostedSitePublicationFixture(args: {
     siteId,
     orgId: args.orgId,
     userId: args.userId,
-    publicBrand,
+    linkLayoutSegment: layoutSegment,
     status: "ready",
     readyAt: nowDate(),
     artifactUrl,
@@ -180,7 +180,7 @@ export async function insertLegacyHostedSitePublicationFixture(args: {
     id: shareId,
     userId: args.userId,
     orgId: args.orgId,
-    publicBrand,
+    linkLayoutSegment: layoutSegment,
     targetKind: "html",
     targetId: siteId,
   });
@@ -191,7 +191,7 @@ export async function insertLegacyHostedSitePublicationFixture(args: {
     shareId,
     ownerId: args.userId,
     orgId: args.orgId,
-    publicBrand,
+    publicBrand: layoutSegment,
     audience: "public",
     status: "active",
     publicToken,
@@ -208,7 +208,7 @@ export async function insertLegacyHostedSitePublicationFixture(args: {
   return {
     siteId,
     publicSlug: args.site,
-    publicBrand,
+    layoutSegment,
     deploymentId,
     shareId,
     snapshotId,
