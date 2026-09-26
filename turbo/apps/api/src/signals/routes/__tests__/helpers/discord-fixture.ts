@@ -480,15 +480,16 @@ export async function discordChatThreads(
     );
   }
   const lifecycleEvents: ChatThreadEvent[] = [];
-  let sinceSeqId = response.body.latestSeqId ?? undefined;
+  let sinceSeqId: number | undefined = response.body.latestSeqId ?? undefined;
   while (true) {
-    const page = await accept(
-      client.events({
-        headers,
-        query: sinceSeqId === undefined ? {} : { sinceSeqId },
-      }),
-      [200],
-    );
+    const page: { body: { events: ChatThreadEvent[]; hasMore: boolean } } =
+      await accept(
+        client.events({
+          headers,
+          query: sinceSeqId === undefined ? {} : { sinceSeqId },
+        }),
+        [200],
+      );
     lifecycleEvents.push(...page.body.events);
     if (!page.body.hasMore) {
       break;
