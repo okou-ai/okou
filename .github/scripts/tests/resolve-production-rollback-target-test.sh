@@ -32,6 +32,8 @@ case "${1:-}" in
       [ "${MOCK_CHAT_THREAD_DRAFT_OWNER_KEY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
       [ "${MOCK_PUBLIC_BRAND_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "3333333333333333333333333333333333333333" ]; then
+      [ "${MOCK_SNAPSHOT_JSONB_DROP_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -39,6 +41,8 @@ case "${1:-}" in
   log)
     if [[ "$*" == *1255_retire_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
+    elif [[ "$*" == *1258_drop_chat_thread_snapshot_jsonb.sql* ]]; then
+      printf '%s\n' "${MOCK_SNAPSHOT_JSONB_DROP_COMMIT-3333333333333333333333333333333333333333}"
     else
       exit 2
     fi
@@ -138,6 +142,7 @@ run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
 grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft owner key floor"
 grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
+grep -Fxq "git merge-base --is-ancestor 3333333333333333333333333333333333333333 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -166,6 +171,20 @@ assert_failure "Rollback target predates the public_brand retirement" \
 [ ! -s "${tmp_dir}/public-brand-floor.output" ] || fail "pre-retirement API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "public_brand retirement floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged chat thread snapshot JSONB drop" \
+    run_resolver "${tmp_dir}/snapshot-jsonb-history.output" "MOCK_SNAPSHOT_JSONB_DROP_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/snapshot-jsonb-history.output" ] || fail "invalid snapshot JSONB drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat thread snapshot JSONB drop" \
+  run_resolver "${tmp_dir}/snapshot-jsonb-floor.output" MOCK_SNAPSHOT_JSONB_DROP_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/snapshot-jsonb-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "snapshot JSONB drop floor must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

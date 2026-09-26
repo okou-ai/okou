@@ -14,6 +14,7 @@ readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70
 # and thread inserts.
 readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
+readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1258_drop_chat_thread_snapshot_jsonb.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -73,6 +74,18 @@ if [[ ! "$public_brand_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$public_brand_retirement_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the public_brand retirement: ${public_brand_retirement_commit}."
+fi
+
+# Once the snapshot JSONB column is dropped, earlier APIs still name it in
+# compaction writes (and older ones read it). Resolve the squash-merged commit
+# from the migration so no branch-only SHA can become a rollback floor.
+snapshot_jsonb_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH" | sed -n '1p')
+if [[ ! "$snapshot_jsonb_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged chat thread snapshot JSONB drop on main."
+fi
+if ! git merge-base --is-ancestor "$snapshot_jsonb_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread snapshot JSONB drop: ${snapshot_jsonb_drop_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
