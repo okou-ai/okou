@@ -21,6 +21,7 @@ import {
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { safeSync } from "../utils";
 import { getStripeClient } from "../external/stripe-client";
 
@@ -626,14 +627,22 @@ export async function resolveUsageAllowanceAvailability(
   });
   // This measures the advisory read including COMMIT; it does not claim
   // the later authoritative admission was accepted under the same lock.
-  // Advisory availability already committed; ordinary logging failures
-  // cannot deny admission. Cancellation still propagates via safeSync.
+  // Advisory availability already committed; telemetry failure cannot deny
+  // admission. Cancellation still propagates via safeSync.
   safeSync(() => {
-    L.info("usage allowance availability work", {
-      durationMs: Math.round(performance.now() - startedAt),
-      lockWaitMs,
-      available: availability !== null,
-    });
+    recordBillingOperationTimings([
+      {
+        actionType: "api_billing_allowance_availability",
+        durationMs: Math.round(performance.now() - startedAt),
+        success: true,
+        dimensions: { available: availability !== null },
+      },
+      {
+        actionType: "api_billing_allowance_org_lock_wait",
+        durationMs: lockWaitMs,
+        success: true,
+      },
+    ]);
   });
   return availability;
 }

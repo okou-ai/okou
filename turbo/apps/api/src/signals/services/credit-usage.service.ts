@@ -7,6 +7,7 @@ import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
 
+import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
@@ -596,14 +597,53 @@ export const completeProcessedOrgUsage$ = command(
     const { orgId, result } = args;
     const { sharedCreditsCharged, runIds, lowBalanceAlert } = result;
     signal.throwIfAborted();
-    // Postcommit only: attempts that roll back are not reported as settled.
-    // Numerical fields and a fixed operation name keep the observation safe
-    // for aggregation without cardinality from orgs, users or events.
+    // Postcommit only: a rollback is not reported as a completed settlement.
+    // No org, user, run or event ID is sent with these timing operations.
     if (result.work.pendingEvents > 0) {
       // The ledger has committed. Best-effort telemetry must not turn its
       // receipt into a failed response; safeSync still propagates cancellation.
       safeSync(() => {
-        L.info("usage settlement work", result.work);
+        const work = result.work;
+        const timingScope =
+          work.transactionDurationMs === undefined ? "inline" : "standalone";
+        recordBillingOperationTimings([
+          {
+            actionType: "api_billing_settlement_work",
+            durationMs: work.settlementWorkMs,
+            success: true,
+            dimensions: {
+              timing_scope: timingScope,
+              pending_events: work.pendingEvents,
+              pricing_rows: work.pricingRows,
+              affected_users: work.affectedUsers,
+              grant_rows: work.grantRows,
+              expired_rows: work.expiredRows,
+              expiry_rows: work.expiryRows,
+            },
+          },
+          {
+            actionType: "api_billing_settlement_compaction_lock_wait",
+            durationMs: work.lockWaitMs,
+            success: true,
+            dimensions: { timing_scope: timingScope },
+          },
+          {
+            actionType: "api_billing_settlement_org_lock_wait",
+            durationMs: work.orgLockWaitMs,
+            success: true,
+            dimensions: { timing_scope: timingScope },
+          },
+          ...(work.transactionDurationMs === undefined
+            ? []
+            : [
+                {
+                  actionType: "api_billing_settlement_transaction",
+                  durationMs: work.transactionDurationMs,
+                  success: true,
+                  dimensions: { timing_scope: "standalone" },
+                },
+              ]),
+        ]);
       });
     }
 

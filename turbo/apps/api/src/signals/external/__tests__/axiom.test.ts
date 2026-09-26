@@ -15,7 +15,10 @@ import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../utils";
-import { recordClaimResponseJsonSerialization } from "../sandbox-op-log";
+import {
+  recordBillingOperationTimings,
+  recordClaimResponseJsonSerialization,
+} from "../sandbox-op-log";
 
 const context = testContext();
 
@@ -67,6 +70,62 @@ describe("shared SDK ingestion", () => {
         ],
       );
     }
+  });
+
+  it("emits ID-free billing timings through the existing operation dataset", () => {
+    // Telemetry-client suite exception: no API read endpoint exposes this event.
+    recordBillingOperationTimings([
+      {
+        actionType: "api_billing_settlement_work",
+        durationMs: 39,
+        success: true,
+        dimensions: { timing_scope: "standalone", pending_events: 3 },
+      },
+      {
+        actionType: "api_billing_settlement_org_lock_wait",
+        durationMs: 7,
+        success: true,
+      },
+    ]);
+    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+      "vm0-sandbox-op-log-dev",
+      [
+        {
+          _time: expect.any(String),
+          source: "api",
+          op_type: "api_billing_settlement_work",
+          operation_domain: "billing",
+          duration_ms: 39,
+          success: true,
+          timing_scope: "standalone",
+          pending_events: 3,
+        },
+        {
+          _time: expect.any(String),
+          source: "api",
+          op_type: "api_billing_settlement_org_lock_wait",
+          operation_domain: "billing",
+          duration_ms: 7,
+          success: true,
+        },
+      ],
+    );
+  });
+
+  it("does not throw when billing timing ingestion fails synchronously", () => {
+    // Telemetry-client suite exception: the ingestion boundary is the subject.
+    context.mocks.axiom.sdkIngest.mockImplementationOnce(() => {
+      throw new Error("telemetry unavailable");
+    });
+    expect(() => {
+      recordBillingOperationTimings([
+        {
+          actionType: "api_billing_settlement_work",
+          durationMs: 8,
+          success: true,
+        },
+      ]);
+    }).not.toThrow();
   });
 
   it("preserves archive diagnostics through the sandbox-operation SDK transport", async () => {
