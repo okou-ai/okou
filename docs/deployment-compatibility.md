@@ -43,8 +43,9 @@ Overlap and rollback:
   accepted; no persisted data is lost because accounts are canonical.
 - This release is the API rollback floor for personal subscriptions. An older
   API treats the missing mirror as an unavailable subscription and its legacy
-  import/seed paths could recreate or diverge from account state. Roll forward
-  instead of deploying an API older than this release.
+  import/seed paths could recreate or diverge from account state. The production
+  rollback resolver rejects API targets that predate the merge commit adding
+  `1259_personal_subscription_account_only.sql`; roll forward instead.
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
