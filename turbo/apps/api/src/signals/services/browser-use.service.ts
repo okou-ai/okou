@@ -3070,18 +3070,6 @@ async function applyBrowserUseUserActionOnSocket(
   ) {
     return "invalid";
   }
-  if (
-    resolved.fields.every((field) => {
-      return (
-        field.value === undefined &&
-        field.checkbox === undefined &&
-        field.radioChoice === undefined &&
-        field.selection === undefined
-      );
-    })
-  ) {
-    return "succeeded";
-  }
   const writeArgs = {
     sessionId: attached.sessionId,
     fields: resolved.fields,

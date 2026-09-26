@@ -2682,7 +2682,22 @@ describe("Browser user-action route", () => {
     await expect(
       accept(apply(untouched.body.action.requestToken, []), [200]),
     ).resolves.toMatchObject({ body: { state: "succeeded" } });
-    expect(browserSelectWrites()).toHaveLength(0);
+    expect(browserSelectWrites()).toHaveLength(2);
+    expect(browserSelectWrites()[0]?.[0].params.arguments).toMatchObject([
+      {
+        value: {
+          kind: "scalar",
+          inputType: "range",
+          value: null,
+          rangeValue: "19",
+        },
+      },
+      { value: 0 },
+    ]);
+    expect(browserSelectWrites()[1]?.[0].params.arguments).toMatchObject([
+      { value: { verifyOnly: true } },
+      { value: 0 },
+    ]);
     const required = await create(true);
     await expect(
       apply(required.body.action.requestToken, []),
