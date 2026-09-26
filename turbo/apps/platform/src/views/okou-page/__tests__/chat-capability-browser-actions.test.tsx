@@ -815,6 +815,115 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   expect(window.location.href).toBe(currentUrl);
 });
 
+test("An inline Browser file picker binds local bytes only after confirmation", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let uploaded = false;
+  const fingerprint = "a".repeat(64);
+  const fileAction = (preflight: boolean) => {
+    return {
+      ...browserInputAction(state),
+      fields: [
+        {
+          key: "document",
+          label: "Document",
+          fieldKind: "file" as const,
+          required: true,
+          control: {
+            tagName: "INPUT" as const,
+            inputType: "file" as const,
+            ...(preflight
+              ? {
+                  siteRequired: false,
+                  multiple: false,
+                  accept: ".txt",
+                  files: [],
+                  fileSetFingerprint: fingerprint,
+                }
+              : {}),
+          },
+        },
+      ],
+    };
+  };
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, fileAction(false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, fileAction(true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "document",
+        operation: "replace",
+        observedFingerprint: fingerprint,
+        files: [
+          {
+            name: "note.txt",
+            type: "text/plain",
+            size: 4,
+            contentBase64: "dGVzdA==",
+          },
+        ],
+      },
+    ]);
+    uploaded = true;
+    state = "succeeded";
+    return respond(200, fileAction(false));
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: RUN_THREAD_ID,
+    });
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  const currentUrl = window.location.href;
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  const input = await within(dialog).findByLabelText(/Document/u);
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+  });
+  expect(
+    within(dialog).getByText("https://accounts.example.test"),
+  ).toBeVisible();
+  const submit = buttonsByName("Add to browser", dialog)[0];
+  if (!submit) {
+    throw new Error("Missing Browser submit button");
+  }
+  expect(submit).toBeDisabled();
+  const file = new File(["test"], "note.txt", { type: "text/plain" });
+  Object.defineProperty(file, "arrayBuffer", {
+    value: () => {
+      return Promise.resolve(new Uint8Array([116, 101, 115, 116]).buffer);
+    },
+  });
+  fireEvent.change(input, { target: { files: [file] } });
+  expect(uploaded).toBeFalsy();
+  await waitFor(() => {
+    expect(submit).toBeEnabled();
+  });
+  click(submit);
+  await waitFor(() => {
+    expect(uploaded).toBeTruthy();
+  });
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(window.location.href).toBe(currentUrl);
+});
+
 test("An inline Browser dialog confirms an existing radio choice and preserves the chat callback", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   const radioAction = (preflight: boolean) => {

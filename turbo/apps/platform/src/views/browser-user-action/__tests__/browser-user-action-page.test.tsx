@@ -75,6 +75,41 @@ function action(
   };
 }
 
+const FILE_FINGERPRINT = "f".repeat(64);
+function fileAction(args: {
+  readonly required: boolean;
+  readonly preflight: boolean;
+  readonly existing?: boolean;
+}) {
+  return {
+    ...action("pending"),
+    siteOrigin: "https://uploads.example.test",
+    fields: [
+      {
+        key: "document",
+        label: "Document",
+        fieldKind: "file" as const,
+        required: args.required,
+        control: {
+          tagName: "INPUT" as const,
+          inputType: "file" as const,
+          ...(args.preflight
+            ? {
+                siteRequired: false,
+                multiple: true,
+                accept: ".txt",
+                fileSetFingerprint: FILE_FINGERPRINT,
+                files: args.existing
+                  ? [{ name: "old.txt", size: 12, type: "text/plain" }]
+                  : [],
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
 function numberAction(
   required: boolean,
 ): Extract<BrowserUserActionResponse, { kind: "input" }> {
@@ -337,6 +372,172 @@ test("The standalone route reuses the native browser input form", async () => {
   });
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(document.title).toContain("Browser action");
+});
+
+test("A standalone native file input transfers chosen bytes only on confirmed submission", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  let uploaded = false;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      state === "pending"
+        ? fileAction({ required: true, preflight: false })
+        : {
+            ...fileAction({ required: true, preflight: false }),
+            state,
+            completedAt: "2026-09-25T05:00:00.000Z",
+          },
+    );
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: true }));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "document",
+        operation: "replace",
+        observedFingerprint: FILE_FINGERPRINT,
+        files: [
+          {
+            name: "note.txt",
+            type: "text/plain",
+            size: 4,
+            contentBase64: "dGVzdA==",
+          },
+        ],
+      },
+    ]);
+    uploaded = true;
+    state = "succeeded";
+    return respond(200, {
+      ...fileAction({ required: true, preflight: false }),
+      state,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const input = within(form).getByLabelText(/Document/u);
+  await waitFor(() => {
+    return expect(input).toBeEnabled();
+  });
+  expect(button("Add to browser")).toBeDisabled();
+  expect(within(form).getByText("https://uploads.example.test")).toBeVisible();
+  const file = new File(["test"], "note.txt", { type: "text/plain" });
+  Object.defineProperty(file, "arrayBuffer", {
+    value: () => {
+      return Promise.resolve(new Uint8Array([116, 101, 115, 116]).buffer);
+    },
+  });
+  fireEvent.change(input, { target: { files: [file] } });
+  expect(uploaded).toBeFalsy();
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(uploaded).toBeTruthy();
+  });
+});
+
+test("A failed local file read reports an error without applying the Browser action", async () => {
+  let applied = false;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: false }));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: true }));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    applied = true;
+    return respond(200, fileAction({ required: true, preflight: false }));
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const input = within(form).getByLabelText(/Document/u);
+  await waitFor(() => {
+    return expect(input).toBeEnabled();
+  });
+  const file = new File(["test"], "note.txt", { type: "text/plain" });
+  Object.defineProperty(file, "arrayBuffer", {
+    value: () => {
+      return Promise.reject(new Error("File is unavailable"));
+    },
+  });
+  fireEvent.change(input, { target: { files: [file] } });
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await expect(
+    screen.findByText(/Couldn't add the information/u),
+  ).resolves.toBeInTheDocument();
+  expect(applied).toBeFalsy();
+  expect(button("Add to browser")).toBeEnabled();
+});
+
+test("An optional file selection leaves existing website files untouched unless cleared", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, fileAction({ required: false, preflight: false }));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      fileAction({ required: false, preflight: true, existing: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...fileAction({ required: false, preflight: false }),
+      state: "succeeded",
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await screen.findByText(/old.txt/u);
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Clear website value"));
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([
+      {
+        key: "document",
+        operation: "clear",
+        files: [],
+        observedFingerprint: FILE_FINGERPRINT,
+      },
+    ]);
+  });
 });
 
 test("The standalone form accepts input and submission while its background check is pending", async () => {

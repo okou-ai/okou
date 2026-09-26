@@ -5342,6 +5342,21 @@ local behavior until updated. No callback receipt or submitted Browser value is
 written to the action row. Thread erasure removes the action and its Chat events
 together; ordinary action retention remains seven days for callback recovery.
 
+### Native file input (#36935)
+
+The new file kind uses the existing staff-only `browserNativeInput` switch.
+Per `docs/fallback.md`, this pre-GA feature does not need a separate file
+switch or old-Platform compatibility branch; staff using an older page during
+the cutover can refresh. File controls are never converted to text, and Browser
+takeover does not transfer a user's local file. Directory-selection
+(`webkitdirectory`) controls are unsupported and rejected, not flattened into
+an ordinary file selection.
+
+The file bytes exist only in the user's explicit, bounded apply request and the
+managed Browser's selected `FileList`; there is no intermediate storage or
+provider-host filesystem path. A website can react to `input`/`change` and
+read/upload the selected bytes itself even though Okou does not submit its form.
+
 ## OOM containment proof chain removal (#36027)
 
 `OomEvidence.runtime_progress_at` is removed, together with the containment

@@ -81,6 +81,8 @@ export function browserUserActionFieldSupportsTarget(
       return fingerprint.inputType === "checkbox";
     case "radio":
       return fingerprint.inputType === "radio";
+    case "file":
+      return fingerprint.inputType === "file";
     case "select":
       return false;
   }
@@ -223,6 +225,7 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
       "select",
       "checkbox",
       "radio",
+      "file",
     ].includes(String(field.fieldKind)) ||
     typeof field.required !== "boolean" ||
     !Number.isSafeInteger(field.backendNodeId) ||

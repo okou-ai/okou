@@ -17,6 +17,13 @@ export const BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH = 256;
 export const BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH = 200;
+export const BROWSER_USER_ACTION_MAX_FILE_BYTES = 1024 * 1024;
+export const BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES = 1024 * 1024 * 1024;
+export const BROWSER_USER_ACTION_MAX_FILES = 3;
+export const BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH = 128;
+export const BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH = 128;
+export const BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH = 512;
+export const BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES = 1_500_000;
 
 export const browserUserActionStateSchema = z.enum([
   "pending",
@@ -36,6 +43,7 @@ export const browserUserActionFieldKindSchema = z.enum([
   "select",
   "checkbox",
   "radio",
+  "file",
 ]);
 
 const boundedNonblank = (maximum: number) => {
@@ -146,11 +154,56 @@ const browserUserActionRadioValueSchema = z
     groupFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
   })
   .strict();
+const browserUserActionFileValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    observedFingerprint: z.string().regex(/^[0-9a-f]{64}$/u),
+    operation: z.enum(["keep", "replace", "clear"]),
+    files: z
+      .array(
+        z
+          .object({
+            name: z
+              .string()
+              .min(1)
+              .max(BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH),
+            type: z.string().max(BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH),
+            size: z
+              .number()
+              .int()
+              .min(0)
+              .max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
+            contentBase64: z
+              .string()
+              .regex(/^[A-Za-z0-9+/]*={0,2}$/u)
+              .max(4 * Math.ceil(BROWSER_USER_ACTION_MAX_FILE_BYTES / 3)),
+          })
+          .strict(),
+      )
+      .max(BROWSER_USER_ACTION_MAX_FILES),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if ((value.operation === "replace") !== value.files.length > 0) {
+      context.addIssue({ code: "custom", message: "Invalid file selection" });
+    }
+    if (
+      value.files.reduce((sum, file) => {
+        return sum + file.size;
+      }, 0) > BROWSER_USER_ACTION_MAX_FILE_BYTES
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "File selection exceeds limit",
+      });
+    }
+  });
 export const browserUserActionSubmittedValueSchema = z.union([
   browserUserActionScalarValueSchema,
   browserUserActionSelectValueSchema,
   browserUserActionCheckboxValueSchema,
   browserUserActionRadioValueSchema,
+  browserUserActionFileValueSchema,
 ]);
 
 export const browserUserActionApplyRequestSchema = z
@@ -205,8 +258,36 @@ export const browserUserActionDisplayFieldSchema = z
           "select-multiple",
           "checkbox",
           "radio",
+          "file",
         ]),
         siteRequired: z.boolean().optional(),
+        accept: z
+          .string()
+          .max(BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH)
+          .optional(),
+        fileSetFingerprint: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/u)
+          .optional(),
+        files: z
+          .array(
+            z
+              .object({
+                name: z
+                  .string()
+                  .min(1)
+                  .max(BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH),
+                type: z.string().max(BROWSER_USER_ACTION_MAX_FILE_TYPE_LENGTH),
+                size: z
+                  .number()
+                  .int()
+                  .min(0)
+                  .max(BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES),
+              })
+              .strict(),
+          )
+          .max(BROWSER_USER_ACTION_MAX_FILES)
+          .optional(),
         checked: z.boolean().optional(),
         radioGroupFingerprint: z
           .string()

@@ -1,5 +1,7 @@
 import {
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
+  BROWSER_USER_ACTION_MAX_FILE_BYTES,
+  BROWSER_USER_ACTION_MAX_FILES,
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { cn } from "@okouai/ui";
@@ -25,12 +27,14 @@ import {
 import type { FormEvent, ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 
-import type {
-  BrowserCheckboxDraft,
-  BrowserRadioDraft,
-  BrowserSelectChoiceDraft,
-  BrowserUserActionRequestState,
-  BrowserUserActionSignals,
+import {
+  fileDraftIsValid,
+  type BrowserCheckboxDraft,
+  type BrowserFileDraft,
+  type BrowserRadioDraft,
+  type BrowserSelectChoiceDraft,
+  type BrowserUserActionRequestState,
+  type BrowserUserActionSignals,
 } from "../../signals/chat-page/browser-user-action-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -383,6 +387,31 @@ function PendingFormHeader({
   );
 }
 
+function PendingFormDestination({
+  action,
+  showTitle,
+}: {
+  readonly action: PendingBrowserInputAction;
+  readonly showTitle: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <PendingFormHeader siteOrigin={action.siteOrigin} showTitle={showTitle} />
+      {action.fields.some((field) => {
+        return field.fieldKind === "file";
+      }) && (
+        <p className="text-xs text-muted-foreground" role="note">
+          {t(($) => {
+            return $.chat.browserInput.fileNotice;
+          })}{" "}
+          {action.siteOrigin}
+        </p>
+      )}
+    </>
+  );
+}
+
 function DraftClearingState({
   signals,
   children,
@@ -486,6 +515,187 @@ function BrowserInputControl({
         }
       }}
     />
+  );
+}
+
+function requiredFilesSatisfied(
+  action: PendingBrowserInputAction,
+  fileDraft: ReadonlyMap<string, BrowserFileDraft>,
+): boolean {
+  return action.fields.every((field) => {
+    return (
+      field.fieldKind !== "file" ||
+      fileDraftIsValid(field, fileDraft.get(field.key))
+    );
+  });
+}
+
+function BrowserFileActions({
+  field,
+  existing,
+  draft,
+  fingerprint,
+  busy,
+  onUpdate,
+  onRemove,
+}: {
+  readonly field: PendingBrowserInputField;
+  readonly existing: readonly {
+    readonly name: string;
+    readonly size: number;
+  }[];
+  readonly draft: BrowserFileDraft | undefined;
+  readonly fingerprint: string | undefined;
+  readonly busy: boolean;
+  readonly onUpdate: (key: string, draft: BrowserFileDraft) => void;
+  readonly onRemove: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-wrap gap-2">
+      {existing.length > 0 && fingerprint && (
+        <Button
+          type="button"
+          size="xs"
+          variant="link"
+          disabled={busy}
+          onClick={() => {
+            return onUpdate(field.key, {
+              operation: "keep",
+              files: [],
+              observedFingerprint: fingerprint,
+            });
+          }}
+        >
+          {t(($) => {
+            return $.chat.browserInput.keepValue;
+          })}
+        </Button>
+      )}
+      {!field.required && !field.control.siteRequired && fingerprint && (
+        <Button
+          type="button"
+          size="xs"
+          variant="link"
+          disabled={busy}
+          onClick={() => {
+            return onUpdate(field.key, {
+              operation: "clear",
+              files: [],
+              observedFingerprint: fingerprint,
+            });
+          }}
+        >
+          {t(($) => {
+            return $.chat.browserInput.clearValue;
+          })}
+        </Button>
+      )}
+      {draft && !field.required && (
+        <Button
+          type="button"
+          size="xs"
+          variant="link"
+          disabled={busy}
+          onClick={() => {
+            return onRemove(field.key);
+          }}
+        >
+          {t(($) => {
+            return $.chat.browserInput.fileLeave;
+          })}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function BrowserFileControl({
+  field,
+  fileDraft,
+  busy,
+  inputId,
+  describedBy,
+  onUpdate,
+  onRemove,
+}: {
+  readonly field: PendingBrowserInputField;
+  readonly fileDraft: ReadonlyMap<string, BrowserFileDraft>;
+  readonly busy: boolean;
+  readonly inputId: string;
+  readonly describedBy: string;
+  readonly onUpdate: (key: string, draft: BrowserFileDraft) => void;
+  readonly onRemove: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  const fingerprint = field.control.fileSetFingerprint;
+  const existing = field.control.files ?? [];
+  const draft = fileDraft.get(field.key);
+  const selected =
+    draft?.operation === "clear"
+      ? []
+      : draft?.operation === "replace"
+        ? draft.files
+        : existing;
+  const limit =
+    draft?.operation === "replace" &&
+    (draft.files.length >
+      (field.control.multiple ? BROWSER_USER_ACTION_MAX_FILES : 1) ||
+      draft.files.reduce((sum, file) => {
+        return sum + file.size;
+      }, 0) > BROWSER_USER_ACTION_MAX_FILE_BYTES);
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <Input
+        key={draft?.operation ?? "untouched"}
+        type="file"
+        id={inputId}
+        name={field.key}
+        aria-describedby={describedBy}
+        accept={field.control.accept}
+        multiple={field.control.multiple}
+        disabled={busy || !fingerprint}
+        onChange={(event) => {
+          if (!fingerprint) {
+            return;
+          }
+          const files = [...(event.currentTarget.files ?? [])];
+          if (files.length) {
+            onUpdate(field.key, {
+              operation: "replace",
+              files,
+              observedFingerprint: fingerprint,
+            });
+          }
+        }}
+      />
+      {selected.length > 0 && (
+        <p className="max-w-full break-all text-xs text-muted-foreground">
+          ({selected.length}){" "}
+          {selected
+            .map((file) => {
+              return `${file.name} (${file.size} B)`;
+            })
+            .join(", ")}
+        </p>
+      )}
+      {limit && (
+        <p role="alert" className="text-xs text-destructive">
+          {t(($) => {
+            return $.chat.browserInput.fileLimit;
+          })}
+        </p>
+      )}
+      <BrowserFileActions
+        field={field}
+        existing={existing}
+        draft={draft}
+        fingerprint={fingerprint}
+        busy={busy}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+      />
+    </div>
   );
 }
 
@@ -1083,9 +1293,12 @@ function BrowserInputField({
   choiceDraft,
   checkboxDraft,
   radioDraft,
+  fileDraft,
   busy,
   onUpdate,
   onRemove,
+  onUpdateFile,
+  onRemoveFile,
   onUpdateChoice,
   onRemoveChoice,
   onUpdateCheckbox,
@@ -1094,6 +1307,9 @@ function BrowserInputField({
   onRemoveRadio,
 }: BrowserInputEditProps & {
   readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
+  readonly fileDraft: ReadonlyMap<string, BrowserFileDraft>;
+  readonly onUpdateFile: (key: string, draft: BrowserFileDraft) => void;
+  readonly onRemoveFile: (key: string) => void;
   readonly onUpdateRadio: (key: string, choice: BrowserRadioDraft) => void;
   readonly onRemoveRadio: (key: string) => void;
   readonly index: number;
@@ -1125,7 +1341,19 @@ function BrowserInputField({
         requirementId={requirementId}
         descriptionId={descriptionId}
       />
-      {field.fieldKind === "radio" ? (
+      {field.fieldKind === "file" ? (
+        <BrowserFileControl
+          field={field}
+          fileDraft={fileDraft}
+          busy={busy}
+          inputId={inputId}
+          describedBy={
+            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
+          }
+          onUpdate={onUpdateFile}
+          onRemove={onRemoveFile}
+        />
+      ) : field.fieldKind === "radio" ? (
         <BrowserRadioControl
           field={field}
           radioDraft={radioDraft}
@@ -1191,9 +1419,12 @@ function BrowserInputFields({
   choiceDraft,
   checkboxDraft,
   radioDraft,
+  fileDraft,
   busy,
   onUpdate,
   onRemove,
+  onUpdateFile,
+  onRemoveFile,
   onUpdateChoice,
   onRemoveChoice,
   onUpdateCheckbox,
@@ -1205,6 +1436,9 @@ function BrowserInputFields({
   readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
   readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
   readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
+  readonly fileDraft: ReadonlyMap<string, BrowserFileDraft>;
+  readonly onUpdateFile: (key: string, draft: BrowserFileDraft) => void;
+  readonly onRemoveFile: (key: string) => void;
   readonly onUpdateRadio: (key: string, choice: BrowserRadioDraft) => void;
   readonly onRemoveRadio: (key: string) => void;
   readonly onUpdateCheckbox: (
@@ -1232,9 +1466,12 @@ function BrowserInputFields({
             choiceDraft={choiceDraft}
             checkboxDraft={checkboxDraft}
             radioDraft={radioDraft}
+            fileDraft={fileDraft}
             busy={busy}
             onUpdate={onUpdate}
             onRemove={onRemove}
+            onUpdateFile={onUpdateFile}
+            onRemoveFile={onRemoveFile}
             onUpdateChoice={onUpdateChoice}
             onRemoveChoice={onRemoveChoice}
             onUpdateCheckbox={onUpdateCheckbox}
@@ -1363,6 +1600,7 @@ function PendingForm({
   const choiceDraft = useGet(signals.choiceDraft$);
   const checkboxDraft = useGet(signals.checkboxDraft$);
   const radioDraft = useGet(signals.radioDraft$);
+  const fileDraft = useGet(signals.fileDraft$);
   const sharedBusy = useGet(signals.busy$);
   const entryState = useGet(signals.entryState$);
   const entryAction = useGet(signals.entryAction$);
@@ -1374,6 +1612,8 @@ function PendingForm({
   const removeCheckboxDraft = useSet(signals.removeCheckboxDraft$);
   const updateRadioDraft = useSet(signals.updateRadioDraft$);
   const removeRadioDraft = useSet(signals.removeRadioDraft$);
+  const updateFileDraft = useSet(signals.updateFileDraft$);
+  const removeFileDraft = useSet(signals.removeFileDraft$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
@@ -1391,12 +1631,14 @@ function PendingForm({
     checkboxDraft,
   );
   const radioValuesValid = requiredRadiosSatisfied(activeAction, radioDraft);
+  const fileValuesValid = requiredFilesSatisfied(activeAction, fileDraft);
   const submitForm = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (
       !selectValuesValid ||
       !checkboxValuesValid ||
       !radioValuesValid ||
+      !fileValuesValid ||
       !event.currentTarget.reportValidity()
     ) {
       return;
@@ -1413,19 +1655,19 @@ function PendingForm({
       })}
       onSubmit={submitForm}
     >
-      <PendingFormHeader
-        siteOrigin={request.action.siteOrigin}
-        showTitle={showTitle}
-      />
+      <PendingFormDestination action={activeAction} showTitle={showTitle} />
       <BrowserInputFields
         action={activeAction}
         draft={draft}
         choiceDraft={choiceDraft}
         checkboxDraft={checkboxDraft}
         radioDraft={radioDraft}
+        fileDraft={fileDraft}
         busy={busy}
         onUpdate={updateDraft}
         onRemove={removeDraft}
+        onUpdateFile={updateFileDraft}
+        onRemoveFile={removeFileDraft}
         onUpdateChoice={updateChoiceDraft}
         onRemoveChoice={removeChoiceDraft}
         onUpdateCheckbox={updateCheckboxDraft}
@@ -1455,11 +1697,13 @@ function PendingForm({
           selectValuesValid &&
           checkboxValuesValid &&
           radioValuesValid &&
+          fileValuesValid &&
           (!request.action.fields.some((field) => {
             return (
               field.fieldKind === "select" ||
               field.fieldKind === "checkbox" ||
-              field.fieldKind === "radio"
+              field.fieldKind === "radio" ||
+              field.fieldKind === "file"
             );
           }) ||
             entryState === "ready")
