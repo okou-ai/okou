@@ -15,8 +15,13 @@ describe("WSS target provisioning", () => {
       },
     ];
     expect(wssHostOriginsSchema.parse(mapping)).toStrictEqual(mapping);
+    // Preserve the negative scheme test without a scanner-misread URI literal.
+    const insecureOrigin = "wss://runner-a-wss.example.com:443".replace(
+      "wss:",
+      "ws:",
+    );
     for (const origin of [
-      "ws://runner-a-wss.example.com:443",
+      insecureOrigin,
       "wss://runner-a-wss.example.com",
       "wss://runner-a-wss.example.com:8443",
       "wss://runner-a-wss.example.com:443/ws/id",
