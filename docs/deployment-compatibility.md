@@ -651,15 +651,12 @@ removes Web App and CLI non-empty inline readers, the capability header from
 new client requests, and the non-empty inline contract. The empty response for
 a scope without a snapshot row is permanent and stays supported.
 
-The API keeps `X-Chat-Thread-Snapshot-R2` in its CORS preflight allowlist for
-previously loaded Web App bundles, which still send it on every request. The
-Web client floor is now `0.970.1` (previously `0.963.3`), above those builds.
-A browser cannot receive `426 Upgrade Required` if preflight rejects the
-request first. This allowance
-does not restore inline snapshot responses or cause new clients to send the
-header. Remove it under #36375 only in a later release, after the header-free
-App is live at a distinct version and an enforced Web client floor excludes
-all header-sending bundles, including already-open tabs on their next request.
+The API CORS preflight allowlist no longer includes `X-Chat-Thread-Snapshot-R2`
+(#36375). The header-free App shipped in `0.970.1`, and the enforced Web
+client floor (`0.973.0`) excludes every header-sending bundle. A browser cannot
+receive `426 Upgrade Required` if preflight rejects the request first, so this
+removal followed the floor enforcement in production. It neither restores
+inline snapshot responses nor changes the empty response.
 
 ## Chat thread snapshot JSONB column retired (2026-09-26)
 
