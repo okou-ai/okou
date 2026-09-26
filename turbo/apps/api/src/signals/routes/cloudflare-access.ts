@@ -238,16 +238,10 @@ const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   const { value } = result;
-  const ownerIds =
-    "affectedOwnerIds" in value
-      ? value.affectedOwnerIds
-      : value.affectedOwners.map(({ userId }) => {
-          return userId;
-        });
   const names = await loadUserDisplayNames(
     set(writeDb$),
     get(clerk$),
-    ownerIds,
+    value.affectedOwnerIds,
     createClerkReadContext(),
     signal,
   );
@@ -257,13 +251,8 @@ const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: {
       expectedRevision: value.expectedRevision,
       ownHostCount: value.ownHostCount,
-      otherHostCount:
-        "otherHostCount" in value
-          ? value.otherHostCount
-          : value.affectedOwners.reduce((sum, entry) => {
-              return sum + entry.hostCount;
-            }, 0),
-      affectedOwners: ownerIds.map((userId) => {
+      otherHostCount: value.otherHostCount,
+      affectedOwners: value.affectedOwnerIds.map((userId) => {
         return { userId, displayName: names.get(userId) ?? null };
       }),
       impactSnapshot: value.impactSnapshot,

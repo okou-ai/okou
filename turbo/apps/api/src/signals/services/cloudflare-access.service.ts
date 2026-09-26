@@ -584,30 +584,23 @@ export async function previewCloudflareAccessDeletion(args: {
       ),
     )
     .orderBy(asc(sshConnections.id));
-  const counts = new Map<string, number>();
+  const affectedOwnerIds = new Set<string>();
+  let otherHostCount = 0;
   for (const host of hosts) {
     if (host.userId !== args.owner.userId) {
-      counts.set(host.userId, (counts.get(host.userId) ?? 0) + 1);
+      otherHostCount += 1;
+      affectedOwnerIds.add(host.userId);
     }
   }
   return {
     ok: true as const,
     value: {
       expectedRevision: config.revision,
-      ownHostCount: hosts.filter((host) => {
-        return host.userId === args.owner.userId;
-      }).length,
-      affectedOwners: [...counts]
-        .sort(([a], [b]) => {
-          return a.localeCompare(b);
-        })
-        .map(([userId, hostCount]) => {
-          return {
-            userId,
-            displayName: null as string | null,
-            hostCount,
-          };
-        }),
+      ownHostCount: hosts.length - otherHostCount,
+      otherHostCount,
+      affectedOwnerIds: [...affectedOwnerIds].sort((a, b) => {
+        return a.localeCompare(b);
+      }),
       impactSnapshot: impactSnapshot(config, hosts),
     },
   };
