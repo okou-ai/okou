@@ -737,6 +737,22 @@ export async function previewCloudflareAccessConversion(args: {
       otherHostCount: hosts.filter((host) => {
         return host.userId !== args.owner.userId;
       }).length,
+      ownHostCount: hosts.filter((host) => {
+        return host.userId === args.owner.userId;
+      }).length,
+      affectedOwnerIds: [
+        ...new Set(
+          hosts
+            .filter((host) => {
+              return host.userId !== args.owner.userId;
+            })
+            .map((host) => {
+              return host.userId;
+            }),
+        ),
+      ].sort((a, b) => {
+        return a.localeCompare(b);
+      }),
       impactSnapshot: impactSnapshot(config, hosts),
     },
   };

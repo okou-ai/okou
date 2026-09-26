@@ -100,6 +100,24 @@ const conversionPreviewSchema = z
     impactSnapshot,
   })
   .strict();
+// A separate endpoint leaves the older previews intact for already-loaded Apps.
+// Unlike the legacy deletion projection, this exposes no per-owner host usage.
+const impactPreviewSchema = z
+  .object({
+    expectedRevision: revision,
+    ownHostCount: z.int().nonnegative(),
+    otherHostCount: z.int().nonnegative(),
+    affectedOwners: z.array(
+      z
+        .object({
+          userId: z.string().min(1),
+          displayName: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    impactSnapshot,
+  })
+  .strict();
 const conversionBody = z
   .object({ expectedRevision: revision, impactSnapshot })
   .strict();
@@ -166,6 +184,14 @@ export const cloudflareAccessContract = c.router({
     pathParams,
     responses: { 200: conversionPreviewSchema, ...errors },
   },
+  impactPreview: {
+    method: "GET",
+    path: "/api/cloudflare-access/configs/:configId/impact-preview",
+    headers: authHeadersSchema,
+    pathParams,
+    query: z.object({ operation: z.enum(["convert", "delete"]) }).strict(),
+    responses: { 200: impactPreviewSchema, ...errors },
+  },
   convertToPersonal: {
     method: "POST",
     path: "/api/cloudflare-access/configs/:configId/convert-to-personal",
@@ -189,6 +215,7 @@ export type UpdateCloudflareAccessRequest = z.infer<typeof updateBody>;
 export type CloudflareAccessConversionPreview = z.infer<
   typeof conversionPreviewSchema
 >;
+export type CloudflareAccessImpactPreview = z.infer<typeof impactPreviewSchema>;
 export type ConvertCloudflareAccessRequest = z.infer<typeof conversionBody>;
 export type CloudflareAccessDeletionPreview = z.infer<
   typeof deletionPreviewSchema

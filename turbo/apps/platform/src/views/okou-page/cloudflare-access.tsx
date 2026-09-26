@@ -23,7 +23,6 @@ import {
 import {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
   type CloudflareAccessConfig,
-  type CloudflareAccessConversionPreview,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
@@ -69,6 +68,7 @@ import {
   reviewCloudflareAccessDeletion$,
   saveCloudflareAccess$,
   type CloudflareAccessDialogState,
+  type CloudflareAccessImpactReview,
 } from "../../signals/cloudflare-access.ts";
 import { localizedCloudflareAccessError } from "../../lib/cloudflare-access-error.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -648,16 +648,103 @@ export function CloudflareAccessDialog() {
   );
 }
 
+function CloudflareAccessAffectedMembers({
+  preview,
+}: {
+  readonly preview: CloudflareAccessImpactReview;
+}) {
+  const { t } = useTranslation();
+  if (preview.otherHostCount === 0) {
+    return null;
+  }
+  if (!preview.memberNamesAvailable) {
+    return (
+      <p role="alert">
+        {t(
+          ($) => {
+            return $.cloudflareAccess.convertWarning;
+          },
+          { count: preview.otherHostCount },
+        )}{" "}
+        {t(($) => {
+          return $.cloudflareAccess.deleteImpact;
+        })}
+      </p>
+    );
+  }
+  const nameCounts = new Map<string, number>();
+  const suffixCounts = new Map<string, number>();
+  for (const owner of preview.affectedOwners) {
+    if (owner.displayName) {
+      nameCounts.set(
+        owner.displayName,
+        (nameCounts.get(owner.displayName) ?? 0) + 1,
+      );
+    }
+    const suffix = owner.userId.slice(-8);
+    suffixCounts.set(suffix, (suffixCounts.get(suffix) ?? 0) + 1);
+  }
+  return (
+    <>
+      <p role="alert">
+        {t(
+          ($) => {
+            return $.cloudflareAccess.impactSummary;
+          },
+          {
+            members: t(
+              ($) => {
+                return $.cloudflareAccess.affectedMembers;
+              },
+              { count: preview.affectedOwners.length },
+            ),
+            hosts: t(
+              ($) => {
+                return $.cloudflareAccess.hostCount;
+              },
+              { count: preview.otherHostCount },
+            ),
+          },
+        )}
+      </p>
+      <ul className="list-inside list-disc">
+        {preview.affectedOwners.map(({ userId, displayName }) => {
+          const ambiguous =
+            !displayName || (nameCounts.get(displayName) ?? 0) > 1;
+          const tail = userId.slice(-8);
+          const identifier =
+            (suffixCounts.get(tail) ?? 0) > 1 ? userId : `…${tail}`;
+          return (
+            <li key={userId}>
+              {displayName ??
+                t(($) => {
+                  return $.cloudflareAccess.nameUnavailable;
+                })}
+              {ambiguous &&
+                t(
+                  ($) => {
+                    return $.cloudflareAccess.memberIdentifier;
+                  },
+                  { identifier },
+                )}
+            </li>
+          );
+        })}
+      </ul>
+    </>
+  );
+}
+
 function CloudflareAccessConversionControls({
   preview,
   isSaving,
   onCancel,
   onConfirm,
 }: {
-  readonly preview: CloudflareAccessConversionPreview | null;
+  readonly preview: CloudflareAccessImpactReview | null;
   readonly isSaving: boolean;
   readonly onCancel: () => void;
-  readonly onConfirm: (preview: CloudflareAccessConversionPreview) => void;
+  readonly onConfirm: (preview: CloudflareAccessImpactReview) => void;
 }) {
   const { t } = useTranslation();
   const acknowledgedSnapshot = useGet(
@@ -670,14 +757,7 @@ function CloudflareAccessConversionControls({
     <>
       {preview && preview.otherHostCount > 0 && (
         <div className="grid gap-3 rounded-lg border p-4 text-sm">
-          <p role="alert">
-            {t(
-              ($) => {
-                return $.cloudflareAccess.convertWarning;
-              },
-              { count: preview.otherHostCount },
-            )}
-          </p>
+          <CloudflareAccessAffectedMembers preview={preview} />
           <label className="flex items-start gap-2">
             <Checkbox
               checked={confirmed}
@@ -854,32 +934,9 @@ function CloudflareAccessDeletionReview({
           })}
         </p>
       )}
-      {impact && impact.affectedOwners.length > 0 && (
+      {impact && impact.otherHostCount > 0 && (
         <div className="grid gap-3 rounded-lg border p-4 text-sm">
-          <p role="alert">
-            {t(($) => {
-              return $.cloudflareAccess.deleteImpact;
-            })}
-          </p>
-          <ul className="list-inside list-disc">
-            {impact.affectedOwners.map(({ userId, displayName, hostCount }) => {
-              return (
-                <li key={userId}>
-                  {displayName ??
-                    t(($) => {
-                      return $.cloudflareAccess.formerMember;
-                    })}{" "}
-                  ({userId}):{" "}
-                  {t(
-                    ($) => {
-                      return $.cloudflareAccess.hostCount;
-                    },
-                    { count: hostCount },
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+          <CloudflareAccessAffectedMembers preview={impact} />
           <label className="flex items-start gap-2">
             <Checkbox
               checked={acknowledged === impact.impactSnapshot}
@@ -981,7 +1038,7 @@ export function CloudflareAccessDeletionDialog() {
                 disabled={
                   isSaving ||
                   impact.ownHostCount > 0 ||
-                  (impact.affectedOwners.length > 0 &&
+                  (impact.otherHostCount > 0 &&
                     acknowledged !== impact.impactSnapshot)
                 }
                 onClick={() => {

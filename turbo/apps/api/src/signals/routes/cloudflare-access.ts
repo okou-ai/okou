@@ -10,7 +10,7 @@ import { cloudflareAccessErrorResponse } from "../../lib/cloudflare-access-error
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, createClerkReadContext } from "../external/clerk";
 import type { RouteEntry } from "../route-entry";
@@ -265,15 +265,83 @@ const conversionPreview$ = command(
       configId,
     });
     signal.throwIfAborted();
-    return result.ok
-      ? { status: 200 as const, body: result.value }
-      : cloudflareAccessErrorResponse(
-          result.kind === "not_found" ? 404 : 403,
-          result.code,
-          result.message,
-        );
+    if (!result.ok) {
+      return cloudflareAccessErrorResponse(
+        result.kind === "not_found" ? 404 : 403,
+        result.code,
+        result.message,
+      );
+    }
+    // The old endpoint retains its exact response for already-loaded Apps.
+    const {
+      ownHostCount: _ownHostCount,
+      affectedOwnerIds: _affectedOwnerIds,
+      ...legacy
+    } = result.value;
+    return { status: 200 as const, body: legacy };
   },
 );
+
+const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const { configId } = get(
+    pathParamsOf(cloudflareAccessContract.impactPreview),
+  );
+  const { operation } = get(queryOf(cloudflareAccessContract.impactPreview));
+  const owner = get(organizationAuthContext$);
+  const result =
+    operation === "convert"
+      ? await previewCloudflareAccessConversion({
+          db: get(db$),
+          owner,
+          configId,
+        })
+      : await previewCloudflareAccessDeletion({
+          db: get(db$),
+          owner,
+          configId,
+        });
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return cloudflareAccessErrorResponse(
+      result.kind === "not_found" ? 404 : 403,
+      result.code,
+      result.message,
+    );
+  }
+  const { value } = result;
+  const ownerIds =
+    "affectedOwnerIds" in value
+      ? value.affectedOwnerIds
+      : value.affectedOwners.map(({ userId }) => {
+          return userId;
+        });
+  const names = await loadUserDisplayNames(
+    set(writeDb$),
+    get(clerk$),
+    ownerIds,
+    createClerkReadContext(),
+    signal,
+  );
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: {
+      expectedRevision: value.expectedRevision,
+      ownHostCount: value.ownHostCount,
+      otherHostCount:
+        "otherHostCount" in value
+          ? value.otherHostCount
+          : value.affectedOwners.reduce((sum, entry) => {
+              return sum + entry.hostCount;
+            }, 0),
+      affectedOwners: ownerIds.map((userId) => {
+        return { userId, displayName: names.get(userId) ?? null };
+      }),
+      impactSnapshot: value.impactSnapshot,
+    },
+  };
+});
 
 const convertConfig$ = command(
   async (
@@ -347,6 +415,10 @@ export const cloudflareAccessRoutes: readonly RouteEntry[] = [
   {
     route: cloudflareAccessContract.conversionPreview,
     handler: authRoute(ownerAuth, conversionPreview$),
+  },
+  {
+    route: cloudflareAccessContract.impactPreview,
+    handler: authRoute(ownerAuth, impactPreview$),
   },
   {
     route: cloudflareAccessContract.convertToPersonal,

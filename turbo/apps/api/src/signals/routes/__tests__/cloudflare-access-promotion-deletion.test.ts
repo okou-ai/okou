@@ -213,6 +213,118 @@ test("only an admin may promote their own Personal configuration in place withou
   );
 });
 
+test("named impact previews disclose total hosts and owners, never per-owner usage or host details", async () => {
+  useSecretKmsProbe();
+  const admin = await actor();
+  const shared = await createConfig("organization");
+  const ownHost = await createHost(shared.id);
+  const first = await actor(admin.orgId, "member");
+  const firstHost = await createHost(shared.id);
+  await createHost(shared.id);
+  const second = await actor(admin.orgId, "member");
+  const secondHost = await createHost(shared.id);
+  mockClerkUsers(context, [
+    {
+      id: first.userId,
+      firstName: "First",
+      lastName: "Member",
+      emailAddresses: [],
+      primaryEmailAddressId: null,
+      imageUrl: "",
+    },
+  ]);
+  await accept(
+    configs().impactPreview({
+      headers,
+      params: { configId: shared.id },
+      query: { operation: "convert" },
+    }),
+    [403],
+  );
+  await accept(
+    configs().impactPreview({
+      headers,
+      params: { configId: shared.id },
+      query: { operation: "delete" },
+    }),
+    [403],
+  );
+  session(admin, "admin");
+  const convert = (
+    await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "convert" },
+      }),
+      [200],
+    )
+  ).body;
+  const deletion = (
+    await accept(
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
+      [200],
+    )
+  ).body;
+  for (const preview of [convert, deletion]) {
+    expect(preview).toMatchObject({
+      expectedRevision: 1,
+      ownHostCount: 1,
+      otherHostCount: 3,
+      affectedOwners: expect.arrayContaining([
+        { userId: first.userId, displayName: "First Member" },
+        { userId: second.userId, displayName: null },
+      ]),
+    });
+    expect(preview.affectedOwners).toHaveLength(2);
+    const body = JSON.stringify(preview);
+    expect(body).not.toContain("hostCount");
+    expect(body).not.toContain(firstHost.id);
+    expect(body).not.toContain(secondHost.id);
+    expect(body).not.toContain(ownHost.id);
+    expect(body).not.toContain("Protected host");
+  }
+  expect(convert.impactSnapshot).toBe(deletion.impactSnapshot);
+  const legacy = (
+    await accept(
+      configs().conversionPreview({ headers, params: { configId: shared.id } }),
+      [200],
+    )
+  ).body;
+  expect(legacy).toStrictEqual({
+    expectedRevision: 1,
+    otherHostCount: 3,
+    impactSnapshot: convert.impactSnapshot,
+  });
+});
+
+test("new impact previews omit the warning data when no other hosts are bound", async () => {
+  useSecretKmsProbe();
+  await actor();
+  const shared = await createConfig("organization");
+  for (const operation of ["convert", "delete"] as const) {
+    const preview = (
+      await accept(
+        configs().impactPreview({
+          headers,
+          params: { configId: shared.id },
+          query: { operation },
+        }),
+        [200],
+      )
+    ).body;
+    expect(preview).toMatchObject({
+      ownHostCount: 0,
+      otherHostCount: 0,
+      affectedOwners: [],
+    });
+  }
+});
+
 test("an admin sees owner counts before deleting other owners' hosts; stale or unreviewed requests cannot detach them", async () => {
   useSecretKmsProbe();
   const admin = await actor();

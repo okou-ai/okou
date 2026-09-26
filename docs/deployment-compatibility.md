@@ -4369,8 +4369,8 @@ identified-App minimum version to `0.954.0`, so older identified Apps receive
 It also retires the bounded personal-only Access response projection; current
 App requests already use `view=scoped`.
 
-The conversion preview contains only an aggregate count of other owners' SSH
-hosts and an opaque impact snapshot. The action requires a current organization
+The original conversion-preview endpoint contains only an aggregate count of
+other owners' SSH hosts and an opaque impact snapshot. The action requires a current organization
 admin, expected Access revision, and unchanged impact. The transaction locks
 the Access row before host rows, detaches other owners' references into
 `needs_rebind`, advances effective generations, then makes the same Access row
@@ -4401,8 +4401,8 @@ compatible with scope-aware clients. Older API binaries remain compatible with
 the expanded trigger until new state is written; they do not offer the new
 promotion or reviewed delete operations.
 
-A current admin can preview Organization deletion impact with owner identity
-and per-owner host counts. The optional opaque snapshot is required only when
+The legacy deletion-preview endpoint lets a current admin review Organization
+deletion impact with owner identity and per-owner host counts. The optional opaque snapshot is required only when
 other owners' hosts are affected. DELETE rechecks the exact revision and host
 set under the Access-before-host lock, blocks any actor-owned reference, and
 atomically detaches only other owners' references into `needs_rebind` before
@@ -4420,6 +4420,33 @@ After a member binds a promoted row or a reviewed deletion writes
 `needs_rebind`, rollback to pre-foundation API/Runner or pre-rebind App is
 unsafe; roll forward with compatible readers. The API-before-App release order
 is safe once migration `1222` and those prerequisites are verified.
+
+### Cloudflare Access impact-review presentation (#36988)
+
+The new App requests the admin-only `GET /api/cloudflare-access/configs/:configId/impact-preview`
+with `operation=convert|delete`. It receives affected-member identities and one
+aggregate count of other-owned SSH hosts; it never receives another member's
+host ID, name, destination, credential or per-member host count from this new
+endpoint. The action's expected revision and exact impact snapshot are the
+same guarded values used by the existing conversion and deletion transactions.
+Directory names are best-effort: a null name does not establish former
+membership. The App shows an ID suffix only to disambiguate missing or duplicate
+names and never normally prints complete raw member IDs. Neither operation
+sends notifications or changes `needs_rebind`/Run/VNC behavior.
+
+The API deploys before the App. Old or already-open Apps continue to use their
+original `/conversion-preview` (aggregate-only) and `/deletion-preview`
+(per-owner counts) endpoints, which retain their **exact original response
+shapes** during this compatibility window. A new App receiving `404` for the
+new route from an older API falls back to those legacy previews: it still hides
+per-owner counts in the UI, and conversion temporarily shows the old aggregate
+warning without asserting that member names were loaded. Both confirmation
+paths still submit and recheck the same opaque impact snapshot. A 403 is not
+retried through a legacy route. Once all serving APIs and supported API
+rollback targets implement the new route, and older App bundles and supported
+App rollback targets have drained or been force-upgraded, remove both
+compatibility paths under #36992. This is not a claim that the legacy response
+no longer exposes per-owner counts during rollout.
 
 ## Feishu and Lark integration identity
 
