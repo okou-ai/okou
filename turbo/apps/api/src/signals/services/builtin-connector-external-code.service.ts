@@ -25,7 +25,7 @@ import {
 import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
 import { command } from "ccstate";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
@@ -255,16 +255,6 @@ async function resolveStoredExternalCodeMethod(args: {
     return connectorExternalCodeUnavailable(args.connectorSlug);
   }
   return resolved;
-}
-
-async function lockExternalCodeSessionOwner(
-  args: BuiltinConnectorExternalCodeSessionOwner & {
-    readonly writeDb: Db;
-  },
-): Promise<void> {
-  await args.writeDb.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtext('connector_external_code:' || ${args.orgId} || ':' || ${args.userId} || ':' || ${args.connectorSlug} || ':' || ${args.authMethod}))`,
-  );
 }
 
 async function markPendingSessionsSuperseded(
@@ -539,10 +529,8 @@ async function markClaimComplete(
 }
 
 async function persistClaimedConnector(
-  args: BuiltinConnectorExternalCodeSessionOwner & {
+  args: {
     readonly writeDb: Db;
-    readonly orgId: string;
-    readonly userId: string;
     readonly session: BuiltinConnectorExternalCodeSessionRow;
     readonly claimStartedAt: Date;
     readonly token: ConnectorAuthProviderGrantResult;
@@ -557,10 +545,6 @@ async function persistClaimedConnector(
   signal: AbortSignal,
 ): Promise<CompleteSuccess | ReturnType<typeof conflict>> {
   return await args.writeDb.transaction(async (tx) => {
-    await lockExternalCodeSessionOwner({
-      ...args,
-      writeDb: tx,
-    });
     if (
       !(await claimStillCurrent(
         {
@@ -790,11 +774,7 @@ async function completeClaimedExternalCodeSession(
   const persistedConnector = await onRejection(
     persistClaimedConnector(
       {
-        connectorSlug: args.resolvedMethod.connectorSlug,
-        authMethod: args.resolvedMethod.authMethodId,
         writeDb: args.writeDb,
-        orgId: args.orgId,
-        userId: args.userId,
         session: args.session,
         claimStartedAt: args.claimStartedAt,
         persistConnector: args.persistConnector,
@@ -870,13 +850,8 @@ async function createExternalCodeSession(
   signal: AbortSignal,
 ) {
   return await db.transaction(async (tx) => {
-    await lockExternalCodeSessionOwner({
-      connectorSlug: args.connectorSlug,
-      authMethod: args.authMethod,
-      writeDb: tx,
-      orgId: args.orgId,
-      userId: args.userId,
-    });
+    // The connector_state lock taken by resolveConnectorConnectionMutation
+    // serializes session creation for this owner and connector.
     const mutationResolution = await resolveConnectorConnectionMutation(tx, {
       orgId: args.orgId,
       userId: args.userId,

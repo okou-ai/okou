@@ -261,9 +261,6 @@ export async function grantGetStartedClaim(
     });
     memberCreditGrantId = grant.id;
   } else {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext(${`credit_${claim.orgId}`}))`,
-    );
     const [record] = await tx
       .insert(creditExpiresRecord)
       .values({

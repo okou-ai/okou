@@ -6,7 +6,7 @@ import { loadFeishuInstallationConfig } from "./feishu-config";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { FEISHU_OAUTH_SCOPES } from "@okouai/api-contracts/contracts/feishu-connect";
 import { connectors } from "@okouai/db/schema/connector";
@@ -408,10 +408,6 @@ async function reconcileFeishuCustomConnector(
   prepared: PreparedFeishuCustomConnectorSkill,
   signal: AbortSignal,
 ): Promise<FeishuCustomConnectorReconciliation> {
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`feishu_custom_connector:${args.installationId}`}, 0))`,
-  );
-  signal.throwIfAborted();
   const [installation] = await tx
     .select({
       orgId: feishuOrgInstallations.orgId,
