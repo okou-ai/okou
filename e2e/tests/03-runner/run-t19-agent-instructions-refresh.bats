@@ -7,7 +7,7 @@ load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
-    runner_e2e_use_native_codex_account
+    runner_e2e_use_mock_codex_profile
     runner_e2e_require_environment
     runner_e2e_setup_test
 }
@@ -41,7 +41,7 @@ EOF
     first_prompt=${first_prompt//__UPDATED_INSTRUCTION_MARKER__/$updated_instruction_marker}
     first_prompt=${first_prompt//__FIRST_OUTPUT_MARKER__/$first_output_marker}
 
-    run runner_e2e_start_chat_run "$AGENT_ID" "$first_prompt"
+    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$first_prompt"
     echo "$output"
     assert_success
     local first_run_id

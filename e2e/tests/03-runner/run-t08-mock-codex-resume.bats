@@ -1,13 +1,13 @@
 #!/usr/bin/env bats
 
-# Codex resume test through two supported sends on the same chat thread.
+# Mock Codex resume test through two supported sends on the same chat thread.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup_file() {
-    runner_e2e_use_native_codex_account
+    runner_e2e_use_mock_codex_profile
     require_runner_api_credentials
 
     export RUNNER_AGENT_ID
@@ -24,8 +24,8 @@ teardown_file() {
     fi
 }
 
-@test "second chat turn resumes the codex session" {
-    run runner_chat_start "$RUNNER_AGENT_ID" "first turn"
+@test "second chat turn resumes the mock codex session" {
+    run runner_chat_start_mock_codex "$RUNNER_AGENT_ID" "first turn"
 
     assert_success
     assert_output --partial '"status":"completed"'

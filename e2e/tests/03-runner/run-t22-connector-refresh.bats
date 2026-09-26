@@ -7,7 +7,7 @@ load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
-    runner_e2e_use_native_codex_account
+    runner_e2e_use_mock_codex_profile
     runner_e2e_require_environment
     runner_e2e_setup_test
 }
@@ -83,7 +83,7 @@ EOF
 
     local first_output_prefix="BENTOML_INITIAL_REQUEST_${TEST_ID}_"
     local first_prompt="${probe_template//__OUTPUT_PREFIX__/$first_output_prefix}"
-    run runner_e2e_start_chat_run "$AGENT_ID" "$first_prompt"
+    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$first_prompt"
     echo "$output"
     assert_success
     local first_send_response="$output"

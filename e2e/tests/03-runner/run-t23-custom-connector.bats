@@ -6,7 +6,7 @@ load '../../helpers/runner-api'
 
 setup() {
     # Keep firewall/account assertions independent of real LLM shell decisions.
-    runner_e2e_use_native_codex_account
+    runner_e2e_use_mock_codex_profile
     runner_e2e_require_environment
     runner_e2e_setup_test
     CUSTOM_CONNECTOR_ID=""
@@ -115,7 +115,7 @@ printf 'CUSTOM_CONNECTOR_REQUEST_SENT\n'
 EOF
 )
 
-    run runner_e2e_start_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er \
@@ -319,7 +319,7 @@ curl --silent --show-error --max-time 15 \\
 printf '${default_marker}\\n'
 EOF
 )
-    run runner_e2e_start_chat_run "$AGENT_ID" "$default_prompt"
+    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$default_prompt"
     echo "$output"
     assert_success
     local first_send_response="$output"

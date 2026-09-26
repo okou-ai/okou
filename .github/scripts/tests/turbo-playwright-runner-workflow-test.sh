@@ -7,7 +7,7 @@ WORKFLOW="${REPO_ROOT}/.github/workflows/turbo.yml"
 TURBO_CONFIG="${REPO_ROOT}/turbo/turbo.json"
 RUNNER_START_HELPER="${REPO_ROOT}/.github/scripts/reconcile-and-start-runner-groups.sh"
 RUNNER_TESTS="${REPO_ROOT}/e2e/tests/03-runner"
-REAL_CLAUDE_TEST="${RUNNER_TESTS}/run-t10-real-claude-smoke.bats"
+REAL_CLAUDE_TEST="${RUNNER_TESTS}/run-t10-real-claude-pi-smoke.bats"
 BUILT_IN_FALLBACK_TEST="${RUNNER_TESTS}/run-t24-built-in-provider-fallback.bats"
 RUNNER_HELPERS=(
   "${REPO_ROOT}/e2e/helpers/runner-api.bash"

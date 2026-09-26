@@ -331,10 +331,10 @@ runner_chat_send_parts() {
     local capture_network_bodies="${7:-false}"
     local payload
 
-    # Native-harness probes use their dedicated account's configured model
-    # explicitly; an empty initial model is not a workspace selection.
+    # Mock Codex probes select their model through the profile; explicit real
+    # model probes pass a model directly rather than inheriting this default.
     if [[ -z "$thread_id" && -z "$selected_model" ]]; then
-        selected_model="${E2E_NATIVE_CODEX_MODEL:-}"
+        selected_model="${E2E_MOCK_CODEX_MODEL:-}"
     fi
 
     if [[ -z "$client_event_id" ]]; then
@@ -721,10 +721,18 @@ _runner_chat_execute() {
     printf '%s\n' "$chat_output"
 }
 
-runner_chat_start() {
+runner_e2e_require_mock_codex_profile() {
+    if [[ "${E2E_RUNNER_PROFILE:-}" != "mock-codex" || "${E2E_MOCK_CODEX_MODEL:-}" != "gpt-6-astra" ]]; then
+        echo "Select the mock Codex profile with runner_e2e_use_mock_codex_profile before starting a chat run" >&2
+        return 1
+    fi
+}
+
+runner_chat_start_mock_codex() {
     local agent_id="$1"
     local prompt="$2"
-    _runner_chat_execute "$agent_id" "$prompt" "" "${E2E_NATIVE_CODEX_MODEL:-deepseek-v4-flash}"
+    runner_e2e_require_mock_codex_profile || return 1
+    _runner_chat_execute "$agent_id" "$prompt" "" "$E2E_MOCK_CODEX_MODEL"
 }
 
 runner_chat_continue() {
