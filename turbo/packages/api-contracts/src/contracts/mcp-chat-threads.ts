@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { indicatorsSchema } from "./chat-threads";
 import {
   mcpChatOutputTimestampSchema,
   mcpFilterTimestampSchema,
@@ -18,8 +19,6 @@ export const mcpListChatThreadsInputSchema = z
       .optional(),
     since: mcpFilterTimestampSchema.optional(),
     before: mcpFilterTimestampSchema.optional(),
-    activity: z.enum(["active", "idle"]).optional(),
-    unread: z.boolean().optional(),
     limit: z.number().int().min(1).max(50).default(20),
     cursor: z.string().min(1).max(4096).optional(),
   })
@@ -56,31 +55,27 @@ export const mcpChatThreadSchema = z.strictObject({
   metadataUpdatedAt: mcpChatOutputTimestampSchema,
   lastMessageAt: mcpChatOutputTimestampSchema,
   url: z.url(),
-  activity: z.strictObject({
-    queued: z.boolean(),
-    pending: z.boolean(),
-    running: z.boolean(),
-  }),
-  unread: z.boolean(),
 });
-
-const unreadCoverageSchema = z.literal("retained_terminal_events");
 
 export const mcpListChatThreadsOutputSchema = z.strictObject({
   threads: z.array(mcpChatThreadSchema).max(50),
   nextCursor: z.string().nullable(),
-  unreadCoverage: unreadCoverageSchema,
 });
 
 export const mcpGetChatThreadOutputSchema = z.strictObject({
   thread: mcpChatThreadSchema,
-  unreadCoverage: unreadCoverageSchema,
 });
+
+export const mcpGetChatIndicatorsInputSchema = z.strictObject({});
+export const mcpGetChatIndicatorsOutputSchema = indicatorsSchema;
 
 export type McpListChatThreadsInput = z.infer<
   typeof mcpListChatThreadsInputSchema
 >;
 export type McpGetChatThreadInput = z.infer<typeof mcpGetChatThreadInputSchema>;
+export type McpGetChatIndicatorsOutput = z.infer<
+  typeof mcpGetChatIndicatorsOutputSchema
+>;
 export type McpChatThread = z.infer<typeof mcpChatThreadSchema>;
 export type McpListChatThreadsOutput = z.infer<
   typeof mcpListChatThreadsOutputSchema
