@@ -498,6 +498,57 @@ test("An optional native slider stays untouched unless the user changes it", asy
   });
 });
 
+test("An optional native slider submits a changed position with its observed snapshot", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, rangeAction(false, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, rangeAction(false, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...rangeAction(false, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const slider = within(form).getByRole("slider", { name: /Level/u });
+  await waitFor(() => {
+    return expect(slider).toHaveValue("19");
+  });
+  fireEvent.change(slider, { target: { value: "16" } });
+  await waitFor(() => {
+    return expect(within(form).getByText("16")).toBeInTheDocument();
+  });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([
+      {
+        key: "level",
+        observedValue: "19",
+        observedMin: "10",
+        observedMax: "20",
+        observedStep: "any",
+        value: "16",
+      },
+    ]);
+  });
+});
+
 test("A standalone native file input transfers chosen bytes only on confirmed submission", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   let uploaded = false;
