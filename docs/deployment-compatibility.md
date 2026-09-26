@@ -1,13 +1,27 @@
 # Deployment Compatibility
 
-## Chat search GIN index drops fastupdate and API maintenance (2026-09-26)
+## Chat search GIN index drops fastupdate and API maintenance; audit approval column contracted (2026-09-26)
 
-Migration `1260_chat_search_gin_fastupdate_off` runs
+Migration `1261_chat_search_gin_fastupdate_off_drop_audit_approval` is
+non-transactional and does two things.
+
+It first drops `computer_use_command_audit_events.approval_outcome` under a 1 s
+`lock_timeout` and 10 s `statement_timeout`, since `DROP COLUMN` needs a brief
+ACCESS EXCLUSIVE lock. #36984 stopped naming that column in audit INSERT and
+SELECT, and its API reached production on 2026-09-26T02:28Z (release
+`d9daec96`). **API rollback floor: `cdeec36c168636b1a2e510e660eb6139c9c4e07a`**
+(#36984's merge commit). Earlier API artifacts name the column in every audit
+INSERT and would fail with `42703`; rollback does not restore the column.
+`.github/scripts/resolve-production-rollback-target.sh` enforces the floor. The
+migration-consistency adapter that restored this column in the generated
+schema is removed.
+
+It then runs
 `ALTER INDEX chat_event_search_messages_user_tsv_gin_idx SET (fastupdate = false)`
-and then `gin_clean_pending_list` on that index. It is non-transactional and
-raises `lock_timeout` to 10 minutes and disables `statement_timeout` for its
-own session, then resets both. `SET` takes SHARE UPDATE EXCLUSIVE and the flush
-works page by page, so neither blocks chat search reads or projector writes.
+and `gin_clean_pending_list` on that index, with `lock_timeout` raised to 10
+minutes and `statement_timeout` disabled, then resets both. `SET` takes SHARE
+UPDATE EXCLUSIVE and the flush works page by page, so neither blocks chat
+search reads or projector writes.
 
 The search projector no longer drains the pending list: it has no GIN
 maintenance budget, advisory lock or `pgstatginindex` call, and never defers
@@ -23,9 +37,57 @@ stayed about 0.5-0.6 s in both modes.
 
 New API/old DB is compatible: until the migration runs, PostgreSQL still
 flushes a full 4 MiB pending list in the foreground. Old API/new DB is
-compatible: an older API finds zero pending pages and skips cleanup, so API
-rollback remains safe. The `pgstattuple` extension stays installed for those
-rollback targets; removing it needs a separate API rollback floor.
+compatible for the index: an older API finds zero pending pages and skips
+cleanup. The audit column floor above bounds API rollback. The `pgstattuple`
+extension stays installed for rollback targets that still call
+`pgstatginindex`; removing it needs a separate API rollback floor.
+
+## Personal subscription credentials become account-only (2026-09-26)
+
+Personal (`user_id <> '__org__'`) `claude-code-oauth-token` and
+`codex-oauth-token` credentials now live only in `model_provider_accounts` and
+`model_provider_account_secrets`. Organization subscriptions and API-key
+providers keep `model_providers` + `secrets` unchanged.
+
+Removed from the API:
+
+- the `secrets` mirror of the active account and the personal singleton fields
+  on `model_providers` (`token_expires_at`, `needs_reconnect`,
+  `last_refresh_error_code`, `secret_id`, `auth_method`, workspace/plan and
+  reset metadata are neither written nor read for personal rows; the columns
+  remain for organization providers);
+- lazy account seeding from legacy secrets, legacy bundle import, mirror/KMS
+  equivalence checks and the request-scoped coordination that existed only for
+  API 1.595.0 singleton writers (`docs/personal-subscription-run-identity.md`
+  formerly §A2), plus the sourceId-less personal reader;
+- every credential advisory and row lock on reads, run admission, connect,
+  reconnect, activation, disconnect and terminal cleanup. Token refresh keeps
+  the `model_provider_state` advisory lock.
+
+Migration `1260_personal_subscription_account_only` sets
+`model_providers.secret_id = NULL` for personal Claude/Codex providers, deletes
+their mirrored `secrets` rows (Claude token; Codex `CHATGPT_*`/`CODEX_AUTH_JSON`)
+and adds the unique index
+`idx_model_provider_accounts_provider_identity (model_provider_id, external_account_id)`
+(NULLs distinct). Connections merge by that identity with `INSERT ... ON
+CONFLICT`; concurrent conflicting account writes surface as `409`.
+
+Prerequisites: every personal Claude/Codex provider must own an account row
+before the migration (seeded 2026-09-26: 21 providers, 12 Claude + 9 Codex;
+the Codex seeds have NULL `external_account_id` until reconnect), and no
+duplicate non-NULL `(model_provider_id, external_account_id)` pair may exist.
+
+Overlap and rollback:
+
+- During the ~20s migration-to-promotion window (API overlap measured at
+  api-v1.673.0) the previous API still reads the mirror for some paths and may
+  report a personal subscription as unavailable or require reconnect. This is
+  accepted; no persisted data is lost because accounts are canonical.
+- This release is the API rollback floor for personal subscriptions. An older
+  API treats the missing mirror as an unavailable subscription and its legacy
+  import/seed paths could recreate or diverge from account state. The production
+  rollback resolver rejects API targets that predate the merge commit adding
+  `1260_personal_subscription_account_only.sql`; roll forward instead.
 
 ## Computer Use audit column: code-only read/write cutover (2026-09-26)
 
@@ -46,6 +108,8 @@ writers. The follow-up #36969 must remove the narrow migration-consistency
 test adapter for this retained nullable text column when it drops the physical
 column, and must raise the rollback floor to this cutover's canonical main
 merge commit. No screenshot decoder or index changes belong to this step.
+The contraction, adapter removal and rollback floor shipped with migration
+`1261_chat_search_gin_fastupdate_off_drop_audit_approval` (see the entry above).
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 

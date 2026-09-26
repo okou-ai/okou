@@ -4,7 +4,6 @@ import {
   getSecretNamesForAuthMethod,
   type ModelProviderListResponse,
   type ModelProviderResponse,
-  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -20,28 +19,26 @@ import {
   desc,
   eq,
   exists,
-  getTableColumns,
   inArray,
   isNotNull,
   isNull,
+  ne,
+  not,
   notExists,
   or,
   sql,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 
 import { settle } from "../utils";
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
-import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import { extractCodexAccountEmailFromIdToken } from "./codex-auth-json-parser";
 import { invalidateCodexResetCreditExpiry } from "./codex-reset-credit-expiry.service";
 import { fetchClaudeCodeProfileMetadata } from "./claude-code-usage.service";
 
@@ -49,14 +46,16 @@ const MAX_PERSONAL_PROVIDER_ACCOUNTS = 10;
 const CODEX_TYPE = "codex-oauth-token";
 const CLAUDE_CODE_TYPE = "claude-code-oauth-token";
 const CODEX_ACCOUNT_ID_SECRET = "CHATGPT_ACCOUNT_ID";
-const CODEX_ID_TOKEN_SECRET = "CHATGPT_ID_TOKEN";
+const ORG_SENTINEL_USER_ID = "__org__";
+const ACCOUNT_CONFLICT_MESSAGE =
+  "The subscription account changed concurrently. Refresh and try again.";
 
 export type PersonalSubscriptionProviderType =
   | typeof CODEX_TYPE
   | typeof CLAUDE_CODE_TYPE;
 
 /** Request-local identity selected at capture. Mutable account and credential
- * state must still come from a fresh locked snapshot before use. */
+ * state must still be read again from the account tables before use. */
 export interface CapturedPersonalSubscriptionAccount {
   readonly id: string;
   readonly orgId: string;
@@ -93,17 +92,26 @@ interface EncryptedAccountSecret {
 
 type AccountRow = typeof modelProviderAccounts.$inferSelect;
 type ProviderRow = typeof modelProviders.$inferSelect;
-// Reuse schema decoders for the locking subquery aliases without rebuilding
-// their inferred field proxies for every snapshot. These contain no row data.
-const subscriptionProviderColumns = getTableColumns(
-  alias(modelProviders, "subscription_provider"),
-);
-const subscriptionAccountColumns = getTableColumns(
-  alias(modelProviderAccounts, "subscription_accounts"),
-);
 export type PersonalProviderAccountErrorResponse =
   | ReturnType<typeof badRequestMessage>
-  | ReturnType<typeof notFound>;
+  | ReturnType<typeof notFound>
+  | ReturnType<typeof conflict>;
+
+/** Account writers rely on constraints instead of locks: one active account per
+ * provider, one row per upstream identity and one secret per name. A losing
+ * concurrent writer surfaces as an explicit conflict. */
+async function withAccountConflict<T>(
+  write: () => Promise<T>,
+): Promise<T | ReturnType<typeof conflict>> {
+  const result = await settle(write());
+  if (result.ok) {
+    return result.value;
+  }
+  if (isUniqueViolation(result.error)) {
+    return conflict(ACCOUNT_CONFLICT_MESSAGE);
+  }
+  throw result.error;
+}
 
 function normalizedText(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -168,279 +176,55 @@ async function encryptAccountSecrets(
   return encrypted;
 }
 
-async function legacySecretRows(
-  db: Db,
-  provider: ProviderRow,
-): Promise<readonly EncryptedAccountSecret[]> {
-  if (provider.secretId) {
-    const rows = await db
-      .select({
-        name: secrets.name,
-        encryptedValue: secrets.encryptedValue,
-        description: secrets.description,
-      })
-      .from(secrets)
-      .where(
-        and(
-          eq(secrets.id, provider.secretId),
-          eq(secrets.orgId, provider.orgId),
-          eq(secrets.userId, provider.userId),
-          eq(secrets.type, "model-provider"),
-        ),
-      )
-      .for("no key update");
-    return rows.map((row) => {
-      return {
-        name: row.name,
-        encryptedValue: row.encryptedValue,
-        description:
-          row.description ?? `Personal ${provider.type} account secret`,
-      };
-    });
-  }
-
-  if (
-    !provider.authMethod ||
-    !isPersonalSubscriptionProviderType(provider.type)
-  ) {
-    return [];
-  }
-  const names = getSecretNamesForAuthMethod(provider.type, provider.authMethod);
-  if (!names || names.length === 0) {
-    return [];
-  }
-  const rows = await db
-    .select({
-      name: secrets.name,
-      encryptedValue: secrets.encryptedValue,
-      description: secrets.description,
-    })
-    .from(secrets)
-    .where(
-      and(
-        eq(secrets.orgId, provider.orgId),
-        eq(secrets.userId, provider.userId),
-        eq(secrets.type, "model-provider"),
-        inArray(secrets.name, [...names]),
-      ),
-    )
-    .for("no key update");
-  return rows.map((row) => {
-    return {
-      name: row.name,
-      encryptedValue: row.encryptedValue,
-      description:
-        row.description ?? `Personal ${provider.type} account secret`,
-    };
-  });
-}
-
-async function insertAccountSecrets(
+async function upsertAccountSecrets(
   db: Db,
   accountId: string,
   encryptedSecrets: readonly EncryptedAccountSecret[],
 ): Promise<void> {
-  if (encryptedSecrets.length === 0) {
-    return;
-  }
-  await db.insert(modelProviderAccountSecrets).values(
-    encryptedSecrets.map((secret) => {
-      return {
-        modelProviderAccountId: accountId,
-        ...secret,
-      };
-    }),
-  );
-}
-
-async function seedLegacyAccount(
-  db: Db,
-  provider: ProviderRow,
-): Promise<AccountRow | null> {
-  const encryptedSecrets = await legacySecretRows(db, provider);
-  if (encryptedSecrets.length === 0) {
-    return null;
-  }
-  const [account] = await db
-    .insert(modelProviderAccounts)
-    .values({
-      modelProviderId: provider.id,
-      orgId: provider.orgId,
-      userId: provider.userId,
-      type: provider.type,
-      authMethod: provider.authMethod,
-      isActive: true,
-      workspaceName: provider.workspaceName,
-      planType: provider.planType,
-      tokenExpiresAt: provider.tokenExpiresAt,
-      needsReconnect: provider.needsReconnect,
-      lastRefreshErrorCode: provider.lastRefreshErrorCode,
-      subscriptionResetPeriod: provider.subscriptionResetPeriod,
-      subscriptionNextResetAt: provider.subscriptionNextResetAt,
-    })
-    .returning();
-  if (!account) {
-    throw new Error(
-      "Expected personal model provider account insert to return",
-    );
-  }
-  await insertAccountSecrets(db, account.id, encryptedSecrets);
-  return account;
-}
-
-async function hydrateSeededCodexIdentity(args: {
-  readonly db: Db;
-  readonly account: AccountRow;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<void> {
-  if (args.account.type !== CODEX_TYPE) {
-    return;
-  }
-  const rows = await args.db
-    .select({
-      name: modelProviderAccountSecrets.name,
-      encryptedValue: modelProviderAccountSecrets.encryptedValue,
-    })
-    .from(modelProviderAccountSecrets)
-    .where(
-      and(
-        eq(modelProviderAccountSecrets.modelProviderAccountId, args.account.id),
-        inArray(modelProviderAccountSecrets.name, [
-          CODEX_ACCOUNT_ID_SECRET,
-          CODEX_ID_TOKEN_SECRET,
-        ]),
-      ),
-    );
-  const values = new Map<string, string>();
-  for (const row of rows) {
-    values.set(
-      row.name,
-      await decryptStoredSecretValue(
-        row.encryptedValue,
-        args.featureSwitchContext,
-      ),
-    );
-  }
-  await args.db
-    .update(modelProviderAccounts)
-    .set({
-      externalAccountId: normalizedText(values.get(CODEX_ACCOUNT_ID_SECRET)),
-      accountEmail: normalizedEmail(
-        extractCodexAccountEmailFromIdToken(values.get(CODEX_ID_TOKEN_SECRET)),
-      ),
-      updatedAt: nowDate(),
-    })
-    .where(eq(modelProviderAccounts.id, args.account.id));
-}
-
-/** Connection preparation needs seed-only behavior, not active-mirror import:
- * supplied reconnect credentials must still be able to repair an unavailable
- * old bundle. Capture/settings initialize inside their coordination instead.
- * Lazily seed the first account from the actual legacy singleton. Removal is
- * owned by #34010 after seeding is complete and observed serving-writer,
- * persisted-context and rollback gates close; elapsed deployment time alone
- * cannot establish that boundary. Retained-only parents are not empty seeds.
- */
-async function seedPersonalModelProviderAccount(args: {
-  readonly db: Db;
-  readonly provider: ProviderRow;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<void> {
-  if (!isPersonalSubscriptionProviderType(args.provider.type)) {
-    return;
-  }
-  const [existing] = await args.db
-    .select({ id: modelProviderAccounts.id })
-    .from(modelProviderAccounts)
-    .where(eq(modelProviderAccounts.modelProviderId, args.provider.id))
-    .limit(1);
-  if (existing) {
-    return;
-  }
-
-  await args.db.transaction(async (tx) => {
-    await lockModelProviderState(tx, {
-      orgId: args.provider.orgId,
-      userId: args.provider.userId,
-      type: args.provider.type,
-    });
-    const [current] = await tx
-      .select()
-      .from(modelProviderAccounts)
-      .where(eq(modelProviderAccounts.modelProviderId, args.provider.id))
-      .limit(1);
-    if (current) {
-      return;
-    }
-    const [provider] = await tx
-      .select()
-      .from(modelProviders)
-      .where(eq(modelProviders.id, args.provider.id))
-      .for("no key update")
-      .limit(1);
-    if (!provider) {
-      return;
-    }
-    const account = await seedLegacyAccount(tx, provider);
-    if (account) {
-      await hydrateSeededCodexIdentity({
-        db: tx,
-        account,
-        featureSwitchContext: args.featureSwitchContext,
+  if (encryptedSecrets.length > 0) {
+    await db
+      .insert(modelProviderAccountSecrets)
+      .values(
+        encryptedSecrets.map((secret) => {
+          return { modelProviderAccountId: accountId, ...secret };
+        }),
+      )
+      .onConflictDoUpdate({
+        target: [
+          modelProviderAccountSecrets.modelProviderAccountId,
+          modelProviderAccountSecrets.name,
+        ],
+        set: {
+          encryptedValue: sql`excluded.encrypted_value`,
+          description: sql`excluded.description`,
+          updatedAt: nowDate(),
+        },
       });
-    }
-  });
-}
-
-async function providerRowsForPersonalAccounts(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<readonly ProviderRow[]> {
-  const rows = await db
-    .select()
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, orgId),
-        eq(modelProviders.userId, userId),
-        inArray(modelProviders.type, [CODEX_TYPE, CLAUDE_CODE_TYPE]),
-      ),
-    );
-  return rows.filter((row) => {
-    return isPersonalSubscriptionProviderType(row.type);
-  });
-}
-
-export async function listPersonalModelProviderAccounts(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal?: AbortSignal,
-): Promise<ModelProviderListResponse> {
-  const providers = await providerRowsForPersonalAccounts(
-    args.db,
-    args.orgId,
-    args.userId,
-  );
-  const unavailable = new Set<string>();
-  for (const provider of providers) {
-    const ready = await ensurePersonalModelProviderAccount(
-      {
-        db: args.db,
-        provider,
-        featureSwitchContext: args.featureSwitchContext,
-      },
-      signal,
-    );
-    if (!ready) {
-      unavailable.add(provider.id);
-    }
   }
+  await db.delete(modelProviderAccountSecrets).where(
+    and(
+      eq(modelProviderAccountSecrets.modelProviderAccountId, accountId),
+      ...(encryptedSecrets.length === 0
+        ? []
+        : [
+            not(
+              inArray(
+                modelProviderAccountSecrets.name,
+                encryptedSecrets.map((secret) => {
+                  return secret.name;
+                }),
+              ),
+            ),
+          ]),
+    ),
+  );
+}
 
+export async function listPersonalModelProviderAccounts(args: {
+  readonly db: Db;
+  readonly orgId: string;
+  readonly userId: string;
+}): Promise<ModelProviderListResponse> {
   const rows = await args.db
     .select({ account: modelProviderAccounts, provider: modelProviders })
     .from(modelProviderAccounts)
@@ -464,13 +248,7 @@ export async function listPersonalModelProviderAccounts(
     );
   return {
     modelProviders: rows.map((row) => {
-      return accountResponse({
-        ...row,
-        account:
-          unavailable.has(row.provider.id) && row.account.isActive
-            ? { ...row.account, needsReconnect: true }
-            : row.account,
-      });
+      return accountResponse(row);
     }),
   };
 }
@@ -540,100 +318,8 @@ function identityMatches(
   );
 }
 
-async function upsertLegacySecret(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly secret: EncryptedAccountSecret;
-  },
-): Promise<string> {
-  const [row] = await db
-    .insert(secrets)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      name: args.secret.name,
-      encryptedValue: args.secret.encryptedValue,
-      type: "model-provider",
-      description: args.secret.description,
-    })
-    .onConflictDoUpdate({
-      target: [secrets.orgId, secrets.userId, secrets.name, secrets.type],
-      targetWhere: isNull(secrets.connectorId),
-      set: {
-        encryptedValue: args.secret.encryptedValue,
-        description: args.secret.description,
-        updatedAt: nowDate(),
-      },
-    })
-    .returning({ id: secrets.id });
-  if (!row) {
-    throw new Error("Expected legacy model provider secret upsert to return");
-  }
-  return row.id;
-}
-
-/** Rollout bridge for singleton readers/writers, including immutable rollback
- * artifacts. Active account writes copy the SAME ciphertext bundle in their
- * transaction; inactive writes never mirror. Removal is owned by #34010 after
- * writer drain, sourceId-less/pre-stability context drain, and an executable
- * rollback floor containing the fully accepted feature. See the identity guide.
- */
-async function mirrorAccountToLegacy(
-  db: Db,
-  args: {
-    readonly account: AccountRow;
-    readonly provider: ProviderRow;
-  },
-): Promise<void> {
-  const accountSecrets = await db
-    .select({
-      name: modelProviderAccountSecrets.name,
-      encryptedValue: modelProviderAccountSecrets.encryptedValue,
-      description: modelProviderAccountSecrets.description,
-    })
-    .from(modelProviderAccountSecrets)
-    .where(
-      eq(modelProviderAccountSecrets.modelProviderAccountId, args.account.id),
-    );
-  let secretId: string | null = null;
-  for (const secret of accountSecrets) {
-    const id = await upsertLegacySecret(db, {
-      orgId: args.account.orgId,
-      userId: args.account.userId,
-      secret: {
-        ...secret,
-        description:
-          secret.description ??
-          `Personal ${args.account.type} account secret: ${secret.name}`,
-      },
-    });
-    if (
-      getSecretNameForType(args.account.type as ModelProviderType) ===
-      secret.name
-    ) {
-      secretId = id;
-    }
-  }
-  await db
-    .update(modelProviders)
-    .set({
-      authMethod: args.account.authMethod,
-      secretId,
-      tokenExpiresAt: args.account.tokenExpiresAt,
-      needsReconnect: args.account.needsReconnect,
-      lastRefreshErrorCode: args.account.lastRefreshErrorCode,
-      workspaceName: args.account.workspaceName,
-      planType: args.account.planType,
-      subscriptionResetPeriod: args.account.subscriptionResetPeriod,
-      subscriptionNextResetAt: args.account.subscriptionNextResetAt,
-      updatedAt: nowDate(),
-    })
-    .where(eq(modelProviders.id, args.provider.id));
-}
-
-async function createLogicalProvider(
+/** The `(org_id, user_id, type)` unique index owns concurrent first connects. */
+async function logicalProvider(
   db: Db,
   args: {
     readonly orgId: string;
@@ -642,7 +328,7 @@ async function createLogicalProvider(
     readonly selectedModel: string | undefined;
   },
 ): Promise<ProviderRow> {
-  const [provider] = await db
+  await db
     .insert(modelProviders)
     .values({
       orgId: args.orgId,
@@ -651,9 +337,26 @@ async function createLogicalProvider(
       isDefault: false,
       selectedModel: args.selectedModel ?? null,
     })
-    .returning();
+    .onConflictDoNothing({
+      target: [
+        modelProviders.orgId,
+        modelProviders.userId,
+        modelProviders.type,
+      ],
+    });
+  const [provider] = await db
+    .select()
+    .from(modelProviders)
+    .where(
+      and(
+        eq(modelProviders.orgId, args.orgId),
+        eq(modelProviders.userId, args.userId),
+        eq(modelProviders.type, args.type),
+      ),
+    )
+    .limit(1);
   if (!provider) {
-    throw new Error("Expected logical model provider insert to return");
+    throw new Error("Expected logical model provider row");
   }
   return provider;
 }
@@ -686,17 +389,6 @@ function selectMutationTarget(args: {
   );
 }
 
-async function replaceAccountSecrets(
-  db: Db,
-  accountId: string,
-  encryptedSecrets: readonly EncryptedAccountSecret[],
-): Promise<void> {
-  await db
-    .delete(modelProviderAccountSecrets)
-    .where(eq(modelProviderAccountSecrets.modelProviderAccountId, accountId));
-  await insertAccountSecrets(db, accountId, encryptedSecrets);
-}
-
 async function applyAccountMutation(
   db: Db,
   args: {
@@ -720,7 +412,80 @@ async function applyAccountMutation(
   if (target && "status" in target) {
     return target;
   }
-  return await applyStableAccountMutation(db, args, target);
+  // Reconnecting to another upstream identity selects its existing row (even a
+  // retained row), never overwrites the identity of the requested account.
+  const selected =
+    args.accounts.find((account) => {
+      return identityMatches(account, args.type, args.metadata);
+    }) ?? null;
+  const replacing =
+    args.mode.kind !== "add" && target && target.id !== selected?.id;
+  if (
+    (!selected || selected.disconnectedAt !== null) &&
+    connected.length - (replacing ? 1 : 0) >= MAX_PERSONAL_PROVIDER_ACCOUNTS
+  ) {
+    return badRequestMessage(
+      `A maximum of ${MAX_PERSONAL_PROVIDER_ACCOUNTS} ${args.type} accounts can be connected`,
+    );
+  }
+  const active =
+    connected.length === 0 ||
+    target?.isActive === true ||
+    selected?.isActive === true;
+  if (replacing) {
+    await retirePersonalModelProviderAccount(db, target);
+  }
+  if (active) {
+    await db
+      .update(modelProviderAccounts)
+      .set({ isActive: false })
+      .where(
+        and(
+          eq(modelProviderAccounts.modelProviderId, args.provider.id),
+          eq(modelProviderAccounts.isActive, true),
+          ...(selected ? [ne(modelProviderAccounts.id, selected.id)] : []),
+        ),
+      );
+  }
+  const values = {
+    ...args.metadata,
+    authMethod: args.authMethod,
+    isActive: active,
+    disconnectedAt: null,
+  };
+  // The provider/identity unique index merges a concurrent same-identity
+  // connection into one row instead of inserting a duplicate.
+  const [account] = selected
+    ? await db
+        .update(modelProviderAccounts)
+        .set(values)
+        .where(eq(modelProviderAccounts.id, selected.id))
+        .returning()
+    : await db
+        .insert(modelProviderAccounts)
+        .values({
+          ...values,
+          modelProviderId: args.provider.id,
+          orgId: args.provider.orgId,
+          userId: args.provider.userId,
+          type: args.type,
+        })
+        .onConflictDoUpdate({
+          target: [
+            modelProviderAccounts.modelProviderId,
+            modelProviderAccounts.externalAccountId,
+          ],
+          set: {
+            ...values,
+            isActive: sql`${modelProviderAccounts.isActive} OR excluded.is_active`,
+          },
+        })
+        .returning();
+  if (!account) {
+    throw new Error("Expected subscription account mutation to return");
+  }
+  await upsertAccountSecrets(db, account.id, args.encryptedSecrets);
+  return { account, created: !selected };
 }
 
 function affectedCodexExpiryBindings(
@@ -764,8 +529,7 @@ type UpsertPersonalAccountArgs = {
 };
 
 type UpsertPersonalAccountResult =
-  | ReturnType<typeof badRequestMessage>
-  | ReturnType<typeof notFound>
+  | PersonalProviderAccountErrorResponse
   | {
       readonly provider: ModelProviderResponse;
       readonly created: boolean;
@@ -790,32 +554,6 @@ async function resolveConnectionIdentityMetadata(
   return profile.ok ? { ...args.metadata, ...profile.value } : args.metadata;
 }
 
-async function preparePersonalAccountConnection(
-  args: UpsertPersonalAccountArgs,
-  signal: AbortSignal,
-) {
-  const existingProviders = await providerRowsForPersonalAccounts(
-    args.db,
-    args.orgId,
-    args.userId,
-  );
-  const existingProvider = existingProviders.find((provider) => {
-    return provider.type === args.type;
-  });
-  if (existingProvider) {
-    await seedPersonalModelProviderAccount({
-      db: args.db,
-      provider: existingProvider,
-      featureSwitchContext: args.featureSwitchContext,
-    });
-  }
-  signal.throwIfAborted();
-
-  return args.type === CLAUDE_CODE_TYPE && existingProvider
-    ? await prepareClaudeAccountIdentities(args, signal)
-    : null;
-}
-
 export async function upsertPersonalModelProviderAccount(
   args: UpsertPersonalAccountArgs,
   signal: AbortSignal,
@@ -831,7 +569,10 @@ export async function upsertPersonalModelProviderAccount(
     args.featureSwitchContext,
     signal,
   );
-  const identityProof = await preparePersonalAccountConnection(args, signal);
+  const identityProof =
+    args.type === CLAUDE_CODE_TYPE
+      ? await prepareClaudeAccountIdentities(args, signal)
+      : null;
   signal.throwIfAborted();
 
   const expiryBindings = new Set<string | null>();
@@ -843,60 +584,22 @@ export async function upsertPersonalModelProviderAccount(
       );
     }
   };
-  const result = await args.db
-    .transaction(async (tx) => {
-      await lockModelProviderState(tx, {
+  const result = await withAccountConflict(() => {
+    return args.db.transaction(async (tx) => {
+      const provider = await logicalProvider(tx, {
         orgId: args.orgId,
         userId: args.userId,
         type: args.type,
+        selectedModel: args.selectedModel,
       });
       signal.throwIfAborted();
-      const [providerRow] = await tx
-        .select()
-        .from(modelProviders)
-        .where(
-          and(
-            eq(modelProviders.orgId, args.orgId),
-            eq(modelProviders.userId, args.userId),
-            eq(modelProviders.type, args.type),
-          ),
-        )
-        .limit(1);
-      if (!providerRow && identityProof) {
-        return notFound("Resource not found");
-      }
-      const provider =
-        providerRow ??
-        (await createLogicalProvider(tx, {
-          orgId: args.orgId,
-          userId: args.userId,
-          type: args.type,
-          selectedModel: args.selectedModel,
-        }));
-      // A provider inserted by this transaction cannot yet own visible accounts.
-      // Its first bundle is still published atomically through the same writer.
-      const currentSnapshot = providerRow
-        ? await lockSubscriptionCredentialSnapshot({ ...args, db: tx })
-        : {
-            provider,
-            accounts: [],
-            mirror: [],
-            accountSecrets: [],
-            active: undefined,
-          };
-      if (!currentSnapshot) {
-        throw new Error("Expected the connected provider snapshot");
-      }
-      if (
-        identityProof &&
-        JSON.stringify(identityProof.snapshot) !==
-          JSON.stringify(currentSnapshot)
-      ) {
-        return notFound("Resource not found");
-      }
       const accounts = await applyClaudeIdentityProof(
         tx,
-        currentSnapshot.accounts,
+        await tx
+          .select()
+          .from(modelProviderAccounts)
+          .where(eq(modelProviderAccounts.modelProviderId, provider.id))
+          .orderBy(modelProviderAccounts.id),
         identityProof,
       );
       signal.throwIfAborted();
@@ -914,7 +617,7 @@ export async function upsertPersonalModelProviderAccount(
         expiryBindings.add(binding);
       }
       invalidateExpiry();
-      const result = await applyAccountMutation(tx, {
+      const mutation = await applyAccountMutation(tx, {
         provider,
         accounts,
         type: args.type,
@@ -923,18 +626,18 @@ export async function upsertPersonalModelProviderAccount(
         metadata,
         encryptedSecrets,
       });
-      if ("status" in result) {
-        return result;
+      if ("status" in mutation) {
+        return mutation;
       }
       return {
         provider: accountResponse({
-          account: result.account,
+          account: mutation.account,
           provider: await persistSubscriptionSelectedModel(tx, provider, args),
         }),
-        created: result.created,
+        created: mutation.created,
       };
-    })
-    .finally(invalidateExpiry);
+    });
+  }).finally(invalidateExpiry);
   if (!("status" in result)) {
     await publishPersonalModelProvidersChangedSafely(args.userId);
   }
@@ -959,32 +662,53 @@ async function persistSubscriptionSelectedModel(
   return { ...provider, selectedModel };
 }
 
+function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {
+  return Boolean(
+    identity.externalAccountId ||
+    (identity.accountEmail && identity.workspaceName),
+  );
+}
+
+/** Profile identity for older Claude accounts is fetched outside any
+ * transaction and recorded only while the row still lacks an identity. */
 async function prepareClaudeAccountIdentities(
-  args: SubscriptionCredentialOwner,
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly featureSwitchContext: FeatureSwitchContext;
+  },
   signal: AbortSignal,
-) {
-  const snapshot = await args.db.transaction(async (tx) => {
-    return await lockSubscriptionCredentialSnapshot({ ...args, db: tx });
-  });
-  if (!snapshot) {
-    return null;
-  }
+): Promise<ReadonlyMap<string, PersonalProviderAccountMetadata> | null> {
+  const rows = await args.db
+    .select({
+      account: modelProviderAccounts,
+      encryptedValue: modelProviderAccountSecrets.encryptedValue,
+    })
+    .from(modelProviderAccounts)
+    .innerJoin(
+      modelProviderAccountSecrets,
+      eq(
+        modelProviderAccountSecrets.modelProviderAccountId,
+        modelProviderAccounts.id,
+      ),
+    )
+    .where(
+      and(
+        eq(modelProviderAccounts.orgId, args.orgId),
+        eq(modelProviderAccounts.userId, args.userId),
+        eq(modelProviderAccounts.type, CLAUDE_CODE_TYPE),
+        isNull(modelProviderAccounts.disconnectedAt),
+        eq(modelProviderAccountSecrets.name, "CLAUDE_CODE_OAUTH_TOKEN"),
+      ),
+    );
   const identities = new Map<string, PersonalProviderAccountMetadata>();
-  for (const account of snapshot.accounts) {
-    if (hasClaudeIdentity(account) || account.disconnectedAt !== null) {
-      continue;
-    }
-    const secret = snapshot.accountSecrets.find((row) => {
-      return (
-        row.modelProviderAccountId === account.id &&
-        row.name === "CLAUDE_CODE_OAUTH_TOKEN"
-      );
-    });
-    if (!secret) {
+  for (const row of rows) {
+    if (hasClaudeIdentity(row.account)) {
       continue;
     }
     const accessToken = await decryptStoredSecretValue(
-      secret.encryptedValue,
+      row.encryptedValue,
       args.featureSwitchContext,
     );
     signal.throwIfAborted();
@@ -992,22 +716,23 @@ async function prepareClaudeAccountIdentities(
       fetchClaudeCodeProfileMetadata({ accessToken }, signal),
     );
     signal.throwIfAborted();
-    if (
-      result.ok &&
-      (result.value.externalAccountId ||
-        (result.value.accountEmail && result.value.workspaceName))
-    ) {
-      identities.set(account.id, result.value);
+    if (result.ok && hasClaudeIdentity(result.value)) {
+      identities.set(row.account.id, result.value);
     }
   }
-  return identities.size === 0 ? null : { snapshot, identities };
+  return identities.size === 0 ? null : identities;
 }
 
-/** Identify legacy Claude accounts before the all-account disconnect transaction.
- * This only records a proven identity under CAS; removal still owns its complete
- * connected set, and a concurrent winning write cannot receive stale proof. */
+/** Identify legacy Claude accounts before the all-account disconnect so a
+ * retained row can still be matched by a later reconnect. */
 export async function identifyPersonalSubscriptionAccountsBeforeDisconnect(
-  args: SubscriptionCredentialOwner,
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly type: PersonalSubscriptionProviderType;
+    readonly featureSwitchContext: FeatureSwitchContext;
+  },
   signal: AbortSignal,
 ): Promise<void> {
   if (args.type !== CLAUDE_CODE_TYPE) {
@@ -1018,40 +743,46 @@ export async function identifyPersonalSubscriptionAccountsBeforeDisconnect(
   if (!proof) {
     return;
   }
-  await args.db.transaction(async (tx) => {
-    const current = await lockSubscriptionCredentialSnapshot({
-      ...args,
-      db: tx,
-    });
-    signal.throwIfAborted();
-    if (current && JSON.stringify(current) === JSON.stringify(proof.snapshot)) {
-      await applyClaudeIdentityProof(tx, current.accounts, proof);
-    }
+  const accounts = await args.db
+    .select()
+    .from(modelProviderAccounts)
+    .where(inArray(modelProviderAccounts.id, [...proof.keys()]));
+  await withAccountConflict(() => {
+    return applyClaudeIdentityProof(args.db, accounts, proof);
   });
 }
 
 async function applyClaudeIdentityProof(
   db: Db,
   accounts: readonly AccountRow[],
-  proof: Awaited<ReturnType<typeof prepareClaudeAccountIdentities>>,
+  proof: ReadonlyMap<string, PersonalProviderAccountMetadata> | null,
 ): Promise<readonly AccountRow[]> {
   const hydrated: AccountRow[] = [];
   for (const account of accounts) {
-    const metadata = proof?.identities.get(account.id);
-    if (!metadata) {
+    const metadata = proof?.get(account.id);
+    if (!metadata || hasClaudeIdentity(account)) {
       hydrated.push(account);
       continue;
     }
-    const identity = {
-      externalAccountId: metadata.externalAccountId ?? null,
-      accountEmail: metadata.accountEmail ?? null,
-      workspaceName: metadata.workspaceName ?? null,
-    };
-    await db
+    const [updated] = await db
       .update(modelProviderAccounts)
-      .set(identity)
-      .where(eq(modelProviderAccounts.id, account.id));
-    hydrated.push({ ...account, ...identity });
+      .set({
+        externalAccountId: metadata.externalAccountId ?? null,
+        accountEmail: metadata.accountEmail ?? null,
+        workspaceName: metadata.workspaceName ?? null,
+      })
+      .where(
+        and(
+          eq(modelProviderAccounts.id, account.id),
+          isNull(modelProviderAccounts.externalAccountId),
+          or(
+            isNull(modelProviderAccounts.accountEmail),
+            isNull(modelProviderAccounts.workspaceName),
+          ),
+        ),
+      )
+      .returning();
+    hydrated.push(updated ?? account);
   }
   return hydrated;
 }
@@ -1086,76 +817,50 @@ async function accountWithProvider(
   return row ?? null;
 }
 
-export async function activatePersonalModelProviderAccount(
-  args: {
-    readonly db: Db;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly id: string;
-  },
-  signal?: AbortSignal,
-): Promise<ModelProviderResponse | ReturnType<typeof notFound>> {
-  const initial = await accountWithProvider(args.db, args);
-  if (!initial || !isPersonalSubscriptionProviderType(initial.account.type)) {
-    return notFound("Resource not found");
-  }
-  if (
-    initial.account.isActive &&
-    !(await coordinatePersonalSubscriptionCredentials(
-      {
-        ...args,
-        type: initial.account.type,
-        sourceId: args.id,
-      },
-      signal,
-    ))
-  ) {
-    return notFound("Resource not found");
-  }
-  const result = await args.db.transaction(async (tx) => {
-    await lockModelProviderState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      type: initial.account.type,
+export async function activatePersonalModelProviderAccount(args: {
+  readonly db: Db;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly id: string;
+}): Promise<
+  | ModelProviderResponse
+  | ReturnType<typeof notFound>
+  | ReturnType<typeof conflict>
+> {
+  const result = await withAccountConflict(() => {
+    return args.db.transaction(async (tx) => {
+      const current = await accountWithProvider(tx, args);
+      if (
+        !current ||
+        !isPersonalSubscriptionProviderType(current.account.type)
+      ) {
+        return notFound("Resource not found");
+      }
+      await tx
+        .update(modelProviderAccounts)
+        .set({ isActive: false, updatedAt: nowDate() })
+        .where(
+          and(
+            eq(modelProviderAccounts.modelProviderId, current.provider.id),
+            eq(modelProviderAccounts.isActive, true),
+            ne(modelProviderAccounts.id, current.account.id),
+          ),
+        );
+      // The one-active partial unique index rejects a concurrent activation.
+      const [account] = await tx
+        .update(modelProviderAccounts)
+        .set({ isActive: true, updatedAt: nowDate() })
+        .where(
+          and(
+            eq(modelProviderAccounts.id, current.account.id),
+            isNull(modelProviderAccounts.disconnectedAt),
+          ),
+        )
+        .returning();
+      return account
+        ? accountResponse({ account, provider: current.provider })
+        : notFound("Resource not found");
     });
-    const snapshot = await lockSubscriptionCredentialSnapshot({
-      ...args,
-      db: tx,
-      type: initial.account.type as PersonalSubscriptionProviderType,
-    });
-    if (
-      !snapshot ||
-      (snapshot.active?.id === args.id &&
-        !(await reconcileLockedSubscriptionSnapshot(
-          {
-            ...args,
-            db: tx,
-            type: initial.account.type as PersonalSubscriptionProviderType,
-          },
-          snapshot,
-        )))
-    ) {
-      return notFound("Resource not found");
-    }
-    const current = await accountWithProvider(tx, args);
-    if (!current) {
-      return notFound("Resource not found");
-    }
-    await tx
-      .update(modelProviderAccounts)
-      .set({ isActive: false, updatedAt: nowDate() })
-      .where(eq(modelProviderAccounts.modelProviderId, current.provider.id));
-    const [account] = await tx
-      .update(modelProviderAccounts)
-      .set({ isActive: true, updatedAt: nowDate() })
-      .where(eq(modelProviderAccounts.id, current.account.id))
-      .returning();
-    if (!account) {
-      throw new Error("Expected activated model provider account to return");
-    }
-    await mirrorAccountToLegacy(tx, { account, provider: current.provider });
-    return accountResponse({ account, provider: current.provider });
   });
   if (!("status" in result)) {
     await publishPersonalModelProvidersChangedSafely(args.userId);
@@ -1163,46 +868,25 @@ export async function activatePersonalModelProviderAccount(
   return result;
 }
 
-async function deleteLastAccount(
+/** Remove the logical provider once no account row, including a retained one,
+ * still references it. */
+async function deleteProviderWithoutAccounts(
   db: Db,
-  args: { readonly account: AccountRow; readonly provider: ProviderRow },
+  providerId: string,
 ): Promise<void> {
-  const legacyNames = args.account.authMethod
-    ? getSecretNamesForAuthMethod(
-        args.account.type as ModelProviderType,
-        args.account.authMethod,
-      )
-    : [getSecretNameForType(args.account.type as ModelProviderType)].filter(
-        (name): name is string => {
-          return name !== undefined;
-        },
-      );
   await db
-    .update(modelProviders)
-    .set({ secretId: null, authMethod: null, updatedAt: nowDate() })
-    .where(eq(modelProviders.id, args.provider.id));
-  const [retained] = await db
-    .select({ id: modelProviderAccounts.id })
-    .from(modelProviderAccounts)
-    .where(eq(modelProviderAccounts.modelProviderId, args.provider.id))
-    .limit(1);
-  if (!retained) {
-    await db
-      .delete(modelProviders)
-      .where(eq(modelProviders.id, args.provider.id));
-  }
-  if (legacyNames && legacyNames.length > 0) {
-    await db
-      .delete(secrets)
-      .where(
-        and(
-          eq(secrets.orgId, args.account.orgId),
-          eq(secrets.userId, args.account.userId),
-          eq(secrets.type, "model-provider"),
-          inArray(secrets.name, [...legacyNames]),
+    .delete(modelProviders)
+    .where(
+      and(
+        eq(modelProviders.id, providerId),
+        notExists(
+          db
+            .select({ id: modelProviderAccounts.id })
+            .from(modelProviderAccounts)
+            .where(eq(modelProviderAccounts.modelProviderId, providerId)),
         ),
-      );
-  }
+      ),
+    );
 }
 
 export async function deletePersonalModelProviderAccount(
@@ -1215,100 +899,67 @@ export async function deletePersonalModelProviderAccount(
     readonly disconnectAll?: boolean;
   },
   signal: AbortSignal,
-): Promise<ReturnType<typeof notFound> | undefined> {
+): Promise<
+  ReturnType<typeof notFound> | ReturnType<typeof conflict> | undefined
+> {
   const initial = await accountWithProvider(args.db, args);
   if (!initial || !isPersonalSubscriptionProviderType(initial.account.type)) {
     return notFound("Resource not found");
   }
-  if (
-    !args.disconnectAll &&
-    initial.account.isActive &&
-    !(await coordinatePersonalSubscriptionCredentials(
-      { ...args, type: initial.account.type, sourceId: args.id },
-      signal,
-    ))
-  ) {
-    return notFound("Resource not found");
-  }
   const identityProof =
     !args.disconnectAll && initial.account.type === CLAUDE_CODE_TYPE
-      ? await prepareClaudeAccountIdentities(
-          { ...args, type: initial.account.type },
-          signal,
-        )
+      ? await prepareClaudeAccountIdentities(args, signal)
       : null;
-  const result = await args.db.transaction(async (tx) => {
-    await lockModelProviderState(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      type: initial.account.type,
-    });
-    if (
-      !args.disconnectAll &&
-      !(await reconcileLockedPersonalSubscriptionCredentials({
-        ...args,
-        db: tx,
-        type: initial.account.type as PersonalSubscriptionProviderType,
-        sourceId: args.id,
-      }))
-    ) {
-      return notFound("Resource not found");
-    }
-    if (identityProof) {
-      const snapshot = await lockSubscriptionCredentialSnapshot({
-        ...args,
-        db: tx,
-        type: CLAUDE_CODE_TYPE,
-      });
+  signal.throwIfAborted();
+  const result = await withAccountConflict(() => {
+    return args.db.transaction(async (tx) => {
+      const current = await accountWithProvider(tx, args);
+      if (!current) {
+        return notFound("Resource not found");
+      }
+      const [account] = await applyClaudeIdentityProof(
+        tx,
+        [current.account],
+        identityProof,
+      );
       if (
-        !snapshot ||
-        JSON.stringify(snapshot) !== JSON.stringify(identityProof.snapshot)
+        !account ||
+        !(await retirePersonalModelProviderAccount(tx, account))
       ) {
         return notFound("Resource not found");
       }
-      await applyClaudeIdentityProof(tx, snapshot.accounts, identityProof);
-    }
-    const current = await accountWithProvider(tx, args);
-    if (!current) {
-      return notFound("Resource not found");
-    }
-    await retirePersonalModelProviderAccount(tx, current.account);
-    const [replacement] = await tx
-      .select()
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.modelProviderId, current.provider.id),
-          isNull(modelProviderAccounts.disconnectedAt),
-        ),
-      )
-      .orderBy(
-        asc(modelProviderAccounts.needsReconnect),
-        asc(modelProviderAccounts.createdAt),
-        asc(modelProviderAccounts.id),
-      )
-      .limit(1);
-    if (!replacement) {
-      await deleteLastAccount(tx, current);
-      return undefined;
-    }
-    if (current.account.isActive) {
-      const [active] = await tx
-        .update(modelProviderAccounts)
-        .set({ isActive: true, updatedAt: nowDate() })
-        .where(eq(modelProviderAccounts.id, replacement.id))
-        .returning();
-      if (!active) {
-        throw new Error(
-          "Expected replacement model provider account to return",
-        );
+      const [replacement] = await tx
+        .select()
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.modelProviderId, current.provider.id),
+            isNull(modelProviderAccounts.disconnectedAt),
+          ),
+        )
+        .orderBy(
+          asc(modelProviderAccounts.needsReconnect),
+          asc(modelProviderAccounts.createdAt),
+          asc(modelProviderAccounts.id),
+        )
+        .limit(1);
+      if (!replacement) {
+        await deleteProviderWithoutAccounts(tx, current.provider.id);
+        return undefined;
       }
-      await mirrorAccountToLegacy(tx, {
-        account: active,
-        provider: current.provider,
-      });
-    }
-    return undefined;
+      if (current.account.isActive) {
+        await tx
+          .update(modelProviderAccounts)
+          .set({ isActive: true, updatedAt: nowDate() })
+          .where(
+            and(
+              eq(modelProviderAccounts.id, replacement.id),
+              isNull(modelProviderAccounts.disconnectedAt),
+            ),
+          );
+      }
+      return undefined;
+    });
   });
   // Disconnect-all is nested in the provider transaction; its owner publishes.
   if (result === undefined && !args.disconnectAll) {
@@ -1346,17 +997,13 @@ export async function activePersonalModelProviderAccount(args: {
  * captured account row. Unknown/stale explicit IDs fail closed instead of
  * falling back to whichever sibling account is active.
  */
-export async function captureActivePersonalModelProviderAccount(
-  args: {
-    readonly db: Db;
-    readonly type: PersonalSubscriptionProviderType;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly modelProviderId: string | null;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal?: AbortSignal,
-): Promise<AccountRow | null> {
+export async function captureActivePersonalModelProviderAccount(args: {
+  readonly db: Db;
+  readonly type: PersonalSubscriptionProviderType;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly modelProviderId: string | null;
+}): Promise<AccountRow | null> {
   if (args.modelProviderId !== null) {
     const exactAccount = await personalModelProviderAccountById({
       db: args.db,
@@ -1365,60 +1012,26 @@ export async function captureActivePersonalModelProviderAccount(
       userId: args.userId,
     });
     if (exactAccount) {
-      if (exactAccount.type !== args.type) {
-        return null;
-      }
-      const accounts = await coordinatePersonalSubscriptionAccounts(
-        { ...args, sourceId: exactAccount.id },
-        signal,
-      );
-      return (
-        accounts?.find((account) => {
-          return (
-            account.id === exactAccount.id &&
-            account.orgId === args.orgId &&
-            account.userId === args.userId &&
-            account.type === args.type &&
-            account.disconnectedAt === null
-          );
-        }) ?? null
-      );
+      return exactAccount.type === args.type ? exactAccount : null;
     }
   }
-
-  const [provider] = await args.db
+  const [account] = await args.db
     .select()
-    .from(modelProviders)
+    .from(modelProviderAccounts)
     .where(
       and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, args.userId),
-        eq(modelProviders.type, args.type),
+        eq(modelProviderAccounts.orgId, args.orgId),
+        eq(modelProviderAccounts.userId, args.userId),
+        eq(modelProviderAccounts.type, args.type),
+        eq(modelProviderAccounts.isActive, true),
+        isNull(modelProviderAccounts.disconnectedAt),
         ...(args.modelProviderId === null
           ? []
-          : [eq(modelProviders.id, args.modelProviderId)]),
+          : [eq(modelProviderAccounts.modelProviderId, args.modelProviderId)]),
       ),
     )
     .limit(1);
-  if (!provider) {
-    return null;
-  }
-  const accounts = await coordinatePersonalSubscriptionAccounts(
-    { ...args, initializeProviderId: provider.id },
-    signal,
-  );
-  return (
-    accounts?.find((account) => {
-      return (
-        account.modelProviderId === provider.id &&
-        account.orgId === args.orgId &&
-        account.userId === args.userId &&
-        account.type === args.type &&
-        account.isActive &&
-        account.disconnectedAt === null
-      );
-    }) ?? null
-  );
+  return account ?? null;
 }
 
 export async function personalModelProviderAccountById(args: {
@@ -1506,107 +1119,55 @@ export function visiblePersonalModelProviderCondition(db: ReadonlyDb) {
   );
 }
 
+/** Retain a disconnected account while a live run still references it;
+ * otherwise delete it. Returns false when a concurrent writer already
+ * disconnected or removed the account. */
 async function retirePersonalModelProviderAccount(
   db: Db,
   account: AccountRow,
-): Promise<void> {
-  const [reference] = await db
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
+): Promise<boolean> {
+  const liveReference = exists(
+    db
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.modelProviderId, account.id),
+          eq(agentRuns.orgId, account.orgId),
+          eq(agentRuns.userId, account.userId),
+          inArray(agentRuns.status, ["queued", "pending", "running"]),
+        ),
+      ),
+  );
+  const [retained] = await db
+    .update(modelProviderAccounts)
+    .set({ isActive: false, disconnectedAt: nowDate(), updatedAt: nowDate() })
     .where(
       and(
-        eq(agentRuns.modelProviderId, account.id),
-        eq(agentRuns.orgId, account.orgId),
-        eq(agentRuns.userId, account.userId),
-        inArray(agentRuns.status, ["queued", "pending", "running"]),
+        eq(modelProviderAccounts.id, account.id),
+        isNull(modelProviderAccounts.disconnectedAt),
+        liveReference,
       ),
     )
-    .limit(1);
-  if (reference) {
-    await db
-      .update(modelProviderAccounts)
-      .set({ isActive: false, disconnectedAt: nowDate(), updatedAt: nowDate() })
-      .where(eq(modelProviderAccounts.id, account.id));
-  } else {
-    await db
-      .delete(modelProviderAccounts)
-      .where(eq(modelProviderAccounts.id, account.id));
+    .returning({ id: modelProviderAccounts.id });
+  if (retained) {
+    return true;
   }
+  const [deleted] = await db
+    .delete(modelProviderAccounts)
+    .where(
+      and(
+        eq(modelProviderAccounts.id, account.id),
+        isNull(modelProviderAccounts.disconnectedAt),
+      ),
+    )
+    .returning({ id: modelProviderAccounts.id });
+  return deleted !== undefined;
 }
 
-async function applyStableAccountMutation(
-  db: Db,
-  args: Parameters<typeof applyAccountMutation>[1],
-  target: AccountRow | null,
-): Promise<Awaited<ReturnType<typeof applyAccountMutation>>> {
-  // Reconnecting to another upstream identity selects its existing row (even a
-  // retained row), never overwrites the identity of the requested account.
-  const selected =
-    args.accounts.find((account) => {
-      return identityMatches(account, args.type, args.metadata);
-    }) ?? null;
-  const connected = args.accounts.filter((account) => {
-    return account.disconnectedAt === null;
-  });
-  const replacing =
-    args.mode.kind !== "add" && target && target.id !== selected?.id;
-  if (
-    (!selected || selected.disconnectedAt !== null) &&
-    connected.length - (replacing ? 1 : 0) >= MAX_PERSONAL_PROVIDER_ACCOUNTS
-  ) {
-    return badRequestMessage(
-      `A maximum of ${MAX_PERSONAL_PROVIDER_ACCOUNTS} ${args.type} accounts can be connected`,
-    );
-  }
-  const active =
-    connected.length === 0 ||
-    target?.isActive === true ||
-    selected?.isActive === true;
-  if (replacing) {
-    await retirePersonalModelProviderAccount(db, target);
-  }
-  if (active) {
-    await db
-      .update(modelProviderAccounts)
-      .set({ isActive: false })
-      .where(eq(modelProviderAccounts.modelProviderId, args.provider.id));
-  }
-  const values = {
-    ...args.metadata,
-    authMethod: args.authMethod,
-    isActive: active,
-    disconnectedAt: null,
-  };
-  const [account] = selected
-    ? await db
-        .update(modelProviderAccounts)
-        .set(values)
-        .where(eq(modelProviderAccounts.id, selected.id))
-        .returning()
-    : await db
-        .insert(modelProviderAccounts)
-        .values({
-          ...values,
-          modelProviderId: args.provider.id,
-          orgId: args.provider.orgId,
-          userId: args.provider.userId,
-          type: args.type,
-        })
-        .returning();
-  if (!account) {
-    throw new Error("Expected subscription account mutation to return");
-  }
-  await replaceAccountSecrets(db, account.id, args.encryptedSecrets);
-  if (active) {
-    await mirrorAccountToLegacy(db, { account, provider: args.provider });
-  }
-  return { account, created: !selected };
-}
-
-/** Called inside the terminal transaction after the run update. The auth-state
- * lock serializes cleanup with admission, settings mutations and token refresh.
- * A second terminal transition observes the first commit and removes the final
- * reference; no wall-clock retention delay is used. */
+/** Called inside the terminal transaction after the run update. A retained
+ * account is deleted once no live run references it; a concurrent same-identity
+ * reconnect that revived the row makes the conditional delete a no-op. */
 export async function cleanupDisconnectedPersonalModelProviderAccounts(
   db: Db,
   runs: readonly {
@@ -1621,47 +1182,38 @@ export async function cleanupDisconnectedPersonalModelProviderAccounts(
         return run.modelProviderId ? [run.modelProviderId] : [];
       }),
     ),
-  ];
+  ].sort();
   if (ids.length === 0) {
     return;
   }
-  const accounts = await db
-    .select()
-    .from(modelProviderAccounts)
-    .where(inArray(modelProviderAccounts.id, ids))
-    .orderBy(
-      modelProviderAccounts.orgId,
-      modelProviderAccounts.userId,
-      modelProviderAccounts.type,
-      modelProviderAccounts.id,
-    );
-  for (const account of accounts) {
-    await lockModelProviderState(db, account);
-    // A fresh same-identity connection may have revived the row while waiting.
-    const [current] = await db
-      .select()
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.id, account.id),
-          isNotNull(modelProviderAccounts.disconnectedAt),
+  const deleted = await db
+    .delete(modelProviderAccounts)
+    .where(
+      and(
+        inArray(modelProviderAccounts.id, ids),
+        isNotNull(modelProviderAccounts.disconnectedAt),
+        notExists(
+          db
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.modelProviderId, modelProviderAccounts.id),
+                eq(agentRuns.orgId, modelProviderAccounts.orgId),
+                eq(agentRuns.userId, modelProviderAccounts.userId),
+                inArray(agentRuns.status, ["queued", "pending", "running"]),
+              ),
+            ),
         ),
-      )
-      .limit(1);
-    if (!current) {
-      continue;
-    }
-    await retirePersonalModelProviderAccount(db, current);
-    const [remaining] = await db
-      .select({ id: modelProviderAccounts.id })
-      .from(modelProviderAccounts)
-      .where(eq(modelProviderAccounts.modelProviderId, current.modelProviderId))
-      .limit(1);
-    if (!remaining) {
-      await db
-        .delete(modelProviders)
-        .where(eq(modelProviders.id, current.modelProviderId));
-    }
+      ),
+    )
+    .returning({ modelProviderId: modelProviderAccounts.modelProviderId });
+  for (const providerId of new Set(
+    deleted.map((row) => {
+      return row.modelProviderId;
+    }),
+  )) {
+    await deleteProviderWithoutAccounts(db, providerId);
   }
 }
 
@@ -1675,126 +1227,60 @@ interface SubscriptionCredentialOwner {
   readonly runId?: string;
 }
 
-/** A1 lifecycle rows -> provider advisory -> provider -> accounts -> secrets.
- * NO KEY UPDATE excludes the old Claude autocommit UPDATE without obstructing
- * its later provider INSERT's secret FK KEY SHARE. Never call identity HTTP under these
- * locks. All supported account writers mirror the active bundle atomically;
- * inactive writers do not mirror. See the writer audit in the identity guide. */
-async function lockSubscriptionCredentialSnapshot(
-  args: SubscriptionCredentialOwner,
-  requiredConnectedSourceId?: string,
-) {
-  const { db } = args;
-  await lockModelProviderState(db, args);
-  // Establish this statement's snapshot only after the advisory wait. Account
-  // writers take that lock; the correlated locking subquery consumes the locked
-  // provider before locking accounts in ID order. Keep the secret reads below as
-  // fresh statements for historical Claude's secret-first autocommit writer.
-  const lockedProvider = db
-    .select()
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, args.userId),
-        eq(modelProviders.type, args.type),
-      ),
-    )
-    .for("no key update")
-    .as("subscription_provider");
-  const lockedAccounts = db
-    .select()
-    .from(modelProviderAccounts)
-    .where(
-      eq(modelProviderAccounts.modelProviderId, subscriptionProviderColumns.id),
-    )
-    .orderBy(modelProviderAccounts.id)
-    .for("no key update")
-    .as("subscription_accounts");
-  const inventory = await db
+/** One non-locking statement for the exact account and its whole ciphertext
+ * bundle. Callers decrypt after it returns, never inside a transaction. */
+async function readAccountCiphertexts(
+  args: Omit<SubscriptionCredentialOwner, "featureSwitchContext"> & {
+    readonly sourceId: string;
+  },
+): Promise<{
+  readonly account: AccountRow;
+  readonly secrets: readonly {
+    readonly name: string;
+    readonly encryptedValue: string;
+  }[];
+} | null> {
+  const rows = await args.db
     .select({
-      provider: subscriptionProviderColumns,
-      account: subscriptionAccountColumns,
+      account: modelProviderAccounts,
+      secret: {
+        name: modelProviderAccountSecrets.name,
+        encryptedValue: modelProviderAccountSecrets.encryptedValue,
+      },
     })
-    .from(lockedProvider)
-    .leftJoinLateral(lockedAccounts, sql`true`)
-    .orderBy(subscriptionAccountColumns.id);
-  const provider = inventory[0]?.provider;
-  if (!provider) {
-    return null;
-  }
-  const accounts = inventory.flatMap((row) => {
-    return row.account ? [row.account] : [];
-  });
-  if (
-    requiredConnectedSourceId &&
-    !accounts.some((account) => {
-      return (
-        account.id === requiredConnectedSourceId &&
-        account.orgId === args.orgId &&
-        account.userId === args.userId &&
-        account.type === args.type &&
-        account.disconnectedAt === null
-      );
-    })
-  ) {
-    return null;
-  }
-  const names =
-    args.type === CLAUDE_CODE_TYPE
-      ? ["CLAUDE_CODE_OAUTH_TOKEN"]
-      : [
-          "CHATGPT_ACCESS_TOKEN",
-          "CHATGPT_REFRESH_TOKEN",
-          "CHATGPT_ACCOUNT_ID",
-          "CHATGPT_ID_TOKEN",
-        ];
-  const mirror = await db
-    .select()
-    .from(secrets)
-    .where(
-      and(
-        eq(secrets.orgId, args.orgId),
-        eq(secrets.userId, args.userId),
-        eq(secrets.type, "model-provider"),
-        inArray(secrets.name, names),
+    .from(modelProviderAccounts)
+    .leftJoin(
+      modelProviderAccountSecrets,
+      eq(
+        modelProviderAccountSecrets.modelProviderAccountId,
+        modelProviderAccounts.id,
       ),
     )
-    .orderBy(secrets.id)
-    .for("no key update");
-  const accountSecrets =
-    accounts.length === 0
-      ? []
-      : await db
-          .select()
-          .from(modelProviderAccountSecrets)
-          .where(
-            inArray(
-              modelProviderAccountSecrets.modelProviderAccountId,
-              accounts.map((account) => {
-                return account.id;
-              }),
-            ),
-          )
-          .orderBy(modelProviderAccountSecrets.id)
-          .for("no key update");
-  const active = accounts.find((account) => {
-    return account.isActive && account.disconnectedAt === null;
-  });
-  return { provider, accounts, mirror, accountSecrets, active };
+    .where(
+      and(
+        eq(modelProviderAccounts.id, args.sourceId),
+        personalSubscriptionAccountAccessCondition(args.db, args.runId),
+        eq(modelProviderAccounts.orgId, args.orgId),
+        eq(modelProviderAccounts.userId, args.userId),
+        eq(modelProviderAccounts.type, args.type),
+      ),
+    );
+  const account = rows[0]?.account;
+  return account
+    ? {
+        account,
+        secrets: rows.flatMap((row) => {
+          return row.secret ? [row.secret] : [];
+        }),
+      }
+    : null;
 }
 
-type SubscriptionCredentialSnapshot = NonNullable<
-  Awaited<ReturnType<typeof lockSubscriptionCredentialSnapshot>>
->;
-
-/** Strict Pi Codex first-turn fast path. Copy only a coherent, connected active
- * account's ciphertext under the user lock. Never decrypt or write in this
- * transaction; callers check token freshness before decrypting outside it.
- * Historical writes and KMS rotation can leave equal plaintext under different
- * ciphertexts, so those snapshots must use the coordinating reader instead. */
+/** Pi Codex first-turn fast path: copy only the access token and account ID
+ * ciphertexts of a connected, healthy account. Callers check token freshness
+ * before decrypting. */
 export async function capturePiCodexCredentialCiphertexts(
-  args: Omit<SubscriptionCredentialOwner, "type"> & {
+  args: Omit<SubscriptionCredentialOwner, "type" | "featureSwitchContext"> & {
     readonly type: typeof CODEX_TYPE;
     readonly sourceId: string;
   },
@@ -1803,56 +1289,28 @@ export async function capturePiCodexCredentialCiphertexts(
   readonly accessTokenCiphertext: string;
   readonly accountIdCiphertext: string;
 } | null> {
-  return await args.db.transaction(async (tx) => {
-    const snapshot = await lockSubscriptionCredentialSnapshot(
-      { ...args, db: tx },
-      args.sourceId,
-    );
-    const active = snapshot?.active;
-    const provider = snapshot?.provider;
-    if (
-      !active ||
-      !provider ||
-      active.id !== args.sourceId ||
-      active.needsReconnect ||
-      provider.needsReconnect ||
-      active.authMethod !== provider.authMethod ||
-      active.tokenExpiresAt?.getTime() !== provider.tokenExpiresAt?.getTime() ||
-      active.lastRefreshErrorCode !== provider.lastRefreshErrorCode
-    ) {
-      return null;
-    }
-    const canonical = snapshot.accountSecrets.filter((secret) => {
-      return secret.modelProviderAccountId === active.id;
-    });
-    if (
-      snapshot.mirror.length === 0 ||
-      snapshot.mirror.length !== canonical.length
-    ) {
-      return null;
-    }
-    const byName = new Map(
-      canonical.map((secret) => {
-        return [secret.name, secret.encryptedValue] as const;
-      }),
-    );
-    if (
-      snapshot.mirror.some((secret) => {
-        return byName.get(secret.name) !== secret.encryptedValue;
-      })
-    ) {
-      return null;
-    }
-    const accessTokenCiphertext = byName.get("CHATGPT_ACCESS_TOKEN");
-    const accountIdCiphertext = byName.get(CODEX_ACCOUNT_ID_SECRET);
-    return accessTokenCiphertext && accountIdCiphertext
-      ? {
-          tokenExpiresAt: active.tokenExpiresAt,
-          accessTokenCiphertext,
-          accountIdCiphertext,
-        }
-      : null;
-  });
+  const current = await readAccountCiphertexts(args);
+  if (
+    !current ||
+    current.account.disconnectedAt !== null ||
+    current.account.needsReconnect
+  ) {
+    return null;
+  }
+  const byName = new Map(
+    current.secrets.map((secret) => {
+      return [secret.name, secret.encryptedValue] as const;
+    }),
+  );
+  const accessTokenCiphertext = byName.get("CHATGPT_ACCESS_TOKEN");
+  const accountIdCiphertext = byName.get(CODEX_ACCOUNT_ID_SECRET);
+  return accessTokenCiphertext && accountIdCiphertext
+    ? {
+        tokenExpiresAt: current.account.tokenExpiresAt,
+        accessTokenCiphertext,
+        accountIdCiphertext,
+      }
+    : null;
 }
 
 async function credentialValues(
@@ -1860,9 +1318,8 @@ async function credentialValues(
   featureSwitchContext: FeatureSwitchContext,
 ): Promise<ReadonlyMap<string, string>> {
   const values = new Map<string, string>();
-  // Keep the locked snapshot and its connection until every started decrypt
-  // settles, including on failure/abort. Small batches bound KMS fan-out per
-  // bundle without a cross-request queue or plaintext cache.
+  // Wait for every started decrypt, including on failure. Small batches bound
+  // KMS fan-out per bundle without a cross-request queue or plaintext cache.
   for (let offset = 0; offset < rows.length; offset += 2) {
     const batch = await Promise.allSettled(
       rows.slice(offset, offset + 2).map(async (row) => {
@@ -1885,746 +1342,150 @@ async function credentialValues(
   return values;
 }
 
-async function subscriptionBundlesMatch(
-  snapshot: SubscriptionCredentialSnapshot,
-  featureSwitchContext: FeatureSwitchContext,
-): Promise<boolean> {
-  const accountSecrets = snapshot.accountSecrets.filter((secret) => {
-    return secret.modelProviderAccountId === snapshot.active?.id;
-  });
-  if (
-    snapshot.mirror.length !== accountSecrets.length ||
-    snapshot.mirror.length === 0
-  ) {
-    return false;
-  }
-  if (
-    snapshot.provider.type === CLAUDE_CODE_TYPE &&
-    snapshot.mirror[0]?.id !== snapshot.provider.secretId
-  ) {
-    return false;
-  }
-  if (snapshot.provider.authMethod !== snapshot.active?.authMethod) {
-    return false;
-  }
-  const canonical = new Map(
-    accountSecrets.map((secret) => {
-      return [secret.name, secret.encryptedValue];
-    }),
-  );
-  for (const secret of snapshot.mirror) {
-    const encrypted = canonical.get(secret.name);
-    if (encrypted === undefined) {
-      return false;
-    }
-    // The bounded KMS rotation also rewrites these tables independently. Equal
-    // plaintext is the same bundle, not evidence of a legacy credential write.
-    if (encrypted === secret.encryptedValue) {
-      continue;
-    }
-    // Join the pair before returning to its snapshot/transaction owner. Inspect
-    // errors in input order and never start a later field after failure.
-    const [canonicalResult, mirrorResult] = await Promise.allSettled([
-      decryptStoredSecretValue(encrypted, featureSwitchContext),
-      decryptStoredSecretValue(secret.encryptedValue, featureSwitchContext),
-    ]);
-    if (canonicalResult.status === "rejected") {
-      throw canonicalResult.reason;
-    }
-    if (mirrorResult.status === "rejected") {
-      throw mirrorResult.reason;
-    }
-    if (canonicalResult.value !== mirrorResult.value) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function snapshotNeedsCoordination(
-  snapshot: SubscriptionCredentialSnapshot,
-  sourceId?: string,
-) {
-  return (
-    (snapshot.active !== undefined &&
-      (sourceId === undefined || snapshot.active.id === sourceId)) ||
-    (sourceId === undefined &&
-      snapshot.accounts.length > 0 &&
-      snapshot.accounts.every((account) => {
-        return account.disconnectedAt !== null;
-      }) &&
-      snapshot.mirror.length > 0)
-  );
-}
-
-async function reconcileCodexRefreshMetadata(
-  db: Db,
-  snapshot: SubscriptionCredentialSnapshot,
-) {
-  const { active, provider } = snapshot;
-  if (
-    !active ||
-    provider.type !== CODEX_TYPE ||
-    (active.tokenExpiresAt?.getTime() === provider.tokenExpiresAt?.getTime() &&
-      active.needsReconnect === provider.needsReconnect &&
-      active.lastRefreshErrorCode === provider.lastRefreshErrorCode)
-  ) {
-    return;
-  }
-  // Old Codex failure writes change only provider state under this same lock.
-  // Claude's uncoordinated late metadata has no such authority.
-  const [updated] = await db
-    .update(modelProviderAccounts)
-    .set({
-      tokenExpiresAt: provider.tokenExpiresAt,
-      needsReconnect: provider.needsReconnect,
-      lastRefreshErrorCode: provider.lastRefreshErrorCode,
-      updatedAt: nowDate(),
-    })
-    .where(eq(modelProviderAccounts.id, active.id))
-    .returning();
-  if (!updated) {
-    throw new Error("Expected locked Codex account metadata update to return");
-  }
-  return updated;
-}
-
-async function importLegacySubscriptionBundle(
-  args: SubscriptionCredentialOwner,
-  snapshot: SubscriptionCredentialSnapshot,
-  metadata: PersonalProviderAccountMetadata,
-  oldIdentity?: PersonalProviderAccountMetadata,
-): Promise<boolean> {
-  const active = snapshot.active;
-  if (oldIdentity && active) {
-    await args.db
-      .update(modelProviderAccounts)
-      .set({
-        externalAccountId: oldIdentity.externalAccountId ?? null,
-        accountEmail: oldIdentity.accountEmail ?? null,
-        workspaceName: oldIdentity.workspaceName ?? null,
-      })
-      .where(eq(modelProviderAccounts.id, active.id));
-  }
-  const accounts = snapshot.accounts.map((account) => {
-    return account.id === active?.id && oldIdentity
-      ? {
-          ...account,
-          externalAccountId: oldIdentity.externalAccountId ?? null,
-          accountEmail: oldIdentity.accountEmail ?? null,
-          workspaceName: oldIdentity.workspaceName ?? null,
-        }
-      : account;
-  });
-  const values = await credentialValues(
-    snapshot.mirror,
-    args.featureSwitchContext,
-  );
-  if (args.type === CODEX_TYPE) {
-    for (const name of [
-      "CHATGPT_ACCESS_TOKEN",
-      "CHATGPT_REFRESH_TOKEN",
-      "CHATGPT_ACCOUNT_ID",
-      "CHATGPT_ID_TOKEN",
-    ]) {
-      if (!values.get(name)?.trim()) {
-        return false;
-      }
-    }
-  }
-  const mutation = {
-    accounts,
-    type: args.type,
-    mode: { kind: "replace-active" as const },
-    metadata: accountMetadataValues({
-      type: args.type,
-      metadata,
-      secretValues: Object.fromEntries(values),
-    }),
-  };
-  const expiryBindings = affectedCodexExpiryBindings(mutation);
-  const invalidateExpiry = () => {
-    for (const binding of expiryBindings) {
-      invalidateCodexResetCreditExpiry(
-        { scope: "personal", orgId: args.orgId, userId: args.userId },
-        { binding },
-      );
-    }
-  };
-  invalidateExpiry();
-  const result = await applyAccountMutation(args.db, {
-    ...mutation,
-    provider: snapshot.provider,
-    authMethod: snapshot.provider.authMethod,
-    encryptedSecrets: snapshot.mirror.map((secret) => {
-      return {
-        ...secret,
-        description:
-          secret.description ?? `Personal ${args.type} account secret`,
-      };
-    }),
-  });
-  if ("status" in result) {
-    return false;
-  }
-  if (args.type === CODEX_TYPE) {
-    await args.db
-      .update(modelProviderAccounts)
-      .set({
-        needsReconnect: snapshot.provider.needsReconnect,
-        lastRefreshErrorCode: snapshot.provider.lastRefreshErrorCode,
-      })
-      .where(eq(modelProviderAccounts.id, result.account.id));
-    await args.db
-      .update(modelProviders)
-      .set({
-        needsReconnect: snapshot.provider.needsReconnect,
-        lastRefreshErrorCode: snapshot.provider.lastRefreshErrorCode,
-      })
-      .where(eq(modelProviders.id, snapshot.provider.id));
-  }
-  invalidateExpiry();
-  return true;
-}
-
-async function reconcileLockedSubscriptionSnapshot(
-  args: SubscriptionCredentialOwner,
-  snapshot: SubscriptionCredentialSnapshot,
-  readCompletedSnapshot = false,
-) {
-  if (!snapshotNeedsCoordination(snapshot, args.sourceId)) {
-    return { accounts: snapshot.accounts, snapshot };
-  }
-  if (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext)) {
-    const updated = await reconcileCodexRefreshMetadata(args.db, snapshot);
-    const completed = updated
-      ? {
-          ...snapshot,
-          active: updated,
-          accounts: snapshot.accounts.map((account) => {
-            return account.id === updated.id ? updated : account;
-          }),
-        }
-      : snapshot;
-    return { accounts: completed.accounts, snapshot: completed };
-  }
-  if (args.type !== CODEX_TYPE) {
+/** Run admission reads the captured account once, without locks. A concurrent
+ * disconnect that commits afterwards fails the run through the explicit
+ * subscription-unavailable path. */
+export async function validatePersonalSubscriptionAdmission(args: {
+  readonly db: Db;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly type: PersonalSubscriptionProviderType;
+  readonly sourceId: string | undefined;
+}): Promise<AccountRow | null> {
+  if (!args.sourceId) {
     return null;
   }
-  const values = await credentialValues(
-    snapshot.mirror,
-    args.featureSwitchContext,
-  );
-  const oldValues = await credentialValues(
-    snapshot.accountSecrets.filter((secret) => {
-      return secret.modelProviderAccountId === snapshot.active?.id;
-    }),
-    args.featureSwitchContext,
-  );
-  const oldAccountId = oldValues.get(CODEX_ACCOUNT_ID_SECRET);
-  if (snapshot.active && !oldAccountId) {
-    return null;
-  }
-  const imported = await importLegacySubscriptionBundle(
-    args,
-    snapshot,
-    {
-      externalAccountId: values.get(CODEX_ACCOUNT_ID_SECRET),
-      accountEmail: extractCodexAccountEmailFromIdToken(
-        values.get(CODEX_ID_TOKEN_SECRET),
-      ),
-      tokenExpiresAt: snapshot.provider.tokenExpiresAt,
-      workspaceName: snapshot.provider.workspaceName,
-      planType: snapshot.provider.planType,
-      subscriptionResetPeriod: snapshot.provider.subscriptionResetPeriod,
-      subscriptionNextResetAt: snapshot.provider.subscriptionNextResetAt,
-    },
-    snapshot.active
-      ? {
-          externalAccountId: oldAccountId,
-          accountEmail: snapshot.active.accountEmail,
-          workspaceName: snapshot.active.workspaceName,
-        }
-      : undefined,
-  );
-  return imported
-    ? await readImportedSubscriptionState(
-        args,
-        snapshot.provider.id,
-        readCompletedSnapshot,
-      )
-    : null;
+  const account = await personalModelProviderAccountById({
+    db: args.db,
+    id: args.sourceId,
+    orgId: args.orgId,
+    userId: args.userId,
+  });
+  return account?.type === args.type ? account : null;
 }
 
-/** Import callers already own the provider and credential locks. Capture and
- * readiness retain their account-only reread; environment preparation needs
- * the complete post-import inventory instead, never the observed old secrets. */
-async function readImportedSubscriptionState(
-  args: SubscriptionCredentialOwner,
-  providerId: string,
-  readCompletedSnapshot: boolean,
-) {
-  if (readCompletedSnapshot) {
-    const snapshot = await lockSubscriptionCredentialSnapshot(args);
-    if (!snapshot) {
-      throw new Error("Expected imported personal model provider snapshot");
-    }
-    return { accounts: snapshot.accounts, snapshot };
-  }
-  const accounts = await args.db
-    .select()
-    .from(modelProviderAccounts)
-    .where(eq(modelProviderAccounts.modelProviderId, providerId));
-  return { accounts, snapshot: null };
-}
-
-/** Refresh and settings mutations own their provider transaction. This helper
- * can decrypt through KMS; final admission must use its database-only validator. */
-export async function reconcileLockedPersonalSubscriptionCredentials(
-  args: SubscriptionCredentialOwner,
-): Promise<boolean> {
-  const snapshot = await lockSubscriptionCredentialSnapshot(args);
-  return (
-    snapshot !== null &&
-    (await reconcileLockedSubscriptionSnapshot(args, snapshot)) !== null
-  );
-}
-
-export interface PreparedPersonalSubscriptionAdmission {
+/** Environment preparation reads the connected account, its logical provider
+ * selection and its ciphertext bundle in one statement. */
+export async function readPersonalSubscriptionAccount(args: {
+  readonly db: Db;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly type: PersonalSubscriptionProviderType;
   readonly sourceId: string;
-  readonly snapshot: string;
-}
-
-/** Capture only encrypted state under the provider/credential locks, then
- * release them before proving complete plaintext equivalence (KMS rotation can
- * encrypt the two stores independently). Earlier capture/environment preparation
- * owns legacy identity import; a mismatch here rejects that fixed capture.
- * This proof is operation-local and never enters a persisted run/queue payload. */
-export async function preparePersonalSubscriptionAdmission(
-  args: SubscriptionCredentialOwner & {
-    readonly sourceId: string;
-    readonly timing: ApiDispatchTimingCollector;
-  },
-  signal: AbortSignal,
-): Promise<PreparedPersonalSubscriptionAdmission | null> {
-  const dimensions = { subscription_provider_type: args.type };
-  const snapshot = await args.timing.measure(
-    "api_dispatch_subscription_prepare_snapshot",
-    "nested",
-    async () => {
-      return await args.db.transaction(async (tx) => {
-        return await lockSubscriptionCredentialSnapshot({ ...args, db: tx });
-      });
-    },
-    dimensions,
-  );
-  signal.throwIfAborted();
-  if (!snapshot) {
-    return null;
-  }
-  const coherent = await args.timing.measure(
-    "api_dispatch_subscription_prepare_bundle_proof",
-    "nested",
-    async () => {
-      return (
-        !snapshotNeedsCoordination(snapshot, args.sourceId) ||
-        (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext))
-      );
-    },
-    dimensions,
-  );
-  signal.throwIfAborted();
-  return coherent
-    ? { sourceId: args.sourceId, snapshot: JSON.stringify(snapshot) }
-    : null;
-}
-
-/** Called after the existing lifecycle fences, in the run-insert transaction.
- * Compare every row ID, identity, selection, state and encrypted cell without
- * decryption or legacy import. A winning writer invalidates this proof even if
- * its new ciphertext might decrypt to the same bytes. A new request can prepare
- * that new snapshot outside the locks; this admission never reselects. */
-export async function validatePersonalSubscriptionAdmission(
-  args: SubscriptionCredentialOwner,
-  prepared: PreparedPersonalSubscriptionAdmission | null,
-): Promise<AccountRow | null> {
-  if (!prepared || prepared.sourceId !== args.sourceId) {
-    return null;
-  }
-  const snapshot = await lockSubscriptionCredentialSnapshot(args);
-  if (!snapshot || JSON.stringify(snapshot) !== prepared.snapshot) {
-    return null;
-  }
-  if (snapshotNeedsCoordination(snapshot, args.sourceId)) {
-    await reconcileCodexRefreshMetadata(args.db, snapshot);
-  }
-  // The snapshot locks the exact source through the commit. New admission needs
-  // a connected account; an existing deferred Run must prove its live retention
-  // binding before using the same disconnected account.
-  const account = snapshot.accounts.find((candidate) => {
-    return (
-      candidate.id === args.sourceId &&
-      candidate.orgId === args.orgId &&
-      candidate.userId === args.userId &&
-      candidate.type === args.type
+}) {
+  const rows = await args.db
+    .select({
+      account: modelProviderAccounts,
+      selectedModel: modelProviders.selectedModel,
+      secret: {
+        name: modelProviderAccountSecrets.name,
+        encryptedValue: modelProviderAccountSecrets.encryptedValue,
+      },
+    })
+    .from(modelProviderAccounts)
+    .innerJoin(
+      modelProviders,
+      eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+    )
+    .leftJoin(
+      modelProviderAccountSecrets,
+      eq(
+        modelProviderAccountSecrets.modelProviderAccountId,
+        modelProviderAccounts.id,
+      ),
+    )
+    .where(
+      and(
+        eq(modelProviderAccounts.id, args.sourceId),
+        eq(modelProviderAccounts.orgId, args.orgId),
+        eq(modelProviderAccounts.userId, args.userId),
+        eq(modelProviderAccounts.type, args.type),
+        isNull(modelProviderAccounts.disconnectedAt),
+      ),
     );
-  });
-  if (!account || account.disconnectedAt === null) {
-    return account ?? null;
-  }
-  if (!args.runId) {
-    return null;
-  }
-  return await personalModelProviderAccountById({
-    ...args,
-    id: account.id,
-  });
-}
-
-function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {
-  return Boolean(
-    identity.externalAccountId ||
-    (identity.accountEmail && identity.workspaceName),
-  );
-}
-
-async function previousClaudeIdentityProof(
-  active: AccountRow | undefined,
-  oldToken: string | null,
-  signal: AbortSignal,
-) {
-  if (!active || hasClaudeIdentity(active)) {
-    return { ok: true as const, value: active };
-  }
-  return oldToken
-    ? await settle(
-        fetchClaudeCodeProfileMetadata({ accessToken: oldToken }, signal),
-      )
-    : { ok: false as const };
-}
-
-/** Request-scoped rollout bridge for actual 1.595.0 singleton writers. Remove
- * under #34010 only after serving writers, old contexts and the executable
- * rollback floor have closed the documented compatibility window. */
-export async function coordinatePersonalSubscriptionCredentials(
-  args: SubscriptionCredentialOwner,
-  signal?: AbortSignal,
-): Promise<boolean> {
-  return (await coordinatePersonalSubscriptionAccounts(args, signal)) !== null;
-}
-
-/** Return completed account state while the coordination owner still holds its
- * locks. Empty inventories can be ready; null means coordination is unavailable.
- * Only logical selection/settings may initialize the exact previously read parent. */
-async function coordinatePersonalSubscriptionAccounts(
-  args: SubscriptionCredentialOwner & {
-    readonly initializeProviderId?: string;
-  },
-  signal?: AbortSignal,
-): Promise<readonly AccountRow[] | null> {
-  const completed = await coordinateSubscriptionSnapshot(args, false, signal);
-  return completed?.accounts ?? null;
-}
-
-/** Environment preparation may reuse the completed encrypted observation, but
- * it is never an admission proof or a runtime credential cache. */
-export async function readCoordinatedPersonalSubscriptionAccount(
-  args: SubscriptionCredentialOwner & { readonly sourceId: string },
-  signal?: AbortSignal,
-) {
-  const completed = await coordinateSubscriptionSnapshot(args, true, signal);
-  const snapshot = completed?.snapshot;
-  if (!snapshot) {
-    return null;
-  }
-  const account = snapshot.accounts.find((candidate) => {
-    return (
-      candidate.id === args.sourceId &&
-      candidate.orgId === args.orgId &&
-      candidate.userId === args.userId &&
-      candidate.type === args.type &&
-      candidate.disconnectedAt === null
-    );
-  });
-  return account
+  const first = rows[0];
+  return first
     ? {
-        account,
-        selectedModel: snapshot.provider.selectedModel,
-        secrets: snapshot.accountSecrets.filter((secret) => {
-          return secret.modelProviderAccountId === account.id;
+        account: first.account,
+        selectedModel: first.selectedModel,
+        secrets: rows.flatMap((row) => {
+          return row.secret ? [row.secret] : [];
         }),
       }
     : null;
 }
 
-async function coordinateSubscriptionSnapshot(
-  args: SubscriptionCredentialOwner & {
-    readonly initializeProviderId?: string;
-  },
-  readCompletedSnapshot: boolean,
-  signal: AbortSignal = AbortSignal.timeout(10_000),
+/** Organization subscriptions remain singleton `model_providers` + `secrets`
+ * credentials. */
+async function readOrgSubscriptionCredentialBundle(
+  args: SubscriptionCredentialOwner,
 ) {
-  const observed = await args.db.transaction(async (tx) => {
-    let snapshot = await lockSubscriptionCredentialSnapshot(
-      {
-        ...args,
-        db: tx,
-      },
-      readCompletedSnapshot ? args.sourceId : undefined,
-    );
-    if (
-      !snapshot ||
-      (args.initializeProviderId !== undefined &&
-        snapshot.provider.id !== args.initializeProviderId)
-    ) {
-      return { completed: null, snapshot: null };
-    }
-    // Keep the actual historical singleton seed until #34010 closes its writer,
-    // persisted-context and rollback gates. Retained-only parents are not empty.
-    if (
-      args.initializeProviderId !== undefined &&
-      snapshot.accounts.length === 0
-    ) {
-      const account = await seedLegacyAccount(tx, snapshot.provider);
-      if (account) {
-        await hydrateSeededCodexIdentity({ ...args, db: tx, account });
-        snapshot = await lockSubscriptionCredentialSnapshot({
-          ...args,
-          db: tx,
-        });
-        if (!snapshot) {
-          throw new Error(
-            "Expected initialized personal model provider snapshot",
-          );
-        }
-      }
-    }
-    const completed = await reconcileLockedSubscriptionSnapshot(
-      { ...args, db: tx },
-      snapshot,
-      readCompletedSnapshot,
-    );
-    return { completed, snapshot };
-  });
-  signal.throwIfAborted();
-  if (
-    observed.completed !== null ||
-    !observed.snapshot ||
-    args.type !== CLAUDE_CODE_TYPE
-  ) {
-    return observed.completed;
-  }
-  const snapshot = observed.snapshot;
-  const active = snapshot.active;
-  const legacy = snapshot.mirror.find((secret) => {
-    return secret.id === snapshot.provider.secretId;
-  });
-  const previous = snapshot.accountSecrets.find((secret) => {
-    return (
-      secret.modelProviderAccountId === active?.id &&
-      secret.name === "CLAUDE_CODE_OAUTH_TOKEN"
-    );
-  });
-  if (!legacy || (active && !previous) || snapshot.mirror.length !== 1) {
+  const [provider] = await args.db
+    .select()
+    .from(modelProviders)
+    .where(
+      and(
+        eq(modelProviders.orgId, args.orgId),
+        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+        eq(modelProviders.type, args.type),
+      ),
+    )
+    .limit(1);
+  if (!provider) {
     return null;
   }
-  const token = await decryptStoredSecretValue(
-    legacy.encryptedValue,
-    args.featureSwitchContext,
-  );
-  const oldToken = previous
-    ? await decryptStoredSecretValue(
-        previous.encryptedValue,
-        args.featureSwitchContext,
-      )
-    : null;
-  signal.throwIfAborted();
-  const [currentProof, oldProof] = await Promise.all([
-    settle(fetchClaudeCodeProfileMetadata({ accessToken: token }, signal)),
-    previousClaudeIdentityProof(active, oldToken, signal),
-  ]);
-  signal.throwIfAborted();
-  if (
-    !currentProof.ok ||
-    !hasClaudeIdentity(currentProof.value) ||
-    !oldProof.ok ||
-    (active && (!oldProof.value || !hasClaudeIdentity(oldProof.value)))
-  ) {
-    return null;
-  }
-  return await args.db.transaction(async (tx) => {
-    const current = await lockSubscriptionCredentialSnapshot({
-      ...args,
-      db: tx,
+  const names =
+    (provider.authMethod
+      ? getSecretNamesForAuthMethod(args.type, provider.authMethod)
+      : undefined) ??
+    [getSecretNameForType(args.type)].filter((name): name is string => {
+      return name !== undefined;
     });
-    signal.throwIfAborted();
-    // Includes row IDs, complete ciphertext bundles, active selection, provider
-    // pointer/state and stored identity. Timestamps are equality fences only.
-    if (JSON.stringify(current) !== JSON.stringify(snapshot)) {
-      return null;
-    }
-    const imported = await importLegacySubscriptionBundle(
-      { ...args, db: tx },
-      snapshot,
-      currentProof.value,
-      oldProof.value,
-    );
-    return imported
-      ? await readImportedSubscriptionState(
-          { ...args, db: tx },
-          snapshot.provider.id,
-          readCompletedSnapshot,
-        )
-      : null;
-  });
+  const rows =
+    names.length === 0
+      ? []
+      : await args.db
+          .select({
+            name: secrets.name,
+            encryptedValue: secrets.encryptedValue,
+          })
+          .from(secrets)
+          .where(
+            and(
+              eq(secrets.orgId, args.orgId),
+              eq(secrets.userId, ORG_SENTINEL_USER_ID),
+              eq(secrets.type, "model-provider"),
+              inArray(secrets.name, [...names]),
+            ),
+          );
+  return {
+    account: provider,
+    values: await credentialValues(rows, args.featureSwitchContext),
+  };
 }
 
-export async function ensurePersonalModelProviderAccount(
-  args: {
-    readonly db: Db;
-    readonly provider: ProviderRow;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal?: AbortSignal,
-): Promise<boolean> {
-  if (!isPersonalSubscriptionProviderType(args.provider.type)) {
-    return true;
-  }
-  return (
-    (await coordinatePersonalSubscriptionAccounts(
-      {
-        ...args,
-        ...args.provider,
-        type: args.provider.type,
-        initializeProviderId: args.provider.id,
-      },
-      signal,
-    )) !== null
-  );
-}
-
-/** Returns state and the complete credential bundle from one locked snapshot.
- * Exact inactive/retained credentials are never reconciled from the mirror. */
+/** Returns state and the complete credential bundle of the exact personal
+ * account. Personal subscriptions are addressed only by their account ID. */
 export async function readPersonalSubscriptionCredentialBundle(
   args: SubscriptionCredentialOwner,
-  signal?: AbortSignal,
 ) {
-  const current = await readLockedPersonalSubscriptionBundle(args);
-  if (current !== false) {
-    return current;
+  if (args.userId === ORG_SENTINEL_USER_ID) {
+    return await readOrgSubscriptionCredentialBundle(args);
   }
-  // Only an opaque identity mismatch needs an unlocked profile round trip.
-  // Coherent bundles and locked Codex imports are already one atomic read.
-  if (!(await coordinatePersonalSubscriptionCredentials(args, signal))) {
+  if (!args.sourceId) {
     return null;
   }
-  const coordinated = await readLockedPersonalSubscriptionBundle(args);
-  return coordinated === false ? null : coordinated;
-}
-
-async function readLockedPersonalSubscriptionBundle(
-  args: SubscriptionCredentialOwner,
-) {
-  return await args.db.transaction(async (tx) => {
-    const snapshot = await lockSubscriptionCredentialSnapshot({
-      ...args,
-      db: tx,
-    });
-    if (!snapshot) {
-      return null;
-    }
-    const needsCoordination = snapshotNeedsCoordination(
-      snapshot,
-      args.sourceId,
-    );
-    const coherent =
-      !needsCoordination ||
-      (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext));
-    if (coherent) {
-      if (needsCoordination) {
-        await reconcileCodexRefreshMetadata(tx, snapshot);
-      }
-      const account = snapshot.accounts.find((candidate) => {
-        return (
-          candidate.orgId === args.orgId &&
-          candidate.userId === args.userId &&
-          candidate.type === args.type &&
-          candidate.disconnectedAt === null &&
-          (args.sourceId ? candidate.id === args.sourceId : candidate.isActive)
-        );
-      });
-      if (account) {
-        const rows = snapshot.accountSecrets.filter((secret) => {
-          return secret.modelProviderAccountId === account.id;
-        });
-        return {
-          account:
-            args.type === CODEX_TYPE && account.id === snapshot.active?.id
-              ? {
-                  ...account,
-                  tokenExpiresAt: snapshot.provider.tokenExpiresAt,
-                  needsReconnect: snapshot.provider.needsReconnect,
-                  lastRefreshErrorCode: snapshot.provider.lastRefreshErrorCode,
-                }
-              : account,
-          values: await credentialValues(rows, args.featureSwitchContext),
-        };
-      }
-    } else if (
-      (await reconcileLockedSubscriptionSnapshot(
-        { ...args, db: tx },
-        snapshot,
-      )) === null
-    ) {
-      return false as const;
-    }
-    const [account] = await tx
-      .select()
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-          eq(modelProviderAccounts.type, args.type),
-          ...(args.sourceId
-            ? [eq(modelProviderAccounts.id, args.sourceId)]
-            : [eq(modelProviderAccounts.isActive, true)]),
-          personalSubscriptionAccountAccessCondition(tx, args.runId),
-        ),
-      );
-    if (!account) {
-      if (args.sourceId) {
-        return null;
-      }
-      const [provider] = await tx
-        .select()
-        .from(modelProviders)
-        .where(
-          and(
-            eq(modelProviders.orgId, args.orgId),
-            eq(modelProviders.userId, args.userId),
-            eq(modelProviders.type, args.type),
-          ),
-        );
-      return provider
-        ? {
-            account: provider,
-            values: await credentialValues(
-              await legacySecretRows(tx, provider),
-              args.featureSwitchContext,
-            ),
-          }
-        : null;
-    }
-    const rows = await tx
-      .select()
-      .from(modelProviderAccountSecrets)
-      .where(
-        eq(modelProviderAccountSecrets.modelProviderAccountId, account.id),
-      );
-    return {
-      account,
-      values: await credentialValues(rows, args.featureSwitchContext),
-    };
+  const current = await readAccountCiphertexts({
+    ...args,
+    sourceId: args.sourceId,
   });
+  return current
+    ? {
+        account: current.account,
+        values: await credentialValues(
+          current.secrets,
+          args.featureSwitchContext,
+        ),
+      }
+    : null;
 }

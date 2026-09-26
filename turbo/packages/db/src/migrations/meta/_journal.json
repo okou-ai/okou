@@ -1279,8 +1279,15 @@
     {
       "idx": 1260,
       "version": "7",
-      "when": 1790389715147,
-      "tag": "1260_chat_search_gin_fastupdate_off",
+      "when": 1790388503838,
+      "tag": "1260_personal_subscription_account_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 1261,
+      "version": "7",
+      "when": 1790390254380,
+      "tag": "1261_chat_search_gin_fastupdate_off_drop_audit_approval",
       "breakpoints": true
     }
   ]

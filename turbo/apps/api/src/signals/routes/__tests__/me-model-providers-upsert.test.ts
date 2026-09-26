@@ -15,7 +15,6 @@ import { server } from "../../../mocks/server";
 import { mockNow, now } from "../../../lib/time";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readUserSecrets } from "./helpers/user-config-state";
 import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { meModelProvidersListRoutes } from "../me-model-providers-list";
@@ -218,17 +217,6 @@ describe("POST /api/me/model-providers (upsert)", () => {
       },
       created: true,
     });
-
-    const storedSecrets = await readUserSecrets(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-    });
-    expect(
-      storedSecrets.some((secret) => {
-        return secret.type === "model-provider";
-      }),
-    ).toBeTruthy();
-    expect(JSON.stringify(storedSecrets)).not.toContain("sk-ant-test");
   });
 
   it("updates an existing personal provider with 200", async () => {

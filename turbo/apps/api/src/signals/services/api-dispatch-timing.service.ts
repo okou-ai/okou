@@ -208,8 +208,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_persist_atomic_launch"
   | "api_dispatch_admission_lock_wait"
   | "api_dispatch_admission_lock_held"
-  | "api_dispatch_subscription_prepare_snapshot"
-  | "api_dispatch_subscription_prepare_bundle_proof"
   | "api_dispatch_subscription_validate_admission"
   | "api_dispatch_check_concurrency_limit"
   | "api_dispatch_validate_official_workflow_admission"

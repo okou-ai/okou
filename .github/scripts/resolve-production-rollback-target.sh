@@ -13,8 +13,13 @@ readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70
 # pair the primary key and drops the columns, so earlier APIs fail draft saves
 # and thread inserts.
 readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
+# #36984 stopped naming computer_use_command_audit_events.approval_outcome in
+# audit INSERT and SELECT. Migration 1261 drops that column, so earlier APIs
+# fail every Computer Use audit write.
+readonly COMPUTER_USE_AUDIT_WRITER_COMMIT=cdeec36c168636b1a2e510e660eb6139c9c4e07a
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
+readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -63,6 +68,9 @@ fi
 if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread draft owner key writer: ${CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT}."
 fi
+if ! git merge-base --is-ancestor "$COMPUTER_USE_AUDIT_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the computer-use audit approval column cutover: ${COMPUTER_USE_AUDIT_WRITER_COMMIT}."
+fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames
 # five persisted link-layout columns. Earlier APIs implicitly name the retired
@@ -85,6 +93,18 @@ if [[ ! "$agent_run_heartbeat_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$agent_run_heartbeat_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the agent_runs heartbeat column drop: ${agent_run_heartbeat_drop_commit}."
+fi
+
+# Migration 1260 deletes the personal subscription secrets mirror. Earlier APIs
+# read that mirror, so they treat every personal Claude/Codex subscription as
+# unavailable and their legacy import paths diverge from the account store.
+personal_subscription_account_only_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH" | sed -n '1p')
+if [[ ! "$personal_subscription_account_only_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged personal subscription account-only migration on main."
+fi
+if ! git merge-base --is-ancestor "$personal_subscription_account_only_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the personal subscription account-only store: ${personal_subscription_account_only_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
