@@ -23,7 +23,6 @@ import {
   isNotNull,
   isNull,
   or,
-  sql,
   type InferSelectModel,
 } from "drizzle-orm";
 
@@ -441,6 +440,64 @@ function connectSessionBody(args: {
   };
 }
 
+function replacePendingConnectSession(
+  db: Db,
+  owner: BankingOwner,
+  connectionId: string,
+  body: BankingConnectSessionRequest,
+) {
+  return db.transaction(async (tx) => {
+    // Lock the existing owner row without blocking account-sync FK checks.
+    const [currentConnection] = await tx
+      .select({ id: bankingConnections.id })
+      .from(bankingConnections)
+      .where(
+        and(
+          eq(bankingConnections.id, connectionId),
+          eq(bankingConnections.orgId, owner.orgId),
+          eq(bankingConnections.userId, owner.userId),
+          eq(bankingConnections.provider, PROVIDER),
+          isNull(bankingConnections.revokedAt),
+          isNull(bankingConnections.deletedAt),
+          or(
+            eq(bankingConnections.status, "active"),
+            eq(bankingConnections.status, "repair_required"),
+          ),
+        ),
+      )
+      .for("no key update");
+    if (!currentConnection) {
+      return userError(
+        409,
+        "BANKING_CONNECTION_CONFLICT",
+        "The banking connection changed while the request was starting",
+      );
+    }
+    await tx
+      .update(bankingConnectSessions)
+      .set({ status: "superseded", updatedAt: nowDate() })
+      .where(
+        and(
+          eq(bankingConnectSessions.orgId, owner.orgId),
+          eq(bankingConnectSessions.userId, owner.userId),
+          eq(bankingConnectSessions.connectionId, connectionId),
+          eq(bankingConnectSessions.status, "pending"),
+        ),
+      );
+    const [created] = await tx
+      .insert(bankingConnectSessions)
+      .values({
+        orgId: owner.orgId,
+        userId: owner.userId,
+        connectionId,
+        mode: body.mode,
+        institutionLoginId: body.institutionLoginId ?? null,
+      })
+      .returning();
+    return created;
+  });
+}
+
 export const startBankingConnectSession$ = command(
   async (
     { set },
@@ -493,33 +550,12 @@ export const startBankingConnectSession$ = command(
       }
     }
 
-    const [session] = await db.transaction(async (tx) => {
-      await tx.execute(
-        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`banking_connect:${connection.id}`}, 0))`,
-      );
-      await tx
-        .update(bankingConnectSessions)
-        .set({ status: "superseded", updatedAt: nowDate() })
-        .where(
-          and(
-            eq(bankingConnectSessions.orgId, args.owner.orgId),
-            eq(bankingConnectSessions.userId, args.owner.userId),
-            eq(bankingConnectSessions.connectionId, connection.id),
-            eq(bankingConnectSessions.status, "pending"),
-          ),
-        );
-      return await tx
-        .insert(bankingConnectSessions)
-        .values({
-          orgId: args.owner.orgId,
-          userId: args.owner.userId,
-          connectionId: connection.id,
-          mode: args.body.mode,
-          institutionLoginId: args.body.institutionLoginId ?? null,
-        })
-        .returning();
-    });
+    const session = await replacePendingConnectSession(
+      db,
+      args.owner,
+      connection.id,
+      args.body,
+    );
     signal.throwIfAborted();
     if (!session) {
       return userError(
@@ -527,6 +563,9 @@ export const startBankingConnectSession$ = command(
         "BANKING_SESSION_NOT_CREATED",
         "The banking session could not be created",
       );
+    }
+    if (isUserErrorResponse(session)) {
+      return session;
     }
 
     const providerBody = connectSessionBody({

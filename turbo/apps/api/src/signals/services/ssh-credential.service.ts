@@ -15,10 +15,14 @@ import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
-import { checkSshCreationId } from "./ssh-creation.service";
+import {
+  checkSshCreationId,
+  resolveSshCreationConflict,
+} from "./ssh-creation.service";
 
 interface Owner {
   readonly orgId: string;
@@ -217,29 +221,41 @@ export async function createSshCredential(args: {
   readonly featureContext: FeatureSwitchContext;
 }): Promise<SshResult<SshCredentialResponse | undefined>> {
   const prepared = await prepareCredential(args.body, args.featureContext);
-  const row = await args.db.transaction(async (tx) => {
-    await lockSshOwner(tx, args.owner);
-    const creation = await checkSshCreationId(
-      tx,
+  const transaction = await settle(
+    args.db.transaction(async (tx) => {
+      await lockSshOwner(tx, args.owner);
+      const creation = await checkSshCreationId(
+        tx,
+        args.owner,
+        sshCredentials,
+        args.id,
+      );
+      if (!creation.ok) {
+        return creation;
+      }
+      if (!creation.value) {
+        return { ok: true as const, value: undefined };
+      }
+      const [created] = await tx
+        .insert(sshCredentials)
+        .values({ ...args.owner, ...prepared, id: args.id })
+        .returning(metadata);
+      if (!created) {
+        throw new Error("SSH credential insert returned no row");
+      }
+      return { ok: true as const, value: response(created, []) };
+    }),
+  );
+  if (!transaction.ok) {
+    return resolveSshCreationConflict(
+      args.db,
       args.owner,
       sshCredentials,
       args.id,
+      transaction.error,
     );
-    if (!creation.ok) {
-      return creation;
-    }
-    if (!creation.value) {
-      return { ok: true as const, value: undefined };
-    }
-    const [created] = await tx
-      .insert(sshCredentials)
-      .values({ ...args.owner, ...prepared, id: args.id })
-      .returning(metadata);
-    if (!created) {
-      throw new Error("SSH credential insert returned no row");
-    }
-    return { ok: true as const, value: response(created, []) };
-  });
+  }
+  const row = transaction.value;
   if (row.ok && row.value) {
     await publishSshClientInvalidation(args.owner);
   }

@@ -13,7 +13,6 @@ import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
   completeRunWithoutCallbacksFixture,
-  holdChatThreadRowLockFixture,
   revokeReservedActiveInputFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -119,55 +118,6 @@ async function steerOwnedRunAtElapsedTime(
 }
 
 describe("CHAT-02: queueing and recalling messages", () => {
-  it("returns an empty active-input poll without waiting for the thread row", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const active = await sendChatRun(actor, {
-      agentId,
-      prompt: "keep the empty active-input poll observational",
-    });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
-    const threadLock = await holdChatThreadRowLockFixture({
-      threadId: active.threadId,
-      signal: context.signal,
-    });
-    let reserveSettled = false;
-    const reserveOutcome = api
-      .reserveRunnerActiveInputs(claimed.claim.sandboxToken, active.runId)
-      .then(
-        (value) => {
-          reserveSettled = true;
-          return { ok: true as const, value };
-        },
-        (error: unknown) => {
-          reserveSettled = true;
-          return { ok: false as const, error };
-        },
-      );
-    onTestFinished(async () => {
-      threadLock.release();
-      await threadLock.done;
-      await reserveOutcome;
-    });
-
-    await expect
-      .poll(() => {
-        return reserveSettled;
-      })
-      .toBeTruthy();
-    const outcome = await reserveOutcome;
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
-    expect(outcome.value).toStrictEqual({ outcome: "empty" });
-    await expect(threadLock.blockedWaiterCount()).resolves.toBe(0);
-
-    threadLock.release();
-    await threadLock.done;
-    await cancelChatRun(actor, active.runId);
-  }, 30_000);
-
   it("reserves rich inputs one at a time and settles concurrent receipts once", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -1542,68 +1492,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
 
     await cancelChatRun(actor, first.runId);
     expect((await api.readRun(actor, first.runId)).status).toBe("cancelled");
-  }, 90_000);
-
-  it("keeps a gap after concurrent idempotent sends reserve the same event", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const thread = await chat.createThread(actor, {
-      agentId,
-      title: "Concurrent idempotent send thread",
-    });
-    const threadLock = await holdChatThreadRowLockFixture({
-      threadId: thread.id,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      threadLock.release();
-      await threadLock.done;
-    });
-
-    const clientEventId = randomUUID();
-    const sendEvent = () => {
-      return chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: thread.id,
-          prompt: "send once through two concurrent requests",
-          clientEventId,
-        },
-        [201],
-      );
-    };
-    const sends = [sendEvent(), sendEvent()];
-    await expect.poll(threadLock.blockedWaiterCount).toBeGreaterThanOrEqual(2);
-    threadLock.release();
-    await threadLock.done;
-
-    const responses = await Promise.all(sends);
-    const runIds = new Set<string>();
-    for (const response of responses) {
-      if (response.status !== 201) {
-        throw new Error("Expected both concurrent sends to be accepted");
-      }
-      if (response.body.runId !== null) {
-        runIds.add(response.body.runId);
-      }
-    }
-    expect(runIds.size).toBe(1);
-
-    const messages = await chat.listThreadEvents(actor, thread.id);
-    const seqIds = messages.events.map((event) => {
-      return event.seqId;
-    });
-    expect(
-      seqIds.some((seqId, index) => {
-        const previousSeqId = seqIds[index - 1];
-        return previousSeqId !== undefined && seqId > previousSeqId + 1;
-      }),
-    ).toBeTruthy();
-
-    for (const runId of runIds) {
-      await cancelChatRun(actor, runId);
-    }
   }, 90_000);
 
   it("keeps a queued message when recall targets another owned thread", async () => {

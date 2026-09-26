@@ -32,7 +32,10 @@ import { settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
-import { checkSshCreationId } from "./ssh-creation.service";
+import {
+  checkSshCreationId,
+  resolveSshCreationConflict,
+} from "./ssh-creation.service";
 import {
   cloudflareAccessFailure,
   insertCloudflareAccessConfig,
@@ -447,6 +450,26 @@ export async function summarizeSshConnections(
   };
 }
 
+async function lockVisibleAgentsForFirstHost(
+  tx: Transaction,
+  owner: { readonly orgId: string; readonly userId: string },
+) {
+  if ((await countOwnerConnections(tx, owner.orgId, owner.userId)) !== 0) {
+    return [];
+  }
+  return await tx
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.orgId, owner.orgId),
+        visibleJoinedAgentCondition(owner.userId),
+      ),
+    )
+    .orderBy(asc(agents.id))
+    .for("update");
+}
+
 export async function createSshConnection(args: {
   readonly db: Db;
   readonly orgId: string;
@@ -474,99 +497,101 @@ export async function createSshConnection(args: {
     args.featureContext,
   );
 
-  const result = await args.db.transaction(async (tx) => {
-    await lockSshOwner(tx, args);
-    const creation = await checkSshCreationId(
-      tx,
+  const transaction = await settle(
+    args.db.transaction(async (tx) => {
+      await lockSshOwner(tx, args);
+      const creation = await checkSshCreationId(
+        tx,
+        args,
+        sshConnections,
+        args.body.id,
+      );
+      if (!creation.ok) {
+        return creation;
+      }
+      if (!creation.value) {
+        return {
+          ok: true as const,
+          value: undefined,
+          authorizedAgents: false,
+          createdAccess: false,
+        };
+      }
+      const bindingFailure = await validateAccessBinding(
+        tx,
+        args,
+        { configId: accessId, creating: preparedAccess !== undefined },
+        canonicalHost.value,
+        args.body.port,
+      );
+      if (bindingFailure) {
+        return bindingFailure;
+      }
+      const credential = await selectSshCredential(
+        tx,
+        args,
+        preparedCredential,
+      );
+      if (!credential.ok) {
+        return credential;
+      }
+      const selectedAccess = await insertAccessBinding(
+        tx,
+        args,
+        preparedAccess,
+        accessId,
+      );
+      // Match Connector's zero-to-one account transition, including re-adding
+      // after all hosts were deleted. The owner lock serializes concurrent adds.
+      const visibleAgents = await lockVisibleAgentsForFirstHost(tx, args);
+      const [connection] = await tx
+        .insert(sshConnections)
+        .values({
+          id: args.body.id,
+          orgId: args.orgId,
+          userId: args.userId,
+          displayName: args.body.displayName,
+          host: canonicalHost.value,
+          port: args.body.port,
+          credentialId: credential.value.id,
+          cloudflareAccessId: selectedAccess.id,
+        })
+        .returning();
+      if (!connection) {
+        throw new Error("SSH connection insert returned no row");
+      }
+      if (visibleAgents.length > 0) {
+        await tx
+          .insert(agentSshAccess)
+          .values(
+            visibleAgents.map((agent) => {
+              return {
+                orgId: args.orgId,
+                userId: args.userId,
+                agentId: agent.id,
+              };
+            }),
+          )
+          .onConflictDoNothing();
+      }
+      return {
+        ok: true as const,
+        value: toSshConnectionResponse(connection, credential.value),
+        authorizedAgents: visibleAgents.length > 0,
+        createdAccess: selectedAccess.created,
+      };
+    }),
+  );
+  if (!transaction.ok) {
+    return resolveSshCreationConflict(
+      args.db,
       args,
       sshConnections,
       args.body.id,
+      transaction.error,
     );
-    if (!creation.ok) {
-      return creation;
-    }
-    if (!creation.value) {
-      return {
-        ok: true as const,
-        value: undefined,
-        authorizedAgents: false,
-        createdAccess: false,
-      };
-    }
-    const bindingFailure = await validateAccessBinding(
-      tx,
-      args,
-      { configId: accessId, creating: preparedAccess !== undefined },
-      canonicalHost.value,
-      args.body.port,
-    );
-    if (bindingFailure) {
-      return bindingFailure;
-    }
-    const credential = await selectSshCredential(tx, args, preparedCredential);
-    if (!credential.ok) {
-      return credential;
-    }
-    const selectedAccess = await insertAccessBinding(
-      tx,
-      args,
-      preparedAccess,
-      accessId,
-    );
-    // Match Connector's zero-to-one account transition, including re-adding
-    // after all hosts were deleted. The owner lock serializes concurrent adds.
-    const firstHost =
-      (await countOwnerConnections(tx, args.orgId, args.userId)) === 0;
-    const visibleAgents = firstHost
-      ? await tx
-          .select({ id: agents.id })
-          .from(agents)
-          .where(
-            and(
-              eq(agents.orgId, args.orgId),
-              visibleJoinedAgentCondition(args.userId),
-            ),
-          )
-          .orderBy(asc(agents.id))
-          .for("update")
-      : [];
-    const [connection] = await tx
-      .insert(sshConnections)
-      .values({
-        id: args.body.id,
-        orgId: args.orgId,
-        userId: args.userId,
-        displayName: args.body.displayName,
-        host: canonicalHost.value,
-        port: args.body.port,
-        credentialId: credential.value.id,
-        cloudflareAccessId: selectedAccess.id,
-      })
-      .returning();
-    if (!connection) {
-      throw new Error("SSH connection insert returned no row");
-    }
-    if (visibleAgents.length > 0) {
-      await tx
-        .insert(agentSshAccess)
-        .values(
-          visibleAgents.map((agent) => {
-            return {
-              orgId: args.orgId,
-              userId: args.userId,
-              agentId: agent.id,
-            };
-          }),
-        )
-        .onConflictDoNothing();
-    }
-    return {
-      ok: true as const,
-      value: toSshConnectionResponse(connection, credential.value),
-      authorizedAgents: visibleAgents.length > 0,
-      createdAccess: selectedAccess.created,
-    };
-  });
+  }
+  const result = transaction.value;
   if (result.ok && result.value) {
     await publishSshConnectionMutationInvalidation(
       args.db,

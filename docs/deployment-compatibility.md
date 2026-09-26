@@ -16,6 +16,40 @@ of every chat search projection tick; after this migration that call fails with
 the extension. `.github/scripts/resolve-production-rollback-target.sh` enforces
 the floor.
 
+## Resource creation advisory lock retirement (2026-09-26)
+
+VNC host and credential creation now use their existing primary keys to
+arbitrate duplicate IDs. A losing insert rolls back the whole transaction,
+including any inline credential, before resolving an owned replay or an ID
+conflict. Only the requested table's primary-key violation is handled; unrelated
+constraint and database failures still propagate. Existing-resource VNC replays
+still skip KMS. The owner lifecycle locks and first-host Agent grants remain.
+
+Banking Connect creates sessions under a short `FOR NO KEY UPDATE` lock on the
+existing connection row, retaining the partial unique index for one pending
+session. The transaction rechecks ownership and live state, supersedes the old
+session, and inserts the replacement. Provider requests remain outside it. This
+lock mode is compatible with the foreign-key checks used by account syncing.
+
+`VncAccess` and `Banking` are both registered as default-disabled, non-GA
+features. Their advisory locks retire in the same release under the
+[pre-GA policy](fallback.md#2-features-behind-a-feature-switch-need-no-fallback).
+Mixed old/new API writers can make an old request fail with a unique-key error
+during the cutover; the existing constraints still prevent duplicate resources
+or pending sessions. This is the bounded pre-GA cutover exception, not a claim
+that the old and new locking protocols coordinate with each other. The API
+contracts and stored shapes do not change, and no migration is required.
+
+SSH and Cloudflare Access are GA. Their creation paths first gain the same
+exact-primary-key conflict recovery while retaining the existing resource-ID
+advisory lock. Removing it immediately could expose an unhandled unique-key
+failure in an older concurrent writer, including two admins creating the same
+organization-scoped Access configuration. Remove this one remaining acquisition
+only after the preparation version covers every serving writer and older
+transactions have drained; supported rollback targets must also retain this
+conflict recovery. That follow-up keeps the owner lock and removes the
+resource-ID lock, its exemption, and this rollout condition together.
+
 ## Workflow import source column (2026-09-25)
 
 Migration `1264_workflow_import_source` adds the nullable
