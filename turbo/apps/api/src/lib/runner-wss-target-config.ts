@@ -10,7 +10,20 @@ const publicRunnerHostnameSchema = z
     /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/,
   )
   .refine((name) => {
-    return !name.endsWith(".localhost") && !/^\d+(?:\.\d+){3}$/.test(name);
+    const localSuffixes = [
+      ".localhost",
+      ".local",
+      ".internal",
+      ".home.arpa",
+      ".invalid",
+      ".test",
+      ".example",
+    ];
+    return (
+      !localSuffixes.some((suffix) => {
+        return name.endsWith(suffix);
+      }) && !/^\d+(?:\.\d+){3}$/.test(name)
+    );
   });
 
 /** A well-formed address, not proof of DNS, TLS, Caddy or live reachability. */
