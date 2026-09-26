@@ -25,6 +25,8 @@ surface; the index does not replace their detailed rules.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
+- [Queued chat threads](./queued-chat-threads.md): chat-thread queueing without
+  queued runs, lease-based picks, lock changes and the staged rollout.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
   concrete account ownership, bounded disconnect retention and credential
   storage/locking.
