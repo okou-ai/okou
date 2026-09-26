@@ -161,7 +161,7 @@ zeroize = { version = "1", default-features = false }
 zstd = { version = "0.14", default-features = false }
 
 # Keep routine local validation usable in constrained environments while
-# retaining source locations in backtraces.
+# retaining workspace source locations in backtraces.
 [profile.local]
 inherits = "dev"
 debug = "line-tables-only"
