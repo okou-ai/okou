@@ -7,6 +7,40 @@ import XCTest
 
 @MainActor
 final class SnapshotHTTPTests: XCTestCase {
+  func testGzipChatThreadArchiveReplaysEventsWithoutForwardingBearer() async throws {
+    let server = try SnapshotLoopbackServer()
+    defer { server.stop() }
+    let baseURL = try await server.start()
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.timeoutIntervalForRequest = 5
+    configuration.timeoutIntervalForResource = 10
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let client = APIClient(baseURL: baseURL, session: session) { "local-gzip-test-session" }
+
+    let threads = try await ChatService(client: client).threads()
+
+    XCTAssertEqual(threads.map(\.title), ["Updated chat"])
+    XCTAssertEqual(threads.first?.indicator, .unread)
+    XCTAssertEqual(
+      server.requests.map(\.path),
+      [
+        "/api/chat-threads/snapshot", "/thread-snapshot.json.gz",
+        "/api/chat-threads/events", "/api/indicators",
+      ])
+    let archiveRequest = try XCTUnwrap(
+      server.requests.first { $0.path == "/thread-snapshot.json.gz" })
+    XCTAssertNil(archiveRequest.authorization)
+    XCTAssertTrue(archiveRequest.acceptEncoding?.contains("gzip") == true)
+    XCTAssertEqual(
+      server.requests.first { $0.path == "/api/chat-threads/events" }?.query,
+      "sinceSeqId=2")
+    XCTAssertTrue(
+      server.requests.filter { $0.path.hasPrefix("/api/") }.allSatisfy {
+        $0.authorization == "Bearer local-gzip-test-session"
+      })
+  }
+
   func testRealHTTPGzipSnapshotDecodesThroughChatService() async throws {
     let server = try SnapshotLoopbackServer()
     defer { server.stop() }
@@ -45,9 +79,15 @@ private final class SnapshotLoopbackServer: Sendable {
     base64Encoded:
       "H4sIAAAAAAAC/91QsW7CMBDd+YrIM4mcgCiwMVQVCwuZurnJiUQktrHPgTTKv3MmrUBMESMn66Sz33v3/DpW5mzNZnyo8Nbmvi3/x7+asSnLCoFpYUDk25GsmFjGybHwxMOhUUewnw1I9DzpqopWK4lwwbTV8HR1x9CiG2sPJwcyg52rf8A8v97xFk5+iEmK/oSQb5BsJjxZhHwVxh9pzNfcn4isfZM18PzBAlMOtcOoBmvFAehRi7ZSgvS6wZn0Yl+/pQ6K0qIybXBW5mgj1veTbnTs87eNPXkpdpKLMlXrCoj4mLrX7idXS9t9i9ACAAA="
   )!
+  // A compacted { chatThreads: [...] } archive with the same gzip metadata as R2.
+  private static let compressedThreadArchive = Data(
+    base64Encoded:
+      "H4sIAAAAAAAC/41RwU7DMAz9FZTzitJuDOgNpEnbAXFY4YI4hMRbI6VJ5bjjUPXfcbpVlBOzIkvPfi/PcXqha0VVjaBMFOVHL6wRpVjKc2RjWqX0MMFL5GIh1BE87a4UFCwgSw6YvqeAYG6SN1djQHoiLheyWGfyMcvvq1yWMp3bvFiu7tbM0jwjgfmf2LXmOmJrvT/zfOfciF/RAE5Yoa7tCfh9B+UiLASCV81cEcGBZq+XYMBNxSaBPRBZf+Sd9kPi4clqqOzv5To0bUeAbxG2IY5bvDRc6Mwzhm8Wbbz6crMBJr93ayD8MZ06u4Y/ZdYZPocf5UjxaOQBAAA="
+  )!
 
   struct Request: Sendable {
     let path: String
+    let query: String?
     let authorization: String?
     let acceptEncoding: String?
   }
@@ -163,12 +203,32 @@ private final class SnapshotLoopbackServer: Sendable {
     observedRequests.withLock {
       $0.append(
         Request(
-          path: requestURL.path, authorization: headers["authorization"],
+          path: requestURL.path, query: requestURL.query,
+          authorization: headers["authorization"],
           acceptEncoding: headers["accept-encoding"]))
     }
     let body: Data
     let contentHeaders: String
     switch requestURL.path {
+    case "/api/chat-threads/snapshot":
+      body = Data(
+        """
+        {"url":"http://127.0.0.1:\(port.rawValue)/thread-snapshot.json.gz","expiresInSeconds":60,"latestEventId":"\(Self.lastEventID)","latestSeqId":2}
+        """.utf8)
+      contentHeaders = "Content-Type: application/json\r\n"
+    case "/thread-snapshot.json.gz":
+      body = Self.compressedThreadArchive
+      contentHeaders = "Content-Type: application/json\r\nContent-Encoding: gzip\r\n"
+    case "/api/chat-threads/events":
+      body = Data(
+        """
+        {"events":[{"id":"30000000-0000-4000-8000-000000000005","seqId":3,"kind":"renamed","chatThreadId":"\(Self.threadID)","agentId":"30000000-0000-4000-8000-000000000002","title":"Updated chat","selectedModel":null,"pinOrder":null,"createdAt":"2026-09-17T10:00:01.000Z"}],"hasMore":false}
+        """.utf8)
+      contentHeaders = "Content-Type: application/json\r\n"
+    case "/api/indicators":
+      body = Data(
+        "{\"agents\":{},\"threads\":{\"\(Self.threadID)\":\"unread\"},\"unreadAt\":{}}".utf8)
+      contentHeaders = "Content-Type: application/json\r\n"
     case "/api/chat-threads/\(Self.threadID)/event-snapshot":
       body = Data(
         """
