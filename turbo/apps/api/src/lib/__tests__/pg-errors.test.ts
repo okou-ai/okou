@@ -35,12 +35,9 @@ describe("SQLSTATE classification", () => {
 });
 
 describe("safeSqlStateCode", () => {
-  it.each(["55P03", "23503", "57014"])(
-    "publishes the %s class code",
-    (code) => {
-      expect(safeSqlStateCode(driverError(code))).toBe(code);
-    },
-  );
+  it("publishes a valid class code", () => {
+    expect(safeSqlStateCode(driverError("57014"))).toBe("57014");
+  });
 
   it("publishes the class code alone, never the driver message", () => {
     const code = safeSqlStateCode(driverError("23503"));

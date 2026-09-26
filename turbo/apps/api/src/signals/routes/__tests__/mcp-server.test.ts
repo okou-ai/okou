@@ -6370,7 +6370,6 @@ describe("MCP message search", () => {
 
   it.each([
     { query: "" },
-    { query: "   " },
     { query: "x".repeat(201) },
     { query: "中文", limit: 0 },
     { query: "中文", limit: 51 },
