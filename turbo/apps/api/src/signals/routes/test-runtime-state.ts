@@ -54,6 +54,7 @@ import {
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
 import { writeRunMetadata } from "../services/agent-run-metadata-write.service";
 import { saveRunSummary } from "../services/run-summary.service";
+import { resolveRunnerWssTarget } from "../services/runner-wss-target.service";
 import { queueArtifactCatalogFile } from "../services/artifact-catalog.service";
 import { reconcileSocialKitDownloads$ } from "../services/socialkit-download.service";
 import { steerRunNearTimeBudgetForTest } from "../services/cron-steer-run-time-budget.service";
@@ -1749,6 +1750,23 @@ const specializedRuntimeFixtureAction$ = command(
       return {
         status: 200 as const,
         body: { ok: true as const, processed },
+      };
+    }
+    if (body.action === "resolve-runner-wss-target") {
+      const target = await resolveRunnerWssTarget(db, {
+        runId: body.run_id,
+        owner: { userId: body.user_id, orgId: body.org_id },
+        now: body.now ? new Date(body.now) : nowDate(),
+      });
+      signal.throwIfAborted();
+      return {
+        status: 200 as const,
+        body: {
+          ok: true as const,
+          wss_target: target
+            ? { ...target, observedAt: target.observedAt.toISOString() }
+            : null,
+        },
       };
     }
     if (body.action === "read-run-failure-reason") {

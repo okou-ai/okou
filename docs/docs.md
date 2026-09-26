@@ -149,6 +149,8 @@ surface; the index does not replace their detailed rules.
   memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and
   verify host-local concurrency and I/O capacity overrides.
+- [Runner WSS target resolution](./runner-wss-target-resolution.md): default-off
+  hostname-derived origin, claimed Runner/version gates and separate ingress proof.
 - [Guest memory policy](./runner-memory-policy.md): shared workload capacity,
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):

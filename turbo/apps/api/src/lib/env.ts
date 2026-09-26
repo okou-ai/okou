@@ -2,6 +2,7 @@ import { createEnv } from "@t3-oss/env-core";
 import { z, type ZodType } from "zod";
 
 import { testOverride } from "./singleton";
+import { wssMinimumRunnerVersionSchema } from "./runner-wss-target-config";
 
 const priceIdsSchema = z
   .string()
@@ -26,6 +27,9 @@ const SCHEMA = {
   SECRETS_ENCRYPTION_KEY: z.string().length(64),
   SECRETS_KMS_KEY_ID: z.string().min(1).optional(),
   OFFICIAL_RUNNER_SECRET: z.string().length(64),
+  // Deliberately absent until the mandatory-listener Runner release (#37027).
+  // Ticket issuance remains separately gated on host ingress and E2E proof.
+  OKOU_WSS_MIN_RUNNER_VERSION: wssMinimumRunnerVersionSchema.optional(),
   OPENAI_API_KEY: z.string().min(1),
   FAL_KEY: z.string().min(1).optional(),
   // Validated together at the Google LLM operation boundary.
