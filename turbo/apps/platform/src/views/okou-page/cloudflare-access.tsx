@@ -23,6 +23,7 @@ import {
 import {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
   type CloudflareAccessConfig,
+  type CloudflareAccessImpactPreview,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
@@ -68,7 +69,6 @@ import {
   reviewCloudflareAccessDeletion$,
   saveCloudflareAccess$,
   type CloudflareAccessDialogState,
-  type CloudflareAccessImpactReview,
 } from "../../signals/cloudflare-access.ts";
 import { localizedCloudflareAccessError } from "../../lib/cloudflare-access-error.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -651,26 +651,11 @@ export function CloudflareAccessDialog() {
 function CloudflareAccessAffectedMembers({
   preview,
 }: {
-  readonly preview: CloudflareAccessImpactReview;
+  readonly preview: CloudflareAccessImpactPreview;
 }) {
   const { t } = useTranslation();
   if (preview.otherHostCount === 0) {
     return null;
-  }
-  if (!preview.memberNamesAvailable) {
-    return (
-      <p role="alert">
-        {t(
-          ($) => {
-            return $.cloudflareAccess.convertWarning;
-          },
-          { count: preview.otherHostCount },
-        )}{" "}
-        {t(($) => {
-          return $.cloudflareAccess.deleteImpact;
-        })}
-      </p>
-    );
   }
   const nameCounts = new Map<string, number>();
   const suffixCounts = new Map<string, number>();
@@ -741,10 +726,10 @@ function CloudflareAccessConversionControls({
   onCancel,
   onConfirm,
 }: {
-  readonly preview: CloudflareAccessImpactReview | null;
+  readonly preview: CloudflareAccessImpactPreview | null;
   readonly isSaving: boolean;
   readonly onCancel: () => void;
-  readonly onConfirm: (preview: CloudflareAccessImpactReview) => void;
+  readonly onConfirm: (preview: CloudflareAccessImpactPreview) => void;
 }) {
   const { t } = useTranslation();
   const acknowledgedSnapshot = useGet(

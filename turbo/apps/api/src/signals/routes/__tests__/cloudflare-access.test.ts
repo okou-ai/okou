@@ -467,9 +467,10 @@ describe("organization Cloudflare Access", () => {
     authenticate(admin, "org:admin");
     const preview = (
       await accept(
-        configs().conversionPreview({
+        configs().impactPreview({
           headers,
           params: { configId: shared.id },
+          query: { operation: "convert" },
         }),
         [200],
       )
@@ -541,9 +542,10 @@ describe("organization Cloudflare Access", () => {
     authenticate(admin, "org:admin");
     const nextPreview = (
       await accept(
-        configs().conversionPreview({
+        configs().impactPreview({
           headers,
           params: { configId: next.id },
+          query: { operation: "convert" },
         }),
         [200],
       )
@@ -1344,9 +1346,10 @@ describe("protected SSH authority", () => {
     authenticate(admin, "org:admin");
     const preview = (
       await accept(
-        configs().conversionPreview({
+        configs().impactPreview({
           headers,
           params: { configId: shared.id },
+          query: { operation: "convert" },
         }),
         [200],
       )

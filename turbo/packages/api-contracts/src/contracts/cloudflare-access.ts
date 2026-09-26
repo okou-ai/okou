@@ -77,31 +77,7 @@ const deleteBody = z
     impactSnapshot: impactSnapshot.optional(),
   })
   .strict();
-const deletionPreviewSchema = z
-  .object({
-    expectedRevision: revision,
-    ownHostCount: z.int().nonnegative(),
-    affectedOwners: z.array(
-      z
-        .object({
-          userId: z.string().min(1),
-          displayName: z.string().nullable(),
-          hostCount: z.int().positive(),
-        })
-        .strict(),
-    ),
-    impactSnapshot,
-  })
-  .strict();
-const conversionPreviewSchema = z
-  .object({
-    expectedRevision: revision,
-    otherHostCount: z.int().nonnegative(),
-    impactSnapshot,
-  })
-  .strict();
-// A separate endpoint leaves the older previews intact for already-loaded Apps.
-// Unlike the legacy deletion projection, this exposes no per-owner host usage.
+// Only aggregate SSH host usage is exposed to the reviewing administrator.
 const impactPreviewSchema = z
   .object({
     expectedRevision: revision,
@@ -162,13 +138,6 @@ export const cloudflareAccessContract = c.router({
     body: deleteBody,
     responses: { 204: c.noBody(), ...errors },
   },
-  deletionPreview: {
-    method: "GET",
-    path: "/api/cloudflare-access/configs/:configId/deletion-preview",
-    headers: authHeadersSchema,
-    pathParams,
-    responses: { 200: deletionPreviewSchema, ...errors },
-  },
   convertToOrganization: {
     method: "POST",
     path: "/api/cloudflare-access/configs/:configId/convert-to-organization",
@@ -176,13 +145,6 @@ export const cloudflareAccessContract = c.router({
     pathParams,
     body: z.object({ expectedRevision: revision }).strict(),
     responses: { 200: configResponseSchema, ...errors },
-  },
-  conversionPreview: {
-    method: "GET",
-    path: "/api/cloudflare-access/configs/:configId/conversion-preview",
-    headers: authHeadersSchema,
-    pathParams,
-    responses: { 200: conversionPreviewSchema, ...errors },
   },
   impactPreview: {
     method: "GET",
@@ -212,12 +174,6 @@ export type CreateCloudflareAccessRequest = z.infer<
 >;
 export type CreateCloudflareAccessConfigRequest = z.infer<typeof createBody>;
 export type UpdateCloudflareAccessRequest = z.infer<typeof updateBody>;
-export type CloudflareAccessConversionPreview = z.infer<
-  typeof conversionPreviewSchema
->;
 export type CloudflareAccessImpactPreview = z.infer<typeof impactPreviewSchema>;
 export type ConvertCloudflareAccessRequest = z.infer<typeof conversionBody>;
-export type CloudflareAccessDeletionPreview = z.infer<
-  typeof deletionPreviewSchema
->;
 export type DeleteCloudflareAccessRequest = z.infer<typeof deleteBody>;

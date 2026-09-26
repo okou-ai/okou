@@ -557,10 +557,6 @@ export const reviewCloudflareAccessConversion$ = command(({ set }) => {
   set(invalidateCloudflareAccess$);
 });
 
-export interface CloudflareAccessImpactReview extends CloudflareAccessImpactPreview {
-  readonly memberNamesAvailable: boolean;
-}
-
 export const cloudflareAccessConversionPreview$ = computed(async (get) => {
   get(conversionPreviewReload$);
   const dialog = await get(cloudflareAccessConversionDialog$);
@@ -580,29 +576,7 @@ export const cloudflareAccessConversionPreview$ = computed(async (get) => {
     undefined,
     { showErrorToast: false },
   );
-  if (result.status === 200) {
-    return { ...result.body, memberNamesAvailable: true };
-  }
-  if (result.status === 403) {
-    return null;
-  }
-  // New App -> old serving or rollback API: only a missing route (404) uses
-  // the legacy preview. Remove once every serving and supported rollback API
-  // implements impact-preview (#36992).
-  const legacy = await accept(
-    client.client.conversionPreview({ params: { configId: dialog.configId } }),
-    [200, 403, 404],
-    undefined,
-    { showErrorToast: false },
-  );
-  return legacy.status === 200
-    ? {
-        ...legacy.body,
-        ownHostCount: 0,
-        affectedOwners: [],
-        memberNamesAvailable: false,
-      }
-    : null;
+  return result.status === 200 ? result.body : null;
 });
 
 interface ReviewedAccessDialog {
@@ -776,40 +750,12 @@ export const cloudflareAccessDeletionPreview$ = computed(async (get) => {
     undefined,
     { showErrorToast: false },
   );
-  if (result.status === 200) {
-    return { ...result.body, memberNamesAvailable: true };
-  }
-  if (result.status === 403) {
-    return null;
-  }
-  // New App -> old serving or rollback API: only a missing route (404) uses
-  // the legacy preview. Remove once every serving and supported rollback API
-  // implements impact-preview (#36992).
-  const legacy = await accept(
-    client.client.deletionPreview({ params: { configId: dialog.configId } }),
-    [200, 403, 404],
-    undefined,
-    { showErrorToast: false },
-  );
-  return legacy.status === 200
-    ? {
-        ...legacy.body,
-        otherHostCount: legacy.body.affectedOwners.reduce((total, owner) => {
-          return total + owner.hostCount;
-        }, 0),
-        affectedOwners: legacy.body.affectedOwners.map(
-          ({ userId, displayName }) => {
-            return { userId, displayName };
-          },
-        ),
-        memberNamesAvailable: true,
-      }
-    : null;
+  return result.status === 200 ? result.body : null;
 });
 export const confirmCloudflareAccessDeletion$ = command(
   async (
     { get, set },
-    preview: CloudflareAccessImpactReview,
+    preview: CloudflareAccessImpactPreview,
     signal: AbortSignal,
   ) => {
     const dialog = await get(cloudflareAccessDeletionDialog$);
@@ -863,7 +809,7 @@ export const confirmCloudflareAccessDeletion$ = command(
 export const confirmCloudflareAccessConversion$ = command(
   async (
     { get, set },
-    preview: CloudflareAccessImpactReview,
+    preview: CloudflareAccessImpactPreview,
     signal: AbortSignal,
   ) => {
     const dialog = await get(cloudflareAccessConversionDialog$);

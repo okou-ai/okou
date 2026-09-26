@@ -1260,6 +1260,28 @@ describe("createApp", () => {
       expect(response.headers.get("cache-control")).toBe("no-store");
     });
 
+    it.each(["conversion-preview", "deletion-preview"])(
+      "force-upgrades App 0.970.0 before matching the retired %s path",
+      async (path) => {
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request(
+          `/api/cloudflare-access/configs/00000000-0000-0000-0000-000000000000/${path}`,
+          {
+            headers: {
+              [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+              [CLIENT_VERSION_HEADER]: "0.970.0",
+            },
+          },
+        );
+
+        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+      },
+    );
+
     it.each([
       MINIMUM_WEB_CLIENT_VERSION,
       `${MINIMUM_WEB_CLIENT_VERSION}+build.1`,

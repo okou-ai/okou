@@ -178,49 +178,6 @@ const delete$ = command(async ({ get, set }, signal: AbortSignal) => {
       );
 });
 
-const deletionPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const { configId } = get(
-    pathParamsOf(cloudflareAccessContract.deletionPreview),
-  );
-  const result = await previewCloudflareAccessDeletion({
-    db: get(db$),
-    owner: get(organizationAuthContext$),
-    configId,
-  });
-  signal.throwIfAborted();
-  if (!result.ok) {
-    return cloudflareAccessErrorResponse(
-      result.kind === "not_found" ? 404 : 403,
-      result.code,
-      result.message,
-    );
-  }
-  const { value } = result;
-  const names = await loadUserDisplayNames(
-    set(writeDb$),
-    get(clerk$),
-    value.affectedOwners.map(({ userId }) => {
-      return userId;
-    }),
-    createClerkReadContext(),
-    signal,
-  );
-  signal.throwIfAborted();
-  return {
-    status: 200 as const,
-    body: {
-      ...value,
-      affectedOwners: value.affectedOwners.map((entry) => {
-        return {
-          ...entry,
-          displayName: names.get(entry.userId) ?? null,
-        };
-      }),
-    },
-  };
-});
-
 const promote$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const body = await get(
@@ -252,35 +209,6 @@ const promote$ = command(async ({ get, set }, signal: AbortSignal) => {
         result.message,
       );
 });
-
-const conversionPreview$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    set(setResHeader$, "Cache-Control", "no-store");
-    const { configId } = get(
-      pathParamsOf(cloudflareAccessContract.conversionPreview),
-    );
-    const result = await previewCloudflareAccessConversion({
-      db: get(db$),
-      owner: get(organizationAuthContext$),
-      configId,
-    });
-    signal.throwIfAborted();
-    if (!result.ok) {
-      return cloudflareAccessErrorResponse(
-        result.kind === "not_found" ? 404 : 403,
-        result.code,
-        result.message,
-      );
-    }
-    // The old endpoint retains its exact response for already-loaded Apps.
-    const {
-      ownHostCount: _ownHostCount,
-      affectedOwnerIds: _affectedOwnerIds,
-      ...legacy
-    } = result.value;
-    return { status: 200 as const, body: legacy };
-  },
-);
 
 const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
@@ -405,16 +333,8 @@ export const cloudflareAccessRoutes: readonly RouteEntry[] = [
     handler: authRoute(ownerAuth, delete$),
   },
   {
-    route: cloudflareAccessContract.deletionPreview,
-    handler: authRoute(ownerAuth, deletionPreview$),
-  },
-  {
     route: cloudflareAccessContract.convertToOrganization,
     handler: authRoute(ownerAuth, promote$),
-  },
-  {
-    route: cloudflareAccessContract.conversionPreview,
-    handler: authRoute(ownerAuth, conversionPreview$),
   },
   {
     route: cloudflareAccessContract.impactPreview,

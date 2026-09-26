@@ -289,17 +289,6 @@ test("named impact previews disclose total hosts and owners, never per-owner usa
     expect(body).not.toContain("Protected host");
   }
   expect(convert.impactSnapshot).toBe(deletion.impactSnapshot);
-  const legacy = (
-    await accept(
-      configs().conversionPreview({ headers, params: { configId: shared.id } }),
-      [200],
-    )
-  ).body;
-  expect(legacy).toStrictEqual({
-    expectedRevision: 1,
-    otherHostCount: 3,
-    impactSnapshot: convert.impactSnapshot,
-  });
 });
 
 test("new impact previews omit the warning data when no other hosts are bound", async () => {
@@ -325,7 +314,7 @@ test("new impact previews omit the warning data when no other hosts are bound", 
   }
 });
 
-test("an admin sees owner counts before deleting other owners' hosts; stale or unreviewed requests cannot detach them", async () => {
+test("an admin reviews aggregate impact before deleting other owners' hosts; stale or unreviewed requests cannot detach them", async () => {
   useSecretKmsProbe();
   const admin = await actor();
   const shared = await createConfig("organization");
@@ -345,28 +334,35 @@ test("an admin sees owner counts before deleting other owners' hosts; stale or u
     },
   ]);
   await accept(
-    configs().deletionPreview({ headers, params: { configId: shared.id } }),
+    configs().impactPreview({
+      headers,
+      params: { configId: shared.id },
+      query: { operation: "delete" },
+    }),
     [403],
   );
   session(admin, "admin");
   const preview = (
     await accept(
-      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
       [200],
     )
   ).body;
-  expect(preview).toMatchObject({ expectedRevision: 1, ownHostCount: 0 });
+  expect(preview).toMatchObject({
+    expectedRevision: 1,
+    ownHostCount: 0,
+    otherHostCount: 3,
+    affectedOwners: expect.arrayContaining([
+      { userId: first.userId, displayName: "First Member" },
+      { userId: second.userId, displayName: null },
+    ]),
+  });
   expect(preview.affectedOwners).toHaveLength(2);
-  expect(
-    preview.affectedOwners.find(({ userId }) => {
-      return userId === first.userId;
-    }),
-  ).toMatchObject({ displayName: "First Member", hostCount: 2 });
-  expect(
-    preview.affectedOwners.find(({ userId }) => {
-      return userId === second.userId;
-    }),
-  ).toMatchObject({ displayName: null, hostCount: 1 });
+  expect(JSON.stringify(preview)).not.toContain("hostCount");
   expect(JSON.stringify(preview)).not.toContain(firstHost.id);
   expect(JSON.stringify(preview)).not.toContain(secondHost.id);
   await expect(
@@ -396,15 +392,16 @@ test("an admin sees owner counts before deleting other owners' hosts; stale or u
   );
   const latest = (
     await accept(
-      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
       [200],
     )
   ).body;
-  expect(
-    latest.affectedOwners.find(({ userId }) => {
-      return userId === first.userId;
-    })?.hostCount,
-  ).toBe(3);
+  expect(latest.otherHostCount).toBe(4);
+  expect(latest.affectedOwners).toHaveLength(2);
   expect(latest.impactSnapshot).not.toBe(preview.impactSnapshot);
   await accept(
     configs().update({
@@ -433,7 +430,11 @@ test("an admin sees owner counts before deleting other owners' hosts; stale or u
   });
   const reviewedAgain = (
     await accept(
-      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
       [200],
     )
   ).body;
@@ -486,7 +487,11 @@ test("a reviewed deletion is stale when a member removes the last reference", as
   session(admin, "admin");
   const preview = (
     await accept(
-      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
       [200],
     )
   ).body;
@@ -526,7 +531,11 @@ test("losing admin role after a deletion preview cannot detach another member's 
   session(admin, "admin");
   const preview = (
     await accept(
-      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
       [200],
     )
   ).body;
@@ -569,7 +578,11 @@ test("binding and reviewed deletion serialize without leaving a broken SSH refer
   const shared = await createConfig("organization");
   const preview = (
     await accept(
-      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
       [200],
     )
   ).body;
@@ -616,7 +629,11 @@ test("a newly bound self-owned host blocks deletion after an initially empty rev
   const shared = await createConfig("organization");
   const preview = (
     await accept(
-      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
       [200],
     )
   ).body;
@@ -657,13 +674,21 @@ test("self-owned SSH references block deletion even with a reviewed snapshot; an
   const other = await actor(admin.orgId, "member");
   const otherHost = await createHost(shared.id);
   await accept(
-    configs().deletionPreview({ headers, params: { configId: shared.id } }),
+    configs().impactPreview({
+      headers,
+      params: { configId: shared.id },
+      query: { operation: "delete" },
+    }),
     [403],
   );
   session(admin, "admin");
   const preview = (
     await accept(
-      configs().deletionPreview({ headers, params: { configId: shared.id } }),
+      configs().impactPreview({
+        headers,
+        params: { configId: shared.id },
+        query: { operation: "delete" },
+      }),
       [200],
     )
   ).body;
