@@ -1,4 +1,5 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../lib/db";
 
@@ -16,7 +17,7 @@ export async function advanceRunActivityClockFixture(
     .where(eq(activeAgentRuns.runId, runId));
 }
 
-/** Runs created by an older API during rollout have no active row. */
+/** Simulate a run whose active row has already been released. */
 export async function deleteActiveAgentRunFixture(runId: string) {
   await db().delete(activeAgentRuns).where(eq(activeAgentRuns.runId, runId));
 }
@@ -29,8 +30,18 @@ export async function readActiveAgentRunFixture(runId: string) {
       summary: activeAgentRuns.summary,
       claimId: activeAgentRuns.claimId,
       chatThreadId: activeAgentRuns.chatThreadId,
+      lastHeartbeatAt: activeAgentRuns.lastHeartbeatAt,
     })
     .from(activeAgentRuns)
     .where(eq(activeAgentRuns.runId, runId));
   return row;
+}
+
+/** Contract-only observation: the retained row must no longer receive heartbeats. */
+export async function readRetainedRunHeartbeatFixture(runId: string) {
+  const [row] = await db()
+    .select({ lastHeartbeatAt: agentRuns.lastHeartbeatAt })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId));
+  return row?.lastHeartbeatAt;
 }

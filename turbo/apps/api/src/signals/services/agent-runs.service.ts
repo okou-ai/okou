@@ -23,6 +23,7 @@ import {
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
@@ -141,12 +142,13 @@ async function concurrencyUsage(
       email: userCache.email,
       active,
     })
-    .from(agentRuns)
-    .leftJoin(userCache, eq(agentRuns.userId, userCache.userId))
+    .from(activeAgentRuns)
+    .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
+    .leftJoin(userCache, eq(activeAgentRuns.userId, userCache.userId))
     .where(
       and(
-        eq(agentRuns.orgId, orgId),
-        sandboxCapacityPredicate(db, orgId, staleThreshold),
+        eq(activeAgentRuns.orgId, orgId),
+        sandboxCapacityPredicate(staleThreshold),
       ),
     )
     .groupBy(agentRuns.userId, userCache.name, userCache.email)

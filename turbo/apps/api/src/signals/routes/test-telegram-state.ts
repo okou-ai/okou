@@ -11,6 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/test-telegram-state";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -1267,15 +1268,27 @@ async function seedRunningRunForAction(
   }
   const startedAt = nowDate();
   const metadata = normalizeRunMetadata({ triggerSource: "telegram" });
-  await db.insert(agentRuns).values({
-    userId: required.user_id!,
+  const [run] = await db
+    .insert(agentRuns)
+    .values({
+      userId: required.user_id!,
+      orgId: required.org_id!,
+      sessionId,
+      status: "running",
+      prompt: "existing running telegram run",
+      startedAt,
+      lastHeartbeatAt: startedAt,
+      ...metadata,
+    })
+    .returning({ id: agentRuns.id });
+  if (!run) {
+    return actionBadRequest("failed to seed running agent run");
+  }
+  await db.insert(activeAgentRuns).values({
+    runId: run.id,
     orgId: required.org_id!,
-    sessionId,
-    status: "running",
-    prompt: "existing running telegram run",
-    startedAt,
+    userId: required.user_id!,
     lastHeartbeatAt: startedAt,
-    ...metadata,
   });
   signal.throwIfAborted();
   return actionOk({ agent_session_id: sessionId });

@@ -32,6 +32,7 @@ use runner_lifecycle::active_runs::{
 use runner_lifecycle::idle_pool::{ExactIdleReservationMiss, FinalizingHandoffCandidate};
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
+use runner_lifecycle::workspace_image_cache::WorkspaceImagePrepareLockPolicy;
 use runner_provider::RunCancellationRegistration;
 use runner_types::ids::RunId;
 
@@ -44,6 +45,37 @@ pub struct FinalizingAdmission {
     pub deadline: Instant,
     pub reuse_key: String,
     pub history_generation_run_id: RunId,
+}
+
+impl FinalizingAdmission {
+    /// Read the live predecessor state when a fresh fallback is ready to start,
+    /// not when its resource was first selected. Return the same snapshot for logging.
+    pub fn fresh_fallback_workspace_prepare_lock_policy(
+        &self,
+    ) -> (ActiveRunReuseState, WorkspaceImagePrepareLockPolicy) {
+        let state = self.predecessor.state();
+        (
+            state,
+            workspace_prepare_lock_policy_for_fresh_fallback(state),
+        )
+    }
+}
+
+fn workspace_prepare_lock_policy_for_fresh_fallback(
+    state: ActiveRunReuseState,
+) -> WorkspaceImagePrepareLockPolicy {
+    match state {
+        ActiveRunReuseState::Pending
+        | ActiveRunReuseState::ExactSandboxPublished
+        | ActiveRunReuseState::ExactSandboxHandedOff => {
+            WorkspaceImagePrepareLockPolicy::ImmediateFallback
+        }
+        ActiveRunReuseState::Finalizing { .. }
+        | ActiveRunReuseState::NoExactSandbox
+        | ActiveRunReuseState::Released => {
+            WorkspaceImagePrepareLockPolicy::WaitForTransientContention
+        }
+    }
 }
 
 /// Only the shared resources required to select a claimed finalizing successor's sandbox.
@@ -675,6 +707,98 @@ mod tests {
     };
     use runner_provider::RunCancellationRegistry;
     use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
+
+    #[test]
+    fn fresh_fallback_workspace_lock_policy_matches_predecessor_state() {
+        let cases = [
+            (
+                ActiveRunReuseState::Pending,
+                WorkspaceImagePrepareLockPolicy::ImmediateFallback,
+            ),
+            (
+                ActiveRunReuseState::Finalizing {
+                    started_at: Instant::now(),
+                },
+                WorkspaceImagePrepareLockPolicy::WaitForTransientContention,
+            ),
+            (
+                ActiveRunReuseState::ExactSandboxPublished,
+                WorkspaceImagePrepareLockPolicy::ImmediateFallback,
+            ),
+            (
+                ActiveRunReuseState::ExactSandboxHandedOff,
+                WorkspaceImagePrepareLockPolicy::ImmediateFallback,
+            ),
+            (
+                ActiveRunReuseState::NoExactSandbox,
+                WorkspaceImagePrepareLockPolicy::WaitForTransientContention,
+            ),
+            (
+                ActiveRunReuseState::Released,
+                WorkspaceImagePrepareLockPolicy::WaitForTransientContention,
+            ),
+        ];
+        for (state, expected) in cases {
+            assert_eq!(
+                workspace_prepare_lock_policy_for_fresh_fallback(state),
+                expected,
+                "{state:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn fresh_fallback_workspace_lock_policy_reads_live_predecessor() {
+        let active_runs = ActiveRuns::new(Arc::new(Notify::new()));
+        let predecessor_run_id = RunId::new_v4();
+        let guard = active_runs.register(
+            predecessor_run_id,
+            Some("thread:finalizing-owner".into()),
+            "vm0/default".into(),
+        );
+        let predecessor = active_runs
+            .finalizing_predecessor(predecessor_run_id, "thread:finalizing-owner", "vm0/default")
+            .expect("predecessor should be registered");
+        let admission = FinalizingAdmission {
+            predecessor,
+            deadline: Instant::now(),
+            reuse_key: "thread:finalizing-owner".into(),
+            history_generation_run_id: predecessor_run_id,
+        };
+        assert_eq!(
+            admission.fresh_fallback_workspace_prepare_lock_policy(),
+            (
+                ActiveRunReuseState::Pending,
+                WorkspaceImagePrepareLockPolicy::ImmediateFallback
+            )
+        );
+        let publisher = guard.reuse_publisher();
+        let started_at = Instant::now();
+        assert!(publisher.mark_finalizing(started_at));
+        assert_eq!(
+            admission.fresh_fallback_workspace_prepare_lock_policy(),
+            (
+                ActiveRunReuseState::Finalizing { started_at },
+                WorkspaceImagePrepareLockPolicy::WaitForTransientContention,
+            )
+        );
+        assert!(publisher.publish_exact_sandbox());
+        assert_eq!(
+            admission.fresh_fallback_workspace_prepare_lock_policy(),
+            (
+                ActiveRunReuseState::ExactSandboxPublished,
+                WorkspaceImagePrepareLockPolicy::ImmediateFallback
+            )
+        );
+        drop(guard);
+        assert_eq!(
+            admission.fresh_fallback_workspace_prepare_lock_policy(),
+            (
+                ActiveRunReuseState::Released,
+                WorkspaceImagePrepareLockPolicy::WaitForTransientContention
+            )
+        );
+    }
 
     fn released_admission() -> FinalizingAdmission {
         let active_runs = ActiveRuns::new(Arc::new(Notify::new()));

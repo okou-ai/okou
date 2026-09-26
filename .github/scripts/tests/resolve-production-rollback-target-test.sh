@@ -41,7 +41,7 @@ case "${1:-}" in
   log)
     if [[ "$*" == *1255_retire_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
-    elif [[ "$*" == *1258_drop_chat_thread_snapshot_jsonb.sql* ]]; then
+    elif [[ "$*" == *1259_drop_chat_thread_snapshot_jsonb.sql* ]]; then
       printf '%s\n' "${MOCK_SNAPSHOT_JSONB_DROP_COMMIT-3333333333333333333333333333333333333333}"
     else
       exit 2

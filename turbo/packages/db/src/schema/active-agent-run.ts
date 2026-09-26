@@ -8,7 +8,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { RunActivityEntries } from "@okouai/db/jsonb-contracts/run-activity-snapshot";
+import type { RunActivityEntries } from "@okouai/db/jsonb-contracts/run-activity";
 import { agentRuns } from "./agent-run";
 
 /**
