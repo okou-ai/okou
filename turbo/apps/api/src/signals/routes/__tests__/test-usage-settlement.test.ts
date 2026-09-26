@@ -481,33 +481,37 @@ describe("POST /api/test/usage-settlement/process", () => {
     const lateBonusKey = `bonus-late-${randomUUID()}`;
     const earlyPurchasedKey = `purchased-early-${randomUUID()}`;
     const latePurchasedKey = `purchased-late-${randomUUID()}`;
+    const expiryBase = nowDate().getTime();
+    const futureExpiry = (days: number): string => {
+      return new Date(expiryBase + days * 86_400_000).toISOString();
+    };
     await createGrant({
       fixture,
       grantType: "bonus",
       idempotencyKey: earlyBonusKey,
       amount: 5,
-      expiresAt: "2028-01-01T00:00:00.000Z",
+      expiresAt: futureExpiry(365),
     });
     await createGrant({
       fixture,
       grantType: "bonus",
       idempotencyKey: lateBonusKey,
       amount: 6,
-      expiresAt: "2031-01-01T00:00:00.000Z",
+      expiresAt: futureExpiry(1460),
     });
     await createGrant({
       fixture,
       grantType: "purchased",
       idempotencyKey: latePurchasedKey,
       amount: 4,
-      expiresAt: "2030-01-01T00:00:00.000Z",
+      expiresAt: futureExpiry(1095),
     });
     await createGrant({
       fixture,
       grantType: "purchased",
       idempotencyKey: earlyPurchasedKey,
       amount: 3,
-      expiresAt: "2029-01-01T00:00:00.000Z",
+      expiresAt: futureExpiry(730),
     });
 
     await insertCharge({ fixture, provider, amount: 5 });
