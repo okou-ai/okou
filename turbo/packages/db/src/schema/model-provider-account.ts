@@ -60,6 +60,11 @@ export const modelProviderAccounts = pgTable(
       uniqueIndex("idx_model_provider_accounts_one_active")
         .on(table.modelProviderId)
         .where(sql`${table.isActive} = true`),
+      // NULL identities stay distinct; connections merge by upstream identity.
+      uniqueIndex("idx_model_provider_accounts_provider_identity").on(
+        table.modelProviderId,
+        table.externalAccountId,
+      ),
     ];
   },
 );

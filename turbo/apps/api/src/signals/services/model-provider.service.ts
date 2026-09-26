@@ -37,7 +37,6 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
   deletePersonalModelProviderAccount,
   isPersonalSubscriptionProviderType,
-  captureActivePersonalModelProviderAccount,
   identifyPersonalSubscriptionAccountsBeforeDisconnect,
   upsertPersonalModelProviderAccount,
   visiblePersonalModelProviderCondition,
@@ -166,23 +165,10 @@ async function disconnectPersonalSubscriptionProvider(
   signal: AbortSignal,
 ): Promise<NotFoundResponse | undefined> {
   const subscriptionType = args.type;
-  // Seed before the all-accounts transaction. Opaque identity requests must
-  // not hold the provider lock across network I/O. The removal itself still
-  // serializes the complete connected set with new connections.
-  await captureActivePersonalModelProviderAccount(
-    {
-      ...args,
-      type: subscriptionType,
-      modelProviderId: null,
-      featureSwitchContext: args.featureSwitchContext,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
+  // Identity requests run before the transaction, never inside it.
   await identifyPersonalSubscriptionAccountsBeforeDisconnect(args, signal);
   signal.throwIfAborted();
   const result = await args.db.transaction(async (tx) => {
-    await lockModelProviderState(tx, args);
     const accounts = await tx
       .select({ id: modelProviderAccounts.id })
       .from(modelProviderAccounts)
@@ -1270,10 +1256,20 @@ async function upsertSingletonSubscription(
   if (!provider) {
     throw new Error("Subscription provider disappeared after connection");
   }
+  // Personal subscription state lives only on the connected account; the
+  // logical provider row keeps the singleton ID, default and model selection.
+  const [account] = await args.db
+    .select()
+    .from(modelProviderAccounts)
+    .where(eq(modelProviderAccounts.id, result.provider.id))
+    .limit(1);
+  if (!account) {
+    throw new Error("Subscription account disappeared after connection");
+  }
   return {
     created: !previous,
-    provider: toModelProviderInfoFromRow({
-      provider,
+    provider: toModelProviderInfo({
+      id: provider.id,
       userId: args.userId,
       type: args.type,
       authMethod: args.authMethod,
@@ -1281,6 +1277,17 @@ async function upsertSingletonSubscription(
       secretNames: args.authMethod
         ? (getSecretNamesForAuthMethod(args.type, args.authMethod) ?? null)
         : null,
+      isDefault: provider.isDefault,
+      selectedModel: provider.selectedModel,
+      tokenExpiresAt: account.tokenExpiresAt,
+      needsReconnect: account.needsReconnect,
+      lastRefreshErrorCode: account.lastRefreshErrorCode,
+      workspaceName: account.workspaceName,
+      planType: account.planType,
+      subscriptionResetPeriod: account.subscriptionResetPeriod,
+      subscriptionNextResetAt: account.subscriptionNextResetAt,
+      createdAt: provider.createdAt,
+      updatedAt: provider.updatedAt,
     }),
   };
 }

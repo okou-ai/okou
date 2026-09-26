@@ -324,11 +324,8 @@ import {
 } from "./pi-api-first-turn-config";
 import {
   activePersonalModelProviderAccount,
-  ensurePersonalModelProviderAccount,
-  readCoordinatedPersonalSubscriptionAccount,
-  preparePersonalSubscriptionAdmission,
+  readPersonalSubscriptionAccount,
   validatePersonalSubscriptionAdmission,
-  type PreparedPersonalSubscriptionAdmission,
   isPersonalSubscriptionProviderType,
   personalModelProviderAccountById,
   type CapturedPersonalSubscriptionAccount,
@@ -959,7 +956,6 @@ interface CommitPreparedLaunchArgs {
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly launch: PreparedRunnerLaunch;
   readonly encryptedQueuedParams: string | undefined;
-  readonly subscriptionAdmission: PreparedPersonalSubscriptionAdmission | null;
   readonly timing: ApiDispatchTimingCollector;
   readonly commitInvocation: number;
 }
@@ -3015,10 +3011,8 @@ async function resolveExactPersonalModelProviderAccount(
   if (!accountType || !isPersonalSubscriptionProviderType(accountType)) {
     return null;
   }
-  // A deferred Run keeps the account its original request authorized. Snapshot
-  // coordination is a request-scoped migration bridge that reconciles the
-  // owner's live credentials and skips accounts they have since disconnected,
-  // so it can neither authorize nor observe a retained continuation.
+  // A deferred Run keeps the account its original request authorized, even if
+  // it has since been disconnected; a new request needs a connected account.
   if (args.retainedRunId) {
     if (!account) {
       return null;
@@ -3037,23 +3031,22 @@ async function resolveExactPersonalModelProviderAccount(
         )
       : null;
   }
-  const coordinated = await readCoordinatedPersonalSubscriptionAccount({
+  const current = await readPersonalSubscriptionAccount({
     db,
     orgId: args.orgId,
     userId: args.userId,
     type: accountType,
     sourceId: args.modelProviderId,
-    featureSwitchContext: args.featureSwitchContext,
   });
-  if (!coordinated) {
+  if (!current) {
     return null;
   }
   return await resolvePersonalModelProviderAccountEnvironment(
     db,
     args,
-    coordinated.account,
-    coordinated.selectedModel,
-    coordinated.secrets,
+    current.account,
+    current.selectedModel,
+    current.secrets,
   );
 }
 
@@ -3071,22 +3064,6 @@ async function resolveActivePersonalModelProviderAccountEnvironment(
   args: ResolveModelProviderEnvironmentArgs,
   row: ResolvableModelProviderEnvironmentRow,
 ): Promise<ResolvedModelProviderEnvironment | null> {
-  const [provider] = await db
-    .select()
-    .from(modelProviders)
-    .where(eq(modelProviders.id, row.id))
-    .limit(1);
-  if (!provider || !isPersonalSubscriptionProviderType(provider.type)) {
-    return null;
-  }
-  const ready = await ensurePersonalModelProviderAccount({
-    db,
-    provider,
-    featureSwitchContext: args.featureSwitchContext,
-  });
-  if (!ready) {
-    return null;
-  }
   const account = await activePersonalModelProviderAccount({
     db,
     modelProviderId: row.id,
@@ -9060,7 +9037,6 @@ async function bindPreparedPiMemoryPhase2MaintenanceRun(
 async function validateCapturedSubscriptionAccount(
   tx: Tx,
   args: PreparedCommitPreparedLaunchArgs,
-  validatedThreadSession: ValidatedThreadSessionSnapshot | undefined,
 ) {
   const provider = args.context.modelProvider;
   if (
@@ -9070,36 +9046,17 @@ async function validateCapturedSubscriptionAccount(
   ) {
     const type = provider.type;
     return await args.admissionTiming.measureLeaf("subscription", async () => {
-      if (
-        !args.identity.shouldCreateSession &&
-        (!validatedThreadSession ||
-          args.createArgs.threadSessionResolution?.expected.sessionId !==
-            args.identity.sessionId)
-      ) {
-        // Unvalidated/session-only launches still acquire this FK lock when
-        // inserting the run. A completion can hold the session before cleanup,
-        // so acquire it before the provider lock too.
-        await tx
-          .select({ id: agentSessions.id })
-          .from(agentSessions)
-          .where(eq(agentSessions.id, args.identity.sessionId))
-          .for("key share");
-      }
       const account = await args.timing.measure(
         "api_dispatch_subscription_validate_admission",
         "nested",
         async () => {
-          return await validatePersonalSubscriptionAdmission(
-            {
-              db: tx,
-              orgId: args.createArgs.orgId,
-              userId: args.createArgs.userId,
-              type,
-              sourceId: provider.id ?? undefined,
-              featureSwitchContext: args.context.featureSwitchContext,
-            },
-            args.subscriptionAdmission,
-          );
+          return await validatePersonalSubscriptionAdmission({
+            db: tx,
+            orgId: args.createArgs.orgId,
+            userId: args.createArgs.userId,
+            type,
+            sourceId: provider.id ?? undefined,
+          });
         },
         { subscription_provider_type: type },
       );
@@ -9169,11 +9126,7 @@ async function commitPreparedLaunchUnderLock(
         return validate(tx);
       });
     }
-    const failure = await validateCapturedSubscriptionAccount(
-      tx,
-      args,
-      threadSessionValidation,
-    );
+    const failure = await validateCapturedSubscriptionAccount(tx, args);
     if (failure && "identity" in failure) {
       capturedIdentity = failure.identity;
     } else if (failure) {
@@ -11536,25 +11489,6 @@ const commitAndActivateAtomicLaunch$ = command(
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
     const { input, identity, callbackRows, launch } = args;
-    const provider = input.context.modelProvider;
-    const subscriptionAdmission =
-      provider?.id &&
-      isPersonalSubscriptionProviderType(provider.type) &&
-      provider.credentialOwner === "member"
-        ? await preparePersonalSubscriptionAdmission(
-            {
-              db: input.db,
-              orgId: input.args.orgId,
-              userId: input.args.userId,
-              type: provider.type,
-              sourceId: provider.id,
-              featureSwitchContext: input.context.featureSwitchContext,
-              timing: input.timing,
-            },
-            signal,
-          )
-        : null;
-    signal.throwIfAborted();
     const executionContext = launch.runnerJobPayload.executionContext;
     const preparation =
       executionContext.piLaunchConfig &&
@@ -11595,7 +11529,6 @@ const commitAndActivateAtomicLaunch$ = command(
               callbackRows,
               launch,
               encryptedQueuedParams,
-              subscriptionAdmission,
               timing: input.timing,
               commitInvocation,
             });
