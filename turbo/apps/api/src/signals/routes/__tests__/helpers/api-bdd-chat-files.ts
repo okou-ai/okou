@@ -36,7 +36,6 @@ import {
   type UserMessageInputDocument,
   type Indicators,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { CHAT_THREAD_SNAPSHOT_R2_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import type { VideoModelId } from "@okouai/api-contracts/contracts/video-models";
 import {
@@ -605,11 +604,7 @@ export function createChatFilesBddApi(context: TestContext) {
       readonly latestEventId: string | null;
       readonly latestSeqId: number | null;
     }> {
-      // Mirrors the Web App and CLI: capable clients always download R2.
-      const headers = {
-        ...authenticate(context, actor),
-        [CHAT_THREAD_SNAPSHOT_R2_HEADER]: "1",
-      };
+      const headers = authenticate(context, actor);
       const response = await accept(
         threadsClient().snapshot({ headers }),
         [200],

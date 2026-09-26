@@ -17,7 +17,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const WEEKLY_SYNC_THREAD_ID = "b0000000-0000-4000-a000-000000000091";
@@ -71,11 +74,14 @@ function configureAgentDraft(
     });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [...referencedThreads],
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [...referencedThreads],
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
 }
 

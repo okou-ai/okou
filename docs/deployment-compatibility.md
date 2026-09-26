@@ -64,21 +64,29 @@ extension stays installed for rollback targets that still call
 
 ## R2-only chat thread snapshot API rollback floor (2026-09-26)
 
-The production API rollback resolver now rejects targets before the #36945
+The production API rollback resolver rejects targets before the #36945
 main merge commit `3d93ff8d4b4a07a5888e3030e69b340f40da0ad4`. That API
-returns an R2 URL for every existing snapshot row, regardless of the request
-header; older rollback-window APIs can still return non-empty inline snapshots.
+returns an R2 URL for every existing snapshot row; no supported rollback target
+returns non-empty inline snapshots.
 The commit preceded release #36948 (`4ecb619b5c409396edd5815a1ce65941cb29cd74`),
 whose production API promotion succeeded on 2026-09-25 at 23:13:47 UTC
 ([release run](https://github.com/okou-ai/okou/actions/runs/36198938622/job/108284233073)).
 
-This floor must be deployed before a separate follow-up removes Web App and CLI
-non-empty inline readers, the capability request header, and the inline
-contract variant for non-empty rows. The empty inline response for a scope
-without a snapshot row is permanent and stays supported. Removing client
-compatibility in this floor-setting release would not establish that the floor
-was already active in production. Recheck the serving API and floor before the
-follow-up enters its release path.
+The floor and the JSONB column removal were deployed in release #36989
+([production run](https://github.com/okou-ai/okou/actions/runs/36213251627),
+API promotion succeeded 2026-09-26 03:02:37 UTC). The subsequent client cleanup
+removes Web App and CLI non-empty inline readers, the capability header from
+new client requests, and the non-empty inline contract. The empty response for
+a scope without a snapshot row is permanent and stays supported.
+
+The API keeps `X-Chat-Thread-Snapshot-R2` in its CORS preflight allowlist for
+previously loaded Web App bundles, which still send it on every request. The
+Web client floor is `0.963.3`, below those builds, and a browser cannot receive
+`426 Upgrade Required` if preflight rejects the request first. This allowance
+does not restore inline snapshot responses or cause new clients to send the
+header. Remove it under #36375 only in a later release, after the header-free
+App is live at a distinct version and an enforced Web client floor excludes
+all header-sending bundles, including already-open tabs on their next request.
 
 ## Chat thread snapshot JSONB column retired (2026-09-26)
 

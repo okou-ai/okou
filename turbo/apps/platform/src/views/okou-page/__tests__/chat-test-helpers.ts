@@ -38,6 +38,7 @@ import {
 
 import { fill } from "../../../__tests__/page-helper.ts";
 import {
+  mockChatThreadSnapshotResponse,
   chatEventRowsResponse,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
@@ -798,11 +799,14 @@ export function mockChatLifecycle(
     },
   );
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: threadListSnapshot(effectiveThreadList()),
-      latestEventId: latestThreadEventId,
-      latestSeqId: latestThreadEventSeqId,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: threadListSnapshot(effectiveThreadList()),
+        latestEventId: latestThreadEventId,
+        latestSeqId: latestThreadEventSeqId,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

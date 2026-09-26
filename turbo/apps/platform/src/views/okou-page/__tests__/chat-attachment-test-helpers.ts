@@ -15,6 +15,7 @@ import { waitFor } from "@testing-library/react";
 
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
+  mockChatThreadSnapshotResponse,
   chatEventRowsResponse,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
@@ -262,21 +263,24 @@ export function mockSplitAttachmentChats(
     }),
   );
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: threadListSnapshot(
-        [left, right].map((chat) => {
-          return {
-            id: chat.threadId,
-            title: chat.title,
-            agent: { id: ATTACHMENT_AGENT_ID, avatarUrl: null },
-            createdAt: "2026-03-10T00:00:00Z",
-            updatedAt: "2026-03-10T00:00:00Z",
-          };
-        }),
-      ),
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: threadListSnapshot(
+          [left, right].map((chat) => {
+            return {
+              id: chat.threadId,
+              title: chat.title,
+              agent: { id: ATTACHMENT_AGENT_ID, avatarUrl: null },
+              createdAt: "2026-03-10T00:00:00Z",
+              updatedAt: "2026-03-10T00:00:00Z",
+            };
+          }),
+        ),
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   context.mocks.api(
     chatThreadEventsContract.rows,

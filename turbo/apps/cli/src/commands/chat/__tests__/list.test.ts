@@ -77,16 +77,37 @@ function event(options: {
   };
 }
 
+function mockR2Snapshot(snapshot: {
+  readonly chatThreads: readonly ReturnType<typeof snapshotThread>[];
+  readonly latestEventId: string | null;
+  readonly latestSeqId: number | null;
+}) {
+  const url = `https://r2.example.com/chat-thread-snapshots/${crypto.randomUUID()}.json`;
+  server.use(
+    http.get(url, () => {
+      return HttpResponse.json({ chatThreads: snapshot.chatThreads });
+    }),
+  );
+  return {
+    url,
+    expiresInSeconds: 900,
+    latestEventId: snapshot.latestEventId,
+    latestSeqId: snapshot.latestSeqId,
+  };
+}
+
 function mockStableThreadSnapshot(
   threads: readonly ReturnType<typeof snapshotThread>[],
 ): void {
   server.use(
     http.get(SNAPSHOT_URL, () => {
-      return HttpResponse.json({
-        chatThreads: threads,
-        latestEventId: INITIAL_EVENT_ID,
-        latestSeqId: INITIAL_SEQ_ID,
-      });
+      return HttpResponse.json(
+        mockR2Snapshot({
+          chatThreads: threads,
+          latestEventId: INITIAL_EVENT_ID,
+          latestSeqId: INITIAL_SEQ_ID,
+        }),
+      );
     }),
     http.get(EVENTS_URL, () => {
       return HttpResponse.json({ events: [], hasMore: false });
@@ -121,36 +142,62 @@ describe("okou chat list command", () => {
     await rm(cacheDirectory, { recursive: true, force: true });
   });
 
+  it("lists no threads when the organization has no snapshot row", async () => {
+    server.use(
+      http.get(SNAPSHOT_URL, () => {
+        return HttpResponse.json({
+          chatThreads: [],
+          latestEventId: null,
+          latestSeqId: null,
+        });
+      }),
+      http.get(EVENTS_URL, () => {
+        return HttpResponse.json({ events: [], hasMore: false });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "list", "--json"]);
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
+      {
+        agentId: AGENT_ID,
+        total: 0,
+        threads: [],
+      },
+    );
+  });
+
   it("replays incremental events from the cache and defaults to OKOU_AGENT_ID", async () => {
     let snapshotRequests = 0;
     let eventRequests = 0;
     server.use(
       http.get(SNAPSHOT_URL, () => {
         snapshotRequests++;
-        return HttpResponse.json({
-          chatThreads: [
-            snapshotThread({
-              id: THREAD_ID,
-              agentId: AGENT_ID,
-              title: "Initial title",
-              sortAt: "2026-07-24T03:00:00.000Z",
-            }),
-            snapshotThread({
-              id: SECOND_THREAD_ID,
-              agentId: AGENT_ID,
-              title: "Second title",
-              sortAt: "2026-07-24T02:00:00.000Z",
-            }),
-            snapshotThread({
-              id: OTHER_THREAD_ID,
-              agentId: OTHER_AGENT_ID,
-              title: "Other agent",
-              sortAt: "2026-07-24T04:00:00.000Z",
-            }),
-          ],
-          latestEventId: INITIAL_EVENT_ID,
-          latestSeqId: INITIAL_SEQ_ID,
-        });
+        return HttpResponse.json(
+          mockR2Snapshot({
+            chatThreads: [
+              snapshotThread({
+                id: THREAD_ID,
+                agentId: AGENT_ID,
+                title: "Initial title",
+                sortAt: "2026-07-24T03:00:00.000Z",
+              }),
+              snapshotThread({
+                id: SECOND_THREAD_ID,
+                agentId: AGENT_ID,
+                title: "Second title",
+                sortAt: "2026-07-24T02:00:00.000Z",
+              }),
+              snapshotThread({
+                id: OTHER_THREAD_ID,
+                agentId: OTHER_AGENT_ID,
+                title: "Other agent",
+                sortAt: "2026-07-24T04:00:00.000Z",
+              }),
+            ],
+            latestEventId: INITIAL_EVENT_ID,
+            latestSeqId: INITIAL_SEQ_ID,
+          }),
+        );
       }),
       http.get(EVENTS_URL, ({ request }) => {
         eventRequests++;
@@ -237,20 +284,23 @@ describe("okou chat list command", () => {
     server.use(
       http.get(SNAPSHOT_URL, () => {
         snapshotRequests++;
-        return HttpResponse.json({
-          chatThreads: [
-            snapshotThread({
-              id: THREAD_ID,
-              agentId: AGENT_ID,
-              title:
-                snapshotRequests === 1 ? "Cached title" : "Refreshed title",
-              sortAt: "2026-07-24T03:00:00.000Z",
-            }),
-          ],
-          latestEventId:
-            snapshotRequests === 1 ? INITIAL_EVENT_ID : REFRESH_EVENT_ID,
-          latestSeqId: snapshotRequests === 1 ? INITIAL_SEQ_ID : REFRESH_SEQ_ID,
-        });
+        return HttpResponse.json(
+          mockR2Snapshot({
+            chatThreads: [
+              snapshotThread({
+                id: THREAD_ID,
+                agentId: AGENT_ID,
+                title:
+                  snapshotRequests === 1 ? "Cached title" : "Refreshed title",
+                sortAt: "2026-07-24T03:00:00.000Z",
+              }),
+            ],
+            latestEventId:
+              snapshotRequests === 1 ? INITIAL_EVENT_ID : REFRESH_EVENT_ID,
+            latestSeqId:
+              snapshotRequests === 1 ? INITIAL_SEQ_ID : REFRESH_SEQ_ID,
+          }),
+        );
       }),
       http.get(EVENTS_URL, ({ request }) => {
         eventRequests++;
@@ -289,24 +339,26 @@ describe("okou chat list command", () => {
   it("lets --agent override OKOU_AGENT_ID", async () => {
     server.use(
       http.get(SNAPSHOT_URL, () => {
-        return HttpResponse.json({
-          chatThreads: [
-            snapshotThread({
-              id: THREAD_ID,
-              agentId: AGENT_ID,
-              title: "Current agent",
-              sortAt: "2026-07-24T03:00:00.000Z",
-            }),
-            snapshotThread({
-              id: OTHER_THREAD_ID,
-              agentId: OTHER_AGENT_ID,
-              title: "Selected agent",
-              sortAt: "2026-07-24T04:00:00.000Z",
-            }),
-          ],
-          latestEventId: INITIAL_EVENT_ID,
-          latestSeqId: INITIAL_SEQ_ID,
-        });
+        return HttpResponse.json(
+          mockR2Snapshot({
+            chatThreads: [
+              snapshotThread({
+                id: THREAD_ID,
+                agentId: AGENT_ID,
+                title: "Current agent",
+                sortAt: "2026-07-24T03:00:00.000Z",
+              }),
+              snapshotThread({
+                id: OTHER_THREAD_ID,
+                agentId: OTHER_AGENT_ID,
+                title: "Selected agent",
+                sortAt: "2026-07-24T04:00:00.000Z",
+              }),
+            ],
+            latestEventId: INITIAL_EVENT_ID,
+            latestSeqId: INITIAL_SEQ_ID,
+          }),
+        );
       }),
       http.get(EVENTS_URL, () => {
         return HttpResponse.json({ events: [], hasMore: false });

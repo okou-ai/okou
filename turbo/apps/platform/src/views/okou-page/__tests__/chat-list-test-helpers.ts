@@ -18,7 +18,10 @@ import {
   queryAllByRoleFast,
   type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
-import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  type TestContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
 
 export const CHAT_LIST_AGENT_ID = "c7000000-0000-4000-a000-000000000001";
@@ -128,11 +131,14 @@ export function installChatListStream(
   let currentEvents = [...(options.events ?? [])];
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await options.remoteGate;
-    return respond(200, {
-      chatThreads: [...options.snapshot],
-      latestEventId: chatListEventId(options.caseId, 1),
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [...options.snapshot],
+        latestEventId: chatListEventId(options.caseId, 1),
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, async ({ query, respond }) => {
     await options.remoteGate;

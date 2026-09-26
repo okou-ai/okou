@@ -78,6 +78,11 @@ export function allowedCorsOrigin(origin: string | undefined): string | null {
   return null;
 }
 
+// Previously loaded App bundles still send this on every API request. Keep CORS
+// preflight working until the header-free App is live with a distinct version
+// and the Web client floor excludes those bundles; then remove it under #36375.
+const LEGACY_CHAT_THREAD_SNAPSHOT_R2_HEADER = "X-Chat-Thread-Snapshot-R2";
+
 const firstPartyCors: MiddlewareHandler = cors({
   origin: (origin) => {
     return allowedCorsOrigin(origin);
@@ -98,6 +103,7 @@ const firstPartyCors: MiddlewareHandler = cors({
     "Range",
     "X-Vercel-Protection-Bypass",
     ...CLIENT_HEADER_NAMES,
+    LEGACY_CHAT_THREAD_SNAPSHOT_R2_HEADER,
   ],
   exposeHeaders: [CHAT_EVENT_SCHEMA_VERSION_HEADER],
   maxAge: 86_400,

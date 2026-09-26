@@ -4,7 +4,6 @@ import {
 } from "../../../test-fixtures/goal-queue";
 
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import { CHAT_THREAD_SNAPSHOT_R2_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import AdmZip from "adm-zip";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
@@ -981,14 +980,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
     expect("chatThreads" in headerlessResponse.body).toBeFalsy();
 
-    const capableClientHeaders = {
-      ...okouCapabilityHeaders(
-        actor,
-        randomUUID(),
-        CHAT_THREAD_READ_CAPABILITIES,
-      ),
-      [CHAT_THREAD_SNAPSHOT_R2_HEADER]: "1",
-    };
+    const capableClientHeaders = okouCapabilityHeaders(
+      actor,
+      randomUUID(),
+      CHAT_THREAD_READ_CAPABILITIES,
+    );
     const response = await accept(
       client.snapshot({
         headers: capableClientHeaders,

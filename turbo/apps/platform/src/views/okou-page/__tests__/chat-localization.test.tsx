@@ -16,7 +16,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import type { SupportedLocale } from "../../../i18n/resources.ts";
 import {
   buildModelPolicy,
@@ -164,11 +167,14 @@ function configureExistingChat(args: {
   });
   configureModelRoute();
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [chatThread(args.title)],
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [chatThread(args.title)],
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
     return respond(200, {
