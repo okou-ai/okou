@@ -17,7 +17,8 @@ readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2b
 # before it may still return inline data to an old header-less client.
 readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40da0ad4
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
-readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_chat_thread_snapshot_jsonb.sql
+readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
+readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1260_drop_chat_thread_snapshot_jsonb.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -81,6 +82,17 @@ fi
 
 if ! git merge-base --is-ancestor "$CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the R2-only chat thread snapshot API: ${CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT}."
+fi
+
+# Migration 1259 drops agent_runs.last_heartbeat_at. Earlier APIs still declare
+# it, so every agent_runs insert, bare select and bare returning names it.
+agent_run_heartbeat_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$AGENT_RUN_HEARTBEAT_DROP_PATH" | sed -n '1p')
+if [[ ! "$agent_run_heartbeat_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged agent_runs heartbeat column drop on main."
+fi
+if ! git merge-base --is-ancestor "$agent_run_heartbeat_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the agent_runs heartbeat column drop: ${agent_run_heartbeat_drop_commit}."
 fi
 
 # Once the snapshot JSONB column is dropped, earlier APIs still name it in

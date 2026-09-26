@@ -183,7 +183,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.FigmaConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Figma design connector",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.ExpensifyConnector]: {
     maintainer: "yuma@okou.ai",

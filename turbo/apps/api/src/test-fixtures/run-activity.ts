@@ -1,5 +1,4 @@
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../lib/db";
 
@@ -35,13 +34,4 @@ export async function readActiveAgentRunFixture(runId: string) {
     .from(activeAgentRuns)
     .where(eq(activeAgentRuns.runId, runId));
   return row;
-}
-
-/** Contract-only observation: the retained row must no longer receive heartbeats. */
-export async function readRetainedRunHeartbeatFixture(runId: string) {
-  const [row] = await db()
-    .select({ lastHeartbeatAt: agentRuns.lastHeartbeatAt })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId));
-  return row?.lastHeartbeatAt;
 }

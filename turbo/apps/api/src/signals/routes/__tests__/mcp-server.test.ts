@@ -14,6 +14,8 @@ import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import {
   mcpGetChatThreadInputSchema,
   mcpGetChatThreadOutputSchema,
+  mcpGetChatIndicatorsInputSchema,
+  mcpGetChatIndicatorsOutputSchema,
   mcpListChatThreadsInputSchema,
   mcpListChatThreadsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
@@ -137,6 +139,7 @@ const fullCatalogToolNames = [
   "get_chat_status",
   "list_agents",
   "list_models",
+  "get_chat_indicators",
   "list_chat_threads",
   "get_chat_thread",
   "create_chat_thread",
@@ -190,6 +193,10 @@ const catalogContracts = {
   list_models: {
     input: standardSchema(mcpListModelsInputSchema),
     output: standardSchema(mcpListModelsOutputSchema),
+  },
+  get_chat_indicators: {
+    input: standardSchema(mcpGetChatIndicatorsInputSchema),
+    output: standardSchema(mcpGetChatIndicatorsOutputSchema),
   },
   list_chat_threads: {
     input: standardSchema(mcpListChatThreadsInputSchema),
@@ -256,6 +263,13 @@ const fullCatalogBudgets = {
     outputSchema: 1026,
     annotations: 111,
     total: 1707,
+  },
+  get_chat_indicators: {
+    description: 200,
+    inputSchema: 130,
+    outputSchema: 1500,
+    annotations: 125,
+    total: 2050,
   },
   list_chat_threads: {
     description: 524,
@@ -335,11 +349,8 @@ const representativeSchemaValues: readonly unknown[] = [
     defaultModel: { model: null, source: null },
     admission: "checked_on_send",
   },
-  {
-    threads: [],
-    nextCursor: null,
-    unreadCoverage: "retained_terminal_events",
-  },
+  { threads: [], nextCursor: null },
+  { agents: {}, threads: {}, unreadAt: {} },
   { messages: [], olderCursor: null, newerCursor: null },
   { matches: [], nextCursor: null, scanLimited: false },
   {
@@ -761,6 +772,12 @@ async function callTool(
 function structuredToolError(result: Awaited<ReturnType<typeof callTool>>) {
   expect(result.isError).toBeTruthy();
   return mcpToolErrorContentSchema.parse(result.structuredContent).error;
+}
+
+async function getIndicators(token: string) {
+  const result = await callTool(token, "get_chat_indicators");
+  expect(result.isError).not.toBeTruthy();
+  return mcpGetChatIndicatorsOutputSchema.parse(result.structuredContent);
 }
 
 async function listThreads(token: string, args: Record<string, unknown> = {}) {
@@ -6503,6 +6520,10 @@ describe("external MCP entry", () => {
             },
             { name: "list_models", annotations: { readOnlyHint: true } },
             {
+              name: "get_chat_indicators",
+              annotations: { readOnlyHint: true },
+            },
+            {
               name: "list_chat_threads",
               inputSchema: {
                 properties: {
@@ -6706,7 +6727,8 @@ describe("external MCP entry", () => {
           ],
           list_agents: [/24 hours/iu, /visibility/iu],
           list_models: [/admission/iu, /does not repair/iu, /model settings/iu],
-          list_chat_threads: [/does not mark read/iu, /not run completion/iu],
+          get_chat_indicators: [/does not mark read/iu, /not run completion/iu],
+          list_chat_threads: [/does not mark read/iu, /get_chat_indicators/iu],
           get_chat_thread: [
             /neither reads messages nor marks read/iu,
             /not prove/iu,
@@ -6760,10 +6782,15 @@ describe("external MCP entry", () => {
           structuredContent: {
             threads: [],
             nextCursor: null,
-            unreadCoverage: "retained_terminal_events",
           },
           content: [{ type: "text" }],
         },
+      });
+      const indicators = await getIndicators(token);
+      expect(indicators).toStrictEqual({
+        agents: {},
+        threads: {},
+        unreadAt: {},
       });
       expect(result.headers.get("cache-control")).toBe("no-store");
       expect(result.headers.get("content-type")).toContain(
@@ -6839,6 +6866,16 @@ describe("external MCP entry", () => {
       expect(result).toMatchObject({
         structuredContent: { threads: [], nextCursor: null },
       });
+      const indicatorResult = await sdk.callTool({
+        name: "get_chat_indicators",
+        arguments: {},
+      });
+      expect(indicatorResult.isError).not.toBeTruthy();
+      expect(
+        mcpGetChatIndicatorsOutputSchema.parse(
+          indicatorResult.structuredContent,
+        ),
+      ).toStrictEqual({ agents: {}, threads: {}, unreadAt: {} });
       const sent = await f.send("sdksearchneedle context handoff");
       for (let index = 1; index < 5; index++) {
         await f.send(`sdksearchneedle context handoff ${index}`, sent.threadId);
@@ -7015,6 +7052,7 @@ describe("external MCP entry", () => {
     const token = auth.token({ scope: `${orgScope} okou:chat:manage` });
     for (const { method, name, args } of [
       { method: "tools/list", name: "list_chat_threads", args: {} },
+      { method: "tools/call", name: "get_chat_indicators", args: {} },
       { method: "tools/call", name: "list_chat_threads", args: {} },
       {
         method: "tools/call",
@@ -7356,8 +7394,6 @@ describe("external MCP entry", () => {
     const filters = {
       agentId: f.agent.agentId,
       title: "100%_done",
-      activity: "idle",
-      unread: false,
       limit: 1,
     };
     const page = await listThreads(token, filters);
@@ -7377,7 +7413,6 @@ describe("external MCP entry", () => {
       }),
     ).toStrictEqual([first.id]);
     expect(next.nextCursor).toBeNull();
-    expect(next.unreadCoverage).toBe("retained_terminal_events");
 
     const current = await getThread(token, second.id);
     const instant = Date.parse(current.thread.lastMessageAt);
@@ -7419,8 +7454,6 @@ describe("external MCP entry", () => {
       title: "Original discovery title",
       titleTruncated: false,
       agent: { agentId: f.agent.agentId, name: "MCP discovery agent" },
-      activity: { queued: false, pending: false, running: false },
-      unread: false,
       model: {
         selectedModel: before.metadata.selectedModel,
         effectiveModel: before.metadata.selectedModel,
@@ -7519,7 +7552,7 @@ describe("external MCP entry", () => {
     for (const args of [
       { ...filters, cursor: tampered },
       { ...filters, cursor, title: "different" },
-      { ...filters, cursor, activity: "idle" },
+      { ...filters, cursor, agentId: randomUUID() },
     ]) {
       const result = await callTool(f.auth.token(), "list_chat_threads", args);
       expect(result.isError).toBeTruthy();
@@ -7629,13 +7662,13 @@ describe("external MCP entry", () => {
     expect(detail.thread.agent.name.endsWith("😀")).toBeTruthy();
   });
 
-  it("projects canonical run activity and unread without the sparse seven-day cap", async () => {
+  it("shares the App's active and unread indicators without changing read state", async () => {
     const f = await chatRunFixture();
     const sent = await f.chat.requestSendEvent(
       f.actor,
       {
         agentId: f.agent.agentId,
-        prompt: "Track canonical activity",
+        prompt: "Track shared indicators",
       },
       [201],
     );
@@ -7644,20 +7677,20 @@ describe("external MCP entry", () => {
     }
     const threadId = sent.body.threadId;
     await flushWaitUntilForTest();
-    const active = await listThreads(f.auth.token(), { activity: "active" });
-    expect(
-      active.threads.map((thread) => {
-        return thread.threadId;
-      }),
-    ).toStrictEqual([threadId]);
-    expect(active.threads[0]?.activity).toStrictEqual({
-      queued: false,
-      pending: true,
-      running: false,
+    const active = await getIndicators(f.auth.token());
+    expect(active).toStrictEqual(await f.chat.listIndicators(f.actor));
+    expect(active.agents[f.agent.agentId]).toBe("active");
+    expect(active.threads[threadId]).toBe("active");
+    expect(active.unreadAt).toStrictEqual({});
+
+    const retainedToken = f.auth.token({
+      exp: Math.floor((now() + 9 * 24 * 60 * 60 * 1000) / 1000),
     });
-    expect(
-      (await listThreads(f.auth.token(), { unread: true })).threads,
-    ).toStrictEqual([]);
+    await withMockNowForTest(now() + 8 * 24 * 60 * 60 * 1000, async () => {
+      const oldActive = await getIndicators(retainedToken);
+      expect(oldActive).toStrictEqual(await f.chat.listIndicators(f.actor));
+      expect(oldActive.threads[threadId]).toBe("active");
+    });
 
     await f.runs.requestCancelRun(f.actor, sent.body.runId, [200]);
     await flushWaitUntilForTest();
@@ -7675,40 +7708,30 @@ describe("external MCP entry", () => {
       .toBe(true);
     await f.chat.markThreadUnread(f.actor, threadId);
     const before = await f.chat.readThread(f.actor, threadId);
-    const unread = await listThreads(f.auth.token(), {
-      unread: true,
-      activity: "idle",
-    });
-    expect(
-      unread.threads.map((thread) => {
-        return thread.threadId;
-      }),
-    ).toStrictEqual([threadId]);
-    expect(
-      (await getThread(f.auth.token(), threadId)).thread.unread,
-    ).toBeTruthy();
+    const unread = await getIndicators(f.auth.token());
+    expect(unread).toStrictEqual(await f.chat.listIndicators(f.actor));
+    expect(unread.agents[f.agent.agentId]).toBe("unread");
+    expect(unread.threads[threadId]).toBe("unread");
+    expect(unread.unreadAt[threadId]).toStrictEqual(expect.any(String));
     await expect(f.chat.readThread(f.actor, threadId)).resolves.toStrictEqual(
       before,
     );
-    const retainedToken = f.auth.token({
-      exp: Math.floor((now() + 9 * 24 * 60 * 60 * 1000) / 1000),
-    });
+
     await withMockNowForTest(now() + 8 * 24 * 60 * 60 * 1000, async () => {
-      expect(
-        (await listThreads(retainedToken, { unread: true })).threads.map(
-          (thread) => {
-            return thread.threadId;
-          },
-        ),
-      ).toStrictEqual([threadId]);
+      const oldUnread = await getIndicators(retainedToken);
+      expect(oldUnread).toStrictEqual(await f.chat.listIndicators(f.actor));
+      expect(oldUnread).toStrictEqual({
+        agents: {},
+        threads: {},
+        unreadAt: {},
+      });
     });
     await f.chat.markThreadRead(f.actor, threadId);
-    expect(
-      (await listThreads(f.auth.token(), { unread: true })).threads,
-    ).toStrictEqual([]);
-    expect(
-      (await getThread(f.auth.token(), threadId)).thread.unread,
-    ).toBeFalsy();
+    await expect(getIndicators(f.auth.token())).resolves.toStrictEqual({
+      agents: {},
+      threads: {},
+      unreadAt: {},
+    });
   });
 
   it("continues pagination through intervening rename and deletion", async () => {
@@ -7778,7 +7801,6 @@ describe("external MCP entry", () => {
     { limit: 51 },
     { title: " \n\t " },
     { since: "2026-09-18T00:00:00Z", before: "2026-09-17T00:00:00Z" },
-    { activity: "completed" },
     { cursor: "x".repeat(4097) },
   ])("rejects invalid list arguments %j", async (args) => {
     const auth = await fixture();
@@ -7789,7 +7811,7 @@ describe("external MCP entry", () => {
     ).toMatchObject({ code: "invalid_arguments", retryable: false });
   });
 
-  it("returns canonical activity isolated to each signed organization", async () => {
+  it("returns active indicators isolated to each signed organization", async () => {
     const auth = await fixture();
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
@@ -7840,9 +7862,11 @@ describe("external MCP entry", () => {
             extraHeaders: protocolHeaders(
               auth.token({ org_id: actor.orgId }),
               "tools/call",
+              true,
+              "get_chat_indicators",
             ),
             body: requestBody("tools/call", true, {
-              name: "list_chat_threads",
+              name: "get_chat_indicators",
               arguments: {},
             }),
           }),
@@ -7855,15 +7879,16 @@ describe("external MCP entry", () => {
         const output = z
           .object({ result: z.object({ structuredContent: z.unknown() }) })
           .parse(rpc(result.body)).result.structuredContent;
-        const page = mcpListChatThreadsOutputSchema.parse(output);
-        expect(page.threads).toHaveLength(1);
-        const thread = page.threads[0];
-        if (!thread) {
-          throw new Error("Expected one owned active thread");
+        const indicators = mcpGetChatIndicatorsOutputSchema.parse(output);
+        expect(Object.values(indicators.threads)).toStrictEqual(["active"]);
+        expect(Object.values(indicators.agents)).toStrictEqual(["active"]);
+        expect(indicators.unreadAt).toStrictEqual({});
+        const threadId = Object.keys(indicators.threads)[0];
+        const agentId = Object.keys(indicators.agents)[0];
+        if (!threadId || !agentId) {
+          throw new Error("Expected one owned active thread and Agent");
         }
-        expect(Object.values(thread.activity).some(Boolean)).toBeTruthy();
-        expect(thread.unread).toBeFalsy();
-        return { threadId: thread.threadId, agentId: thread.agent.agentId };
+        return { threadId, agentId };
       }),
     ).toStrictEqual(expected);
   });

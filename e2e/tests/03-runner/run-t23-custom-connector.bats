@@ -5,6 +5,8 @@ load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
+    # Keep firewall/account assertions independent of real LLM shell decisions.
+    runner_e2e_use_native_codex_account
     runner_e2e_require_environment
     runner_e2e_setup_test
     CUSTOM_CONNECTOR_ID=""
