@@ -57,6 +57,7 @@ import {
 } from "../../../test-fixtures/chat-thread-events";
 
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
+import { setAgentRunStatusFixture } from "../../../test-fixtures/agent-deletion";
 import {
   seedOrgMetadata,
   seedUsagePricingRows,
@@ -3541,6 +3542,162 @@ describe("CHAT-03 run usage events", () => {
       }),
     ]);
   }, 60_000);
+
+  it("recovers a lost postcommit callback, a lost ack, and late usage without duplicate cards", async () => {
+    const { actor, agentId } = await entitledChatActorWithoutRunner(
+      "Recoverable usage projection agent",
+    );
+    const provider = `projection-${randomUUID().slice(0, 8)}`;
+    const category = "api_request";
+    await seedUsagePricingRows([
+      { kind: "connector", provider, category, unitPrice: 3, unitSize: 1 },
+    ]);
+    const { runId, threadId } = await sendChatRun(actor, {
+      agentId,
+      prompt: "project committed usage",
+    });
+    // A targeted terminal fixture avoids a runner claim; settlement and card
+    // reads still use real Hono routes and real PostgreSQL transactions.
+    await setAgentRunStatusFixture(runId, "completed");
+    const headers = {
+      authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
+    };
+    const webhooks = createWebhookCallbackApi(context);
+    const billing = createBillingMediaApi(context);
+    const record = async (quantity: number) => {
+      await webhooks.requestAgentUsageEvent(
+        {
+          runId,
+          events: [
+            {
+              idempotencyKey: randomUUID(),
+              kind: "connector",
+              provider,
+              category,
+              quantity,
+            },
+          ],
+        },
+        headers,
+        [200],
+      );
+    };
+    await record(2);
+    await billing.rollbackUsageSettlement(actor);
+    await expect(
+      usageEventsForRun(actor, threadId, runId),
+    ).resolves.toHaveLength(0);
+    await billing.processWithoutUsageProjection(actor);
+    await expect(
+      usageEventsForRun(actor, threadId, runId),
+    ).resolves.toHaveLength(0);
+    // No production request can expire a worker's lease. This guarded test
+    // route models a crash after claim; the real cron must recover the card.
+    await billing.injectUsageProjectionFault(runId, "expire-lease");
+    await Promise.all([
+      billing.drainUsageProjection(),
+      billing.drainUsageProjection(),
+    ]);
+    const first = await usageEventsForRun(actor, threadId, runId);
+    expect(first).toHaveLength(1);
+    expect(first[0]?.usage.totalCredits).toBe(6);
+
+    // The card committed, but the worker's ack or realtime wakeup was lost.
+    // Redrive must notify the client without appending a second revision.
+    await flushWaitUntilForTest();
+    context.mocks.ably.publish.mockClear();
+    await billing.injectUsageProjectionFault(runId, "drop-ack");
+    await billing.drainUsageProjection();
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      `chatThreadMessageCreated:${threadId}`,
+      null,
+    );
+    await expect(
+      usageEventsForRun(actor, threadId, runId),
+    ).resolves.toStrictEqual(first);
+
+    await record(1);
+    await billing.processWithoutUsageProjection(actor);
+    await billing.drainUsageProjection();
+    const revised = await usageEventsForRun(actor, threadId, runId);
+    expect(revised).toHaveLength(2);
+    expect(revised[1]).toMatchObject({
+      revokesEventId: first[0]?.id,
+      usage: {
+        totalCredits: 9,
+        settledAt: first[0]?.usage.settledAt,
+      },
+    });
+    // During the rolling deployment an old API still directly writes the
+    // revision. The new consumer must converge without a second card.
+    await record(1);
+    await billing.processWithoutUsageProjection(actor);
+    await billing.projectUsageAsLegacyWriter(runId);
+    const oldWriter = await usageEventsForRun(actor, threadId, runId);
+    expect(oldWriter).toHaveLength(3);
+    await billing.drainUsageProjection();
+    await expect(
+      usageEventsForRun(actor, threadId, runId),
+    ).resolves.toStrictEqual(oldWriter);
+  }, 30_000);
+
+  it("defers nonterminal work and does not resurrect a deleted thread", async () => {
+    const { actor, agentId } = await entitledChatActorWithoutRunner(
+      "Deferred usage projection agent",
+    );
+    const provider = `deferred-${randomUUID().slice(0, 8)}`;
+    const category = "api_request";
+    await seedUsagePricingRows([
+      { kind: "connector", provider, category, unitPrice: 1, unitSize: 1 },
+    ]);
+    const billing = createBillingMediaApi(context);
+    const addUsage = async (runId: string) => {
+      await createWebhookCallbackApi(context).requestAgentUsageEvent(
+        {
+          runId,
+          events: [
+            {
+              idempotencyKey: randomUUID(),
+              kind: "connector",
+              provider,
+              category,
+              quantity: 1,
+            },
+          ],
+        },
+        { authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}` },
+        [200],
+      );
+      await billing.processWithoutUsageProjection(actor);
+    };
+    const first = await sendChatRun(actor, { agentId, prompt: "defer card" });
+    await addUsage(first.runId);
+    // The test send helper may finalize its run automatically. Force the
+    // projection's nonterminal branch after financial COMMIT.
+    await setAgentRunStatusFixture(first.runId, "running");
+    await billing.drainUsageProjection();
+    await expect(
+      usageEventsForRun(actor, first.threadId, first.runId),
+    ).resolves.toHaveLength(0);
+    await setAgentRunStatusFixture(first.runId, "completed");
+    // Simulate passage of one backoff interval without sleeping in the test.
+    await billing.injectUsageProjectionFault(first.runId, "force-due");
+    await billing.drainUsageProjection();
+    await expect(
+      usageEventsForRun(actor, first.threadId, first.runId),
+    ).resolves.toHaveLength(1);
+
+    const second = await sendChatRun(actor, { agentId, prompt: "erase card" });
+    await setAgentRunStatusFixture(second.runId, "completed");
+    await addUsage(second.runId);
+    await chat.deleteThread(actor, second.threadId);
+    await billing.drainUsageProjection();
+    // User-visible history remains deleted after the projection cron runs.
+    await expect(chat.listThreadEvents(actor, second.threadId)).rejects.toThrow(
+      /received 404/,
+    );
+  }, 30_000);
 
   it("revises run usage when later usage settles", async () => {
     const { actor, agentId } = await entitledChatActorWithoutRunner(

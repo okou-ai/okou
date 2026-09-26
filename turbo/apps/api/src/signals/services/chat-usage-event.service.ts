@@ -136,8 +136,50 @@ async function loadUsageBreakdownRows(tx: WriteTx, runId: string) {
     .orderBy(usage.kind, usage.provider);
 }
 
-export const maybeEmitRunUsageEvent$ = command(
-  async ({ set }, runId: string, signal: AbortSignal): Promise<boolean> => {
+export type RunUsageProjectionResult =
+  | "updated"
+  | "unchanged"
+  | "deferred"
+  | "discarded";
+
+/** A replay may need to wake a client after its card committed. Duplicate wakeups only refetch canonical history. */
+async function notifyUsageProjection(target: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly chatThreadId: string;
+}): Promise<void> {
+  await publishChatThreadMessageCreatedSafely({
+    userId: target.userId,
+    orgId: target.orgId,
+    threadId: target.chatThreadId,
+  });
+}
+
+function logRunUsageProjection(emitted: {
+  readonly action: "emitted" | "revised";
+  readonly runId: string;
+  readonly chatThreadId: string;
+  readonly totalCredits: number;
+}): void {
+  L.debug(
+    emitted.action === "emitted"
+      ? "Emitted chat usage message"
+      : "Revised chat usage message",
+    {
+      runId: emitted.runId,
+      chatThreadId: emitted.chatThreadId,
+      totalCredits: emitted.totalCredits,
+    },
+  );
+}
+
+/** The content-owned projection result also tells the durable worker when to retry. */
+export const projectRunUsageEvent$ = command(
+  async (
+    { set },
+    runId: string,
+    signal: AbortSignal,
+  ): Promise<RunUsageProjectionResult> => {
     const db = set(writeDb$);
     const emitted = await db.transaction(async (tx) => {
       // Multiple terminal side effects can attempt emission for the same run.
@@ -151,20 +193,23 @@ export const maybeEmitRunUsageEvent$ = command(
       signal.throwIfAborted();
 
       if (!context) {
-        return null;
+        return { state: "discarded" as const };
       }
       if (
         !TERMINAL_RUN_STATUSES.includes(
           context.status as (typeof TERMINAL_RUN_STATUSES)[number],
         )
       ) {
-        return null;
+        return { state: "deferred" as const };
       }
       if (!context.chatThreadId || !context.userId) {
-        return null;
+        return { state: "discarded" as const };
       }
-      if (context.hasPending || context.finalizedCount === 0) {
-        return null;
+      if (context.hasPending) {
+        return { state: "deferred" as const };
+      }
+      if (context.finalizedCount === 0) {
+        return { state: "unchanged" as const };
       }
 
       const breakdownRows = await loadUsageBreakdownRows(tx, runId);
@@ -220,7 +265,12 @@ export const maybeEmitRunUsageEvent$ = command(
         existingUsageEvent &&
         isDeepStrictEqual(existingUsageEvent.payload?.usage, payload)
       ) {
-        return null;
+        return {
+          state: "matched" as const,
+          chatThreadId: context.chatThreadId,
+          orgId: context.orgId,
+          userId: context.userId,
+        };
       }
 
       const event = {
@@ -240,10 +290,11 @@ export const maybeEmitRunUsageEvent$ = command(
       signal.throwIfAborted();
 
       if (!inserted) {
-        return null;
+        return { state: "deferred" as const };
       }
 
       return {
+        state: "updated" as const,
         action: existingUsageEvent
           ? ("revised" as const)
           : ("emitted" as const),
@@ -255,28 +306,25 @@ export const maybeEmitRunUsageEvent$ = command(
     });
     signal.throwIfAborted();
 
-    if (!emitted) {
-      return false;
+    if (emitted.state !== "updated" && emitted.state !== "matched") {
+      return emitted.state;
     }
 
-    await publishChatThreadMessageCreatedSafely({
-      userId: emitted.userId,
-      orgId: emitted.orgId,
-      threadId: emitted.chatThreadId,
-    });
+    await notifyUsageProjection(emitted);
     signal.throwIfAborted();
 
-    L.debug(
-      emitted.action === "emitted"
-        ? "Emitted chat usage message"
-        : "Revised chat usage message",
-      {
-        runId,
-        chatThreadId: emitted.chatThreadId,
-        totalCredits: emitted.totalCredits,
-      },
-    );
+    if (emitted.state === "matched") {
+      return "unchanged";
+    }
+    logRunUsageProjection({ ...emitted, runId });
 
-    return true;
+    return "updated";
+  },
+);
+
+/** Retain the prior boolean surface for old postcommit callers. */
+export const maybeEmitRunUsageEvent$ = command(
+  async ({ set }, runId: string, signal: AbortSignal): Promise<boolean> => {
+    return (await set(projectRunUsageEvent$, runId, signal)) === "updated";
   },
 );
