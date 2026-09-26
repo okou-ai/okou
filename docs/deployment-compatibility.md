@@ -24,9 +24,11 @@ merge commit. No screenshot decoder or index changes belong to this step.
 
 **Release ordering:** #36900 shipped separately in release #36948. #36955
 merged into main with migration `1258_active_agent_runs_step2.sql` and shipped
-separately in release #36974. This PR follows with migration
-`1259_active_agent_runs_chat_thread_slot.sql`. Do not ship both steps in one
-release. The rollback floor for #36929 is the deployed step-2 API.
+separately in release #36974. #36980's step-3 migration
+`1259_drop_agent_runs_last_heartbeat_at.sql` must ship alone in its own release
+(#36986), with the previous API drained. Only then may #36929 ship separately
+with migration `1260_active_agent_runs_chat_thread_slot.sql`. The rollback
+floor for #36929 is the deployed step-3 API.
 
 #36955 owns the backfill for queued, pending, running and started terminal runs
 still within the recovery grace or heartbeating. #36929 does **not** repeat
@@ -39,7 +41,7 @@ admission, Web preflight and queue drain read the slot. Admission, completion,
 timeout and queued-run markers no longer lock the thread row; the session
 binding uses compare-and-set.
 
-**Mixed-version risk:** the step-2 API still inserts active rows without a
+**Mixed-version risk:** the step-3 API still inserts active rows without a
 thread-slot conflict handler. If its launch races a new API launch or a still-
 finishing terminal run, the unique index can reject its insert (`23505`): its
 launch rolls back and inline send returns a temporary HTTP 500. The separately
@@ -384,6 +386,28 @@ Activity and summary already use `active_agent_runs`; migration `1258` drops
 **do not roll back to #36900**: its timeout cleanup reads the now-stale
 `agent_runs.last_heartbeat_at`, and older APIs write the dropped snapshot
 table. Step 3 drops the old heartbeat column. Do not ship step 3 in this PR.
+
+## Active run state: `agent_runs.last_heartbeat_at` dropped (step 3 of 3)
+
+**Release gate:** step 2 (#36955, `e62567d3`) shipped alone in `api-v1.681.2`
+(release #36974). Promote the release carrying this change only after
+`api-v1.681.2` is live in production and the previous API has drained. Step 2
+is the first API that neither reads nor writes `agent_runs.last_heartbeat_at`;
+timeout cleanup, capacity and every heartbeat use `active_agent_runs`.
+
+Migration `1259` drops the column and this release removes its Drizzle
+declaration. `test:migration-consistency` requires both to ship together (as in
+`1228` and `1257`). Step 2 still declares the column, so Drizzle names it in
+every `agent_runs` insert, bare select and bare returning. Migrations run
+before API promotion; until the previous API drains, those statements on the
+old instances fail with `42703`, including run creation. Release this change
+alone at low traffic. The drop is metadata-only; the two heartbeat indexes on
+the column were already removed by `1249`.
+
+Rollback promotes artifacts without restoring schema, so the production
+rollback resolver rejects API targets that predate the canonical main commit
+that added `1259_drop_agent_runs_last_heartbeat_at.sql`. Recovery past it needs
+a forward-fix migration that restores the nullable column.
 
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 
