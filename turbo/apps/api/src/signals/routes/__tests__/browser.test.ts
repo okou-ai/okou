@@ -242,6 +242,7 @@ function nativePasswordRequest(callbackPrompt: string) {
 
 async function createNativePasswordActionForPreflightTest(
   eventsBeforeReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[1]>,
+  withholdReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[2]>,
 ): Promise<{
   readonly token: string;
   readonly providerId: string;
@@ -258,7 +259,7 @@ async function createNativePasswordActionForPreflightTest(
     [FeatureSwitchKey.BrowserNativeInput]: true,
   });
   const providerId = randomUUID();
-  acceptBrowserUseCdpSessions([providerId], eventsBeforeReply);
+  acceptBrowserUseCdpSessions([providerId], eventsBeforeReply, withholdReply);
   mockNativeInputTarget();
   server.use(
     http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
@@ -1243,6 +1244,48 @@ describe("Browser user-action route", () => {
       status: 503,
       body: { error: { code: "BROWSER_USE_TIMEOUT" } },
     });
+  });
+
+  it("keeps a preflight pending when its attach reply is withheld until the deadline", async () => {
+    const attachStarted = createDeferredPromise<void>(context.signal);
+    let holdAttachReply = false;
+    const { token } = await createNativePasswordActionForPreflightTest(
+      (command) => {
+        if (holdAttachReply && command.method === "Target.attachToTarget") {
+          attachStarted.resolve();
+          return [{ method: "Target.attachedToTarget", params: {} }];
+        }
+        return [];
+      },
+      (command) => {
+        return holdAttachReply && command.method === "Target.attachToTarget";
+      },
+    );
+    const deadline = new AbortController();
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      return milliseconds === 15_000 ? deadline.signal : undefined;
+    });
+    holdAttachReply = true;
+    const preflight = userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    await attachStarted.promise;
+    deadline.abort(new DOMException("CDP deadline", "TimeoutError"));
+    const failed = await preflight;
+    expect(failed).toMatchObject({
+      status: 503,
+      body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+    });
+    const pending = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+      }),
+      [200],
+    );
+    expect(pending.body.state).toBe("pending");
   });
 
   it("preflights when an attach event and reply arrive back-to-back", async () => {
@@ -4698,6 +4741,7 @@ function browserUseCdpWebSocketUrl(providerSessionId: string): string {
 function acceptBrowserUseCdpSessions(
   providerSessionIds: readonly string[],
   eventsBeforeReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[1]>,
+  withholdReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[2]>,
 ): void {
   for (const providerSessionId of providerSessionIds) {
     const webSocketUrl = browserUseCdpWebSocketUrl(providerSessionId);
@@ -4708,7 +4752,7 @@ function acceptBrowserUseCdpSessions(
           return HttpResponse.json({ webSocketDebuggerUrl: webSocketUrl });
         },
       ),
-      browserUseCdpHandler(webSocketUrl, eventsBeforeReply),
+      browserUseCdpHandler(webSocketUrl, eventsBeforeReply, withholdReply),
     );
   }
 }

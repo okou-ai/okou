@@ -688,6 +688,7 @@ export function browserUseCdpHandler(
   eventsBeforeReply?: (
     command: BrowserUseCdpCommand,
   ) => readonly Readonly<Record<string, unknown>>[],
+  withholdReply?: (command: BrowserUseCdpCommand) => boolean,
 ) {
   const cdp = ws.link(url);
   return cdp.addEventListener("connection", ({ client }) => {
@@ -700,6 +701,9 @@ export function browserUseCdpHandler(
       const mockedResult = apiTestMocks.browserUseCdp.command(command);
       for (const beforeReply of eventsBeforeReply?.(command) ?? []) {
         client.send(JSON.stringify(beforeReply));
+      }
+      if (withholdReply?.(command)) {
+        return;
       }
       if (mockedResult instanceof Error) {
         client.send(
