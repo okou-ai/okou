@@ -22,7 +22,7 @@ Removed from the API:
   reconnect, activation, disconnect and terminal cleanup. Token refresh keeps
   the `model_provider_state` advisory lock.
 
-Migration `1259_personal_subscription_account_only` sets
+Migration `1260_personal_subscription_account_only` sets
 `model_providers.secret_id = NULL` for personal Claude/Codex providers, deletes
 their mirrored `secrets` rows (Claude token; Codex `CHATGPT_*`/`CODEX_AUTH_JSON`)
 and adds the unique index
@@ -45,7 +45,7 @@ Overlap and rollback:
   API treats the missing mirror as an unavailable subscription and its legacy
   import/seed paths could recreate or diverge from account state. The production
   rollback resolver rejects API targets that predate the merge commit adding
-  `1259_personal_subscription_account_only.sql`; roll forward instead.
+  `1260_personal_subscription_account_only.sql`; roll forward instead.
 
 ## Computer Use audit column: code-only read/write cutover (2026-09-26)
 
@@ -401,6 +401,28 @@ Activity and summary already use `active_agent_runs`; migration `1258` drops
 **do not roll back to #36900**: its timeout cleanup reads the now-stale
 `agent_runs.last_heartbeat_at`, and older APIs write the dropped snapshot
 table. Step 3 drops the old heartbeat column. Do not ship step 3 in this PR.
+
+## Active run state: `agent_runs.last_heartbeat_at` dropped (step 3 of 3)
+
+**Release gate:** step 2 (#36955, `e62567d3`) shipped alone in `api-v1.681.2`
+(release #36974). Promote the release carrying this change only after
+`api-v1.681.2` is live in production and the previous API has drained. Step 2
+is the first API that neither reads nor writes `agent_runs.last_heartbeat_at`;
+timeout cleanup, capacity and every heartbeat use `active_agent_runs`.
+
+Migration `1259` drops the column and this release removes its Drizzle
+declaration. `test:migration-consistency` requires both to ship together (as in
+`1228` and `1257`). Step 2 still declares the column, so Drizzle names it in
+every `agent_runs` insert, bare select and bare returning. Migrations run
+before API promotion; until the previous API drains, those statements on the
+old instances fail with `42703`, including run creation. Release this change
+alone at low traffic. The drop is metadata-only; the two heartbeat indexes on
+the column were already removed by `1249`.
+
+Rollback promotes artifacts without restoring schema, so the production
+rollback resolver rejects API targets that predate the canonical main commit
+that added `1259_drop_agent_runs_last_heartbeat_at.sql`. Recovery past it needs
+a forward-fix migration that restores the nullable column.
 
 ## Chat thread archived rollout fallbacks removed (2026-09-25)
 

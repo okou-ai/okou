@@ -1272,8 +1272,15 @@
     {
       "idx": 1259,
       "version": "7",
-      "when": 1790386227129,
-      "tag": "1259_personal_subscription_account_only",
+      "when": 1790385766079,
+      "tag": "1259_drop_agent_runs_last_heartbeat_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 1260,
+      "version": "7",
+      "when": 1790388503838,
+      "tag": "1260_personal_subscription_account_only",
       "breakpoints": true
     }
   ]

@@ -14,7 +14,8 @@ readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70
 # and thread inserts.
 readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
-readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1259_personal_subscription_account_only.sql
+readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
+readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -76,7 +77,18 @@ if ! git merge-base --is-ancestor "$public_brand_retirement_commit" "$TARGET_COM
   fail "Rollback target predates the public_brand retirement: ${public_brand_retirement_commit}."
 fi
 
-# Migration 1259 deletes the personal subscription secrets mirror. Earlier APIs
+# Migration 1259 drops agent_runs.last_heartbeat_at. Earlier APIs still declare
+# it, so every agent_runs insert, bare select and bare returning names it.
+agent_run_heartbeat_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$AGENT_RUN_HEARTBEAT_DROP_PATH" | sed -n '1p')
+if [[ ! "$agent_run_heartbeat_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged agent_runs heartbeat column drop on main."
+fi
+if ! git merge-base --is-ancestor "$agent_run_heartbeat_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the agent_runs heartbeat column drop: ${agent_run_heartbeat_drop_commit}."
+fi
+
+# Migration 1260 deletes the personal subscription secrets mirror. Earlier APIs
 # read that mirror, so they treat every personal Claude/Codex subscription as
 # unavailable and their legacy import paths diverge from the account store.
 personal_subscription_account_only_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
