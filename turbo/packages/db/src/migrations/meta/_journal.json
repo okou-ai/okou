@@ -1265,8 +1265,15 @@
     {
       "idx": 1258,
       "version": "7",
-      "when": 1790384297971,
-      "tag": "1258_drop_computer_use_audit_approval_outcome",
+      "when": 1790383932521,
+      "tag": "1258_active_agent_runs_step2",
+      "breakpoints": true
+    },
+    {
+      "idx": 1259,
+      "version": "7",
+      "when": 1790385271359,
+      "tag": "1259_drop_computer_use_audit_approval_outcome",
       "breakpoints": true
     }
   ]

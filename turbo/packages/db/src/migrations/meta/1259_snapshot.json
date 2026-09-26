@@ -1,6 +1,6 @@
 {
-  "id": "3b6f219d-f7e9-4983-81b6-c85b6f6c721d",
-  "prevId": "1de8b03f-87d8-4057-b5ec-4768516d3b1f",
+  "id": "bde40454-d925-4297-8e8d-dafbfbdf4a51",
+  "prevId": "3b6f219d-f7e9-4983-81b6-c85b6f6c721d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9971,12 +9971,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "approval_outcome": {
-          "name": "approval_outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "redacted_result": {
           "name": "redacted_result",

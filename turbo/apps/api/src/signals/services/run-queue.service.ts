@@ -405,7 +405,6 @@ async function promoteAdmittedQueuedRun(
     .update(agentRuns)
     .set({
       status: "pending",
-      lastHeartbeatAt: new Date(promotedAt),
       creditAdmitted:
         builtInModel && isFreePlanForCreditAdmission(capabilities?.planKey),
       runnerGroup: payload.runnerGroup,

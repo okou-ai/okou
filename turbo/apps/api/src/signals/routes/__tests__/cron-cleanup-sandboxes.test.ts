@@ -258,6 +258,7 @@ async function insertRunFixture(args?: {
   readonly composeName?: string;
   readonly createdAt?: Date;
   readonly lastHeartbeatAt?: Date | null;
+  readonly activeLastHeartbeatAt?: Date;
   readonly completedAt?: Date | null;
   readonly cancellationRecoveryCompleted?: boolean;
   readonly threadless?: boolean;
@@ -267,26 +268,28 @@ async function insertRunFixture(args?: {
   readonly orgId?: string;
   readonly runnerGroup?: string;
 }): Promise<RunFixture> {
+  const fixture: NonNullable<typeof args> = args ?? {};
   const response = await postCronCleanupState({
     action: "seed-run",
-    status: args?.status,
-    compose_name: args?.composeName,
-    created_at: args?.createdAt?.toISOString(),
+    status: fixture.status,
+    compose_name: fixture.composeName,
+    created_at: fixture.createdAt?.toISOString(),
     last_heartbeat_at:
-      args?.lastHeartbeatAt === undefined
+      fixture.lastHeartbeatAt === undefined
         ? undefined
-        : (args.lastHeartbeatAt?.toISOString() ?? null),
+        : (fixture.lastHeartbeatAt?.toISOString() ?? null),
+    active_last_heartbeat_at: fixture.activeLastHeartbeatAt?.toISOString(),
     completed_at:
-      args?.completedAt === undefined
+      fixture.completedAt === undefined
         ? undefined
-        : (args.completedAt?.toISOString() ?? null),
-    cancellation_recovery_completed: args?.cancellationRecoveryCompleted,
-    threadless: args?.threadless,
-    checkpoint_ready: args?.checkpointReady,
-    trigger_source: args?.triggerSource,
-    user_id: args?.userId,
-    org_id: args?.orgId,
-    runner_group: args?.runnerGroup,
+        : (fixture.completedAt?.toISOString() ?? null),
+    cancellation_recovery_completed: fixture.cancellationRecoveryCompleted,
+    threadless: fixture.threadless,
+    checkpoint_ready: fixture.checkpointReady,
+    trigger_source: fixture.triggerSource,
+    user_id: fixture.userId,
+    org_id: fixture.orgId,
+    runner_group: fixture.runnerGroup,
   });
   return {
     runId: stringField(response, "run_id"),
@@ -1273,6 +1276,42 @@ describe("sandbox cleanup", () => {
     await expect(findRun(fixture.runId)).resolves.toMatchObject({
       status: "running",
       error: null,
+    });
+  });
+
+  it("uses the active heartbeat even when the retained run heartbeat is stale", async () => {
+    const fixture = await trackRun(
+      insertRunFixture({
+        status: "running",
+        createdAt: minutesAgo(10),
+        lastHeartbeatAt: minutesAgo(3),
+        activeLastHeartbeatAt: minutesAgo(1),
+      }),
+    );
+
+    const response = await cleanupRegisteredFixtures();
+
+    expect(response.body.results).toHaveLength(0);
+    await expect(findRun(fixture.runId)).resolves.toMatchObject({
+      status: "running",
+    });
+  });
+
+  it("expires a silent active row even when the retained run heartbeat is recent", async () => {
+    const fixture = await trackRun(
+      insertRunFixture({
+        status: "running",
+        createdAt: minutesAgo(10),
+        lastHeartbeatAt: minutesAgo(1),
+        activeLastHeartbeatAt: minutesAgo(3),
+      }),
+    );
+
+    const response = await cleanupRegisteredFixtures();
+
+    expect(response.body.cleaned).toBe(1);
+    await expect(findRun(fixture.runId)).resolves.toMatchObject({
+      status: "timeout",
     });
   });
 
