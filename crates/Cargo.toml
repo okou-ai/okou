@@ -167,6 +167,11 @@ inherits = "dev"
 debug = "line-tables-only"
 incremental = false
 
+# Preserve workspace source lines in local backtraces, but avoid emitting debug
+# metadata for non-workspace dependencies in the large native test build.
+[profile.local.package."*"]
+debug = 0
+
 [profile.release]
 lto = true
 strip = true
