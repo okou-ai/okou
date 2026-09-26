@@ -4,7 +4,10 @@ import { runnerState } from "@okouai/db/schema/runner-state";
 import { and, eq, gt, inArray, like, lte } from "drizzle-orm";
 
 import { env } from "../../lib/env";
-import { supportsMandatoryWssListener } from "../../lib/runner-wss-target-config";
+import {
+  supportsMandatoryWssListener,
+  wssOriginFromRunnerHostname,
+} from "../../lib/runner-wss-target-config";
 import type { ReadonlyDb } from "../external/db";
 
 // Three missed 10-second routine heartbeats. A snapshot is NOT a socket or
@@ -12,7 +15,7 @@ import type { ReadonlyDb } from "../external/db";
 const WSS_RUNNER_FRESH_MS = 30_000;
 const MAX_CLOCK_LEAD_MS = 5000;
 
-/** A configured target, not evidence that DNS/Caddy/TLS is currently reachable. */
+/** An attribution-derived target, not evidence of live public ingress. */
 export interface RunnerWssTarget {
   readonly runId: string;
   readonly runnerId: string;
@@ -37,9 +40,8 @@ export async function resolveRunnerWssTarget(
     readonly now: Date;
   },
 ): Promise<RunnerWssTarget | null> {
-  const origins = env("OKOU_WSS_HOST_ORIGINS");
   const minimumVersion = env("OKOU_WSS_MIN_RUNNER_VERSION");
-  if (!origins || !minimumVersion) {
+  if (!minimumVersion) {
     return null;
   }
 
@@ -98,17 +100,15 @@ export async function resolveRunnerWssTarget(
     return null;
   }
 
-  const host = origins.find((entry) => {
-    return entry.inventoryHostname === row.runnerHostname;
-  });
-  if (!host) {
+  const publicOrigin = wssOriginFromRunnerHostname(row.runnerHostname);
+  if (!publicOrigin) {
     return null;
   }
 
   return {
     runId: row.runId,
     runnerId: row.runnerId,
-    publicOrigin: host.publicOrigin,
+    publicOrigin,
     ingressVerification: "not-observed",
     claimedVersion: row.runnerVersion,
     observedMode: row.mode,

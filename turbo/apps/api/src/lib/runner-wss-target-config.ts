@@ -1,67 +1,25 @@
 import { z } from "zod";
 
-// Inventory names identify a reviewed host entry; they are never URL authority.
-const inventoryHostnameSchema = z
+// The official Runner's inventory_hostname is the configured public WSS DNS
+// name. The claim contract accepts arbitrary text, so validate the persisted
+// snapshot before interpolating it into a browser-facing URL.
+const publicRunnerHostnameSchema = z
   .string()
-  .max(255)
-  .regex(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/)
+  .max(253)
+  .regex(
+    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/,
+  )
   .refine((name) => {
-    return name.split(".").every((label) => {
-      return (
-        label.length > 0 &&
-        label.length <= 63 &&
-        !label.startsWith("-") &&
-        !label.endsWith("-")
-      );
-    });
+    return !name.endsWith(".localhost") && !/^\d+(?:\.\d+){3}$/.test(name);
   });
 
-const wssOriginSchema = z
-  .string()
-  .max(300)
-  .superRefine((value, ctx) => {
-    const hostname =
-      /^wss:\/\/([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+):443$/.exec(
-        value,
-      )?.[1];
-    if (!hostname || hostname.length > 253 || hostname.endsWith(".localhost")) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Expected a canonical DNS WSS origin with explicit :443",
-      });
-      return;
-    }
-    // The host must be DNS, not an IP literal copied from a Runner claim.
-    if (/^\d+(?:\.\d+){3}$/.test(hostname)) {
-      ctx.addIssue({
-        code: "custom",
-        message: "IP literals are not WSS host origins",
-      });
-    }
-  });
-
-const entrySchema = z.strictObject({
-  inventoryHostname: inventoryHostnameSchema,
-  publicOrigin: wssOriginSchema,
-});
-
-/** The env parser accepts arrays so duplicate inventory names remain detectable. */
-export const wssHostOriginsSchema = z
-  .array(entrySchema)
-  .max(256)
-  .superRefine((entries, ctx) => {
-    const names = new Set<string>();
-    for (const [index, entry] of entries.entries()) {
-      if (names.has(entry.inventoryHostname)) {
-        ctx.addIssue({
-          code: "custom",
-          path: [index, "inventoryHostname"],
-          message: "Duplicate inventory hostname",
-        });
-      }
-      names.add(entry.inventoryHostname);
-    }
-  });
+/** A well-formed address, not proof of DNS, TLS, Caddy or live reachability. */
+export function wssOriginFromRunnerHostname(hostname: string): string | null {
+  if (!publicRunnerHostnameSchema.safeParse(hostname).success) {
+    return null;
+  }
+  return `wss://${hostname}:443`;
+}
 
 function releaseParts(value: string): readonly [number, number, number] | null {
   const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value);

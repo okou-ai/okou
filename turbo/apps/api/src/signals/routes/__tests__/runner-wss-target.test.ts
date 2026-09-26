@@ -13,7 +13,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const inventoryHostname = "runner-a.example.com";
-const publicOrigin = "wss://runner-a-wss.example.com:443";
+const publicOrigin = `wss://${inventoryHostname}:443`;
 
 function testClient() {
   return setupApp({ context, routes: testRuntimeStateRoutes })(
@@ -22,10 +22,6 @@ function testClient() {
 }
 
 function provision() {
-  mockEnv(
-    "OKOU_WSS_HOST_ORIGINS",
-    JSON.stringify([{ inventoryHostname, publicOrigin }]),
-  );
   // Synthetic future floor. A real floor is configured only after #37027.
   mockEnv("OKOU_WSS_MIN_RUNNER_VERSION", "0.214.0");
 }
@@ -119,7 +115,7 @@ async function heartbeat(
 }
 
 describe("internal WSS target via guarded test API route", () => {
-  it("defaults off, then resolves only the authorized active winner after both settings", async () => {
+  it("defaults off, then resolves only the authorized active winner after the version gate", async () => {
     const f = await setup();
     const run = await createRun(f);
     const runnerId = randomUUID();
@@ -129,11 +125,6 @@ describe("internal WSS target via guarded test API route", () => {
       version: "0.214.2",
     });
     await heartbeat(f, runnerId, "running", 1);
-    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
-    mockEnv(
-      "OKOU_WSS_HOST_ORIGINS",
-      JSON.stringify([{ inventoryHostname, publicOrigin }]),
-    );
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
     mockEnv("OKOU_WSS_MIN_RUNNER_VERSION", "0.214.0");
     await expect(readTarget(run.runId, f.actor)).resolves.toMatchObject({
@@ -187,7 +178,7 @@ describe("internal WSS target via guarded test API route", () => {
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
 
-  it("rejects unsupported and missing claim metadata and unlisted or malformed host mapping", async () => {
+  it("rejects unsupported and missing Runner claim metadata", async () => {
     provision();
     const f = await setup();
     const runnerId = randomUUID();
@@ -211,18 +202,23 @@ describe("internal WSS target via guarded test API route", () => {
     await expect(readTarget(current.runId, f.actor)).resolves.toMatchObject({
       publicOrigin,
     });
-    expect(() => {
-      mockEnv("OKOU_WSS_HOST_ORIGINS", "{");
-    }).toThrow("Expected property name");
-    mockEnv(
-      "OKOU_WSS_HOST_ORIGINS",
-      JSON.stringify([
-        { inventoryHostname: "other.example.com", publicOrigin },
-      ]),
-    );
-    await expect(readTarget(current.runId, f.actor)).resolves.toBeNull();
     for (const runId of [oldRun.runId, historical.runId, current.runId]) {
       await f.api.requestCancelRun(f.actor, runId, [200]);
     }
+  });
+
+  it("rejects a malformed hostname in an otherwise eligible official claim", async () => {
+    provision();
+    const f = await setup();
+    const run = await createRun(f);
+    const runnerId = randomUUID();
+    await claimRun(f, run.runId, {
+      runnerId,
+      hostname: "runner-a.example.com/other",
+      version: "0.214.9",
+    });
+    await heartbeat(f, runnerId, "running", 1);
+    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
 });

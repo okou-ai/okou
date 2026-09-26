@@ -2,72 +2,39 @@ import { describe, expect, it } from "vitest";
 
 import {
   supportsMandatoryWssListener,
-  wssHostOriginsSchema,
+  wssOriginFromRunnerHostname,
   wssMinimumRunnerVersionSchema,
 } from "./runner-wss-target-config";
 
 describe("WSS target provisioning", () => {
-  it("accepts only a canonical, explicitly ported DNS WSS origin", () => {
-    const mapping = [
-      {
-        inventoryHostname: "runner-a.example.com",
-        publicOrigin: "wss://runner-a-wss.example.com:443",
-      },
-    ];
-    expect(wssHostOriginsSchema.parse(mapping)).toStrictEqual(mapping);
-    // Preserve the negative scheme test without a scanner-misread URI literal.
-    const insecureOrigin = "wss://runner-a-wss.example.com:443".replace(
-      "wss:",
-      "ws:",
+  it("uses the configured Runner hostname as the canonical WSS origin", () => {
+    expect(wssOriginFromRunnerHostname("runner-a.example.com")).toBe(
+      "wss://runner-a.example.com:443",
     );
-    for (const origin of [
-      insecureOrigin,
-      "wss://runner-a-wss.example.com",
-      "wss://runner-a-wss.example.com:8443",
-      "wss://runner-a-wss.example.com:443/ws/id",
-      "wss://runner-a-wss.example.com:443?ticket=x",
-      "wss://user@runner-a-wss.example.com:443",
-      "wss://127.0.0.1:443",
-      "wss://localhost:443",
-      "wss://RUNNER-a.example.com:443",
-      "wss://runner-a.example.com.:443",
-      "wss://runner-a.example.com:443#fragment",
-      `wss://${"a".repeat(62)}.${"b".repeat(62)}.${"c".repeat(62)}.${"d".repeat(62)}.com:443`,
-    ]) {
-      expect(
-        wssHostOriginsSchema.safeParse([
-          { inventoryHostname: "runner-a.example.com", publicOrigin: origin },
-        ]).success,
-        origin,
-      ).toBe(false);
-    }
+    expect(wssOriginFromRunnerHostname("r1.us-east.example.com")).toBe(
+      "wss://r1.us-east.example.com:443",
+    );
   });
 
-  it("rejects duplicate and ambiguous inventory keys", () => {
-    expect(wssHostOriginsSchema.safeParse("{").success).toBe(false);
-    expect(
-      wssHostOriginsSchema.safeParse([
-        {
-          inventoryHostname: "runner-a.example.com",
-          publicOrigin: "wss://a.example.com:443",
-        },
-        {
-          inventoryHostname: "runner-a.example.com",
-          publicOrigin: "wss://b.example.com:443",
-        },
-      ]).success,
-    ).toBe(false);
-    for (const inventoryHostname of [
-      "../runner",
+  it("rejects unsafe or non-public hostname representations", () => {
+    for (const hostname of [
+      "",
+      "localhost",
+      "runner.localhost",
+      "127.0.0.1",
+      "RUNNER-a.example.com",
+      "runner.example.com.",
+      "runner.example.com:443",
+      "runner.example.com/ws/id",
+      "runner.example.com?ticket=x",
+      "user@runner.example.com",
       "runner..example.com",
-      "Runner.example.com",
       "runner.example.com ",
+      "-runner.example.com",
+      `a.${"b".repeat(64)}.example.com`,
+      `${"a".repeat(62)}.${"b".repeat(62)}.${"c".repeat(62)}.${"d".repeat(62)}.com`,
     ]) {
-      expect(
-        wssHostOriginsSchema.safeParse([
-          { inventoryHostname, publicOrigin: "wss://a.example.com:443" },
-        ]).success,
-      ).toBe(false);
+      expect(wssOriginFromRunnerHostname(hostname), hostname).toBeNull();
     }
   });
 

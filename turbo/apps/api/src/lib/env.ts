@@ -2,10 +2,7 @@ import { createEnv } from "@t3-oss/env-core";
 import { z, type ZodType } from "zod";
 
 import { testOverride } from "./singleton";
-import {
-  wssHostOriginsSchema,
-  wssMinimumRunnerVersionSchema,
-} from "./runner-wss-target-config";
+import { wssMinimumRunnerVersionSchema } from "./runner-wss-target-config";
 
 const priceIdsSchema = z
   .string()
@@ -30,15 +27,8 @@ const SCHEMA = {
   SECRETS_ENCRYPTION_KEY: z.string().length(64),
   SECRETS_KMS_KEY_ID: z.string().min(1).optional(),
   OFFICIAL_RUNNER_SECRET: z.string().length(64),
-  // Deliberately absent until host ingress and a mandatory-listener Runner
-  // release have been independently verified (#37027, #37028, #37030).
-  OKOU_WSS_HOST_ORIGINS: z
-    .string()
-    .max(64 * 1024)
-    .transform((raw) => {
-      return wssHostOriginsSchema.parse(JSON.parse(raw) as unknown);
-    })
-    .optional(),
+  // Deliberately absent until the mandatory-listener Runner release (#37027).
+  // Ticket issuance remains separately gated on host ingress and E2E proof.
   OKOU_WSS_MIN_RUNNER_VERSION: wssMinimumRunnerVersionSchema.optional(),
   OPENAI_API_KEY: z.string().min(1),
   FAL_KEY: z.string().min(1).optional(),
