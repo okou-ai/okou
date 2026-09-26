@@ -2118,6 +2118,7 @@
         "wrappedUp": "{{time}}에 마무리됨"
       },
       "duration": {
+        "hoursMinutesShort": "{{hours}}시간 {{minutes}}분",
         "hoursShort_one": "{{count}}시간",
         "hoursShort_other": "{{count}}시간",
         "minutesShort_one": "{{count}}분",
