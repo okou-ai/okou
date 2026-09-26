@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.710.12](https://github.com/okou-ai/okou/compare/core-v8.710.11...core-v8.710.12) (2026-09-26)
+
+
+### Refactoring
+
+* retire public brand columns and types ([#36909](https://github.com/okou-ai/okou/issues/36909)) ([99f320c](https://github.com/okou-ai/okou/commit/99f320ca41fdedafbf9cecaad34ebfa61235ccdb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.1
+
 ## [8.710.11](https://github.com/okou-ai/okou/compare/core-v8.710.10...core-v8.710.11) (2026-09-25)
 
 
