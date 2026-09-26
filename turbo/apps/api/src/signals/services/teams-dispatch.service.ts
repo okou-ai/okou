@@ -3,7 +3,7 @@ import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import {
   getBuiltInVisibleModels,
@@ -123,7 +123,7 @@ function teamsIdentity(installation: TeamsInstallation | null | undefined): {
   readonly brandName: "Okou";
   readonly botName: string;
 } {
-  const presentation = PUBLIC_BRAND_PRESENTATION;
+  const presentation = BRAND_PRESENTATION;
   return {
     ...presentation,
     botName: teamsBotDisplayName(installation?.botName),

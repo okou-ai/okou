@@ -13,16 +13,44 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { pgTable, text } from "drizzle-orm/pg-core";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 import {
-  hostedDeployments,
-  hostedSites,
-  privateHostedDeployments,
-} from "../src/runtime/hosted-site";
+  hostedDeploymentColumns,
+  hostedSiteColumns,
+  privateHostedDeploymentColumns,
+} from "../src/columns/hosted-site";
 import type { HostedSiteManifest } from "../src/jsonb-contracts/hosted-site";
 import { applyPendingMigrations } from "./migration-runner";
+
+// Runtime mapping at the 1173 frontier. A later migration renamed
+// `public_brand` to `link_layout_segment`; this frontier keeps the old name.
+function frontierLayoutColumn() {
+  return text("public_brand").$type<"okou" | "vm0">().notNull().default("okou");
+}
+const { linkLayoutSegment: _siteLayout, ...siteColumns } = hostedSiteColumns();
+const hostedSites = pgTable("hosted_sites", {
+  ...siteColumns,
+  publicBrand: frontierLayoutColumn(),
+});
+const { linkLayoutSegment: _deploymentLayout, ...deploymentColumns } =
+  hostedDeploymentColumns(() => {
+    return hostedSites.id;
+  });
+const hostedDeployments = pgTable("hosted_deployments", {
+  ...deploymentColumns,
+  publicBrand: frontierLayoutColumn(),
+});
+const { linkLayoutSegment: _privateLayout, ...privateDeploymentColumns } =
+  privateHostedDeploymentColumns(() => {
+    return hostedSites.id;
+  });
+const privateHostedDeployments = pgTable("private_hosted_deployments", {
+  ...privateDeploymentColumns,
+  publicBrand: frontierLayoutColumn(),
+});
 
 // Run the shipped A -> B transition in a newly created database, including
 // deliberately inconsistent pre-contraction rows that current APIs cannot emit.

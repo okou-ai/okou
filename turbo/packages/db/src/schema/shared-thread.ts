@@ -11,7 +11,7 @@ import type {
   SharedThreadMessages,
   SharedThreadMessageAttachments,
 } from "@okouai/db/jsonb-contracts/shared-thread";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import type { LinkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 
 import { chatThreads } from "./chat-thread";
 
@@ -46,8 +46,8 @@ export const sharedThreads = pgTable(
      * Stores the shared-artifact link layout segment. Current APIs write the
      * current segment explicitly and read it to locate existing shares.
      */
-    publicBrand: text("public_brand")
-      .$type<PublicBrand>()
+    linkLayoutSegment: text("link_layout_segment")
+      .$type<LinkLayoutSegment>()
       .default("okou")
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

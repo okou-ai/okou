@@ -48,13 +48,6 @@ export const socialKitDownloadJobs = pgTable(
       },
       { onDelete: "set null" },
     ),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: varchar("public_brand", { length: 8 })
-      .default("okou")
-      .notNull(),
     request: jsonb("request")
       .$type<SocialKitDownloadRequestSnapshot>()
       .notNull(),

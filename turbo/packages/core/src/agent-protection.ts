@@ -1,5 +1,5 @@
 import { DEFAULT_AGENT_AVATAR_URL } from "./agent-avatar";
-import { DEFAULT_AGENT_DISPLAY_NAME } from "./public-brand";
+import { DEFAULT_AGENT_DISPLAY_NAME } from "./brand-presentation";
 
 interface AgentIdentityUpdate {
   readonly displayName?: string;

@@ -21,7 +21,7 @@ import { Resend } from "resend";
 import { delay } from "signal-timers";
 import { Webhook } from "svix";
 import { z } from "zod";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env, optionalEnv } from "../../lib/env";
@@ -300,11 +300,11 @@ function getFromDomain(): string {
 }
 
 export function buildFromAddress(): string {
-  return `${PUBLIC_BRAND_PRESENTATION.assistantName} <okou@${getFromDomain()}>`;
+  return `${BRAND_PRESENTATION.assistantName} <okou@${getFromDomain()}>`;
 }
 
 export function buildTeamFromAddress(): string {
-  return `${PUBLIC_BRAND_PRESENTATION.brandName} Team <support@${getFromDomain()}>`;
+  return `${BRAND_PRESENTATION.brandName} Team <support@${getFromDomain()}>`;
 }
 
 function generateUnsubscribeToken(userId: string): string {

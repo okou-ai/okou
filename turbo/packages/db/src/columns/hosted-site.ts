@@ -9,6 +9,7 @@ import {
   varchar,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import type { LinkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import type { HostedSiteManifest } from "../jsonb-contracts/hosted-site";
 
 export const HOSTED_DEPLOYMENT_STATUSES = [
@@ -30,7 +31,10 @@ export function hostedSiteColumns() {
     requestedSlug: varchar("requested_slug", { length: 64 }),
     // Persisted link-layout segment (see api-contracts link-layout.ts). Rows
     // with the legacy segment keep serving their previously issued links.
-    publicBrand: text("public_brand").notNull().default("okou"),
+    linkLayoutSegment: text("link_layout_segment")
+      .$type<LinkLayoutSegment>()
+      .notNull()
+      .default("okou"),
     // Thread deletion must not erase the publication's ownership boundary.
     chatThreadId: uuid("chat_thread_id"),
     publicSlug: varchar("public_slug", { length: 96 }).notNull(),
@@ -52,7 +56,10 @@ export function hostedDeploymentColumns(siteId: () => AnyPgColumn) {
     userId: text("user_id").notNull(),
     runId: text("run_id"),
     // Must match the site's link-layout segment (composite foreign key).
-    publicBrand: text("public_brand").notNull().default("okou"),
+    linkLayoutSegment: text("link_layout_segment")
+      .$type<LinkLayoutSegment>()
+      .notNull()
+      .default("okou"),
     status: varchar("status", { length: 32 })
       .$type<HostedDeploymentStatus>()
       .notNull()

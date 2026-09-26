@@ -14,7 +14,7 @@ import {
   type NotionPageContentUpdatedScope,
   type NotionPageReference,
 } from "@okouai/api-contracts/contracts/workflows";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
   notionWebhookEvents,
   notionWebhookSecrets,
@@ -723,7 +723,7 @@ export async function prepareNotionChildPageEventConfigForPersist(
   if (pageResult.kind === "not_found" || pageResult.kind === "unauthorized") {
     return {
       kind: "bad-request",
-      message: `${PUBLIC_BRAND_PRESENTATION.assistantName} cannot access this Notion page`,
+      message: `${BRAND_PRESENTATION.assistantName} cannot access this Notion page`,
     };
   }
   if (pageResult.kind !== "ok") {
@@ -819,7 +819,7 @@ export async function prepareNotionDatabaseItemEventConfigForPersist(
     ) {
       return {
         kind: "bad-request",
-        message: `${PUBLIC_BRAND_PRESENTATION.assistantName} cannot access this Notion database`,
+        message: `${BRAND_PRESENTATION.assistantName} cannot access this Notion database`,
       };
     }
     if (dataSourceResult.kind !== "ok") {
@@ -860,7 +860,7 @@ export async function prepareNotionDatabaseItemEventConfigForPersist(
   ) {
     return {
       kind: "bad-request",
-      message: `${PUBLIC_BRAND_PRESENTATION.assistantName} cannot access this Notion database`,
+      message: `${BRAND_PRESENTATION.assistantName} cannot access this Notion database`,
     };
   }
   if (dataSourceResult.kind !== "ok") {

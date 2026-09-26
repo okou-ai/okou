@@ -14,7 +14,6 @@ import {
   serializeChatFollowupsContent,
   type ChatRecommendedFollowup,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import {
@@ -73,7 +72,6 @@ import {
   feishuDeliveryTargetSchema,
   type FeishuDeliveryTarget,
 } from "./feishu-chat-callback-payload";
-import { FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND } from "./feishu-org-callback-payload";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import {
   deliverAgentPhoneChatAdmissionFailure,
@@ -118,7 +116,6 @@ import {
 } from "./teams-chat-callback-payload";
 import {
   discordDeliveryTargetSchema,
-  storedDiscordDeliveryTarget,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
 import {
@@ -943,15 +940,11 @@ function buildQueuedCreateAgentRunArgs(
         payload: {
           threadId: input.threadId,
           agentId: input.agentId,
-          // Rollout fallback (new API -> old API): older API instances default a
-          // missing brand to VM0. Stop writing it once those APIs no longer serve
-          // and are not rollback targets (#36766 Phase 2).
-          publicBrand: PUBLIC_BRAND,
           queuedMessageId: input.queuedMessage.id,
           slackDelivery: input.slackDelivery,
           feishuDelivery: input.feishuDelivery,
           teamsDelivery: input.teamsDelivery,
-          discordDelivery: storedDiscordDeliveryTarget(input.discordDelivery),
+          discordDelivery: input.discordDelivery,
           telegramDelivery: input.telegramDelivery,
           agentphoneDelivery: input.agentphoneDelivery,
           githubDelivery: input.githubDelivery,
@@ -973,7 +966,6 @@ function buildQueuedCreateAgentRunArgs(
                 replyInThread: input.feishuDelivery.replyInThread,
                 files: input.feishuDelivery.files,
                 canonicalChatDelivery: true,
-                publicBrand: FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND,
               },
             },
           ]
@@ -1265,9 +1257,6 @@ async function insertSlackChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      // Older APIs require this field when they deliver the callback; remove
-      // it once no rollback target predates #36766 Phase 1.
-      publicBrand: "okou",
     },
   });
 }
@@ -1288,7 +1277,6 @@ async function insertFeishuChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND,
     },
   });
 }
@@ -1360,9 +1348,6 @@ async function insertTelegramChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      // Rollback shim (#36766): API builds before brand retirement require
-      // this key. Remove after older API deployments drain.
-      publicBrand: "okou",
     },
   });
 }
@@ -1383,7 +1368,10 @@ async function insertAgentPhoneChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: PUBLIC_BRAND,
+      // Rollback compatibility (#36766): the agentphone:chat reader released
+      // with Phase 1 still requires this literal. Current readers strip it.
+      // Stop writing it once no serving or rollback-target API requires it.
+      publicBrand: "okou",
     },
   });
 }
@@ -1404,7 +1392,6 @@ async function insertGitHubChatDeliveryCallback(args: {
     payload: {
       ...args.target,
       chatEventId: args.chatEventId,
-      publicBrand: PUBLIC_BRAND,
     },
   });
 }

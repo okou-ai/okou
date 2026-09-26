@@ -39,11 +39,6 @@ export const chatSlackContext = pgTable(
     /** Bot user ID of the installation that received the message. */
     botUserId: text("bot_user_id"),
     /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou").notNull(),
-    /**
      * Server-private Slack launch material retained with the trigger context.
      * Raw third-party content is intentionally retained permanently; read paths
      * must continue to project only the explicitly required columns.
