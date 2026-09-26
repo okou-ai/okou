@@ -5095,7 +5095,9 @@ The new file kind uses the existing staff-only `browserNativeInput` switch.
 Per `docs/fallback.md`, this pre-GA feature does not need a separate file
 switch or old-Platform compatibility branch; staff using an older page during
 the cutover can refresh. File controls are never converted to text, and Browser
-takeover does not transfer a user's local file.
+takeover does not transfer a user's local file. Directory-selection
+(`webkitdirectory`) controls are unsupported and rejected, not flattened into
+an ordinary file selection.
 
 The file bytes exist only in the user's explicit, bounded apply request and the
 managed Browser's selected `FileList`; there is no intermediate storage or

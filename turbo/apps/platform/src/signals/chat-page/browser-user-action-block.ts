@@ -1062,7 +1062,11 @@ function createSubmitSignal({
       }),
     );
     signal.throwIfAborted();
-    const values = prepared.ok ? prepared.value : null;
+    if (!prepared.ok) {
+      set(activeMutation$, false);
+      throw new Error("Browser file could not be read");
+    }
+    const values = prepared.value;
     if (!values) {
       set(activeMutation$, false);
       return;

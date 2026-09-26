@@ -8,7 +8,10 @@ import {
   browserAuthorizationRequestsContract,
   browserContract,
 } from "@okouai/api-contracts/contracts/browser";
-import { browserUserActionsContract } from "@okouai/api-contracts/contracts/browser-user-actions";
+import {
+  BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES,
+  browserUserActionsContract,
+} from "@okouai/api-contracts/contracts/browser-user-actions";
 import {
   chatThreadComputerUseHostContract,
   chatThreadsContract,
@@ -20,7 +23,7 @@ import { z } from "zod";
 import { createApp } from "../../../app-factory";
 import { browserUseCdpHandler } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -810,6 +813,7 @@ function mockNativeFileTarget(state: {
     type: string;
   }[];
   readonly writable: () => boolean;
+  readonly missingNode: () => boolean;
   readonly readback: () => boolean;
   readonly accept: () => string;
   readonly multiple: () => boolean;
@@ -851,7 +855,9 @@ function mockNativeFileTarget(state: {
         return { executionContextId: 101 };
       }
       case "DOM.resolveNode": {
-        return { object: { objectId: "file-object" } };
+        return state.missingNode()
+          ? new Error("No node with given id found")
+          : { object: { objectId: "file-object" } };
       }
       case "Runtime.callFunctionOn": {
         const declaration = String(command.params.functionDeclaration);
@@ -926,7 +932,8 @@ describe("Browser user-action route", () => {
     let files: readonly { name: string; size: number; type: string }[] = [];
     let siteAccept = ".txt";
     const multiple = true;
-    const writable = true;
+    let writable = true;
+    let missingNode = false;
     let readback = true;
     mockNativeFileTarget({
       current: () => {
@@ -934,6 +941,9 @@ describe("Browser user-action route", () => {
       },
       writable: () => {
         return writable;
+      },
+      missingNode: () => {
+        return missingNode;
       },
       readback: () => {
         return readback;
@@ -997,6 +1007,21 @@ describe("Browser user-action route", () => {
       inputType: "file",
     });
     expect(JSON.stringify(created.body)).not.toContain("fileSetFingerprint");
+    const oversized = await setupRawAppRequest({
+      context,
+      routes: browserUserActionRoutes,
+    })(`/api/browser/user-actions/${token}/apply`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer clerk-session",
+        "content-type": "application/json",
+      },
+      body: " ".repeat(BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES + 1),
+    });
+    expect(oversized.status).toBe(400);
+    expect(oversized.body).toMatchObject({
+      error: { message: "Browser input request is too large" },
+    });
     const observed = await accept(
       userActionClient().preflight({
         headers: { authorization: "Bearer clerk-session" },
@@ -1080,6 +1105,38 @@ describe("Browser user-action route", () => {
         return command.method === "Page.createIsolatedWorld";
       }),
     ).toBeTruthy();
+    writable = false;
+    const unavailable = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after selecting the file",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "document",
+            label: "Document",
+            fieldKind: "file",
+            required: false,
+            backendNodeId: 45,
+          },
+        ],
+      },
+    });
+    expect(unavailable.status).toBe(409);
+    writable = true;
+    const missing = await create();
+    missingNode = true;
+    const staleNode = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: missing.body.action.requestToken },
+        body: { values: [] },
+      }),
+      [200],
+    );
+    expect(staleNode.body.state).toBe("stale");
+    missingNode = false;
     const noReadback = await create();
     const changedFingerprint =
       (

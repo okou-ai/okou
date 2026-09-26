@@ -1007,7 +1007,8 @@ function browserUseControlInspectionFunction(): string {
       const textual = supported && (textarea || !["number", "date", "time", "datetime-local", "month", "week", "checkbox", "radio", "file"].includes(control.type));
       const constrained = input && (control.type === "number" || dateTimeTypes.has(control.type));
       const file = input && control.type === "file";
-      const boundedFiles = !file || (control.accept.length <= ${BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH} &&
+      const boundedFiles = !file || (!control.webkitdirectory &&
+        control.accept.length <= ${BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH} &&
         control.files.length <= ${BROWSER_USER_ACTION_MAX_FILES} &&
         [...control.files].every((item) => item.name.length > 0 &&
           item.name.length <= ${BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH} &&
@@ -2707,8 +2708,8 @@ async function resolveBrowserUseFileControl(
         signal,
       ),
     );
-  const remote = browserUseCdpRemoteObjectSchema.safeParse(
-    await sendBrowserUseCdpCommand(
+  const remoteResult = await settle(
+    sendBrowserUseCdpCommand(
       socket,
       {
         id: 5,
@@ -2722,8 +2723,15 @@ async function resolveBrowserUseFileControl(
       signal,
     ),
   );
+  if (!remoteResult.ok) {
+    if (isMissingBrowserUseNode(remoteResult.error)) {
+      return null;
+    }
+    throw remoteResult.error;
+  }
+  const remote = browserUseCdpRemoteObjectSchema.safeParse(remoteResult.value);
   if (!remote.success) {
-    return null;
+    throw new Error("Browser Use CDP node resolution failed");
   }
   const objectId = remote.data.object.objectId;
   const [observed] = await inspectBrowserUseControls(
@@ -2826,6 +2834,7 @@ async function applyBrowserUseFileActionOnSocket(
   const writer = `function (original, operation, files) {
     if (!(this instanceof HTMLInputElement) || this.type !== "file" ||
       !this.isConnected || this.ownerDocument !== document || this.matches(":disabled") ||
+      this.webkitdirectory ||
       this.accept !== original.accept || this.multiple !== original.multiple ||
       this.required !== original.required ||
       JSON.stringify([...this.files].map(f => ({ name: f.name, size: f.size, type: f.type }))) !==
@@ -2880,6 +2889,7 @@ async function applyBrowserUseFileActionOnSocket(
           functionDeclaration: `function (original, expected) {
       return this instanceof HTMLInputElement && this.type === "file" &&
         this.isConnected && this.ownerDocument === document && !this.matches(":disabled") &&
+        !this.webkitdirectory &&
         this.accept === original.accept && this.multiple === original.multiple &&
         this.required === original.required &&
         JSON.stringify([...this.files].map(f => ({ name: f.name, size: f.size, type: f.type }))) ===

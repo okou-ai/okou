@@ -451,6 +451,49 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
   });
 });
 
+test("A failed local file read reports an error without applying the Browser action", async () => {
+  let applied = false;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: false }));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: true }));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    applied = true;
+    return respond(200, fileAction({ required: true, preflight: false }));
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const input = within(form).getByLabelText(/Document/u);
+  await waitFor(() => {
+    return expect(input).toBeEnabled();
+  });
+  const file = new File(["test"], "note.txt", { type: "text/plain" });
+  Object.defineProperty(file, "arrayBuffer", {
+    value: () => {
+      return Promise.reject(new Error("File is unavailable"));
+    },
+  });
+  fireEvent.change(input, { target: { files: [file] } });
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await expect(
+    screen.findByText(/Couldn't add the information/u),
+  ).resolves.toBeInTheDocument();
+  expect(applied).toBeFalsy();
+  expect(button("Add to browser")).toBeEnabled();
+});
+
 test("An optional file selection leaves existing website files untouched unless cleared", async () => {
   let sent: unknown = null;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
