@@ -170,25 +170,40 @@ describe("host-bound Runner WSS local readiness", () => {
         })
         .sort(),
     ).toStrictEqual([200, 409]);
+    for (const headers of [authA, authB]) {
+      expect(
+        (
+          await accept(
+            client().status({ params: { runnerId }, headers }),
+            [200],
+          )
+        ).body.localReady,
+      ).toBeFalsy();
+      await accept(renew(runnerId, headers), [409]);
+    }
   });
 
-  it("never reassigns a runner ID to a different host, even after expiry", async () => {
-    const { renew, authB } = fixture();
+  it("quarantines a copied ID for both hosts even after the original lease expires", async () => {
+    const { renew, authA, authB } = fixture();
     const runnerId = randomUUID();
     await accept(renew(runnerId), [200]);
     await accept(renew(runnerId, authB), [409]);
+    for (const headers of [authA, authB]) {
+      expect(
+        (
+          await accept(
+            client().status({ params: { runnerId }, headers }),
+            [200],
+          )
+        ).body.localReady,
+      ).toBeFalsy();
+    }
     mockNow(new Date(nowMs + 30_000));
-    await accept(
-      renew(runnerId, authB, new Date(nowMs + 30_000).toISOString()),
-      [409],
-    );
-    expect(
-      (
-        await accept(
-          client().status({ params: { runnerId }, headers: authB }),
-          [200],
-        )
-      ).body.localReady,
-    ).toBeFalsy();
+    for (const headers of [authA, authB]) {
+      await accept(
+        renew(runnerId, headers, new Date(nowMs + 30_000).toISOString()),
+        [409],
+      );
+    }
   });
 });

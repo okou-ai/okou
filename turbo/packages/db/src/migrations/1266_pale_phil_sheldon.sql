@@ -4,6 +4,7 @@ CREATE TABLE "runner_wss_endpoints" (
 	"last_probed_at" timestamp NOT NULL,
 	"lease_expires_at" timestamp NOT NULL,
 	"withdrawn_at" timestamp,
+	"quarantined_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );

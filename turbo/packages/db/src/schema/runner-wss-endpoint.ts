@@ -10,6 +10,8 @@ export const runnerWssEndpoints = pgTable(
     lastProbedAt: timestamp("last_probed_at").notNull(),
     leaseExpiresAt: timestamp("lease_expires_at").notNull(),
     withdrawnAt: timestamp("withdrawn_at"),
+    // Conflicting host claims quarantine this ID until an explicit operator reset.
+    quarantinedAt: timestamp("quarantined_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

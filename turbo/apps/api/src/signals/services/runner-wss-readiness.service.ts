@@ -99,31 +99,42 @@ export async function renewLocalWssEndpoint(
     return { status: "invalid-proof" };
   }
   const expiresAt = new Date(now.getTime() + LEASE_MS);
-  const rows = await db
-    .insert(runnerWssEndpoints)
-    .values({
-      runnerId,
-      hostId: host.id,
-      lastProbedAt: observed,
-      leaseExpiresAt: expiresAt,
-      withdrawnAt: null,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: runnerWssEndpoints.runnerId,
-      set: {
+  return await db.transaction(async (transaction) => {
+    const rows = await transaction
+      .insert(runnerWssEndpoints)
+      .values({
+        runnerId,
+        hostId: host.id,
         lastProbedAt: observed,
         leaseExpiresAt: expiresAt,
         withdrawnAt: null,
         updatedAt: now,
-      },
-      setWhere: eq(runnerWssEndpoints.hostId, host.id),
-    })
-    .returning({ runnerId: runnerWssEndpoints.runnerId });
-  if (rows.length === 0) {
-    return { status: "host-conflict" };
-  }
-  return { status: "ready", expiresAt };
+      })
+      .onConflictDoUpdate({
+        target: runnerWssEndpoints.runnerId,
+        set: {
+          lastProbedAt: observed,
+          leaseExpiresAt: expiresAt,
+          withdrawnAt: null,
+          updatedAt: now,
+        },
+        setWhere: and(
+          eq(runnerWssEndpoints.hostId, host.id),
+          isNull(runnerWssEndpoints.quarantinedAt),
+        ),
+      })
+      .returning({ runnerId: runnerWssEndpoints.runnerId });
+    if (rows.length === 0) {
+      // A copied ID makes *both* locations unusable. Never let the winner of
+      // a race remain eligible for a ticket while the collision is unresolved.
+      await transaction
+        .update(runnerWssEndpoints)
+        .set({ quarantinedAt: now, withdrawnAt: now, updatedAt: now })
+        .where(eq(runnerWssEndpoints.runnerId, runnerId));
+      return { status: "host-conflict" as const };
+    }
+    return { status: "ready" as const, expiresAt };
+  });
 }
 
 export async function withdrawLocalWssEndpoint(
@@ -169,6 +180,7 @@ export async function resolveLocalWssEndpoint(
         eq(runnerWssEndpoints.runnerId, runnerId),
         gt(runnerWssEndpoints.leaseExpiresAt, now),
         isNull(runnerWssEndpoints.withdrawnAt),
+        isNull(runnerWssEndpoints.quarantinedAt),
       ),
     )
     .limit(1);

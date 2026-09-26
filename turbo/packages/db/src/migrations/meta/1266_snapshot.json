@@ -1,5 +1,5 @@
 {
-  "id": "32bc1023-c59e-47c4-8ffe-f79ad8b9da05",
+  "id": "1ed97302-07b6-4a82-acaf-52bc0e67a088",
   "prevId": "4b5fdf74-3349-417e-b2a9-1a27fed28acf",
   "version": "7",
   "dialect": "postgresql",
@@ -28673,6 +28673,12 @@
         },
         "withdrawn_at": {
           "name": "withdrawn_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quarantined_at": {
+          "name": "quarantined_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
