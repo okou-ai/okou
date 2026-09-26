@@ -57,7 +57,6 @@ import {
 } from "./threadless-run-cleanup.service";
 import { cleanupExpiredPiApiFirstTurnData$ } from "./pi-api-first-turn-cleanup.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
-import { lockAgentRunCheckpointLifecycle } from "./agent-run-checkpoint-lifecycle-lock.service";
 import { lockChatQueueThread } from "./chat-event-queue.service";
 import {
   finalizeActiveInputDelivery,
@@ -348,8 +347,6 @@ async function commitStaleRunTimeout(
   while (true) {
     const result = await db.transaction(
       async (tx): Promise<TimeoutTransactionResult> => {
-        await lockAgentRunCheckpointLifecycle(tx, run.id);
-        signal.throwIfAborted();
         const threadLocked =
           expectedChatThreadId === null
             ? false
