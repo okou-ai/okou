@@ -3,11 +3,13 @@
 -- naming it in audit INSERT and SELECT and is in production; the API rollback
 -- floor excludes older writers. DROP COLUMN needs a brief ACCESS EXCLUSIVE lock,
 -- so keep the normal short lock wait instead of queueing behind audit writes.
+-- IF EXISTS keeps a rerun after a later statement fails safe: the runner
+-- journals a non-transactional migration only after its last statement.
 SET lock_timeout = '1s';
 --> statement-breakpoint
 SET statement_timeout = '10s';
 --> statement-breakpoint
-ALTER TABLE "computer_use_command_audit_events" DROP COLUMN "approval_outcome";
+ALTER TABLE "computer_use_command_audit_events" DROP COLUMN IF EXISTS "approval_outcome";
 --> statement-breakpoint
 -- 2) Turn off fastupdate so each projector INSERT updates the chat search GIN
 -- index directly, then flush the pending list left by earlier inserts. SET
