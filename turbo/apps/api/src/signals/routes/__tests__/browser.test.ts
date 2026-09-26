@@ -322,6 +322,8 @@ interface NativeConstrainedMockArgs {
   readonly verificationMatches: () => boolean;
   readonly inputType?: () => string;
   readonly siteRequired?: () => boolean;
+  readonly rangeValue?: () => string;
+  readonly writable?: () => boolean;
   readonly validValue?: (value: unknown) => boolean;
 }
 
@@ -336,6 +338,31 @@ function nativeVerifyOnly(argumentsValue: unknown): boolean {
     "verifyOnly" in first.value &&
     first.value.verifyOnly === true
   );
+}
+
+function mockNativeConstrainedInspection(args: NativeConstrainedMockArgs) {
+  const { min, max, step } = args.constraints();
+  return {
+    result: {
+      value: [
+        {
+          tagName: "INPUT",
+          inputType: args.inputType?.() ?? "number",
+          connected: true,
+          mainDocument: true,
+          writable: args.writable?.() ?? true,
+          siteRequired: args.siteRequired?.() ?? false,
+          multiple: false,
+          ...(args.inputType?.() === "range" && args.writable?.() !== false
+            ? { rangeValue: args.rangeValue?.() ?? "50" }
+            : {}),
+          ...(min ? { min } : {}),
+          ...(max ? { max } : {}),
+          ...(step ? { step } : {}),
+        },
+      ],
+    },
+  };
 }
 
 function mockNativeConstrainedCall(
@@ -376,25 +403,7 @@ function mockNativeConstrainedCall(
   if (declaration.includes("nextValue")) {
     return { result: { value: true } };
   }
-  const { min, max, step } = args.constraints();
-  return {
-    result: {
-      value: [
-        {
-          tagName: "INPUT",
-          inputType: args.inputType?.() ?? "number",
-          connected: true,
-          mainDocument: true,
-          writable: true,
-          siteRequired: args.siteRequired?.() ?? false,
-          multiple: false,
-          ...(min ? { min } : {}),
-          ...(max ? { max } : {}),
-          ...(step ? { step } : {}),
-        },
-      ],
-    },
-  };
+  return mockNativeConstrainedInspection(args);
 }
 
 function mockNativeNumberTarget(args: NativeConstrainedMockArgs): void {
@@ -2537,6 +2546,258 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(uncertain.body.state).toBe("uncertain");
+  });
+
+  it("guards native slider position, constraints, required confirmation and post-event readback", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Choose a website slider position",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    let value = "19";
+    let min = "10";
+    const max = "20";
+    const step = "3";
+    let writable = true;
+    let readbackMatches = true;
+    mockNativeNumberTarget({
+      constraints: () => {
+        return { min, max, step };
+      },
+      inputType: () => {
+        return "range";
+      },
+      rangeValue: () => {
+        return value;
+      },
+      writable: () => {
+        return writable;
+      },
+      verificationMatches: () => {
+        return readbackMatches;
+      },
+      validValue: (next) => {
+        return next === null || next === "19" || next === "16";
+      },
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const create = async (required = false) => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after slider selection",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "level",
+                label: "Level",
+                fieldKind: "range",
+                required,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+    };
+    const apply = async (
+      token: string,
+      values: readonly {
+        key: string;
+        observedValue: string;
+        observedMin?: string;
+        observedMax?: string;
+        observedStep?: string;
+        value: string;
+      }[],
+    ) => {
+      return await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [...values] },
+      });
+    };
+    const choice = (next: string) => {
+      return {
+        key: "level",
+        observedValue: "19",
+        observedMin: "10",
+        observedMax: "20",
+        observedStep: "3",
+        value: next,
+      };
+    };
+    const untouched = await create();
+    expect(untouched.body.action.fields[0]?.control).toMatchObject({
+      inputType: "range",
+    });
+    expect(JSON.stringify(untouched.body)).not.toContain("rangeValue");
+    const observed = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: untouched.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(observed.body.fields[0]?.control).toMatchObject({
+      inputType: "range",
+      rangeValue: "19",
+      min: "10",
+      max: "20",
+      step: "3",
+    });
+    await expect(
+      accept(apply(untouched.body.action.requestToken, []), [200]),
+    ).resolves.toMatchObject({ body: { state: "succeeded" } });
+    expect(browserSelectWrites()).toHaveLength(2);
+    expect(browserSelectWrites()[0]?.[0].params.arguments).toMatchObject([
+      {
+        value: {
+          kind: "scalar",
+          inputType: "range",
+          value: null,
+          rangeValue: "19",
+        },
+      },
+      { value: 0 },
+    ]);
+    expect(browserSelectWrites()[1]?.[0].params.arguments).toMatchObject([
+      { value: { verifyOnly: true } },
+      { value: 0 },
+    ]);
+    const required = await create(true);
+    await expect(
+      apply(required.body.action.requestToken, []),
+    ).resolves.toMatchObject({
+      status: 400,
+      body: { error: { code: "BROWSER_USER_ACTION_REQUIRED_VALUE_MISSING" } },
+    });
+    await expect(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: required.body.action.requestToken },
+        body: { values: [{ key: "level", value: "16" }] },
+      }),
+    ).resolves.toMatchObject({
+      status: 400,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUES" } },
+    });
+    await expect(
+      accept(apply(required.body.action.requestToken, [choice("19")]), [200]),
+    ).resolves.toMatchObject({ body: { state: "succeeded" } });
+    expect(browserSelectWrites().at(-2)?.[0].params.arguments).toMatchObject([
+      {
+        value: {
+          kind: "scalar",
+          inputType: "range",
+          value: "19",
+          rangeValue: "19",
+          min: "10",
+          max: "20",
+          step: "3",
+        },
+      },
+      { value: 0 },
+    ]);
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { verifyOnly: true } },
+      { value: 0 },
+    ]);
+    const invalid = await create();
+    await expect(
+      apply(invalid.body.action.requestToken, [choice("17")]),
+    ).resolves.toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_INVALID_VALUE" } },
+    });
+    await expect(
+      accept(apply(invalid.body.action.requestToken, [choice("16")]), [200]),
+    ).resolves.toMatchObject({ body: { state: "succeeded" } });
+    const changed = await create();
+    value = "16";
+    expect(
+      (
+        await accept(
+          apply(changed.body.action.requestToken, [choice("19")]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("stale");
+    value = "19";
+    const constraintsChanged = await create();
+    min = "11";
+    expect(
+      (
+        await accept(
+          apply(constraintsChanged.body.action.requestToken, [choice("19")]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("stale");
+    min = "10";
+    const reverted = await create();
+    readbackMatches = false;
+    expect(
+      (
+        await accept(
+          apply(reverted.body.action.requestToken, [choice("16")]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("uncertain");
+    readbackMatches = true;
+    writable = false;
+    const disabled = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after slider selection",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "level",
+            label: "Level",
+            fieldKind: "range",
+            required: false,
+            backendNodeId: 45,
+          },
+        ],
+      },
+    });
+    expect(disabled.status).toBe(409);
   });
 
   it("validates all five native date/time subtypes, empty/required values and independent readback", async () => {

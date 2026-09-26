@@ -1743,6 +1743,7 @@
       "checkFailed": "Der Browser konnte nicht überprüft werden. Ihre Eingaben bleiben erhalten; versuchen Sie es vor dem Senden erneut.",
       "clearValue": "Wert auf der Website löschen",
       "completed": "Informationen hinzugefügt",
+      "confirmRangeValue": "Aktuellen Wert verwenden",
       "continue": "Agent benachrichtigen",
       "continuing": "Wird benachrichtigt…",
       "delivered": "Agent benachrichtigt",

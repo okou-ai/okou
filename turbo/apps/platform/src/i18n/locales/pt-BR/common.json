@@ -1772,6 +1772,7 @@
       "checkFailed": "Não foi possível verificar o navegador. Suas informações foram mantidas; tente novamente antes de enviar.",
       "clearValue": "Limpar o valor no site",
       "completed": "Informações adicionadas",
+      "confirmRangeValue": "Usar o valor atual",
       "continue": "Avisar o agente",
       "continuing": "Avisando o agente…",
       "delivered": "Agente notificado",

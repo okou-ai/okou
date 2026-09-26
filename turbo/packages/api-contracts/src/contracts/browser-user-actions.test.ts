@@ -90,6 +90,24 @@ describe("Browser user-action contracts", () => {
     }
   });
 
+  it("accepts only bounded, explicit native range selections", () => {
+    const base = { key: "level", observedValue: "0.4", value: "0.5" };
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({ values: [base] }).success,
+    ).toBe(true);
+    for (const entry of [
+      { ...base, observedValue: "" },
+      { ...base, value: "" },
+      { ...base, value: "1".repeat(129) },
+      { ...base, extra: "private" },
+    ]) {
+      expect(
+        browserUserActionApplyRequestSchema.safeParse({ values: [entry] })
+          .success,
+      ).toBe(false);
+    }
+  });
+
   it("bounds native file selections and keeps content out of the persisted creation request", () => {
     const created = browserUserActionCreateRequestSchema.parse({
       kind: "input",

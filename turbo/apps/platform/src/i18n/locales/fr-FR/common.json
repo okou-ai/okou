@@ -1772,6 +1772,7 @@
       "checkFailed": "Impossible de vérifier le navigateur. Vos saisies sont conservées ; réessayez avant de les envoyer.",
       "clearValue": "Effacer la valeur sur le site",
       "completed": "Informations ajoutées",
+      "confirmRangeValue": "Utiliser la valeur actuelle",
       "continue": "Prévenir l’agent",
       "continuing": "Notification en cours…",
       "delivered": "Agent informé",

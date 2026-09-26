@@ -88,6 +88,39 @@ describe("Browser user-action JSONB payload", () => {
     }).toThrow("Invalid Browser user-action payload");
   });
 
+  it("accepts only an exact range target without persisting its current value", () => {
+    const field = {
+      key: "level",
+      label: "Level",
+      fieldKind: "range",
+      required: true,
+      backendNodeId: 45,
+      fingerprint: { tagName: "INPUT", inputType: "range" },
+    };
+    const target = { ...inputTarget, fields: [field] };
+    expect(
+      parseBrowserUserActionPayload({
+        version: 1,
+        kind: "input",
+        callbackIds,
+        target,
+      }).target.fields[0],
+    ).toMatchObject(field);
+    for (const candidate of [
+      { ...field, fingerprint: { tagName: "INPUT", inputType: "number" } },
+      { ...field, rangeValue: "40" },
+    ]) {
+      expect(() => {
+        parseBrowserUserActionPayload({
+          version: 1,
+          kind: "input",
+          callbackIds,
+          target: { ...inputTarget, fields: [candidate] },
+        });
+      }).toThrow("Invalid Browser user-action payload");
+    }
+  });
+
   it("accepts genuine number targets but keeps semantic kinds distinct", () => {
     const field = {
       key: "quantity",

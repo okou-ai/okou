@@ -32,6 +32,7 @@ import {
   type BrowserCheckboxDraft,
   type BrowserFileDraft,
   type BrowserRadioDraft,
+  type BrowserRangeDraft,
   type BrowserSelectChoiceDraft,
   type BrowserUserActionRequestState,
   type BrowserUserActionSignals,
@@ -516,6 +517,29 @@ function BrowserInputControl({
       }}
     />
   );
+}
+
+function requiredRangesSatisfied(
+  action: PendingBrowserInputAction,
+  rangeDraft: ReadonlyMap<string, BrowserRangeDraft>,
+): boolean {
+  return action.fields.every((field) => {
+    if (field.fieldKind !== "range") {
+      return true;
+    }
+    const observed = field.control.rangeValue;
+    if (!observed) {
+      return false;
+    }
+    const choice = rangeDraft.get(field.key);
+    return choice
+      ? choice.observedValue === observed &&
+          choice.observedMin === field.control.min &&
+          choice.observedMax === field.control.max &&
+          choice.observedStep === field.control.step &&
+          choice.value.length > 0
+      : !field.required && !field.control.siteRequired;
+  });
 }
 
 function requiredFilesSatisfied(
@@ -1286,13 +1310,113 @@ function BrowserInputFieldHeader({
   );
 }
 
-function BrowserInputField({
+function BrowserRangeControl({
+  field,
+  rangeDraft,
+  busy,
+  inputId,
+  describedBy,
+  onUpdate,
+  onRemove,
+}: {
+  readonly field: PendingBrowserInputField;
+  readonly rangeDraft: ReadonlyMap<string, BrowserRangeDraft>;
+  readonly busy: boolean;
+  readonly inputId: string;
+  readonly describedBy: string;
+  readonly onUpdate: (key: string, choice: BrowserRangeDraft) => void;
+  readonly onRemove: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  const observed = field.control.rangeValue;
+  if (!observed) {
+    return null;
+  }
+  const saved = rangeDraft.get(field.key);
+  const choice =
+    saved?.observedValue === observed &&
+    saved.observedMin === field.control.min &&
+    saved.observedMax === field.control.max &&
+    saved.observedStep === field.control.step
+      ? saved
+      : undefined;
+  const required = field.required || field.control.siteRequired;
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex min-w-0 items-center gap-3">
+        <input
+          id={inputId}
+          type="range"
+          className="min-w-0 flex-1 accent-primary"
+          aria-describedby={describedBy}
+          min={field.control.min ?? "0"}
+          max={field.control.max ?? "100"}
+          step={field.control.step ?? "1"}
+          value={choice?.value ?? observed}
+          disabled={busy}
+          onChange={(event) => {
+            onUpdate(field.key, {
+              observedValue: observed,
+              observedMin: field.control.min,
+              observedMax: field.control.max,
+              observedStep: field.control.step,
+              value: event.currentTarget.value,
+            });
+          }}
+        />
+        <output htmlFor={inputId} className="min-w-12 text-right tabular-nums">
+          {choice?.value ?? observed}
+        </output>
+      </div>
+      {required && !choice ? (
+        <Button
+          type="button"
+          variant="link"
+          size="xs"
+          className="h-auto self-start p-0 text-xs"
+          disabled={busy}
+          onClick={() => {
+            onUpdate(field.key, {
+              observedValue: observed,
+              observedMin: field.control.min,
+              observedMax: field.control.max,
+              observedStep: field.control.step,
+              value: observed,
+            });
+          }}
+        >
+          {t(($) => {
+            return $.chat.browserInput.confirmRangeValue;
+          })}
+        </Button>
+      ) : !required && saved ? (
+        <Button
+          type="button"
+          variant="link"
+          size="xs"
+          className="h-auto self-start p-0 text-xs"
+          disabled={busy}
+          onClick={() => {
+            onRemove(field.key);
+          }}
+        >
+          {t(($) => {
+            return $.chat.browserInput.keepValue;
+          })}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function BrowserInputFieldControl({
   field,
   index,
   draft,
   choiceDraft,
   checkboxDraft,
   radioDraft,
+  rangeDraft,
   fileDraft,
   busy,
   onUpdate,
@@ -1305,8 +1429,13 @@ function BrowserInputField({
   onRemoveCheckbox,
   onUpdateRadio,
   onRemoveRadio,
+  onUpdateRange,
+  onRemoveRange,
 }: BrowserInputEditProps & {
   readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
+  readonly rangeDraft: ReadonlyMap<string, BrowserRangeDraft>;
+  readonly onUpdateRange: (key: string, choice: BrowserRangeDraft) => void;
+  readonly onRemoveRange: (key: string) => void;
   readonly fileDraft: ReadonlyMap<string, BrowserFileDraft>;
   readonly onUpdateFile: (key: string, draft: BrowserFileDraft) => void;
   readonly onRemoveFile: (key: string) => void;
@@ -1333,23 +1462,28 @@ function BrowserInputField({
   const descriptionId = field.description
     ? `${inputId}-description`
     : undefined;
+  const describedBy = descriptionId
+    ? `${requirementId} ${descriptionId}`
+    : requirementId;
   return (
-    <div className="flex flex-col gap-1.5">
-      <BrowserInputFieldHeader
-        field={field}
-        inputId={inputId}
-        requirementId={requirementId}
-        descriptionId={descriptionId}
-      />
-      {field.fieldKind === "file" ? (
+    <>
+      {field.fieldKind === "range" ? (
+        <BrowserRangeControl
+          field={field}
+          rangeDraft={rangeDraft}
+          busy={busy}
+          inputId={inputId}
+          describedBy={describedBy}
+          onUpdate={onUpdateRange}
+          onRemove={onRemoveRange}
+        />
+      ) : field.fieldKind === "file" ? (
         <BrowserFileControl
           field={field}
           fileDraft={fileDraft}
           busy={busy}
           inputId={inputId}
-          describedBy={
-            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
-          }
+          describedBy={describedBy}
           onUpdate={onUpdateFile}
           onRemove={onRemoveFile}
         />
@@ -1359,9 +1493,7 @@ function BrowserInputField({
           radioDraft={radioDraft}
           busy={busy}
           inputId={inputId}
-          describedBy={
-            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
-          }
+          describedBy={describedBy}
           onUpdate={onUpdateRadio}
           onRemove={onRemoveRadio}
         />
@@ -1369,9 +1501,7 @@ function BrowserInputField({
         <BrowserCheckboxControl
           field={field}
           inputId={inputId}
-          describedBy={
-            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
-          }
+          describedBy={describedBy}
           checkboxDraft={checkboxDraft}
           busy={busy}
           onUpdate={onUpdateCheckbox}
@@ -1381,9 +1511,7 @@ function BrowserInputField({
         <BrowserSelectControl
           field={field}
           inputId={inputId}
-          describedBy={
-            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
-          }
+          describedBy={describedBy}
           choiceDraft={choiceDraft}
           busy={busy}
           onUpdate={onUpdateChoice}
@@ -1393,15 +1521,35 @@ function BrowserInputField({
         <BrowserInputControl
           field={field}
           inputId={inputId}
-          describedBy={
-            descriptionId ? `${requirementId} ${descriptionId}` : requirementId
-          }
+          describedBy={describedBy}
           draft={draft}
           busy={busy}
           onUpdate={onUpdate}
           onRemove={onRemove}
         />
       )}
+    </>
+  );
+}
+
+function BrowserInputField(
+  props: Parameters<typeof BrowserInputFieldControl>[0],
+) {
+  const { field, index, draft, busy, onUpdate, onRemove } = props;
+  const inputId = `browser-input-field-${index}`;
+  const requirementId = `${inputId}-requirement`;
+  const descriptionId = field.description
+    ? `${inputId}-description`
+    : undefined;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <BrowserInputFieldHeader
+        field={field}
+        inputId={inputId}
+        requirementId={requirementId}
+        descriptionId={descriptionId}
+      />
+      <BrowserInputFieldControl {...props} />
       <OptionalConstrainedInputClearAction
         field={field}
         draft={draft}
@@ -1419,6 +1567,7 @@ function BrowserInputFields({
   choiceDraft,
   checkboxDraft,
   radioDraft,
+  rangeDraft,
   fileDraft,
   busy,
   onUpdate,
@@ -1431,11 +1580,16 @@ function BrowserInputFields({
   onRemoveCheckbox,
   onUpdateRadio,
   onRemoveRadio,
+  onUpdateRange,
+  onRemoveRange,
 }: Omit<BrowserInputEditProps, "field"> & {
   readonly action: PendingBrowserInputAction;
   readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
   readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
   readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
+  readonly rangeDraft: ReadonlyMap<string, BrowserRangeDraft>;
+  readonly onUpdateRange: (key: string, choice: BrowserRangeDraft) => void;
+  readonly onRemoveRange: (key: string) => void;
   readonly fileDraft: ReadonlyMap<string, BrowserFileDraft>;
   readonly onUpdateFile: (key: string, draft: BrowserFileDraft) => void;
   readonly onRemoveFile: (key: string) => void;
@@ -1466,6 +1620,7 @@ function BrowserInputFields({
             choiceDraft={choiceDraft}
             checkboxDraft={checkboxDraft}
             radioDraft={radioDraft}
+            rangeDraft={rangeDraft}
             fileDraft={fileDraft}
             busy={busy}
             onUpdate={onUpdate}
@@ -1478,6 +1633,8 @@ function BrowserInputFields({
             onRemoveCheckbox={onRemoveCheckbox}
             onUpdateRadio={onUpdateRadio}
             onRemoveRadio={onRemoveRadio}
+            onUpdateRange={onUpdateRange}
+            onRemoveRange={onRemoveRange}
           />
         );
       })}
@@ -1585,6 +1742,14 @@ function PendingFormPreflight({
   return null;
 }
 
+function hasNativeBrowserInputs(action: PendingBrowserInputAction): boolean {
+  return action.fields.some((field) => {
+    return ["select", "checkbox", "radio", "range", "file"].includes(
+      field.fieldKind,
+    );
+  });
+}
+
 function PendingForm({
   signals,
   request,
@@ -1600,6 +1765,7 @@ function PendingForm({
   const choiceDraft = useGet(signals.choiceDraft$);
   const checkboxDraft = useGet(signals.checkboxDraft$);
   const radioDraft = useGet(signals.radioDraft$);
+  const rangeDraft = useGet(signals.rangeDraft$);
   const fileDraft = useGet(signals.fileDraft$);
   const sharedBusy = useGet(signals.busy$);
   const entryState = useGet(signals.entryState$);
@@ -1612,6 +1778,8 @@ function PendingForm({
   const removeCheckboxDraft = useSet(signals.removeCheckboxDraft$);
   const updateRadioDraft = useSet(signals.updateRadioDraft$);
   const removeRadioDraft = useSet(signals.removeRadioDraft$);
+  const updateRangeDraft = useSet(signals.updateRangeDraft$);
+  const removeRangeDraft = useSet(signals.removeRangeDraft$);
   const updateFileDraft = useSet(signals.updateFileDraft$);
   const removeFileDraft = useSet(signals.removeFileDraft$);
   const formRef = useSet(signals.formRef$);
@@ -1631,6 +1799,7 @@ function PendingForm({
     checkboxDraft,
   );
   const radioValuesValid = requiredRadiosSatisfied(activeAction, radioDraft);
+  const rangeValuesValid = requiredRangesSatisfied(activeAction, rangeDraft);
   const fileValuesValid = requiredFilesSatisfied(activeAction, fileDraft);
   const submitForm = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1638,6 +1807,7 @@ function PendingForm({
       !selectValuesValid ||
       !checkboxValuesValid ||
       !radioValuesValid ||
+      !rangeValuesValid ||
       !fileValuesValid ||
       !event.currentTarget.reportValidity()
     ) {
@@ -1662,6 +1832,7 @@ function PendingForm({
         choiceDraft={choiceDraft}
         checkboxDraft={checkboxDraft}
         radioDraft={radioDraft}
+        rangeDraft={rangeDraft}
         fileDraft={fileDraft}
         busy={busy}
         onUpdate={updateDraft}
@@ -1674,6 +1845,8 @@ function PendingForm({
         onRemoveCheckbox={removeCheckboxDraft}
         onUpdateRadio={updateRadioDraft}
         onRemoveRadio={removeRadioDraft}
+        onUpdateRange={updateRangeDraft}
+        onRemoveRange={removeRangeDraft}
       />
 
       <PendingFormPreflight signals={signals} entryState={entryState} />
@@ -1697,16 +1870,9 @@ function PendingForm({
           selectValuesValid &&
           checkboxValuesValid &&
           radioValuesValid &&
+          rangeValuesValid &&
           fileValuesValid &&
-          (!request.action.fields.some((field) => {
-            return (
-              field.fieldKind === "select" ||
-              field.fieldKind === "checkbox" ||
-              field.fieldKind === "radio" ||
-              field.fieldKind === "file"
-            );
-          }) ||
-            entryState === "ready")
+          (!hasNativeBrowserInputs(request.action) || entryState === "ready")
         }
         onCancel={() => {
           detach(cancel(pageSignal), Reason.DomCallback);

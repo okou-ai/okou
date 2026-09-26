@@ -77,6 +77,14 @@ export interface BrowserRadioDraft {
   readonly groupFingerprint: string;
 }
 
+export interface BrowserRangeDraft {
+  readonly observedValue: string;
+  readonly observedMin?: string;
+  readonly observedMax?: string;
+  readonly observedStep?: string;
+  readonly value: string;
+}
+
 export interface BrowserFileDraft {
   readonly operation: "keep" | "replace" | "clear";
   readonly files: readonly File[];
@@ -91,6 +99,9 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   >;
   readonly checkboxDraft$: Computed<ReadonlyMap<string, BrowserCheckboxDraft>>;
   readonly radioDraft$: Computed<ReadonlyMap<string, BrowserRadioDraft>>;
+  readonly rangeDraft$: Computed<ReadonlyMap<string, BrowserRangeDraft>>;
+  readonly updateRangeDraft$: Command<void, [string, BrowserRangeDraft]>;
+  readonly removeRangeDraft$: Command<void, [string]>;
   readonly fileDraft$: Computed<ReadonlyMap<string, BrowserFileDraft>>;
   readonly updateFileDraft$: Command<void, [string, BrowserFileDraft]>;
   readonly removeFileDraft$: Command<void, [string]>;
@@ -456,6 +467,35 @@ function createRadioDraftSignals() {
   };
 }
 
+function createRangeDraftSignals() {
+  const internalRangeDraft$ = state<ReadonlyMap<string, BrowserRangeDraft>>(
+    new Map(),
+  );
+  const rangeDraft$ = computed((get) => {
+    return get(internalRangeDraft$);
+  });
+  const updateRangeDraft$ = command(
+    ({ set }, key: string, choice: BrowserRangeDraft): void => {
+      set(internalRangeDraft$, (current) => {
+        return new Map(current).set(key, choice);
+      });
+    },
+  );
+  const removeRangeDraft$ = command(({ set }, key: string): void => {
+    set(internalRangeDraft$, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+  });
+  return {
+    internalRangeDraft$,
+    rangeDraft$,
+    updateRangeDraft$,
+    removeRangeDraft$,
+  };
+}
+
 function createScalarDraftUpdater(
   internalDraft$: State<ReadonlyMap<string, string>>,
 ) {
@@ -536,6 +576,9 @@ function createDraftSignals(): Pick<
   | "choiceDraft$"
   | "checkboxDraft$"
   | "radioDraft$"
+  | "rangeDraft$"
+  | "updateRangeDraft$"
+  | "removeRangeDraft$"
   | "fileDraft$"
   | "updateFileDraft$"
   | "removeFileDraft$"
@@ -555,6 +598,7 @@ function createDraftSignals(): Pick<
   const selectSignals = createSelectDraftSignals();
   const checkboxSignals = createCheckboxDraftSignals();
   const radioSignals = createRadioDraftSignals();
+  const rangeSignals = createRangeDraftSignals();
   const fileSignals = createFileDraftSignals();
   const ownerCount$ = state(0);
   const draft$ = computed((get) => {
@@ -566,6 +610,7 @@ function createDraftSignals(): Pick<
     set(selectSignals.internalChoiceDraft$, new Map());
     set(checkboxSignals.internalCheckboxDraft$, new Map());
     set(radioSignals.internalRadioDraft$, new Map());
+    set(rangeSignals.internalRangeDraft$, new Map());
     set(fileSignals.internalFileDraft$, new Map());
   });
   const removeDraft$ = command(({ set }, key: string): void => {
@@ -627,6 +672,9 @@ function createDraftSignals(): Pick<
     choiceDraft$: selectSignals.choiceDraft$,
     checkboxDraft$: checkboxSignals.checkboxDraft$,
     radioDraft$: radioSignals.radioDraft$,
+    rangeDraft$: rangeSignals.rangeDraft$,
+    updateRangeDraft$: rangeSignals.updateRangeDraft$,
+    removeRangeDraft$: rangeSignals.removeRangeDraft$,
     fileDraft$: fileSignals.fileDraft$,
     updateFileDraft$: fileSignals.updateFileDraft$,
     removeFileDraft$: fileSignals.removeFileDraft$,
@@ -665,6 +713,7 @@ interface BrowserUserActionMutationContext {
   readonly choiceDraft$: BrowserUserActionSignals["choiceDraft$"];
   readonly checkboxDraft$: BrowserUserActionSignals["checkboxDraft$"];
   readonly radioDraft$: BrowserUserActionSignals["radioDraft$"];
+  readonly rangeDraft$: BrowserUserActionSignals["rangeDraft$"];
   readonly fileDraft$: BrowserUserActionSignals["fileDraft$"];
   readonly entryAction$: BrowserUserActionSignals["entryAction$"];
   readonly entryState$: BrowserUserActionSignals["entryState$"];
@@ -899,6 +948,52 @@ async function browserFileSubmissionValue(
   };
 }
 
+function browserRangeSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  rangeDraft: ReadonlyMap<string, BrowserRangeDraft>,
+):
+  | Extract<
+      BrowserUserActionApplyRequest["values"][number],
+      { observedValue: string }
+    >
+  | null
+  | undefined {
+  const observedValue = field.control.rangeValue;
+  if (!observedValue) {
+    return null;
+  }
+  const choice = rangeDraft.get(field.key);
+  if (!choice) {
+    return field.required || field.control.siteRequired ? null : undefined;
+  }
+  return choice.observedValue === observedValue &&
+    choice.observedMin === field.control.min &&
+    choice.observedMax === field.control.max &&
+    choice.observedStep === field.control.step &&
+    choice.value.length > 0
+    ? { key: field.key, ...choice }
+    : null;
+}
+
+function browserScalarSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  draft: ReadonlyMap<string, string>,
+): { key: string; value: string } | null | undefined {
+  const value = draft.get(field.key) ?? "";
+  if (value === "") {
+    if (field.required || field.control.siteRequired) {
+      return null;
+    }
+    if (
+      !["number", "date_time"].includes(field.fieldKind) ||
+      !draft.has(field.key)
+    ) {
+      return undefined;
+    }
+  }
+  return { key: field.key, value };
+}
+
 async function browserInputSubmissionValues(
   action: BrowserInputAction,
   drafts: {
@@ -906,12 +1001,30 @@ async function browserInputSubmissionValues(
     readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
     readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
     readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
+    readonly rangeDraft: ReadonlyMap<string, BrowserRangeDraft>;
     readonly fileDraft: ReadonlyMap<string, BrowserFileDraft>;
   },
 ): Promise<BrowserUserActionApplyRequest["values"] | null> {
-  const { draft, choiceDraft, checkboxDraft, radioDraft, fileDraft } = drafts;
+  const {
+    draft,
+    choiceDraft,
+    checkboxDraft,
+    radioDraft,
+    rangeDraft,
+    fileDraft,
+  } = drafts;
   const values: BrowserUserActionApplyRequest["values"][number][] = [];
   for (const field of action.fields) {
+    if (field.fieldKind === "range") {
+      const range = browserRangeSubmissionValue(field, rangeDraft);
+      if (range === null) {
+        return null;
+      }
+      if (range !== undefined) {
+        values.push(range);
+      }
+      continue;
+    }
     if (field.fieldKind === "file") {
       const file = await browserFileSubmissionValue(
         field,
@@ -955,19 +1068,13 @@ async function browserInputSubmissionValues(
       }
       continue;
     }
-    const value = draft.get(field.key) ?? "";
-    if (value === "") {
-      if (field.required || field.control.siteRequired) {
-        return null;
-      }
-      if (
-        !["number", "date_time"].includes(field.fieldKind) ||
-        !draft.has(field.key)
-      ) {
-        continue;
-      }
+    const scalar = browserScalarSubmissionValue(field, draft);
+    if (scalar === null) {
+      return null;
     }
-    values.push({ key: field.key, value });
+    if (scalar !== undefined) {
+      values.push(scalar);
+    }
   }
   return values;
 }
@@ -1008,6 +1115,7 @@ function createSubmitSignal({
   choiceDraft$,
   checkboxDraft$,
   radioDraft$,
+  rangeDraft$,
   fileDraft$,
   entryAction$,
   entryState$,
@@ -1058,6 +1166,7 @@ function createSubmitSignal({
         choiceDraft: get(choiceDraft$),
         checkboxDraft: get(checkboxDraft$),
         radioDraft: get(radioDraft$),
+        rangeDraft: get(rangeDraft$),
         fileDraft: get(fileDraft$),
       }),
     );
@@ -1234,6 +1343,7 @@ function createMutationSignals({
   choiceDraft$,
   checkboxDraft$,
   radioDraft$,
+  rangeDraft$,
   fileDraft$,
   clearDraft$,
   entryAction$,
@@ -1248,6 +1358,7 @@ function createMutationSignals({
   | "choiceDraft$"
   | "checkboxDraft$"
   | "radioDraft$"
+  | "rangeDraft$"
   | "fileDraft$"
   | "clearDraft$"
   | "entryAction$"
@@ -1295,6 +1406,7 @@ function createMutationSignals({
     choiceDraft$,
     checkboxDraft$,
     radioDraft$,
+    rangeDraft$,
     fileDraft$,
     entryAction$,
     entryState$,
@@ -1382,6 +1494,7 @@ export function createBrowserUserActionSignals(
     choiceDraft$: draftSignals.choiceDraft$,
     checkboxDraft$: draftSignals.checkboxDraft$,
     radioDraft$: draftSignals.radioDraft$,
+    rangeDraft$: draftSignals.rangeDraft$,
     fileDraft$: draftSignals.fileDraft$,
     clearDraft$: draftSignals.clearDraft$,
     entryAction$: entrySignals.entryAction$,

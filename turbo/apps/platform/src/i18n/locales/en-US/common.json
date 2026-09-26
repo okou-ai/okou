@@ -1743,6 +1743,7 @@
       "checkFailed": "Couldn't check the browser. Your entries are still here; retry before adding them.",
       "clearValue": "Clear website value",
       "completed": "Information added",
+      "confirmRangeValue": "Use current value",
       "continue": "Notify agent",
       "continuing": "Notifying…",
       "delivered": "Agent notified",

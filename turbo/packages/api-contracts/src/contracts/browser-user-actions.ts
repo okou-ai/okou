@@ -39,6 +39,7 @@ export const browserUserActionFieldKindSchema = z.enum([
   "password",
   "one_time_code",
   "number",
+  "range",
   "date_time",
   "select",
   "checkbox",
@@ -131,6 +132,31 @@ const browserUserActionSelectValueSchema = z
       });
     }
   });
+const browserUserActionRangeValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    observedValue: z
+      .string()
+      .min(1)
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH),
+    observedMin: z
+      .string()
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+    observedMax: z
+      .string()
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+    observedStep: z
+      .string()
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+      .optional(),
+    value: z
+      .string()
+      .min(1)
+      .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH),
+  })
+  .strict();
 const browserUserActionCheckboxValueSchema = z
   .object({
     key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
@@ -200,6 +226,7 @@ const browserUserActionFileValueSchema = z
   });
 export const browserUserActionSubmittedValueSchema = z.union([
   browserUserActionScalarValueSchema,
+  browserUserActionRangeValueSchema,
   browserUserActionSelectValueSchema,
   browserUserActionCheckboxValueSchema,
   browserUserActionRadioValueSchema,
@@ -249,6 +276,7 @@ export const browserUserActionDisplayFieldSchema = z
           "url",
           "password",
           "number",
+          "range",
           "date",
           "time",
           "datetime-local",
@@ -348,6 +376,11 @@ export const browserUserActionDisplayFieldSchema = z
           .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
           .optional(),
         pattern: z.string().max(512).optional(),
+        rangeValue: z
+          .string()
+          .min(1)
+          .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
+          .optional(),
         min: z
           .string()
           .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
