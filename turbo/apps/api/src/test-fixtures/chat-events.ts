@@ -10,6 +10,7 @@ import type {
 } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-teams-context";
 import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -914,14 +915,20 @@ export async function completeRunWithoutCallbacksFixture(args: {
   readonly runId: string;
 }): Promise<void> {
   const completedAt = nowDate();
-  const updated = await db()
-    .update(agentRuns)
-    .set({ status: "completed", completedAt })
-    .where(and(eq(agentRuns.id, args.runId), eq(agentRuns.status, "running")))
-    .returning({ id: agentRuns.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one running run to complete without callbacks");
-  }
+  await db().transaction(async (tx) => {
+    const updated = await tx
+      .update(agentRuns)
+      .set({ status: "completed", completedAt })
+      .where(and(eq(agentRuns.id, args.runId), eq(agentRuns.status, "running")))
+      .returning({ id: agentRuns.id });
+    if (updated.length !== 1) {
+      throw new Error("Expected one running run to complete without callbacks");
+    }
+    // Completion releases the thread's active run row with the transition.
+    await tx
+      .delete(activeAgentRuns)
+      .where(eq(activeAgentRuns.runId, args.runId));
+  });
 }
 
 /**

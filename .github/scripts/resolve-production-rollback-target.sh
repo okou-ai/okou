@@ -14,7 +14,7 @@ readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70
 # and thread inserts.
 readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
 # #36984 stopped naming computer_use_command_audit_events.approval_outcome in
-# audit INSERT and SELECT. Migration 1262 drops that column, so earlier APIs
+# audit INSERT and SELECT. Migration 1263 drops that column, so earlier APIs
 # fail every Computer Use audit write.
 readonly COMPUTER_USE_AUDIT_WRITER_COMMIT=cdeec36c168636b1a2e510e660eb6139c9c4e07a
 # #36945 made every non-empty chat thread snapshot response R2-only. API targets

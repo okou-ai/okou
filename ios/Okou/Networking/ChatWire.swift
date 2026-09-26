@@ -2,9 +2,31 @@ import Foundation
 
 // Current contracts: turbo/packages/api-contracts/src/contracts/chat-threads.ts.
 // These are the fields this client consumes; unrelated server fields are ignored.
-struct ThreadSnapshot: Decodable, Sendable {
+enum ThreadSnapshot: Decodable, Sendable {
+  case inline([ThreadProjection], latestSeqId: Int?)
+  case remote(URL, latestSeqId: Int?)
+
+  private enum CodingKeys: String, CodingKey { case chatThreads, url, latestSeqId }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let latestSeqId = try container.decodeIfPresent(Int.self, forKey: .latestSeqId)
+    if container.contains(.url) {
+      guard !container.contains(.chatThreads) else {
+        throw DecodingError.dataCorruptedError(
+          forKey: .url, in: container, debugDescription: "Ambiguous chat thread snapshot")
+      }
+      self = .remote(try container.decode(URL.self, forKey: .url), latestSeqId: latestSeqId)
+    } else {
+      self = .inline(
+        try container.decode([ThreadProjection].self, forKey: .chatThreads),
+        latestSeqId: latestSeqId)
+    }
+  }
+}
+
+struct ThreadSnapshotArchive: Decodable, Sendable {
   let chatThreads: [ThreadProjection]
-  let latestSeqId: Int?
 }
 
 struct ThreadProjection: Decodable, Sendable {

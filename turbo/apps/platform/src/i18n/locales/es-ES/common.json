@@ -2259,11 +2259,6 @@
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "Crea un presentador para tu próximo contenido",
-          "prompt": "Crea un presentador avatar que hable para mi próximo vídeo.",
-          "title": "Crear un avatar"
-        },
         "illustration": {
           "description": "Crea una imagen acabada con el estilo que quieras",
           "prompt": "Crea una ilustración con el estilo que te describa.",
@@ -2273,11 +2268,6 @@
           "description": "Convierte un tema o documento en un deck",
           "prompt": "Crea una presentación a partir de un tema o documento que te dé.",
           "title": "Crear una presentación"
-        },
-        "video": {
-          "description": "Convierte tu idea en un vídeo acabado",
-          "prompt": "Convierte mi idea o mis archivos en un vídeo acabado.",
-          "title": "Crear un vídeo"
         },
         "website": {
           "description": "Crea y publica una página que puedas compartir",

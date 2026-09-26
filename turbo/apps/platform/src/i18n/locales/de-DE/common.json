@@ -2212,11 +2212,6 @@
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "Erstellen Sie eine Moderation für Videos",
-          "prompt": "Erstelle einen sprechenden Avatar-Moderator für mein nächstes Video.",
-          "title": "Avatar erstellen"
-        },
         "illustration": {
           "description": "Erstellen Sie ein fertiges Motiv im gewünschten Stil",
           "prompt": "Erstelle eine Illustration in dem Stil, den ich beschreibe.",
@@ -2226,11 +2221,6 @@
           "description": "Machen Sie aus einem Thema ein fertiges Deck",
           "prompt": "Erstelle eine Präsentation aus einem Thema oder Dokument, das ich dir gebe.",
           "title": "Präsentation erstellen"
-        },
-        "video": {
-          "description": "Machen Sie aus Ihrer Idee ein fertiges Video",
-          "prompt": "Mach aus meiner Idee oder meinen Assets ein fertiges Video.",
-          "title": "Video erstellen"
         },
         "website": {
           "description": "Erstellen Sie eine teilbare Seite",

@@ -2203,11 +2203,6 @@
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "Buat presenter untuk konten Anda berikutnya",
-          "prompt": "Buatkan presenter avatar yang berbicara untuk video saya berikutnya.",
-          "title": "Buat avatar"
-        },
         "illustration": {
           "description": "Buat visual jadi dengan gaya yang Anda inginkan",
           "prompt": "Buatkan ilustrasi dengan gaya yang saya jelaskan.",
@@ -2217,11 +2212,6 @@
           "description": "Ubah topik atau dokumen menjadi dek yang rapi",
           "prompt": "Buatkan presentasi dari topik atau dokumen yang saya berikan.",
           "title": "Buat presentasi"
-        },
-        "video": {
-          "description": "Ubah ide atau aset Anda menjadi video jadi",
-          "prompt": "Ubah ide atau aset saya menjadi video jadi.",
-          "title": "Buat video"
         },
         "website": {
           "description": "Buat halaman yang bisa dibagikan",
