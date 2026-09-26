@@ -13,6 +13,9 @@ readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70
 # pair the primary key and drops the columns, so earlier APIs fail draft saves
 # and thread inserts.
 readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
+# #36945 made every non-empty chat thread snapshot response R2-only. API targets
+# before it may still return inline data to an old header-less client.
+readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40da0ad4
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_chat_thread_snapshot_jsonb.sql
 
@@ -74,6 +77,10 @@ if [[ ! "$public_brand_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$public_brand_retirement_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the public_brand retirement: ${public_brand_retirement_commit}."
+fi
+
+if ! git merge-base --is-ancestor "$CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the R2-only chat thread snapshot API: ${CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT}."
 fi
 
 # Once the snapshot JSONB column is dropped, earlier APIs still name it in

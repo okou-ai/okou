@@ -1,5 +1,23 @@
 # Deployment Compatibility
 
+## R2-only chat thread snapshot API rollback floor (2026-09-26)
+
+The production API rollback resolver now rejects targets before the #36945
+main merge commit `3d93ff8d4b4a07a5888e3030e69b340f40da0ad4`. That API
+returns an R2 URL for every existing snapshot row, regardless of the request
+header; older rollback-window APIs can still return non-empty inline snapshots.
+The commit preceded release #36948 (`4ecb619b5c409396edd5815a1ce65941cb29cd74`),
+whose production API promotion succeeded on 2026-09-25 at 23:13:47 UTC
+([release run](https://github.com/okou-ai/okou/actions/runs/36198938622/job/108284233073)).
+
+This floor must be deployed before a separate follow-up removes Web App and CLI
+non-empty inline readers, the capability request header, and the inline
+contract variant for non-empty rows. The empty inline response for a scope
+without a snapshot row is permanent and stays supported. Removing client
+compatibility in this floor-setting release would not establish that the floor
+was already active in production. Recheck the serving API and floor before the
+follow-up enters its release path.
+
 ## Chat thread snapshot JSONB column retired (2026-09-26)
 
 Migration `1259_drop_chat_thread_snapshot_jsonb` drops only

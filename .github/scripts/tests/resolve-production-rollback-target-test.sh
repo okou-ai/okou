@@ -30,6 +30,8 @@ case "${1:-}" in
       [ "${MOCK_CHAT_THREAD_DRAFT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38" ]; then
       [ "${MOCK_CHAT_THREAD_DRAFT_OWNER_KEY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
+      [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
       [ "${MOCK_PUBLIC_BRAND_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3333333333333333333333333333333333333333" ]; then
@@ -142,6 +144,7 @@ run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
 grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft owner key floor"
 grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
+grep -Fxq "git merge-base --is-ancestor 3d93ff8d4b4a07a5888e3030e69b340f40da0ad4 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the R2-only chat thread snapshot floor"
 grep -Fxq "git merge-base --is-ancestor 3333333333333333333333333333333333333333 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -171,6 +174,15 @@ assert_failure "Rollback target predates the public_brand retirement" \
 [ ! -s "${tmp_dir}/public-brand-floor.output" ] || fail "pre-retirement API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "public_brand retirement floor must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the R2-only chat thread snapshot API" \
+  run_resolver "${tmp_dir}/snapshot-r2-only-floor.output" MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID=0
+grep -Fq '3d93ff8d4b4a07a5888e3030e69b340f40da0ad4' "${tmp_dir}/failure.err" || fail "R2-only rejection must identify the #36945 merge commit"
+[ ! -s "${tmp_dir}/snapshot-r2-only-floor.output" ] || fail "pre-R2-only API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "R2-only floor must fail before artifact or host access"
 fi
 
 for drop_commit in "" invalid; do
