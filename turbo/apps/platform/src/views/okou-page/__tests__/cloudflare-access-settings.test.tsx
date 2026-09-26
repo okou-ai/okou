@@ -780,6 +780,39 @@ test("an older API's aggregate-only conversion preview remains usable after a mi
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
 });
 
+test("conversion preview 403 never falls back to the legacy route", async () => {
+  const shared = { ...config, scope: "organization" as const };
+  let legacyCalls = 0;
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(403, {
+      error: { code: "CLOUDFLARE_ACCESS_FORBIDDEN", message: "Forbidden" },
+    });
+  });
+  context.mocks.api(
+    cloudflareAccessContract.conversionPreview,
+    ({ respond }) => {
+      legacyCalls += 1;
+      return respond(200, {
+        expectedRevision: 1,
+        otherHostCount: 1,
+        impactSnapshot: "a".repeat(64),
+      });
+    },
+  );
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  click(getAction("button", "Make personal", organization));
+  const dialog = await screen.findByRole("dialog", { name: "Make personal" });
+  await within(dialog).findByText(/no longer available/u);
+  expect(legacyCalls).toBe(0);
+  expect(queryAction("button", "Make personal", dialog)).toBeNull();
+});
+
 test("only an admin can promote their Personal configuration with explicit audience confirmation", async () => {
   let configs: ScopedCloudflareAccessConfig[] = [config];
   const bodies: unknown[] = [];
@@ -892,6 +925,41 @@ test("older deletion preview stays usable without rendering its per-owner counts
   expect(
     getAction("button", "Delete Cloudflare Access", dialog),
   ).toBeDisabled();
+});
+
+test("deletion preview 403 never falls back to the legacy route", async () => {
+  const shared = { ...config, scope: "organization" as const };
+  let legacyCalls = 0;
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
+    return respond(403, {
+      error: { code: "CLOUDFLARE_ACCESS_FORBIDDEN", message: "Forbidden" },
+    });
+  });
+  context.mocks.api(cloudflareAccessContract.deletionPreview, ({ respond }) => {
+    legacyCalls += 1;
+    return respond(200, {
+      expectedRevision: 1,
+      ownHostCount: 0,
+      affectedOwners: [
+        { userId: "user_member_1", displayName: "Member One", hostCount: 3 },
+      ],
+      impactSnapshot: "a".repeat(64),
+    });
+  });
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  click(getAction("button", "Delete Cloudflare Access", organization));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete Cloudflare Access",
+  });
+  await within(dialog).findByText(/no longer available/u);
+  expect(legacyCalls).toBe(0);
+  expect(queryAction("button", "Delete Cloudflare Access", dialog)).toBeNull();
 });
 
 test("reviewed shared deletion names affected owners and requires re-review when the host set changes", async () => {
