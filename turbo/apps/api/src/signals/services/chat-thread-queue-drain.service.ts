@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, eq, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
@@ -27,8 +26,8 @@ import {
 import { expiredCancellationRecoveryThreads } from "./chat-active-run.service";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
+  listPendingChatInputs,
   loadChatQueueHead,
-  pendingActiveInputCondition,
 } from "./chat-event-queue.service";
 import {
   chatThreadHasActiveRun,
@@ -81,17 +80,12 @@ export async function notifyRunningChatRunOfPendingInput(
   if (!run) {
     return false;
   }
-  const [pendingInput] = await db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, chatThreadId),
-        pendingActiveInputCondition(db, run.id),
-      ),
-    )
-    .limit(1);
-  if (!pendingInput) {
+  const pendingInput = await listPendingChatInputs(db, {
+    chatThreadId,
+    eventTypes: ["input.prompt"],
+    budgetForRunId: run.id,
+  });
+  if (pendingInput.length === 0) {
     return false;
   }
   if (run.runnerGroup) {

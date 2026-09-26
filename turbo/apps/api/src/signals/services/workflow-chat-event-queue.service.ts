@@ -320,13 +320,8 @@ export interface PendingWorkflowQueueEvent {
 export async function loadNextWorkflowQueueEvent(
   db: Db,
   chatThreadId: string,
-  queueItemCreatedBefore?: Date,
 ): Promise<PendingWorkflowQueueEvent | null> {
-  const head = await loadChatQueueHead(
-    db,
-    chatThreadId,
-    queueItemCreatedBefore,
-  );
+  const head = await loadChatQueueHead(db, chatThreadId);
   if (head?.eventType !== "input.automation") {
     return null;
   }

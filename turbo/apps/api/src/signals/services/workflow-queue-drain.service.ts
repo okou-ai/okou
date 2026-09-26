@@ -165,7 +165,6 @@ interface DrainWorkflowQueueArgs {
   readonly apiStartTime: number;
   readonly chatThreadId: string;
   readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
-  readonly queueItemCreatedBefore?: Date;
   readonly automationEventLaunch?: AutomationEventLaunch;
 }
 
@@ -174,11 +173,7 @@ async function loadNextDrainEvent(
   args: DrainWorkflowQueueArgs,
   signal: AbortSignal,
 ) {
-  const event = await loadNextWorkflowQueueEvent(
-    db,
-    args.chatThreadId,
-    args.queueItemCreatedBefore,
-  );
+  const event = await loadNextWorkflowQueueEvent(db, args.chatThreadId);
   signal.throwIfAborted();
   return event;
 }

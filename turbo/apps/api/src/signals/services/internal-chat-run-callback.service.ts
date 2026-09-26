@@ -3853,7 +3853,6 @@ interface AutoSendQueuedMessageArgs {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly agentId: string;
-  readonly queueItemCreatedBefore?: Date;
   readonly timing: ChatCallbackPreCreateTimingCollector;
   readonly formatIntegrationRunError: ChatCallbackDependencies["formatIntegrationRunError"];
   readonly deliverSlackAdmissionFailure: ChatCallbackDependencies["deliverSlackAdmissionFailure"];
@@ -3990,11 +3989,7 @@ async function autoSendQueuedMessageForThread(
     "api_dispatch_pre_create_agent_chat_callback_auto_send_lookup_queued_message",
     "nested",
     () => {
-      return loadNextUnclaimedQueuedUserMessage(
-        args.db,
-        threadId,
-        args.queueItemCreatedBefore,
-      );
+      return loadNextUnclaimedQueuedUserMessage(args.db, threadId);
     },
   );
   if (!queuedMessage) {
@@ -5550,7 +5545,6 @@ export const drainQueuedUserMessagesForThread$ = command(
     args: {
       readonly chatThreadId: string;
       readonly apiStartTime: number;
-      readonly queueItemCreatedBefore?: Date;
       readonly timing?: ChatCallbackPreCreateTimingCollector;
     },
     signal: AbortSignal,
@@ -5589,7 +5583,6 @@ export const drainQueuedUserMessagesForThread$ = command(
         admissionTime,
         userId: thread.userId,
         agentId: thread.agentId,
-        queueItemCreatedBefore: args.queueItemCreatedBefore,
         timing: args.timing ?? new ChatCallbackPreCreateTimingCollector(),
         formatIntegrationRunError: dependencies.formatIntegrationRunError,
         deliverSlackAdmissionFailure: dependencies.deliverSlackAdmissionFailure,
