@@ -31,3 +31,34 @@ test("deployed E2E tests only use Luna for GPT models", async () => {
     `Use a Luna model for GPT E2E coverage:\n${violations.join("\n")}`,
   );
 });
+
+test("runner behavioral E2E tests use the native mock account", async () => {
+  const directory = fileURLToPath(
+    new URL("../tests/03-runner/", import.meta.url),
+  );
+  // These files intentionally cover real model/provider behavior or mock Claude.
+  const providerTests = new Set([
+    "run-t09-real-codex-steer.bats",
+    "run-t10-real-claude-smoke.bats",
+    "run-t11-real-codex-billing.bats",
+    "run-t21-claude-runtime-regressions.bats",
+    "run-t24-built-in-provider-fallback.bats",
+  ]);
+  const files = (await readdir(directory)).filter((file) =>
+    file.endsWith(".bats"),
+  );
+  const violations: string[] = [];
+
+  for (const file of files) {
+    if (providerTests.has(file)) continue;
+    const source = await readFile(join(directory, file), "utf8");
+    if (!/^\s*runner_e2e_use_native_codex_account\s*$/m.test(source)) {
+      violations.push(`${file}: select the native mock account in setup`);
+    }
+    if (/\bdeepseek-v4-flash\b/.test(source)) {
+      violations.push(`${file}: do not select the real default model`);
+    }
+  }
+
+  assert.deepEqual(violations, []);
+});
