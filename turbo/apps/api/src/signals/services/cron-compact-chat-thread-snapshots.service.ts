@@ -11,7 +11,9 @@ import {
   asc,
   desc,
   eq,
+  exists,
   gt,
+  gte,
   inArray,
   lt,
   lte,
@@ -615,6 +617,25 @@ async function pruneCompactedEvents(
     .where(
       and(
         lt(chatThreadEvents.createdAt, cutoff),
+        // Eligibility must precede LIMIT: an uncovered expired prefix would
+        // otherwise be selected on every run and starve later covered events.
+        // The head lookup uses its (user_id, org_id) primary key; the bounded
+        // read below still rechecks heads before deleting a selected batch.
+        exists(
+          db
+            .select({ userId: chatThreadSnapshots.userId })
+            .from(chatThreadSnapshots)
+            .where(
+              and(
+                eq(chatThreadSnapshots.userId, chatThreadEvents.userId),
+                eq(chatThreadSnapshots.orgId, chatThreadEvents.orgId),
+                gte(
+                  chatThreadSnapshots.latestEventSeqId,
+                  chatThreadEvents.seqId,
+                ),
+              ),
+            ),
+        ),
         scope.kind === "global"
           ? undefined
           : scope.scopes.length === 0

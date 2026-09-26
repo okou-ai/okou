@@ -1753,6 +1753,55 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     }
   });
 
+  it("prunes a covered event behind an older uncovered event at a one-event budget", async () => {
+    const startedAt = now();
+    const uncovered = bdd.user({ userId: `user_z${randomUUID()}` });
+    const covered = bdd.user({ userId: `user_0${randomUUID()}` });
+    await api.ensureOrgModelProvider(uncovered);
+    await api.ensureOrgModelProvider(covered);
+    const uncoveredAgent = await bdd.createAgent(uncovered, {
+      displayName: "Uncompacted retention scope",
+    });
+    const uncoveredThread = await chat.createThread(uncovered, {
+      agentId: uncoveredAgent.agentId,
+      title: "Older event with no snapshot",
+    });
+    const coveredAgent = await bdd.createAgent(covered, {
+      displayName: "Compacted retention scope",
+    });
+    const coveredThread = await chat.createThread(covered, {
+      agentId: coveredAgent.agentId,
+      title: "Later covered event",
+    });
+    await compactChatThreadSnapshots(covered);
+    // The scoped candidate budget chooses `user_0` before `user_z`, so the
+    // older un-compacted scope stays uncovered while the covered scope moves.
+    mockOptionalEnv("CHAT_THREAD_SNAPSHOT_COMPACTION_BATCH_SIZE", "1");
+    mockOptionalEnv("CHAT_THREAD_EVENT_PRUNE_BATCH_SIZE", "1");
+    await chat.renameThread(
+      covered,
+      coveredThread.id,
+      "Newer snapshot boundary",
+    );
+    mockNow(startedAt + 8 * DAY_MS);
+
+    const result = await compactChatThreadSnapshots(covered, uncovered);
+
+    expect(result.scopes).toBe(1);
+    expect(result.eventsPruned).toBe(1);
+    await expect(allThreadEvents(uncovered)).resolves.toContainEqual(
+      expect.objectContaining({ chatThreadId: uncoveredThread.id }),
+    );
+    await expect(allThreadEvents(covered)).resolves.toHaveLength(1);
+    const snapshot = await chat.getThreadSnapshot(covered);
+    expect(snapshot.chatThreads).toContainEqual(
+      expect.objectContaining({
+        id: coveredThread.id,
+        title: "Newer snapshot boundary",
+      }),
+    );
+  });
+
   it("rejects snapshot compaction test requests in production", async () => {
     mockEnv("ENV", "production");
     const client = setupApp({
