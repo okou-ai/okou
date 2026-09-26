@@ -1772,6 +1772,7 @@
       "checkFailed": "Impossibile verificare il browser. I dati inseriti sono conservati; riprova prima di inviarli.",
       "clearValue": "Cancella il valore sul sito",
       "completed": "Informazioni aggiunte",
+      "confirmRangeValue": "Usa il valore attuale",
       "continue": "Avvisa l’agente",
       "continuing": "Notifica in corso…",
       "delivered": "Agente avvisato",

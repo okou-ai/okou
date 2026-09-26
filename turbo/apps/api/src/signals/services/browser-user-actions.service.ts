@@ -194,6 +194,9 @@ function publicRequest(
                 ...(observed.checked === undefined
                   ? {}
                   : { checked: observed.checked }),
+                ...(observed.rangeValue === undefined
+                  ? {}
+                  : { rangeValue: observed.rangeValue }),
                 ...(observed.radioGroupFingerprint === undefined
                   ? {}
                   : {
@@ -631,6 +634,7 @@ function browserCreationControlType(
     "url",
     "search",
     "number",
+    "range",
     "date",
     "time",
     "datetime-local",
@@ -1114,12 +1118,15 @@ function submittedValues(
       const field = allowed.get(entry.key);
       return (
         !field ||
+        (field.fieldKind === "range" && !("observedValue" in entry)) ||
+        (field.fieldKind !== "range" && "observedValue" in entry) ||
         (field.fieldKind === "select" && !("optionIndexes" in entry)) ||
         (field.fieldKind === "checkbox" && !("checked" in entry)) ||
         (field.fieldKind === "radio" && !("memberIndex" in entry)) ||
         (field.fieldKind === "file" &&
           (!("files" in entry) || !validSubmittedFiles(entry))) ||
-        (field.fieldKind !== "select" &&
+        (field.fieldKind !== "range" &&
+          field.fieldKind !== "select" &&
           field.fieldKind !== "checkbox" &&
           field.fieldKind !== "radio" &&
           field.fieldKind !== "file" &&
@@ -1141,15 +1148,17 @@ function submittedValues(
       const entry = values.get(field.key);
       return (
         !entry ||
-        ("optionIndexes" in entry
-          ? entry.optionIndexes.length === 0
-          : "checked" in entry
-            ? entry.checked !== true
-            : "memberIndex" in entry
-              ? entry.memberIndex < 0
-              : "files" in entry
-                ? entry.operation === "clear"
-                : entry.value.length === 0)
+        ("observedValue" in entry
+          ? entry.value.length === 0
+          : "optionIndexes" in entry
+            ? entry.optionIndexes.length === 0
+            : "checked" in entry
+              ? entry.checked !== true
+              : "memberIndex" in entry
+                ? entry.memberIndex < 0
+                : "files" in entry
+                  ? entry.operation === "clear"
+                  : entry.value.length === 0)
       );
     })
   ) {
@@ -1394,31 +1403,33 @@ function browserApplyField(
     required: field.required,
     ...(entry === undefined
       ? {}
-      : "value" in entry
-        ? { value: entry.value }
-        : "checked" in entry
-          ? {
-              checkbox: {
-                checked: entry.checked,
-                observedChecked: entry.observedChecked,
-              },
-            }
-          : "files" in entry
-            ? { fileChoice: entry }
-            : "memberIndex" in entry
-              ? {
-                  radioChoice: {
-                    memberIndex: entry.memberIndex,
-                    observedSelectedIndex: entry.observedSelectedIndex,
-                    groupFingerprint: entry.groupFingerprint,
-                  },
-                }
-              : {
-                  selection: {
-                    optionIndexes: entry.optionIndexes,
-                    optionSetFingerprint: entry.optionSetFingerprint,
-                  },
-                }),
+      : "observedValue" in entry
+        ? { rangeChoice: entry }
+        : "value" in entry
+          ? { value: entry.value }
+          : "checked" in entry
+            ? {
+                checkbox: {
+                  checked: entry.checked,
+                  observedChecked: entry.observedChecked,
+                },
+              }
+            : "files" in entry
+              ? { fileChoice: entry }
+              : "memberIndex" in entry
+                ? {
+                    radioChoice: {
+                      memberIndex: entry.memberIndex,
+                      observedSelectedIndex: entry.observedSelectedIndex,
+                      groupFingerprint: entry.groupFingerprint,
+                    },
+                  }
+                : {
+                    selection: {
+                      optionIndexes: entry.optionIndexes,
+                      optionSetFingerprint: entry.optionSetFingerprint,
+                    },
+                  }),
   };
 }
 

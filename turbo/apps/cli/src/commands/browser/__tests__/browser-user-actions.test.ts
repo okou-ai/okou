@@ -391,6 +391,36 @@ describe("okou browser user-action commands", () => {
     expect(JSON.stringify(requestBody)).not.toContain("#quantity");
   });
 
+  it("captures an exact native slider node without disclosing its selector or value", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "level",
+        label: "Level",
+        fieldKind: "range",
+        required: true,
+        target: "#private-level",
+      }),
+      "--callback-prompt",
+      "Continue after slider confirmation",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "level", fieldKind: "range", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-level");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-level",
+    );
+  });
+
   it("captures a native date/time field by node, leaving subtype discovery to the API", async () => {
     installCdp({ nodeName: "INPUT" });
     let requestBody: unknown;

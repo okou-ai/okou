@@ -1740,6 +1740,7 @@
       "checkFailed": "ブラウザーを確認できませんでした。入力内容は保持されています。送信前に再試行してください。",
       "clearValue": "サイトの値を消去",
       "completed": "情報を追加しました",
+      "confirmRangeValue": "現在の値を使用",
       "continue": "エージェントに通知",
       "continuing": "通知しています…",
       "delivered": "エージェントに通知しました",

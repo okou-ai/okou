@@ -1740,6 +1740,7 @@
       "checkFailed": "无法检查浏览器。填写内容已保留，请重试后提交。",
       "clearValue": "清空网页中的值",
       "completed": "信息已添加",
+      "confirmRangeValue": "使用当前值",
       "continue": "通知 Agent",
       "continuing": "正在通知 Agent…",
       "delivered": "已通知 Agent",
