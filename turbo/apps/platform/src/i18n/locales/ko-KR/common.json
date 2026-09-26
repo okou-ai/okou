@@ -2558,7 +2558,7 @@
         "back": "워크플로 둘러보기",
         "browse": "워크플로 둘러보기",
         "close": "닫기",
-        "contextPrefix": "중요한 사항: {{context}}",
+        "contextPrefix": "중요한 사항: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "매일 또는 매주",
@@ -4254,9 +4254,7 @@
       "common": {
         "back": "뒤로",
         "continue": "계속",
-        "finish": "설정 완료",
-        "notNow": "나중에",
-        "skip": "지금은 건너뛰기"
+        "notNow": "나중에"
       },
       "compliance": {
         "frameworks": {
@@ -6626,7 +6624,6 @@
       "morningBrief": {
         "conflict": "설치 상태가 일관되지 않아 Morning Brief를 일시적으로 사용할 수 없습니다. 조정이 완료되면 다시 시도하세요.",
         "description": "내 시간대의 오전 7:00에 일일 우선순위를 받습니다.",
-        "loading": "Morning Brief 설정을 불러오는 중...",
         "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
         "preparationFailed": "설정을 자동으로 다시 시도합니다. 지금 다시 시도할 수도 있습니다.",
@@ -7122,7 +7119,6 @@
       "invalidHost": "URL, 사용자 이름, 포트를 제외한 유효한 호스트 이름 또는 IP 주소를 입력하세요.",
       "invalidInput": "VNC 설정을 확인하고 다시 시도하세요.",
       "invalidTrust": "최대 8개, 64 KiB 이하의 유효한 공개 CA 인증서를 입력하세요.",
-      "ownerChanged": "워크스페이스 액세스가 변경되었습니다. 새로고침 후 계속하세요.",
       "revisionExhausted": "더 이상 업데이트할 수 없습니다. 새로 만드세요."
     },
     "host": "호스트 이름 또는 IP 주소",
@@ -7148,6 +7144,8 @@
       "appleRsaSrpHelp": "저장된 Mac SSH 연결과 RFB 대상 127.0.0.1 또는 ::1이 필요합니다. RFB에서 받은 RSA 키만으로는 호스트 신원을 증명할 수 없습니다. SRP는 계정과 서버 증명을 검증하고 SSH는 전체 VNC 세션을 보호합니다. SSH 호스트 키도 이후 프록시 전달 여부는 보장하지 않습니다.",
       "appleSrp": "Mac 화면 공유 (Apple Direct SRP)",
       "appleSrpHelp": "저장된 Mac SSH 연결과 RFB 대상 127.0.0.1 또는 ::1이 필요합니다. SRP는 계정과 서버 증명을 검증하고 SSH는 전체 VNC 세션을 보호합니다. SSH 호스트 키는 선택한 엔드포인트를 식별하지만 이후 프록시 전달이 없음을 보장하지는 않습니다.",
+      "appleVncPassword": "Mac 화면 공유(기존 VNC 암호)",
+      "appleVncPasswordHelp": "Mac의 선택적 VNC 암호는 인쇄 가능한 ASCII 1~8바이트입니다. type 2만으로는 서버 신원을 확인하거나 데스크톱을 암호화하지 않습니다. 검증된 SSH는 이 Okou 세션만 보호하며 Mac의 수신 포트를 격리하지 않습니다. 네트워크 설정에 따라 다른 클라이언트도 5900번 포트에 접속할 수 있습니다. 위험을 이해한 경우에만 Mac에서 직접 옵션을 켜세요.",
       "caBundle": "CA 인증서 (PEM)",
       "caHelp": "최대 8개의 CA 인증서, 총 64 KiB까지 가능합니다. 개인 키나 서버 인증서를 붙여넣지 마세요.",
       "caHint": "서버 인증서를 발급한 공개 CA 인증서를 붙여넣으세요",
@@ -7169,6 +7167,7 @@
       "appleDhDestinationHelp": "Apple DH에서는 127.0.0.1 또는 ::1을 입력하세요. 선택한 SSH 호스트를 통해 접근하는 Mac 자체의 루프백 주소입니다.",
       "appleRsaSrpDestinationHelp": "Apple RSA/SRP에서는 선택한 SSH 호스트를 통해 Mac의 127.0.0.1 또는 ::1에 접속하세요.",
       "appleSrpDestinationHelp": "Apple Direct SRP에서는 127.0.0.1 또는 ::1을 입력하세요. 선택한 SSH 호스트를 통해 접근하는 Mac 자체의 루프백 주소입니다.",
+      "appleVncPasswordDestinationHelp": "Mac 기존 VNC 암호의 대상은 저장된 SSH로 연결한 Mac의 127.0.0.1 또는 ::1로 입력하세요.",
       "destination": "RFB 대상",
       "destinationHelp": "SSH 경로에서는 Runner가 직접 연결하지 않고 선택한 SSH 서버에서 이 호스트와 포트에 연결합니다.",
       "direct": "Runner에서 직접",

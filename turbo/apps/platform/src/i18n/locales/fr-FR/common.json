@@ -2614,7 +2614,7 @@
         "back": "Parcourir les workflows",
         "browse": "Parcourir les workflows",
         "close": "Fermer",
-        "contextPrefix": "Ce qui compte pour moi : {{context}}",
+        "contextPrefix": "Ce qui compte pour moi : {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Chaque jour ou chaque semaine",
@@ -4330,9 +4330,7 @@
       "common": {
         "back": "Retour",
         "continue": "Continuer",
-        "finish": "Terminer la configuration",
-        "notNow": "Pas maintenant",
-        "skip": "Passer pour l'instant"
+        "notNow": "Pas maintenant"
       },
       "compliance": {
         "frameworks": {
@@ -6710,7 +6708,6 @@
       "morningBrief": {
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent. Réessayez une fois la réconciliation terminée.",
         "description": "Vos priorités quotidiennes à 7 h dans votre fuseau horaire.",
-        "loading": "Chargement des paramètres de Morning Brief...",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",
@@ -7218,7 +7215,6 @@
       "invalidHost": "Saisissez un nom d’hôte ou une adresse IP valides, sans URL, nom d’utilisateur ni port.",
       "invalidInput": "Vérifiez la configuration VNC et réessayez.",
       "invalidTrust": "Saisissez un ensemble valide de 8 certificats publics d’AC maximum, ne dépassant pas 64 KiB.",
-      "ownerChanged": "Votre accès à l’espace de travail a changé. Actualisez avant de continuer.",
       "revisionExhausted": "Cette configuration ne peut plus être mise à jour. Créez-en une nouvelle."
     },
     "host": "Nom d’hôte ou adresse IP",
@@ -7244,6 +7240,8 @@
       "appleRsaSrpHelp": "Nécessite SSH enregistré vers le Mac et une destination RFB 127.0.0.1 ou ::1. La clé RSA fournie par RFB ne prouve pas l’identité de l’hôte. SRP vérifie le compte et la preuve du serveur ; SSH protège toute la session. La clé d’hôte SSH identifie le point choisi sans exclure un relais en aval.",
       "appleSrp": "Partage d’écran Mac (Apple Direct SRP)",
       "appleSrpHelp": "Nécessite une connexion SSH enregistrée vers le Mac et 127.0.0.1 ou ::1 comme destination RFB. SRP vérifie le compte et la preuve du serveur ; SSH protège toute la session VNC. La clé d’hôte SSH identifie le point choisi, mais n’exclut pas un relais en aval.",
+      "appleVncPassword": "Partage d’écran Mac (mot de passe VNC classique)",
+      "appleVncPasswordHelp": "Mot de passe VNC optionnel du Mac : 1 à 8 octets ASCII imprimables. Le type 2 seul ne vérifie pas l’identité du serveur et ne chiffre pas le bureau. SSH vérifié protège cette session Okou, pas l’écoute du Mac : d’autres clients peuvent atteindre le port 5900 selon le réseau. Activez l’option sur le Mac seulement si vous acceptez ce risque.",
       "caBundle": "Certificats d’AC (PEM)",
       "caHelp": "Jusqu’à 8 certificats d’AC, pour un total de 64 KiB. Ne collez ni clé privée ni certificat de serveur.",
       "caHint": "Collez les certificats publics des AC ayant émis le certificat du serveur",
@@ -7266,6 +7264,7 @@
       "appleDhDestinationHelp": "Pour Apple DH, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
       "appleRsaSrpDestinationHelp": "Pour Apple RSA/SRP, saisissez 127.0.0.1 ou ::1 sur le Mac accessible via l’hôte SSH sélectionné.",
       "appleSrpDestinationHelp": "Pour Apple Direct SRP, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
+      "appleVncPasswordDestinationHelp": "Pour le mot de passe VNC classique, saisissez 127.0.0.1 ou ::1 sur le Mac joint par SSH enregistré.",
       "destination": "Destination RFB",
       "destinationHelp": "Pour une route SSH, cet hôte et ce port sont joints depuis le serveur SSH sélectionné, et non directement depuis le Runner.",
       "direct": "Direct depuis le Runner",

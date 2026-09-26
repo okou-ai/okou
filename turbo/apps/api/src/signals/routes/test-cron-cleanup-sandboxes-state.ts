@@ -16,6 +16,7 @@ import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -46,7 +47,11 @@ import {
   normalizeRunMetadata,
   writeRunMetadata,
 } from "../services/agent-run-metadata-write.service";
-import { transitionAgentRunsToTerminal } from "../services/agent-run-terminal-transition.service";
+import {
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
+  transitionAgentRunsToTerminal,
+} from "../services/agent-run-terminal-transition.service";
 import { deleteArtifactCatalogForHostedSiteId } from "../services/artifact-catalog-deletion.service";
 import { cleanupSandboxes$ } from "../services/cron-cleanup-sandboxes.service";
 import { insertChatEvent } from "../services/chat-event.service";
@@ -206,7 +211,6 @@ async function seedRunForAction(
         readOptionalString(body, "sandbox_id") ?? `sandbox-${randomUUID()}`,
       createdAt: readDate(body, "created_at") ?? undefined,
       completedAt: readNullableDate(body, "completed_at"),
-      lastHeartbeatAt: readNullableDate(body, "last_heartbeat_at"),
       runnerGroup: readOptionalString(body, "runner_group"),
       cancellationRecoveryCompleted: readOptionalBoolean(
         body,
@@ -218,6 +222,18 @@ async function seedRunForAction(
   signal.throwIfAborted();
   if (!run) {
     return actionBadRequest("failed to seed run");
+  }
+  if (["queued", "pending", "running"].includes(status)) {
+    await db.insert(activeAgentRuns).values({
+      runId: run.id,
+      orgId,
+      userId,
+      lastHeartbeatAt:
+        readDate(body, "last_heartbeat_at") ??
+        readDate(body, "created_at") ??
+        nowDate(),
+    });
+    signal.throwIfAborted();
   }
 
   return actionOk({
@@ -422,7 +438,7 @@ async function seedHostedPublication(
       userId: run.userId,
       slug: publicSlug,
       ...scope,
-      publicBrand: "okou",
+      linkLayoutSegment: "okou",
       publicSlug,
       createdFromRunId: run.id,
     });
@@ -439,7 +455,7 @@ async function seedHostedPublication(
       orgId: run.orgId,
       userId: run.userId,
       runId: run.id,
-      publicBrand: "okou",
+      linkLayoutSegment: "okou",
       status: "ready",
       artifactUrl: `https://storage.example/${hostedDeploymentId}.zip`,
       r2Prefix: `hosted/${hostedDeploymentId}`,
@@ -1075,7 +1091,7 @@ async function transitionRunTerminalForAction(
     return actionBadRequest("terminal status is required");
   }
   const updated = await db.transaction(async (tx) => {
-    const [run] = await transitionAgentRunsToTerminal(tx, {
+    const transitions = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: terminalStatus,
         completedAt: nowDate(),
@@ -1089,7 +1105,8 @@ async function transitionRunTerminalForAction(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    return run;
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions));
+    return transitions[0];
   });
   signal.throwIfAborted();
   return updated ? actionOk() : actionBadRequest("active run not found");

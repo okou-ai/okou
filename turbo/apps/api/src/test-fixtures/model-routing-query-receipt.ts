@@ -3,7 +3,7 @@ import { Client } from "pg";
 
 import { closeDbPool } from "../lib/db";
 import { settleIncludingAbort } from "../signals/utils";
-import { barrierQueryText } from "./account-erasure-subject";
+import { barrierQueryText } from "./database-transaction-barrier";
 
 export interface ModelRoutingQueryReceipt {
   readonly planReads: number;
@@ -12,6 +12,9 @@ export interface ModelRoutingQueryReceipt {
   readonly personalMetadataReads: number;
   readonly personalAccountReads: number;
 }
+
+const PERSONAL_METADATA_READ =
+  'select "type", "model_provider_id", "is_active", "needs_reconnect" from "model_provider_accounts"';
 
 function countTableReads(statements: readonly string[], table: string): number {
   const source = `from "${table}"`;
@@ -60,11 +63,7 @@ export async function withModelRoutingQueryReceipt<T>(
       policyReads: countTableReads(statements, "org_model_policies"),
       featureSwitchReads: countTableReads(statements, "user_feature_switches"),
       personalMetadataReads: statements.filter((statement) => {
-        return (
-          statement.startsWith(
-            'select "id", "type", "secret_id", "auth_method", "needs_reconnect", exists',
-          ) && statement.includes('from "model_providers"')
-        );
+        return statement.startsWith(PERSONAL_METADATA_READ);
       }).length,
       personalAccountReads: countTableReads(
         statements,

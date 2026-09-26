@@ -24,11 +24,6 @@ export const exportJobs = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou").notNull(),
     // pending -> running -> completed | failed
     status: varchar("status", { length: 20 }).notNull(),
     // NULL preserves exports admitted by the outgoing one-call executor.

@@ -63,9 +63,11 @@ export const computerUseCommands = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     runId: text("run_id"),
-    hostId: uuid("host_id").references(() => {
-      return computerUseHosts.id;
-    }),
+    hostId: uuid("host_id")
+      .references(() => {
+        return computerUseHosts.id;
+      })
+      .notNull(),
     kind: text("kind").notNull(),
     status: text("status").default("queued").notNull(),
     payload: jsonb("payload")
@@ -74,7 +76,7 @@ export const computerUseCommands = pgTable(
       .notNull(),
     result: jsonb("result").$type<ComputerUseCommandResult>(),
     error: text("error"),
-    timeoutMs: integer("timeout_ms"),
+    timeoutMs: integer("timeout_ms").notNull(),
     claimedAt: timestamp("claimed_at"),
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -115,7 +117,6 @@ export const computerUseCommandAuditEvents = pgTable(
     kind: text("kind").notNull(),
     app: text("app"),
     event: text("event").notNull(),
-    approvalOutcome: text("approval_outcome"),
     redactedResult:
       jsonb("redacted_result").$type<ComputerUseCommandAuditRedactedResult>(),
     error: jsonb("error").$type<ComputerUseCommandAuditError>(),

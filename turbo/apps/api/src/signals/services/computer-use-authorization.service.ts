@@ -16,22 +16,14 @@ import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 
-import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import {
-  ChatThreadContentOwnershipChangedError,
-  type ChatThreadContentIdentity,
-  withChatThreadContentRead,
-  withChatThreadContentWrite,
-} from "./chat-thread-content-erasure-admission.service";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
 import {
   computerUseHostIsOnline,
   listComputerUseHosts$,
-  projectComputerUseHosts,
 } from "./computer-use.service";
 
 const COMPUTER_USE_AUTHORIZATION_REQUEST_TTL_MS = 60 * 60 * 1000;
@@ -41,10 +33,10 @@ const COMPUTER_USE_AUTHORIZATION_URL_PREFIX =
 type AuthorizationRequestRow =
   typeof computerUseAuthorizationRequests.$inferSelect;
 
-interface ComputerUseAuthorizationRunLocator {
+type AuthorizationRequestScope = {
+  readonly source: "chat";
   readonly chatThreadId: string;
-  readonly triggerSource: string;
-}
+};
 
 type CreateComputerUseAuthorizationRequestResult =
   | {
@@ -108,13 +100,13 @@ function authorizationUrl(requestToken: string): string {
   )}`;
 }
 
-async function resolveRunLocator(args: {
+async function resolveRequestScope(args: {
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string;
 }): Promise<
-  ComputerUseAuthorizationRunLocator | "run_not_found" | "unsupported_context"
+  AuthorizationRequestScope | "run_not_found" | "unsupported_context"
 > {
   if (!isUuid(args.runId)) {
     return "run_not_found";
@@ -123,7 +115,6 @@ async function resolveRunLocator(args: {
   const [run] = await args.db
     .select({
       chatThreadId: agentRuns.chatThreadId,
-      triggerSource: agentRuns.triggerSource,
     })
     .from(agentRuns)
     .where(
@@ -136,70 +127,15 @@ async function resolveRunLocator(args: {
     )
     .limit(1);
 
-  if (!run || run.triggerSource === null) {
+  if (!run) {
     return "run_not_found";
   }
-  if (run.chatThreadId === null) {
-    return "unsupported_context";
-  }
-  return {
-    chatThreadId: run.chatThreadId,
-    triggerSource: run.triggerSource,
-  };
-}
 
-/**
- * Retains the canonical thread and exact original run for request creation.
- *
- * The shared helper's thread KEY SHARE blocks deletion and keyed user changes,
- * but permits non-key Agent updates. This caller can then wait for the run, so it locally
- * upgrades the thread to SHARE and rechecks the admitted identity first. A
- * mismatch retries the whole bounded admission before any newly discovered
- * subject can be locked out of order. The run comes last and also needs SHARE:
- * all labels checked below are non-key, and the locator is never retargeted.
- */
-async function retainComputerUseAuthorizationCreationIdentity(
-  tx: Tx,
-  args: {
-    readonly identity: ChatThreadContentIdentity;
-    readonly locator: ComputerUseAuthorizationRunLocator;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly runId: string;
-  },
-): Promise<boolean> {
-  const [thread] = await tx
-    .select({
-      userId: chatThreads.userId,
-      agentId: chatThreads.agentId,
-    })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, args.locator.chatThreadId))
-    .limit(1)
-    .for("share");
-  if (
-    !thread ||
-    thread.userId !== args.identity.userId ||
-    thread.agentId !== args.identity.agentId
-  ) {
-    throw new ChatThreadContentOwnershipChangedError();
+  if (run.chatThreadId) {
+    return { source: "chat", chatThreadId: run.chatThreadId };
   }
 
-  const [run] = await tx
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.userId, args.userId),
-        eq(agentRuns.orgId, args.orgId),
-        eq(agentRuns.chatThreadId, args.locator.chatThreadId),
-        eq(agentRuns.triggerSource, args.locator.triggerSource),
-      ),
-    )
-    .limit(1)
-    .for("share");
-  return run !== undefined;
+  return "unsupported_context";
 }
 
 async function loadRequestByToken(args: {
@@ -363,204 +299,47 @@ async function teamsScopeExists(args: {
   return connection !== undefined;
 }
 
-/**
- * Retains the exact admitted thread identity with the write-compatible lock the
- * selection UPDATE below already needs. The shared helper's KEY SHARE protects
- * deletion and keyed user changes but permits Agent rebinds; a SHARE lock would
- * make concurrent applies upgrade against one another and can deadlock. NO KEY
- * UPDATE instead serializes those writers without an avoidable lock upgrade.
- */
-async function retainComputerUseAuthorizationApplyThread(
-  tx: Tx,
-  identity: ChatThreadContentIdentity,
-): Promise<void> {
-  const [thread] = await tx
-    .select({
-      userId: chatThreads.userId,
-      agentId: chatThreads.agentId,
-    })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, identity.chatThreadId))
-    .limit(1)
-    .for("no key update");
-  if (
-    !thread ||
-    thread.userId !== identity.userId ||
-    thread.agentId !== identity.agentId
-  ) {
-    throw new ChatThreadContentOwnershipChangedError();
-  }
-}
-
-/**
- * Revalidates and pins the exact canonical-chat request only after B1 subject,
- * Agent and thread admission. The request labels are a locator rather than
- * authority; the fixed id/hash/user/org/source/thread tuple can never retarget
- * this apply while it waits. Thread selection, sidebar sequence/event and
- * request completion then share this transaction and one accepted timestamp.
- */
-async function applyAuthorizedComputerUseSelection(
-  tx: Tx,
-  args: {
-    readonly identity: ChatThreadContentIdentity & {
-      readonly agentId: string;
-    };
-    readonly request: AuthorizationRequestRow;
-    readonly requestToken: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly computerUseHostId: string;
-  },
-  signal: AbortSignal,
-): Promise<ApplyComputerUseAuthorizationRequestResult> {
-  await retainComputerUseAuthorizationApplyThread(tx, args.identity);
-  signal.throwIfAborted();
-
-  const [request] = await tx
-    .select({ expiresAt: computerUseAuthorizationRequests.expiresAt })
-    .from(computerUseAuthorizationRequests)
-    .where(
-      and(
-        eq(computerUseAuthorizationRequests.id, args.request.id),
-        eq(
-          computerUseAuthorizationRequests.requestTokenHash,
-          hashSecret(args.requestToken),
+async function applyChatAuthorizationScope(args: {
+  readonly db: Db;
+  readonly request: AuthorizationRequestRow;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly computerUseHostId: string;
+  readonly now: Date;
+}): Promise<boolean> {
+  return await args.db.transaction(async (tx) => {
+    const [thread] = await tx
+      .update(chatThreads)
+      .set({
+        computerUseHostId: args.computerUseHostId,
+        cloudBrowserEnabled: false,
+        updatedAt: args.now,
+      })
+      .where(
+        and(
+          eq(chatThreads.id, requiredChatThreadId(args.request)),
+          eq(chatThreads.userId, args.userId),
         ),
-        eq(computerUseAuthorizationRequests.orgId, args.orgId),
-        eq(computerUseAuthorizationRequests.userId, args.userId),
-        eq(computerUseAuthorizationRequests.source, "chat"),
-        eq(
-          computerUseAuthorizationRequests.chatThreadId,
-          args.identity.chatThreadId,
-        ),
-      ),
-    )
-    .limit(1)
-    .for("no key update");
-  signal.throwIfAborted();
-  if (!request) {
-    return { status: "not_found" };
-  }
-
-  // The request pin can wait. Read the clock afterwards so a link that lapses
-  // during that wait cannot update the thread or complete the request.
-  const appliedAt = nowDate();
-  if (request.expiresAt.getTime() <= appliedAt.getTime()) {
-    return { status: "expired" };
-  }
-  // Completed requests intentionally remain repeatable.
-
-  const [thread] = await tx
-    .update(chatThreads)
-    .set({
+      )
+      .returning({
+        id: chatThreads.id,
+        agentId: chatThreads.agentId,
+      });
+    if (!thread?.agentId) {
+      return false;
+    }
+    await appendChatThreadEvent(tx, {
+      kind: "computer_use_host_updated",
+      userId: args.userId,
+      orgId: args.orgId,
+      chatThreadId: thread.id,
+      agentId: thread.agentId,
       computerUseHostId: args.computerUseHostId,
       cloudBrowserEnabled: false,
-      updatedAt: appliedAt,
-    })
-    .where(
-      and(
-        eq(chatThreads.id, args.identity.chatThreadId),
-        eq(chatThreads.userId, args.identity.userId),
-        eq(chatThreads.agentId, args.identity.agentId),
-      ),
-    )
-    .returning({ id: chatThreads.id, agentId: chatThreads.agentId });
-  signal.throwIfAborted();
-  if (!thread?.agentId) {
-    return { status: "scope_not_found" };
-  }
-
-  await appendChatThreadEvent(tx, {
-    kind: "computer_use_host_updated",
-    userId: args.userId,
-    orgId: args.orgId,
-    chatThreadId: thread.id,
-    agentId: thread.agentId,
-    computerUseHostId: args.computerUseHostId,
-    cloudBrowserEnabled: false,
-    createdAt: appliedAt,
+      createdAt: args.now,
+    });
+    return true;
   });
-  signal.throwIfAborted();
-
-  const completed = await tx
-    .update(computerUseAuthorizationRequests)
-    .set({ completedAt: appliedAt, updatedAt: appliedAt })
-    .where(
-      and(
-        eq(computerUseAuthorizationRequests.id, args.request.id),
-        eq(
-          computerUseAuthorizationRequests.requestTokenHash,
-          hashSecret(args.requestToken),
-        ),
-        eq(computerUseAuthorizationRequests.orgId, args.orgId),
-        eq(computerUseAuthorizationRequests.userId, args.userId),
-        eq(computerUseAuthorizationRequests.source, "chat"),
-        eq(
-          computerUseAuthorizationRequests.chatThreadId,
-          args.identity.chatThreadId,
-        ),
-      ),
-    )
-    .returning({ id: computerUseAuthorizationRequests.id });
-  signal.throwIfAborted();
-  if (completed.length !== 1) {
-    throw new Error("Failed to complete Computer Use authorization request");
-  }
-  return {
-    status: "applied",
-    source: "chat",
-    computerUseHostId: args.computerUseHostId,
-  };
-}
-
-async function applyChatAuthorizationScope(
-  args: {
-    readonly db: Db;
-    readonly request: AuthorizationRequestRow;
-    readonly requestToken: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly computerUseHostId: string;
-  },
-  signal: AbortSignal,
-): Promise<ApplyComputerUseAuthorizationRequestResult> {
-  const chatThreadId = requiredChatThreadId(args.request);
-  const result = await withChatThreadContentWrite(
-    args.db,
-    {
-      chatThreadId,
-      authorize: (identity) => {
-        return (
-          identity.userId === args.userId &&
-          identity.agentId !== null &&
-          identity.orgId === args.orgId
-        );
-      },
-    },
-    async (tx, identity) => {
-      if (identity.agentId === null) {
-        return { status: "scope_not_found" as const };
-      }
-      return await applyAuthorizedComputerUseSelection(
-        tx,
-        {
-          identity: { ...identity, agentId: identity.agentId },
-          request: args.request,
-          requestToken: args.requestToken,
-          orgId: args.orgId,
-          userId: args.userId,
-          computerUseHostId: args.computerUseHostId,
-        },
-        signal,
-      );
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (result.outcome !== "written") {
-    return { status: "scope_not_found" };
-  }
-  return result.value;
 }
 
 async function applyTeamsAuthorizationScope(args: {
@@ -643,224 +422,46 @@ export const createComputerUseAuthorizationRequest$ = command(
     signal: AbortSignal,
   ): Promise<CreateComputerUseAuthorizationRequestResult> => {
     const db = set(writeDb$);
-    const locator = await resolveRunLocator({ db, ...args });
+    const scope = await resolveRequestScope({ db, ...args });
     signal.throwIfAborted();
 
-    if (locator === "run_not_found") {
+    if (scope === "run_not_found") {
       return { status: "run_not_found" };
     }
-    if (locator === "unsupported_context") {
+    if (scope === "unsupported_context") {
       return { status: "unsupported_context" };
     }
 
-    // The token is opaque and never persisted. Reusing it across a bounded
-    // ownership retry is safe because only an accepted attempt can insert its
-    // hash, and no URL is returned until that transaction commits.
     const requestToken = generateOpaqueToken();
-    const result = await withChatThreadContentWrite(
-      db,
-      {
-        chatThreadId: locator.chatThreadId,
-        authorize: (identity) => {
-          return (
-            identity.userId === args.userId &&
-            identity.agentId !== null &&
-            identity.orgId === args.orgId
-          );
-        },
-      },
-      async (
-        tx,
-        identity,
-      ): Promise<CreateComputerUseAuthorizationRequestResult> => {
-        const retained = await retainComputerUseAuthorizationCreationIdentity(
-          tx,
-          {
-            identity,
-            locator,
-            ...args,
-          },
-        );
-        if (!retained) {
-          return { status: "run_not_found" };
-        }
-        signal.throwIfAborted();
-
-        // Required locks can wait on deletion and identity writers. Start the
-        // one-hour validity only after those waits, immediately before INSERT.
-        const now = nowDate();
-        const expiresAt = new Date(
-          now.getTime() + COMPUTER_USE_AUTHORIZATION_REQUEST_TTL_MS,
-        );
-        await tx.insert(computerUseAuthorizationRequests).values({
-          requestTokenHash: hashSecret(requestToken),
-          orgId: args.orgId,
-          userId: args.userId,
-          runId: args.runId,
-          // Canonical Slack and Teams runs intentionally retain the historical
-          // chat source contract; creation does not revive legacy locators.
-          source: "chat",
-          chatThreadId: locator.chatThreadId,
-          slackConnectionId: null,
-          slackChannelId: null,
-          slackThreadTs: null,
-          teamsConnectionId: null,
-          teamsConversationId: null,
-          teamsThreadId: null,
-          expiresAt,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        return {
-          status: "created",
-          authorizationUrl: authorizationUrl(requestToken),
-          source: "chat",
-          expiresAt: expiresAt.toISOString(),
-        };
-      },
-      signal,
+    const now = nowDate();
+    const expiresAt = new Date(
+      now.getTime() + COMPUTER_USE_AUTHORIZATION_REQUEST_TTL_MS,
     );
-    if (result.outcome !== "written") {
-      return { status: "run_not_found" };
-    }
-    return result.value;
-  },
-);
 
-/**
- * Rechecks every canonical thread identity field and reads the selected
- * host without locking the thread row.
- *
- * #35311 made this route take the thread `FOR UPDATE` to remove a KEY SHARE ->
- * UPDATE upgrade cycle between two concurrent GETs. The read path no longer
- * takes either lock, so no cycle remains: this GET locks no thread row, and it
- * therefore neither serializes against another GET nor upgrades around a second
- * business row. The projection still takes no host row lock, so host
- * lifecycle's host -> thread order is unchanged.
- *
- * The recheck is still required. Without a lock a transfer can commit between
- * the admitting statement and this one, so an identity that no longer matches
- * raises rather than projecting another account's selected host.
- */
-async function retainComputerUseAuthorizationReadThread(
-  tx: Tx,
-  identity: ChatThreadContentIdentity,
-): Promise<string | null> {
-  const [thread] = await tx
-    .select({
-      userId: chatThreads.userId,
-      agentId: chatThreads.agentId,
-      computerUseHostId: chatThreads.computerUseHostId,
-    })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, identity.chatThreadId))
-    .limit(1);
-  if (
-    !thread ||
-    thread.userId !== identity.userId ||
-    thread.agentId !== identity.agentId
-  ) {
-    throw new ChatThreadContentOwnershipChangedError();
-  }
-  return thread.computerUseHostId;
-}
-
-/**
- * Reads one canonical source:chat projection under lock-free subject admission
- * and the retained exact request pin, which is taken before the thread read. The final host statement observes every
- * exact actor/org, nonrevoked host in last-seen order inside this transaction;
- * filtering to online happens only after that statement.
- *
- * Dropping the thread lock narrows what this read linearizes against: a host
- * lifecycle transaction that already owns a host lock can now commit its
- * binding clear while this read is in flight. The projection's own database
- * linearization point is still its final READ COMMITTED host statement, and it
- * still adds no thread -> host lock. Heartbeat and grant changes that do not
- * need the thread remain outside this slice's linearization claim.
- */
-async function readAuthorizedComputerUseProjection(
-  tx: Tx,
-  args: {
-    readonly identity: ChatThreadContentIdentity & {
-      readonly agentId: string;
-    };
-    readonly request: AuthorizationRequestRow;
-    readonly requestToken: string;
-    readonly orgId: string;
-    readonly userId: string;
-  },
-  signal: AbortSignal,
-): Promise<ReadComputerUseAuthorizationRequestResult> {
-  const [request] = await tx
-    .select({
-      expiresAt: computerUseAuthorizationRequests.expiresAt,
-      completedAt: computerUseAuthorizationRequests.completedAt,
-    })
-    .from(computerUseAuthorizationRequests)
-    .where(
-      and(
-        eq(computerUseAuthorizationRequests.id, args.request.id),
-        eq(
-          computerUseAuthorizationRequests.requestTokenHash,
-          hashSecret(args.requestToken),
-        ),
-        eq(computerUseAuthorizationRequests.orgId, args.orgId),
-        eq(computerUseAuthorizationRequests.userId, args.userId),
-        eq(computerUseAuthorizationRequests.runId, args.request.runId),
-        eq(computerUseAuthorizationRequests.source, "chat"),
-        eq(
-          computerUseAuthorizationRequests.chatThreadId,
-          args.identity.chatThreadId,
-        ),
-      ),
-    )
-    .limit(1)
-    .for("share");
-  signal.throwIfAborted();
-  if (!request) {
-    return { status: "not_found" };
-  }
-
-  // The thread read follows the pin. With no thread row lock left, the pin is
-  // the only barrier this projection has, so taking it first is what keeps an
-  // Apply from committing between the thread read and the request read and
-  // producing a response that reports the request completed while still
-  // showing the host selection it replaced.
-  const selectedHostId = await retainComputerUseAuthorizationReadThread(
-    tx,
-    args.identity,
-  );
-  signal.throwIfAborted();
-
-  // Both TTL and heartbeat eligibility use an explicit clock acquired only
-  // after every potentially waiting business-row pin.
-  const projectionAt = nowDate();
-  if (request.expiresAt.getTime() <= projectionAt.getTime()) {
-    return { status: "expired" };
-  }
-  const hosts = await projectComputerUseHosts(
-    {
-      db: tx,
+    await db.insert(computerUseAuthorizationRequests).values({
+      requestTokenHash: hashSecret(requestToken),
       orgId: args.orgId,
       userId: args.userId,
-      now: projectionAt,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
+      runId: args.runId,
+      source: scope.source,
+      chatThreadId: scope.chatThreadId,
+      teamsConnectionId: null,
+      teamsConversationId: null,
+      teamsThreadId: null,
+      expiresAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+    signal.throwIfAborted();
 
-  return {
-    status: "found",
-    source: "chat",
-    expiresAt: request.expiresAt.toISOString(),
-    completedAt: request.completedAt?.toISOString() ?? null,
-    computerUseHostId: request.completedAt ? selectedHostId : null,
-    hosts: hosts.hosts.filter((host) => {
-      return host.status === "online";
-    }),
-  };
-}
+    return {
+      status: "created",
+      authorizationUrl: authorizationUrl(requestToken),
+      source: scope.source,
+      expiresAt: expiresAt.toISOString(),
+    };
+  },
+);
 
 export const readComputerUseAuthorizationRequest$ = command(
   async (
@@ -873,8 +474,6 @@ export const readComputerUseAuthorizationRequest$ = command(
     signal: AbortSignal,
   ): Promise<ReadComputerUseAuthorizationRequestResult> => {
     const db = set(writeDb$);
-    // The token lookup is a locator only. Exact actor/org predicates preserve
-    // the route's non-oracular 404 before canonical scope or expiry is exposed.
     const loaded = await loadRequestByToken({
       db,
       orgId: args.orgId,
@@ -888,60 +487,20 @@ export const readComputerUseAuthorizationRequest$ = command(
       return loaded;
     }
 
-    if (loaded.request.source === "chat") {
-      const chatThreadId = requiredChatThreadId(loaded.request);
-      const result = await withChatThreadContentRead(
-        db,
-        {
-          chatThreadId,
-          authorize: (identity) => {
-            return (
-              identity.userId === args.userId &&
-              identity.agentId !== null &&
-              identity.orgId === args.orgId
-            );
-          },
-        },
-        async (tx, identity) => {
-          if (identity.agentId === null) {
-            return { status: "not_found" as const };
-          }
-          return await readAuthorizedComputerUseProjection(
-            tx,
-            {
-              identity: { ...identity, agentId: identity.agentId },
-              request: loaded.request,
-              requestToken: args.requestToken,
-              orgId: args.orgId,
-              userId: args.userId,
-            },
-            signal,
-          );
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (result.outcome !== "written") {
-        return { status: "not_found" };
-      }
-      return result.value;
-    }
-
-    // Legacy persisted Teams/Slack sources retain their existing authority and
-    // own-database host-list behavior. Canonical web, Slack and Teams creation
-    // all persists source:chat and therefore follows the fenced branch above.
     const computerUseHostId = await loadAuthorizedComputerUseHostId({
       db,
       request: loaded.request,
       userId: args.userId,
     });
     signal.throwIfAborted();
+
     const hosts = await set(
       listComputerUseHosts$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
+
     return {
       status: "found",
       source: loaded.request.source as ComputerUseAuthorizationSource,
@@ -995,36 +554,9 @@ export const applyComputerUseAuthorizationRequest$ = command(
     signal.throwIfAborted();
 
     const request = loaded.request;
-    if (request.source === "chat") {
-      const applied = await applyChatAuthorizationScope(
-        {
-          db,
-          request,
-          requestToken: args.requestToken,
-          orgId: args.orgId,
-          userId: args.userId,
-          computerUseHostId: args.computerUseHostId,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (applied.status !== "applied") {
-        return applied;
-      }
-      await publishThreadListChanged({
-        userId: args.userId,
-        orgId: args.orgId,
-      });
-      signal.throwIfAborted();
-      return applied;
-    }
-
-    // Legacy Teams authorization retains its existing route/connection
-    // authority and two-transaction completion semantics. R14 changes only the
-    // canonical source:chat path shared by web, Slack and Teams runs.
     const applied =
-      request.source === "teams"
-        ? await applyTeamsAuthorizationScope({
+      request.source === "chat"
+        ? await applyChatAuthorizationScope({
             db,
             request,
             orgId: args.orgId,
@@ -1032,8 +564,18 @@ export const applyComputerUseAuthorizationRequest$ = command(
             computerUseHostId: args.computerUseHostId,
             now,
           })
-        : false;
+        : request.source === "teams"
+          ? await applyTeamsAuthorizationScope({
+              db,
+              request,
+              orgId: args.orgId,
+              userId: args.userId,
+              computerUseHostId: args.computerUseHostId,
+              now,
+            })
+          : false;
     signal.throwIfAborted();
+
     if (!applied) {
       return { status: "scope_not_found" };
     }
@@ -1043,8 +585,13 @@ export const applyComputerUseAuthorizationRequest$ = command(
       .set({ completedAt: now, updatedAt: now })
       .where(eq(computerUseAuthorizationRequests.id, request.id));
     signal.throwIfAborted();
-    await publishThreadListChanged({ userId: args.userId, orgId: args.orgId });
+
+    await publishThreadListChanged({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
     signal.throwIfAborted();
+
     return {
       status: "applied",
       source: request.source as ComputerUseAuthorizationSource,

@@ -52,7 +52,6 @@ import {
   insertCanonicalOrphanChatThreadEventFixture,
   insertChatThreadEventTransactionFixture,
   readChatThreadEventIdsFixture,
-  readChatThreadSnapshotStorageFixture,
   setChatThreadSnapshotBoundaryFixture,
   setChatThreadSnapshotObjectKeyFixture,
   setChatThreadVideoModelFixture,
@@ -926,7 +925,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
   });
 
-  it("returns a scoped R2 URL when a chat thread snapshot has an object pointer", async () => {
+  it("returns a scoped R2 URL for snapshots with or without the capability header", async () => {
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
@@ -949,33 +948,13 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       title: "R2 snapshot pointer thread",
     });
     await compactChatThreadSnapshots(actor);
-    await expect(
-      readChatThreadSnapshotStorageFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-      }),
-    ).resolves.toStrictEqual({
-      objectKey: expect.any(String),
-      chatThreads: [],
-    });
     const materialized = await chat.getThreadSnapshot(actor);
+    expect(materialized.chatThreads).toContainEqual(
+      expect.objectContaining({ title: "R2 snapshot pointer thread" }),
+    );
     const client = setupApp({ context, routes: chatThreadRoutes })(
       chatThreadsContract,
     );
-    const oldAppHeaders = {
-      ...okouCapabilityHeaders(
-        actor,
-        randomUUID(),
-        CHAT_THREAD_READ_CAPABILITIES,
-      ),
-    };
-    const oldAppResponse = await accept(
-      client.snapshot({
-        headers: oldAppHeaders,
-      }),
-      [200],
-    );
-    expect(oldAppResponse.body).toStrictEqual(materialized);
     await setChatThreadSnapshotObjectKeyFixture({
       userId: actor.userId,
       orgId: actor.orgId,
@@ -983,7 +962,26 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       body: Buffer.from("{}"),
     });
 
-    const newAppHeaders = {
+    // The API must not read or materialize the R2 object for either request.
+    const headerlessResponse = await accept(
+      client.snapshot({
+        headers: okouCapabilityHeaders(
+          actor,
+          randomUUID(),
+          CHAT_THREAD_READ_CAPABILITIES,
+        ),
+      }),
+      [200],
+    );
+    expect(headerlessResponse.body).toMatchObject({
+      url: expect.any(String),
+      expiresInSeconds: expect.any(Number),
+      latestEventId: materialized.latestEventId,
+      latestSeqId: materialized.latestSeqId,
+    });
+    expect("chatThreads" in headerlessResponse.body).toBeFalsy();
+
+    const capableClientHeaders = {
       ...okouCapabilityHeaders(
         actor,
         randomUUID(),
@@ -993,7 +991,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     };
     const response = await accept(
       client.snapshot({
-        headers: newAppHeaders,
+        headers: capableClientHeaders,
       }),
       [200],
     );
@@ -1408,7 +1406,108 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
   }, 90_000);
 
-  it("keeps markerless snapshot watermarks monotonic across stale projection refresh", async () => {
+  it("removes all deleted Agent threads from the sidebar list and snapshot", async () => {
+    const actor = bdd.user();
+    await api.ensureOrgModelProvider(actor);
+    const removedAgent = await bdd.createAgent(actor, {
+      displayName: "Agent with sidebar threads to delete",
+    });
+    const keptAgent = await bdd.createAgent(actor, {
+      displayName: "Agent with a retained sidebar thread",
+    });
+    const removedThreads = await Promise.all(
+      ["First deleted thread", "Second deleted thread"].map(async (title) => {
+        return await chat.createThread(actor, {
+          agentId: removedAgent.agentId,
+          title,
+        });
+      }),
+    );
+    const keptThread = await chat.createThread(actor, {
+      agentId: keptAgent.agentId,
+      title: "Retained sidebar thread",
+    });
+    await compactChatThreadSnapshots(actor);
+    const before = await chat.getThreadSnapshot(actor);
+    expect(before.chatThreads).toHaveLength(3);
+    if (before.latestSeqId === null) {
+      throw new Error("Expected a sidebar snapshot cursor");
+    }
+
+    chat.mockObjectStorageObjectsExist();
+    await authOrg.deleteAgent(actor, removedAgent.agentId);
+    // The App renders its list from the snapshot plus this external event API.
+    const tail = await threadEventPage(actor, before.latestSeqId);
+    expect(tail.events).toHaveLength(2);
+    expect(tail.hasMore).toBeFalsy();
+    expect(
+      tail.events.map((event) => {
+        return { kind: event.kind, chatThreadId: event.chatThreadId };
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining(
+        removedThreads.map((thread) => {
+          return { kind: "deleted", chatThreadId: thread.id };
+        }),
+      ),
+    );
+    expect(
+      replayChatThreadEvents(before.chatThreads, tail.events).map((thread) => {
+        return thread.id;
+      }),
+    ).toStrictEqual([keptThread.id]);
+    for (const thread of removedThreads) {
+      expect(
+        (await chat.requestReadThread(actor, thread.id, [404])).status,
+      ).toBe(404);
+    }
+
+    expect((await compactChatThreadSnapshots(actor)).scopes).toBe(1);
+    const after = await chat.getThreadSnapshot(actor);
+    expect(
+      after.chatThreads.map((thread) => {
+        return thread.id;
+      }),
+    ).toStrictEqual([keptThread.id]);
+    expect(after.latestSeqId).toBe(tail.events.at(-1)?.seqId);
+    expect((await compactChatThreadSnapshots(actor)).scopes).toBe(0);
+  });
+
+  it("does not repeatedly publish an empty scope with no visible event", async () => {
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    await api.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Gap-only snapshot agent",
+    });
+    const createdEventId = randomUUID();
+    await chat.createThread(actor, {
+      agentId: agent.agentId,
+      title: "Gap-only thread",
+      eventId: createdEventId,
+    });
+    const [event] = await allThreadEvents(actor);
+    if (!event) {
+      throw new Error("Expected a thread creation event");
+    }
+    await deleteChatThreadEventMarkerFixture({
+      userId: actor.userId,
+      orgId: actor.orgId,
+      eventId: event.id,
+      seqId: event.seqId,
+    });
+    expect((await compactChatThreadSnapshots(actor)).scopes).toBe(0);
+    expect((await compactChatThreadSnapshots(actor)).scopes).toBe(0);
+    await expect(chat.getThreadSnapshot(actor)).resolves.toStrictEqual({
+      chatThreads: [],
+      latestEventId: null,
+      latestSeqId: null,
+    });
+  });
+
+  it("keeps markerless snapshot watermarks monotonic across an allocator gap", async () => {
     const snapshotAt = now();
     mockNow(snapshotAt);
     const scenario = await createSnapshotCursorScenario(
@@ -1436,9 +1535,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     }
 
     // Reusing an older retained event ID reserves a sequence but inserts no
-    // event. The live thread still changes, giving stale compaction a
-    // projection-only update to apply without treating the allocator gap as a
-    // cursor boundary.
+    // event. Agent deletion later supplies the next real cursor boundary.
     await chat.renameThread(
       actor,
       thread.id,
@@ -1462,9 +1559,21 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     }
     chat.mockObjectStorageObjectsExist();
     await authOrg.deleteAgent(actor, removedAgent.agentId);
-    await expect(
-      threadEventPage(actor, boundary.latestSeqId),
-    ).resolves.toStrictEqual({ events: [], hasMore: false });
+    const deletedPage = await threadEventPage(actor, boundary.latestSeqId);
+    expect(deletedPage).toStrictEqual({
+      events: [
+        expect.objectContaining({
+          kind: "deleted",
+          chatThreadId: removedThread.id,
+          agentId: removedAgent.agentId,
+        }),
+      ],
+      hasMore: false,
+    });
+    const [deletedEvent] = deletedPage.events;
+    if (!deletedEvent) {
+      throw new Error("Expected the deleted Agent thread event");
+    }
 
     const unrelatedActor = bdd.user();
     const unrelatedAgent = await bdd.createAgent(unrelatedActor, {
@@ -1472,12 +1581,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
     await chat.createThread(unrelatedActor, {
       agentId: unrelatedAgent.agentId,
-      title: "Unrelated event arriving before stale compaction",
+      title: "Unrelated event arriving before compaction",
     });
 
-    mockNow(snapshotAt + DAY_MS + 1);
-    const staleCompact = await compactChatThreadSnapshots(actor);
-    expect(staleCompact.eventsApplied).toBe(0);
+    const deletedCompact = await compactChatThreadSnapshots(actor);
+    expect(deletedCompact.scopes).toBe(1);
     await expect(chat.getThreadSnapshot(unrelatedActor)).resolves.toStrictEqual(
       {
         chatThreads: [],
@@ -1485,25 +1593,24 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         latestSeqId: null,
       },
     );
-    const preserved = await chat.getThreadSnapshot(actor);
+    const afterDeletion = await chat.getThreadSnapshot(actor);
     expect({
-      latestEventId: preserved.latestEventId,
-      latestSeqId: preserved.latestSeqId,
+      latestEventId: afterDeletion.latestEventId,
+      latestSeqId: afterDeletion.latestSeqId,
     }).toStrictEqual({
-      latestEventId: boundary.latestEventId,
-      latestSeqId: boundary.latestSeqId,
+      latestEventId: deletedEvent.id,
+      latestSeqId: deletedEvent.seqId,
     });
-    expect(preserved.chatThreads).toContainEqual(
+    expect(afterDeletion.chatThreads).toContainEqual(
       expect.objectContaining({
         id: thread.id,
         title: "Projection refreshed without a lifecycle event",
       }),
     );
-    expect(
-      preserved.chatThreads.some((entry) => {
-        return entry.id === removedThread.id;
-      }),
-    ).toBeFalsy();
+    expect(afterDeletion.chatThreads).not.toContainEqual(
+      expect.objectContaining({ id: removedThread.id }),
+    );
+    expect((await compactChatThreadSnapshots(actor)).scopes).toBe(0);
     await expect(
       readChatThreadEventIdsFixture({
         userId: actor.userId,
@@ -1523,7 +1630,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       "Real lifecycle event after allocator gap",
       laterEventId,
     );
-    const markerlessTail = await threadEventPage(actor, boundary.latestSeqId);
+    const markerlessTail = await threadEventPage(actor, deletedEvent.seqId);
     expect(markerlessTail).toStrictEqual({
       events: [expect.objectContaining({ id: laterEventId })],
       hasMore: false,
@@ -1532,7 +1639,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     if (!laterEvent) {
       throw new Error("Expected the real event after the allocator gap");
     }
-    expect(laterEvent.seqId).toBe(boundary.latestSeqId + 2);
+    expect(laterEvent.seqId).toBe(deletedEvent.seqId + 1);
     await expectExpiredThreadEventCursor(actor, firstEvent.seqId);
 
     const advancedCompact = await compactChatThreadSnapshots(actor);
@@ -1545,6 +1652,18 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       latestEventId: laterEvent.id,
       latestSeqId: laterEvent.seqId,
     });
+    // The rebuild keeps the eventless rename and the deleted Agent's thread out.
+    expect(advanced.chatThreads).toContainEqual(
+      expect.objectContaining({
+        id: thread.id,
+        title: "Real lifecycle event after allocator gap",
+      }),
+    );
+    expect(
+      advanced.chatThreads.some((entry) => {
+        return entry.id === removedThread.id;
+      }),
+    ).toBeFalsy();
 
     await compactChatThreadSnapshots(actor);
     const repeated = await chat.getThreadSnapshot(actor);
@@ -1622,6 +1741,55 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         selected ? [] : [fixture.createdEventId, fixture.renamedEventId],
       );
     }
+  });
+
+  it("prunes a covered event behind an older uncovered event at a one-event budget", async () => {
+    const startedAt = now();
+    const uncovered = bdd.user({ userId: `user_z${randomUUID()}` });
+    const covered = bdd.user({ userId: `user_0${randomUUID()}` });
+    await api.ensureOrgModelProvider(uncovered);
+    await api.ensureOrgModelProvider(covered);
+    const uncoveredAgent = await bdd.createAgent(uncovered, {
+      displayName: "Uncompacted retention scope",
+    });
+    const uncoveredThread = await chat.createThread(uncovered, {
+      agentId: uncoveredAgent.agentId,
+      title: "Older event with no snapshot",
+    });
+    const coveredAgent = await bdd.createAgent(covered, {
+      displayName: "Compacted retention scope",
+    });
+    const coveredThread = await chat.createThread(covered, {
+      agentId: coveredAgent.agentId,
+      title: "Later covered event",
+    });
+    await compactChatThreadSnapshots(covered);
+    // The scoped candidate budget chooses `user_0` before `user_z`, so the
+    // older un-compacted scope stays uncovered while the covered scope moves.
+    mockOptionalEnv("CHAT_THREAD_SNAPSHOT_COMPACTION_BATCH_SIZE", "1");
+    mockOptionalEnv("CHAT_THREAD_EVENT_PRUNE_BATCH_SIZE", "1");
+    await chat.renameThread(
+      covered,
+      coveredThread.id,
+      "Newer snapshot boundary",
+    );
+    mockNow(startedAt + 8 * DAY_MS);
+
+    const result = await compactChatThreadSnapshots(covered, uncovered);
+
+    expect(result.scopes).toBe(1);
+    expect(result.eventsPruned).toBe(1);
+    await expect(allThreadEvents(uncovered)).resolves.toContainEqual(
+      expect.objectContaining({ chatThreadId: uncoveredThread.id }),
+    );
+    await expect(allThreadEvents(covered)).resolves.toHaveLength(1);
+    const snapshot = await chat.getThreadSnapshot(covered);
+    expect(snapshot.chatThreads).toContainEqual(
+      expect.objectContaining({
+        id: coveredThread.id,
+        title: "Newer snapshot boundary",
+      }),
+    );
   });
 
   it("rejects snapshot compaction test requests in production", async () => {
@@ -1765,25 +1933,27 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       compactChatThreadSnapshots(actor),
       compactChatThreadSnapshots(actor),
     ]);
+    const overlapPruned = overlappingCompactions.map((result) => {
+      return result.eventsPruned;
+    });
+    // Bounded reads are intentionally unlocked: both crons may choose the
+    // same two ids, so one DELETE can win while the other removes zero.
     expect(
-      overlappingCompactions
-        .map((result) => {
-          return result.eventsPruned;
-        })
-        .sort((left, right) => {
-          return left - right;
-        }),
-    ).toStrictEqual([2, 2]);
-    await expect(
-      readChatThreadEventIdsFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        eventIds: coveredEventIds,
+      overlapPruned.every((count) => {
+        return count >= 0 && count <= 2;
       }),
-    ).resolves.toStrictEqual([nullAgentMarker.id]);
-
-    const converged = await compactChatThreadSnapshots(actor);
-    expect(converged.eventsPruned).toBe(1);
+    ).toBeTruthy();
+    let totalPruned = overlapPruned.reduce((sum, count) => {
+      return sum + count;
+    }, 0);
+    expect(totalPruned).toBeGreaterThanOrEqual(2);
+    while (totalPruned < coveredEventIds.length) {
+      const nextRun = await compactChatThreadSnapshots(actor);
+      expect(nextRun.eventsPruned).toBeGreaterThan(0);
+      expect(nextRun.eventsPruned).toBeLessThanOrEqual(2);
+      totalPruned += nextRun.eventsPruned;
+    }
+    expect(totalPruned).toBe(coveredEventIds.length);
     await expect(
       readChatThreadEventIdsFixture({
         userId: actor.userId,
@@ -1836,7 +2006,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         title: "Old event above only the isolated scope watermark",
         createdAt: retainedAtBoundary,
       });
-    const compactionBlocker = bdd.user({ userId: actor.userId });
+    // The one-candidate page must visit this scope first; sharing a random
+    // user id with the other scopes left their org-id order nondeterministic.
+    const compactionBlocker = bdd.user({
+      userId: "user_00000000-0000-0000-0000-000000000000",
+    });
     await api.ensureOrgModelProvider(compactionBlocker);
     const blockerAgent = await bdd.createAgent(compactionBlocker, {
       displayName: "Above-watermark compaction blocker",
@@ -2111,19 +2285,21 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     chat.mockObjectStorageObjectsExist();
     await authOrg.deleteAgent(actor, deletedAgent.agentId);
-
-    mockNow(incrementalSnapshotAt + DAY_MS);
-    await compactChatThreadSnapshots(actor);
-    const boundarySnapshot = await chat.getThreadSnapshot(actor);
-    expect(
-      boundarySnapshot.chatThreads.map((thread) => {
-        return thread.id;
+    const deletionEvents = await threadEventPage(
+      actor,
+      (await chat.getThreadSnapshot(actor)).latestSeqId ?? undefined,
+    );
+    expect(deletionEvents.events).toContainEqual(
+      expect.objectContaining({
+        kind: "deleted",
+        chatThreadId: deletedAgentThread.id,
       }),
-    ).toContain(deletedAgentThread.id);
+    );
 
-    mockNow(incrementalSnapshotAt + DAY_MS + 1);
-    await compactChatThreadSnapshots(actor);
+    const deletionCompact = await compactChatThreadSnapshots(actor);
+    expect(deletionCompact.scopes).toBe(1);
     const compactedSnapshot = await chat.getThreadSnapshot(actor);
+    expect((await compactChatThreadSnapshots(actor)).scopes).toBe(0);
     expect(compactedSnapshot.latestEventId).not.toBeNull();
     expect(compactedSnapshot.latestSeqId).not.toBeNull();
     expect(compactedSnapshot.chatThreads).toStrictEqual([
@@ -2185,11 +2361,17 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         code: "CHAT_THREAD_EVENTS_EXPIRED",
       },
     });
+    // Deleted-Agent tombstones remain visible until their own retention
+    // cutoff; non-deletion events from that Agent must stay filtered.
     expect(
-      (await allThreadEvents(actor)).some((event) => {
-        return event.agentId === deletedAgent.agentId;
-      }),
-    ).toBeFalsy();
+      (await allThreadEvents(actor))
+        .filter((event) => {
+          return event.agentId === deletedAgent.agentId;
+        })
+        .every((event) => {
+          return event.kind === "deleted";
+        }),
+    ).toBeTruthy();
 
     const markerlessSnapshotCursor = await chat.requestThreadEvents(
       actor,

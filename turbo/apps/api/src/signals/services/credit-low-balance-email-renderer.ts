@@ -1,4 +1,4 @@
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { convert } from "html-to-text";
 import { escapeHtml } from "markdown-it/lib/common/utils.mjs";
 
@@ -28,8 +28,8 @@ export function renderCreditLowBalanceEmail(
   const thresholdCredits = escapeHtml(
     props.thresholdCredits.toLocaleString("en-US"),
   );
-  const brandName = escapeHtml(PUBLIC_BRAND_PRESENTATION.brandName);
-  const supportEmail = escapeHtml(PUBLIC_BRAND_PRESENTATION.supportEmail);
+  const brandName = escapeHtml(BRAND_PRESENTATION.brandName);
+  const supportEmail = escapeHtml(BRAND_PRESENTATION.supportEmail);
   const unsubscribe = props.unsubscribeUrl
     ? `<p style="margin:14px 0 0;font-size:12px;line-height:19px"><a href="${escapeHtml(props.unsubscribeUrl)}" style="color:#8C8685;text-decoration:underline">Unsubscribe</a></p>`
     : "";

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type {
   RunActivityEntries,
   RunActivityEntry,
-} from "@okouai/db/jsonb-contracts/run-activity-snapshot";
+} from "@okouai/db/jsonb-contracts/run-activity";
 import type { AgentEvent } from "./event-consumer/verify";
 
 const ACTIVITY_ENTRY_LIMIT = 16;
@@ -10,7 +10,6 @@ const ACTIVITY_BYTE_LIMIT = 16 * 1024;
 const ACTIVITY_EXCERPT_LIMIT = 700;
 const ACTIVITY_NAME_LIMIT = 100;
 const ACTIVITY_CALL_ID_LIMIT = 160;
-export const ACTIVITY_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -216,9 +215,6 @@ export function activityRevision(entries: RunActivityEntries): string {
   return createHash("sha256")
     .update(JSON.stringify(entries.map(canonicalEntry)))
     .digest("hex");
-}
-export function summaryRevision(activity: string, cursor: number): string {
-  return createHash("sha256").update(`${activity}:${cursor}`).digest("hex");
 }
 function activityPhrase(value: string | null): string | null {
   if (value === null) {

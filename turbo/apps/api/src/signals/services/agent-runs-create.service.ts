@@ -126,8 +126,8 @@ type AgentRunRecord = AgentRunRequestAgent;
  * Request-scoped preparation facts from an entry point that already authorized
  * this exact user, organization, and Agent. These observations can remove
  * equivalent preflight reads, but they never authorize the later launch
- * transaction: compute admission still locks and revalidates Agent ownership
- * and erasure state before it claims input or inserts a Run.
+ * transaction: compute admission still resolves the Agent and its ownership
+ * again before it claims input or inserts a Run.
  *
  * When this object is present, nullable Agent metadata and feature overrides
  * are authoritative observations. The bootstrap materializer may enrich an
@@ -1177,7 +1177,6 @@ function buildCreateAgentRunArgs(
 async function captureSubscriptionAccount(
   db: Db,
   input: AgentRunAfterBootstrap,
-  signal: AbortSignal,
 ): Promise<AgentRunAfterBootstrap | ReturnType<typeof conflict>> {
   const { command } = input;
   const pin = command.agentRunModelPin;
@@ -1196,17 +1195,13 @@ async function captureSubscriptionAccount(
   if (testHold) {
     await testHold;
   }
-  const account = await captureActivePersonalModelProviderAccount(
-    {
-      type: pin.modelProvider,
-      db,
-      orgId: command.auth.orgId,
-      userId: command.auth.userId,
-      modelProviderId: pin.modelProviderId,
-      featureSwitchContext: input.featureSwitchContext,
-    },
-    signal,
-  );
+  const account = await captureActivePersonalModelProviderAccount({
+    type: pin.modelProvider,
+    db,
+    orgId: command.auth.orgId,
+    userId: command.auth.userId,
+    modelProviderId: pin.modelProviderId,
+  });
   if (!account) {
     return conflict(
       "The selected subscription account is unavailable. Reconnect it before starting another run.",
@@ -1347,7 +1342,7 @@ async function captureAndCompleteAgentRunPostAuthorizationContext(
     input.timing,
     "api_dispatch_pre_create_agent_capture_subscription_account",
     () => {
-      return captureSubscriptionAccount(db, input, signal);
+      return captureSubscriptionAccount(db, input);
     },
   );
   signal.throwIfAborted();
@@ -1651,9 +1646,7 @@ export const createQueueFirstAgentRun$ = command(
     args: CreateQueueFirstAgentRunCommandArgs,
     signal: AbortSignal,
   ) => {
-    if (
-      isUnsupportedRunAdmission(args.triggerSource, args.queueFirstAssociation)
-    ) {
+    if (isUnsupportedRunAdmission(args.queueFirstAssociation)) {
       return conflict("Unsupported run input");
     }
     const result = await set(createAgentRunInternal$, args, signal);

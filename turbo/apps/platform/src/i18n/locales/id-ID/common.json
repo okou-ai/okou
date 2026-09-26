@@ -2558,7 +2558,7 @@
         "back": "Jelajahi workflow",
         "browse": "Jelajahi workflow",
         "close": "Tutup",
-        "contextPrefix": "Yang penting bagi saya: {{context}}",
+        "contextPrefix": "Yang penting bagi saya: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Harian atau mingguan",
@@ -4254,9 +4254,7 @@
       "common": {
         "back": "Kembali",
         "continue": "Lanjutkan",
-        "finish": "Selesaikan penyiapan",
-        "notNow": "Nanti saja",
-        "skip": "Lewati dulu"
+        "notNow": "Nanti saja"
       },
       "compliance": {
         "frameworks": {
@@ -6626,7 +6624,6 @@
       "morningBrief": {
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten. Coba lagi setelah rekonsiliasi selesai.",
         "description": "Prioritas harian pukul 07.00 sesuai zona waktu Anda.",
-        "loading": "Memuat pengaturan Morning Brief...",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
         "preparationFailed": "Penyiapan akan dicoba lagi secara otomatis. Anda juga dapat mencoba lagi sekarang.",
@@ -7122,7 +7119,6 @@
       "invalidHost": "Masukkan nama host atau alamat IP yang valid tanpa URL, nama pengguna, atau port.",
       "invalidInput": "Periksa konfigurasi VNC dan coba lagi.",
       "invalidTrust": "Masukkan kumpulan valid berisi maksimal 8 sertifikat CA publik, dengan ukuran total tidak lebih dari 64 KiB.",
-      "ownerChanged": "Akses ruang kerja Anda telah berubah. Segarkan sebelum melanjutkan.",
       "revisionExhausted": "Konfigurasi ini tidak dapat diperbarui lagi. Buat yang baru."
     },
     "host": "Nama host atau alamat IP",
@@ -7148,6 +7144,8 @@
       "appleRsaSrpHelp": "Memerlukan SSH tersimpan ke Mac dan tujuan RFB 127.0.0.1 atau ::1. Kunci RSA dari RFB tidak secara mandiri membuktikan identitas host. SRP memverifikasi akun dan bukti server; SSH melindungi seluruh sesi. Kunci host SSH mengenali endpoint pilihan, tetapi tidak meniadakan proksi lanjutan.",
       "appleSrp": "Berbagi Layar Mac (Apple Direct SRP)",
       "appleSrpHelp": "Memerlukan koneksi SSH tersimpan ke Mac dan tujuan RFB 127.0.0.1 atau ::1. SRP memverifikasi akun dan bukti server; SSH melindungi seluruh sesi VNC. Kunci host SSH mengenali endpoint yang dipilih, tetapi tidak dapat meniadakan proksi lanjutan.",
+      "appleVncPassword": "Berbagi Layar Mac (kata sandi VNC klasik)",
+      "appleVncPasswordHelp": "Kata sandi VNC opsional Mac berisi 1–8 byte ASCII yang dapat dicetak. Type 2 saja tidak memverifikasi identitas server atau mengenkripsi desktop. SSH terverifikasi melindungi sesi Okou ini, bukan port Mac; klien lain mungkin dapat mengakses port 5900 tergantung jaringan. Aktifkan opsi di Mac sendiri hanya jika Anda menerima risikonya.",
       "caBundle": "Sertifikat CA (PEM)",
       "caHelp": "Maksimal 8 sertifikat CA, total 64 KiB. Jangan tempel kunci privat atau sertifikat server.",
       "caHint": "Tempel sertifikat CA publik yang menerbitkan sertifikat server",
@@ -7169,6 +7167,7 @@
       "appleDhDestinationHelp": "Untuk Apple DH, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
       "appleRsaSrpDestinationHelp": "Untuk Apple RSA/SRP, masukkan 127.0.0.1 atau ::1 pada Mac melalui host SSH pilihan.",
       "appleSrpDestinationHelp": "Untuk Apple Direct SRP, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
+      "appleVncPasswordDestinationHelp": "Untuk kata sandi VNC klasik Mac, isi 127.0.0.1 atau ::1 pada Mac yang diakses melalui SSH tersimpan.",
       "destination": "Tujuan RFB",
       "destinationHelp": "Untuk rute SSH, host dan port ini dijangkau dari server SSH yang dipilih, bukan langsung dari Runner.",
       "direct": "Langsung dari Runner",

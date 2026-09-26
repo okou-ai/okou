@@ -68,6 +68,9 @@ export const vncTypeBindings = [
         variants: {
           x509_vnc: ["VeNCrypt X509Vnc."],
           x509_plain: ["VeNCrypt X509Plain."],
+          apple_vnc_password: [
+            "Apple bare type 2, requiring SSH to Mac loopback.",
+          ],
           apple_dh: ["Apple DH type 30, requiring SSH to Mac loopback."],
           apple_srp: [
             "Apple Direct SRP type 36, requiring SSH to Mac loopback.",
@@ -130,6 +133,9 @@ export const vncTypeBindings = [
           resolved_transport: [
             "Current credential, policy and explicit generation-bound transport.",
           ],
+          resolved_apple_vnc_password: [
+            "Apple classic VNC password with verified SSH-to-Mac-loopback transport only.",
+          ],
           resolved_apple_dh: [
             "Apple DH credential and verified SSH-to-Mac-loopback transport only.",
           ],
@@ -189,6 +195,9 @@ export const vncTypeBindings = [
         variants: {
           x509_vnc: ["VeNCrypt X509Vnc with verified TLS."],
           x509_plain: ["VeNCrypt X509Plain with verified TLS."],
+          apple_vnc_password: [
+            "Apple bare type 2; only the separately verified SSH channel protects the RFB session.",
+          ],
           apple_dh: [
             "Apple DH type 30; only the separately verified SSH channel protects the RFB session.",
           ],

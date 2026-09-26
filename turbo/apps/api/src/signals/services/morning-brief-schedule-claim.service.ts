@@ -1,5 +1,4 @@
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import {
   morningBriefScheduleClaims,
   type MorningBriefScheduleClaimSettlement,
@@ -117,10 +116,9 @@ async function nextClaimSequence(
 /**
  * Consume the due occurrence and journal it in the caller's transaction.
  *
- * The erasure subjects are admitted before the automation row is locked, the
- * locked row must still be the same enabled automation whose `next_run_at` is
- * the anchor this tick resolved, and clearing the schedule, recording
- * `last_run_at` and inserting the journal row all commit together. A caller
+ * The locked automation row must still be the same enabled automation whose
+ * `next_run_at` is the anchor this tick resolved, and clearing the schedule,
+ * recording `last_run_at` and inserting the journal row all commit together. A caller
  * that aborts leaves the schedule exactly as it found it.
  */
 export async function claimMorningBriefSchedule(
@@ -132,10 +130,6 @@ export async function claimMorningBriefSchedule(
     readonly claimedAt: Date;
   },
 ): Promise<MorningBriefScheduleClaimAttempt> {
-  await assertErasureSubjectWritable(tx, [
-    { subjectKind: "organization", subjectId: args.owner.orgId },
-    { subjectKind: "user", subjectId: args.owner.ownerUserId },
-  ]);
   const lineage = {
     orgId: args.owner.orgId,
     userId: args.owner.ownerUserId,
@@ -347,10 +341,9 @@ function revocationWhere(scope: MorningBriefScheduleRevocationScope): SQL {
  * Revoke this scope's legacy schedule occurrences inside a cleanup transaction.
  *
  * `workflows.owner_user_id` and `workflow_automations.owner_user_id` are plain
- * text with no users foreign key, and user cleanup only cascades the Agents the
- * departing user owns, so a member whose Morning Brief runs on a colleague's
- * shared or default Agent would keep this journal if the automation cascade
- * were the only path. This runs at the same owner, organization and membership
+ * text with no users foreign key, and user cleanup retains every Agent, so a
+ * departing member would keep this journal if an Agent cascade were the only
+ * path. This runs at the same owner, organization and membership
  * revocation points the rest of Morning Brief already uses.
  *
  * It scrubs owner identity rather than deleting the row. Deleting would make a

@@ -14,7 +14,6 @@ import { writeDb$ } from "../external/db";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
-import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
   invalidatePiStableContext,
@@ -25,7 +24,6 @@ import {
 } from "./pi-stable-context-generation.service";
 
 interface WorkflowDeleteHooks {
-  readonly beforeAdmission?: () => Promise<void>;
   readonly beforeAgentLock?: (tx: Tx) => Promise<void>;
   readonly beforeStorageDelete?: (tx: Tx) => Promise<void>;
 }
@@ -50,62 +48,11 @@ interface DeleteWorkflowInput {
   readonly allowOfficialInstallationDeletion?: boolean;
   readonly requiredOfficialInstallationState?: "installing";
   readonly serializeOfficialLifecycle?: boolean;
-  /** Internal compensation may remove an erased installing row without publishing. */
-  readonly allowClosedOwnerCleanupWithoutInvalidation?: boolean;
 }
 
 interface DeleteOrphanedWorkflowVolumeInput {
   readonly orgId: string;
   readonly workflowId: string;
-}
-
-async function admitWorkflowDeletion(
-  tx: Tx,
-  args: DeleteWorkflowInput,
-): Promise<
-  | {
-      readonly ownerUserId: string;
-      readonly agentId: string;
-      readonly admitted: boolean;
-    }
-  | undefined
-> {
-  const [observed] = await tx
-    .select({
-      ownerUserId: workflows.ownerUserId,
-      agentId: workflows.agentId,
-    })
-    .from(workflows)
-    .where(
-      and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
-    )
-    .limit(1);
-  if (!observed) {
-    return undefined;
-  }
-
-  await workflowDeleteHooks.get().beforeAdmission?.();
-  const admitted = await admitPiStableContextSubjects(tx, [
-    { subjectKind: "organization", subjectId: args.orgId },
-    { subjectKind: "user", subjectId: observed.ownerUserId },
-  ]);
-  if (!admitted && args.allowClosedOwnerCleanupWithoutInvalidation !== true) {
-    return undefined;
-  }
-  if (
-    args.allowClosedOwnerCleanupWithoutInvalidation === true &&
-    (args.allowOfficialInstallationDeletion !== true ||
-      args.requiredOfficialInstallationState !== "installing")
-  ) {
-    throw new Error(
-      "Closed-owner Workflow cleanup requires an installing Official Workflow",
-    );
-  }
-  return {
-    ownerUserId: observed.ownerUserId,
-    agentId: observed.agentId,
-    admitted,
-  };
 }
 
 async function retireDeletedWorkflowStableContext(
@@ -236,8 +183,17 @@ export const deleteWorkflow$ = command(
     const writeDb = set(writeDb$);
 
     const result = await writeDb.transaction(async (tx) => {
-      const admission = await admitWorkflowDeletion(tx, args);
-      if (!admission) {
+      const [observed] = await tx
+        .select({ agentId: workflows.agentId })
+        .from(workflows)
+        .where(
+          and(
+            eq(workflows.orgId, args.orgId),
+            eq(workflows.id, args.workflowId),
+          ),
+        )
+        .limit(1);
+      if (!observed) {
         return { deleted: false as const };
       }
 
@@ -250,7 +206,7 @@ export const deleteWorkflow$ = command(
         );
       }
       await workflowDeleteHooks.get().beforeAgentLock?.(tx);
-      await lockCanonicalAgentMutation(tx, admission.agentId);
+      await lockCanonicalAgentMutation(tx, observed.agentId);
       const [workflow] = await tx
         .select({
           id: workflows.id,
@@ -265,7 +221,6 @@ export const deleteWorkflow$ = command(
           and(
             eq(workflows.orgId, args.orgId),
             eq(workflows.id, args.workflowId),
-            eq(workflows.ownerUserId, admission.ownerUserId),
           ),
         )
         .for("update")
@@ -324,12 +279,10 @@ export const deleteWorkflow$ = command(
         await tx.delete(storages).where(eq(storages.id, storage.id));
       }
 
-      if (admission.admitted) {
-        await retireDeletedWorkflowStableContext(tx, {
-          orgId: args.orgId,
-          workflow,
-        });
-      }
+      await retireDeletedWorkflowStableContext(tx, {
+        orgId: args.orgId,
+        workflow,
+      });
 
       return {
         deleted: true as const,

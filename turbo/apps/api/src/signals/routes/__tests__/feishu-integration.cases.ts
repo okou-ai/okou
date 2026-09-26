@@ -13,7 +13,6 @@ import {
 import { Buffer } from "node:buffer";
 
 import { HttpResponse, http } from "msw";
-import { Webhook } from "svix";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -42,7 +41,6 @@ import {
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 
@@ -55,20 +53,16 @@ import { server } from "../../../mocks/server";
 import {
   findPendingChatEventByPromptFixture,
   readChatEventContextFixture,
-  readFeishuCallbackPayloadsFixture,
-  setLegacyFeishuPublicBrandFixture,
 } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { now, nowDate } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
-import { holdFeishuOAuthBeforeErasureAdmissionFixture } from "../../../test-fixtures/feishu-oauth";
 import { feishuBrowserConnectRoutes } from "../feishu-browser-connect";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuOauthRoutes } from "../feishu-oauth";
-import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -1549,7 +1543,7 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "user-deletion") {
-      it("fences deleted-user Feishu access while retaining each member's mapping", async () => {
+      it("removes only the deleted user's Feishu connection mapping", async () => {
         const fixture = await setupFeishuInstallationFixture();
         const survivor = fixture.actor;
         await connectFixtureUser(fixture, survivor, "ou_feishu_survivor");
@@ -1591,27 +1585,14 @@ export function registerFeishuIntegrationTests(
         expect(response.body).toBe("OK");
         await flushWaitUntilForTest();
 
-        // An old Clerk session can remain cryptographically valid after the
-        // webhook, but the durable deletion receipt denies its API access.
         mocks.clerk.session(doomed.userId, doomed.orgId, "org:member");
         const deletedUserStatus = await accept(
           client.getStatus({
             headers: { authorization: "Bearer clerk-session" },
           }),
-          [401],
+          [200],
         );
-        expect(deletedUserStatus.body).toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-        await expect(
-          readFeishuMemberConnectorState(context, {
-            orgId: requireValue(survivor.orgId, "Expected an organization"),
-            userId: doomed.userId,
-            installationId: fixture.installationId,
-          }),
-        ).resolves.toMatchObject({
-          feishu_member_connection: { open_id: "ou_feishu_doomed" },
-        });
+        expect(deletedUserStatus.body.isConnected).toBeFalsy();
 
         mocks.clerk.session(survivor.userId, survivor.orgId, "org:admin");
         const survivorStatus = await accept(
@@ -2322,100 +2303,6 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "oauth-and-events") {
-      it("admits a Feishu OAuth callback before Agent locks during signed user erasure", async () => {
-        const fixture = await setupFeishuRunFixture();
-        const connectUrl = await requestFeishuConnectUrl(fixture);
-        const connectApp = createAppWithRoutes({
-          signal: context.signal,
-          routes: feishuBrowserConnectRoutes,
-        });
-        const connectResponse = await connectApp.request(
-          "/api/feishu/connect",
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              cookie: "__session=opaque",
-              origin: new URL(connectUrl).origin,
-            },
-            body: JSON.stringify(feishuConnectBody(connectUrl)),
-          },
-        );
-        const authorizationUrl =
-          await feishuAuthorizationUrlFromResponse(connectResponse);
-        const state = requireValue(
-          authorizationUrl.searchParams.get("state"),
-          "Expected Feishu OAuth state",
-        );
-        fixtureState.oauthUserOpenId = "ou_feishu_user";
-
-        const entered = createDeferredPromise<void>(context.signal);
-        const release = createDeferredPromise<void>(context.signal);
-        holdFeishuOAuthBeforeErasureAdmissionFixture(async () => {
-          entered.resolve();
-          await release.promise;
-        });
-        const callback = Promise.resolve(
-          createAppWithRoutes({
-            signal: context.signal,
-            routes: feishuOauthRoutes,
-          }).request(
-            `${feishuOauthContract.callback.path}?${new URLSearchParams({
-              code: `feishu-oauth-${randomUUID()}`,
-              responseMode: "json",
-              state,
-            })}`,
-          ),
-        );
-        await Promise.race([
-          entered.promise,
-          callback.then(async (response) => {
-            throw new Error(
-              `Feishu OAuth callback completed before admission: ${response.status} ${await response.text()}`,
-            );
-          }),
-        ]);
-
-        const sdk = await vi.importActual<
-          typeof import("@clerk/backend/webhooks")
-        >("@clerk/backend/webhooks");
-        const secret = `whsec_${Buffer.from("feishu-oauth-erasure").toString("base64")}`;
-        mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
-        context.mocks.clerk.verifyWebhook.mockImplementation(
-          async (request: unknown) => {
-            if (!(request instanceof Request)) {
-              throw new Error("expected raw Request");
-            }
-            return await sdk.verifyWebhook(request, { signingSecret: secret });
-          },
-        );
-        const body = JSON.stringify({
-          type: "user.deleted",
-          data: { id: fixture.actor.userId, deleted: true },
-        });
-        const id = randomUUID();
-        const timestamp = nowDate();
-        const signature = new Webhook(secret).sign(id, timestamp, body);
-        await accept(
-          setupApp({ context, routes: webhooksClerkRoutes })(
-            webhookClerkContract,
-          ).post({
-            body,
-            extraHeaders: {
-              "svix-id": id,
-              "svix-timestamp": String(Math.floor(timestamp.getTime() / 1000)),
-              "svix-signature": signature,
-            },
-          }),
-          [200],
-        );
-        await flushWaitUntilForTest();
-
-        release.resolve();
-        const callbackResponse = await callback;
-        expect(callbackResponse.status).not.toBe(200);
-      }, 30_000);
-
       it("connects the current Feishu user through signed OAuth state", async () => {
         const appId = `cli_${randomUUID()}`;
         const admin = authOrgApi.user({
@@ -5912,90 +5799,6 @@ export function registerFeishuIntegrationTests(
           }),
           [200],
         );
-      });
-
-      it("launches and delivers a queued Feishu input stored without a public brand", async () => {
-        const fixture = await setupFeishuRunFixture();
-        const { actor, runnerGroup, appId, callbackUrl } = fixture;
-        await connectFixtureUser(fixture);
-        fixtureState.outboundMessages = [];
-        const firstMessageId = `om_${randomUUID()}`;
-        const firstPrompt = "first task before the legacy queued input";
-        const secondPrompt = "queued input stored without a public brand";
-        await postEvent(
-          callbackUrl,
-          groupMessage(appId, firstPrompt, { messageId: firstMessageId }),
-          { encrypted: true },
-        );
-        await flushWaitUntilForTest();
-        const firstRun = await findRun(actor, `@Nova ${firstPrompt}`);
-        await postEvent(
-          callbackUrl,
-          groupMessage(appId, secondPrompt, {
-            rootId: firstMessageId,
-            threadId: `omt_${randomUUID()}`,
-          }),
-          { encrypted: true },
-        );
-        await flushWaitUntilForTest();
-        const queued = requireValue(
-          await findPendingChatEventByPromptFixture({
-            userId: actor.userId,
-            prompt: `@Nova ${secondPrompt}`,
-          }),
-          "Expected the queued Feishu input",
-        );
-        await setLegacyFeishuPublicBrandFixture({
-          eventId: queued.eventId,
-          installationId: fixture.installationId,
-        });
-
-        await runsApi.heartbeatRunner(runnerGroup);
-        const firstClaim = await runsApi.claimRunnerJob(firstRun.id);
-        await completeRunSession({
-          runId: firstRun.id,
-          sandboxToken: firstClaim.sandboxToken,
-          sessionId: `bdd-feishu-legacy-brand-first-${firstRun.id}`,
-          history: `bdd feishu legacy brand first history ${firstRun.id}`,
-          assistantText: "First legacy brand answer",
-        });
-        const secondRun = await findRun(actor, `@Nova ${secondPrompt}`);
-        await runsApi.heartbeatRunner(runnerGroup);
-        const secondClaim = await runsApi.claimRunnerJob(secondRun.id);
-        expect(secondClaim.prompt).toBe(`@Nova ${secondPrompt}`);
-        await completeRunSession({
-          runId: secondRun.id,
-          sandboxToken: secondClaim.sandboxToken,
-          sessionId: `bdd-feishu-legacy-brand-second-${secondRun.id}`,
-          history: `bdd feishu legacy brand second history ${secondRun.id}`,
-          assistantText: "Queued legacy brand answer",
-        });
-        await flushWaitUntilForTest();
-
-        expect(
-          fixtureState.outboundMessages.some((message) => {
-            return messageContent(message).includes(
-              "Queued legacy brand answer",
-            );
-          }),
-        ).toBeTruthy();
-        // Older APIs still require the brand on stored Feishu callbacks, so a
-        // rollback can parse them.
-        // Older APIs still require the brand on stored Feishu callbacks, so
-        // a rollback can still parse them.
-        const callbacks = await readFeishuCallbackPayloadsFixture(secondRun.id);
-        expect(
-          new Set(
-            callbacks.map((callback) => {
-              return callback.internalKind;
-            }),
-          ),
-        ).toStrictEqual(new Set(["feishu:chat", "feishu:org"]));
-        for (const callback of callbacks) {
-          expect(callback.payload).toMatchObject({ publicBrand: "okou" });
-        }
-
-        await removeFeishuInstallation(fixture);
       });
 
       it("ignores unmentioned group messages, app messages and system notifications", async () => {

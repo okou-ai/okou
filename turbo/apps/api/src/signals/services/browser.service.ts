@@ -21,7 +21,7 @@ import {
 } from "@okouai/db/schema/browser-session";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command } from "ccstate";
 import {
   and,
@@ -69,7 +69,6 @@ import {
   completePrivateArtifact$,
   privateArtifactRecord,
 } from "./private-artifact-storage.service";
-import { browserScreenshotSchemaAvailable } from "./browser-screenshot-schema.service";
 import {
   decryptPersistentSecretValue,
   encryptPersistentSecretValue,
@@ -129,10 +128,7 @@ const BROWSER_SESSION_SELECTION = {
   updatedAt: browserSessions.updatedAt,
 } as const;
 
-type BrowserSessionRow = Omit<
-  typeof browserSessions.$inferSelect,
-  "publicBrand"
->;
+type BrowserSessionRow = typeof browserSessions.$inferSelect;
 type BrowserInstanceRow = typeof browserSessionInstances.$inferSelect;
 type BrowserThreadProfileRow = typeof browserThreadProfiles.$inferSelect;
 type DbTransaction = Tx;
@@ -249,13 +245,13 @@ function chatRunRequired(
   return serviceError(
     400,
     code,
-    `Managed browsers can only be started from an ${PUBLIC_BRAND_PRESENTATION.assistantName} chat run`,
+    `Managed browsers can only be started from an ${BRAND_PRESENTATION.assistantName} chat run`,
   );
 }
 
 function browserReclaiming() {
   return conflict(
-    `${PUBLIC_BRAND_PRESENTATION.assistantName} is still reclaiming this thread's previous managed browser; retry in a moment`,
+    `${BRAND_PRESENTATION.assistantName} is still reclaiming this thread's previous managed browser; retry in a moment`,
     "BROWSER_STOPPING",
   );
 }
@@ -378,10 +374,6 @@ const loadBrowserScreenshotUrl$ = command(
     chatThreadId: string,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    if (!(await browserScreenshotSchemaAvailable(db))) {
-      signal.throwIfAborted();
-      return null;
-    }
     const [screenshot] = await db
       .select({
         url: browserSessionScreenshots.url,
@@ -933,10 +925,6 @@ const captureAndStoreBrowserScreenshot$ = command(
     const [result] = await Promise.allSettled([
       (async () => {
         const db = set(writeDb$);
-        if (!(await browserScreenshotSchemaAvailable(db))) {
-          signal.throwIfAborted();
-          return;
-        }
         const instance = await loadActiveInstance(db, browser.chatThreadId);
         signal.throwIfAborted();
         if (!instance) {
@@ -2981,7 +2969,6 @@ async function claimExpiredInactiveBrowser(
   db: Db,
   target: ExpiredInactiveBrowserTarget,
   cutoff: Date,
-  screenshotSchemaReady: boolean,
   signal: AbortSignal,
 ): Promise<Date | null> {
   const claimedAt = nowDate();
@@ -3051,11 +3038,9 @@ async function claimExpiredInactiveBrowser(
       return false;
     }
 
-    if (screenshotSchemaReady) {
-      await tx
-        .delete(browserSessionScreenshots)
-        .where(eq(browserSessionScreenshots.chatThreadId, target.chatThreadId));
-    }
+    await tx
+      .delete(browserSessionScreenshots)
+      .where(eq(browserSessionScreenshots.chatThreadId, target.chatThreadId));
     await tx
       .delete(browserSessionTabSnapshots)
       .where(eq(browserSessionTabSnapshots.chatThreadId, target.chatThreadId));
@@ -3163,14 +3148,12 @@ async function cleanupExpiredInactiveBrowser(
   db: Db,
   target: ExpiredInactiveBrowserTarget,
   cutoff: Date,
-  screenshotSchemaReady: boolean,
   signal: AbortSignal,
 ): Promise<boolean> {
   const claimedAt = await claimExpiredInactiveBrowser(
     db,
     target,
     cutoff,
-    screenshotSchemaReady,
     signal,
   );
   if (claimedAt === null) {
@@ -3211,7 +3194,6 @@ async function cleanupExpiredInactiveBrowser(
 async function reconcileExpiredInactiveBrowsers(
   db: Db,
   limit: number,
-  screenshotSchemaReady: boolean,
   chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<{
@@ -3288,7 +3270,6 @@ async function reconcileExpiredInactiveBrowsers(
         db,
         { ...row, status: row.status },
         cutoff,
-        screenshotSchemaReady,
         signal,
       ),
     );
@@ -3648,12 +3629,9 @@ const reconcileBrowsersWithScope$ = command(
       chatThreadIds,
       signal,
     );
-    const screenshotSchemaReady = await browserScreenshotSchemaAvailable(db);
-    signal.throwIfAborted();
     const expiredBrowserCleanup = await reconcileExpiredInactiveBrowsers(
       db,
       RECONCILE_BATCH_SIZE,
-      screenshotSchemaReady,
       chatThreadIds,
       signal,
     );
@@ -3669,14 +3647,12 @@ const reconcileBrowsersWithScope$ = command(
       chatThreadIds,
       signal,
     );
-    const orphanedScreenshotCleanup = screenshotSchemaReady
-      ? await reconcileOrphanedBrowserScreenshots(
-          db,
-          RECONCILE_BATCH_SIZE,
-          chatThreadIds,
-          signal,
-        )
-      : { checked: 0, cleaned: 0, errors: 0 };
+    const orphanedScreenshotCleanup = await reconcileOrphanedBrowserScreenshots(
+      db,
+      RECONCILE_BATCH_SIZE,
+      chatThreadIds,
+      signal,
+    );
 
     return {
       checked:

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 export const feishuOrgCallbackFileSchema = z.object({
   fileId: z.string().min(1),
@@ -23,15 +22,6 @@ export const feishuOrgCallbackPayloadSchema = z
     canonicalChatDelivery: z.boolean().optional(),
   })
   .passthrough();
-
-/**
- * Rollback compatibility (#36766): APIs released before the Feishu brand
- * retirement require `publicBrand` when they parse stored `feishu:chat` and
- * `feishu:org` payloads. Current readers ignore it. Surface: persisted payload
- * read by an older API. Remove once those APIs have drained and are no longer
- * rollback targets, with the Feishu `public_brand` column drop.
- */
-export const FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND = PUBLIC_BRAND;
 
 export type FeishuOrgCallbackPayload = z.infer<
   typeof feishuOrgCallbackPayloadSchema

@@ -44,7 +44,6 @@ type ChatEventIdentity = {
   readonly id?: string;
   readonly chatThreadId: string;
   readonly runId?: string | null;
-  readonly runGroupId?: string | null;
   readonly createdAt?: Date;
 };
 
@@ -52,7 +51,7 @@ type ChatEventIdentity = {
 export type DiscordChatEventContext = Readonly<
   Omit<
     typeof chatDiscordContext.$inferSelect,
-    "id" | "chatThreadId" | "publicBrand" | "createdAt"
+    "id" | "chatThreadId" | "createdAt"
   >
 >;
 
@@ -1007,14 +1006,10 @@ function canonicalChatEventContext(
   values: NewChatEvent,
   overrides?: ChatEventContextPointer,
 ) {
-  const runGroupId = "runGroupId" in values ? values.runGroupId : undefined;
-  const context =
-    runGroupId === null || runGroupId === undefined
-      ? {
-          contextType: "contextType" in values ? values.contextType : undefined,
-          contextId: "contextId" in values ? values.contextId : undefined,
-        }
-      : { contextType: "goal" as const, contextId: runGroupId };
+  const context = {
+    contextType: "contextType" in values ? values.contextType : undefined,
+    contextId: "contextId" in values ? values.contextId : undefined,
+  };
   // Replacement provenance is authoritative, including explicit null pointers.
   return { ...context, ...overrides };
 }

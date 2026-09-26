@@ -1195,8 +1195,106 @@
     {
       "idx": 1248,
       "version": "7",
-      "when": 1790348633298,
-      "tag": "1248_workflow_import_source",
+      "when": 1790347365037,
+      "tag": "1248_contract_chat_thread_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1249,
+      "version": "7",
+      "when": 1790349311981,
+      "tag": "1249_agent_runs_heartbeat_index_contraction",
+      "breakpoints": true
+    },
+    {
+      "idx": 1250,
+      "version": "7",
+      "when": 1790349327269,
+      "tag": "1250_active_agent_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 1251,
+      "version": "7",
+      "when": 1790352293834,
+      "tag": "1251_computer_use_commands_required_host_timeout",
+      "breakpoints": true
+    },
+    {
+      "idx": 1252,
+      "version": "7",
+      "when": 1790353538834,
+      "tag": "1252_chat_agent_run_context_owner_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 1253,
+      "version": "7",
+      "when": 1790354750068,
+      "tag": "1253_unique_zarek",
+      "breakpoints": true
+    },
+    {
+      "idx": 1254,
+      "version": "7",
+      "when": 1790356985326,
+      "tag": "1254_drop_account_erasure",
+      "breakpoints": true
+    },
+    {
+      "idx": 1255,
+      "version": "7",
+      "when": 1790380349486,
+      "tag": "1255_retire_public_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 1256,
+      "version": "7",
+      "when": 1790382132921,
+      "tag": "1256_drop_redundant_chat_thread_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1257,
+      "version": "7",
+      "when": 1790382154084,
+      "tag": "1257_drop_chat_thread_draft_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1258,
+      "version": "7",
+      "when": 1790383932521,
+      "tag": "1258_active_agent_runs_step2",
+      "breakpoints": true
+    },
+    {
+      "idx": 1259,
+      "version": "7",
+      "when": 1790385766079,
+      "tag": "1259_drop_agent_runs_last_heartbeat_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 1260,
+      "version": "7",
+      "when": 1790388503838,
+      "tag": "1260_personal_subscription_account_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 1261,
+      "version": "7",
+      "when": 1790389782946,
+      "tag": "1261_drop_chat_thread_snapshot_jsonb",
+      "breakpoints": true
+    },
+    {
+      "idx": 1262,
+      "version": "7",
+      "when": 1790391657218,
+      "tag": "1262_workflow_import_source",
       "breakpoints": true
     }
   ]

@@ -159,33 +159,36 @@ describe("thread drafts", () => {
     });
   });
 
-  it("returns 404 for a foreign or missing thread and leaves the owner's draft", async () => {
+  it("keeps a write to another user's thread out of the owner's draft", async () => {
     const fixture = await createDraftFixture();
     await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
     const foreign = bdd.user({ orgId: fixture.actor.orgId });
 
-    await chat.requestPatchThread(
-      foreign,
-      fixture.threadId,
-      draftBody("not mine"),
-      [404],
-    );
-    await chat.requestPatchThread(
-      fixture.actor,
-      randomUUID(),
-      draftBody("no thread"),
-      [404],
-    );
+    // The write is accepted but keyed to the caller, so the owner's draft and
+    // the owner's listing are untouched.
+    await chat.patchThread(foreign, fixture.threadId, draftBody("not mine"));
 
     await expect(servedDraftText(fixture)).resolves.toBe("owned");
+    await expect(
+      chat.readThreadDraft(foreign, fixture.threadId),
+    ).resolves.toStrictEqual({
+      draftUserMessage: draftDocument("not mine"),
+      draftAttachments: null,
+    });
+    await chat.patchThread(fixture.actor, fixture.threadId, {
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
+    await expect(
+      chat.readThreadDraft(foreign, fixture.threadId),
+    ).resolves.toMatchObject({ draftUserMessage: draftDocument("not mine") });
   });
 
   it("saves while another writer holds the thread row", async () => {
     const fixture = await createDraftFixture();
     // Event projection, the run queue and the read cursor all lock the thread
-    // row. The draft save reads the owner without a lock and writes only its
-    // own row, so it must not queue behind even the strongest row lock
-    // (#36173).
+    // row. The draft save writes only its own row, so it must not queue behind
+    // even the strongest row lock (#36173).
     const holder = await holdChatThreadRowLockFixture({
       threadId: fixture.threadId,
       mode: "update",
@@ -222,12 +225,6 @@ describe("thread drafts", () => {
 
     await expect(listedDraftIds(fixture)).resolves.not.toContain(
       fixture.threadId,
-    );
-    await chat.requestPatchThread(
-      fixture.actor,
-      fixture.threadId,
-      draftBody("after delete"),
-      [404],
     );
   });
 });

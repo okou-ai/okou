@@ -2614,7 +2614,7 @@
         "back": "Explorar workflows",
         "browse": "Explorar workflows",
         "close": "Fechar",
-        "contextPrefix": "O que importa para mim: {{context}}",
+        "contextPrefix": "O que importa para mim: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Diariamente ou semanalmente",
@@ -4330,9 +4330,7 @@
       "common": {
         "back": "Voltar",
         "continue": "Continuar",
-        "finish": "Concluir configuração",
-        "notNow": "Agora não",
-        "skip": "Pular por enquanto"
+        "notNow": "Agora não"
       },
       "compliance": {
         "frameworks": {
@@ -6710,7 +6708,6 @@
       "morningBrief": {
         "conflict": "O Morning Brief está temporariamente indisponível porque o estado da instalação está inconsistente. Tente novamente quando a reconciliação terminar.",
         "description": "Prioridades diárias às 7h no seu fuso horário.",
-        "loading": "Carregando as configurações do Morning Brief...",
         "missingDefaultAgent": "Escolha um Agent padrão utilizável antes de ativar o Morning Brief.",
         "missingTimezone": "Defina um fuso horário válido antes de ativar o Morning Brief.",
         "preparationFailed": "A configuração será tentada novamente automaticamente. Você também pode tentar agora.",
@@ -7218,7 +7215,6 @@
       "invalidHost": "Digite um nome de host ou endereço IP válido, sem URL, usuário ou porta.",
       "invalidInput": "Confira a configuração VNC e tente novamente.",
       "invalidTrust": "Insira até 8 certificados públicos de CA válidos, com no máximo 64 KiB.",
-      "ownerChanged": "Seu acesso ao espaço de trabalho mudou. Atualize antes de continuar.",
       "revisionExhausted": "Esta configuração não pode mais ser atualizada. Crie uma nova."
     },
     "host": "Nome do host ou endereço IP",
@@ -7244,6 +7240,8 @@
       "appleRsaSrpHelp": "Requer SSH salvo para o Mac e destino RFB 127.0.0.1 ou ::1. A chave RSA fornecida pelo RFB não comprova sozinha a identidade do host. O SRP verifica a conta e a prova do servidor; o SSH protege toda a sessão. A chave de host SSH identifica o destino escolhido, mas não descarta um proxy posterior.",
       "appleSrp": "Compartilhamento de Tela do Mac (Apple Direct SRP)",
       "appleSrpHelp": "Requer uma conexão SSH salva para o Mac e destino RFB 127.0.0.1 ou ::1. O SRP verifica a conta e a prova do servidor; o SSH protege toda a sessão VNC. A chave de host SSH identifica o destino escolhido, mas não descarta um proxy posterior.",
+      "appleVncPassword": "Compartilhamento de Tela do Mac (senha VNC clássica)",
+      "appleVncPasswordHelp": "A senha VNC opcional do Mac usa 1–8 bytes ASCII imprimíveis. O tipo 2 isolado não verifica a identidade do servidor nem criptografa a área de trabalho. SSH verificado protege esta sessão do Okou, não a porta do Mac: outros clientes podem acessar a porta 5900 conforme a rede. Ative a opção no Mac por conta própria apenas se aceitar esse risco.",
       "caBundle": "Certificados de CA (PEM)",
       "caHelp": "Até 8 certificados de CA, totalizando 64 KiB. Não cole uma chave privada nem um certificado de servidor.",
       "caHint": "Cole os certificados públicos da CA que emitiu o certificado do servidor",
@@ -7266,6 +7264,7 @@
       "appleDhDestinationHelp": "Para Apple DH, informe 127.0.0.1 ou ::1. Esse é o endereço de loopback do Mac acessado pelo host SSH selecionado.",
       "appleRsaSrpDestinationHelp": "Para Apple RSA/SRP, informe 127.0.0.1 ou ::1 no Mac acessado pelo host SSH selecionado.",
       "appleSrpDestinationHelp": "Para Apple Direct SRP, informe 127.0.0.1 ou ::1. Esse é o endereço de loopback do Mac acessado pelo host SSH selecionado.",
+      "appleVncPasswordDestinationHelp": "Para a senha VNC clássica, informe 127.0.0.1 ou ::1 no Mac acessado pela conexão SSH salva.",
       "destination": "Destino RFB",
       "destinationHelp": "Em rotas SSH, este host e esta porta são acessados a partir do servidor SSH selecionado, não diretamente do Runner.",
       "direct": "Direta do Runner",

@@ -2558,7 +2558,7 @@
         "back": "ワークフローを見る",
         "browse": "ワークフローを見る",
         "close": "閉じる",
-        "contextPrefix": "重視したいこと：{{context}}",
+        "contextPrefix": "重視したいこと：{{preference}}",
         "items": {
           "competitors": {
             "cadence": "毎日または毎週",
@@ -4254,9 +4254,7 @@
       "common": {
         "back": "戻る",
         "continue": "次へ",
-        "finish": "セットアップを完了",
-        "notNow": "後で",
-        "skip": "今はスキップ"
+        "notNow": "後で"
       },
       "compliance": {
         "frameworks": {
@@ -6626,7 +6624,6 @@
       "morningBrief": {
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
         "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
-        "loading": "Morning Brief の設定を読み込んでいます...",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",
@@ -7122,7 +7119,6 @@
       "invalidHost": "URL、ユーザー名、ポートを含めず、有効なホスト名または IP アドレスを入力してください。",
       "invalidInput": "VNC 設定を確認して再試行してください。",
       "invalidTrust": "最大 8 件、64 KiB 以下の有効な公開 CA 証明書を入力してください。",
-      "ownerChanged": "ワークスペースへのアクセスが変更されました。更新してから続行してください。",
       "revisionExhausted": "これ以上更新できません。新しく作成してください。"
     },
     "host": "ホスト名または IP アドレス",
@@ -7148,6 +7144,8 @@
       "appleRsaSrpHelp": "保存済みの Mac への SSH 接続と RFB 接続先 127.0.0.1 または ::1 が必要です。RFB から受け取る RSA 鍵だけではホストの身元を証明できません。SRP はアカウントとサーバーの証明を検証し、SSH はセッション全体を保護します。SSH ホスト鍵も先へのプロキシ転送は否定できません。",
       "appleSrp": "Mac の画面共有 (Apple Direct SRP)",
       "appleSrpHelp": "保存済みの Mac への SSH 接続と、RFB 接続先 127.0.0.1 または ::1 が必要です。SRP はアカウントとサーバーの証明を検証し、SSH は VNC セッション全体を保護します。SSH ホスト鍵は選択した接続先を識別しますが、先へのプロキシ転送は否定できません。",
+      "appleVncPassword": "Mac 画面共有（従来の VNC パスワード）",
+      "appleVncPasswordHelp": "Mac の任意設定の VNC パスワードは印字可能な ASCII 1～8 バイトです。type 2 単体ではサーバーの身元を検証せず、画面通信も暗号化しません。検証済み SSH が保護するのはこの Okou セッションであり、Mac の待受ポートではありません。ネットワーク設定によっては他のクライアントも 5900 番ポートに接続できます。リスクを理解したうえで Mac 側の設定を自分で有効にしてください。",
       "caBundle": "CA 証明書（PEM）",
       "caHelp": "CA 証明書は最大 8 件、合計 64 KiB です。秘密鍵やサーバー証明書は貼り付けないでください。",
       "caHint": "サーバー証明書を発行した公開 CA 証明書を貼り付けてください",
@@ -7169,6 +7167,7 @@
       "appleDhDestinationHelp": "Apple DH には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
       "appleRsaSrpDestinationHelp": "Apple RSA/SRP には、選択した SSH ホスト経由で到達する Mac 自身の 127.0.0.1 または ::1 を入力してください。",
       "appleSrpDestinationHelp": "Apple Direct SRP には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
+      "appleVncPasswordDestinationHelp": "Mac の従来の VNC パスワードでは、保存済み SSH 接続先 Mac の 127.0.0.1 または ::1 を指定してください。",
       "destination": "RFB接続先",
       "destinationHelp": "SSHルートでは、このホストとポートへRunnerから直接ではなく、選択したSSHサーバーから接続します。",
       "direct": "Runnerから直接",

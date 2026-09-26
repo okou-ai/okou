@@ -6,7 +6,7 @@ import type { Db } from "../external/db";
 const PENDING_LIST_TARGET_BYTES = 512 * 1024;
 
 /**
- * Runs outside projection transactions, without thread or erasure locks. Keep
+ * Runs outside projection transactions, without thread locks. Keep
  * fastupdate and the index's 4 MiB limit: a smaller foreground limit makes
  * INSERTs clean more often. The independent worker drains earlier instead.
  */

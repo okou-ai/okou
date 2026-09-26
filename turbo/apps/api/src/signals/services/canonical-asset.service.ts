@@ -20,7 +20,6 @@ import {
   type RunUploadedFileSource,
 } from "@okouai/db/schema/run-uploaded-file";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import type { ChatEventAttachFileMetadata } from "@okouai/db/schema/chat-event";
 import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
@@ -1153,65 +1152,55 @@ async function ensureCanonicalPublishedAsset(
     readonly chatThreadId: string | null;
   },
 ): Promise<CanonicalAssetRow> {
-  return await db.transaction(async (tx) => {
-    if (args.provider === "discord") {
-      // Retain writer admission through insertion: erasure either captures
-      // this asset after COMMIT or closes the owner before it can be created.
-      await assertErasureSubjectWritable(tx, [
-        { subjectKind: "organization", subjectId: args.orgId },
-        { subjectKind: "user", subjectId: args.userId },
-      ]);
-    }
-    const [inserted] = await tx
-      .insert(runUploadedFiles)
-      .values({
-        id: artifact.id,
-        runId: args.runId,
-        chatThreadId: context.chatThreadId,
-        source: context.source,
-        externalId: args.operationId,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: args.filename,
-        contentType: args.contentType,
-        sizeBytes: args.size,
-        url: null,
-        metadata:
-          args.runId === null
-            ? { ...artifact.storageMetadata, purpose: "artifact" }
-            : artifact.storageMetadata,
-        assetVersion: CANONICAL_ASSET_VERSION,
-        classification: "published-output",
-        accessLevel: "published",
-        materializationStatus: "pending",
-        checksumSha256: args.checksumSha256,
-        storageKey: artifact.key,
-        provenance: { provider: "agent" },
-        materializationError: null,
-        idempotencyScope: context.scope,
-        idempotencyKey: args.operationId,
-      })
-      .onConflictDoNothing({
-        target: [
-          runUploadedFiles.userId,
-          runUploadedFiles.idempotencyScope,
-          runUploadedFiles.idempotencyKey,
-        ],
-        where: eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
-      })
-      .returning(canonicalAssetSelection());
-    const asset =
-      inserted ??
-      (await canonicalAssetByIdentity(tx, {
-        userId: args.userId,
-        scope: context.scope,
-        key: args.operationId,
-      }));
-    if (!asset) {
-      throw new Error("Canonical publication asset conflict is missing");
-    }
-    return asset;
-  });
+  const [inserted] = await db
+    .insert(runUploadedFiles)
+    .values({
+      id: artifact.id,
+      runId: args.runId,
+      chatThreadId: context.chatThreadId,
+      source: context.source,
+      externalId: args.operationId,
+      userId: args.userId,
+      orgId: args.orgId,
+      filename: args.filename,
+      contentType: args.contentType,
+      sizeBytes: args.size,
+      url: null,
+      metadata:
+        args.runId === null
+          ? { ...artifact.storageMetadata, purpose: "artifact" }
+          : artifact.storageMetadata,
+      assetVersion: CANONICAL_ASSET_VERSION,
+      classification: "published-output",
+      accessLevel: "published",
+      materializationStatus: "pending",
+      checksumSha256: args.checksumSha256,
+      storageKey: artifact.key,
+      provenance: { provider: "agent" },
+      materializationError: null,
+      idempotencyScope: context.scope,
+      idempotencyKey: args.operationId,
+    })
+    .onConflictDoNothing({
+      target: [
+        runUploadedFiles.userId,
+        runUploadedFiles.idempotencyScope,
+        runUploadedFiles.idempotencyKey,
+      ],
+      where: eq(runUploadedFiles.assetVersion, CANONICAL_ASSET_VERSION),
+    })
+    .returning(canonicalAssetSelection());
+  const asset =
+    inserted ??
+    (await canonicalAssetByIdentity(db, {
+      userId: args.userId,
+      scope: context.scope,
+      key: args.operationId,
+    }));
+  if (!asset) {
+    throw new Error("Canonical publication asset conflict is missing");
+  }
+  return asset;
 }
 
 function sameCanonicalDeliveryDestination(
@@ -1242,12 +1231,6 @@ async function ensureCanonicalDelivery(
   args: PrepareCanonicalPublishedAssetArgs,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    if (args.provider === "discord") {
-      await assertErasureSubjectWritable(tx, [
-        { subjectKind: "organization", subjectId: args.orgId },
-        { subjectKind: "user", subjectId: args.userId },
-      ]);
-    }
     const [asset] = await tx
       .select({ id: runUploadedFiles.id })
       .from(runUploadedFiles)
@@ -1291,27 +1274,12 @@ async function ensureCanonicalDelivery(
       destination: args.destination,
       ...(args.provider === "discord"
         ? {
-            providerState: {
-              provider: "discord" as const,
-              nonce: createHash("sha256")
-                .update(`${assetId}:${args.operationId}`)
-                .digest("base64url")
-                .slice(0, 25),
-              attempt: null,
-            },
+            providerState: { provider: "discord" as const, attempt: null },
           }
         : {}),
     });
     return true;
   });
-}
-
-function isCanonicalPublicationOwnerUnavailable(error: unknown): boolean {
-  return (
-    isForeignKeyViolation(error) ||
-    (error instanceof Error &&
-      error.message === "account_erasure:subject_closed")
-  );
 }
 
 function canonicalPublicationScope(args: PrepareCanonicalPublishedAssetArgs) {
@@ -1473,7 +1441,7 @@ export const prepareCanonicalPublishedAsset$ = command(
         signal,
       );
       if (!assetResult.ok) {
-        if (isCanonicalPublicationOwnerUnavailable(assetResult.error)) {
+        if (isForeignKeyViolation(assetResult.error)) {
           return null;
         }
         throw assetResult.error;
@@ -1499,7 +1467,7 @@ export const prepareCanonicalPublishedAsset$ = command(
       signal,
     );
     if (!deliveryResult.ok) {
-      if (isCanonicalPublicationOwnerUnavailable(deliveryResult.error)) {
+      if (isForeignKeyViolation(deliveryResult.error)) {
         return null;
       }
       throw deliveryResult.error;

@@ -22,7 +22,7 @@ export type DiscordChatIngressStatus =
   | "processed"
   | "terminal";
 
-/** Durable, erasure-owned message admission before any thread-creation side effect. */
+/** Durable, deletion-owned message admission before any thread-creation side effect. */
 export const discordChatIngress = pgTable(
   "discord_chat_ingress",
   {
@@ -39,11 +39,6 @@ export const discordChatIngress = pgTable(
     eventId: varchar("event_id", { length: 255 }).notNull(),
     messageId: varchar("message_id", { length: 255 }).notNull(),
     payload: text("payload").notNull(),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou").notNull(),
     status: varchar("status", { length: 16 })
       .$type<DiscordChatIngressStatus>()
       .default("pending")

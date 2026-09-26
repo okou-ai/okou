@@ -47,8 +47,8 @@ the local state again under the rows that serialize the corresponding writers.
 
 In order, inside the one local write transaction:
 
-1. `lockCollectionOwner` — repeat erasure admission, then lock the durable
-   `org_members_metadata` row, in the same order collection and generation take.
+1. `lockCollectionOwner` — lock the durable `org_members_metadata` row, in the
+   same order collection and generation take.
 2. Resolve the deliverable result (above).
 3. Return the existing delivery for this occurrence, if there is one.
 4. Re-read the occurrence and require the **frozen** `membership_id` recorded on
@@ -136,7 +136,7 @@ Native cleanup already takes an authority or policy lock before it deletes the
 delivery and its outbox row. The drain follows the same protocol instead of
 claiming outbox first:
 
-**erasure/member → occurrence → Agent → destination thread → workflow/thread
+**member → occurrence → Agent → destination thread → workflow/thread
 binding and installation → automation → subscription → outbox.**
 
 The external Clerk membership lookup remains outside the transaction. Inside
@@ -147,7 +147,7 @@ relationship. Missing or changed provenance across either unlocked discovery
 window fails closed; it can never fall through to the generic sender.
 
 Before the provider request is committed, the delivery must still exist;
-erasure and the member row must admit a write; the occurrence's frozen
+the member row must admit a write; the occurrence's frozen
 `membership_id` must still match; Morning Brief must be installed, enabled and
 on the same Agent; the exact workflow/thread binding and destination must still
 belong to that Agent and user; and the recipient must not have opted out.

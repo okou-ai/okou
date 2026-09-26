@@ -11,6 +11,109 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.969.0](https://github.com/okou-ai/okou/compare/app-v0.968.0...app-v0.969.0) (2026-09-26)
+
+
+### Features
+
+* **platform:** let continue wait for each optional onboarding step's action ([#36931](https://github.com/okou-ai/okou/issues/36931)) ([c54001e](https://github.com/okou-ai/okou/commit/c54001e60241d8813afe117da0d3b54607c27c96))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.4
+    * @okouai/core bumped to 8.711.1
+
+## [0.968.0](https://github.com/okou-ai/okou/compare/app-v0.967.2...app-v0.968.0) (2026-09-26)
+
+
+### Features
+
+* **platform:** render internal chat thread links as chat chips ([#36985](https://github.com/okou-ai/okou/issues/36985)) ([5270290](https://github.com/okou-ai/okou/commit/52702903e0d364fb0d6f2da71419634ef05accaa))
+
+
+### Performance Improvements
+
+* **app:** stop passing reserved i18next context option for workflow preference ([#36977](https://github.com/okou-ai/okou/issues/36977)) ([83a1d65](https://github.com/okou-ai/okou/commit/83a1d658b6374b0181cdba84a61d768b42de67c3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.3
+    * @okouai/core bumped to 8.711.0
+
+## [0.967.2](https://github.com/okou-ai/okou/compare/app-v0.967.1...app-v0.967.2) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.2
+    * @okouai/core bumped to 8.710.13
+
+## [0.967.1](https://github.com/okou-ai/okou/compare/app-v0.967.0...app-v0.967.1) (2026-09-26)
+
+
+### Refactoring
+
+* retire public brand columns and types ([#36909](https://github.com/okou-ai/okou/issues/36909)) ([99f320c](https://github.com/okou-ai/okou/commit/99f320ca41fdedafbf9cecaad34ebfa61235ccdb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.1
+    * @okouai/core bumped to 8.710.12
+
+## [0.967.0](https://github.com/okou-ai/okou/compare/app-v0.966.1...app-v0.967.0) (2026-09-25)
+
+
+### Features
+
+* **vnc:** add opt-in mac classic password profile ([#36856](https://github.com/okou-ai/okou/issues/36856)) ([ab807e1](https://github.com/okou-ai/okou/commit/ab807e1651f58fd68934104416b39beb37bf282c))
+
+
+### Bug Fixes
+
+* align cloudflare access conversion dialog buttons ([#36947](https://github.com/okou-ai/okou/issues/36947)) ([07ef536](https://github.com/okou-ai/okou/commit/07ef536de414deb0a0425e084910d1528826d92b))
+
+
+### Refactoring
+
+* **chat:** retire ios inline snapshot response ([#36945](https://github.com/okou-ai/okou/issues/36945)) ([3d93ff8](https://github.com/okou-ai/okou/commit/3d93ff8d4b4a07a5888e3030e69b340f40da0ad4))
+* remove expired deployment compatibility ([#36967](https://github.com/okou-ai/okou/issues/36967)) ([c1469bb](https://github.com/okou-ai/okou/commit/c1469bbd47aeea42ceaedc53c270923a82e46f16))
+* remove the account erasure mechanism ([#36927](https://github.com/okou-ai/okou/issues/36927)) ([6d1f353](https://github.com/okou-ai/okou/commit/6d1f35381f6205b8b440c4f4c6e2095d0c98a7e2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.0
+    * @okouai/core bumped to 8.710.11
+
+## [0.966.1](https://github.com/okou-ai/okou/compare/app-v0.966.0...app-v0.966.1) (2026-09-25)
+
+
+### Refactoring
+
+* contract thread drafts after the child-table cutover ([#36932](https://github.com/okou-ai/okou/issues/36932)) ([7a187fa](https://github.com/okou-ai/okou/commit/7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38))
+* **morning-brief:** drop settings loading status row ([#36938](https://github.com/okou-ai/okou/issues/36938)) ([0644672](https://github.com/okou-ai/okou/commit/0644672530fce6f387645b5bfc3d0cd8309aa38c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.513.1
+    * @okouai/core bumped to 8.710.10
+
 ## [0.966.0](https://github.com/okou-ai/okou/compare/app-v0.965.0...app-v0.966.0) (2026-09-25)
 
 

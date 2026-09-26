@@ -1,4 +1,4 @@
-import "../erasure-bridge/env";
+import "../chat-event-acceptance/env";
 
 // Own and await the existing publication/telemetry lifetime in this process.
 Object.assign(process.env, {

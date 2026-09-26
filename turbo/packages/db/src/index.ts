@@ -1,9 +1,6 @@
-import * as chatContentErasureSubjectSchema from "./schema/chat-content-erasure-subject";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
-import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
-import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
-import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
+import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
@@ -174,11 +171,8 @@ import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
-  ...chatContentErasureSubjectSchema,
   ...getStartedClaimSchema,
-  ...accountErasureSchema,
-  ...accountErasureBridgeSchema,
-  ...runActivitySnapshotSchema,
+  ...activeAgentRunSchema,
   ...homeTaskRecommendationSchema,
   ...userSchema,
   ...artifactShareSchema,

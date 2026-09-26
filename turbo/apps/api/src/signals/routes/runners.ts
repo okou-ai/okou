@@ -29,13 +29,13 @@ import {
   type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import { command } from "ccstate";
-import { activePiMemoryPhase2MaintenanceRunCondition } from "../services/pi-memory-phase2-maintenance.service";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
   runStatusSchema,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
@@ -53,8 +53,6 @@ import {
   eq,
   gt,
   inArray,
-  isNotNull,
-  exists,
   lt,
   lte,
   notInArray,
@@ -89,18 +87,8 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
-import {
-  prepareAgentClaimAdmission,
-  prepareComputeRunAdmission,
-  validateComputeRunAdmission,
-  stopClosedComputeCandidate,
-  withComputeOwnershipRetry,
-  type ComputeRunAdmission,
-  type ComputeRunOwner,
-} from "../services/compute-erasure-admission.service";
 import { logger } from "../../lib/log";
 import { executeRawRows } from "../../lib/db-raw-rows";
-import type { Tx } from "../../lib/db-types";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -109,7 +97,8 @@ import {
 import { generateSandboxToken } from "../auth/tokens";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
 import {
-  COMPUTE_CLOSURE_ERROR,
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
   transitionAgentRunsToTerminal,
 } from "../services/agent-run-terminal-transition.service";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
@@ -544,10 +533,6 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     body.data.heldWorkspaceStates,
   );
   const admittableProfiles = body.data.admittableProfiles;
-  // Older Runner heartbeats omit this field during fleet drain and rollback.
-  // Remove this API fallback only after those senders leave the supported
-  // Runner fleet and rollback floor (see #36867).
-  const activeReuseProducers = body.data.activeReuseProducers ?? [];
   const currentDate = nowDate();
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
@@ -570,7 +555,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       admittableProfiles,
       heldSandboxStates,
       heldWorkspaceStates,
-      activeReuseProducers,
+      activeReuseProducers: body.data.activeReuseProducers,
       mode: body.data.mode,
       lastSeenAt: currentDate,
     })
@@ -589,7 +574,7 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         admittableProfiles,
         heldSandboxStates,
         heldWorkspaceStates,
-        activeReuseProducers,
+        activeReuseProducers: body.data.activeReuseProducers,
         mode: body.data.mode,
         lastSeenAt: currentDate,
       },
@@ -730,21 +715,14 @@ async function resolvePollRunnerReusePreference(
   return resolution ?? runnerReusePreferenceLookupError();
 }
 
-function pendingRunnerJobs(
-  executor: Pick<Db, "select">,
-  args: {
-    readonly conditions: readonly SQL[];
-    readonly priorityOrder: readonly SQL[];
-    readonly currentDate: Date;
-  },
+async function findPendingRunnerJob(
+  db: Pick<Db, "select">,
+  conditions: readonly SQL[],
+  priorityOrder: readonly SQL[],
 ) {
-  return executor
+  const [pendingJob] = await db
     .select({
       runId: runnerJobQueue.runId,
-      launchSnapshot: agentRuns.launchSnapshot,
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      agentId: agentSessions.agentId,
       prompt: agentRuns.prompt,
       appendSystemPrompt: agentRuns.appendSystemPrompt,
       vars: agentRuns.vars,
@@ -759,77 +737,9 @@ function pendingRunnerJobs(
     })
     .from(runnerJobQueue)
     .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .where(
-      and(
-        ...args.conditions,
-        or(
-          isNotNull(agentSessions.agentId),
-          exists(
-            executor
-              .select({ id: piMemoryPhase2Jobs.memoryStorageId })
-              .from(piMemoryPhase2Jobs)
-              .where(
-                activePiMemoryPhase2MaintenanceRunCondition(executor, {
-                  runId: agentRuns.id,
-                  userId: agentRuns.userId,
-                  orgId: agentRuns.orgId,
-                  currentTime: args.currentDate,
-                }),
-              ),
-          ),
-        ),
-      ),
-    )
-    .orderBy(
-      ...args.priorityOrder,
-      runnerJobQueue.createdAt,
-      runnerJobQueue.runId,
-    );
-}
-
-type PendingRunnerJob = Awaited<ReturnType<typeof pendingRunnerJobs>>[number];
-async function admitPendingRunnerJob(
-  db: Db,
-  candidates: readonly PendingRunnerJob[],
-  whereConditions: SQL[],
-  reusePreferencePriorityOrder: SQL[],
-  currentDate: Date,
-) {
-  let pendingJob: PendingRunnerJob | undefined;
-  for (const candidate of candidates) {
-    const owner = candidate;
-    pendingJob = await withComputeOwnershipRetry(() => {
-      return db.transaction(async (tx) => {
-        const admission = await prepareComputeRunAdmission(
-          tx,
-          candidate.runId,
-          owner,
-        );
-        if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
-          return undefined;
-        }
-        if (admission.closed) {
-          await stopClosedComputeCandidate(tx, admission);
-          return undefined;
-        }
-        const [job] = await pendingRunnerJobs(tx, {
-          conditions: [
-            ...whereConditions,
-            eq(runnerJobQueue.runId, candidate.runId),
-          ],
-          priorityOrder: reusePreferencePriorityOrder,
-          currentDate,
-        })
-          .for("share", { of: runnerJobQueue })
-          .limit(1);
-        return job;
-      });
-    });
-    if (pendingJob) {
-      break;
-    }
-  }
+    .where(and(...conditions))
+    .orderBy(...priorityOrder, runnerJobQueue.createdAt, runnerJobQueue.runId)
+    .limit(1);
   return pendingJob;
 }
 
@@ -909,18 +819,10 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     runnerGroup: group,
     currentDate,
   });
-  const candidates = await pendingRunnerJobs(db, {
-    conditions: whereConditions,
-    priorityOrder: reusePreferencePriorityOrder,
-    currentDate,
-  }).limit(8);
-  signal.throwIfAborted();
-  const pendingJob = await admitPendingRunnerJob(
+  const pendingJob = await findPendingRunnerJob(
     db,
-    candidates,
     whereConditions,
     reusePreferencePriorityOrder,
-    currentDate,
   );
   signal.throwIfAborted();
   const pendingJobLookupFinishedAtMs = now();
@@ -996,7 +898,6 @@ interface ClaimedRun {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string | null;
-  readonly resourceOwner?: ComputeRunOwner["resourceOwner"];
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
@@ -1088,12 +989,10 @@ async function getClaimableJob(
         vars: agentRuns.vars,
       },
       maintenanceRunId: piMemoryPhase2Jobs.maintenanceRunId,
-      resourceOwner: { userId: agents.owner, orgId: agents.orgId },
     })
     .from(runnerJobQueue)
     .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
     .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .leftJoin(agents, eq(agents.id, agentSessions.agentId))
     .leftJoin(
       piMemoryPhase2Jobs,
       and(
@@ -1118,10 +1017,7 @@ async function getClaimableJob(
   ) {
     return {
       job: jobWithRun.job,
-      run: {
-        ...jobWithRun.run,
-        resourceOwner: jobWithRun.resourceOwner ?? undefined,
-      },
+      run: jobWithRun.run,
     };
   }
   return notFound("Job not found in queue");
@@ -1240,7 +1136,6 @@ function buildClaimTransitionSql(
               ${agentRuns.status} AS "status"
             FROM ${agentRuns}
             WHERE ${eq(agentRuns.id, runId)}
-              AND ${agentRuns.triggerSource} IS DISTINCT FROM 'goal'
             FOR UPDATE
           ),
           locked_job AS MATERIALIZED (
@@ -1270,7 +1165,6 @@ function buildClaimTransitionSql(
             SET
               status = 'running',
               started_at = claim_clock."claimedAt",
-              last_heartbeat_at = claim_clock."claimedAt",
               cancellation_recovery_completed = false,
               runner_id = ${runnerId},
               runner_heartbeat_generation = ${runnerHeartbeatGeneration},
@@ -1335,91 +1229,13 @@ function buildClaimTransitionSql(
           `;
 }
 
-async function deleteStaleClaimJob(
-  db: Pick<Db, "delete" | "select">,
-  args: {
-    readonly runId: string;
-    readonly owner: ComputeRunOwner;
-    readonly sessionId: string;
-  },
-): Promise<void> {
-  // Preserve legacy stale-job cleanup without locking the no-longer-pending
-  // run or its Session. Queued runs may still be promoted; erasure-stopped
-  // payloads must remain available for capture.
-  await db.delete(runnerJobQueue).where(
-    and(
-      eq(runnerJobQueue.runId, args.runId),
-      exists(
-        db
-          .select({ id: agentRuns.id })
-          .from(agentRuns)
-          .where(
-            and(
-              eq(agentRuns.id, args.runId),
-              eq(agentRuns.userId, args.owner.userId),
-              eq(agentRuns.orgId, args.owner.orgId),
-              eq(agentRuns.sessionId, args.sessionId),
-              notInArray(agentRuns.status, ["queued", "pending"]),
-              sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
-            ),
-          ),
-      ),
-    ),
-  );
-}
-
-async function prepareClaimTransitionAdmission(
-  tx: Tx,
-  args: {
-    readonly runId: string;
-    readonly owner: ComputeRunOwner;
-  },
-): Promise<ComputeRunAdmission | undefined> {
-  const { runId, owner } = args;
-  const ordinaryAgentClaim = owner.agentId !== null;
-  const agentClaimAdmission = ordinaryAgentClaim
-    ? await prepareAgentClaimAdmission(tx, runId, {
-        ...owner,
-        agentId: owner.agentId,
-      })
-    : undefined;
-  const admission = ordinaryAgentClaim
-    ? agentClaimAdmission?.admission
-    : await prepareComputeRunAdmission(tx, runId, owner);
-  if (!admission) {
-    return undefined;
-  }
-  const valid = ordinaryAgentClaim
-    ? agentClaimAdmission?.valid === true
-    : await validateComputeRunAdmission(tx, admission, "pending");
-  if (!valid) {
-    if (!admission.closed) {
-      await deleteStaleClaimJob(tx, {
-        runId,
-        owner,
-        sessionId: admission.sessionId,
-      });
-    }
-    return undefined;
-  }
-  if (admission.closed) {
-    await stopClosedComputeCandidate(tx, admission);
-    return undefined;
-  }
-  return admission;
-}
-
 async function transitionClaimedJobToRunning(
   db: Db,
-  args: {
-    readonly runId: string;
-    readonly owner: ComputeRunOwner;
-  },
+  runId: string,
   runnerAttribution: RunnerClaimAttribution | undefined,
   signal: AbortSignal,
   timing: ClaimRouteTimingCollector,
 ): Promise<ClaimTransitionResult> {
-  const { runId } = args;
   const query = buildClaimTransitionSql(
     runId,
     runnerAttribution?.runnerIdentity.runnerId ?? null,
@@ -1427,23 +1243,22 @@ async function transitionClaimedJobToRunning(
     runnerAttribution?.runnerHostname ?? null,
     runnerAttribution?.runnerVersion ?? null,
   );
-  return await withComputeOwnershipRetry(() => {
-    return db.transaction(async (tx) => {
-      const admission = await prepareClaimTransitionAdmission(tx, args);
-      if (!admission) {
-        return { status: "run-not-found" as const };
-      }
-      const result = await timing.measure(
-        "claim_route_transition_execute",
-        "nested",
-        async () => {
-          return await executeRawRows(tx, query, claimTransitionSqlRowSchema);
-        },
-      );
-      signal.throwIfAborted();
-      return decodeClaimTransitionResult(result);
-    });
-  });
+  const result = await timing.measure(
+    "claim_route_transition_execute",
+    "nested",
+    async () => {
+      return await executeRawRows(db, query, claimTransitionSqlRowSchema);
+    },
+  );
+  const transition = decodeClaimTransitionResult(result);
+  if (transition.status === "claimed") {
+    await db
+      .update(activeAgentRuns)
+      .set({ lastHeartbeatAt: transition.claimedAt })
+      .where(eq(activeAgentRuns.runId, runId));
+  }
+  signal.throwIfAborted();
+  return transition;
 }
 
 type PoisonJobResult =
@@ -1465,56 +1280,45 @@ function poisonJobErrorResponse(result: FailedPoisonJobResult) {
 async function failPoisonQueuedJob(
   db: Db,
   runId: string,
-  owner: ComputeRunOwner,
   errorMessage: string,
   signal: AbortSignal,
 ): Promise<PoisonJobResult> {
-  return await withComputeOwnershipRetry(() => {
-    return db.transaction(async (tx) => {
-      const admission = await prepareComputeRunAdmission(tx, runId, owner);
-      if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
-        return { status: "run-not-found" as const };
-      }
-      if (admission.closed) {
-        await stopClosedComputeCandidate(tx, admission);
-        return { status: "run-not-found" as const };
-      }
-      const run = await lockClaimRun(tx, runId);
-      signal.throwIfAborted();
-      if (!run) {
-        return { status: "run-not-found" };
-      }
-      if (run.status !== "pending") {
-        await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
-        signal.throwIfAborted();
-        return { status: "run-not-found" };
-      }
-
-      const job = await lockRunnerJob(tx, runId);
-      signal.throwIfAborted();
-      if (!job || job.isExpired) {
-        return { status: "job-not-found" };
-      }
-
-      const failedAt = nowDate();
-      const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
-        values: {
-          status: "failed",
-          completedAt: failedAt,
-          error: errorMessage,
-        },
-        conditions: [eq(agentRuns.id, runId), eq(agentRuns.status, "pending")],
-      });
-      signal.throwIfAborted();
-      if (!updatedRun) {
-        throw new Error("Locked pending run was not failed");
-      }
-
+  return await db.transaction(async (tx) => {
+    const run = await lockClaimRun(tx, runId);
+    signal.throwIfAborted();
+    if (!run) {
+      return { status: "run-not-found" };
+    }
+    if (run.status !== "pending") {
       await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
       signal.throwIfAborted();
+      return { status: "run-not-found" };
+    }
 
-      return { status: "failed" as const };
+    const job = await lockRunnerJob(tx, runId);
+    signal.throwIfAborted();
+    if (!job || job.isExpired) {
+      return { status: "job-not-found" };
+    }
+
+    const failedAt = nowDate();
+    const transitions = await transitionAgentRunsToTerminal(tx, {
+      values: {
+        status: "failed",
+        completedAt: failedAt,
+        error: errorMessage,
+      },
+      conditions: [eq(agentRuns.id, runId), eq(agentRuns.status, "pending")],
     });
+    signal.throwIfAborted();
+    if (transitions.length === 0) {
+      throw new Error("Locked pending run was not failed");
+    }
+
+    await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
+    signal.throwIfAborted();
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions));
+    return { status: "failed" as const };
   });
 }
 
@@ -2636,7 +2440,6 @@ const scheduleClaimFailedSideEffects$ = command(
 async function failClaimForResumeSessionHistoryLoad(
   args: {
     readonly db: Db;
-    readonly owner: ComputeRunOwner;
     readonly runId: string;
     readonly orgId: string;
     readonly hash: string;
@@ -2657,7 +2460,6 @@ async function failClaimForResumeSessionHistoryLoad(
   const poisonResult = await failPoisonQueuedJob(
     args.db,
     args.runId,
-    args.owner,
     args.errorMessage,
     signal,
   );
@@ -2675,7 +2477,6 @@ async function failClaimForResumeSessionHistoryLoad(
 async function failClaimForInvalidStoredExecutionContext(
   args: {
     readonly db: Db;
-    readonly owner: ComputeRunOwner;
     readonly runId: string;
     readonly orgId: string;
     readonly scheduleFailedSideEffects: (
@@ -2687,7 +2488,6 @@ async function failClaimForInvalidStoredExecutionContext(
   const poisonResult = await failPoisonQueuedJob(
     args.db,
     args.runId,
-    args.owner,
     INVALID_EXECUTION_CONTEXT_ERROR,
     signal,
   );
@@ -2721,7 +2521,6 @@ async function claimResponseBuildErrorResponse(
     {
       db: args.db,
       runId: args.runId,
-      owner: args.run,
       hash: args.error.hash,
       orgId: args.run.orgId,
       errorMessage: args.error.message,
@@ -2735,7 +2534,6 @@ async function claimResponseBuildErrorResponse(
 async function resolveStoredExecutionContextForClaim(
   args: {
     readonly db: Db;
-    readonly owner: ComputeRunOwner;
     readonly runId: string;
     readonly orgId: string;
     readonly executionContext: unknown;
@@ -2867,7 +2665,6 @@ const claimAuthorizedJob$ = command(
       {
         db,
         runId,
-        owner: run,
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
@@ -2929,7 +2726,7 @@ const claimAuthorizedJob$ = command(
       async () => {
         return await transitionClaimedJobToRunning(
           db,
-          { runId, owner: run },
+          runId,
           args.runnerAttribution,
           signal,
           claimRouteTiming,

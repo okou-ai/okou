@@ -12,6 +12,7 @@ import {
   type SandboxReuseResult,
 } from "@okouai/api-contracts/contracts/webhooks";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
@@ -51,11 +52,6 @@ import {
   ingestXResourceUsage,
   XResourceUsageError,
 } from "../services/x-resource-usage.service";
-import {
-  hasHeldClerkUserDeletion,
-  lockXResourceAdmission,
-  setXResourceTransactionTimeouts,
-} from "../services/x-resource-usage-lifecycle";
 
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
@@ -403,20 +399,30 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const db = set(writeDb$);
+  const heartbeatAt = nowDate();
+  // The active row outlives the public status: a run cancelled while running
+  // keeps it until the runner reports completion, and its sandbox keeps
+  // heartbeating meanwhile. Row existence is the only gate.
+  await db
+    .update(activeAgentRuns)
+    .set({ lastHeartbeatAt: heartbeatAt })
+    .where(
+      and(
+        eq(activeAgentRuns.runId, body.runId),
+        eq(activeAgentRuns.userId, auth.userId),
+      ),
+    );
+  signal.throwIfAborted();
   const result = await db
-    .update(agentRuns)
-    .set({ lastHeartbeatAt: nowDate() })
+    .select({ triggerSource: agentRuns.triggerSource })
+    .from(agentRuns)
     .where(
       and(
         eq(agentRuns.id, body.runId),
         eq(agentRuns.userId, auth.userId),
         inArray(agentRuns.status, ["pending", "running"]),
       ),
-    )
-    .returning({
-      id: agentRuns.id,
-      triggerSource: agentRuns.triggerSource,
-    });
+    );
   signal.throwIfAborted();
 
   if (result.length === 0) {
@@ -537,30 +543,15 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const insertResult = await settle(
     (async () => {
       if (usageEventValues.length > 0) {
-        await db.transaction(async (tx) => {
-          await setXResourceTransactionTimeouts(tx);
-          // Count-event retries share the account-cleanup fence with resource batches.
-          await lockXResourceAdmission(tx, "shared");
-          if (await hasHeldClerkUserDeletion(tx, auth.userId)) {
-            throw new XResourceUsageError(404, "Run not found");
-          }
-          await tx
-            .insert(usageEvent)
-            .values(usageEventValues)
-            .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
-          signal.throwIfAborted();
-        });
+        await db
+          .insert(usageEvent)
+          .values(usageEventValues)
+          .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
       }
     })(),
   );
   signal.throwIfAborted();
   if (!insertResult.ok) {
-    if (
-      insertResult.error instanceof XResourceUsageError &&
-      insertResult.error.status === 404
-    ) {
-      return notFound(insertResult.error.message);
-    }
     if (isForeignKeyViolation(insertResult.error)) {
       L.error("Run not found for usage event, dropping", {
         ...usageUnderbillingFields("run_not_found", "confirmed"),

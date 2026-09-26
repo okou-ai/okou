@@ -196,6 +196,14 @@ test("Persist the browser language when the workspace has no preference", async 
   let serverLocale: UserLocale | null = null;
   context.mocks.browser.languages(["id-ID"]);
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    if (serverLocale === null) {
+      return respond(409, {
+        error: {
+          code: "USER_PREFERENCES_UNINITIALIZED",
+          message: "User preferences require timezone or locale initialization",
+        },
+      });
+    }
     return respond(200, createPreferences(serverLocale));
   });
   mockMissingLocaleInitialization(
@@ -457,6 +465,7 @@ async function setupSnapshotMeasurement() {
             createdAt: "2026-09-05T00:00:00Z",
             updatedAt: "2026-09-05T00:00:00Z",
             pinnedAt: null,
+            archived: false,
             renamedAt: null,
             selectedModel: null,
             serviceTier: null,

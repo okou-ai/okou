@@ -1,5 +1,64 @@
 # Changelog
 
+## [1.5.62](https://github.com/okou-ai/okou/compare/host-worker-v1.5.61...host-worker-v1.5.62) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.4
+
+## [1.5.61](https://github.com/okou-ai/okou/compare/host-worker-v1.5.60...host-worker-v1.5.61) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.3
+
+## [1.5.60](https://github.com/okou-ai/okou/compare/host-worker-v1.5.59...host-worker-v1.5.60) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.2
+
+## [1.5.59](https://github.com/okou-ai/okou/compare/host-worker-v1.5.58...host-worker-v1.5.59) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.1
+
+## [1.5.58](https://github.com/okou-ai/okou/compare/host-worker-v1.5.57...host-worker-v1.5.58) (2026-09-25)
+
+
+### Refactoring
+
+* remove the account erasure mechanism ([#36927](https://github.com/okou-ai/okou/issues/36927)) ([6d1f353](https://github.com/okou-ai/okou/commit/6d1f35381f6205b8b440c4f4c6e2095d0c98a7e2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.0
+
+## [1.5.57](https://github.com/okou-ai/okou/compare/host-worker-v1.5.56...host-worker-v1.5.57) (2026-09-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.513.1
+
 ## [1.5.56](https://github.com/okou-ai/okou/compare/host-worker-v1.5.55...host-worker-v1.5.56) (2026-09-25)
 
 

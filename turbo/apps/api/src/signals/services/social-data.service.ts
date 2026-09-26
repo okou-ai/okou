@@ -33,7 +33,6 @@ import {
   checkManagedCreditsInDb,
   recordManagedUsageInTransaction,
 } from "./managed-usage.service";
-import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import {
   inspectSocialDataProviderPlan,
   readSocialDataProviderRun,
@@ -92,17 +91,6 @@ function requestOf(body: SocialDataCreateRequest): SocialDataRequest {
 
 function providerFor(platform: SocialDataRequest["platform"]): string {
   return `monid/${platform}`;
-}
-
-async function admitSocialOwner(
-  tx: Tx,
-  owner: Pick<Actor, "userId" | "orgId">,
-): Promise<boolean> {
-  // Legacy Clerk cleanup records its durable closure in this shared subject fence.
-  return await admitPiStableContextSubjects(tx, [
-    { subjectKind: "user", subjectId: owner.userId },
-    { subjectKind: "organization", subjectId: owner.orgId },
-  ]);
 }
 
 function creditsFor(cost: number, unitPrice: number, unitSize: number): number {
@@ -370,14 +358,6 @@ async function admitJob(
   },
   signal: AbortSignal,
 ): Promise<CreatedResponse | ErrorResponse> {
-  if (!(await admitSocialOwner(tx, args.auth))) {
-    return errorResponse(
-      403,
-      "SOCIAL_DATA_OWNER_UNAVAILABLE",
-      "This account cannot start Social data jobs.",
-    );
-  }
-  signal.throwIfAborted();
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`social-data:${args.auth.orgId}`}, 0))`,
   );
@@ -524,18 +504,11 @@ async function readClaimOutcome(
   const plan = jobPlan(job);
   let outcome: SocialDataProviderRun;
   if (job.startedAt === null) {
-    const starting = await db.transaction(async (tx) => {
-      if (!(await admitSocialOwner(tx, job))) {
-        return undefined;
-      }
-      signal.throwIfAborted();
-      const [admitted] = await tx
-        .update(socialDataJobs)
-        .set({ status: "running", startedAt: nowDate() })
-        .where(and(claimedWhere(claim), isNull(socialDataJobs.stopRequestedAt)))
-        .returning();
-      return admitted;
-    });
+    const [starting] = await db
+      .update(socialDataJobs)
+      .set({ status: "running", startedAt: nowDate() })
+      .where(and(claimedWhere(claim), isNull(socialDataJobs.stopRequestedAt)))
+      .returning();
     signal.throwIfAborted();
     if (!starting) {
       await finishFree(db, claim, "cancelled");
@@ -644,11 +617,6 @@ const settleSocialDataJob$ = command(
     const db = set(writeDb$);
     const resolution = get(usagePricingResolution$);
     const effects = await db.transaction(async (tx) => {
-      if (!(await admitSocialOwner(tx, claim.job))) {
-        await finishFree(tx, claim, "cancelled");
-        return null;
-      }
-      signal.throwIfAborted();
       await lockUsageEventCompaction(tx, "shared");
       signal.throwIfAborted();
       const [job] = await tx

@@ -99,6 +99,7 @@ function chatThread(title: string): ChatThreadSnapshotProjection {
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
     pinnedAt: null,
+    archived: false,
     renamedAt: null,
     selectedModel: "claude-sonnet-5",
     serviceTier: null,

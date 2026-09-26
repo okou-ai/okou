@@ -45,7 +45,6 @@ import {
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
-import { testOverride } from "../../lib/singleton";
 import {
   deleteOrphanedWorkflowVolume$,
   deleteWorkflow$,
@@ -117,7 +116,6 @@ import {
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
 import { lockCanonicalAgentMutation } from "../services/agent-mutation-lock.service";
-import { admitPiStableContextSubjects } from "../services/pi-stable-context-erasure.service";
 import {
   invalidatePiStableContext,
   lockPiStableContextGenerationScopes,
@@ -402,25 +400,6 @@ const listComposerWorkflowsInner$ = computed(async (get) => {
   };
 });
 
-interface WorkflowCreationHooks {
-  readonly beforeAdmission?: () => Promise<void>;
-  readonly beforeCopyAdmission?: () => Promise<void>;
-}
-
-const workflowCreationHooks = testOverride<WorkflowCreationHooks>(() => {
-  return {};
-});
-
-export function setWorkflowCreationHooksForTest(
-  hooks: WorkflowCreationHooks,
-): void {
-  workflowCreationHooks.set(hooks);
-}
-
-export function clearWorkflowCreationHooksForTest(): void {
-  workflowCreationHooks.clear();
-}
-
 export interface WorkflowCreationInput {
   readonly orgId: string;
   readonly member: WorkflowMember;
@@ -475,19 +454,7 @@ async function createPreparedWorkflow(
   },
   signal: AbortSignal,
 ) {
-  await workflowCreationHooks.get().beforeAdmission?.();
   return await db.transaction(async (tx) => {
-    if (
-      !(await admitPiStableContextSubjects(tx, [
-        { subjectKind: "organization", subjectId: args.orgId },
-        { subjectKind: "user", subjectId: args.member.userId },
-      ]))
-    ) {
-      return {
-        kind: "error" as const,
-        response: notFound(`Agent not found: ${args.body.agentId}`),
-      };
-    }
     const error = await validateWorkflowCreation(tx, args, true, signal);
     if (error) {
       return { kind: "error" as const, response: error };
@@ -1518,16 +1485,7 @@ async function copyWorkflowDatabaseRows(
   },
   signal: AbortSignal,
 ): Promise<CopyWorkflowDatabaseResult> {
-  await workflowCreationHooks.get().beforeCopyAdmission?.();
   return await db.transaction(async (tx) => {
-    if (
-      !(await admitPiStableContextSubjects(tx, [
-        { subjectKind: "organization", subjectId: args.orgId },
-        { subjectKind: "user", subjectId: args.userId },
-      ]))
-    ) {
-      return { kind: "conflict", message: WORKFLOW_COPY_CHANGED_MESSAGE };
-    }
     const current = await readWorkflowCopySource(tx, args, args.source);
     if (current.kind === "conflict") {
       return current;
@@ -2085,14 +2043,6 @@ async function applyVisibilityUpdate(
   },
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    if (
-      !(await admitPiStableContextSubjects(tx, [
-        { subjectKind: "organization", subjectId: args.workflow.orgId },
-        { subjectKind: "user", subjectId: args.workflow.ownerUserId },
-      ]))
-    ) {
-      return false;
-    }
     await lockCanonicalAgentMutation(tx, args.workflow.agentId);
     const workflowCondition = and(
       eq(workflows.id, args.workflow.id),

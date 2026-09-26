@@ -1,4 +1,4 @@
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import type {
   SlackAnyBlock,
@@ -23,7 +23,7 @@ interface AppHomeViewOptions {
 }
 
 function appHomeIntroBlocks(): SlackAnyBlock[] {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "header",
@@ -76,7 +76,7 @@ function disconnectedAppHomeBlocks(
 }
 
 function connectedStatusBlock(options: AppHomeViewOptions): SlackKnownBlock {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return {
     type: "section",
     text: {
@@ -146,7 +146,7 @@ function appHomeAgentBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
 }
 
 function appHomeHelpBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   const botMention = officialSlackBotMention(options.botUserId);
   return [
     {
@@ -174,7 +174,7 @@ function appHomeHelpBlocks(options: AppHomeViewOptions): SlackAnyBlock[] {
 }
 
 function disconnectAccountBlock(): SlackKnownBlock {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return {
     type: "section",
     text: {

@@ -3196,8 +3196,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         expect.objectContaining({
           payload: expect.objectContaining({
             teamsDelivery: expect.objectContaining({
-              // Rollback shim: older APIs require this key when parsing.
-              publicBrand: "okou",
               files: expect.arrayContaining([
                 expect.objectContaining({ name: "current-task.txt" }),
                 expect.objectContaining({ name: "deployment-plan.pdf" }),

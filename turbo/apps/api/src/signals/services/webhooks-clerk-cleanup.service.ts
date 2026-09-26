@@ -1,17 +1,11 @@
-import {
-  recordChatContentDeletion,
-  completeChatContentDeletion,
-} from "@okouai/db/operations/chat-content-erasure";
-import { piInferenceErasureScopePredicate } from "./pi-inference-lifecycle.service";
+import { organizationAgentRunScopePredicate } from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
-import { agents } from "@okouai/db/schema/agent";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { composeJobs } from "@okouai/db/schema/compose-job";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
@@ -45,10 +39,6 @@ import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
-import {
-  getInstructionsStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
 import { command, computed, type Computed } from "ccstate";
 import {
   and,
@@ -58,7 +48,6 @@ import {
   inArray,
   isNotNull,
   like,
-  or,
   sql,
 } from "drizzle-orm";
 import { env } from "../../lib/env";
@@ -94,7 +83,6 @@ import {
   loadStoredBuiltinConnectorRuntimeSnapshot,
 } from "./connector-data.service";
 import {
-  AGENT_LIFECYCLE_LOCK_TIMEOUT,
   deleteClerkAgentLifecycleData,
   deleteStableContextLifecycleAfterAuthorityRemoval,
 } from "./agent-lifecycle.service";
@@ -103,7 +91,11 @@ import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collectio
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
-import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  neverStartedRunIds,
+  releaseActiveAgentRuns,
+  transitionAgentRunsToTerminal,
+} from "./agent-run-terminal-transition.service";
 import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
 import {
   deleteDiscordOrgData,
@@ -135,19 +127,24 @@ async function publishCancelBestEffort(
 /**
  * What a deletion's first committed transaction revokes beyond its own runs.
  *
- * `cascadeOwnedAgents` widens run cancellation to the erasure scope, and
- * `revokeMorningBriefCollection` joins Morning Brief collection ownership to
- * that same commit. A ban is neither, so it keeps the narrow default.
+ * `cascadeOwnedAgents` widens organization run cancellation to the owned Agent
+ * cascade, and `revokeMorningBriefCollection` joins Morning Brief collection
+ * ownership to that same commit. User deletion and bans only ever cancel the
+ * user's own runs; members' runs on Agents the user owns continue.
  */
-interface RunCancellationScope {
+interface OrgRunCancellationScope {
   readonly cascadeOwnedAgents?: boolean;
+  readonly revokeMorningBriefCollection?: boolean;
+}
+
+interface UserRunCancellationScope {
   readonly revokeMorningBriefCollection?: boolean;
 }
 
 async function cancelOrgRuns(
   db: Db,
   orgId: string,
-  scope: RunCancellationScope = {},
+  scope: OrgRunCancellationScope = {},
 ): Promise<void> {
   const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
@@ -159,10 +156,7 @@ async function cancelOrgRuns(
       },
       conditions: [
         scope.cascadeOwnedAgents
-          ? piInferenceErasureScopePredicate(tx, {
-              kind: "organization",
-              orgId,
-            })
+          ? organizationAgentRunScopePredicate(tx, orgId)
           : eq(agentRuns.orgId, orgId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
@@ -181,6 +175,7 @@ async function cancelOrgRuns(
         orgId,
       });
     }
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(rows));
     return rows;
   });
   await Promise.all(
@@ -236,7 +231,7 @@ async function cancelLastAdminOrgsStripeSubscriptions(
 async function cancelUserRuns(
   db: Db,
   userId: string,
-  scope: RunCancellationScope = {},
+  scope: UserRunCancellationScope = {},
 ): Promise<void> {
   const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
@@ -247,9 +242,7 @@ async function cancelUserRuns(
         runnerCancellationMode: "hard",
       },
       conditions: [
-        scope.cascadeOwnedAgents
-          ? piInferenceErasureScopePredicate(tx, { kind: "user", userId })
-          : eq(agentRuns.userId, userId),
+        eq(agentRuns.userId, userId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
     });
@@ -262,6 +255,7 @@ async function cancelUserRuns(
       );
       await revokeMorningBriefDeliveryOwnership(tx, { kind: "user", userId });
     }
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(rows));
     return rows;
   });
   await Promise.all(
@@ -270,17 +264,6 @@ async function cancelUserRuns(
     }),
   );
 }
-
-// Stopgap user deletion must stop the departed user's active work without
-// following their Agents into another member's sessions and runs.
-export const cancelDeletedUserRuns$ = command(
-  async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
-    await cancelUserRuns(set(writeDb$), userId, {
-      revokeMorningBriefCollection: true,
-    });
-    signal.throwIfAborted();
-  },
-);
 
 async function cleanupWorkspaceInstallation(
   db: Db,
@@ -761,33 +744,10 @@ function deleteUserS3Data(db: Db, userId: string): Computed<Promise<void>> {
         ),
       );
 
-    const ownedAgents = await db
-      .select({ name: agents.name, orgId: agents.orgId })
-      .from(agents)
-      .where(eq(agents.owner, userId));
-    const agentStorageRows =
-      ownedAgents.length === 0
-        ? []
-        : await db
-            .select({ s3Prefix: storages.s3Prefix })
-            .from(storages)
-            .where(
-              and(
-                eq(storages.userId, VOLUME_ORG_USER_ID),
-                or(
-                  ...ownedAgents.map((agent) => {
-                    return and(
-                      eq(storages.orgId, agent.orgId),
-                      eq(storages.name, getInstructionsStorageName(agent.name)),
-                    );
-                  }),
-                ),
-              ),
-            );
-
+    // Agents the user owns are retained, so their instructions Storage is too.
     const prefixes = [
       ...new Set(
-        [...userStorageRows, ...agentStorageRows].map((row) => {
+        userStorageRows.map((row) => {
           return row.s3Prefix;
         }),
       ),
@@ -843,23 +803,9 @@ async function deleteOrgData(
   await db
     .delete(browserUserActionRequests)
     .where(eq(browserUserActionRequests.orgId, orgId));
-  // Historical context rows can still have null copied ownership. Remove them
-  // through the live source before lifecycle cleanup deletes that source.
   await db
     .delete(chatAgentRunContext)
-    .where(
-      or(
-        eq(chatAgentRunContext.sourceOrgId, orgId),
-        inArray(
-          chatAgentRunContext.sourceChatThreadId,
-          db
-            .select({ id: chatThreads.id })
-            .from(chatThreads)
-            .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-            .where(eq(agents.orgId, orgId)),
-        ),
-      ),
-    );
+    .where(eq(chatAgentRunContext.sourceOrgId, orgId));
   await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
   // VNC references were removed at the start of organization cleanup. Remove
   // Access rows before SSH hosts: rotation takes config then host locks.
@@ -931,12 +877,6 @@ async function deleteUserData(
   await deleteDiscordUserData(db, userId);
   signal.throwIfAborted();
 
-  await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
-    );
-  });
-
   await db
     .delete(slackOrgConnections)
     .where(eq(slackOrgConnections.userId, userId));
@@ -961,18 +901,7 @@ async function deleteUserData(
     .where(eq(browserUserActionRequests.userId, userId));
   await db
     .delete(chatAgentRunContext)
-    .where(
-      or(
-        eq(chatAgentRunContext.sourceUserId, userId),
-        inArray(
-          chatAgentRunContext.sourceChatThreadId,
-          db
-            .select({ id: chatThreads.id })
-            .from(chatThreads)
-            .where(eq(chatThreads.userId, userId)),
-        ),
-      ),
-    );
+    .where(eq(chatAgentRunContext.sourceUserId, userId));
   await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
   // VNC references were removed before user cleanup. Delete only this user's
   // SSH resources and personal Access configurations; organization Access
@@ -1036,23 +965,12 @@ async function deleteUserData(
     .where(eq(userDisabledPaidTools.userId, userId));
   await db.delete(userCache).where(eq(userCache.userId, userId));
   signal.throwIfAborted();
-  await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
-    );
-    await tx.delete(users).where(eq(users.id, userId));
-  });
+  await db.delete(users).where(eq(users.id, userId));
 }
 
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await recordChatContentDeletion(db, {
-      subjectKind: "organization",
-      subjectId: orgId,
-      sourceReference: `clerk:organization:${orgId}`,
-    });
-    signal.throwIfAborted();
     await eraseVncOwnerData(db, { kind: "organization", orgId });
     signal.throwIfAborted();
     await cancelOrgRuns(db, orgId, {
@@ -1075,11 +993,6 @@ export const cleanupClerkDeletedOrg$ = command(
     await get(deleteOrgS3Data(db, orgId));
     signal.throwIfAborted();
     await deleteOrgData(db, orgId, signal);
-    await completeChatContentDeletion(db, {
-      subjectKind: "organization",
-      subjectId: orgId,
-      sourceReference: `clerk:organization:${orgId}`,
-    });
   },
 );
 
@@ -1108,10 +1021,8 @@ export const cleanupClerkDeletedUser$ = command(
     const db = set(writeDb$);
     await eraseVncOwnerData(db, { kind: "user", userId });
     signal.throwIfAborted();
-    await cancelUserRuns(db, userId, {
-      cascadeOwnedAgents: true,
-      revokeMorningBriefCollection: true,
-    });
+    // Only the user's own runs: members' runs on Agents the user owns continue.
+    await cancelUserRuns(db, userId, { revokeMorningBriefCollection: true });
     signal.throwIfAborted();
     await revokeMorningBriefScheduleOwnership(db, { kind: "user", userId });
     signal.throwIfAborted();

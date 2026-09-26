@@ -3,7 +3,7 @@ import { Button } from "@okouai/ui/components/ui/button";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { AlertCircle, Loader2, RotateCcw, Sunrise } from "lucide-react";
+import { AlertCircle, RotateCcw, Sunrise } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -19,13 +19,11 @@ import { PreferenceCardRow } from "./preference-card-row.tsx";
 
 interface MorningBriefStatusProps {
   readonly state: MorningBriefPreferenceState | undefined;
-  readonly loading: boolean;
   readonly loadFailed: boolean;
   readonly mutationFailed: boolean;
 }
 
 type MorningBriefStatusKey =
-  | "loading"
   | "retryMessage"
   | "conflict"
   | "missingTimezone"
@@ -35,13 +33,9 @@ type MorningBriefStatusKey =
 
 function morningBriefStatusKey({
   state,
-  loading,
   loadFailed,
   mutationFailed,
 }: MorningBriefStatusProps): MorningBriefStatusKey | null {
-  if (loading) {
-    return "loading";
-  }
   if (loadFailed || mutationFailed) {
     return "retryMessage";
   }
@@ -78,7 +72,6 @@ function MorningBriefStatus(props: MorningBriefStatusProps) {
       aria-live="polite"
     >
       {showAlert && <AlertCircle className="size-3.5 shrink-0" />}
-      {key === "loading" && <Loader2 className="size-3.5 animate-spin" />}
       {key !== null && (
         <span>
           {t(($) => {
@@ -169,7 +162,6 @@ export function MorningBriefSettings() {
         status={
           <MorningBriefStatus
             state={state}
-            loading={loading || mutating}
             loadFailed={loadFailed}
             mutationFailed={mutationFailed}
           />

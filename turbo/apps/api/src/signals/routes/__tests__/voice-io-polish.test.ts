@@ -166,23 +166,6 @@ describe("POST /api/voice-io/polish", () => {
   });
 
   it.each([
-    {
-      reason: "output_truncated",
-      body: {
-        candidates: [
-          {
-            finishReason: "MAX_TOKENS",
-            content: { parts: [{ text: "private partial transcript" }] },
-          },
-        ],
-      },
-    },
-    {
-      reason: "blocked",
-      body: {
-        promptFeedback: { blockReason: "private upstream block reason" },
-      },
-    },
     { reason: "blocked", body: { candidates: [{ finishReason: "SAFETY" }] } },
     {
       reason: "non_stop",

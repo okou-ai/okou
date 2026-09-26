@@ -1,10 +1,10 @@
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
-import { cleanupExpiredRunActivity$ } from "./run-activity-snapshot.service";
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import {
-  COMPUTE_CLOSURE_ERROR,
+  releaseActiveAgentRuns,
   transitionAgentRunsToTerminal,
 } from "./agent-run-terminal-transition.service";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
@@ -56,6 +56,7 @@ import {
   type ThreadlessRunCleanupResult,
 } from "./threadless-run-cleanup.service";
 import { cleanupExpiredPiApiFirstTurnData$ } from "./pi-api-first-turn-cleanup.service";
+import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
 import { lockAgentRunCheckpointLifecycle } from "./agent-run-checkpoint-lifecycle-lock.service";
 import { lockChatQueueThread } from "./chat-event-queue.service";
 import {
@@ -114,8 +115,7 @@ interface StaleRun {
   readonly sandboxId: string | null;
   readonly runnerGroup: string | null;
   readonly chatThreadId: string | null;
-  readonly lastHeartbeatAt: Date | null;
-  readonly createdAt: Date;
+  readonly lastHeartbeatAt: Date;
   readonly composeName: string | null;
 }
 
@@ -145,8 +145,6 @@ interface LockedTimeoutRun {
   readonly sandboxId: string | null;
   readonly runnerGroup: string | null;
   readonly chatThreadId: string | null;
-  readonly lastHeartbeatAt: Date | null;
-  readonly createdAt: Date;
 }
 
 interface CommittedTimeout {
@@ -174,8 +172,7 @@ function staleRunCutoff(run: StaleRun, cutoffs: CleanupCutoffs): Date {
 }
 
 function isExpiredRun(run: StaleRun, cutoffs: CleanupCutoffs): boolean {
-  const referenceTime = run.lastHeartbeatAt ?? run.createdAt;
-  return referenceTime < staleRunCutoff(run, cutoffs);
+  return run.lastHeartbeatAt < staleRunCutoff(run, cutoffs);
 }
 
 async function publishQueueMarkerNotificationSafely(
@@ -203,8 +200,6 @@ async function lockTimeoutRun(
       sandboxId: agentRuns.sandboxId,
       runnerGroup: agentRuns.runnerGroup,
       chatThreadId: agentRuns.chatThreadId,
-      lastHeartbeatAt: agentRuns.lastHeartbeatAt,
-      createdAt: agentRuns.createdAt,
     })
     .from(agentRuns)
     .where(eq(agentRuns.id, runId))
@@ -377,8 +372,16 @@ async function commitStaleRunTimeout(
         ) {
           return { kind: "skipped" };
         }
-        const referenceTime = lockedRun.lastHeartbeatAt ?? lockedRun.createdAt;
-        if (referenceTime >= cutoff) {
+        // Heartbeats no longer lock agent_runs. Lock their narrow row for the
+        // timeout transaction so a heartbeat cannot commit after this check
+        // but before the final release of the active slot.
+        const [active] = await tx
+          .select({ lastHeartbeatAt: activeAgentRuns.lastHeartbeatAt })
+          .from(activeAgentRuns)
+          .where(eq(activeAgentRuns.runId, run.id))
+          .for("update", { of: activeAgentRuns });
+        signal.throwIfAborted();
+        if (!active || active.lastHeartbeatAt >= cutoff) {
           return { kind: "skipped" };
         }
 
@@ -410,6 +413,11 @@ async function commitStaleRunTimeout(
         }
 
         await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, run.id));
+        signal.throwIfAborted();
+
+        // The runner is considered dead and will not report completion, so
+        // release the active row whether or not the run started.
+        await releaseActiveAgentRuns(tx, [run.id]);
         signal.throwIfAborted();
 
         return {
@@ -501,14 +509,13 @@ const cleanupSingleRun$ = command(
     signal.throwIfAborted();
 
     const isDebug = run.composeName?.startsWith(DEBUG_COMPOSE_PREFIX) ?? false;
-    const referenceTime = run.lastHeartbeatAt ?? run.createdAt;
     L.debug("Cleaned up expired run", {
       runId: run.id,
       status: run.status,
       sandboxId: committed.sandboxId,
       composeName: run.composeName,
       isDebug,
-      referenceTime: referenceTime.toISOString(),
+      referenceTime: run.lastHeartbeatAt.toISOString(),
     });
 
     return {
@@ -617,40 +624,17 @@ async function cleanupExpiredRunnerJobs(
   runIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<number> {
-  const deletedCount = await db.transaction(async (tx) => {
-    // Lock run before queue, as claims do. Recheck closure after waiting so an
-    // in-flight TTL statement cannot discard a newly retained locator.
-    const candidates = await tx
-      .select({ runId: agentRuns.id })
-      .from(agentRuns)
-      .innerJoin(runnerJobQueue, eq(runnerJobQueue.runId, agentRuns.id))
-      .where(
-        and(
-          lte(runnerJobQueue.expiresAt, sql`now()`),
-          sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
-          runIds === null ? undefined : inArray(agentRuns.id, runIds),
-        ),
-      )
-      .orderBy(agentRuns.createdAt, agentRuns.id)
-      .limit(100)
-      .for("update", { of: agentRuns });
-    if (candidates.length === 0) {
-      return 0;
-    }
-    const { rowCount } = await tx.delete(runnerJobQueue).where(
+  const { rowCount } = await db
+    .delete(runnerJobQueue)
+    .where(
       and(
-        inArray(
-          runnerJobQueue.runId,
-          candidates.map((row) => {
-            return row.runId;
-          }),
-        ),
         lte(runnerJobQueue.expiresAt, sql`now()`),
+        runIds === null ? undefined : inArray(runnerJobQueue.runId, runIds),
       ),
     );
-    return rowCount ?? 0;
-  });
   signal.throwIfAborted();
+
+  const deletedCount = rowCount ?? 0;
 
   if (deletedCount > 0) {
     L.debug("Cleaned up expired runner job queue entries", {
@@ -678,7 +662,6 @@ async function cleanupConnectorDiagnosticRegistrations(
           isNull(agentRuns.id),
           inArray(agentRuns.status, TERMINAL_RUN_STATUSES),
         ),
-        sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
         runIds === null
           ? undefined
           : inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds),
@@ -744,7 +727,7 @@ const cleanupGlobalMaintenance$ = command(
       L.error("Failed to retry Feishu connect welcomes", { error });
     });
     signal.throwIfAborted();
-    await set(cleanupExpiredRunActivity$, null, signal);
+    await set(releaseStaleTerminalActiveAgentRuns$, null, signal);
     signal.throwIfAborted();
     await set(cleanupExpiredPiApiFirstTurnData$, signal);
     signal.throwIfAborted();
@@ -757,7 +740,7 @@ const cleanupFixtureMaintenance$ = command(
     scope: Extract<CleanupSandboxesScope, { kind: "fixtures" }>,
     signal: AbortSignal,
   ): Promise<void> => {
-    await set(cleanupExpiredRunActivity$, scope.runIds, signal);
+    await set(releaseStaleTerminalActiveAgentRuns$, scope.runIds, signal);
     signal.throwIfAborted();
     await set(
       drainStaleChatThreadQueues$,
@@ -802,11 +785,11 @@ export const cleanupSandboxes$ = command(
         sandboxId: agentRuns.sandboxId,
         runnerGroup: agentRuns.runnerGroup,
         chatThreadId: agentRuns.chatThreadId,
-        lastHeartbeatAt: agentRuns.lastHeartbeatAt,
-        createdAt: agentRuns.createdAt,
+        lastHeartbeatAt: activeAgentRuns.lastHeartbeatAt,
         composeName: agents.name,
       })
-      .from(agentRuns)
+      .from(activeAgentRuns)
+      .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
       .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
       .leftJoin(agents, eq(agentSessions.agentId, agents.id))
       .where(

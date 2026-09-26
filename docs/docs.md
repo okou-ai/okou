@@ -23,11 +23,8 @@ surface; the index does not replace their detailed rules.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
-  concrete account ownership, bounded disconnect retention and activation gates.
-- [Subscription decryption experiment](./subscription-decryption-experiment.md):
-  bounded KMS concurrency, provider-lock measurements and failure trade-offs.
-- [Subscription equivalence experiment](./subscription-equivalence-experiment.md):
-  paired canonical/mirror proof decryption and complete caller measurements.
+  concrete account ownership, bounded disconnect retention and credential
+  storage/locking.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.
@@ -71,44 +68,8 @@ surface; the index does not replace their detailed rules.
 - [Hosted publication version retirement](./database/hosted-publication-retirement.md):
   immutable content identity, historical inventory, preserved links/permissions,
   and the consumer/data/rollback gates before schema contraction.
-- [Account telemetry and recovery erasure](./account-erasure-evidence.md):
-  dated sink/copy inventory, provider capability gaps, and the parent-worker
-  design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
 - [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
   scope, canonical chat history, checksum semantics, and download compatibility.
-- [Browser authorization request creation](./account-erasure-browser-authorization-creation.md):
-  account-erasure admission, retained thread/run identity, SQL cost inventory
-  and failure boundaries for minting cloud-browser authorization links.
-- [Computer Use authorization request creation](./account-erasure-computer-use-authorization-creation.md):
-  account-erasure admission, retained canonical identity, compatibility source
-  semantics and failure boundaries for Computer Use authorization links.
-- [Computer Use authorization Apply](./account-erasure-computer-use-authorization-apply.md):
-  canonical chat admission, retained request and thread identity, atomic sidebar
-  completion, bounded SQL inventory and explicit host/legacy residuals.
-- [Canonical authorization reads](./account-erasure-authorization-read.md):
-  deadlock-free Browser and Computer Use GET admission, same-thread concurrency,
-  exact SQL counts and complete unbounded host projection.
-- [Single-thread chat metadata](./account-erasure-chat-thread-metadata.md):
-  exact user authorization, canonical ownership admission, SQL counts, response
-  measurement and failure-path lifecycle evidence.
-- [Standalone Computer Use host directory](./account-erasure-computer-use-host-directory.md):
-  exact host-owner admission, complete online/offline projection, Agent-bound
-  narrowing and unbounded host-cardinality evidence.
-- [Computer Use host START](./account-erasure-computer-use-host-start.md):
-  shared user/organization producer admission for legacy creation and stable
-  installation reactivation, including credential and cancellation boundaries.
-- [Standalone Computer Use audit events](./account-erasure-computer-use-audit-events.md):
-  exact owner admission, retained selector/redaction semantics and bounded output
-  with explicit physical-scan evidence.
-- [Computer Use command GET](./account-erasure-computer-use-command-get.md):
-  canonical owner admission around the complete timeout-maintenance sweep,
-  response/auth compatibility, abort boundaries and exact SQL sequences.
-- [Computer Use command creation](./account-erasure-computer-use-command-creation.md):
-  canonical owner admission around complete host selection and insertion,
-  fixed closed response, fresh liveness clock and exact SQL sequences.
-- [Computer Use binary content reads](./account-erasure-computer-use-content-read.md):
-  canonical owner admission through complete screenshot/plugin byte acquisition,
-  provider cancellation ownership and the SQL-versus-S3 duration boundary.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.

@@ -265,8 +265,9 @@ const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
 const INDICATOR_AGENT_LIMIT = 128;
 const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
-const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
-const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+/** Unread candidates read per request: the newest threads within the lookback. */
+export const INDICATOR_UNREAD_CANDIDATE_LIMIT = 128;
+export const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
 function ownedChatThreadDetail(
   threadId: string,
@@ -531,12 +532,7 @@ export function chatThreadDraftIds(args: {
     const rows = await db
       .select({ id: chatThreadDrafts.chatThreadId })
       .from(chatThreadDrafts)
-      .where(
-        and(
-          eq(chatThreadDrafts.userId, args.userId),
-          isNotNull(chatThreadDrafts.draftUserMessage),
-        ),
-      );
+      .where(eq(chatThreadDrafts.userId, args.userId));
     return rows.map((row) => {
       return row.id;
     });
@@ -1002,12 +998,10 @@ async function deleteChatThreadInTransaction(
   });
 
   // Search rows are an eventually consistent derived projection without a
-  // parent FK. Remove them synchronously under the thread lock taken above:
-  // the projector now takes a conflicting KEY SHARE on this same row and
-  // revalidates the thread inside its transaction, so it either commits
-  // before this delete removes its rows or finds the thread gone and writes
-  // nothing. Delete the watermark first so the bounded orphan repair, which
-  // still covers pre-fence rows and older producers, keeps its anchor.
+  // parent FK. Remove the normal-path rows synchronously; the projection
+  // cron repairs only writes that race this transaction. Delete the
+  // watermark first so any later projector write also restores the cleanup
+  // anchor.
   await tx
     .delete(chatEventSearchMessageWatermarks)
     .where(eq(chatEventSearchMessageWatermarks.chatThreadId, ownedThread.id));
@@ -1140,21 +1134,13 @@ export const deleteChatThread$ = command(
 );
 
 /**
- * Update a chat thread's draft content + attachments.
+ * Save or clear the caller's composer draft for one thread.
  *
- * Missing or cross-user thread → returns `{ updated: false }` so the route
- * handler emits the correct 404. Draft changes do not publish
- * `threadListChanged`: the editing client updates its own sidebar locally, and
- * other clients pick the dot up from the drafts endpoint on their next list
- * reload. The route requires no organization and accepts a thread without an
- * Agent.
- *
- * The owner is read by primary key outside any transaction, then the draft is
- * written with one statement to `chat_thread_drafts`. Nothing here writes or
- * locks the hot `chat_threads` row, so a draft save never waits on event
- * projection, the run queue or the read cursor (#36173). A thread deleted after
- * the owner read can leave an unreachable draft row behind; removing it belongs
- * to deletion cleanup, not to this write.
+ * One statement on `chat_thread_drafts`, keyed by the thread and the caller.
+ * Nothing reads or locks `chat_threads`: a write for a thread the caller does
+ * not own, or for a missing thread, lands in a row keyed to the caller that no
+ * reader ever serves for anyone else. Draft changes do not publish
+ * `threadListChanged`; other clients pick the dot up from the drafts endpoint.
  */
 export const updateChatThreadDraft$ = command(
   async (
@@ -1166,19 +1152,8 @@ export const updateChatThreadDraft$ = command(
       readonly draftAttachments: readonly PersistedAttachment[] | null;
     },
     signal: AbortSignal,
-  ): Promise<{ readonly updated: boolean }> => {
-    const writeDb = set(writeDb$);
-    const [thread] = await writeDb
-      .select({ userId: chatThreads.userId })
-      .from(chatThreads)
-      .where(eq(chatThreads.id, args.threadId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (thread?.userId !== args.userId) {
-      return { updated: false };
-    }
-
-    await persistChatThreadDraft(writeDb, {
+  ): Promise<void> => {
+    await persistChatThreadDraft(set(writeDb$), {
       chatThreadId: args.threadId,
       userId: args.userId,
       draftUserMessage: args.draftUserMessage,
@@ -1187,6 +1162,5 @@ export const updateChatThreadDraft$ = command(
         : null,
     });
     signal.throwIfAborted();
-    return { updated: true };
   },
 );

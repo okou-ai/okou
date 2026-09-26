@@ -2,7 +2,7 @@
 
 ## Workflow import source column (2026-09-25)
 
-Migration `1248_workflow_import_source` adds the nullable
+Migration `1262_workflow_import_source` adds the nullable
 `workflows.import_source` column. It is a metadata-only `ADD COLUMN` without a
 default, so it takes a brief `ACCESS EXCLUSIVE` lock under the default 1s lock
 timeout and rewrites no rows.
@@ -16,6 +16,593 @@ which the API accepts and whose imports stay untagged, and it ignores the extra
 response field. A newer app reads a missing `importSource` from an older API as
 untagged. Tokens issued before this change carry no provider and keep working
 until they expire. No API rollback floor is needed.
+
+## R2-only chat thread snapshot API rollback floor (2026-09-26)
+
+The production API rollback resolver now rejects targets before the #36945
+main merge commit `3d93ff8d4b4a07a5888e3030e69b340f40da0ad4`. That API
+returns an R2 URL for every existing snapshot row, regardless of the request
+header; older rollback-window APIs can still return non-empty inline snapshots.
+The commit preceded release #36948 (`4ecb619b5c409396edd5815a1ce65941cb29cd74`),
+whose production API promotion succeeded on 2026-09-25 at 23:13:47 UTC
+([release run](https://github.com/okou-ai/okou/actions/runs/36198938622/job/108284233073)).
+
+This floor must be deployed before a separate follow-up removes Web App and CLI
+non-empty inline readers, the capability request header, and the inline
+contract variant for non-empty rows. The empty inline response for a scope
+without a snapshot row is permanent and stays supported. Removing client
+compatibility in this floor-setting release would not establish that the floor
+was already active in production. Recheck the serving API and floor before the
+follow-up enters its release path.
+
+## Chat thread snapshot JSONB column retired (2026-09-26)
+
+Migration `1261_drop_chat_thread_snapshot_jsonb` drops only
+`chat_thread_snapshots.chat_threads`. The API already reads the snapshot cursor
+and scoped R2 `object_key`, not the old JSONB body; the archive in R2 and the
+empty response for a scope without a snapshot row remain unchanged. A masked
+production census on 2026-09-26 00:14 UTC visited all 5,549 snapshot scopes
+in stable key order and observed no null `object_key` (paginated reads, not a
+single-transaction snapshot). This does not establish that every R2 object
+exists. The migration discards the old JSONB column and its contents, but
+leaves all R2 objects and their pointers untouched.
+
+Outgoing API artifacts still write an empty JSONB array on snapshot
+publication (via raw SQL or Drizzle). The owner explicitly accepts a temporary
+failure of that job while
+migrations run before the replacement API is promoted. It may upload an
+unreferenced immutable R2 object before its publish statement fails with
+`42703`; that invocation does not proceed to lifecycle-event pruning or R2
+snapshot garbage collection. Existing snapshot pointers, their R2 downloads,
+and the separate lifecycle-events API do not read the column. A new scope
+without a published snapshot takes the existing empty-snapshot plus event-tail
+path until the new compactor catches up. Verify the outgoing API is already an
+R2-only reader and that no older JSONB reader is still serving at migration
+time. The new API omits the column from both INSERT and UPDATE, so its
+compaction works against either side of the migration.
+
+Rollback does not restore the dropped column. The production rollback resolver
+therefore finds the first-parent main commit adding this migration and rejects
+all API targets before it, including the previous release whose compactor
+would fail and earlier APIs that still read JSONB. Until the new release is
+READY in production, no pre-migration API target is eligible; recovery requires
+fixing forward. This is the accepted single-release compatibility trade-off.
+The R2 JSON archive and its response contract are unchanged.
+
+## Personal subscription credentials become account-only (2026-09-26)
+
+Personal (`user_id <> '__org__'`) `claude-code-oauth-token` and
+`codex-oauth-token` credentials now live only in `model_provider_accounts` and
+`model_provider_account_secrets`. Organization subscriptions and API-key
+providers keep `model_providers` + `secrets` unchanged.
+
+Removed from the API:
+
+- the `secrets` mirror of the active account and the personal singleton fields
+  on `model_providers` (`token_expires_at`, `needs_reconnect`,
+  `last_refresh_error_code`, `secret_id`, `auth_method`, workspace/plan and
+  reset metadata are neither written nor read for personal rows; the columns
+  remain for organization providers);
+- lazy account seeding from legacy secrets, legacy bundle import, mirror/KMS
+  equivalence checks and the request-scoped coordination that existed only for
+  API 1.595.0 singleton writers (`docs/personal-subscription-run-identity.md`
+  formerly §A2), plus the sourceId-less personal reader;
+- every credential advisory and row lock on reads, run admission, connect,
+  reconnect, activation, disconnect and terminal cleanup. Token refresh keeps
+  the `model_provider_state` advisory lock.
+
+Migration `1260_personal_subscription_account_only` sets
+`model_providers.secret_id = NULL` for personal Claude/Codex providers, deletes
+their mirrored `secrets` rows (Claude token; Codex `CHATGPT_*`/`CODEX_AUTH_JSON`)
+and adds the unique index
+`idx_model_provider_accounts_provider_identity (model_provider_id, external_account_id)`
+(NULLs distinct). Connections merge by that identity with `INSERT ... ON
+CONFLICT`; concurrent conflicting account writes surface as `409`.
+
+Prerequisites: every personal Claude/Codex provider must own an account row
+before the migration (seeded 2026-09-26: 21 providers, 12 Claude + 9 Codex;
+the Codex seeds have NULL `external_account_id` until reconnect), and no
+duplicate non-NULL `(model_provider_id, external_account_id)` pair may exist.
+
+Overlap and rollback:
+
+- During the ~20s migration-to-promotion window (API overlap measured at
+  api-v1.673.0) the previous API still reads the mirror for some paths and may
+  report a personal subscription as unavailable or require reconnect. This is
+  accepted; no persisted data is lost because accounts are canonical.
+- This release is the API rollback floor for personal subscriptions. An older
+  API treats the missing mirror as an unavailable subscription and its legacy
+  import/seed paths could recreate or diverge from account state. The production
+  rollback resolver rejects API targets that predate the merge commit adding
+  `1260_personal_subscription_account_only.sql`; roll forward instead.
+
+## Computer Use audit column: code-only read/write cutover (2026-09-26)
+
+The production database still has
+`computer_use_command_audit_events.approval_outcome`. #36960 already changed
+the audit-list SELECT to project only response fields, but its Drizzle schema
+still declares the retired column. Drizzle therefore names it in audit INSERTs
+with `DEFAULT`, even though no writer supplies an approval outcome.
+
+This code-only release removes the Drizzle declaration without a migration.
+The new API's generated INSERT and SELECT no longer name the column; both work
+while the physical column still exists. Existing write-command and plugin
+audit route tests exercise the current endpoints against that retained schema.
+Older serving APIs can still insert because the column remains. Do not drop it
+until this version has been independently promoted to production, the old API
+instances have drained, and the production rollback floor excludes those old
+writers. The follow-up #36969 must remove the narrow migration-consistency
+test adapter for this retained nullable text column when it drops the physical
+column, and must raise the rollback floor to this cutover's canonical main
+merge commit. No screenshot decoder or index changes belong to this step.
+
+## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
+
+**Draft columns and owner key.** Migration `1257_drop_chat_thread_draft_columns` drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`, and makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.
+
+`PATCH /api/chat-threads/:id` no longer reads the thread. It upserts or deletes the caller's own row and always returns `204`; the contract no longer declares `404`. A write to a missing or foreign thread lands in a row keyed to the caller that nobody else reads.
+
+**Rollback floor: `7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38`** (#36932). Older APIs name the dropped columns in thread inserts or upsert `ON CONFLICT (chat_thread_id)`. The resolver enforces this floor. #36932 entered production in release #36941 before this contraction. The account-erasure retirement below also independently prohibits rolling back to pre-#36927 APIs.
+
+**Read cursor.** mark-read, mark-unread and mark-agent-read run without a transaction or account-erasure admission:
+
+- mark-read reads the thread and Agent by primary key, reads the newest terminal marker, then advances the cursor with one single-row compare-and-set;
+- mark-unread is one single-row `UPDATE`;
+- mark-agent-read takes the same bounded candidates as the unread indicators (last message within seven days and newer than the cursor, newest 128) and advances each with its own compare-and-set. Older unread threads under the Agent are not bulk-marked read.
+
+Responses are unchanged.
+
+**Indexes.** Migration `1256_drop_redundant_chat_thread_indexes` (non-transactional) drops `idx_chat_threads_user_agent_updated` and `idx_chat_threads_user_last_read` with `CONCURRENTLY`. The planner serves their prefixes from `idx_chat_threads_user_agent_last_message` and `idx_chat_threads_user_last_message_id`. Read-cursor-only updates become HOT-eligible. No API names these indexes.
+
+**Snapshot compaction.** The cron no longer unions every thread, event and snapshot scope:
+
+- it pages `chat_thread_event_sequences` by primary key and reads snapshot heads by user;
+- it builds each projection from the org's Agent ids and the user's threads, with no join;
+- it skips the R2 upload when the projection's content hash is unchanged;
+- it publishes with one single-row compare-and-set;
+- it prunes compacted events with bounded reads and one `DELETE` by id.
+
+Agent deletion reads the affected thread ids and owners in bounded keyset pages before the deletion transaction. After commit it appends `deleted` lifecycle events in small batches using the single-statement sequence allocator, with the captured org id (the Agent is already gone). Batch failures are logged, not retried, and never roll back deletion; as with `sort_touched`, an occasional missing event is accepted. Event-page reads keep `deleted` tombstones visible after the Agent is gone while continuing to filter other events by live Agent. With these events driving snapshot invalidation, the 24-hour full refresh and repeated empty-scope publication are removed. A scope with no visible event and no snapshot remains empty. The projection's timestamp strings keep the exact `jsonb_build_object` format.
+
+## Public brand retirement contraction (2026-09-25)
+
+Phase 2 of #36766 contracts the columns that Phase 1 stopped reading. Migration
+`1255_retire_public_brand` drops `public_brand` from `slack_org_installations`,
+`slack_chat_ingress`, `chat_slack_context`, `discord_chat_ingress`,
+`chat_discord_context`, `feishu_org_installations`, `feishu_org_connections`,
+`feishu_chat_ingress`, `chat_feishu_context`, `teams_org_installations`,
+`chat_teams_context`, `telegram_installations`, `telegram_official_user_links`,
+`chat_telegram_context`, `github_installations` (with `setup_public_brand`),
+`chat_github_context`, `chat_automation_context`, `push_subscriptions`,
+`email_outbox`, `export_jobs`, `usage_pack_invitation_purchases`,
+`browser_sessions` and `socialkit_download_jobs`, and removes their Drizzle
+declarations.
+
+The per-row link layout marker is renamed, not dropped: `public_brand` becomes
+`link_layout_segment` on `hosted_sites`, `hosted_deployments`,
+`private_hosted_deployments`, `artifact_shares` and `shared_threads`, with the
+same `okou` / `vm0` values, `NOT NULL` and `DEFAULT 'okou'`. The unique key
+`idx_hosted_sites_id_public_brand` and the foreign keys
+`fk_hosted_deployments_site_public_brand` and
+`fk_private_hosted_deployments_site_public_brand` are renamed to their
+`link_layout_segment` spellings with `RENAME CONSTRAINT`, so no index is rebuilt
+and no foreign key is revalidated. Every statement is a catalog-only change
+under the default 1s lock timeout; no table is rewritten or scanned. No
+function, trigger or view references the retired columns.
+
+Gate evidence: the seven Phase 1 slices (#36768, #36770–#36774, #36777) are all
+in API release `api-v1.676.0`, and `api/production` serves release #36892
+(`api-v1.677.1`, `2be63cd`) since 2026-09-25 11:25 UTC; every earlier
+production API that remains deployable contains Phase 1.
+
+Phase 1 APIs no longer read these columns, but they still declare them.
+Drizzle names every declared column in `insert` column lists and in bare
+`select()`, so those APIs still reach `public_brand` on every table above,
+including the five layout tables. As with `1228`, `test:migration-consistency`
+requires the declaration and the physical schema to agree, so the declaration
+changes and the migration ship in one release. Migrations run before API
+promotion. In the window before the previous API drains, its Slack, Discord,
+Feishu, Teams, Telegram, GitHub and automation ingress/context statements,
+push, email, export, usage-pack invitation, browser-session and SocialKit
+statements, and its hosted-site, artifact-share and shared-thread statements
+receive `42703`. Release this change alone at low traffic; the promotion window
+after migration completion is about 20 seconds.
+
+This release also stops writing the rollout-only `publicBrand: "okou"` in chat,
+Slack, Discord, Feishu, Teams, Telegram, GitHub and workflow-automation
+result-email callback payloads and in built-in generation requests, and removes
+the run-level and queued-launch brand. The Phase 1 readers of those payloads do
+not declare or read the field, and stored payloads that still carry it keep
+parsing because the current readers strip unknown keys.
+
+The `agentphone:chat` payload was the rolling-deploy exception. The Phase 1
+reader (`agentPhoneChatCallbackPayloadSchema`) required `publicBrand`, so Phase 2
+kept writing the literal `"okou"` while Phase 1 instances might still serve or
+be selected as rollback targets. The Phase 2 reader no longer declares the field.
+
+Follow-up #36913 stops writing that literal. Phase 2's migration and API shipped
+to `api/production` in release #36970 (`191d95c`): the production migration
+completed at 2026-09-26 00:50 UTC and API deployment succeeded. The most recent
+pre-Phase-2 API (`4ecb619`) was marked inactive at 00:50 UTC and no longer has a
+Vercel production alias; at the 02:29 UTC check, production API aliases pointed
+to the later Phase-2-descendant `355e1ac`. The production rollback workflow
+checks out `main`, where its target resolver rejects any commit predating the
+canonical `1255_retire_public_brand` migration merge; the resolver test passes.
+Stored callbacks with the old extra field still parse because the current reader
+strips unknown keys.
+
+Stored R2 records keep their historical names: the `publicBrand` field of
+policies, delivery records, preview grants, pointers and manifests, the
+`public-brand` object metadata, the `publicBrand` key of
+`run_uploaded_files.metadata`, and the `<segment>` path components. Legacy
+links keep resolving: the host Worker reads only R2 and is unaffected by the
+column rename, and the API reads the unchanged `okou` / `vm0` values from
+`link_layout_segment` to lay out records derived from existing content. OAuth
+and install states are unaffected; Phase 1 already removed the brand from them.
+
+Rollback promotes artifacts without restoring schema. The production rollback
+resolver therefore rejects API targets that predate the canonical main commit
+that added `1255_retire_public_brand.sql`. Recovering past that commit requires
+a forward-fix migration that restores the columns and the old layout column
+name, not an artifact rollback.
+
+## Account erasure retirement (2026-09-25)
+
+The whole account-erasure mechanism from EPIC #33745 is removed. It will be
+redesigned from scratch; until then account deletion runs the legacy Clerk
+cleanup, narrowed so that user deletion never deletes an Agent.
+
+- **Writer and reader fence.** API writes and reads no longer check whether
+  their user or organization was closed for erasure, take the shared subject
+  advisory lock, or set a custom `lock_timeout`/`statement_timeout` for it.
+  Nothing returns `subject_closed`, `account_closed`, "Account unavailable" or a
+  closure-only 404. The Computer Use host stop and command completion contracts
+  drop their `403` response; the Desktop client only handles `401`/`409` there.
+  `VNC_OWNER_CHANGED` leaves the VNC error contract and the App.
+- **Deletion hold (#36842).** The `clerk-user-deletion` job no longer yields for
+  24 hours before cleanup. Auth, firewall credential handoff, runner
+  cancellation state and X resource usage no longer look up a pending deletion
+  job; Clerk stops issuing tokens for a deleted user.
+- **Deletion job.** The Clerk `user.deleted` webhook still revokes shared-thread
+  artifacts, records one durable `clerk-user-deletion` job (#36236) and starts
+  it; the per-minute background-job cron reclaims unfinished work. The job now
+  runs only the legacy cleanup (`cleanupClerkDeletedUser$`, including the
+  empty-organization branch) and completes. There is no capture or verify
+  phase. Jobs queued by an older API with a `phase` or `safetyHold` checkpoint
+  simply run the idempotent cleanup. `organization.deleted` is unchanged: billing
+  cleanup in the webhook, then `cleanupClerkDeletedOrg$`.
+- **Agents are retained on user deletion.** User cleanup deletes no Agent and
+  never cascades through one. It removes only the user's own data by `user_id`:
+  their runs (cancelled first), sessions, chat threads and drafts, usage, stable
+  context, credentials, connectors, storages and the other per-user rows.
+  Agents the user owned keep `owner` pointing at the deleted user (no ownership
+  transfer), together with their instructions Storage, Workflows, Morning Brief
+  deliveries, other members' stable context, and other members' sessions,
+  threads and runs.
+  Other members' runs on those Agents are no longer cancelled. Organization
+  deletion is unchanged and still deletes every Agent in the organization.
+- **Executor and collectors.** The user executor, selector, ownership coverage
+  guard, relational sweep, every object/remote collector, shared blob erasure,
+  chat content deletion receipts and their late-content sweep, the dormant Clerk
+  bridge and the separate decision journal are deleted. Blob retention uses the
+  plain reference count again and upload intents are gone.
+- **X resource retention.** Clerk cleanup, telemetry ingestion and the
+  retention cron no longer take a global `x_resource_reads` advisory lock.
+  Ingestion still validates the UTC today/yesterday window, serializes claims
+  by the resource primary key, and holds the Run's SHARE lock while writing
+  usage. Cron reads at most 1,000 expired keys, then deletes only those keys
+  with a repeated day predicate in a separate statement. An insert committed
+  just after its final time check at midnight can leave an expired key until
+  the next retention tick; it cannot reopen the admission window. Database
+  global timeouts replace the per-transaction X resource and 100 ms Clerk
+  lifecycle overrides. An upload holding its Run lock may delay cleanup;
+  the user deletion job retries a failed attempt, organization cleanup does not.
+
+Rows written for a deleted account after its legacy cleanup committed are no
+longer swept by anything. That is the accepted gap until the redesign.
+
+Migration `1254_drop_account_erasure` follows the VNC migration `1253`, required
+agent-run context ownership migration `1252`, and Computer Use migration `1251`.
+It replaces the earlier, never-released
+`1248_drop_pi_stable_context_erasure_fences`. It drops the `account_erasure_*`
+tables (jobs, work, pages, sinks, selector dependencies, bridge ingress and
+replay), `chat_content_erasure_subjects`, `pi_stable_context_erasure_fences`,
+`blob_upload_intents`, and `blobs.erasure_pending`/`erasure_eligible_at` with
+their check constraint, in the same release by explicit decision rather than
+after a rollback window. An older API still serving during the overlap fails
+every path that touches those relations: account-erasure fence admission on
+almost every write, membership-cache refresh, Pi stable-context, connector,
+permission and Workflow admission, session-history blob retention and Clerk
+deletion. **Rolling the API back below this revision is unsupported.**
+
+Older entries below that mention account erasure, erasure admission, the
+relational sweep, collectors, the Clerk erasure bridge or deletion-status
+capabilities describe the retired mechanism.
+
+## Computer Use audit approval column: reader cutover (2026-09-25)
+
+`computer_use_command_audit_events.approval_outcome` belongs to the retired
+approval flow. No current writer sets it or response exposes it; a masked
+production census on 2026-09-25 found 0 non-null values across 11,258 audit
+rows. The audit-list API now selects only the fields it returns instead of the
+full table row; other audit reads already select individual columns. The
+physical Drizzle schema and database still declare `approval_outcome`, so this
+release does **not** drop or migrate the column. The HTTP response is unchanged.
+
+Drop the column in a follow-up release **after** this reader cutover has shipped
+to production, outgoing API instances have drained, and the enforced production
+API rollback floor is at or above this reader-cutover commit. Otherwise an
+older API's unqualified Drizzle `SELECT` would name the dropped column and fail
+with `42703` between database migration and API promotion (or after rollback).
+Reconfirm zero non-null rows before the DROP, remove the physical schema
+mapping in that same follow-up, and validate the old/new API/DB combinations.
+The column drop is not authorized by this preparatory release alone.
+
+## Discord file deliveries become fire and forget (2026-09-25)
+
+`POST /api/integrations/discord/files/complete` sends each upload operation to
+Discord at most once, without a nonce. A send that Discord rejects,
+rate-limits or never answers is recorded as a failed delivery with
+`retryable: false` and no `retryAfterSeconds`; a repeated completion returns the
+recorded outcome and never sends again. To retry, start a new upload operation.
+The enforced-nonce replay, its window and the stored retry deadline are
+removed, and new delivery rows no longer store a nonce.
+
+The delivery response no longer declares the unused optional
+`retryAfterSeconds` field, and the CLI no longer suggests retrying a failed or
+pending delivery. `pending` remains a valid response during concurrent
+completion; a repeated completion reports the recorded state without resending.
+Discord has no production users, so rows written by the previous replay flow
+need no migration; their extra JSONB keys are ignored.
+
+## Agent-run context ownership becomes required (2026-09-25)
+
+Migration `1252_chat_agent_run_context_owner_not_null` deletes
+`chat_agent_run_context` rows whose `source_user_id` or `source_org_id` is null,
+then makes both columns `NOT NULL`. Every API from the split writer on (API
+1.672.0) inserts a row only after reading both owners from the source thread and
+agent, so no rollback target writes a null owner. The deleted rows were written
+by older APIs; on 2026-09-25 all 955 had lost their source thread, so no owner
+could be derived. No code reads these rows, and the `chat_events.context_id`
+values that referenced 70 of them carry no foreign key.
+
+The Clerk legacy cleanup deletes these rows by copied ownership. The account-
+erasure collector and its captured replay are retired by this PR; older API
+instances cannot safely run against the dropped relations, and API rollback
+below this revision is unsupported as noted above.
+
+## Computer Use erasure admission and legacy host retirement (2026-09-25)
+
+Host START, command creation, the host directory and the audit-event list no
+longer take account-erasure admission or open transactions; START is one
+upsert and creation is a bounded host read plus one INSERT. A closed erasure
+subject is no longer refused with `403` by these routes; late writes
+are not swept until the deletion mechanism is redesigned.
+
+`POST /api/computer-use/hosts/start` now requires `installationId`. Hosts
+registered without one (the last was seen in August 2026) are no longer
+accepted, and stop always keeps the host as an offline installation instead of
+revoking it and clearing chat-thread bindings. Every current Desktop build
+sends `installationId`.
+
+Migration `1251_computer_use_commands_required_host_timeout` deletes commands
+left by the retired approval flow (and their audit rows), revokes any active
+host without an installation, and makes `computer_use_commands.host_id` and
+`timeout_ms` `NOT NULL`. Older APIs always write both columns for new commands,
+so they remain compatible after the migration.
+
+## Computer Use host sessions and command reads stop locking (2026-09-25)
+
+Computer Use heartbeat, command claim, command completion, host stop, command
+status reads and screenshot/plugin-content reads no longer open multi-statement
+transactions, take account-erasure admission locks or lock host/command rows.
+Each reads with plain bounded queries and writes with single-row conditional
+UPDATEs; a request that loses a race skips its write (heartbeat), reports
+`idle` (claim), or reports the command as already completed (completion).
+Heartbeats and claim polls only rewrite the host row when its reported state
+changed or `last_seen_at` is at least 30s old, and Desktop sends steady-state
+heartbeats every 15s instead of 2s.
+
+Observable differences:
+
+- A closed erasure subject is no longer refused with `403` by these routes; late
+  writes are not swept until the deletion mechanism is redesigned.
+- Claim is no longer serialized with stop. A claim that read the host just
+  before a concurrent stop can still start one command, which then fails
+  through the normal running-command timeout.
+- A command status read times out only the command being read. Other running
+  commands time out when they are read or when their host polls again.
+- Migration `1241_computer_use_host_liveness_indexes` (#36895) drops
+  `idx_computer_use_hosts_last_seen` and adds the partial unique index
+  `idx_computer_use_commands_running_host (host_id) WHERE status = 'running'`,
+  which now enforces one running command per host. Older APIs serialized claims
+  per host and never create a second running row, so they remain compatible.
+  While old and new APIs overlap, an old claim racing a new one for the same
+  host can hit the index and return one `500`; the Desktop recovers on its next
+  poll.
+
+## Active run state moves to `active_agent_runs` (2026-09-25, step 1 of 3)
+
+Heartbeats rewrote the wide `agent_runs` row and two heartbeat indexes that no
+query used, and activity snapshots were written through the run-content lock
+chain. Migration `1249` builds `idx_agent_runs_status` concurrently and drops
+`idx_agent_runs_status_heartbeat` and `idx_agent_runs_running_heartbeat`; no
+API names either index. Migration `1250` adds `active_agent_runs`, one narrow
+row per active run with an immutable `chat_thread_id` (no foreign key, null for
+threadless runs), and seeds it from queued, pending and running runs.
+
+A row lives while a runner may still work on the run. The new API inserts it as
+the launch transaction's last statement and refreshes its heartbeat on
+promotion, claim and every sandbox heartbeat. A run that never reached `running`
+loses the row when it turns terminal; a run that did, including one cancelled
+while running, keeps it until the completion webhook, the running-heartbeat
+timeout, or a cleanup sweep that releases rows of runs terminal and silent for
+the 120-second cancellation-recovery grace. Every release is the last
+statement of its transaction, after the provider-account cleanup. The follow-up
+per-thread admission index relies on this ordering. It still writes `agent_runs.last_heartbeat_at`, and timeout cleanup and capacity
+checks still read that column. Activity capture and the activity summary read
+and write only the active row with single-row compare-and-set updates; they no
+longer touch `run_activity_snapshots`, `chat_threads` or `chat_events`, and no
+longer pass the account-erasure write fence.
+
+During rollout, and on any rollback to an older API, the older API keeps writing
+`run_activity_snapshots`, creates runs without an active row (the new API shows
+no activity for them), and ends seeded runs without deleting their active row.
+New API instances no longer expire `run_activity_snapshots` rows; they stay
+until step 2 drops the table and remain erasable through the `agent_runs`
+cascade. An older API's account-erasure worker rejects the uncatalogued
+`active_agent_runs` table (`catalogue_uncovered`), so account deletions wait for
+a new worker during the migration-to-promotion window and on rollback. A row an
+older API abandons is either still live, or terminal and released by the
+stale-terminal sweep once its heartbeat and completion age past the grace; no
+reader treats it as more than activity for a run the summary already reports as
+ineligible, so none of these states needs a runtime fallback.
+
+## Active run state: readers and old storage retired (step 2 of 3)
+
+**Release gate:** #36900 / `c0a46af5` reached production in release #36948
+(run 36198938622); step 2 may enter the merge queue. Migration `1258` backfills
+missing active rows created by pre-#36900 API instances; it includes started
+terminal runs still within the 120-second recovery window or still heartbeating
+(except cancelled runs with completed recovery). It removes terminal rows only
+when _both_ completion and heartbeat are more than 120 seconds old, matching
+the existing stale-terminal sweep. The insert is idempotent on `run_id`.
+#36929 must rebase after this migration and remove its duplicate backfill;
+its own migration owns the unique `chat_thread_id` index and slot admission.
+
+Timeout cleanup now checks the active row's heartbeat (including its locked-run
+recheck); capacity excludes queued runs and expired pending runs but counts
+started terminal runs while their active row still exists. Launch, promotion,
+claim and sandbox heartbeats no longer write `agent_runs.last_heartbeat_at`.
+Activity and summary already use `active_agent_runs`; migration `1258` drops
+`run_activity_snapshots` and its ORM declaration. Once this release deploys,
+**do not roll back to #36900**: its timeout cleanup reads the now-stale
+`agent_runs.last_heartbeat_at`, and older APIs write the dropped snapshot
+table. Step 3 drops the old heartbeat column. Do not ship step 3 in this PR.
+
+## Active run state: `agent_runs.last_heartbeat_at` dropped (step 3 of 3)
+
+**Release gate:** step 2 (#36955, `e62567d3`) shipped alone in `api-v1.681.2`
+(release #36974). Promote the release carrying this change only after
+`api-v1.681.2` is live in production and the previous API has drained. Step 2
+is the first API that neither reads nor writes `agent_runs.last_heartbeat_at`;
+timeout cleanup, capacity and every heartbeat use `active_agent_runs`.
+
+Migration `1259` drops the column and this release removes its Drizzle
+declaration. `test:migration-consistency` requires both to ship together (as in
+`1228` and `1257`). Step 2 still declares the column, so Drizzle names it in
+every `agent_runs` insert, bare select and bare returning. Migrations run
+before API promotion; until the previous API drains, those statements on the
+old instances fail with `42703`, including run creation. Release this change
+alone at low traffic. The drop is metadata-only; the two heartbeat indexes on
+the column were already removed by `1249`.
+
+Rollback promotes artifacts without restoring schema, so the production
+rollback resolver rejects API targets that predate the canonical main commit
+that added `1259_drop_agent_runs_last_heartbeat_at.sql`. Recovery past it needs
+a forward-fix migration that restores the nullable column.
+
+## Chat thread archived rollout fallbacks removed (2026-09-25)
+
+Issue #36551 removes the bounded rollout fallbacks added with #36480. The
+`archived` field is now required in `chatThreadSnapshotProjectionSchema` and
+`chatThreadMetadataSchema`, and the `?? false` normalizations in chat thread
+event replay and the Platform metadata projection are gone.
+
+Evidence for each gate:
+
+- Web clients: the force-upgrade floor is 0.963.3; #36480 first shipped in
+  App 0.955.0.
+- API rollback: the production rollback floor is `32e48c76` (#36885), which
+  contains #36480, so no API from before archiving is serving or retained as a
+  rollback target.
+- Snapshots: a MaskDB census found all 5536 `chat_thread_snapshots` rows were
+  updated after the first production API containing #36480 was deployed
+  (2026-09-24T06:12Z; oldest row updated 2026-09-24T13:00Z).
+
+IndexedDB caches are intentionally **not** reset (`CHAT_IDB_VERSION` is
+unchanged). A Web snapshot cache row last written by a pre-0.955.0 build now
+fails schema parsing and takes the existing degraded read path, which refetches
+from the API. The CLI chat thread cache likewise treats such a row as invalid
+and rebuilds it. No database migration is included.
+
+## R2 chat thread snapshot rollout fallbacks removed (2026-09-25)
+
+Issue #36375 removes the rollout fallbacks that #36320 added. Evidence for the
+removal gates:
+
+- The Web App client floor is 0.963.3. #36320 first shipped in App 0.950.0.
+- The owner confirmed that no CLI builds from before R2 support remain in use.
+- A MaskDB census found 5536 `chat_thread_snapshots` rows, none with
+  `object_key IS NULL`. Compaction writes only rows that have an object key.
+- The production API rollback floor is 32e48c76 (#36885), which descends from
+  #36320.
+
+The API no longer reads the legacy `chat_threads` JSONB. A row without an
+object key is now an error. A scope without a snapshot row returns the
+permanent empty `{ chatThreads: [], latestEventId: null, latestSeqId: null }`
+shape. The App SharedWorker and CLI keep handling the inline contract variant for
+the API rollback window. They send the header, so current and rollback-window
+APIs return them an R2 URL whenever a row exists.
+
+At the time of #36942, one fallback remained: the native iOS TestFlight
+client (0.2.x) read only inline `chatThreads`, so the API materialized the R2
+archive for requests without the capability header. That branch was retired
+later on 2026-09-25 with explicit acceptance of breaking the old TestFlight
+builds; see "iOS inline chat thread snapshot response retired" below.
+
+## iOS inline chat thread snapshot response retired (2026-09-25)
+
+The owner approved removing the remaining header-less inline response for
+#36375 despite breaking old internal iOS TestFlight builds. For a scope with a
+compacted snapshot, `GET /api/chat-threads/snapshot` now returns a scoped,
+short-lived R2 URL whether or not `X-Chat-Thread-Snapshot-R2: 1` is present.
+The API no longer downloads and decompresses the R2 archive on behalf of a
+header-less client. A scope without a snapshot row still returns
+`{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
+
+The iOS TestFlight client currently decodes only inline `chatThreads`, so a
+header-less iOS build cannot load a non-empty compacted chat thread list from
+this API. Updating iOS to download the R2 URL remains separate work; this PR
+does not provide a minimum-version gate for iOS. Web App and CLI still send the
+capability header and accept inline responses for the existing API rollback
+window: an older API behind the current rollback floor still branches on that
+header. Keep the header in CORS and the shared inline response variant until
+the API rollback floor advances past that implementation.
+
+## Thread draft contraction, release 2 (2026-09-25)
+
+Release 2 of the thread-draft move off `chat_threads` (#36173). Release 1
+(#36897, merge commit `4558c9fa`) made `chat_thread_drafts` the only draft
+store and writes `user_id` on every row.
+
+Migration `1248_contract_chat_thread_drafts` fills any missing `user_id` from
+the thread. It then deletes cleared tombstones (both draft values null) and rows
+whose thread no longer exists, makes `user_id` and `draft_user_message`
+`NOT NULL`, drops `chat_thread_drafts_draft_user_message_check`, and adds the
+unique index `uq_chat_thread_drafts_thread_user`. Release 1 always writes an
+owner and deletes on clear, so it stays compatible with the contracted table
+during rollout; its `ON CONFLICT (chat_thread_id)` upsert still matches the
+unchanged primary key.
+
+The API drops the two compatibility paths Release 1 declared. The drafts listing
+no longer filters null tombstones, and account erasure no longer reaches draft
+rows through the thread, because every row now has an owner. Draft upserts
+target `(chat_thread_id, user_id)`. `GET /api/chat-threads/:id/draft` no longer
+declares `404` (Release 1 already never returns it), and the App stops accepting
+it. The runtime `chat_threads` mapping no longer declares `draft_user_message`
+or `draft_attachments`, so no API from this release names them in an implicit
+`INSERT`, `SELECT` or `RETURNING`. The DDL schema still declares them.
+
+**API rollback floor: `4558c9fac46ce1a96a25745b477b32b70dab7ae6`** (#36897). An
+older API dual-writes a draft row without `user_id` and fails every draft save
+against this schema. The production rollback resolver enforces the floor.
+
+Release 3 is allowed only after this API is in production and becomes the
+rollback floor. It drops the two `chat_threads` draft columns and their check
+constraint, which Release 1 would still name in thread inserts. It also makes
+`(chat_thread_id, user_id)` the primary key and lets the draft `PATCH` skip the
+owner read, so a missing or foreign thread returns `204` instead of `404`.
 
 ## Chat event retention and Discord delivery table retirement (2026-09-25)
 
@@ -249,24 +836,24 @@ older API is safe until that migration ships.
 
 ## Runner active-producer affinity for delayed finalization (2026-09-25)
 
-The Runner heartbeat may now include `activeReuseProducers`, bounded exact
-`runId/reuseKey/profile` capabilities for locally publishable active runs. The
-additive `runner_state.active_reuse_producers` JSONB column defaults to `[]`.
-An older Runner omits the field, which the new API reads as empty and writes as
-`[]`; its existing completion-relative 1.5s finalizing preference remains in
-place. An older API ignores the unknown heartbeat field from a new Runner and
-continues with its old timer. The new API only uses a capability for the exact
-completed predecessor on the same runner process generation and a fresh running
-heartbeat. Producer-qualified claim priority expires at successor creation
-plus 2s; it does not inherit the 30s heartbeat freshness interval. Runner-local
-pre-claim proof, running handoff, and global claim CAS remain unchanged.
+Every Runner heartbeat must include `activeReuseProducers`, even when empty.
+The API rejects a heartbeat that omits it; it no longer treats omission as an
+empty producer list. Each entry is a bounded exact `runId/reuseKey/profile`
+capability for a locally publishable active run. The additive
+`runner_state.active_reuse_producers` JSONB column retains its `[]` default for
+existing rows; the heartbeat handler always writes the supplied list.
 
-Deploy the additive DB migration before the API relies on the column. During
-mixed-version rollout, the old 1.5s bridge still covers short runs and older
-Runner instances. An API rollback can leave the unused column in place; do not
-drop it while the new API is a rollback target. Stale/missed producer revocation
-can delay an individual cold claim by at most the successor-relative preference
-window, never by heartbeat freshness; measure that tail cost alongside reuse.
+The API uses a producer capability only for the exact completed predecessor on
+the same Runner process generation and a fresh running heartbeat. Registration
+triggers an immediate but asynchronous producer heartbeat. A same-generation
+predecessor that completes before that snapshot reaches the API can still receive
+a completion-relative preference for at most 1.5s; this protects the current
+Runner's first-heartbeat race, not an omitted-field protocol. Producer-qualified
+claim priority instead expires at successor creation plus 2s and does not
+inherit the 30s heartbeat freshness interval. Runner-local pre-claim proof,
+running handoff, and global claim CAS remain unchanged. A stale or missed
+producer revocation can delay an individual cold claim only within the bounded
+successor-relative preference window; measure that tail cost alongside reuse.
 
 ## App floor 0.963.3 retires the mark-read `unreads` field (2026-09-25)
 
@@ -332,8 +919,8 @@ Migration `1237_public_brand_okou_default_platform` sets the column default to
 `browser_sessions` and `socialkit_download_jobs`). An old API reads `okou` from
 rows the new API inserts, and its own inserts still carry an explicit brand, so
 old API/new DB and rollback remain compatible. The columns and their ORM
-declarations stay in place; drop them in a separate migration after older API
-deployments drain.
+declarations stayed in place until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 `GET /api/shared-threads/:id` and `GET /api/shared-threads/:id/meta` no longer
 return `publicBrand`. No App code reads it, and the App does not validate
@@ -342,8 +929,8 @@ responses. The test-only email outbox state endpoint no longer returns
 
 Chat run callbacks no longer read `publicBrand`. The persisted `chat` callback
 payload still carries a fixed `publicBrand: "okou"`, because an older API
-instance that processes the callback defaults a missing value to `vm0`; stop
-writing it after older API deployments drain. Stored callbacks that carry any
+instance that processes the callback defaults a missing value to `vm0`; the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) stopped writing it. Stored callbacks that carry any
 `publicBrand`, including `vm0`, keep parsing because the payload schema passes
 unknown keys through, and the value is ignored. Provider delivery callback
 payloads keep the fixed value until their provider slices retire the field.
@@ -389,15 +976,15 @@ default), `chat_telegram_context` (previously no default),
 from rows the new API inserts, including the non-null brand its Telegram
 queued-launch path requires, so old API/new DB and rollback remain compatible.
 Existing rows keep their stored values; no current reader observes them. The
-columns and their ORM declarations stay in place; drop them in a separate
-migration after older API deployments drain.
+columns and their ORM declarations stayed in place until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 Teams and Telegram chat callback payloads, and the Teams delivery target inside
 persisted run payloads, still carry `publicBrand: "okou"`. APIs before this
 change require that key when they parse a pending callback or a claimed run, so
 removing it would break delivery during a rolling deploy or after an API
-rollback. The new readers ignore any stored value, including `vm0`. Stop
-writing the key when the column-drop follow-up lands.
+rollback. The new readers ignore any stored value, including `vm0`. The
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) stopped writing the key.
 
 The Teams OAuth `state` no longer carries `publicBrand`, and the callback no
 longer requires it. A state issued by an older API still parses because the
@@ -419,20 +1006,20 @@ to `'okou'` on `slack_chat_ingress`, `chat_slack_context`,
 `discord_chat_ingress` and `chat_discord_context` (previously no default);
 `slack_org_installations` already defaulted to `'okou'`. An old API therefore
 reads a non-null `okou` brand from rows the new API inserts, so old API/new DB
-and rollback remain compatible. The columns and their ORM declarations stay in
-place; drop them in a separate migration after older API deployments drain.
+and rollback remain compatible. The columns and their ORM declarations stayed in
+place until the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 Persisted callback payloads:
 
 - `slack:chat`: the reader no longer declares `publicBrand`, so stored payloads
   that carry it keep parsing (the key is stripped). Older APIs require the
-  field, so the writer still emits the literal `publicBrand: "okou"`. Remove
-  that write once no API rollback target predates this change.
+  field, so the writer kept emitting the literal `publicBrand: "okou"` until
+  the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 - `chat` callback `discordDelivery`: the target no longer declares
   `publicBrand`; stored targets that carry it keep parsing. Older APIs require
   `publicBrand: "okou"` on the stored target, so the persisted `chat` callback
-  still writes that literal through `storedDiscordDeliveryTarget`. Remove it
-  once no API rollback target predates this change.
+  kept writing that literal through `storedDiscordDeliveryTarget` until the
+  [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 Slack OAuth state no longer carries `publicBrand`. The new API accepts states
 issued before this change, because it ignores the key. An older API rejects
@@ -458,13 +1045,13 @@ Migration `1231_feishu_public_brand_okou_default` sets the column default to
 had none). An old API therefore reads `okou` from rows the new API inserts,
 including the non-null brand that its ingress processor and queued-launch path
 require, so old API/new DB and rollback remain compatible. The columns and their
-ORM declarations stay until a later migration drops them.
+ORM declarations stayed until the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 Stored `feishu:chat` and `feishu:org` callback payloads keep parsing: current
 readers no longer declare `publicBrand`, so a stored brand is ignored. Older
-APIs still require the field, so writers keep stamping the fixed
-`FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND` value until those APIs are no longer
-rollback targets.
+APIs still require the field, so writers kept stamping the fixed
+`FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND` value until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) excluded those APIs from rollback.
 
 Feishu OAuth state no longer carries `publicBrand`. States signed by an older
 API still verify, because the extra key is stripped. A state signed by the new
@@ -520,14 +1107,15 @@ The segment appears in R2 keys (`artifact-shares/<segment>/`,
 `publicBrand` field of stored R2 policies, delivery records, preview grants,
 pointers and manifests, in the `public-brand` object metadata, in the
 `publicBrand` key of `run_uploaded_files.metadata` and chat attachment
-metadata, and in the `public_brand` column of `hosted_sites`,
+metadata, and in the `link_layout_segment` column (named `public_brand` until
+the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25)) of `hosted_sites`,
 `hosted_deployments`, `private_hosted_deployments` and `artifact_shares`.
 Where a marker is absent — V1 artifact objects, V2 objects and canonical assets
 stored before the marker, pointers and manifests written before it, and
 historical public delivery writes — the layout is `legacy`. Present unknown
 values fail. The host Worker (#36766 slice G) uses the same segment names.
-Conversation snapshots are addressed through `shared_threads.public_brand`,
-which therefore remains readable as their layout marker until Phase 2.
+Conversation snapshots are addressed through
+`shared_threads.link_layout_segment`, which remains their layout marker.
 
 Writers therefore keep emitting the `okou` marker on every current-layout
 object: deployed Workers and an older API treat a missing marker as legacy.
@@ -547,15 +1135,14 @@ hosted sites, deployments, shares and shared threads, using the same layout that
 selects their URLs and keys, so rows do not depend on the migration having run.
 Old API/new DB and rollback remain compatible. The columns, the
 `(site_id, public_brand)` foreign keys and their unique key stay: they are the
-per-row layout marker for roughly 13.4k sites and 22.5k deployments. Phase 2
-may replace the marker with a neutral column (for example a `legacy_link_layout`
-boolean backfilled from `public_brand = 'vm0'`) before dropping
-`public_brand`; that requires its own expand/contract release.
+per-row layout marker for roughly 13.4k sites and 22.5k deployments. The
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) renamed the column, its unique key and foreign keys to
+`link_layout_segment` with unchanged values.
 
-Built-in generation jobs no longer read a brand. New job requests keep writing
-`__builtInGeneration.publicBrand = "okou"` so an older API that completes the
-job during rollout or rollback does not publish its result in the legacy
-layout. Stored requests that still carry any `publicBrand` value parse and the
+Built-in generation jobs no longer read a brand. New job requests kept writing
+`__builtInGeneration.publicBrand = "okou"` until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25), so an older API that completed the job during rollout or rollback
+did not publish its result in the legacy layout. Stored requests that still carry any `publicBrand` value parse and the
 value is ignored.
 
 Environment names are unchanged because renaming deployed secrets is not safe
@@ -608,7 +1195,7 @@ to `'okou'` on `github_installations.setup_public_brand`,
 `'okou'`. An old API therefore reads `okou`, including the non-null automation
 brand its queue drain requires, from rows the new API inserts. Old API/new DB
 and rollback remain compatible. The columns and their Drizzle declarations
-stay until a separate Phase 2 drop.
+stayed until the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 GitHub App install state no longer carries `publicBrand` / `publicBrandSig`.
 The callback-redirect and requested-scope HMACs no longer include a brand and
@@ -626,8 +1213,8 @@ earlier APIs still parse. The `github:chat` reader ignores the field in the
 same way. Writers still emit `publicBrand: "okou"` in the result-email payload
 because earlier APIs require the key in their strict schema; the generic
 `chat` callback brand and the `github:chat` writer belong to the run-level
-brand cleanup. Remove these writes when the Phase 2 rollback floor excludes
-APIs that require them. No App, CLI or public contract changes.
+brand cleanup. The [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) removed these writes and raised the rollback
+floor past the APIs that require them. No App, CLI or public contract changes.
 
 ## Discord canonical Chat sources (2026-09-24)
 
@@ -975,6 +1562,9 @@ the stream for those older readers; roll forward instead.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
 
+Historical rollout record; the current header-less inline branch has since
+been retired as described at the top of this document.
+
 Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
 `chat_thread_snapshots`. Existing rows continue to carry the legacy
 `chat_threads` JSONB and the API returns the same inline snapshot for them.
@@ -1005,6 +1595,10 @@ JSONB after the first R2 write would leave R2-backed snapshots unreadable;
 the production rollback resolver enforces the canonical main commit that first
 introduced `chat-thread-snapshot-object.ts` as the API reader floor. Recovery
 must stay at or above that floor or roll forward.
+
+The legacy JSONB read and the Web App/CLI inline fallbacks described above
+were removed on 2026-09-25. See "R2 chat thread snapshot rollout fallbacks
+removed" at the top of this file.
 
 ## Artifact catalog API handoff (2026-09-23)
 
@@ -1366,17 +1960,13 @@ or production backfill. Deploy the additive migration before an API that writes
 these rows. Existing Runner, Sandbox, CLI and persisted Pi resource-snapshot
 wire readers are unchanged.
 
-Legacy Clerk user and organization deletion closes a one-way subject digest in
-`pi_stable_context_erasure_fences` under the existing account-erasure advisory
-lock, in the same transaction that removes stable-context lifecycle rows. The
-real Clerk membership-cache refresh shares that admission and refuses a closed
-subject; generation initialization, demand registration, and publication make
-the same check. A refresh admitted before closure either finishes first and is
-subsequently cleaned up, or waits and observes the fence. The table is
-feature-local deletion finality: it does not register the dormant account-
-erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
-other product data. Keep stable-context activation on hold until migration 1168
-and this API writer are present on every serving API instance.
+Legacy Clerk user and organization deletion no longer writes
+`pi_stable_context_erasure_fences`, and no writer or reader consults it:
+membership-cache refresh, generation initialization, demand registration,
+publication, and connector, permission and Workflow writes proceed after
+deletion. Migration `1254_drop_account_erasure` drops the table. Keep
+stable-context activation on hold until migration 1168 is present on every
+serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
 generation/head treats the exact variant as missing and uses canonical

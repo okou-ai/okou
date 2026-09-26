@@ -36,6 +36,7 @@ import {
   type UserMessageInputDocument,
   type Indicators,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { CHAT_THREAD_SNAPSHOT_R2_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import type { VideoModelId } from "@okouai/api-contracts/contracts/video-models";
 import {
@@ -604,31 +605,28 @@ export function createChatFilesBddApi(context: TestContext) {
       readonly latestEventId: string | null;
       readonly latestSeqId: number | null;
     }> {
+      // Mirrors the Web App and CLI: capable clients always download R2.
+      const headers = {
+        ...authenticate(context, actor),
+        [CHAT_THREAD_SNAPSHOT_R2_HEADER]: "1",
+      };
       const response = await accept(
-        threadsClient().snapshot({
-          headers: authenticate(context, actor),
-        }),
+        threadsClient().snapshot({ headers }),
         [200],
       );
-      if (response.body.latestSeqId === undefined) {
-        throw new Error("Expected snapshot sequence cursor");
+      if (!("url" in response.body)) {
+        return response.body;
       }
-      if ("url" in response.body) {
-        const archiveResponse = await fetch(response.body.url);
-        if (!archiveResponse.ok) {
-          throw new Error("Failed to download chat thread snapshot");
-        }
-        const archive = chatThreadSnapshotArchiveSchema.parse(
-          await archiveResponse.json(),
-        );
-        return {
-          chatThreads: archive.chatThreads,
-          latestEventId: response.body.latestEventId,
-          latestSeqId: response.body.latestSeqId,
-        };
+      const archiveResponse = await fetch(response.body.url);
+      if (!archiveResponse.ok) {
+        throw new Error("Failed to download chat thread snapshot");
       }
+      const archive = chatThreadSnapshotArchiveSchema.parse(
+        await archiveResponse.json(),
+      );
       return {
-        ...response.body,
+        chatThreads: archive.chatThreads,
+        latestEventId: response.body.latestEventId,
         latestSeqId: response.body.latestSeqId,
       };
     },
@@ -901,20 +899,6 @@ export function createChatFilesBddApi(context: TestContext) {
       return response.body;
     },
 
-    async requestReadThreadDraft(
-      actor: ApiTestUser | null,
-      threadId: string,
-      statuses: readonly (200 | 400 | 401 | 404)[],
-    ) {
-      return await accept(
-        threadDraftClient().get({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-        }),
-        statuses,
-      );
-    },
-
     async patchThread(
       actor: ApiTestUser,
       threadId: string,
@@ -941,34 +925,6 @@ export function createChatFilesBddApi(context: TestContext) {
           body: requestBody,
         }),
         [204],
-      );
-    },
-
-    async requestPatchThread(
-      actor: ApiTestUser | null,
-      threadId: string,
-      body: {
-        readonly draftUserMessage: UserMessageInputDocument | null;
-        readonly draftAttachments?: readonly PersistedAttachment[] | null;
-      },
-      statuses: readonly (204 | 400 | 401 | 404)[],
-    ) {
-      return await accept(
-        threadByIdClient().patch({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: {
-            draftUserMessage: body.draftUserMessage,
-            ...(body.draftAttachments === undefined
-              ? {}
-              : {
-                  draftAttachments: body.draftAttachments
-                    ? [...body.draftAttachments]
-                    : null,
-                }),
-          },
-        }),
-        statuses,
       );
     },
 

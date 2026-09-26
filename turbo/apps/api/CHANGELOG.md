@@ -8,6 +8,137 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.681.4](https://github.com/okou-ai/okou/compare/api-v1.681.3...api-v1.681.4) (2026-09-26)
+
+
+### Refactoring
+
+* **api:** make personal subscription credentials account-only ([#36976](https://github.com/okou-ai/okou/issues/36976)) ([d9daec9](https://github.com/okou-ai/okou/commit/d9daec96b4dd954584ba06c7ac2a42e5d3c214b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.4
+    * @okouai/core bumped to 8.711.1
+    * @okouai/db bumped to 1.303.4
+    * @okouai/pi-agent-runtime bumped to 1.40.27
+
+## [1.681.3](https://github.com/okou-ai/okou/compare/api-v1.681.2...api-v1.681.3) (2026-09-26)
+
+
+### Refactoring
+
+* **api:** unify mcp activity and unread with chat indicators ([#36982](https://github.com/okou-ai/okou/issues/36982)) ([3c71465](https://github.com/okou-ai/okou/commit/3c71465c87d72241858dd157cd98c8b73c54e818))
+
+
+### Performance Improvements
+
+* **db:** drop agent_runs.last_heartbeat_at (active run state step 3) ([#36980](https://github.com/okou-ai/okou/issues/36980)) ([52fd72a](https://github.com/okou-ai/okou/commit/52fd72ae38e294aeabdba5ab71963566b7c3cb6d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.3
+    * @okouai/core bumped to 8.711.0
+    * @okouai/db bumped to 1.303.3
+    * @okouai/pi-agent-runtime bumped to 1.40.26
+
+## [1.681.2](https://github.com/okou-ai/okou/compare/api-v1.681.1...api-v1.681.2) (2026-09-26)
+
+
+### Performance Improvements
+
+* **api:** bound chat thread read, draft and snapshot paths ([#36944](https://github.com/okou-ai/okou/issues/36944)) ([d170783](https://github.com/okou-ai/okou/commit/d1707833dc21daab82ed43510dc8cd462f5c28ac))
+* **api:** switch run liveness reads to active agent runs ([#36955](https://github.com/okou-ai/okou/issues/36955)) ([e62567d](https://github.com/okou-ai/okou/commit/e62567d36dfe3d087278f56d0a1a88f16c35fa4e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.2
+    * @okouai/core bumped to 8.710.13
+    * @okouai/db bumped to 1.303.2
+    * @okouai/pi-agent-runtime bumped to 1.40.25
+
+## [1.681.1](https://github.com/okou-ai/okou/compare/api-v1.681.0...api-v1.681.1) (2026-09-26)
+
+
+### Refactoring
+
+* retire public brand columns and types ([#36909](https://github.com/okou-ai/okou/issues/36909)) ([99f320c](https://github.com/okou-ai/okou/commit/99f320ca41fdedafbf9cecaad34ebfa61235ccdb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.1
+    * @okouai/core bumped to 8.710.12
+    * @okouai/db bumped to 1.303.1
+    * @okouai/pi-agent-runtime bumped to 1.40.24
+
+## [1.681.0](https://github.com/okou-ai/okou/compare/api-v1.680.2...api-v1.681.0) (2026-09-25)
+
+
+### Features
+
+* **vnc:** add opt-in mac classic password profile ([#36856](https://github.com/okou-ai/okou/issues/36856)) ([ab807e1](https://github.com/okou-ai/okou/commit/ab807e1651f58fd68934104416b39beb37bf282c))
+
+
+### Refactoring
+
+* **api:** lock-free computer use command paths and retire erasure admission ([#36912](https://github.com/okou-ai/okou/issues/36912)) ([5270a70](https://github.com/okou-ai/okou/commit/5270a706e240e5df0e2f388dc0c0846653ad0bf3))
+* **api:** remove retired goal run-group lookup and branches ([#36933](https://github.com/okou-ai/okou/issues/36933)) ([12b6a9c](https://github.com/okou-ai/okou/commit/12b6a9c453ef02e3a028e9fddefa228f20a83864))
+* **api:** remove unused run output and queue fields ([#36965](https://github.com/okou-ai/okou/issues/36965)) ([c2b5dab](https://github.com/okou-ai/okou/commit/c2b5dab86acb5dda87b4d696b06141924d8e328b))
+* **api:** require agent-run context ownership and send discord file deliveries fire and forget ([#36911](https://github.com/okou-ai/okou/issues/36911)) ([76c73d2](https://github.com/okou-ai/okou/commit/76c73d22ca2e919cd13068ce89b025a40da4695c))
+* **api:** stop selecting retired computer use approval column ([#36960](https://github.com/okou-ai/okou/issues/36960)) ([41cc991](https://github.com/okou-ai/okou/commit/41cc9918009622ccad7c64e433d09db1a8dfbe9c))
+* **chat:** retire ios inline snapshot response ([#36945](https://github.com/okou-ai/okou/issues/36945)) ([3d93ff8](https://github.com/okou-ai/okou/commit/3d93ff8d4b4a07a5888e3030e69b340f40da0ad4))
+* remove expired deployment compatibility ([#36967](https://github.com/okou-ai/okou/issues/36967)) ([c1469bb](https://github.com/okou-ai/okou/commit/c1469bbd47aeea42ceaedc53c270923a82e46f16))
+* remove the account erasure mechanism ([#36927](https://github.com/okou-ai/okou/issues/36927)) ([6d1f353](https://github.com/okou-ai/okou/commit/6d1f35381f6205b8b440c4f4c6e2095d0c98a7e2))
+
+
+### Performance Improvements
+
+* **api:** move active run heartbeat and activity to active_agent_runs ([#36900](https://github.com/okou-ai/okou/issues/36900)) ([c0a46af](https://github.com/okou-ai/okou/commit/c0a46af59961f921987ad4d14e52ac772e66f830))
+* **api:** retire x resource admission lock after account erasure removal ([#36964](https://github.com/okou-ai/okou/issues/36964)) ([93db582](https://github.com/okou-ai/okou/commit/93db5825e09fee78c6ed720bb4ae35bde004fa7e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.0
+    * @okouai/core bumped to 8.710.11
+    * @okouai/db bumped to 1.303.0
+    * @okouai/pi-agent-runtime bumped to 1.40.23
+
+## [1.680.2](https://github.com/okou-ai/okou/compare/api-v1.680.1...api-v1.680.2) (2026-09-25)
+
+
+### Refactoring
+
+* contract thread drafts after the child-table cutover ([#36932](https://github.com/okou-ai/okou/issues/36932)) ([7a187fa](https://github.com/okou-ai/okou/commit/7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38))
+
+
+### Performance Improvements
+
+* **db:** drop discord deliveries and simplify chat event crons ([#36894](https://github.com/okou-ai/okou/issues/36894)) ([00edcaa](https://github.com/okou-ai/okou/commit/00edcaa76105997cc90d4b9eb68f6e8772243994))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.513.1
+    * @okouai/core bumped to 8.710.10
+    * @okouai/db bumped to 1.302.3
+    * @okouai/pi-agent-runtime bumped to 1.40.22
+
 ## [1.680.1](https://github.com/okou-ai/okou/compare/api-v1.680.0...api-v1.680.1) (2026-09-25)
 
 

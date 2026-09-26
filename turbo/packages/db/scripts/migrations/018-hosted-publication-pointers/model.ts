@@ -99,7 +99,7 @@ export const siteSchema = z.object({
   user_id: z.string(),
   slug: z.string(),
   requested_slug: z.string().nullable(),
-  public_brand: brandSchema,
+  link_layout_segment: brandSchema,
   public_slug: slugSchema,
   active_deployment_id: z.uuid().nullable(),
   created_at: z.date(),
@@ -109,7 +109,7 @@ export const shareSchema = z.object({
   id: z.uuid(),
   org_id: z.string(),
   user_id: z.string(),
-  public_brand: brandSchema,
+  link_layout_segment: brandSchema,
   target_kind: z.literal("html"),
   target_id: z.uuid(),
 });
@@ -118,7 +118,7 @@ export const deploymentSchema = z.object({
   site_id: z.uuid(),
   org_id: z.string(),
   user_id: z.string(),
-  public_brand: brandSchema,
+  link_layout_segment: brandSchema,
   status: z.enum(["uploading", "ready", "failed", "deleted"]),
   manifest: z.record(z.string(), z.unknown()),
   manifest_hash: z.string(),
@@ -312,7 +312,7 @@ export function validateIdentity(
   assert(
     share.org_id === orgId &&
       share.user_id === site.user_id &&
-      share.public_brand === site.public_brand &&
+      share.link_layout_segment === site.link_layout_segment &&
       share.target_id === site.id,
     "share_scope_mismatch",
   );
@@ -320,11 +320,11 @@ export function validateIdentity(
     policy.orgId === orgId &&
       policy.ownerId === site.user_id &&
       policy.shareId === share.id &&
-      policy.publicBrand === site.public_brand &&
+      policy.publicBrand === site.link_layout_segment &&
       policy.target.siteId === site.id &&
       policy.target.id === policy.target.manifest.deploymentId &&
       policy.target.siteId === policy.target.manifest.siteId &&
-      policy.target.manifest.publicBrand === site.public_brand &&
+      policy.target.manifest.publicBrand === site.link_layout_segment &&
       policy.target.manifest.publicSlug === site.public_slug,
     "policy_scope_mismatch",
   );
@@ -347,7 +347,7 @@ export function validatePlan(
   assert(
     planned.siteId === site.id &&
       planned.ownerId === site.user_id &&
-      planned.publicBrand === site.public_brand &&
+      planned.publicBrand === site.link_layout_segment &&
       planned.publicSlug === site.public_slug &&
       planned.requestedSlug === (site.requested_slug ?? site.slug) &&
       planned.shareId === share.id &&
@@ -391,7 +391,7 @@ export function validateDeployment(
       row.site_id === site.siteId &&
       row.org_id === orgId &&
       row.user_id === site.ownerId &&
-      row.public_brand === site.publicBrand &&
+      row.link_layout_segment === site.publicBrand &&
       (row.status === "uploading" || row.status === "ready") &&
       row.run_id === null &&
       row.r2_prefix === prefix(site) &&

@@ -10,10 +10,6 @@ import {
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { agents } from "../schema/agent";
 import { computerUseHosts } from "../schema/computer-use-host";
-import type {
-  ChatThreadDraftAttachments,
-  ChatThreadDraftUserMessage,
-} from "@okouai/db/jsonb-contracts/chat-thread";
 import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 
 import type { ChatThreadProvenance } from "../schema/chat-thread";
@@ -51,15 +47,6 @@ export function chatThreadColumns() {
      * No FK, for the same reason as agentSessionId; a dangling id is harmless.
      */
     agentSessionRunId: uuid("agent_session_run_id"),
-    /**
-     * Retired: the composer draft lives in `chat_thread_drafts`. Nothing reads
-     * or writes this column; the contract release drops it.
-     */
-    draftUserMessage:
-      jsonb("draft_user_message").$type<ChatThreadDraftUserMessage>(),
-    /** Retired with `draftUserMessage`; see `chat_thread_drafts`. */
-    draftAttachments:
-      jsonb("draft_attachments").$type<ChatThreadDraftAttachments>(),
     /**
      * Slack-style watermark: the last timestamp up to which the user has read
      * messages in this thread. It normally advances to the latest run-finish

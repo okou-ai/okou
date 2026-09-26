@@ -266,6 +266,11 @@ import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
+import {
+  ChatThreadLinkChip,
+  STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
+  STRUCTURED_INLINE_REFERENCE_CLASS,
+} from "../components/chat-thread-link-chip.tsx";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
@@ -7133,16 +7138,6 @@ function AgentRunSourceMessageAnnotation({
 // File chips carry their own border, so they need more breathing room from the
 // surrounding sentence than a borderless inline mention does.
 const INLINE_FILE_REFERENCE_SPACING_CLASS = "mx-1";
-const STRUCTURED_INLINE_REFERENCE_CLASS =
-  "relative -top-px mx-0.5 inline-flex h-7 max-w-[240px] items-center " +
-  "gap-1.5 rounded-md bg-orange-500/10 px-2 align-middle text-[13px] " +
-  "font-medium text-orange-600 dark:bg-orange-400/15 dark:text-orange-300";
-const STRUCTURED_INLINE_INTERACTIVE_CLASS =
-  "transition-colors hover:bg-orange-500/15 focus-visible:outline-none " +
-  "focus-visible:ring-2 focus-visible:ring-orange-500/30 " +
-  "active:bg-orange-500/20 dark:hover:bg-orange-400/20 " +
-  "dark:active:bg-orange-400/25";
-const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFERENCE_CLASS} ${STRUCTURED_INLINE_INTERACTIVE_CLASS}`;
 
 function UserMessageTemplateReference({
   part,
@@ -7248,33 +7243,6 @@ function UserMessageFileReference({
   );
 }
 
-function UserMessageChatThreadReference({
-  threadId,
-  title,
-}: {
-  threadId: string;
-  title: string;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Link
-      pathname={ROUTES.chat}
-      options={{ pathParams: { threadId } }}
-      aria-label={t(
-        ($) => {
-          return $.chat.thread.openNamedChat;
-        },
-        { title },
-      )}
-      className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-      title={title}
-    >
-      <MessageCircle size={13} className="shrink-0" />
-      <span className="min-w-0 truncate">{title}</span>
-    </Link>
-  );
-}
-
 function UserMessageAgentReference({
   agentId,
   name,
@@ -7325,7 +7293,7 @@ function UserMessageFeedbackNote({
         const key = `${identity}:${String(occurrence)}`;
         if (renderPart.type === "chat_thread") {
           return (
-            <UserMessageChatThreadReference
+            <ChatThreadLinkChip
               key={key}
               threadId={renderPart.part.threadId}
               title={renderPart.part.titleSnapshot}
@@ -7347,7 +7315,13 @@ function UserMessageFeedbackNote({
             <UserMessageTemplateReference key={key} part={renderPart.part} />
           );
         }
-        return <PlainTextWithLinks key={key} text={renderPart.part.text} />;
+        return (
+          <PlainTextWithLinks
+            key={key}
+            text={renderPart.part.text}
+            chatThreadChips
+          />
+        );
       })}
     </div>
   );
@@ -7490,11 +7464,11 @@ function UserMessagePartView({
   renderPart: UserMessageStandaloneRenderPart;
 }): ReactNode {
   if (renderPart.type === "text") {
-    return <PlainTextWithLinks text={renderPart.part.text} />;
+    return <PlainTextWithLinks text={renderPart.part.text} chatThreadChips />;
   }
   if (renderPart.type === "chat_thread") {
     return (
-      <UserMessageChatThreadReference
+      <ChatThreadLinkChip
         threadId={renderPart.part.threadId}
         title={renderPart.part.titleSnapshot}
       />

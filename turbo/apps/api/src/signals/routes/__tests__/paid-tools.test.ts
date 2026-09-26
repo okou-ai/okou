@@ -255,7 +255,7 @@ test("requires a workspace session and rejects run credentials", async () => {
 });
 
 test.each(["membership", "user", "organization"] as const)(
-  "%s deletion fences or clears scoped paid tool preferences",
+  "%s deletion clears exactly its paid tool preferences",
   async (scope) => {
     const current = await owner();
     const peer = await owner({ orgId: current.orgId });
@@ -295,22 +295,12 @@ test.each(["membership", "user", "organization"] as const)(
     );
     await flushWaitUntilForTest();
 
-    if (scope === "user") {
-      // The same deleted identity must be rejected in every workspace while
-      // its preferences await a separate owner-scoped erasure pass.
-      for (const identity of [current, elsewhere]) {
-        mocks.clerk.session(identity.userId, identity.orgId, "org:member");
-        const denied = await accept(client().get({ headers }), [401]);
-        expect(denied.body).toMatchObject({
-          error: { code: "UNAUTHORIZED" },
-        });
-      }
-    } else {
-      await expect(listFor(current)).resolves.toStrictEqual([]);
-      await expect(listFor(elsewhere)).resolves.toStrictEqual(["web-search"]);
-    }
+    await expect(listFor(current)).resolves.toStrictEqual([]);
     await expect(listFor(peer)).resolves.toStrictEqual(
       scope === "organization" ? [] : ["web-search"],
+    );
+    await expect(listFor(elsewhere)).resolves.toStrictEqual(
+      scope === "user" ? [] : ["web-search"],
     );
   },
 );

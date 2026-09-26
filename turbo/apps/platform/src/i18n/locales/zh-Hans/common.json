@@ -2558,7 +2558,7 @@
         "back": "浏览工作流",
         "browse": "浏览工作流",
         "close": "关闭",
-        "contextPrefix": "我在意的是：{{context}}",
+        "contextPrefix": "我在意的是：{{preference}}",
         "items": {
           "competitors": {
             "cadence": "每天或每周",
@@ -4254,9 +4254,7 @@
       "common": {
         "back": "返回",
         "continue": "继续",
-        "finish": "完成设置",
-        "notNow": "暂不",
-        "skip": "先跳过"
+        "notNow": "暂不"
       },
       "compliance": {
         "frameworks": {
@@ -6626,7 +6624,6 @@
       "morningBrief": {
         "conflict": "晨报的安装状态不一致，暂时无法使用。请在状态同步完成后重试。",
         "description": "每天早上 7:00（按你的时区）接收当日重点。",
-        "loading": "正在加载晨报设置…",
         "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
         "preparationFailed": "晨报设置会自动重试，你也可以现在就重试。",
@@ -7122,7 +7119,6 @@
       "invalidHost": "请输入有效的主机名或IP地址，不要包含URL、用户名或端口。",
       "invalidInput": "请检查VNC配置后重试。",
       "invalidTrust": "请输入有效的证书包：最多8个公开CA证书，总大小不超过64 KiB。",
-      "ownerChanged": "你的工作区访问权限已变更，请刷新后再继续。",
       "revisionExhausted": "该配置已无法继续更新，请新建一个。"
     },
     "host": "主机名或IP地址",
@@ -7148,6 +7144,8 @@
       "appleRsaSrpHelp": "必须通过已保存的 SSH 连接到 Mac，RFB 目标为 127.0.0.1 或 ::1。RFB 下发的 RSA 密钥不能独立证明主机身份；SRP 验证账户和服务端证明，SSH 保护整个 VNC 会话。SSH 主机密钥确认所选端点，但不能排除后续代理转发。",
       "appleSrp": "Mac 屏幕共享 (Apple Direct SRP)",
       "appleSrpHelp": "需要已保存的 Mac SSH 连接，RFB 目标必须是 127.0.0.1 或 ::1。SRP 验证账户和服务端证明；SSH 保护整个 VNC 会话。SSH 主机密钥确认所选端点，但不能排除后续代理转发。",
+      "appleVncPassword": "Mac 屏幕共享（经典 VNC 密码）",
+      "appleVncPasswordHelp": "Mac 可选 VNC 密码为 1–8 个可打印 ASCII 字节。裸 type 2 不验证服务器身份，也不加密桌面。已验证的 SSH 仅保护本次 Okou 会话，不能隔离 Mac 的监听端口；其他客户端可能因网络设置而访问 5900 端口。请自行决定是否在 Mac 上启用并承担相应风险。",
       "caBundle": "CA证书（PEM）",
       "caHelp": "最多8个CA证书，总大小64 KiB。请勿粘贴私钥或服务器证书。",
       "caHint": "粘贴签发该服务器证书的公开CA证书",
@@ -7169,6 +7167,7 @@
       "appleDhDestinationHelp": "Apple DH 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
       "appleRsaSrpDestinationHelp": "Apple RSA/SRP 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
       "appleSrpDestinationHelp": "Apple Direct SRP 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
+      "appleVncPasswordDestinationHelp": "经典 VNC 密码模式请填写 127.0.0.1 或 ::1；这是通过已保存 SSH 主机访问的 Mac 本机回环地址。",
       "destination": "RFB目标",
       "destinationHelp": "使用SSH路由时，将从所选SSH服务器访问此主机和端口，而不是由Runner直接访问。",
       "direct": "Runner直连",

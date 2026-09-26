@@ -36,7 +36,7 @@ export const MORNING_BRIEF_PREFERENCE_PROJECTION_VERSION = 1;
  * organization deletion paths; the Agent and thread keys fence the two
  * lifecycle deletions that invalidate a brief's destination. Before native
  * state becomes execution authority, that cache lifetime must be replaced with
- * durable membership and erasure ownership.
+ * durable membership and deletion ownership.
  */
 export const morningBriefInstalledPreferences = pgTable(
   "morning_brief_installed_preferences",

@@ -1,5 +1,77 @@
 # Changelog
 
+## [9.365.7](https://github.com/okou-ai/okou/compare/cli-v9.365.6...cli-v9.365.7) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.514.4
+    * @okouai/core bumped to 8.711.1
+    * @okouai/pi-agent-runtime bumped to 1.40.27
+
+## [9.365.6](https://github.com/okou-ai/okou/compare/cli-v9.365.5...cli-v9.365.6) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.514.3
+    * @okouai/core bumped to 8.711.0
+    * @okouai/pi-agent-runtime bumped to 1.40.26
+
+## [9.365.5](https://github.com/okou-ai/okou/compare/cli-v9.365.4...cli-v9.365.5) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.514.2
+    * @okouai/core bumped to 8.710.13
+    * @okouai/pi-agent-runtime bumped to 1.40.25
+
+## [9.365.4](https://github.com/okou-ai/okou/compare/cli-v9.365.3...cli-v9.365.4) (2026-09-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.514.1
+    * @okouai/core bumped to 8.710.12
+    * @okouai/pi-agent-runtime bumped to 1.40.24
+
+## [9.365.3](https://github.com/okou-ai/okou/compare/cli-v9.365.2...cli-v9.365.3) (2026-09-25)
+
+
+### Refactoring
+
+* **chat:** retire ios inline snapshot response ([#36945](https://github.com/okou-ai/okou/issues/36945)) ([3d93ff8](https://github.com/okou-ai/okou/commit/3d93ff8d4b4a07a5888e3030e69b340f40da0ad4))
+* remove redundant rollback checks and discord retry advice ([#36962](https://github.com/okou-ai/okou/issues/36962)) ([566e37b](https://github.com/okou-ai/okou/commit/566e37b48dc2ff1d6b3b55321d21769932493c09))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.514.0
+    * @okouai/core bumped to 8.710.11
+    * @okouai/pi-agent-runtime bumped to 1.40.23
+
+## [9.365.2](https://github.com/okou-ai/okou/compare/cli-v9.365.1...cli-v9.365.2) (2026-09-25)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.513.1
+    * @okouai/core bumped to 8.710.10
+    * @okouai/pi-agent-runtime bumped to 1.40.22
+
 ## [9.365.1](https://github.com/okou-ai/okou/compare/cli-v9.365.0...cli-v9.365.1) (2026-09-25)
 
 

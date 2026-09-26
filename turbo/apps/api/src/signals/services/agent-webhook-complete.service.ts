@@ -49,7 +49,10 @@ import {
   prepareAgentCheckpointPersistence$,
 } from "./agent-webhook-checkpoints.service";
 import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
-import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  releaseActiveAgentRuns,
+  transitionAgentRunsToTerminal,
+} from "./agent-run-terminal-transition.service";
 import {
   logAgentRunFailure,
   type AgentRunFailureLogSnapshot,
@@ -972,7 +975,7 @@ export const completeAgentRun$ = command(
       const result = await db.transaction(async (tx) => {
         await lockAgentRunCheckpointLifecycle(tx, input.body.runId);
         signal.throwIfAborted();
-        return await completeAgentRunTransition(
+        const transition = await completeAgentRunTransition(
           tx,
           input,
           {
@@ -982,6 +985,12 @@ export const completeAgentRun$ = command(
           },
           signal,
         );
+        if (transition.kind === "committed") {
+          // The runner reported completion, so the active row is released
+          // whether or not the run ever started. Must stay last in the tx.
+          await releaseActiveAgentRuns(tx, [input.body.runId]);
+        }
+        return transition;
       });
       signal.throwIfAborted();
       if (result.kind === "retry") {

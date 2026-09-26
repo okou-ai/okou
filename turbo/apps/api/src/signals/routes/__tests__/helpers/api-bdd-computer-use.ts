@@ -265,9 +265,9 @@ function hostTokenHeaders(hostToken: string | null): AuthHeaders {
 
 function hostRuntimeBody(options: ComputerUseHostStartOptions = {}) {
   return {
-    ...(options.installationId
-      ? { installationId: options.installationId }
-      : {}),
+    // Every Desktop registers with its installation; a new one per start
+    // unless the test is exercising reactivation of the same installation.
+    installationId: options.installationId ?? randomUUID(),
     hostName: options.hostName ?? "BDD Desktop",
     appVersion: options.appVersion ?? "0.1.0",
     osVersion: options.osVersion ?? "macOS 15",
@@ -710,7 +710,7 @@ export function createComputerUseBddApi(context: TestContext) {
 
     async requestComputerUseHeartbeat(
       hostToken: string | null,
-      statuses: readonly (200 | 401 | 403 | 409)[],
+      statuses: readonly (200 | 401 | 409)[],
     ) {
       return await accept(
         heartbeatClient().heartbeat({
@@ -736,7 +736,7 @@ export function createComputerUseBddApi(context: TestContext) {
 
     async requestStopComputerUseHost(
       hostToken: string | null,
-      statuses: readonly (200 | 401 | 403)[],
+      statuses: readonly (200 | 401)[],
     ) {
       return await accept(
         heartbeatClient().stop({
@@ -986,7 +986,7 @@ export function createComputerUseBddApi(context: TestContext) {
 
     async requestClaimNextComputerUseCommand(
       hostToken: string | null,
-      statuses: readonly (200 | 401 | 403)[],
+      statuses: readonly (200 | 401)[],
     ) {
       return await accept(
         hostCommandsClient().next({
@@ -1037,7 +1037,7 @@ export function createComputerUseBddApi(context: TestContext) {
       hostToken: string | null,
       commandId: string,
       body: ComputerUseCompleteBody,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 409)[],
+      statuses: readonly (200 | 400 | 401 | 404 | 409)[],
     ) {
       return await accept(
         hostCommandsClient().complete({

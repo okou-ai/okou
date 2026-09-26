@@ -61,9 +61,7 @@ export async function updateAgentVncAccess(
   signal: AbortSignal,
 ) {
   return await db.transaction(async (tx) => {
-    if (!(await enterVncWrite(tx, owner))) {
-      return null;
-    }
+    await enterVncWrite(tx, owner);
     const [agent] = await tx
       .select({ id: agents.id })
       .from(agents)

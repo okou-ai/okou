@@ -2023,6 +2023,9 @@ pub mod runners {
             /// VeNCrypt X509Plain.
             #[serde(rename = "x509_plain")]
             X509Plain,
+            /// Apple bare type 2, requiring SSH to Mac loopback.
+            #[serde(rename = "apple_vnc_password")]
+            AppleVncPassword,
             /// Apple DH type 30, requiring SSH to Mac loopback.
             #[serde(rename = "apple_dh")]
             AppleDh,
@@ -2284,6 +2287,8 @@ pub mod runners {
                 /// Required verified TLS trust policy.
                 trust: ResolveResponseResolvedSecurityX509VncTrust,
             },
+            /// Apple bare type 2; only the separately verified SSH channel protects the RFB session.
+            AppleVncPassword,
             /// Apple DH type 30; only the separately verified SSH channel protects the RFB session.
             AppleDh,
             /// Apple Direct SRP type 36; only the separately verified SSH channel protects the RFB session.
@@ -2301,6 +2306,8 @@ pub mod runners {
                     X509Vnc,
                     #[serde(rename = "x509_plain")]
                     X509Plain,
+                    #[serde(rename = "apple_vnc_password")]
+                    AppleVncPassword,
                     #[serde(rename = "apple_dh")]
                     AppleDh,
                     #[serde(rename = "apple_srp")]
@@ -2357,6 +2364,9 @@ pub mod runners {
                             }
                             (Some(Kind::X509Plain), Some(trust)) => {
                                 Ok(ResolveResponseResolvedSecurity::X509Plain { trust })
+                            }
+                            (Some(Kind::AppleVncPassword), None) => {
+                                Ok(ResolveResponseResolvedSecurity::AppleVncPassword)
                             }
                             (Some(Kind::AppleDh), None) => {
                                 Ok(ResolveResponseResolvedSecurity::AppleDh)
@@ -2506,6 +2516,21 @@ pub mod runners {
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedSecurity,
             },
+            /// Apple classic VNC password with verified SSH-to-Mac-loopback transport only.
+            ResolvedAppleVncPassword {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
+                /// Credential for the explicitly saved method.
+                authentication: ResolveResponseResolvedAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedSecurity,
+            },
             /// Apple DH credential and verified SSH-to-Mac-loopback transport only.
             ResolvedAppleDh {
                 /// Current private destination.
@@ -2566,6 +2591,8 @@ pub mod runners {
                     Resolved,
                     #[serde(rename = "resolved_transport")]
                     ResolvedTransport,
+                    #[serde(rename = "resolved_apple_vnc_password")]
+                    ResolvedAppleVncPassword,
                     #[serde(rename = "resolved_apple_dh")]
                     ResolvedAppleDh,
                     #[serde(rename = "resolved_apple_srp")]
@@ -2735,6 +2762,23 @@ pub mod runners {
                                 port,
                                 generation,
                                 server_name,
+                                transport,
+                                authentication,
+                                security,
+                            }),
+                            (
+                                Some(Kind::ResolvedAppleVncPassword),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                Some(authentication),
+                                Some(security),
+                                None,
+                                Some(transport),
+                            ) => Ok(ResolveResponse::ResolvedAppleVncPassword {
+                                host,
+                                port,
+                                generation,
                                 transport,
                                 authentication,
                                 security,

@@ -63,12 +63,12 @@ async function entitledNativeChatActor(): Promise<
   return fixture;
 }
 
-async function expectRunAppContext(args: {
+function expectRunAppContext(args: {
   readonly actor: ApiTestUser;
   readonly runId: string;
   readonly claim: RunnerClaim;
   readonly appUrl: string;
-}): Promise<void> {
+}): void {
   if (!args.actor.orgId) {
     throw new Error("Expected an organization-scoped chat actor");
   }
@@ -79,23 +79,6 @@ async function expectRunAppContext(args: {
   }
   expect(verifyOkouToken(token)).toMatchObject({
     runId: args.runId,
-  });
-  const state = await runStateStore.set(
-    readAgentRunState$,
-    {
-      orgId: args.actor.orgId,
-      userId: args.actor.userId,
-      runId: args.runId,
-    },
-    context.signal,
-  );
-  // Older API instances default a missing callback brand to VM0.
-  expect(
-    state.callbacks.find((callback) => {
-      return callback.internalKind === "chat";
-    }),
-  ).toMatchObject({
-    payload: { publicBrand: "okou" },
   });
 }
 
@@ -125,7 +108,7 @@ describe("CHAT-02: default assistant identity", () => {
     expect(anchorRun.appendSystemPrompt).toContain("Your name is Okou.");
 
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-    await expectRunAppContext({
+    expectRunAppContext({
       actor,
       runId: anchor.runId,
       claim: anchorClaim.claim,
@@ -184,7 +167,7 @@ describe("CHAT-02: default assistant identity", () => {
     const promotedRun = await api.readRun(actor, promoted.runId);
     expect(promotedRun.appendSystemPrompt).toContain("Your name is Okou.");
     const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
-    await expectRunAppContext({
+    expectRunAppContext({
       actor,
       runId: promoted.runId,
       claim: promotedClaim.claim,
@@ -206,7 +189,7 @@ describe("CHAT-02: default assistant identity", () => {
     expect(customPrompt).toContain("Your name is Nova.");
     expect(customPrompt).not.toContain("Your name is Okou.");
     const customClaim = await claimChatRun(runnerGroup, customRun.runId);
-    await expectRunAppContext({
+    expectRunAppContext({
       actor,
       runId: customRun.runId,
       claim: customClaim.claim,
@@ -564,37 +547,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     );
     expectApiError(unknownHost.body);
     expect(unknownHost.body.error.message).toBe("Computer-use host not found");
-
-    // Stopping a host revokes it, so an explicit selection reports it as
-    // missing rather than offline, and clears any thread binding immediately.
-    const stopped = await cu.startComputerUseHost(actor);
-    const stoppedPinned = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "pin the host before stopping it",
-        computerUseHostId: stopped.hostId,
-      },
-      [201],
-    );
-    if (stoppedPinned.status !== 201) {
-      throw new Error("Expected the stopped-host pin send to be accepted");
-    }
-    await cu.stopComputerUseHost(stopped.hostToken);
-    await expect(
-      readThreadComputerUseHostId(actor, stoppedPinned.body.threadId),
-    ).resolves.toBeNull();
-    const revokedHost = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "use a stopped host",
-        computerUseHostId: stopped.hostId,
-      },
-      [404],
-    );
-    expectApiError(revokedHost.body);
-    expect(revokedHost.body.error.message).toBe("Computer-use host not found");
 
     // Installation-backed hosts stop as temporary offline devices, so thread
     // bindings survive and reconnect to the same host id on the next start.

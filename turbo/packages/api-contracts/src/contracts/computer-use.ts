@@ -134,6 +134,10 @@ const computerUseRuntimeBodySchema = z.object({
   permissions: computerUsePermissionsSchema,
 });
 
+const computerUseHostStartBodySchema = computerUseRuntimeBodySchema.extend({
+  installationId: hostInstallationIdSchema,
+});
+
 const computerUseCommandTargetShape = {
   timeoutMs: z.number().int().min(1_000).max(120_000).default(60_000),
 } as const;
@@ -555,7 +559,7 @@ export const computerUseHostsContract = c.router({
     method: "POST",
     path: "/api/computer-use/hosts/start",
     headers: authHeadersSchema,
-    body: computerUseRuntimeBodySchema,
+    body: computerUseHostStartBodySchema,
     responses: {
       200: computerUseHostStartResponseSchema,
       401: apiErrorSchema,
@@ -586,7 +590,6 @@ export const computerUseHeartbeatContract = c.router({
     responses: {
       200: computerUseHeartbeatResponseSchema,
       401: apiErrorSchema,
-      403: apiErrorSchema,
       409: apiErrorSchema,
     },
     summary: "Refresh a desktop computer-use host heartbeat",
@@ -599,7 +602,6 @@ export const computerUseHeartbeatContract = c.router({
     responses: {
       200: computerUseHostStopResponseSchema,
       401: apiErrorSchema,
-      403: apiErrorSchema,
     },
     summary: "Stop a desktop computer-use host",
   },
@@ -756,7 +758,6 @@ export const computerUseHostCommandsContract = c.router({
     responses: {
       200: computerUseHostCommandNextResponseSchema,
       401: apiErrorSchema,
-      403: apiErrorSchema,
     },
     summary: "Claim the next approved desktop computer-use command",
   },
@@ -770,7 +771,6 @@ export const computerUseHostCommandsContract = c.router({
       200: computerUseCommandCompleteResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
-      403: apiErrorSchema,
       404: apiErrorSchema,
       409: apiErrorSchema,
     },

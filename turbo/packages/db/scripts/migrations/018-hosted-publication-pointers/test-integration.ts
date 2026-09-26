@@ -233,12 +233,12 @@ await test(
     await db.connect();
     try {
       await db.query(
-        "INSERT INTO hosted_sites (id, org_id, user_id, slug, requested_slug, public_brand, public_slug) VALUES ($1, $2, $3, $4, $4, 'okou', $4)",
+        "INSERT INTO hosted_sites (id, org_id, user_id, slug, requested_slug, link_layout_segment, public_slug) VALUES ($1, $2, $3, $4, $4, 'okou', $4)",
         [siteId, orgId, ownerId, slug],
       );
       await db.query(
         `INSERT INTO private_hosted_deployments
-      (id, site_id, org_id, user_id, public_brand, status, artifact_url, r2_prefix, manifest, manifest_hash, content_hash, file_count, size_bytes, url)
+      (id, site_id, org_id, user_id, link_layout_segment, status, artifact_url, r2_prefix, manifest, manifest_hash, content_hash, file_count, size_bytes, url)
       VALUES ($1, $2, $3, $4, 'okou', 'ready', $5, $6, $7, $8, $9, 1, $10, $5)`,
         [
           sourceId,
@@ -254,7 +254,7 @@ await test(
         ],
       );
       await db.query(
-        "INSERT INTO artifact_shares (id, org_id, user_id, public_brand, target_kind, target_id) VALUES ($1, $2, $3, 'okou', 'html', $4)",
+        "INSERT INTO artifact_shares (id, org_id, user_id, link_layout_segment, target_kind, target_id) VALUES ($1, $2, $3, 'okou', 'html', $4)",
         [shareId, orgId, ownerId, siteId],
       );
       // The older bootstrap must not consume version 5 and outrank this pending 4.
@@ -265,7 +265,7 @@ await test(
       };
       await db.query(
         `INSERT INTO hosted_deployments
-      (id, site_id, org_id, user_id, public_brand, status, r2_prefix, manifest, manifest_hash, content_hash, file_count, size_bytes, url)
+      (id, site_id, org_id, user_id, link_layout_segment, status, r2_prefix, manifest, manifest_hash, content_hash, file_count, size_bytes, url)
       VALUES ($1, $2, $3, $4, 'okou', 'uploading', $5, $6, $7, $8, 1, $9, $10)`,
         [
           pendingId,

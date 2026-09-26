@@ -2614,7 +2614,7 @@
         "back": "Esplora i workflow",
         "browse": "Esplora i workflow",
         "close": "Chiudi",
-        "contextPrefix": "Per me è importante: {{context}}",
+        "contextPrefix": "Per me è importante: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Ogni giorno o ogni settimana",
@@ -4330,9 +4330,7 @@
       "common": {
         "back": "Indietro",
         "continue": "Continua",
-        "finish": "Completa la configurazione",
-        "notNow": "Non ora",
-        "skip": "Salta per ora"
+        "notNow": "Non ora"
       },
       "compliance": {
         "frameworks": {
@@ -6710,7 +6708,6 @@
       "morningBrief": {
         "conflict": "Morning Brief non è temporaneamente disponibile perché lo stato dell'installazione non è coerente. Riprova al termine della riconciliazione.",
         "description": "Priorità quotidiane alle 7:00 nel tuo fuso orario.",
-        "loading": "Caricamento delle impostazioni di Morning Brief...",
         "missingDefaultAgent": "Scegli un Agent predefinito utilizzabile prima di attivare Morning Brief.",
         "missingTimezone": "Imposta un fuso orario valido prima di attivare Morning Brief.",
         "preparationFailed": "La configurazione verrà ritentata automaticamente. Puoi riprovare anche ora.",
@@ -7218,7 +7215,6 @@
       "invalidHost": "Inserisci un nome host o un indirizzo IP validi, senza URL, nome utente o porta.",
       "invalidInput": "Controlla la configurazione VNC e riprova.",
       "invalidTrust": "Inserisci un insieme valido di massimo 8 certificati CA pubblici, non superiore a 64 KiB.",
-      "ownerChanged": "Il tuo accesso allo spazio di lavoro è cambiato. Aggiorna prima di continuare.",
       "revisionExhausted": "Questa configurazione non può più essere aggiornata. Creane una nuova."
     },
     "host": "Nome host o indirizzo IP",
@@ -7244,6 +7240,8 @@
       "appleRsaSrpHelp": "Richiede SSH salvato al Mac e destinazione RFB 127.0.0.1 o ::1. La chiave RSA fornita da RFB non prova da sola l’identità dell’host. SRP verifica l’account e la prova del server; SSH protegge l’intera sessione. La chiave host SSH identifica l’endpoint scelto, ma non esclude un proxy successivo.",
       "appleSrp": "Condivisione schermo Mac (Apple Direct SRP)",
       "appleSrpHelp": "Richiede una connessione SSH salvata al Mac e 127.0.0.1 o ::1 come destinazione RFB. SRP verifica l’account e la prova del server; SSH protegge l’intera sessione VNC. La chiave host SSH identifica l’endpoint scelto, ma non esclude un proxy successivo.",
+      "appleVncPassword": "Condivisione schermo Mac (password VNC classica)",
+      "appleVncPasswordHelp": "La password VNC opzionale del Mac usa 1–8 byte ASCII stampabili. Il solo tipo 2 non verifica l’identità del server né cifra il desktop. SSH verificato protegge questa sessione Okou, non la porta del Mac: altri client potrebbero raggiungere la porta 5900 secondo la rete. Attiva l’opzione sul Mac solo se accetti il rischio.",
       "caBundle": "Certificati CA (PEM)",
       "caHelp": "Fino a 8 certificati CA, per un totale di 64 KiB. Non incollare una chiave privata né un certificato del server.",
       "caHint": "Incolla i certificati CA pubblici che hanno emesso il certificato del server",
@@ -7266,6 +7264,7 @@
       "appleDhDestinationHelp": "Per Apple DH, inserisci 127.0.0.1 o ::1. È l’indirizzo di loopback del Mac raggiunto tramite l’host SSH selezionato.",
       "appleRsaSrpDestinationHelp": "Per Apple RSA/SRP, inserisci 127.0.0.1 o ::1 sul Mac tramite l’host SSH selezionato.",
       "appleSrpDestinationHelp": "Per Apple Direct SRP, inserisci 127.0.0.1 o ::1. È l’indirizzo di loopback del Mac raggiunto tramite l’host SSH selezionato.",
+      "appleVncPasswordDestinationHelp": "Per la password VNC classica, inserisci 127.0.0.1 o ::1 sul Mac raggiunto tramite SSH salvato.",
       "destination": "Destinazione RFB",
       "destinationHelp": "Per i percorsi SSH, questo host e questa porta vengono raggiunti dal server SSH selezionato, non direttamente dal Runner.",
       "direct": "Diretto dal Runner",
