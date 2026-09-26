@@ -1,5 +1,47 @@
 # Deployment Compatibility
 
+## Chat search GIN index drops fastupdate and API maintenance; audit approval column contracted (2026-09-26)
+
+Migration `1263_chat_search_gin_fastupdate_off_drop_audit_approval` is
+non-transactional and does two things.
+
+It first drops `computer_use_command_audit_events.approval_outcome` under a 1 s
+`lock_timeout` and 10 s `statement_timeout`, since `DROP COLUMN` needs a brief
+ACCESS EXCLUSIVE lock. #36984 stopped naming that column in audit INSERT and
+SELECT, and its API reached production on 2026-09-26T02:28Z (release
+`d9daec96`). **API rollback floor: `cdeec36c168636b1a2e510e660eb6139c9c4e07a`**
+(#36984's merge commit). Earlier API artifacts name the column in every audit
+INSERT and would fail with `42703`; rollback does not restore the column.
+`.github/scripts/resolve-production-rollback-target.sh` enforces the floor. The
+migration-consistency adapter that restored this column in the generated
+schema is removed.
+
+It then runs
+`ALTER INDEX chat_event_search_messages_user_tsv_gin_idx SET (fastupdate = false)`
+and `gin_clean_pending_list` on that index, with `lock_timeout` raised to 10
+minutes and `statement_timeout` disabled, then resets both. `SET` takes SHARE
+UPDATE EXCLUSIVE and the flush works page by page, so neither blocks chat
+search reads or projector writes.
+
+The search projector no longer drains the pending list: it has no GIN
+maintenance budget, advisory lock or `pgstatginindex` call, and never defers
+candidates. `deferredThreads` is removed from the
+`/api/cron/project-chat-event-search` response, whose only caller is the Vercel
+cron, and the test-only projection route no longer accepts `gin_index_names`.
+
+A production-branch benchmark on 2026-09-26 (5,000 sampled real messages per
+run, one INSERT per transaction, warm cache) measured 21.2 s and 25.5 s total
+with fastupdate off against 14.6 s plus a 0.2 s flush with it on. p50 rose from
+0.11 ms to 0.55 ms and p99 from 46 ms to 67-79 ms. The largest single insert
+stayed about 0.5-0.6 s in both modes.
+
+New API/old DB is compatible: until the migration runs, PostgreSQL still
+flushes a full 4 MiB pending list in the foreground. Old API/new DB is
+compatible for the index: an older API finds zero pending pages and skips
+cleanup. The audit column floor above bounds API rollback. The `pgstattuple`
+extension stays installed for rollback targets that still call
+`pgstatginindex`; removing it needs a separate API rollback floor.
+
 ## R2-only chat thread snapshot API rollback floor (2026-09-26)
 
 The production API rollback resolver rejects targets before the #36945
@@ -117,6 +159,45 @@ writers. The follow-up #36969 must remove the narrow migration-consistency
 test adapter for this retained nullable text column when it drops the physical
 column, and must raise the rollback floor to this cutover's canonical main
 merge commit. No screenshot decoder or index changes belong to this step.
+The contraction, adapter removal and rollback floor shipped with migration
+`1263_chat_search_gin_fastupdate_off_drop_audit_approval` (see the entry above).
+
+## Chat run admission moves to the `active_agent_runs` thread slot (pending)
+
+**Release ordering:** #36900 shipped separately in release #36948. #36955
+merged into main with migration `1258_active_agent_runs_step2.sql` and shipped
+separately in release #36974. #36980's step-3 migration
+`1259_drop_agent_runs_last_heartbeat_at.sql` must ship alone in its own release
+(#36986), with the previous API drained. #36975's
+`1261_drop_chat_thread_snapshot_jsonb.sql` must also ship independently and
+its previous API must drain before #36929 enters the merge queue. Only then
+may #36929 ship with migration `1262_active_agent_runs_chat_thread_slot.sql`,
+after #36976's `1260_personal_subscription_account_only.sql` and #36975's
+`1261` in the migration journal. The slot rollout requires the deployed
+step-3 API as its predecessor; the effective rollback floor also inherits the
+stricter #36976 account-only and #36975 snapshot-drop floors.
+
+#36955 owns the backfill for queued, pending, running and started terminal runs
+still within the recovery grace or heartbeating. #36929 does **not** repeat
+that backfill. Its migration keeps only the newest active row slotted per
+thread and adds the plain unique index on `active_agent_runs.chat_thread_id`.
+NULL thread IDs remain distinct. The new API's last launch statement inserts
+the active row with `ON CONFLICT (chat_thread_id) DO NOTHING`; a collision rolls
+back that launch as a lost queue claim and keeps the message queued. Queue-first
+admission, Web preflight and queue drain read the slot. Admission, completion,
+timeout and queued-run markers no longer lock the thread row; the session
+binding uses compare-and-set.
+
+**Mixed-version risk:** the step-3 API still inserts active rows without a
+thread-slot conflict handler. If its launch races a new API launch or a still-
+finishing terminal run, the unique index can reject its insert (`23505`): its
+launch rolls back and inline send returns a temporary HTTP 500. The separately
+enqueued input remains durable and can drain after slot release; no second run
+starts. This is a user-visible error, not seamless compatibility. The release
+owner must explicitly accept it and monitor errors and queue progress, or
+first provide an older-API conflict handler / avoid serving the older API
+after the index is created. Separating releases alone does not remove the
+rolling mixed-version window.
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 

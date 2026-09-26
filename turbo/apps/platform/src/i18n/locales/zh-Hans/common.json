@@ -2203,11 +2203,6 @@
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "为你的下一个内容做一位出镜主播",
-          "prompt": "为我的下一支视频创建一位会说话的数字人主播。",
-          "title": "创建数字人"
-        },
         "illustration": {
           "description": "按你想要的风格做出成品画面",
           "prompt": "按我描述的风格创作一张插画。",
@@ -2217,11 +2212,6 @@
           "description": "把一个主题或文档变成精致的演示文稿",
           "prompt": "根据我提供的主题或文档创建一份演示文稿。",
           "title": "创建演示文稿"
-        },
-        "video": {
-          "description": "把你的想法或素材变成成片",
-          "prompt": "把我的想法或素材做成一支成片视频。",
-          "title": "创建视频"
         },
         "website": {
           "description": "创建并发布一个可分享的页面",

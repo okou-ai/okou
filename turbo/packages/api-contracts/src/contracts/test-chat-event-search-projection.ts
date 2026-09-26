@@ -7,11 +7,6 @@ const c = initContract();
 
 export const testChatEventSearchProjectionBodySchema = z.object({
   chat_thread_ids: z.array(z.uuid()).min(1).max(20),
-  gin_index_names: z
-    .array(z.string().regex(/^chat_search_gin_test_[a-f0-9]{32}$/u))
-    .min(1)
-    .max(2)
-    .optional(),
 });
 
 export const testChatEventSearchProjectionContract = c.router({

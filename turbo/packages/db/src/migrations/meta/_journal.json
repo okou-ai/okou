@@ -1289,6 +1289,20 @@
       "when": 1790389782946,
       "tag": "1261_drop_chat_thread_snapshot_jsonb",
       "breakpoints": true
+    },
+    {
+      "idx": 1262,
+      "version": "7",
+      "when": 1790391011215,
+      "tag": "1262_active_agent_runs_chat_thread_slot",
+      "breakpoints": true
+    },
+    {
+      "idx": 1263,
+      "version": "7",
+      "when": 1790392511094,
+      "tag": "1263_chat_search_gin_fastupdate_off_drop_audit_approval",
+      "breakpoints": true
     }
   ]
 }
