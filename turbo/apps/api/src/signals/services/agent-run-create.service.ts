@@ -5899,16 +5899,17 @@ async function buildPermissionManifest(
 }
 
 /**
- * Caller owns the organization capacity advisory lock. Each older eligible
- * The outcome stays the existing capacity outcome, so a queue-enabled caller
- * queues and a nonqueue caller keeps its current error.
+ * Final admission callers own the organization capacity advisory lock; the
+ * preflight caller reads without it. The outcome stays the existing capacity
+ * outcome, so a queue-enabled caller queues and a nonqueue caller keeps its
+ * current error.
  */
 async function checkRunConcurrencyLimit(
-  tx: DbTransaction,
+  db: Pick<Db, "select">,
   orgId: string,
 ): Promise<CreateRunErrorResult | null> {
   const at = nowDate();
-  const state = await loadOrgConcurrencyAdmissionState(tx, {
+  const state = await loadOrgConcurrencyAdmissionState(db, {
     orgId,
     at,
     activePendingAfter: new Date(at.getTime() - PENDING_RUN_TTL_MS),
@@ -8497,29 +8498,22 @@ async function persistAtomicLaunchRows(
   return persisted;
 }
 
+/**
+ * Early rejection only. Final admission re-checks capacity under the
+ * organization admission lock, so this read needs no lock or transaction.
+ */
 async function checkRunConcurrencyPreflight(args: {
   readonly db: Db;
   readonly orgId: string;
   readonly timing: ApiDispatchTimingCollector;
 }): Promise<CreateRunErrorResult | null> {
-  return await args.db.transaction(async (tx) => {
-    await args.timing.measure(
-      "api_dispatch_concurrency_preflight_lock_wait",
-      "nested",
-      async () => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
-        );
-      },
-    );
-    return await args.timing.measure(
-      "api_dispatch_concurrency_preflight_check",
-      "nested",
-      async () => {
-        return await checkRunConcurrencyLimit(tx, args.orgId);
-      },
-    );
-  });
+  return await args.timing.measure(
+    "api_dispatch_concurrency_preflight_check",
+    "nested",
+    async () => {
+      return await checkRunConcurrencyLimit(args.db, args.orgId);
+    },
+  );
 }
 
 async function resolveQueueFirstAdmissionForLaunch(args: {
