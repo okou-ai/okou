@@ -225,6 +225,36 @@ def _data_sends(observed: list[commands.Command]) -> list[commands.SendData]:
     ]
 
 
+def _assert_forwarded_messages(
+    running: _RunningWebSocket,
+    batches: list[list[commands.Command]],
+    *,
+    from_client: bool,
+    permessage_deflate: str,
+    expected: list[bytes],
+) -> None:
+    receiver = _peer(
+        from_client=not from_client,
+        permessage_deflate=permessage_deflate,
+    )
+    destination = running.server if from_client else running.client
+    messages: list[bytes] = []
+    fragments: list[bytes] = []
+    for batch in batches:
+        for send in _data_sends(batch):
+            assert send.connection is destination
+            receiver.receive_data(send.data)
+            for event in receiver.events():
+                assert isinstance(event, wsproto.events.BytesMessage)
+                fragments.append(bytes(event.data))
+                if event.message_finished:
+                    messages.append(b"".join(fragments))
+                    fragments.clear()
+
+    assert fragments == []
+    assert messages == expected
+
+
 def _bounded_source_websocket(
     running: _RunningWebSocket,
     *,
@@ -298,6 +328,13 @@ async def _assert_compressed_fragmented_message_accepted(
     assert running.flow.websocket is not None
     assert running.flow.websocket.timestamp_end is None
     assert [message.content for message in running.flow.websocket.messages] == [content]
+    _assert_forwarded_messages(
+        running,
+        [prefix, complete],
+        from_client=from_client,
+        permessage_deflate=_PERMESSAGE_DEFLATE,
+        expected=[content],
+    )
 
 
 async def _assert_compressed_fragmented_byte_limit(
@@ -1123,6 +1160,13 @@ async def test_uncompressed_message_after_deflate_negotiation_clears_state(
     assert running.flow.websocket is not None
     assert running.flow.websocket.timestamp_end is None
     assert [message.content for message in running.flow.websocket.messages] == contents
+    _assert_forwarded_messages(
+        running,
+        [uncompressed, compressed],
+        from_client=from_client,
+        permessage_deflate=_PERMESSAGE_DEFLATE,
+        expected=contents,
+    )
     assert sum(len(fragment) for fragment in source.frame_buf) == 0
     assert bounded_deflate._decompressor is not None
     assert bounded_deflate._inbound_compressed is None
@@ -1130,8 +1174,10 @@ async def test_uncompressed_message_after_deflate_negotiation_clears_state(
     assert source._message_limit._budget.data_frames == 0
 
 
+@pytest.mark.parametrize("from_client", [True, False])
 async def test_compression_preserves_context_takeover_and_is_connection_local(
     tmp_path: Path,
+    from_client: bool,
 ) -> None:
     original_permessage_deflate = wsproto.extensions.PerMessageDeflate
 
@@ -1144,23 +1190,20 @@ async def test_compression_preserves_context_takeover_and_is_connection_local(
             permessage_deflate=_PERMESSAGE_DEFLATE,
         )
         peer = _peer(
-            from_client=False,
+            from_client=from_client,
             permessage_deflate=_PERMESSAGE_DEFLATE,
         )
         first = await _handle_event(
             addon_context,
             running,
             events.DataReceived(
-                running.server,
+                _source_connection(running, from_client=from_client),
                 peer.send(_message_event(b"shared-prefix-" * 32)),
             ),
         )
-        assert isinstance(
-            running.layer.server_ws,
-            websocket_framing._BoundedWebsocketConnection,
-        )
-        assert len(running.layer.server_ws._bounded_deflates) == 1
-        bounded_deflate = running.layer.server_ws._bounded_deflates[0]
+        source = _bounded_source_websocket(running, from_client=from_client)
+        assert len(source._bounded_deflates) == 1
+        bounded_deflate = source._bounded_deflates[0]
         first_decompressor = bounded_deflate._decompressor
         assert first_decompressor is not None
 
@@ -1168,7 +1211,7 @@ async def test_compression_preserves_context_takeover_and_is_connection_local(
             addon_context,
             running,
             events.DataReceived(
-                running.server,
+                _source_connection(running, from_client=from_client),
                 peer.send(_message_event(b"shared-prefix-" * 32 + b"second")),
             ),
         )
@@ -1182,6 +1225,13 @@ async def test_compression_preserves_context_takeover_and_is_connection_local(
         b"shared-prefix-" * 32,
         b"shared-prefix-" * 32 + b"second",
     ]
+    _assert_forwarded_messages(
+        running,
+        [first, second],
+        from_client=from_client,
+        permessage_deflate=_PERMESSAGE_DEFLATE,
+        expected=[b"shared-prefix-" * 32, b"shared-prefix-" * 32 + b"second"],
+    )
 
 
 @pytest.mark.parametrize(
@@ -1221,6 +1271,7 @@ async def test_compression_releases_negotiated_no_context_takeover_state(
         assert len(source_websocket._bounded_deflates) == 1
         bounded_deflate = source_websocket._bounded_deflates[0]
 
+        forwarded: list[list[commands.Command]] = []
         for content in contents:
             delivered = await _handle_event(
                 addon_context,
@@ -1236,9 +1287,17 @@ async def test_compression_releases_negotiated_no_context_takeover_state(
             assert running.flow.websocket is not None
             assert running.flow.websocket.messages[-1].content == content
             assert bounded_deflate._decompressor is None
+            forwarded.append(delivered)
 
     assert running.flow.websocket is not None
     assert [message.content for message in running.flow.websocket.messages] == contents
+    _assert_forwarded_messages(
+        running,
+        forwarded,
+        from_client=from_client,
+        permessage_deflate=permessage_deflate,
+        expected=contents,
+    )
 
 
 @pytest.mark.parametrize("from_client", [True, False])
