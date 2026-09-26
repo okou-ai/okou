@@ -213,7 +213,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_subscription_validate_admission"
   | "api_dispatch_check_concurrency_limit"
   | "api_dispatch_validate_official_workflow_admission"
-  | "api_dispatch_concurrency_preflight_lock_wait"
   | "api_dispatch_concurrency_preflight_check"
   | "api_dispatch_queue_promotion_lock_wait"
   | "api_dispatch_queue_promotion_lock_held"

@@ -917,9 +917,8 @@ async function completeInstallation(
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
     );
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext(${args.installation.orgId}))`,
-    );
+    // The installing -> installed CAS below owns activation. Run admission,
+    // reconciliation, and Copy only lock installed rows, so no org lock.
     await lockCanonicalAgentMutation(tx, args.installation.agentId);
     signal.throwIfAborted();
     const currentCatalog = await readAcceptedOfficialWorkflowCatalog(
