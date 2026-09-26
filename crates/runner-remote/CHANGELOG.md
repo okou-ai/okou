@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.5.0...runner-remote-v0.5.1) (2026-09-26)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#37056](https://github.com/okou-ai/okou/issues/37056)) ([736f701](https://github.com/okou-ai/okou/commit/736f70167be41d6d99cf07d842071cbd9b2fa68c))
+
 ## [0.5.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.4.4...runner-remote-v0.5.0) (2026-09-25)
 
 
