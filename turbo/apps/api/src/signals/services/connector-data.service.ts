@@ -2286,8 +2286,7 @@ function authorizedExternalIdForMutation(args: {
     : undefined;
 }
 
-interface CommitBuiltinConnectorTokenConnectionArgs {
-  readonly db: Tx;
+interface PreparedBuiltinConnectorTokenConnection {
   readonly orgId: string;
   readonly userId: string;
   readonly runtimeMethod: ConnectorRuntimeMethod;
@@ -2298,6 +2297,34 @@ interface CommitBuiltinConnectorTokenConnectionArgs {
   readonly oauthRequestedScopes: readonly string[];
   readonly oauthGrantedScopes: readonly string[];
   readonly tokenExpiresAt: Date | null;
+  readonly account: ConnectorAccountMutationIntent;
+  readonly matchExistingExternalIdentity?: boolean;
+  readonly insertConnectionId?: string;
+}
+
+interface CommitBuiltinConnectorTokenConnectionArgs extends PreparedBuiltinConnectorTokenConnection {
+  readonly db: Tx;
+}
+
+interface CommittedBuiltinConnectorTokenConnection {
+  readonly status: "connected";
+  readonly connectorRow: StoredConnectorRow;
+  readonly created: boolean;
+  readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
+  readonly pendingGoogleCalendarWatchStop: PendingGoogleCalendarWatchStop | null;
+}
+
+interface BuiltinConnectorTokenConnectionArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runtimeMethod: ConnectorRuntimeMethod;
+  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly outputs: BuiltinConnectorTokenOutputValues;
+  readonly userInfo: ExternalUserInfo;
+  readonly oauthRequestedScopes: readonly string[];
+  readonly oauthGrantedScopes: readonly string[];
+  readonly expiresIn?: number;
+  readonly extraConnectorSecrets?: Readonly<Record<string, string>>;
   readonly account: ConnectorAccountMutationIntent;
   readonly matchExistingExternalIdentity?: boolean;
   readonly insertConnectionId?: string;
@@ -2388,21 +2415,10 @@ async function prepareConnectorTokenConnectionCleanup(
   return { pendingTokenRevoke, pendingGoogleCalendarWatchStop };
 }
 
-async function commitConnectorTokenConnection(
+export async function resolveBuiltinConnectorTokenConnectionMutation(
   args: CommitBuiltinConnectorTokenConnectionArgs,
   signal: AbortSignal,
-): Promise<
-  | {
-      readonly status: "connected";
-      readonly connectorRow: StoredConnectorRow;
-      readonly created: boolean;
-      readonly pendingTokenRevoke: PendingBuiltinConnectorTokenRevoke | null;
-      readonly pendingGoogleCalendarWatchStop: PendingGoogleCalendarWatchStop | null;
-    }
-  | ConnectorConnectionMutationFailure
-  | { readonly status: "identityMismatch" }
-> {
-  const mutation = args.account;
+): Promise<ConnectorConnectionMutationResolution> {
   const resolution = await resolveConnectorConnectionMutation(args.db, {
     orgId: args.orgId,
     userId: args.userId,
@@ -2410,14 +2426,29 @@ async function commitConnectorTokenConnection(
       kind: "builtin",
       connectorSlug: args.runtimeMethod.connectorSlug,
     },
-    mutation,
+    mutation: args.account,
     allowSiblings: true,
     matchExternalId: authorizedExternalIdForMutation({
-      mutation,
+      mutation: args.account,
       matchExistingExternalIdentity: args.matchExistingExternalIdentity,
       externalId: args.userInfo.id,
     }),
   });
+  signal.throwIfAborted();
+  return resolution;
+}
+
+export async function commitBuiltinConnectorTokenConnection(
+  args: CommitBuiltinConnectorTokenConnectionArgs & {
+    readonly resolution: ConnectorConnectionMutationResolution;
+  },
+  signal: AbortSignal,
+): Promise<
+  | CommittedBuiltinConnectorTokenConnection
+  | ConnectorConnectionMutationFailure
+  | { readonly status: "identityMismatch" }
+> {
+  const resolution = args.resolution;
   signal.throwIfAborted();
   if (resolution.kind !== "ready") {
     return connectorConnectionMutationFailure(resolution);
@@ -2514,35 +2545,12 @@ async function commitConnectorTokenConnection(
   };
 }
 
-export const upsertBuiltinConnectorTokenConnection$ = command(
+export const prepareBuiltinConnectorTokenConnection$ = command(
   async (
-    { get, set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runtimeMethod: ConnectorRuntimeMethod;
-      readonly snapshot: ConnectorRuntimeSnapshot;
-      readonly outputs: BuiltinConnectorTokenOutputValues;
-      readonly userInfo: ExternalUserInfo;
-      readonly oauthRequestedScopes: readonly string[];
-      readonly oauthGrantedScopes: readonly string[];
-      readonly expiresIn?: number;
-      readonly extraConnectorSecrets?: Readonly<Record<string, string>>;
-      readonly account: ConnectorAccountMutationIntent;
-      readonly matchExistingExternalIdentity?: boolean;
-      readonly insertConnectionId?: string;
-    },
+    { get },
+    args: BuiltinConnectorTokenConnectionArgs,
     signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly status: "connected";
-        readonly connector: BuiltinConnectorResponse;
-        readonly created: boolean;
-      }
-    | ConnectorConnectionMutationFailure
-    | { readonly status: "identityMismatch" }
-  > => {
-    const writeDb = set(writeDb$);
+  ): Promise<PreparedBuiltinConnectorTokenConnection> => {
     const outputMetadata = connectorTokenOutputMetadataForAuthMethod({
       runtimeMethod: args.runtimeMethod,
     });
@@ -2580,71 +2588,112 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
     );
     signal.throwIfAborted();
 
+    return {
+      orgId: args.orgId,
+      userId: args.userId,
+      runtimeMethod: args.runtimeMethod,
+      snapshot: args.snapshot,
+      connectorTokenState,
+      featureSwitchContext,
+      userInfo: args.userInfo,
+      oauthRequestedScopes: args.oauthRequestedScopes,
+      oauthGrantedScopes: args.oauthGrantedScopes,
+      tokenExpiresAt,
+      account: args.account,
+      matchExistingExternalIdentity: args.matchExistingExternalIdentity,
+      insertConnectionId: args.insertConnectionId,
+    };
+  },
+);
+
+export async function finalizeBuiltinConnectorTokenConnection(
+  args: {
+    readonly db: Db;
+    readonly prepared: PreparedBuiltinConnectorTokenConnection;
+    readonly connectionResult: CommittedBuiltinConnectorTokenConnection;
+    readonly postCommitAbort: unknown;
+  },
+  signal: AbortSignal,
+): Promise<{
+  readonly status: "connected";
+  readonly connector: BuiltinConnectorResponse;
+  readonly created: boolean;
+}> {
+  const { prepared, connectionResult } = args;
+  let postCommitAbort = args.postCommitAbort;
+  const automationCleanupAbort =
+    await stopPendingGoogleCalendarAutomationCleanup(
+      connectionResult.pendingGoogleCalendarWatchStop,
+      signal,
+    );
+  postCommitAbort ??= automationCleanupAbort;
+
+  await finalizeConnectorStateChangeAfterCommit(
+    {
+      userId: prepared.userId,
+      connectorSlug: prepared.runtimeMethod.connectorSlug,
+      pendingTokenRevoke: connectionResult.pendingTokenRevoke,
+      postCommitAbort,
+    },
+    signal,
+  );
+  await reconcileAccountBoundAutomationWatches(
+    args.db,
+    {
+      orgId: prepared.orgId,
+      userId: prepared.userId,
+      connectorSlug: prepared.runtimeMethod.connectorSlug,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+
+  return {
+    status: "connected",
+    connector: storedBuiltinConnectorRowToResponse(
+      connectionResult.connectorRow,
+      prepared.runtimeMethod,
+      nowDate(),
+    ),
+    created: connectionResult.created,
+  };
+}
+
+export const upsertBuiltinConnectorTokenConnection$ = command(
+  async (
+    { set },
+    args: BuiltinConnectorTokenConnectionArgs,
+    signal: AbortSignal,
+  ) => {
+    const writeDb = set(writeDb$);
+    const prepared = await set(
+      prepareBuiltinConnectorTokenConnection$,
+      args,
+      signal,
+    );
     let postCommitAbort: unknown = null;
     const connectionResult = await writeDb.transaction(async (tx) => {
-      return await commitConnectorTokenConnection(
-        {
-          db: tx,
-          orgId: args.orgId,
-          userId: args.userId,
-          runtimeMethod: args.runtimeMethod,
-          snapshot: args.snapshot,
-          connectorTokenState,
-          featureSwitchContext,
-          userInfo: args.userInfo,
-          oauthRequestedScopes: args.oauthRequestedScopes,
-          oauthGrantedScopes: args.oauthGrantedScopes,
-          tokenExpiresAt,
-          account: args.account,
-          matchExistingExternalIdentity: args.matchExistingExternalIdentity,
-          insertConnectionId: args.insertConnectionId,
-        },
+      const write = { ...prepared, db: tx };
+      const resolution = await resolveBuiltinConnectorTokenConnectionMutation(
+        write,
+        signal,
+      );
+      return await commitBuiltinConnectorTokenConnection(
+        { ...write, resolution },
         signal,
       );
     });
     if (signal.aborted) {
-      postCommitAbort ??= signal.reason;
+      postCommitAbort = signal.reason;
     }
     if (connectionResult.status !== "connected") {
+      throwCapturedAbort(postCommitAbort);
       return connectionResult;
     }
-
-    const automationCleanupAbort =
-      await stopPendingGoogleCalendarAutomationCleanup(
-        connectionResult.pendingGoogleCalendarWatchStop,
-        signal,
-      );
-    postCommitAbort ??= automationCleanupAbort;
-
-    await finalizeConnectorStateChangeAfterCommit(
-      {
-        userId: args.userId,
-        connectorSlug: args.runtimeMethod.connectorSlug,
-        pendingTokenRevoke: connectionResult.pendingTokenRevoke,
-        postCommitAbort,
-      },
+    return await finalizeBuiltinConnectorTokenConnection(
+      { db: writeDb, prepared, connectionResult, postCommitAbort },
       signal,
     );
-    await reconcileAccountBoundAutomationWatches(
-      writeDb,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: args.runtimeMethod.connectorSlug,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    return {
-      status: "connected",
-      connector: storedBuiltinConnectorRowToResponse(
-        connectionResult.connectorRow,
-        args.runtimeMethod,
-        nowDate(),
-      ),
-      created: connectionResult.created,
-    };
   },
 );
 

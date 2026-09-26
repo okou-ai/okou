@@ -6,7 +6,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { storages } from "@okouai/db/schema/storage";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
@@ -168,10 +168,6 @@ async function lockWorkflowForDeletion(tx: Tx, args: DeleteWorkflowInput) {
 
   if (args.serializeOfficialLifecycle === true) {
     await lockAcceptedOfficialWorkflowCatalog(tx);
-    await tx.execute(
-      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-      sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
-    );
   }
   const [agent] = await tx
     .select({ id: agents.id })

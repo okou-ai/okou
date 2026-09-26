@@ -216,3 +216,31 @@ protocols and removal conditions are recorded in
 [deployment compatibility](./deployment-compatibility.md#scoped-advisory-cleanup-and-owner-row-preparation-2026-09-26).
 Do not infer necessity from the remaining count or from a test that waits for a
 lock.
+
+## Narrow cleanup and writer preparation (2026-09-27)
+
+Against main `736f70167be41d6d99cf07d842071cbd9b2fa68c`, this batch removes
+two production acquisition sites: failed Official Run persistence and installed
+Official uninstall. They retain catalog and existing row/foreign-key protection
+without entering the credit plan after Workflow rows. The inventory becomes
+44 literal sites: 42 production, one catalog test-isolation site, and one billing
+attribution operator-tool site. The six historical SQL migration sites are
+unchanged and counted separately.
+
+Two shared entrances are narrower without deleting another SQL definition:
+only schedule automations acquire the queue-admission key, including manual
+schedule execution; uncapped connector/check-in rewards skip the owner key and
+COUNT while retaining exact reward deduplication. Do not add these runtime
+acquisition reductions to the literal-site reduction.
+
+Official copy gains exact private-name conflict recovery after complete
+transaction rollback. Device authorization commits the exact session claim,
+credentials, and completion marker in the same existing account transaction.
+Their advisory keys remain until these new writer preparations cover serving
+and supported rollback versions and outgoing requests drain.
+
+The eight other sites prepared by #37009 also remain. Production preparation
+and a successful promotion alone do not prove that retained deployment URLs,
+old invocations, or rollback writers can no longer execute. The per-family
+retirement gates remain in
+[deployment compatibility](./deployment-compatibility.md#scoped-advisory-cleanup-and-owner-row-preparation-2026-09-26).

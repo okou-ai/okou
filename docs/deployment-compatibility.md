@@ -158,12 +158,15 @@ reconciliation work together. A losing first publisher rolls back all writes.
 
 The publisher retains its exclusive catalog advisory key because outgoing
 readers do not yet lock the singleton. Official run admission now takes its
-credit plan row before Workflow/Automation rows, matching reconciliation; the
-five organization-key acquisition sites remain because outgoing admission
-still uses the inverse row order. Remove the publisher key after all old
-readers drain, and the organization keys after all old writers drain. Serving
-versions and supported rollback targets must include this preparation. These
-shared paths include GA Morning Brief, regardless of catalog discovery flags.
+credit plan row before Workflow/Automation rows, matching reconciliation.
+Normal admission and reconciliation retain their organization key because
+outgoing admission still uses the inverse row order. Remove the publisher key
+after all old readers drain, and these two organization-key sites after all
+old writers drain. Serving versions and supported rollback targets must include
+this preparation. These shared paths include GA Morning Brief, regardless of
+catalog discovery flags. Copy has a separate conflict-recovery preparation
+below; failed Run persistence and uninstall do not enter the plan lock and no
+longer acquire the organization key.
 
 Built-in generation admission now locks the existing Run row with
 `FOR NO KEY UPDATE` before expiring and counting admissions and inserting the
@@ -181,6 +184,46 @@ back, and only a new accepted claim enqueues work. The GA admission key remains
 until every serving and supported rollback writer uses this protocol and old
 admission transactions drain. An outgoing writer still uses a bare INSERT and
 would otherwise expose an unhandled unique violation during overlap.
+
+## Narrow advisory cleanup and writer preparation (2026-09-27)
+
+Official failed Run persistence and installed uninstall no longer acquire the
+organization advisory key. Both retain the accepted-catalog singleton read,
+the existing parent/Workflow/Automation row protection, and exact installation
+and revision validation. The failed Run branch does not admit credit, and
+uninstall performs provider cleanup after commit. Neither enters the credit
+plan after Workflow rows, so these removals do not depend on the separate
+normal-admission ordering preparation above.
+
+Workflow event admission now acquires the queue key only for schedule
+automations, including manual schedule executions that must coordinate with
+cron coalescing. Event automations retain their delivery identities, source
+transition CAS, transactional event insertion, and final Run claim. Connector
+and check-in rewards have no total-count cap: their shared redemption helper
+retains the exact reward key, claim and credit transaction but skips the owner
+key and count query. Capped rewards keep their existing protocol. Old and new
+requests still coordinate on each reward identity; no migration or rollout
+wait is required for these narrower entrances.
+
+Official copy now handles only the private owner/Agent/name unique constraint
+after the complete copy transaction has rolled back, returning the existing
+name-conflict response and cleaning up the unpublished volume. Different
+Official source installations can target the same private name without sharing
+a source row, so row protection alone cannot replace this conflict handling.
+The copy organization key remains until this preparation covers all serving
+writers, outgoing copy requests have drained, and supported rollback targets
+include it. The earlier #37009 preparation does not contain this recovery.
+
+Device authorization prepares tokens before its commit transaction. The
+existing connector account target serializes start and completion; the exact
+poll claim, connector credentials, and completion marker now commit together.
+A superseded claim writes no credentials, and a failed credential write also
+rolls back the session transition. Provider work and post-commit cleanup remain
+outside the transaction. The device-specific key stays on start and completion
+until every serving and supported rollback writer uses this atomic protocol
+and old requests drain: an outgoing completion can otherwise persist stale
+credentials in its separate transaction after a replacement start. No new lock
+key, lock table, schema migration, or persisted shape is introduced.
 
 ## Workflow import source column (2026-09-25)
 

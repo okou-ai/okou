@@ -154,12 +154,13 @@ async function lockRedemption(
   claim: GetStartedClaimRow,
   rewardKey: string,
 ): Promise<void> {
-  const owner =
-    claim.rewardTarget === "org" ? claim.orgId : claim.beneficiaryUserId;
-  const keys = [
-    `get-started:owner:${claim.questKey}:${owner}`,
-    `get-started:reward:${rewardKey}`,
-  ].sort();
+  const keys = [`get-started:reward:${rewardKey}`];
+  if (GET_STARTED_REWARDS[claim.questKey].limit !== null) {
+    const owner =
+      claim.rewardTarget === "org" ? claim.orgId : claim.beneficiaryUserId;
+    keys.push(`get-started:owner:${claim.questKey}:${owner}`);
+  }
+  keys.sort();
   for (const key of keys) {
     await tx.execute(
       // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
@@ -225,26 +226,30 @@ export async function grantGetStartedClaim(
     return markIneligible(tx, claim.id, "already_redeemed");
   }
 
-  const ownerCondition =
-    claim.rewardTarget === "org"
-      ? eq(getStartedClaims.orgId, claim.orgId)
-      : eq(getStartedClaims.beneficiaryUserId, requiredBeneficiary(claim));
-  const [awards] = await tx
-    .select({ total: count() })
-    .from(getStartedClaims)
-    .where(
-      and(
-        ownerCondition,
-        eq(getStartedClaims.questKey, claim.questKey),
-        eq(getStartedClaims.status, "granted"),
-      ),
-    );
-  if (!awards) {
-    throw new Error("Get started award count is missing");
-  }
   const limit = GET_STARTED_REWARDS[claim.questKey].limit;
-  if (limit !== null && awards.total >= limit) {
-    return markIneligible(tx, claim.id, "limit_reached");
+  let rewardSlot: number | null = null;
+  if (limit !== null) {
+    const ownerCondition =
+      claim.rewardTarget === "org"
+        ? eq(getStartedClaims.orgId, claim.orgId)
+        : eq(getStartedClaims.beneficiaryUserId, requiredBeneficiary(claim));
+    const [awards] = await tx
+      .select({ total: count() })
+      .from(getStartedClaims)
+      .where(
+        and(
+          ownerCondition,
+          eq(getStartedClaims.questKey, claim.questKey),
+          eq(getStartedClaims.status, "granted"),
+        ),
+      );
+    if (!awards) {
+      throw new Error("Get started award count is missing");
+    }
+    if (awards.total >= limit) {
+      return markIneligible(tx, claim.id, "limit_reached");
+    }
+    rewardSlot = rewardSlotFor(claim.questKey, awards.total);
   }
 
   const grantedAt = nowDate();
@@ -284,7 +289,7 @@ export async function grantGetStartedClaim(
     .set({
       status: "granted",
       rewardKey,
-      rewardSlot: rewardSlotFor(claim.questKey, awards.total),
+      rewardSlot,
       memberCreditGrantId,
       orgCreditRecordId,
       grantedAt,

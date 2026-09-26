@@ -44,6 +44,7 @@ import {
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import {
   deleteOrphanedWorkflowVolume$,
@@ -1685,26 +1686,46 @@ const publishCopiedWorkflow$ = command(
         );
         signal.throwIfAborted();
 
-        const copied = await copyWorkflowDatabaseRows(
-          args.db,
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            member: args.member,
-            sourceWorkflow: args.sourceWorkflow,
-            sourceFiles: args.sourceFiles,
-            sourceStorage: args.sourceStorage,
-            targetAgentId: args.targetAgentId,
-            targetWorkflowId,
-            currentTime: args.currentTime,
-            inheritedAutonomyBudget: args.inheritedAutonomyBudget,
-            source: snapshot.source,
-            preparedWebhooks,
-            volume,
-          },
+        const publication = await settle(
+          copyWorkflowDatabaseRows(
+            args.db,
+            {
+              orgId: args.orgId,
+              userId: args.userId,
+              member: args.member,
+              sourceWorkflow: args.sourceWorkflow,
+              sourceFiles: args.sourceFiles,
+              sourceStorage: args.sourceStorage,
+              targetAgentId: args.targetAgentId,
+              targetWorkflowId,
+              currentTime: args.currentTime,
+              inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+              source: snapshot.source,
+              preparedWebhooks,
+              volume,
+            },
+            signal,
+          ),
           signal,
         );
-        signal.throwIfAborted();
+        if (!publication.ok) {
+          if (
+            !isUniqueViolation(
+              publication.error,
+              "idx_workflows_private_owner_agent_name_unique",
+            )
+          ) {
+            throw publication.error;
+          }
+          // Different sources can race for the same target slug. The whole
+          // publication transaction has rolled back before its volume is removed.
+          await set(cleanupUnpublishedWorkflow$, cleanup);
+          return workflowSlugConflict(
+            "private",
+            snapshot.source.sourceWorkflow.name,
+          );
+        }
+        const copied = publication.value;
         if (copied.kind === "conflict") {
           await set(cleanupUnpublishedWorkflow$, cleanup);
           return conflict(copied.message);

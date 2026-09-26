@@ -1312,6 +1312,102 @@ describe("workflows", () => {
     );
   });
 
+  it("publishes one complete copy when different source workflows compete for the same private slug", async () => {
+    const actor = user();
+    const firstSourceAgent = await createAgent(actor, {
+      displayName: "First Concurrent Copy Source",
+      visibility: "private",
+    });
+    const secondSourceAgent = await createAgent(actor, {
+      displayName: "Second Concurrent Copy Source",
+      visibility: "private",
+    });
+    const targetAgent = await createAgent(actor, {
+      displayName: "Concurrent Copy Target",
+      visibility: "private",
+    });
+    const workflowName = `concurrent-copy-${randomUUID().slice(0, 8)}`;
+    const sources = await Promise.all(
+      [firstSourceAgent, secondSourceAgent].map(async (agent, index) => {
+        const instruction = `# Source workflow ${index + 1}`;
+        const created = await createWorkflow(actor, {
+          agentId: agent.agentId,
+          name: workflowName,
+          visibility: "private",
+          instruction,
+        });
+        return { workflowId: created.body.id, instruction };
+      }),
+    );
+
+    const copies = await Promise.all(
+      sources.map(async (source) => {
+        const response = await accept(
+          detailClient().copy({
+            headers: authHeaders(actor),
+            params: { workflowId: source.workflowId },
+            body: { toAgentId: targetAgent.agentId },
+          }),
+          [201, 409],
+        );
+        return { source, response };
+      }),
+    );
+    expect(
+      copies
+        .map((copy) => {
+          return copy.response.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 409]);
+    const winner = copies.find((copy) => {
+      return copy.response.status === 201;
+    });
+    const rejected = copies.find((copy) => {
+      return copy.response.status === 409;
+    });
+    if (winner?.response.status !== 201 || rejected?.response.status !== 409) {
+      throw new Error("Expected one successful copy and one name conflict");
+    }
+    expect(rejected.response.body.error.message).toContain(
+      `private workflow named "/${workflowName}"`,
+    );
+
+    const targetWorkflows = await accept(
+      collectionClient().list({
+        headers: authHeaders(actor),
+        query: { agentId: targetAgent.agentId },
+      }),
+      [200],
+    );
+    expect(targetWorkflows.body).toHaveLength(1);
+    expect(targetWorkflows.body[0]).toMatchObject({
+      id: winner.response.body.id,
+      name: workflowName,
+      visibility: "private",
+    });
+    for (const workflow of [
+      ...sources,
+      {
+        workflowId: winner.response.body.id,
+        instruction: winner.source.instruction,
+      },
+    ]) {
+      const current = await accept(
+        detailClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.workflowId },
+        }),
+        [200],
+      );
+      expect(current.body).toMatchObject({
+        name: workflowName,
+        instruction: workflow.instruction,
+        official: null,
+      });
+    }
+  });
+
   it("rejects demoting a public workflow when the owner already has that private slug", async () => {
     const actor = user();
     const agent = await createAgent(actor, {

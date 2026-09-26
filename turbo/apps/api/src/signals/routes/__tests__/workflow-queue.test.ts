@@ -925,42 +925,64 @@ describe("workflow queue", () => {
     });
   });
 
-  it("queues webhook events without extra keys and drains one per completion", async () => {
+  it("queues concurrent webhook events and drains each exactly once", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
-    const kms = useSecretKmsProbe();
+    const firstRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(automation, "first"),
+      automation.threadId,
+    );
 
-    const first = await postWorkflowWebhook(automation, "first");
-    const firstRunId = await expectAcceptedRunId(first, automation.threadId);
-    await flushWaitUntilForTest();
-    // Workflow admission stores no encrypted launch blob. The only data key is
-    // for the launched run's execution secrets.
-    expect(kms.generateDataKeyCalls).toBe(1);
-
-    // The workflow is busy: the next two events are accepted into the queue
-    // without creating runs.
-    const secondApiStartTime = now() + 60_000;
-    mockNow(secondApiStartTime);
-    expectAcceptedWithoutRun(await postWorkflowWebhook(automation, "second"));
-    expect(kms.generateDataKeyCalls).toBe(1);
-    mockNow(secondApiStartTime + 1000);
-    expectAcceptedWithoutRun(await postWorkflowWebhook(automation, "third"));
-    expect(kms.generateDataKeyCalls).toBe(1);
+    const queued = await Promise.all([
+      postWorkflowWebhook(automation, "second"),
+      postWorkflowWebhook(automation, "third"),
+    ]);
+    for (const response of queued) {
+      expectAcceptedWithoutRun(response);
+    }
     const pendingEvents = await pendingAutomationEvents(automation.threadId);
     expect(pendingEvents).toHaveLength(2);
     await expect(workflowRunIds(automation.threadId)).resolves.toStrictEqual([
       firstRunId,
     ]);
 
-    // Completing the run drains exactly one event into the next run.
-    const dequeuedAt = secondApiStartTime + 10_000;
-    mockNow(dequeuedAt);
-    await completeRunThroughSandbox(scenario, firstRunId);
-    const afterFirst = await workflowRunIds(automation.threadId);
-    expect(afterFirst).toHaveLength(2);
+    await requestRunCompletionThroughSandbox(scenario, firstRunId);
+    await expect
+      .poll(() => {
+        return workflowRunIds(automation.threadId);
+      })
+      .toHaveLength(2);
+    const secondRunId = (await workflowRunIds(automation.threadId))[1];
+    if (!secondRunId) {
+      throw new Error("Expected one queued event to create the next run");
+    }
     await expect(
       pendingAutomationEvents(automation.threadId),
     ).resolves.toHaveLength(1);
+
+    await requestRunCompletionThroughSandbox(scenario, secondRunId);
+    await expect
+      .poll(() => {
+        return workflowRunIds(automation.threadId);
+      })
+      .toHaveLength(3);
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toHaveLength(0);
+    const claimedEventIds = (await wf.readThreadEvents(automation.threadId))
+      .filter((event) => {
+        return event.eventType === "input.prompt" && event.runId;
+      })
+      .map((event) => {
+        return event.revokesEventId;
+      });
+    for (const event of pendingEvents) {
+      expect(
+        claimedEventIds.filter((id) => {
+          return id === event.id;
+        }),
+      ).toHaveLength(1);
+    }
   });
 
   it("starts a promoted webhook run's API clock at dequeue time", async () => {

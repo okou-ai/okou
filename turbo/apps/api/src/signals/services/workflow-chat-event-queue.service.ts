@@ -229,7 +229,10 @@ async function attemptWorkflowQueueAdmission(
     triggerBrief: args.triggerBrief ?? null,
   } as const;
   return await db.transaction(async (tx) => {
-    await chatEventQueueAdmissionLock(tx, args.chatThreadId);
+    if (automation.kind === "schedule") {
+      // Manual schedule runs must also coordinate with coalescing cron ticks.
+      await chatEventQueueAdmissionLock(tx, args.chatThreadId);
+    }
 
     if (args.coalescePendingScheduleRun && automation.kind === "schedule") {
       const pendingEventId = await pendingTickForAutomation(tx, automation.id);

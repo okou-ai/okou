@@ -16,6 +16,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
 
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
@@ -78,6 +79,7 @@ import {
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { connectorCatalogRoutes } from "../connector-catalog";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 
 const context = testContext({ connectorCatalog: true });
 const connectorsApi = createConnectorBddApi(context);
@@ -1741,14 +1743,14 @@ describe("CONN-02: OAuth device authorization", () => {
     await connectorsApi.deleteFeatureSwitches(actor);
   });
 
-  it("reclaims a stale device poll while its original request is pending", async () => {
+  it("keeps the completed reclaimed device account when its stale poll returns", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     await connectorsApi.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.TestOauthConnector]: true,
     });
 
-    mockTestOAuthDeviceConnectorProvider({ deviceCode: "pending" });
+    mockTestOAuthDeviceConnectorProvider();
     const staleDeferred = mockDeferredTestOAuthTokenEndpoint(context.signal);
     const stale = await connectorsApi.startDeviceAuth(
       actor,
@@ -1765,6 +1767,9 @@ describe("CONN-02: OAuth device authorization", () => {
       (async () => {
         await staleDeferred.started;
         mockNow(now() + 31_000);
+        const reclaimedProvider = mockTestOAuthDeviceConnectorProvider({
+          tokenScope: "read reclaimed",
+        });
 
         const reclaimedPoll = await connectorsApi.pollDeviceAuth(
           actor,
@@ -1772,11 +1777,37 @@ describe("CONN-02: OAuth device authorization", () => {
           stale.sessionId,
           stale.sessionToken,
         );
-        expect(reclaimedPoll).toStrictEqual({ status: "pending", interval: 0 });
-        expect(staleDeferred.calls()).toBe(2);
+        if (reclaimedPoll.status !== "complete") {
+          throw new Error(
+            `Expected reclaimed completion, received ${reclaimedPoll.status}`,
+          );
+        }
+        expect(reclaimedPoll.connector.oauthScopes).toStrictEqual([
+          "read",
+          "reclaimed",
+        ]);
+        expect(reclaimedProvider.tokenBodies).toHaveLength(1);
         staleDeferred.release();
         const stalePoll = await stalePollPromise;
         expect(stalePoll).toStrictEqual({ status: "pending", interval: 0 });
+        const rePoll = await connectorsApi.pollDeviceAuth(
+          actor,
+          "test-oauth-device",
+          stale.sessionId,
+          stale.sessionToken,
+        );
+        expect(rePoll).toStrictEqual(reclaimedPoll);
+        const accounts = await connectorsApi.listBuiltinConnectorAccounts(
+          actor,
+          "test-oauth-device",
+        );
+        expect(accounts).toHaveLength(1);
+        expect(accounts[0]).toMatchObject({
+          id: reclaimedPoll.connector.id,
+          oauthScopes: ["read", "reclaimed"],
+        });
+        expect(staleDeferred.calls()).toBe(1);
+        expect(reclaimedProvider.tokenBodies).toHaveLength(1);
       })().finally(() => {
         staleDeferred.release();
         clearMockNow();
@@ -1789,6 +1820,83 @@ describe("CONN-02: OAuth device authorization", () => {
       }
     }
     await connectorsApi.deleteFeatureSwitches(actor);
+  });
+
+  it("awards each connector once when different device connections and reconnects complete concurrently", async () => {
+    const actor = createBddApi(context).user();
+    await setGetStartedEnabled(context, actor);
+    mockBase44OAuthProvider();
+    mockSlockOAuthProvider();
+
+    const connections = await Promise.all(
+      (["base44", "slock"] as const).map(async (connectorSlug) => {
+        const session = await connectorsApi.startDeviceAuth(
+          actor,
+          connectorSlug,
+          "oauth",
+        );
+        const completed = await connectorsApi.pollDeviceAuth(
+          actor,
+          connectorSlug,
+          session.sessionId,
+          session.sessionToken,
+        );
+        if (completed.status !== "complete") {
+          throw new Error(
+            `Expected ${connectorSlug} completion, received ${completed.status}`,
+          );
+        }
+        return { connectorSlug, connector: completed.connector };
+      }),
+    );
+    await Promise.all(
+      connections.map(async ({ connectorSlug, connector }) => {
+        const session = await connectorsApi.startDeviceAuth(
+          actor,
+          connectorSlug,
+          "oauth",
+          undefined,
+          { intent: "reconnect", connectionId: connector.id },
+        );
+        await expect(
+          connectorsApi.pollDeviceAuth(
+            actor,
+            connectorSlug,
+            session.sessionId,
+            session.sessionToken,
+          ),
+        ).resolves.toMatchObject({
+          status: "complete",
+          connector: { id: connector.id },
+        });
+      }),
+    );
+
+    expect(
+      (await readGetStartedStatus(context, actor)).quests.find((quest) => {
+        return quest.key === "connector";
+      })?.claimedCount,
+    ).toBe(2);
+    const balance = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(balance.body.bonusCredits).toBe(200);
+    expect(balance.body.creditGrants).toHaveLength(2);
+    expect(balance.body.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 100,
+        remaining: 100,
+      }),
+      expect.objectContaining({
+        grantType: "bonus",
+        amount: 100,
+        remaining: 100,
+      }),
+    ]);
   });
 
   it("completes Base44 and Slock device sessions with provider metadata visible through connector reads", async () => {
