@@ -2201,28 +2201,6 @@
       "unread": "Belum dibaca",
       "unreadOnly": "Belum dibaca"
     },
-    "startCards": {
-      "kinds": {
-        "illustration": {
-          "description": "Buat visual jadi dengan gaya yang Anda inginkan",
-          "prompt": "Buatkan ilustrasi dengan gaya yang saya jelaskan.",
-          "title": "Buat ilustrasi"
-        },
-        "slides": {
-          "description": "Ubah topik atau dokumen menjadi dek yang rapi",
-          "prompt": "Buatkan presentasi dari topik atau dokumen yang saya berikan.",
-          "title": "Buat presentasi"
-        },
-        "website": {
-          "description": "Buat halaman yang bisa dibagikan",
-          "prompt": "Buat dan terbitkan halaman web yang bisa saya bagikan.",
-          "title": "Buat situs web"
-        }
-      },
-      "openTemplatesAria": "Jelajahi templat",
-      "startWithPrompt": "Buat",
-      "templates": "Templat"
-    },
     "taskChips": {
       "chooseTask": "Pilih tugas",
       "ideas": {

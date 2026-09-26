@@ -2201,28 +2201,6 @@
       "unread": "未读",
       "unreadOnly": "未读"
     },
-    "startCards": {
-      "kinds": {
-        "illustration": {
-          "description": "按你想要的风格做出成品画面",
-          "prompt": "按我描述的风格创作一张插画。",
-          "title": "创作插画"
-        },
-        "slides": {
-          "description": "把一个主题或文档变成精致的演示文稿",
-          "prompt": "根据我提供的主题或文档创建一份演示文稿。",
-          "title": "创建演示文稿"
-        },
-        "website": {
-          "description": "创建并发布一个可分享的页面",
-          "prompt": "为我搭建并发布一个可分享的网页。",
-          "title": "搭建网站"
-        }
-      },
-      "openTemplatesAria": "浏览模板",
-      "startWithPrompt": "创建",
-      "templates": "模板"
-    },
     "taskChips": {
       "chooseTask": "选择任务",
       "ideas": {

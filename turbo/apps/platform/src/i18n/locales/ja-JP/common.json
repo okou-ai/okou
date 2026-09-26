@@ -2201,28 +2201,6 @@
       "unread": "未読",
       "unreadOnly": "未読"
     },
-    "startCards": {
-      "kinds": {
-        "illustration": {
-          "description": "好きなスタイルで仕上がったビジュアルを作る",
-          "prompt": "指定するスタイルでイラストを作ってください。",
-          "title": "イラストを作る"
-        },
-        "slides": {
-          "description": "トピックや資料から完成度の高いスライドを作る",
-          "prompt": "渡すトピックや資料からプレゼン資料を作ってください。",
-          "title": "プレゼン資料を作る"
-        },
-        "website": {
-          "description": "共有できるページを作って公開する",
-          "prompt": "共有できるウェブページを作って公開してください。",
-          "title": "ウェブサイトを作る"
-        }
-      },
-      "openTemplatesAria": "テンプレートを見る",
-      "startWithPrompt": "作成",
-      "templates": "テンプレート"
-    },
     "taskChips": {
       "chooseTask": "タスクを選ぶ",
       "ideas": {

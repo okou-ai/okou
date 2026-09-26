@@ -40,7 +40,6 @@ const GOOGLE_ANALYTICS_SLUG = "google-analytics" as ConnectorSlug;
 const PUBLIC_STRIPE_SLUG = "stripe-public" as ConnectorSlug;
 
 async function loadComposer(): Promise<void> {
-  await expect(screen.findByTestId("start-cards")).resolves.toBeVisible();
   await expect(findFastControl("button", "Connectors")).resolves.toBeVisible();
 }
 

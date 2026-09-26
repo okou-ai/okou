@@ -21,7 +21,6 @@ import {
 
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
-import { StartCards } from "./start-cards.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import { HomeTaskRecommendations } from "./home-task-recommendations.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
@@ -412,25 +411,17 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
 export function AgentChatPage() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
-  const pageSignal = useGet(pageSignal$);
   const user = useLastResolved(user$);
   const userFirstName =
     user === undefined ? undefined : (user.firstName ?? null);
 
   const composerSignals = useGet(agentChatComposerSignals$);
   const taskChipsEnabled = useGet(composerSignals.taskChips.enabled$);
-  const setInput = useSet(composerSignals.draft.setDraftInput$);
-  const saveDraft = useSet(composerSignals.draft.save$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
   const tagline = useTagline(userFirstName, taglineIndex);
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
-
-  const handleInputChange = (value: string) => {
-    setInput(value);
-    detach(saveDraft(pageSignal), Reason.DomCallback);
-  };
 
   return (
     <div className="relative flex flex-1 flex-col min-h-0">
@@ -524,13 +515,11 @@ export function AgentChatPage() {
               The ordering the wrapper carried moved onto the section itself. */}
           <HomeTaskRecommendations agentId={currentChatAgentId} />
 
-          <div className="order-2 sm:order-none">
-            {taskChipsEnabled ? (
+          {taskChipsEnabled && (
+            <div className="order-2 sm:order-none">
               <ComposerTaskChips signals={composerSignals} />
-            ) : (
-              <StartCards onSelectPrompt={handleInputChange} />
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </main>
       <PersonalClaudeCodeDeviceAuthDialog />

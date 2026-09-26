@@ -2257,28 +2257,6 @@
       "unread": "No leído",
       "unreadOnly": "No leído"
     },
-    "startCards": {
-      "kinds": {
-        "illustration": {
-          "description": "Crea una imagen acabada con el estilo que quieras",
-          "prompt": "Crea una ilustración con el estilo que te describa.",
-          "title": "Crear una ilustración"
-        },
-        "slides": {
-          "description": "Convierte un tema o documento en un deck",
-          "prompt": "Crea una presentación a partir de un tema o documento que te dé.",
-          "title": "Crear una presentación"
-        },
-        "website": {
-          "description": "Crea y publica una página que puedas compartir",
-          "prompt": "Crea y publica una página web que pueda compartir.",
-          "title": "Crear un sitio web"
-        }
-      },
-      "openTemplatesAria": "Explorar plantillas",
-      "startWithPrompt": "Crear",
-      "templates": "Plantillas"
-    },
     "taskChips": {
       "chooseTask": "Elegir una tarea",
       "ideas": {

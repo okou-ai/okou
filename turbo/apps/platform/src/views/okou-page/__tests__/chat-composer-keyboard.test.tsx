@@ -32,7 +32,6 @@ function installComposerChat(
 }
 
 async function loadNewChatComposer(): Promise<HTMLElement> {
-  await expect(screen.findByTestId("start-cards")).resolves.toBeVisible();
   return await findComposer();
 }
 
