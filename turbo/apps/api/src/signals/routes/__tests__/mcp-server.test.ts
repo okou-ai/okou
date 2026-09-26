@@ -7862,6 +7862,8 @@ describe("external MCP entry", () => {
             extraHeaders: protocolHeaders(
               auth.token({ org_id: actor.orgId }),
               "tools/call",
+              true,
+              "get_chat_indicators",
             ),
             body: requestBody("tools/call", true, {
               name: "get_chat_indicators",

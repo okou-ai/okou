@@ -832,7 +832,7 @@ HTTP with SSE responses. The 2026-07-28 protocol uses the SDK's envelope and
 `MCP-Method`/`MCP-Name` headers with automatic JSON/SSE response selection. Clients
 should use a conforming SDK instead of implementing these envelopes themselves.
 
-The 12 advertised tools each include a human-readable `annotations.title`. Their
+The 13 advertised tools each include a human-readable `annotations.title`. Their
 input and output JSON Schemas inline local references, so the advertised schemas
 contain no `$ref` or `$defs`; field types and validation constraints are unchanged.
 
