@@ -7,6 +7,9 @@ surface; the index does not replace their detailed rules.
 ## Code Review
 
 - [Bad code smells](./bad-smell.md): production-code quality rules.
+- [Retiring PostgreSQL advisory locks](./advisory-locks.md): the 2026-09-26
+  retirement policy, constraint and SQL alternatives, testing boundaries, and
+  lint enforcement.
 - [Fallbacks to avoid](./fallback.md): fallback slop, negative tests against
   removed code, feature-switched features that need no compatibility, and the
   narrow cases where a time-boxed fallback is required.
