@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.681.4](https://github.com/okou-ai/okou/compare/api-v1.681.3...api-v1.681.4) (2026-09-26)
+
+
+### Refactoring
+
+* **api:** make personal subscription credentials account-only ([#36976](https://github.com/okou-ai/okou/issues/36976)) ([d9daec9](https://github.com/okou-ai/okou/commit/d9daec96b4dd954584ba06c7ac2a42e5d3c214b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.4
+    * @okouai/core bumped to 8.711.1
+    * @okouai/db bumped to 1.303.4
+    * @okouai/pi-agent-runtime bumped to 1.40.27
+
 ## [1.681.3](https://github.com/okou-ai/okou/compare/api-v1.681.2...api-v1.681.3) (2026-09-26)
 
 
