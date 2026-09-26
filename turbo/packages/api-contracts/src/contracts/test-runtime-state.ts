@@ -65,6 +65,15 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     action: z.literal("read-run-failure-reason"),
     run_id: z.uuid(),
   }),
+  // Test-only read boundary for the internal WSS resolver, before #37025
+  // exposes an authenticated bootstrap route to clients.
+  z.object({
+    action: z.literal("resolve-runner-wss-target"),
+    run_id: z.uuid(),
+    user_id: z.string(),
+    org_id: z.string(),
+    now: z.iso.datetime().optional(),
+  }),
   z.object({
     action: z.literal("set-run-model-provider"),
     run_id: z.uuid(),
@@ -250,6 +259,18 @@ export const testRuntimeStateActionResponseSchema = z.object({
   built_in_model_route: builtInModelRuntimeRouteSchema.nullable().optional(),
   autonomy_budget: z.int().min(0).max(10).nullable().optional(),
   failure_reason: runFailureReasonTokenSchema.nullable().optional(),
+  wss_target: z
+    .object({
+      runId: z.uuid(),
+      runnerId: z.uuid(),
+      publicOrigin: z.string(),
+      ingressVerification: z.literal("not-observed"),
+      claimedVersion: z.string(),
+      observedMode: z.enum(["running", "draining"]),
+      observedAt: z.iso.datetime(),
+    })
+    .nullable()
+    .optional(),
   workflow_automation_state: z
     .object({
       autonomy_budget: z.int().min(0).max(10),

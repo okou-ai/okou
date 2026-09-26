@@ -12,6 +12,7 @@
   },
   "include": [
     "src/lib/env.ts",
+    "src/lib/runner-wss-target-config.ts",
     "src/lib/log.ts",
     "src/lib/secret-kms-client.ts",
     "src/lib/singleton.ts",
