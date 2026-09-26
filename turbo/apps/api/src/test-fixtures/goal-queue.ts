@@ -160,41 +160,18 @@ export async function readGoalQueueStateFixture(threadId: string): Promise<{
 /** Run the same shared scheduler that follows production goal admission. */
 export async function drainChatThreadQueueFixture(args: {
   readonly threadId: string;
+  readonly orgId: string;
   readonly signal: AbortSignal;
-  readonly queueItemCreatedBefore?: Date;
 }): Promise<void> {
   await createStore().set(
     drainChatThreadQueueForThread$,
     {
       chatThreadId: args.threadId,
+      orgId: args.orgId,
       dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-      queueItemCreatedBefore: args.queueItemCreatedBefore,
     },
     args.signal,
   );
-}
-
-/** Move one goal trigger before a stale-sweep cutoff. */
-export async function setGoalQueueEventCreatedAtFixture(args: {
-  readonly eventId: string;
-  readonly createdAt: Date;
-}): Promise<void> {
-  const updated = await db().transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
-    return await tx
-      .update(chatEvents)
-      .set({ createdAt: args.createdAt })
-      .where(
-        and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.eventType, "input.goal"),
-        ),
-      )
-      .returning({ id: chatEvents.id });
-  });
-  if (updated.length !== 1) {
-    throw new Error("Expected one goal queue event to become historical");
-  }
 }
 
 /** Retain a close marker beside captured input without invoking a queue drain. */
