@@ -21,7 +21,6 @@ import { storages } from "@okouai/db/schema/storage";
 import { createDeferredPromise } from "../../utils";
 import { deleteClerkAgentLifecycleData } from "../agent-lifecycle.service";
 import { persistAgentCheckpointInTransaction } from "../agent-webhook-checkpoints.service";
-import { lockAgentRunCheckpointLifecycle } from "../agent-run-checkpoint-lifecycle-lock.service";
 import {
   deleteLockedRuns,
   deleteRunConversations,
@@ -1413,7 +1412,6 @@ test("breaks the shared-blob and surviving-session checkpoint cycle without a de
   const backend = createDeferredPromise<number>(context.signal);
   const writer = h.db.transaction(async (tx) => {
     backend.resolve(await pid(tx));
-    await lockAgentRunCheckpointLifecycle(tx, writerRunId);
     return await persistAgentCheckpointInTransaction(
       tx,
       {

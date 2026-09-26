@@ -50,7 +50,6 @@ import {
   SESSION_HISTORY_ENCODING_IDENTITY,
   SESSION_HISTORY_ENCODING_ZSTD,
 } from "./session-history-blobs";
-import { lockAgentRunCheckpointLifecycle } from "./agent-run-checkpoint-lifecycle-lock.service";
 import { safeSync, settle } from "../utils";
 
 export type AgentCheckpointBody = z.infer<
@@ -553,8 +552,6 @@ export const prepareCheckpointHistoryUpload$ = command(
     }
 
     const admission = await db.transaction(async (tx) => {
-      await lockAgentRunCheckpointLifecycle(tx, input.body.runId);
-      signal.throwIfAborted();
       const [run] = await tx
         .select({ status: agentRuns.status })
         .from(agentRuns)
@@ -1284,8 +1281,6 @@ async function commitAgentCheckpoint(
   source: AgentCheckpointPersistenceSource,
 ): Promise<AgentCheckpointResponse> {
   return await db.transaction(async (tx) => {
-    await lockAgentRunCheckpointLifecycle(tx, input.body.runId);
-    signal.throwIfAborted();
     return await persistAgentCheckpointInTransaction(
       tx,
       input,
