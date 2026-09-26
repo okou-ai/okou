@@ -80,13 +80,13 @@ function mockWorkflows(initial: readonly WorkflowSummary[] = []): {
 }
 
 /** Each session names the tool it was opened for, in the order they opened. */
-function mockSessions(): { readonly providers: (string | undefined)[] } {
-  const providers: (string | undefined)[] = [];
+function mockSessions(): { readonly providers: string[] } {
+  const providers: string[] = [];
   context.mocks.api(skillImportSessionsContract.create, ({ body, respond }) => {
     providers.push(body.provider);
     return respond(200, {
       uploadUrl: "https://api.okou.test/api/skill-import/skills",
-      token: `vm0_skillimport_${body.provider ?? "none"}-session-token`,
+      token: `vm0_skillimport_${body.provider}-session-token`,
       expiresAt: new Date(
         now() + SKILL_IMPORT_SESSION_TTL_SECONDS * 1000,
       ).toISOString(),
@@ -257,6 +257,56 @@ test("An imported workflow is tagged with the tool it came from", async () => {
     within(weeklyReport).getByText("Imported from Claude Code"),
   ).toBeVisible();
   expect(within(madeInOkou).queryByText(/^Imported from/)).toBeNull();
+});
+
+test("The import tag stays hidden while the switch is off", async () => {
+  mockWorkflows([
+    workflow({
+      id: "d0000000-0000-4000-a000-000000000404",
+      name: "release-notes",
+      displayName: "Release notes",
+      importSource: "codex",
+    }),
+  ]);
+
+  await openWorkflowsPage({ [FeatureSwitchKey.WorkflowSkillImport]: false });
+
+  const releaseNotes = (await screen.findByText("Release notes")).closest(
+    "article",
+  );
+  if (!releaseNotes) {
+    throw new Error("Expected a row for the workflow");
+  }
+  expect(within(releaseNotes).queryByText(/^Imported from/)).toBeNull();
+});
+
+test("The dialog lists only workflows the import tagged", async () => {
+  const workflows = mockWorkflows();
+  mockSessions();
+  await openWorkflowsPage();
+  click(getButtonNamed("Import skills"));
+  const dialog = await findDialog();
+  await within(dialog).findByRole("region", { name: PROMPT_LABEL });
+
+  // A workflow made in chat arrives alongside the imported one.
+  workflows.write([
+    workflow({
+      id: "d0000000-0000-4000-a000-000000000421",
+      name: "made-in-chat",
+      displayName: "Made in chat",
+    }),
+    workflow({
+      id: "d0000000-0000-4000-a000-000000000422",
+      name: "weekly-report",
+      displayName: "Weekly report",
+      importSource: "claudeCode",
+    }),
+  ]);
+
+  await expect(
+    within(dialog).findByText("Weekly report"),
+  ).resolves.toBeVisible();
+  expect(within(dialog).queryByText("Made in chat")).toBeNull();
 });
 
 test("Reopening the dialog after an import leads with the imported skills", async () => {

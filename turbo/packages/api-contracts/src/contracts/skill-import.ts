@@ -56,12 +56,10 @@ export type SkillImportLimits = z.infer<typeof skillImportLimitsSchema>;
 
 /**
  * The tool the prompt is written for. The session records it so every skill
- * the session imports is tagged with where it came from. Optional because an
- * app that predates the tag opens a session without a body; such a session
- * imports untagged workflows.
+ * the session imports is tagged with where it came from.
  */
 export const skillImportSessionRequestSchema = z.object({
-  provider: workflowImportSourceSchema.optional(),
+  provider: workflowImportSourceSchema,
 });
 export type SkillImportSessionRequest = z.infer<
   typeof skillImportSessionRequestSchema
@@ -163,6 +161,7 @@ export const skillImportSessionsContract = c.router({
     body: skillImportSessionRequestSchema,
     responses: {
       200: skillImportSessionResponseSchema,
+      400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,

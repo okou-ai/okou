@@ -119,7 +119,7 @@ export interface SkillImportAuth {
   readonly orgId: string;
   readonly agentId: string;
   /** The tool the session's prompt was written for, tagged on each import. */
-  readonly provider: WorkflowImportSource | null;
+  readonly provider: WorkflowImportSource;
   /** Session start, used to count the skills this session has created. */
   readonly issuedAtSeconds: number;
 }

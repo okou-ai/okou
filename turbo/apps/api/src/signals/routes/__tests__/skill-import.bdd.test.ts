@@ -181,7 +181,9 @@ async function bootstrapActor(): Promise<{
   };
 }
 
-async function openSession(body: SkillImportSessionRequest = {}): Promise<{
+async function openSession(
+  body: SkillImportSessionRequest = { provider: "claudeCode" },
+): Promise<{
   readonly actor: OrgActor;
   readonly agentId: string;
   readonly session: SkillImportSessionResponse;
@@ -215,7 +217,10 @@ describe("POST /api/skill-import/sessions", () => {
     const { actor } = await bootstrapActor();
 
     const response = await accept(
-      sessionsClient().create({ headers: clerkHeaders(actor), body: {} }),
+      sessionsClient().create({
+        headers: clerkHeaders(actor),
+        body: { provider: "claudeCode" },
+      }),
       [403],
     );
 
@@ -278,6 +283,26 @@ describe("POST /api/skill-import/sessions", () => {
     expect(response.body.error.code).toBe("BAD_REQUEST");
   });
 
+  it("rejects a session request that names no tool", async () => {
+    const { actor } = await bootstrapActor();
+    await setSkillImportSwitch(actor, true);
+    const request = setupRawAppRequest({ context, routes: skillImportRoutes });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const response = await request("/api/skill-import/sessions", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer clerk-session",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(400);
+    expectApiError(response.body);
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+  });
+
   it("refuses an unauthenticated caller", async () => {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
@@ -286,7 +311,7 @@ describe("POST /api/skill-import/sessions", () => {
     const response = await accept(
       sessionsClient().create({
         headers: { authorization: "Bearer nope" },
-        body: {},
+        body: { provider: "claudeCode" },
       }),
       [401],
     );
@@ -380,42 +405,6 @@ describe("POST /api/skill-import/skills", () => {
       expect.objectContaining({
         id: created.body.workflowId,
         importSource: "codex",
-      }),
-    );
-  });
-
-  it("leaves the workflow untagged for a session that named no tool", async () => {
-    const { actor, agentId } = await openSession();
-    // A token minted before sessions recorded a tool carries no provider.
-    const issuedAt = Math.floor(now() / 1000);
-    const untagged = signSkillImportJwtForTests({
-      scope: "skill-import",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      agentId,
-      iat: issuedAt,
-      exp: issuedAt + 60 * 60,
-    });
-
-    const created = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(untagged),
-        body: skillBody(),
-      }),
-      [201],
-    );
-
-    const listed = await accept(
-      workflowListClient().list({
-        headers: clerkHeaders(actor),
-        query: { agentId },
-      }),
-      [200],
-    );
-    expect(listed.body).toContainEqual(
-      expect.objectContaining({
-        id: created.body.workflowId,
-        importSource: null,
       }),
     );
   });
@@ -590,6 +579,7 @@ describe("POST /api/skill-import/skills", () => {
       userId: actor.userId,
       orgId: actor.orgId,
       agentId,
+      provider: "claudeCode",
       iat: issuedAt,
       exp: issuedAt + 60 * 60,
     });
@@ -629,6 +619,7 @@ describe("POST /api/skill-import/skills", () => {
       userId: actor.userId,
       orgId: actor.orgId,
       agentId: randomUUID(),
+      provider: "claudeCode",
       iat: issuedAt,
       exp: issuedAt + 60 * 60,
     });

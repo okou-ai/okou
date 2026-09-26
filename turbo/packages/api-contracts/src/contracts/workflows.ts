@@ -1514,7 +1514,10 @@ export const workflowSummarySchema = z.object({
     })
     .nullable()
     .optional(),
-  // Optional so an app can still read an API that predates the import tag.
+  // Rollout fallback (surface: new app -> old API). Optional so a new app can
+  // still read the workflow list and detail from an API that predates the
+  // import tag. Remove the `.optional()` once that API is no longer serving or
+  // retained as a production rollback target.
   importSource: workflowImportSourceSchema.nullable().optional(),
 });
 

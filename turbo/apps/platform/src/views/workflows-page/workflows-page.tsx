@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import {
   surfaceVariants,
+  Badge,
   Button,
   DropdownMenu,
   DropdownMenuContent,
@@ -579,6 +580,8 @@ function WorkflowRow({
   readonly displayTimezone: string;
 }) {
   const title = workflowTitle(workflow);
+  const importSourceShown =
+    useGet(featureSwitch$)[FeatureSwitchKey.WorkflowSkillImport] ?? false;
   return (
     <article className="flex items-center gap-3 px-5 py-3.5 text-left text-foreground transition-colors hover:bg-state-hover">
       <WorkflowTooltip workflow={workflow}>
@@ -617,8 +620,8 @@ function WorkflowRow({
                     })}
               </span>
             ) : null}
-            {workflow.importSource ? (
-              <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {importSourceShown && workflow.importSource ? (
+              <Badge className="shrink-0 text-xs font-medium text-muted-foreground">
                 {workflow.importSource === "codex"
                   ? i18n.t(($) => {
                       return $.workflows.skillImport.source.codex;
@@ -626,7 +629,7 @@ function WorkflowRow({
                   : i18n.t(($) => {
                       return $.workflows.skillImport.source.claudeCode;
                     })}
-              </span>
+              </Badge>
             ) : null}
           </span>
         </Link>

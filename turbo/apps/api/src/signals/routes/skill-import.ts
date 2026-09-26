@@ -154,7 +154,7 @@ const createSessionInner$ = command(
       auth.userId,
       auth.orgId,
       agentId,
-      bodyResult.data.provider ?? null,
+      bodyResult.data.provider,
     );
     // The token is a credential; keep it out of every cache on the way back.
     set(setResHeader$, "Cache-Control", "no-store");

@@ -122,9 +122,7 @@ const skillImportTokenPayloadSchema = jwtBaseSchema.extend({
   scope: z.literal("skill-import"),
   orgId: z.string().min(1),
   agentId: z.string().min(1),
-  // Absent from a token issued before the import tag, or for a session that
-  // named no tool; the workflows such a session imports stay untagged.
-  provider: workflowImportSourceSchema.optional(),
+  provider: workflowImportSourceSchema,
 });
 
 export type SkillImportTokenPayload = z.infer<
@@ -436,7 +434,7 @@ export function verifySkillImportToken(token: string): SkillImportAuth | null {
     userId: parsed.data.userId,
     orgId: parsed.data.orgId,
     agentId: parsed.data.agentId,
-    provider: parsed.data.provider ?? null,
+    provider: parsed.data.provider,
     issuedAtSeconds: parsed.data.iat,
   };
 }
@@ -445,7 +443,7 @@ export function generateSkillImportToken(
   userId: string,
   orgId: string,
   agentId: string,
-  provider: WorkflowImportSource | null,
+  provider: WorkflowImportSource,
 ): { readonly token: string; readonly expiresAt: Date } {
   const nowSeconds = Math.floor(now() / 1000);
   const expiresAtSeconds = nowSeconds + SKILL_IMPORT_SESSION_TTL_SECONDS;
@@ -454,7 +452,7 @@ export function generateSkillImportToken(
     userId,
     orgId,
     agentId,
-    ...(provider === null ? {} : { provider }),
+    provider,
     iat: nowSeconds,
     exp: expiresAtSeconds,
   };
