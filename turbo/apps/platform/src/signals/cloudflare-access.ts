@@ -586,7 +586,9 @@ export const cloudflareAccessConversionPreview$ = computed(async (get) => {
   if (result.status === 403) {
     return null;
   }
-  // Until the API rollout completes, an older API has no named preview.
+  // New App -> old serving or rollback API: only a missing route (404) uses
+  // the legacy preview. Remove once every serving and supported rollback API
+  // implements impact-preview (#36992).
   const legacy = await accept(
     client.client.conversionPreview({ params: { configId: dialog.configId } }),
     [200, 403, 404],
@@ -780,6 +782,9 @@ export const cloudflareAccessDeletionPreview$ = computed(async (get) => {
   if (result.status === 403) {
     return null;
   }
+  // New App -> old serving or rollback API: only a missing route (404) uses
+  // the legacy preview. Remove once every serving and supported rollback API
+  // implements impact-preview (#36992).
   const legacy = await accept(
     client.client.deletionPreview({ params: { configId: dialog.configId } }),
     [200, 403, 404],
