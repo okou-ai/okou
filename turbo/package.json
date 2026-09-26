@@ -42,7 +42,7 @@
     "tailwind-csstree": "^0.4.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "turbo": "^2.10.12",
+    "turbo": "^2.11.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "typescript-eslint": "^8.69.0",
     "vitest": "^5.0.0"
