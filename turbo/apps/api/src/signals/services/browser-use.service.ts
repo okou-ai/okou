@@ -22,7 +22,6 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import {
-  createDeferredPromise,
   readBoundedResponseText,
   safeJsonParse,
   safeSync,
@@ -316,15 +315,40 @@ async function sendBrowserUseCdpCommand(
   signal.throwIfAborted();
   // Keep one listener for the entire command: a nonmatching CDP event and its
   // reply can arrive back-to-back before an awaited one-shot listener re-arms.
-  const pending = createDeferredPromise<unknown>(signal);
-  const onDisconnect = () => {
-    if (!pending.settled()) {
-      pending.reject(new Error("Browser Use CDP connection closed"));
+  const { promise, resolve, reject } = (
+    Promise as PromiseConstructor & {
+      withResolvers<T>(): {
+        promise: Promise<T>;
+        resolve: (value: T) => void;
+        reject: (reason?: unknown) => void;
+      };
     }
-  };
-  const onMessage = (event: MessageEvent) => {
+  ).withResolvers<unknown>();
+  let settled = false;
+  function finish(complete: () => void): void {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    socket.removeEventListener("message", onMessage);
+    socket.removeEventListener("error", onDisconnect);
+    socket.removeEventListener("close", onDisconnect);
+    signal.removeEventListener("abort", onAbort);
+    complete();
+  }
+  function onDisconnect(): void {
+    finish(() => {
+      reject(new Error("Browser Use CDP connection closed"));
+    });
+  }
+  function onAbort(): void {
+    finish(() => {
+      reject(signal.reason);
+    });
+  }
+  function onMessage(event: MessageEvent): void {
     if (
-      pending.settled() ||
+      settled ||
       typeof event.data !== "string" ||
       event.data.length >
         (maxResponseBytes ?? MAX_BROWSER_USE_CDP_RESPONSE_BYTES)
@@ -337,18 +361,24 @@ async function sendBrowserUseCdpCommand(
     if (!response.success || response.data.id !== id) {
       return;
     }
-    if (response.data.error) {
-      pending.reject(
-        new BrowserUseCdpCommandError(response.data.error.message),
-      );
+    const error = response.data.error;
+    if (error) {
+      finish(() => {
+        reject(new BrowserUseCdpCommandError(error.message));
+      });
       return;
     }
-    pending.resolve(response.data.result);
-  };
+    finish(() => {
+      resolve(response.data.result);
+    });
+  }
   socket.addEventListener("message", onMessage);
   socket.addEventListener("error", onDisconnect);
   socket.addEventListener("close", onDisconnect);
-  if (!pending.settled()) {
+  signal.addEventListener("abort", onAbort, { once: true });
+  if (signal.aborted) {
+    onAbort();
+  } else if (!settled) {
     const sent = safeSync(() => {
       socket.send(
         JSON.stringify({
@@ -359,18 +389,13 @@ async function sendBrowserUseCdpCommand(
         }),
       );
     });
-    if ("error" in sent && !pending.settled()) {
-      pending.reject(sent.error);
+    if ("error" in sent) {
+      finish(() => {
+        reject(sent.error);
+      });
     }
   }
-  const result = await settleIncludingAbort(pending.promise);
-  socket.removeEventListener("message", onMessage);
-  socket.removeEventListener("error", onDisconnect);
-  socket.removeEventListener("close", onDisconnect);
-  if (!result.ok) {
-    throw result.error;
-  }
-  return result.value;
+  return await promise;
 }
 
 async function withBrowserUseCdpSocket<T>(
