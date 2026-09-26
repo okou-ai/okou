@@ -1,5 +1,25 @@
 # Deployment Compatibility
 
+## Workflow import source column (2026-09-25)
+
+Migration `1264_workflow_import_source` adds the nullable
+`workflows.import_source` column. It is a metadata-only `ADD COLUMN` without a
+default, so it takes a brief `ACCESS EXCLUSIVE` lock under the default 1s lock
+timeout and rewrites no rows.
+
+The skill import writes the column when it creates a workflow, from the
+`provider` claim in the session token; the workflow list and detail responses
+expose it as an optional `importSource`. An older API neither reads nor writes
+the column, so a rollback only stops tagging new imports, and an older app
+ignores the extra response field. A newer app reads a missing `importSource`
+from an older API as untagged; that optional field is a bounded rollout
+fallback, removed once the pre-change API is no longer serving or retained as
+a rollback target. The session request body and token now require `provider`.
+Skill import is still behind the non-GA `OnboardingSourcesFirst` and
+`WorkflowSkillImport` switches, so an older app's bodyless session request and
+a session token issued before this change are rejected rather than kept
+compatible, per `docs/fallback.md` section 2. No API rollback floor is needed.
+
 ## Chat search GIN index drops fastupdate and API maintenance; audit approval column contracted (2026-09-26)
 
 Migration `1263_chat_search_gin_fastupdate_off_drop_audit_approval` is

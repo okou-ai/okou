@@ -51,6 +51,8 @@ import { CreditPurchaseConfirmDialog } from "./components/org-manage/credit-purc
 import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subscription-purchase-confirm-dialog.tsx";
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
+import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-dialog.ts";
+import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
 import {
   paletteColorTheme$,
   shellDocumentAttributesRef$,
@@ -369,6 +371,12 @@ function AttachmentLightboxMount() {
   return lightboxUrl ? <AttachmentLightbox /> : null;
 }
 
+/** Mounted only while open, so a closed dialog costs the shell nothing. */
+function SkillImportDialogMount() {
+  const open = useGet(skillImportDialogOpen$);
+  return open ? <SkillImportDialog /> : null;
+}
+
 function MobileSidebarMount() {
   const expanded = useGet(sidebarExpanded$);
   const setExpanded = useSet(setSidebarExpanded$);
@@ -416,6 +424,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <CreditPurchaseConfirmDialog />
       <SubscriptionPurchaseConfirmDialog />
       <AttachmentLightboxMount />
+      <SkillImportDialogMount />
       <QueueDrawer />
       {isDesktop ? <Sidebar isDesktop /> : <MobileSidebarMount />}
       <WorkspaceInset beside={chatListHidden ? "nav-rail" : "chat-list"}>

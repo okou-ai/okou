@@ -7893,6 +7893,20 @@
       "uninstallTitle": "卸载官方工作流",
       "viewAndInstall": "查看并安装",
       "yes": "是"
+    },
+    "skillImport": {
+      "action": "导入技能",
+      "description": "在你的技能所在的地方运行这段提示词。每个技能都会成为一个私有工作流。",
+      "emptyAction": "从 Claude Code 或 Codex 导入",
+      "hidePrompt": "隐藏提示词",
+      "providerLabel": "导入来源",
+      "showPrompt": "显示提示词",
+      "source": {
+        "claudeCode": "导入自 Claude Code",
+        "codex": "导入自 Codex"
+      },
+      "title": "导入你的技能",
+      "viewWorkflows": "查看工作流"
     }
   },
   "works": {

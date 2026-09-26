@@ -7996,6 +7996,20 @@
       "uninstallTitle": "Desinstalar flujo de trabajo oficial",
       "viewAndInstall": "Ver e instalar",
       "yes": "Sí"
+    },
+    "skillImport": {
+      "action": "Importar skills",
+      "description": "Ejecuta este prompt donde están tus skills. Cada una se convierte en un flujo de trabajo privado.",
+      "emptyAction": "Importar desde Claude Code o Codex",
+      "hidePrompt": "Ocultar prompt",
+      "providerLabel": "Importar desde",
+      "showPrompt": "Mostrar prompt",
+      "source": {
+        "claudeCode": "Importado de Claude Code",
+        "codex": "Importado de Codex"
+      },
+      "title": "Importa tus skills",
+      "viewWorkflows": "Ver flujos de trabajo"
     }
   },
   "works": {

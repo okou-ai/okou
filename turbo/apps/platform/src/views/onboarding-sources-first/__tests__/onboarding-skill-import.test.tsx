@@ -1,6 +1,10 @@
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import { skillImportSessionsContract } from "@okouai/api-contracts/contracts/skill-import";
+import {
+  SKILL_IMPORT_LIMITS,
+  SKILL_IMPORT_SESSION_TTL_SECONDS,
+  skillImportSessionsContract,
+} from "@okouai/api-contracts/contracts/skill-import";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import {
   workflowsCollectionContract,
@@ -15,6 +19,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { now } from "../../../lib/time.ts";
 import { pathname } from "../../../signals/location.ts";
 import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
@@ -126,6 +131,23 @@ function mockAgentWorkflows(): {
       workflows = next;
     },
   };
+}
+
+/** Each session names the tool it was opened for, in the order they opened. */
+function mockSessions(): { readonly providers: string[] } {
+  const providers: string[] = [];
+  context.mocks.api(skillImportSessionsContract.create, ({ body, respond }) => {
+    providers.push(body.provider);
+    return respond(200, {
+      uploadUrl: "https://api.okou.test/api/skill-import/skills",
+      token: SESSION_TOKEN,
+      expiresAt: new Date(
+        now() + SKILL_IMPORT_SESSION_TTL_SECONDS * 1000,
+      ).toISOString(),
+      limits: SKILL_IMPORT_LIMITS,
+    });
+  });
+  return { providers };
 }
 
 function getButtonByName(name: string): HTMLElement {
@@ -353,6 +375,7 @@ test("The step hands over the prompt its session produced, and copies it whole",
   const posthog = context.mocks.posthog();
   const clipboard = context.mocks.browser.clipboardWriteText();
   mockAgentWorkflows();
+  const sessions = mockSessions();
 
   await openSkillsStep();
 
@@ -391,10 +414,12 @@ test("The step hands over the prompt its session produced, and copies it whole",
   );
   // The token is the session; it belongs on the clipboard and nowhere else.
   expect(JSON.stringify(posthog.events)).not.toContain(SESSION_TOKEN);
+  expect(sessions.providers).toStrictEqual(["codex"]);
 });
 
 test("The skills step names Claude Code when it was selected", async () => {
   mockAgentWorkflows();
+  const sessions = mockSessions();
 
   await openSkillsStep("Claude Code");
 
@@ -408,6 +433,7 @@ test("The skills step names Claude Code when it was selected", async () => {
   expect(prompt.textContent).toContain("~/.claude/skills/");
   expect(prompt.textContent).toContain("~/.agents/skills/");
   expect(prompt.textContent).not.toContain("~/.codex/skills/");
+  expect(sessions.providers).toStrictEqual(["claudeCode"]);
 });
 
 test("Finishing onboarding sends the selected Codex model preference after a full flow", async () => {

@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { RESERVED_SKILL_FILE, workflowNameSchema } from "./workflows";
+import {
+  RESERVED_SKILL_FILE,
+  workflowImportSourceSchema,
+  workflowNameSchema,
+} from "./workflows";
 
 const c = initContract();
 
@@ -14,8 +18,9 @@ const c = initContract();
  * the Platform mints a short-lived session, and the user's agent uploads one
  * skill per request with the session token.
  *
- * Both routes are gated by `FeatureSwitchKey.OnboardingSourcesFirst`, the same
- * switch as the onboarding step they serve, and answer `403` while it is off.
+ * The routes serve the onboarding skills step and the workflows page's import
+ * dialog, so they answer while either `FeatureSwitchKey.OnboardingSourcesFirst`
+ * or `FeatureSwitchKey.WorkflowSkillImport` is on, and `403` otherwise.
  *
  * Binary content is deliberately out of scope for this version. A later version
  * can add an explicit encoding to the upload body without touching the shared
@@ -48,6 +53,17 @@ export const skillImportLimitsSchema = z.object({
   maxRequestBytes: z.number().int().positive(),
 });
 export type SkillImportLimits = z.infer<typeof skillImportLimitsSchema>;
+
+/**
+ * The tool the prompt is written for. The session records it so every skill
+ * the session imports is tagged with where it came from.
+ */
+export const skillImportSessionRequestSchema = z.object({
+  provider: workflowImportSourceSchema,
+});
+export type SkillImportSessionRequest = z.infer<
+  typeof skillImportSessionRequestSchema
+>;
 
 export const skillImportSessionResponseSchema = z.object({
   /** Absolute URL of the upload route the prompt posts each skill to. */
@@ -142,9 +158,10 @@ export const skillImportSessionsContract = c.router({
     method: "POST",
     path: "/api/skill-import/sessions",
     headers: authHeadersSchema,
-    body: c.noBody(),
+    body: skillImportSessionRequestSchema,
     responses: {
       200: skillImportSessionResponseSchema,
+      400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,

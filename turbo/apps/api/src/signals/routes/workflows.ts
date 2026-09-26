@@ -7,6 +7,7 @@ import {
   workflowsDetailContract,
   workflowVisibilityContract,
   type WorkflowCreateRequest,
+  type WorkflowImportSource,
 } from "@okouai/api-contracts/contracts/workflows";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
@@ -404,6 +405,8 @@ export interface WorkflowCreationInput {
   readonly member: WorkflowMember;
   readonly body: WorkflowCreateRequest;
   readonly visibility: "public" | "private";
+  /** Set only by the skill import, for the tool the skill came from. */
+  readonly importSource?: WorkflowImportSource | null;
 }
 
 async function validateWorkflowCreation(
@@ -485,6 +488,7 @@ async function createPreparedWorkflow(
         ownerUserId: member.userId,
         displayName: body.displayName ?? null,
         description: body.description ?? null,
+        importSource: args.importSource ?? null,
         createdBy: member.userId,
         updatedBy: member.userId,
         createdAt: currentTime,

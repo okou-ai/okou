@@ -7893,6 +7893,20 @@
       "uninstallTitle": "Hapus instalasi Workflow Resmi",
       "viewAndInstall": "Lihat dan instal",
       "yes": "Ya"
+    },
+    "skillImport": {
+      "action": "Impor skill",
+      "description": "Jalankan prompt ini di tempat skill Anda berada. Setiap skill menjadi alur kerja pribadi.",
+      "emptyAction": "Impor dari Claude Code atau Codex",
+      "hidePrompt": "Sembunyikan prompt",
+      "providerLabel": "Impor dari",
+      "showPrompt": "Tampilkan prompt",
+      "source": {
+        "claudeCode": "Diimpor dari Claude Code",
+        "codex": "Diimpor dari Codex"
+      },
+      "title": "Impor skill Anda",
+      "viewWorkflows": "Lihat alur kerja"
     }
   },
   "works": {

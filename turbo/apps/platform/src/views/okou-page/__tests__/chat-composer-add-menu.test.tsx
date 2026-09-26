@@ -10,6 +10,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { pathname } from "../../../signals/location.ts";
 import { mockTemplateChat } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   THREAD_ID,
@@ -98,6 +99,43 @@ test("collapses those buttons into the add menu's rows", async () => {
     "Template",
     "Create workflow",
   ]);
+});
+
+test("adds import skills after create workflow and opens its dialog", async () => {
+  const editor = await setupComposer({
+    [FeatureSwitchKey.ComposerAddMenu]: true,
+    [FeatureSwitchKey.WorkflowSkillImport]: true,
+  });
+
+  const menu = await openAddMenu(editor);
+  expect(menuItemLabels(menu)).toStrictEqual([
+    "Attach",
+    "Template",
+    "Create workflow",
+    "Import skills",
+  ]);
+  click(menuItem(menu, "Import skills"));
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "Import your skills",
+  });
+  await expect(
+    within(dialog).findByRole("region", { name: "Skill import prompt" }),
+  ).resolves.toBeVisible();
+
+  const viewWorkflows = queryAllByRoleFast("link", dialog).find((link) => {
+    return link.textContent?.trim() === "View workflows";
+  });
+  if (!viewWorkflows) {
+    throw new Error("Expected the View workflows link");
+  }
+  click(viewWorkflows);
+  await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
+  });
+  expect(
+    screen.queryByRole("dialog", { name: "Import your skills" }),
+  ).toBeNull();
 });
 
 // The dialog used to be mounted by the toolbar button that the menu replaces.

@@ -31,6 +31,8 @@ export type { WorkflowAutomationEventConfig } from "@okouai/db/jsonb-contracts/w
  */
 export type WorkflowVisibility = "public" | "private";
 export type OfficialWorkflowInstallationState = "installing" | "installed";
+/** The local tool a skill-imported workflow came from. */
+export type WorkflowImportSource = "claudeCode" | "codex";
 export type OfficialWorkflowReconciliationStatus =
   | "current"
   | "reconciling"
@@ -72,6 +74,11 @@ export const workflows = pgTable(
     officialInstallationState: varchar("official_installation_state", {
       length: 32,
     }).$type<OfficialWorkflowInstallationState>(),
+    // Set once by the skill import when it creates the workflow; null for a
+    // workflow made in Okou or imported by a session that named no tool.
+    importSource: varchar("import_source", {
+      length: 32,
+    }).$type<WorkflowImportSource>(),
     createdBy: text("created_by").notNull(),
     updatedBy: text("updated_by").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
