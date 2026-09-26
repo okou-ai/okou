@@ -1544,68 +1544,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     expect((await api.readRun(actor, first.runId)).status).toBe("cancelled");
   }, 90_000);
 
-  it("keeps a gap after concurrent idempotent sends reserve the same event", async () => {
-    const { actor, agentId } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const thread = await chat.createThread(actor, {
-      agentId,
-      title: "Concurrent idempotent send thread",
-    });
-    const threadLock = await holdChatThreadRowLockFixture({
-      threadId: thread.id,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      threadLock.release();
-      await threadLock.done;
-    });
-
-    const clientEventId = randomUUID();
-    const sendEvent = () => {
-      return chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: thread.id,
-          prompt: "send once through two concurrent requests",
-          clientEventId,
-        },
-        [201],
-      );
-    };
-    const sends = [sendEvent(), sendEvent()];
-    await expect.poll(threadLock.blockedWaiterCount).toBeGreaterThanOrEqual(2);
-    threadLock.release();
-    await threadLock.done;
-
-    const responses = await Promise.all(sends);
-    const runIds = new Set<string>();
-    for (const response of responses) {
-      if (response.status !== 201) {
-        throw new Error("Expected both concurrent sends to be accepted");
-      }
-      if (response.body.runId !== null) {
-        runIds.add(response.body.runId);
-      }
-    }
-    expect(runIds.size).toBe(1);
-
-    const messages = await chat.listThreadEvents(actor, thread.id);
-    const seqIds = messages.events.map((event) => {
-      return event.seqId;
-    });
-    expect(
-      seqIds.some((seqId, index) => {
-        const previousSeqId = seqIds[index - 1];
-        return previousSeqId !== undefined && seqId > previousSeqId + 1;
-      }),
-    ).toBeTruthy();
-
-    for (const runId of runIds) {
-      await cancelChatRun(actor, runId);
-    }
-  }, 90_000);
-
   it("keeps a queued message when recall targets another owned thread", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();

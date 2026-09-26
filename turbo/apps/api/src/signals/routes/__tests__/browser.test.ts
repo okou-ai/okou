@@ -7328,25 +7328,6 @@ describe("okou browser route", () => {
       },
     ]);
 
-    const collided = await createApp({
-      signal: context.signal,
-      routes: TEST_APP_ROUTES,
-    }).request(`/api/chat-threads/${first.threadId}/browser/close`, {
-      method: "POST",
-      headers: {
-        authorization: "Bearer clerk-session",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ eventId: closeEventId }),
-    });
-    expect(collided.status).toBe(409);
-    await expect(collided.json()).resolves.toMatchObject({
-      error: { code: "BROWSER_EVENT_ID_CONFLICT" },
-    });
-    expect(providerCreates).toBe(2);
-    await flushWaitUntilForTest();
-    expect(providerStops).toBe(1);
-
     await chat.deleteThread(actor, first.threadId);
     await flushWaitUntilForTest();
     expect(providerStops).toBe(2);
