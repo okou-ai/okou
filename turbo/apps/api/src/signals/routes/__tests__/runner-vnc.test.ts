@@ -456,9 +456,13 @@ describe("private Runner VNC authority", () => {
     );
     await api.grantSsh(f, false);
     const kms = useSecretKmsProbe();
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unsupported_profile",
-    });
+    await expect(
+      api.resolve(f, {
+        supportedProfiles: vncProfiles.filter((profile) => {
+          return profile.transportType === "direct";
+        }),
+      }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
     expect(kms.decryptCalls).toBe(0);
     expect((await check(f, 2)).body).toStrictEqual({
       outcome: "unavailable",

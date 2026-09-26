@@ -1963,9 +1963,8 @@ pub mod runners {
             pub runner_identity: CheckRequestRunnerIdentity,
             /// Configuration generation returned by credential resolution.
             pub expected_generation: i64,
-            /// Expected explicit transport snapshot; omission preserves legacy direct-only checks.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub expected_transport: Option<CheckRequestExpectedTransport>,
+            /// Expected explicit transport snapshot.
+            pub expected_transport: CheckRequestExpectedTransport,
         }
 
         /// Current authorization snapshot, not a reservation or guarantee of exclusive control.
@@ -2056,9 +2055,8 @@ pub mod runners {
             pub auth_method: ResolveRequestSupportedProfileAuthMethod,
             /// Supported security policy.
             pub security_type: ResolveRequestSupportedProfileSecurityType,
-            /// Supported transport; omission is the legacy direct-only capability.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub transport_type: Option<ResolveRequestSupportedProfileTransportType>,
+            /// Supported transport for this exact tuple.
+            pub transport_type: ResolveRequestSupportedProfileTransportType,
         }
 
         /// Resolve one saved VNC policy supported by this Runner.
@@ -2071,318 +2069,6 @@ pub mod runners {
             pub runner_identity: ResolveRequestRunnerIdentity,
             /// Exact supported tuples; empty means no supported policy.
             pub supported_profiles: Vec<ResolveRequestSupportedProfile>,
-        }
-
-        /// Typed private VNC credential.
-        pub enum ResolveResponseResolvedAuthentication {
-            /// Classic VNC password challenge response.
-            VncPassword {
-                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
-                password: crate::SecretUtf8Text<1023>,
-            },
-            /// Username/password authentication inside verified TLS.
-            UsernamePassword {
-                /// Bounded Plain username, preserving exact UTF-8 bytes.
-                username: String,
-                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
-                password: crate::SecretUtf8Text<1023>,
-            },
-            /// Apple DH username/password fields; the Runner validates 63-byte bounds.
-            AppleDhUsernamePassword {
-                /// Bounded Plain username, preserving exact UTF-8 bytes.
-                username: String,
-                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
-                password: crate::SecretUtf8Text<1023>,
-            },
-            /// Apple Direct SRP username/password fields; the Runner validates 255/1023-byte bounds.
-            AppleSrpUsernamePassword {
-                /// Bounded Plain username, preserving exact UTF-8 bytes.
-                username: String,
-                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
-                password: crate::SecretUtf8Text<1023>,
-            },
-            /// Apple RSA/SRP username/password fields; the Runner validates 234/1023-byte bounds.
-            AppleRsaSrpUsernamePassword {
-                /// Bounded Plain username, preserving exact UTF-8 bytes.
-                username: String,
-                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
-                password: crate::SecretUtf8Text<1023>,
-            },
-        }
-
-        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedAuthentication {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
-                #[derive(serde::Deserialize)]
-                enum Kind {
-                    #[serde(rename = "vnc_password")]
-                    VncPassword,
-                    #[serde(rename = "username_password")]
-                    UsernamePassword,
-                    #[serde(rename = "apple_dh_username_password")]
-                    AppleDhUsernamePassword,
-                    #[serde(rename = "apple_srp_username_password")]
-                    AppleSrpUsernamePassword,
-                    #[serde(rename = "apple_rsa_srp_username_password")]
-                    AppleRsaSrpUsernamePassword,
-                }
-                #[derive(serde::Deserialize)]
-                #[serde(field_identifier)]
-                enum Field {
-                    #[serde(rename = "method")]
-                    Outcome,
-                    #[serde(rename = "password")]
-                    Password,
-                    #[serde(rename = "username")]
-                    Username,
-                }
-                struct Visitor;
-                impl<'de> serde::de::Visitor<'de> for Visitor {
-                    type Value = ResolveResponseResolvedAuthentication;
-                    fn expecting(
-                        &self,
-                        formatter: &mut std::fmt::Formatter<'_>,
-                    ) -> std::fmt::Result {
-                        formatter.write_str("a private authority response object")
-                    }
-                    fn visit_map<M: serde::de::MapAccess<'de>>(
-                        self,
-                        mut map: M,
-                    ) -> Result<Self::Value, M::Error> {
-                        let mut outcome = None::<Kind>;
-                        let mut password = None::<crate::SecretUtf8Text<1023>>;
-                        let mut username = None::<String>;
-                        while let Some(field) = map.next_key::<Field>()? {
-                            match field {
-                                Field::Outcome => {
-                                    if outcome.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    outcome = Some(map.next_value()?);
-                                }
-                                Field::Password => {
-                                    if password.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    password = Some(map.next_value()?);
-                                }
-                                Field::Username => {
-                                    if username.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    username = Some(map.next_value()?);
-                                }
-                            }
-                        }
-                        match (outcome, password, username) {
-                            (Some(Kind::VncPassword), Some(password), None) => Ok(ResolveResponseResolvedAuthentication::VncPassword { password }),
-                            (Some(Kind::UsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedAuthentication::UsernamePassword { username, password }),
-                            (Some(Kind::AppleDhUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedAuthentication::AppleDhUsernamePassword { username, password }),
-                            (Some(Kind::AppleSrpUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedAuthentication::AppleSrpUsernamePassword { username, password }),
-                            (Some(Kind::AppleRsaSrpUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedAuthentication::AppleRsaSrpUsernamePassword { username, password }),
-                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
-                        }
-                    }
-                }
-                deserializer.deserialize_map(Visitor)
-            }
-        }
-
-        /// Exact trust source; insecure verification is not representable.
-        pub enum ResolveResponseResolvedSecurityX509VncTrust {
-            /// Use system trust roots.
-            System,
-            /// Use the explicitly saved custom CA bundle.
-            CustomCa {
-                /// Owner-provided CA bundle, private to this connection.
-                ca_bundle: String,
-            },
-        }
-
-        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedSecurityX509VncTrust {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
-                #[derive(serde::Deserialize)]
-                enum Kind {
-                    #[serde(rename = "system")]
-                    System,
-                    #[serde(rename = "custom_ca")]
-                    CustomCa,
-                }
-                #[derive(serde::Deserialize)]
-                #[serde(field_identifier)]
-                enum Field {
-                    #[serde(rename = "mode")]
-                    Outcome,
-                    #[serde(rename = "caBundle")]
-                    CaBundle,
-                }
-                struct Visitor;
-                impl<'de> serde::de::Visitor<'de> for Visitor {
-                    type Value = ResolveResponseResolvedSecurityX509VncTrust;
-                    fn expecting(
-                        &self,
-                        formatter: &mut std::fmt::Formatter<'_>,
-                    ) -> std::fmt::Result {
-                        formatter.write_str("a private authority response object")
-                    }
-                    fn visit_map<M: serde::de::MapAccess<'de>>(
-                        self,
-                        mut map: M,
-                    ) -> Result<Self::Value, M::Error> {
-                        let mut outcome = None::<Kind>;
-                        let mut ca_bundle = None::<String>;
-                        while let Some(field) = map.next_key::<Field>()? {
-                            match field {
-                                Field::Outcome => {
-                                    if outcome.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    outcome = Some(map.next_value()?);
-                                }
-                                Field::CaBundle => {
-                                    if ca_bundle.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    ca_bundle = Some(map.next_value()?);
-                                }
-                            }
-                        }
-                        match (outcome, ca_bundle) {
-                            (Some(Kind::System), None) => {
-                                Ok(ResolveResponseResolvedSecurityX509VncTrust::System)
-                            }
-                            (Some(Kind::CustomCa), Some(ca_bundle)) => {
-                                Ok(ResolveResponseResolvedSecurityX509VncTrust::CustomCa {
-                                    ca_bundle,
-                                })
-                            }
-                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
-                        }
-                    }
-                }
-                deserializer.deserialize_map(Visitor)
-            }
-        }
-
-        /// Saved security policy, independent of future engine capabilities.
-        pub enum ResolveResponseResolvedSecurity {
-            /// VeNCrypt X509Vnc with verified TLS.
-            X509Vnc {
-                /// Required verified TLS trust policy.
-                trust: ResolveResponseResolvedSecurityX509VncTrust,
-            },
-            /// VeNCrypt X509Plain with verified TLS.
-            X509Plain {
-                /// Required verified TLS trust policy.
-                trust: ResolveResponseResolvedSecurityX509VncTrust,
-            },
-            /// Apple bare type 2; only the separately verified SSH channel protects the RFB session.
-            AppleVncPassword,
-            /// Apple DH type 30; only the separately verified SSH channel protects the RFB session.
-            AppleDh,
-            /// Apple Direct SRP type 36; only the separately verified SSH channel protects the RFB session.
-            AppleSrp,
-            /// Apple RSA/SRP type 33; only the separately verified SSH channel protects the RFB session.
-            AppleRsaSrp,
-        }
-
-        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedSecurity {
-            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
-                #[derive(serde::Deserialize)]
-                enum Kind {
-                    #[serde(rename = "x509_vnc")]
-                    X509Vnc,
-                    #[serde(rename = "x509_plain")]
-                    X509Plain,
-                    #[serde(rename = "apple_vnc_password")]
-                    AppleVncPassword,
-                    #[serde(rename = "apple_dh")]
-                    AppleDh,
-                    #[serde(rename = "apple_srp")]
-                    AppleSrp,
-                    #[serde(rename = "apple_rsa_srp")]
-                    AppleRsaSrp,
-                }
-                #[derive(serde::Deserialize)]
-                #[serde(field_identifier)]
-                enum Field {
-                    #[serde(rename = "type")]
-                    Outcome,
-                    #[serde(rename = "trust")]
-                    Trust,
-                }
-                struct Visitor;
-                impl<'de> serde::de::Visitor<'de> for Visitor {
-                    type Value = ResolveResponseResolvedSecurity;
-                    fn expecting(
-                        &self,
-                        formatter: &mut std::fmt::Formatter<'_>,
-                    ) -> std::fmt::Result {
-                        formatter.write_str("a private authority response object")
-                    }
-                    fn visit_map<M: serde::de::MapAccess<'de>>(
-                        self,
-                        mut map: M,
-                    ) -> Result<Self::Value, M::Error> {
-                        let mut outcome = None::<Kind>;
-                        let mut trust = None::<ResolveResponseResolvedSecurityX509VncTrust>;
-                        while let Some(field) = map.next_key::<Field>()? {
-                            match field {
-                                Field::Outcome => {
-                                    if outcome.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    outcome = Some(map.next_value()?);
-                                }
-                                Field::Trust => {
-                                    if trust.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    trust = Some(map.next_value()?);
-                                }
-                            }
-                        }
-                        match (outcome, trust) {
-                            (Some(Kind::X509Vnc), Some(trust)) => {
-                                Ok(ResolveResponseResolvedSecurity::X509Vnc { trust })
-                            }
-                            (Some(Kind::X509Plain), Some(trust)) => {
-                                Ok(ResolveResponseResolvedSecurity::X509Plain { trust })
-                            }
-                            (Some(Kind::AppleVncPassword), None) => {
-                                Ok(ResolveResponseResolvedSecurity::AppleVncPassword)
-                            }
-                            (Some(Kind::AppleDh), None) => {
-                                Ok(ResolveResponseResolvedSecurity::AppleDh)
-                            }
-                            (Some(Kind::AppleSrp), None) => {
-                                Ok(ResolveResponseResolvedSecurity::AppleSrp)
-                            }
-                            (Some(Kind::AppleRsaSrp), None) => {
-                                Ok(ResolveResponseResolvedSecurity::AppleRsaSrp)
-                            }
-                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
-                        }
-                    }
-                }
-                deserializer.deserialize_map(Visitor)
-            }
         }
 
         /// Secret-free transport snapshot selected by an exact capability tuple.
@@ -2480,25 +2166,325 @@ pub mod runners {
             }
         }
 
+        /// Typed private VNC credential.
+        pub enum ResolveResponseResolvedTransportAuthentication {
+            /// Classic VNC password challenge response.
+            VncPassword {
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Username/password authentication inside verified TLS.
+            UsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Apple DH username/password fields; the Runner validates 63-byte bounds.
+            AppleDhUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Apple Direct SRP username/password fields; the Runner validates 255/1023-byte bounds.
+            AppleSrpUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+            /// Apple RSA/SRP username/password fields; the Runner validates 234/1023-byte bounds.
+            AppleRsaSrpUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportAuthentication {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "vnc_password")]
+                    VncPassword,
+                    #[serde(rename = "username_password")]
+                    UsernamePassword,
+                    #[serde(rename = "apple_dh_username_password")]
+                    AppleDhUsernamePassword,
+                    #[serde(rename = "apple_srp_username_password")]
+                    AppleSrpUsernamePassword,
+                    #[serde(rename = "apple_rsa_srp_username_password")]
+                    AppleRsaSrpUsernamePassword,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "method")]
+                    Outcome,
+                    #[serde(rename = "password")]
+                    Password,
+                    #[serde(rename = "username")]
+                    Username,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedTransportAuthentication;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut password = None::<crate::SecretUtf8Text<1023>>;
+                        let mut username = None::<String>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::Password => {
+                                    if password.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    password = Some(map.next_value()?);
+                                }
+                                Field::Username => {
+                                    if username.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    username = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, password, username) {
+                            (Some(Kind::VncPassword), Some(password), None) => Ok(ResolveResponseResolvedTransportAuthentication::VncPassword { password }),
+                            (Some(Kind::UsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::UsernamePassword { username, password }),
+                            (Some(Kind::AppleDhUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword { username, password }),
+                            (Some(Kind::AppleSrpUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword { username, password }),
+                            (Some(Kind::AppleRsaSrpUsernamePassword), Some(password), Some(username)) => Ok(ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword { username, password }),
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Exact trust source; insecure verification is not representable.
+        pub enum ResolveResponseResolvedTransportSecurityX509VncTrust {
+            /// Use system trust roots.
+            System,
+            /// Use the explicitly saved custom CA bundle.
+            CustomCa {
+                /// Owner-provided CA bundle, private to this connection.
+                ca_bundle: String,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportSecurityX509VncTrust {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "system")]
+                    System,
+                    #[serde(rename = "custom_ca")]
+                    CustomCa,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "mode")]
+                    Outcome,
+                    #[serde(rename = "caBundle")]
+                    CaBundle,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedTransportSecurityX509VncTrust;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut ca_bundle = None::<String>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::CaBundle => {
+                                    if ca_bundle.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    ca_bundle = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, ca_bundle) {
+                            (Some(Kind::System), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurityX509VncTrust::System)
+                            }
+                            (Some(Kind::CustomCa), Some(ca_bundle)) => Ok(
+                                ResolveResponseResolvedTransportSecurityX509VncTrust::CustomCa {
+                                    ca_bundle,
+                                },
+                            ),
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Saved security policy, independent of future engine capabilities.
+        pub enum ResolveResponseResolvedTransportSecurity {
+            /// VeNCrypt X509Vnc with verified TLS.
+            X509Vnc {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
+            },
+            /// VeNCrypt X509Plain with verified TLS.
+            X509Plain {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedTransportSecurityX509VncTrust,
+            },
+            /// Apple bare type 2; only the separately verified SSH channel protects the RFB session.
+            AppleVncPassword,
+            /// Apple DH type 30; only the separately verified SSH channel protects the RFB session.
+            AppleDh,
+            /// Apple Direct SRP type 36; only the separately verified SSH channel protects the RFB session.
+            AppleSrp,
+            /// Apple RSA/SRP type 33; only the separately verified SSH channel protects the RFB session.
+            AppleRsaSrp,
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedTransportSecurity {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "x509_vnc")]
+                    X509Vnc,
+                    #[serde(rename = "x509_plain")]
+                    X509Plain,
+                    #[serde(rename = "apple_vnc_password")]
+                    AppleVncPassword,
+                    #[serde(rename = "apple_dh")]
+                    AppleDh,
+                    #[serde(rename = "apple_srp")]
+                    AppleSrp,
+                    #[serde(rename = "apple_rsa_srp")]
+                    AppleRsaSrp,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "type")]
+                    Outcome,
+                    #[serde(rename = "trust")]
+                    Trust,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedTransportSecurity;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut trust =
+                            None::<ResolveResponseResolvedTransportSecurityX509VncTrust>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::Trust => {
+                                    if trust.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    trust = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, trust) {
+                            (Some(Kind::X509Vnc), Some(trust)) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::X509Vnc { trust })
+                            }
+                            (Some(Kind::X509Plain), Some(trust)) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::X509Plain { trust })
+                            }
+                            (Some(Kind::AppleVncPassword), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::AppleVncPassword)
+                            }
+                            (Some(Kind::AppleDh), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::AppleDh)
+                            }
+                            (Some(Kind::AppleSrp), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::AppleSrp)
+                            }
+                            (Some(Kind::AppleRsaSrp), None) => {
+                                Ok(ResolveResponseResolvedTransportSecurity::AppleRsaSrp)
+                            }
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
         /// Private credential handoff. Never Debug, clone, serialize, persist or send to guest.
         pub enum ResolveResponse {
             /// Current authority is unavailable; no credential delivered.
             Unavailable,
             /// Runner does not support the exact saved profile.
             UnsupportedProfile,
-            /// Legacy direct credential and policy; the VNC server controls connection admission.
-            Resolved {
-                /// Current private destination.
-                host: String,
-                /// Current destination port.
-                port: u64,
-                /// Current saved configuration generation.
-                generation: i64,
-                /// Credential for the explicitly saved method.
-                authentication: ResolveResponseResolvedAuthentication,
-                /// Explicit saved transport and trust policy; never downgrade.
-                security: ResolveResponseResolvedSecurity,
-            },
             /// Current credential, policy and explicit generation-bound transport.
             ResolvedTransport {
                 /// Current private destination.
@@ -2512,9 +2498,9 @@ pub mod runners {
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Credential for the explicitly saved method.
-                authentication: ResolveResponseResolvedAuthentication,
+                authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
-                security: ResolveResponseResolvedSecurity,
+                security: ResolveResponseResolvedTransportSecurity,
             },
             /// Apple classic VNC password with verified SSH-to-Mac-loopback transport only.
             ResolvedAppleVncPassword {
@@ -2527,9 +2513,9 @@ pub mod runners {
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Credential for the explicitly saved method.
-                authentication: ResolveResponseResolvedAuthentication,
+                authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
-                security: ResolveResponseResolvedSecurity,
+                security: ResolveResponseResolvedTransportSecurity,
             },
             /// Apple DH credential and verified SSH-to-Mac-loopback transport only.
             ResolvedAppleDh {
@@ -2542,9 +2528,9 @@ pub mod runners {
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Credential for the explicitly saved method.
-                authentication: ResolveResponseResolvedAuthentication,
+                authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
-                security: ResolveResponseResolvedSecurity,
+                security: ResolveResponseResolvedTransportSecurity,
             },
             /// Apple Direct SRP credential and verified SSH-to-Mac-loopback transport only.
             ResolvedAppleSrp {
@@ -2557,9 +2543,9 @@ pub mod runners {
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Credential for the explicitly saved method.
-                authentication: ResolveResponseResolvedAuthentication,
+                authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
-                security: ResolveResponseResolvedSecurity,
+                security: ResolveResponseResolvedTransportSecurity,
             },
             /// Apple RSA/SRP credential and verified SSH-to-Mac-loopback transport only.
             ResolvedAppleRsaSrp {
@@ -2572,9 +2558,9 @@ pub mod runners {
                 /// Explicit direct or generation-bound SSH transport snapshot.
                 transport: ResolveResponseResolvedTransportTransport,
                 /// Credential for the explicitly saved method.
-                authentication: ResolveResponseResolvedAuthentication,
+                authentication: ResolveResponseResolvedTransportAuthentication,
                 /// Explicit saved transport and trust policy; never downgrade.
-                security: ResolveResponseResolvedSecurity,
+                security: ResolveResponseResolvedTransportSecurity,
             },
         }
 
@@ -2587,8 +2573,6 @@ pub mod runners {
                     Unavailable,
                     #[serde(rename = "unsupported_profile")]
                     UnsupportedProfile,
-                    #[serde(rename = "resolved")]
-                    Resolved,
                     #[serde(rename = "resolved_transport")]
                     ResolvedTransport,
                     #[serde(rename = "resolved_apple_vnc_password")]
@@ -2611,14 +2595,14 @@ pub mod runners {
                     Port,
                     #[serde(rename = "generation")]
                     Generation,
-                    #[serde(rename = "authentication")]
-                    Authentication,
-                    #[serde(rename = "security")]
-                    Security,
                     #[serde(rename = "serverName")]
                     ServerName,
                     #[serde(rename = "transport")]
                     Transport,
+                    #[serde(rename = "authentication")]
+                    Authentication,
+                    #[serde(rename = "security")]
+                    Security,
                 }
                 struct Visitor;
                 impl<'de> serde::de::Visitor<'de> for Visitor {
@@ -2637,10 +2621,11 @@ pub mod runners {
                         let mut host = None::<String>;
                         let mut port = None::<u64>;
                         let mut generation = None::<i64>;
-                        let mut authentication = None::<ResolveResponseResolvedAuthentication>;
-                        let mut security = None::<ResolveResponseResolvedSecurity>;
                         let mut server_name = None::<String>;
                         let mut transport = None::<ResolveResponseResolvedTransportTransport>;
+                        let mut authentication =
+                            None::<ResolveResponseResolvedTransportAuthentication>;
+                        let mut security = None::<ResolveResponseResolvedTransportSecurity>;
                         while let Some(field) = map.next_key::<Field>()? {
                             match field {
                                 Field::Outcome => {
@@ -2675,22 +2660,6 @@ pub mod runners {
                                     }
                                     generation = Some(map.next_value()?);
                                 }
-                                Field::Authentication => {
-                                    if authentication.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    authentication = Some(map.next_value()?);
-                                }
-                                Field::Security => {
-                                    if security.is_some() {
-                                        return Err(serde::de::Error::custom(
-                                            "duplicate authority field",
-                                        ));
-                                    }
-                                    security = Some(map.next_value()?);
-                                }
                                 Field::ServerName => {
                                     if server_name.is_some() {
                                         return Err(serde::de::Error::custom(
@@ -2707,6 +2676,22 @@ pub mod runners {
                                     }
                                     transport = Some(map.next_value()?);
                                 }
+                                Field::Authentication => {
+                                    if authentication.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    authentication = Some(map.next_value()?);
+                                }
+                                Field::Security => {
+                                    if security.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    security = Some(map.next_value()?);
+                                }
                             }
                         }
                         match (
@@ -2714,10 +2699,10 @@ pub mod runners {
                             host,
                             port,
                             generation,
-                            authentication,
-                            security,
                             server_name,
                             transport,
+                            authentication,
+                            security,
                         ) {
                             (Some(Kind::Unavailable), None, None, None, None, None, None, None) => {
                                 Ok(ResolveResponse::Unavailable)
@@ -2733,30 +2718,14 @@ pub mod runners {
                                 None,
                             ) => Ok(ResolveResponse::UnsupportedProfile),
                             (
-                                Some(Kind::Resolved),
-                                Some(host),
-                                Some(port),
-                                Some(generation),
-                                Some(authentication),
-                                Some(security),
-                                None,
-                                None,
-                            ) => Ok(ResolveResponse::Resolved {
-                                host,
-                                port,
-                                generation,
-                                authentication,
-                                security,
-                            }),
-                            (
                                 Some(Kind::ResolvedTransport),
                                 Some(host),
                                 Some(port),
                                 Some(generation),
-                                Some(authentication),
-                                Some(security),
                                 Some(server_name),
                                 Some(transport),
+                                Some(authentication),
+                                Some(security),
                             ) => Ok(ResolveResponse::ResolvedTransport {
                                 host,
                                 port,
@@ -2771,10 +2740,10 @@ pub mod runners {
                                 Some(host),
                                 Some(port),
                                 Some(generation),
-                                Some(authentication),
-                                Some(security),
                                 None,
                                 Some(transport),
+                                Some(authentication),
+                                Some(security),
                             ) => Ok(ResolveResponse::ResolvedAppleVncPassword {
                                 host,
                                 port,
@@ -2788,10 +2757,10 @@ pub mod runners {
                                 Some(host),
                                 Some(port),
                                 Some(generation),
-                                Some(authentication),
-                                Some(security),
                                 None,
                                 Some(transport),
+                                Some(authentication),
+                                Some(security),
                             ) => Ok(ResolveResponse::ResolvedAppleDh {
                                 host,
                                 port,
@@ -2805,10 +2774,10 @@ pub mod runners {
                                 Some(host),
                                 Some(port),
                                 Some(generation),
-                                Some(authentication),
-                                Some(security),
                                 None,
                                 Some(transport),
+                                Some(authentication),
+                                Some(security),
                             ) => Ok(ResolveResponse::ResolvedAppleSrp {
                                 host,
                                 port,
@@ -2822,10 +2791,10 @@ pub mod runners {
                                 Some(host),
                                 Some(port),
                                 Some(generation),
-                                Some(authentication),
-                                Some(security),
                                 None,
                                 Some(transport),
+                                Some(authentication),
+                                Some(security),
                             ) => Ok(ResolveResponse::ResolvedAppleRsaSrp {
                                 host,
                                 port,

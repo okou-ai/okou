@@ -3,15 +3,17 @@ use api_contracts::generated::types::runners::vnc::{
     ResolveRequest, ResolveRequestRunnerIdentity, ResolveRequestSupportedProfile,
     ResolveRequestSupportedProfileAuthMethod, ResolveRequestSupportedProfileSecurityType,
     ResolveRequestSupportedProfileTransportType, ResolveResponse,
-    ResolveResponseResolvedAuthentication, ResolveResponseResolvedSecurity,
-    ResolveResponseResolvedSecurityX509VncTrust, ResolveResponseResolvedTransportTransport,
+    ResolveResponseResolvedTransportAuthentication, ResolveResponseResolvedTransportSecurity,
+    ResolveResponseResolvedTransportSecurityX509VncTrust,
+    ResolveResponseResolvedTransportTransport,
 };
 use serde_json::{Value, json};
 
 fn resolved() -> Value {
     json!({
-        "outcome": "resolved", "host": "vnc.example.com", "port": 5900,
-        "generation": 5,
+        "outcome": "resolved_transport", "host": "vnc.example.com", "port": 5900,
+        "generation": 5, "serverName": "desktop.internal",
+        "transport": {"type": "direct"},
         "authentication": {"method": "vnc_password", "password": " pass  "},
         "security": {"type": "x509_vnc", "trust": {"mode": "system"}}
     })
@@ -20,7 +22,7 @@ fn resolved() -> Value {
 #[test]
 fn credential_handoff_preserves_explicit_authentication_and_trust() {
     let response: ResolveResponse = serde_json::from_str(&resolved().to_string()).unwrap();
-    let ResolveResponse::Resolved {
+    let ResolveResponse::ResolvedTransport {
         authentication,
         security,
         generation,
@@ -29,36 +31,38 @@ fn credential_handoff_preserves_explicit_authentication_and_trust() {
     else {
         panic!("expected current authority");
     };
-    let ResolveResponseResolvedAuthentication::VncPassword { password } = authentication else {
+    let ResolveResponseResolvedTransportAuthentication::VncPassword { password } = authentication
+    else {
         panic!("expected classic VNC password");
     };
     assert_eq!(password.expose(), " pass  ");
     assert_eq!(generation, 5);
-    let ResolveResponseResolvedSecurity::X509Vnc { trust } = security else {
+    let ResolveResponseResolvedTransportSecurity::X509Vnc { trust } = security else {
         panic!("expected X509Vnc security");
     };
     assert!(matches!(
         trust,
-        ResolveResponseResolvedSecurityX509VncTrust::System
+        ResolveResponseResolvedTransportSecurityX509VncTrust::System
     ));
 
     let mut custom = resolved();
     custom["security"]["trust"] = json!({"mode": "custom_ca", "caBundle": "owner-ca-bundle"});
     let response: ResolveResponse = serde_json::from_str(&custom.to_string()).unwrap();
-    let ResolveResponse::Resolved { security, .. } = response else {
+    let ResolveResponse::ResolvedTransport { security, .. } = response else {
         panic!("expected custom trust");
     };
-    let ResolveResponseResolvedSecurity::X509Vnc { trust } = security else {
+    let ResolveResponseResolvedTransportSecurity::X509Vnc { trust } = security else {
         panic!("expected X509Vnc security");
     };
-    let ResolveResponseResolvedSecurityX509VncTrust::CustomCa { ca_bundle } = trust else {
+    let ResolveResponseResolvedTransportSecurityX509VncTrust::CustomCa { ca_bundle } = trust else {
         panic!("expected custom CA");
     };
     assert_eq!(ca_bundle, "owner-ca-bundle");
 
     let plain: ResolveResponse = serde_json::from_value(json!({
-        "outcome": "resolved", "host": "plain.example.com", "port": 5900,
-        "generation": 6,
+        "outcome": "resolved_transport", "host": "plain.example.com", "port": 5900,
+        "generation": 6, "serverName": "plain.internal",
+        "transport": {"type": "direct"},
         "authentication": {
             "method": "username_password",
             "username": " operator界 ",
@@ -67,7 +71,7 @@ fn credential_handoff_preserves_explicit_authentication_and_trust() {
         "security": {"type": "x509_plain", "trust": {"mode": "system"}}
     }))
     .unwrap();
-    let ResolveResponse::Resolved {
+    let ResolveResponse::ResolvedTransport {
         authentication,
         security,
         ..
@@ -75,7 +79,7 @@ fn credential_handoff_preserves_explicit_authentication_and_trust() {
     else {
         panic!("expected current Plain authority");
     };
-    let ResolveResponseResolvedAuthentication::UsernamePassword { username, password } =
+    let ResolveResponseResolvedTransportAuthentication::UsernamePassword { username, password } =
         authentication
     else {
         panic!("expected Plain credentials");
@@ -84,8 +88,8 @@ fn credential_handoff_preserves_explicit_authentication_and_trust() {
     assert_eq!(password.expose(), " päss 界 ");
     assert!(matches!(
         security,
-        ResolveResponseResolvedSecurity::X509Plain {
-            trust: ResolveResponseResolvedSecurityX509VncTrust::System
+        ResolveResponseResolvedTransportSecurity::X509Plain {
+            trust: ResolveResponseResolvedTransportSecurityX509VncTrust::System
         }
     ));
 }
@@ -213,13 +217,14 @@ fn apple_classic_password_handoff_is_distinct_from_x509_and_keeps_secret_private
     else {
         panic!("expected separate Apple classic-password handoff");
     };
-    let ResolveResponseResolvedAuthentication::VncPassword { password } = authentication else {
+    let ResolveResponseResolvedTransportAuthentication::VncPassword { password } = authentication
+    else {
         panic!("expected bounded classic VNC password");
     };
     assert_eq!(password.expose(), "secret");
     assert!(matches!(
         security,
-        ResolveResponseResolvedSecurity::AppleVncPassword
+        ResolveResponseResolvedTransportSecurity::AppleVncPassword
     ));
     assert!(matches!(
         transport,
@@ -251,14 +256,19 @@ fn apple_dh_handoff_keeps_secret_private_and_omits_x509_identity() {
     else {
         panic!("expected Apple DH authority");
     };
-    let ResolveResponseResolvedAuthentication::AppleDhUsernamePassword { username, password } =
-        authentication
+    let ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword {
+        username,
+        password,
+    } = authentication
     else {
         panic!("expected Apple DH credentials");
     };
     assert_eq!(username, "operator");
     assert_eq!(password.expose(), "secret");
-    assert!(matches!(security, ResolveResponseResolvedSecurity::AppleDh));
+    assert!(matches!(
+        security,
+        ResolveResponseResolvedTransportSecurity::AppleDh
+    ));
     assert!(matches!(
         transport,
         ResolveResponseResolvedTransportTransport::Ssh { generation: 9, .. }
@@ -289,8 +299,10 @@ fn apple_srp_handoff_keeps_secret_private_and_omits_x509_identity() {
     else {
         panic!("expected Apple SRP authority");
     };
-    let ResolveResponseResolvedAuthentication::AppleSrpUsernamePassword { username, password } =
-        authentication
+    let ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword {
+        username,
+        password,
+    } = authentication
     else {
         panic!("expected Apple SRP credentials");
     };
@@ -298,7 +310,7 @@ fn apple_srp_handoff_keeps_secret_private_and_omits_x509_identity() {
     assert_eq!(password.expose(), "secret");
     assert!(matches!(
         security,
-        ResolveResponseResolvedSecurity::AppleSrp
+        ResolveResponseResolvedTransportSecurity::AppleSrp
     ));
     assert!(matches!(
         transport,
@@ -330,8 +342,10 @@ fn apple_rsa_srp_handoff_keeps_secret_private_and_omits_x509_identity() {
     else {
         panic!("expected Apple RSA/SRP authority");
     };
-    let ResolveResponseResolvedAuthentication::AppleRsaSrpUsernamePassword { username, password } =
-        authentication
+    let ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword {
+        username,
+        password,
+    } = authentication
     else {
         panic!("expected Apple RSA/SRP credentials");
     };
@@ -339,7 +353,7 @@ fn apple_rsa_srp_handoff_keeps_secret_private_and_omits_x509_identity() {
     assert_eq!(password.expose(), "secret");
     assert!(matches!(
         security,
-        ResolveResponseResolvedSecurity::AppleRsaSrp
+        ResolveResponseResolvedTransportSecurity::AppleRsaSrp
     ));
     assert!(matches!(
         transport,
@@ -386,42 +400,42 @@ fn resolve_request_advertises_the_eight_exact_supported_tuples() {
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Direct),
+                transport_type: ResolveRequestSupportedProfileTransportType::Direct,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Direct),
+                transport_type: ResolveRequestSupportedProfileTransportType::Direct,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::AppleVncPassword,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::AppleDhUsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::AppleDh,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::AppleSrpUsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::AppleSrp,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::AppleRsaSrpUsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::AppleRsaSrp,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
             },
         ],
     };
@@ -449,10 +463,10 @@ fn authorization_check_preserves_expected_generation_and_closed_outcomes() {
             heartbeat_generation: 5_000_000_000,
         },
         expected_generation: 5,
-        expected_transport: Some(CheckRequestExpectedTransport::Ssh {
+        expected_transport: CheckRequestExpectedTransport::Ssh {
             connection_id: "00000000-0000-4000-8000-000000000003".to_owned(),
             generation: 7,
-        }),
+        },
     };
     assert_eq!(
         serde_json::to_value(request).unwrap(),
@@ -470,20 +484,18 @@ fn authorization_check_preserves_expected_generation_and_closed_outcomes() {
             }
         })
     );
-    let legacy = CheckRequest {
+    let direct = CheckRequest {
         connection_id: "00000000-0000-4000-8000-000000000001".to_owned(),
         runner_identity: CheckRequestRunnerIdentity {
             runner_id: "00000000-0000-4000-8000-000000000002".to_owned(),
             heartbeat_generation: 5_000_000_000,
         },
         expected_generation: 5,
-        expected_transport: None,
+        expected_transport: CheckRequestExpectedTransport::Direct,
     };
-    assert!(
-        serde_json::to_value(legacy)
-            .unwrap()
-            .get("expectedTransport")
-            .is_none()
+    assert_eq!(
+        serde_json::to_value(direct).unwrap()["expectedTransport"],
+        json!({"type": "direct"})
     );
     for (outcome, expected) in [
         ("valid", CheckResponse::Valid),

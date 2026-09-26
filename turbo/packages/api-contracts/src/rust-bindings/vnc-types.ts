@@ -40,9 +40,7 @@ export const vncTypeBindings = [
         fields: {
           authMethod: ["Supported authentication method."],
           securityType: ["Supported security policy."],
-          transportType: [
-            "Supported transport; omission is the legacy direct-only capability.",
-          ],
+          transportType: ["Supported transport for this exact tuple."],
         },
       },
       {
@@ -127,9 +125,6 @@ export const vncTypeBindings = [
           unsupported_profile: [
             "Runner does not support the exact saved profile.",
           ],
-          resolved: [
-            "Legacy direct credential and policy; the VNC server controls connection admission.",
-          ],
           resolved_transport: [
             "Current credential, policy and explicit generation-bound transport.",
           ],
@@ -162,7 +157,7 @@ export const vncTypeBindings = [
         },
       },
       {
-        rustTypeName: "ResolveResponseResolvedAuthentication",
+        rustTypeName: "ResolveResponseResolvedTransportAuthentication",
         rustDoc: ["Typed private VNC credential."],
         fields: {
           username: ["Bounded Plain username, preserving exact UTF-8 bytes."],
@@ -187,7 +182,7 @@ export const vncTypeBindings = [
         },
       },
       {
-        rustTypeName: "ResolveResponseResolvedSecurity",
+        rustTypeName: "ResolveResponseResolvedTransportSecurity",
         rustDoc: [
           "Saved security policy, independent of future engine capabilities.",
         ],
@@ -210,7 +205,7 @@ export const vncTypeBindings = [
         },
       },
       {
-        rustTypeName: "ResolveResponseResolvedSecurityX509VncTrust",
+        rustTypeName: "ResolveResponseResolvedTransportSecurityX509VncTrust",
         rustDoc: [
           "Exact trust source; insecure verification is not representable.",
         ],
@@ -239,9 +234,7 @@ export const vncTypeBindings = [
           expectedGeneration: [
             "Configuration generation returned by credential resolution.",
           ],
-          expectedTransport: [
-            "Expected explicit transport snapshot; omission preserves legacy direct-only checks.",
-          ],
+          expectedTransport: ["Expected explicit transport snapshot."],
         },
       },
       identityDocs("CheckRequestRunnerIdentity"),

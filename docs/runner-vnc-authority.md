@@ -55,11 +55,10 @@ Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 exact authentication/security/transport tuples. Current Runners advertise the
 X509Vnc and X509Plain pairs separately for `direct` and `ssh`, plus the distinct
 Mac classic-password `vnc_password` / `apple_vnc_password` pair and Apple DH,
-Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. A pre-transport Runner
-omits `transportType`; omission means direct-only. An empty list or a saved
-tuple absent from the list returns `unsupported_profile` only after VNC
-authorization and before KMS. An SSH row is also checked for its SSH grant
-before any credential handoff.
+Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. Every advertised tuple
+names its `transportType`. An empty list or a saved tuple absent from the list
+returns `unsupported_profile` only after VNC authorization and before KMS. An
+SSH row is also checked for its SSH grant before any credential handoff.
 Unknown methods, profiles and cross-paired combinations are rejected. Future
 engine support must add a new exact pair instead of broadening a saved policy or
 creating an implicit downgrade path. The Mac classic-password profile selects

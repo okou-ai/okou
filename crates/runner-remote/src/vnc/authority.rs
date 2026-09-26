@@ -92,8 +92,8 @@ fn apple_vnc_password_credential(
     port: u64,
     generation: i64,
     transport: ResolveResponseResolvedTransportTransport,
-    authentication: ResolveResponseResolvedAuthentication,
-    security: ResolveResponseResolvedSecurity,
+    authentication: ResolveResponseResolvedTransportAuthentication,
+    security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
     let port = valid_port_and_generation(port, generation)?;
@@ -106,8 +106,8 @@ fn apple_vnc_password_credential(
     };
     let password = match (authentication, security) {
         (
-            ResolveResponseResolvedAuthentication::VncPassword { password },
-            ResolveResponseResolvedSecurity::AppleVncPassword,
+            ResolveResponseResolvedTransportAuthentication::VncPassword { password },
+            ResolveResponseResolvedTransportSecurity::AppleVncPassword,
         ) => VncPassword::new_zeroizing(password.into_zeroizing())
             .map_err(|_| Failure::InvalidCredential)?,
         _ => return Err(Failure::Authority),
@@ -126,8 +126,8 @@ fn apple_dh_credential(
     port: u64,
     generation: i64,
     transport: ResolveResponseResolvedTransportTransport,
-    authentication: ResolveResponseResolvedAuthentication,
-    security: ResolveResponseResolvedSecurity,
+    authentication: ResolveResponseResolvedTransportAuthentication,
+    security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
     let port = valid_port_and_generation(port, generation)?;
@@ -140,8 +140,11 @@ fn apple_dh_credential(
     };
     let credentials = match (authentication, security) {
         (
-            ResolveResponseResolvedAuthentication::AppleDhUsernamePassword { username, password },
-            ResolveResponseResolvedSecurity::AppleDh,
+            ResolveResponseResolvedTransportAuthentication::AppleDhUsernamePassword {
+                username,
+                password,
+            },
+            ResolveResponseResolvedTransportSecurity::AppleDh,
         ) => AppleDhCredentials::new_zeroizing(username, password.into_zeroizing())
             .map_err(|_| Failure::InvalidCredential)?,
         _ => return Err(Failure::Authority),
@@ -160,8 +163,8 @@ fn apple_srp_credential(
     port: u64,
     generation: i64,
     transport: ResolveResponseResolvedTransportTransport,
-    authentication: ResolveResponseResolvedAuthentication,
-    security: ResolveResponseResolvedSecurity,
+    authentication: ResolveResponseResolvedTransportAuthentication,
+    security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
     let port = valid_port_and_generation(port, generation)?;
@@ -174,8 +177,11 @@ fn apple_srp_credential(
     };
     let credentials = match (authentication, security) {
         (
-            ResolveResponseResolvedAuthentication::AppleSrpUsernamePassword { username, password },
-            ResolveResponseResolvedSecurity::AppleSrp,
+            ResolveResponseResolvedTransportAuthentication::AppleSrpUsernamePassword {
+                username,
+                password,
+            },
+            ResolveResponseResolvedTransportSecurity::AppleSrp,
         ) => AppleSrpCredentials::new_zeroizing(username, password.into_zeroizing())
             .map_err(|_| Failure::InvalidCredential)?,
         _ => return Err(Failure::Authority),
@@ -194,8 +200,8 @@ fn apple_rsa_srp_credential(
     port: u64,
     generation: i64,
     transport: ResolveResponseResolvedTransportTransport,
-    authentication: ResolveResponseResolvedAuthentication,
-    security: ResolveResponseResolvedSecurity,
+    authentication: ResolveResponseResolvedTransportAuthentication,
+    security: ResolveResponseResolvedTransportSecurity,
     supports_ssh: bool,
 ) -> Result<Credential, Failure> {
     let port = valid_port_and_generation(port, generation)?;
@@ -208,11 +214,11 @@ fn apple_rsa_srp_credential(
     };
     let credentials = match (authentication, security) {
         (
-            ResolveResponseResolvedAuthentication::AppleRsaSrpUsernamePassword {
+            ResolveResponseResolvedTransportAuthentication::AppleRsaSrpUsernamePassword {
                 username,
                 password,
             },
-            ResolveResponseResolvedSecurity::AppleRsaSrp,
+            ResolveResponseResolvedTransportSecurity::AppleRsaSrp,
         ) => AppleRsaSrpCredentials::new_zeroizing(username, password.into_zeroizing())
             .map_err(|_| Failure::InvalidCredential)?,
         _ => return Err(Failure::Authority),
@@ -671,12 +677,12 @@ impl Authority {
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Direct),
+                transport_type: ResolveRequestSupportedProfileTransportType::Direct,
             },
             ResolveRequestSupportedProfile {
                 auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                 security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
-                transport_type: Some(ResolveRequestSupportedProfileTransportType::Direct),
+                transport_type: ResolveRequestSupportedProfileTransportType::Direct,
             },
         ];
         if supports_ssh {
@@ -684,33 +690,33 @@ impl Authority {
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509Vnc,
-                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::UsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::X509Plain,
-                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::VncPassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleVncPassword,
-                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::AppleDhUsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleDh,
-                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method: ResolveRequestSupportedProfileAuthMethod::AppleSrpUsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleSrp,
-                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
                 },
                 ResolveRequestSupportedProfile {
                     auth_method:
                         ResolveRequestSupportedProfileAuthMethod::AppleRsaSrpUsernamePassword,
                     security_type: ResolveRequestSupportedProfileSecurityType::AppleRsaSrp,
-                    transport_type: Some(ResolveRequestSupportedProfileTransportType::Ssh),
+                    transport_type: ResolveRequestSupportedProfileTransportType::Ssh,
                 },
             ]);
         }
@@ -734,7 +740,6 @@ impl Authority {
             match response {
                 ResolveResponse::Unavailable => return Err(Failure::Unavailable),
                 ResolveResponse::UnsupportedProfile => return Err(Failure::UnsupportedProfile),
-                ResolveResponse::Resolved { .. } => return Err(Failure::Authority),
                 ResolveResponse::ResolvedAppleVncPassword {
                     host,
                     port,
@@ -830,16 +835,19 @@ impl Authority {
         let transport = parse_transport(transport, supports_ssh)?;
         let (authentication, trust) = match (authentication, security) {
             (
-                ResolveResponseResolvedAuthentication::VncPassword { password },
-                ResolveResponseResolvedSecurity::X509Vnc { trust },
+                ResolveResponseResolvedTransportAuthentication::VncPassword { password },
+                ResolveResponseResolvedTransportSecurity::X509Vnc { trust },
             ) => {
                 let password = VncPassword::new_zeroizing(password.into_zeroizing())
                     .map_err(|_| Failure::InvalidCredential)?;
                 (X509Authentication::VncPassword(password), trust)
             }
             (
-                ResolveResponseResolvedAuthentication::UsernamePassword { username, password },
-                ResolveResponseResolvedSecurity::X509Plain { trust },
+                ResolveResponseResolvedTransportAuthentication::UsernamePassword {
+                    username,
+                    password,
+                },
+                ResolveResponseResolvedTransportSecurity::X509Plain { trust },
             ) => {
                 if !(1..=MAX_PLAIN_USERNAME_BYTES).contains(&username.len())
                     || username.as_bytes().contains(&0)
@@ -854,8 +862,10 @@ impl Authority {
             _ => return Err(Failure::Authority),
         };
         let roots = match trust {
-            ResolveResponseResolvedSecurityX509VncTrust::System => TrustRoots::public_roots(),
-            ResolveResponseResolvedSecurityX509VncTrust::CustomCa { ca_bundle } => {
+            ResolveResponseResolvedTransportSecurityX509VncTrust::System => {
+                TrustRoots::public_roots()
+            }
+            ResolveResponseResolvedTransportSecurityX509VncTrust::CustomCa { ca_bundle } => {
                 custom_roots(Zeroizing::new(ca_bundle))?
             }
         };
@@ -879,7 +889,7 @@ impl Authority {
         generation: i64,
         transport: Transport,
     ) -> Result<(), Failure> {
-        let expected_transport = Some(match transport {
+        let expected_transport = match transport {
             Transport::Direct => CheckRequestExpectedTransport::Direct,
             Transport::Ssh {
                 connection,
@@ -888,7 +898,7 @@ impl Authority {
                 connection_id: connection.to_string(),
                 generation,
             },
-        });
+        };
         let request = CheckRequest {
             connection_id: connection.to_string(),
             runner_identity: CheckRequestRunnerIdentity {
