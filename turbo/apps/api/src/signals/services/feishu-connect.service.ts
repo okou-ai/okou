@@ -540,6 +540,7 @@ export const configureFeishuInstallation$ = command(
     const prepared = await prepareFeishuInstallation(args, existing, signal);
     const result = await db.transaction(async (tx) => {
       await tx.execute(
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         sql`SELECT pg_advisory_xact_lock(hashtext('feishu_installation:' || ${args.orgId}))`,
       );
       signal.throwIfAborted();

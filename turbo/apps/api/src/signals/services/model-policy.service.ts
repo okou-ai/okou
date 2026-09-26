@@ -194,6 +194,7 @@ function loadRows(
 // fence. Normal selection reads take no lock when no repair is needed.
 async function lockPolicyWrites(db: Db, orgId: string): Promise<void> {
   await db.execute(
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`model-policy:${orgId}`}, 0))`,
   );
 }

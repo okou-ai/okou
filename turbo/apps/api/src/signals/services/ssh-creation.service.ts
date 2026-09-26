@@ -19,6 +19,7 @@ export async function checkSshCreationId(
   id: string,
 ) {
   await tx.execute(
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`ssh_creation:${getTableName(table)}:${id.toLowerCase()}`}, 0))`,
   );
   const [existing] = await tx

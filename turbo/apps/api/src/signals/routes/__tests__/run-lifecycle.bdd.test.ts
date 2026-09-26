@@ -164,10 +164,8 @@ import {
 } from "./helpers/connector-credential-storage-state";
 import {
   clearRunApiStart,
-  holdOrgAdmissionLock,
   mutateRunnerJobConnectorPermissionBaseline,
   removeRunCanonicalStorageState,
-  readOrgAdmissionLockState,
   readRunAutonomyBudgetFixture,
   readRunApiStart,
   readRunClaimOwner,
@@ -175,7 +173,6 @@ import {
   readRunLaunchSnapshotFixture,
   readRunnerJobStorageState,
   readStoragePersistenceState,
-  releaseOrgAdmissionLock,
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
   setCustomConnectorAuthTemplateFixture,
@@ -4832,215 +4829,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
   });
 
-  it("preserves the same-thread reuse preference across queued admission", async () => {
-    const {
-      actor,
-      reuseRunnerId,
-      agentId,
-      api,
-      cliAgentSessionId,
-      first,
-      heartbeatHolder,
-      reuseKey,
-      runnerGroup,
-      waitForCancellation,
-      webhooks,
-    } = await setupSameThreadReuseScenario();
-
-    await heartbeatHolder({
-      admittableProfiles: [],
-      reusableSandbox: {
-        profile: "vm0/default",
-        historyGenerationRunId: first.runId,
-      },
-    });
-    const equivalentExactRunnerId = randomUUID();
-    await api.requestHeartbeatRunner(true, [200], {
-      runnerId: equivalentExactRunnerId,
-      group: runnerGroup,
-      snapshotGeneration: 7,
-      snapshotSequence: 1,
-      admittableProfiles: [],
-      heldSandboxStates: [
-        {
-          reuseKey,
-          lastCompletedAt: nowDate().toISOString(),
-          reusableSandbox: {
-            profile: "vm0/default",
-            historyGenerationRunId: first.runId,
-          },
-        },
-      ],
-    });
-    const preferredExactRunner =
-      reuseRunnerId < equivalentExactRunnerId
-        ? { runnerId: reuseRunnerId, heartbeatGeneration: 1 }
-        : { runnerId: equivalentExactRunnerId, heartbeatGeneration: 7 };
-    if (!actor.orgId) {
-      throw new Error("Expected reuse actor to have an organization");
-    }
-    const requestStartedAt = now();
-    const queueInsertedAt = requestStartedAt + 5000;
-    mockNow(requestStartedAt);
-    const admissionLockRequest = holdOrgAdmissionLock(context, actor.orgId);
-    const cleanupRequests: Promise<unknown>[] = [admissionLockRequest];
-    onTestFinished(async () => {
-      clearMockNow();
-      const cleanupResults = await Promise.allSettled([
-        releaseOrgAdmissionLock(context),
-        ...cleanupRequests,
-      ]);
-      const cleanupFailure = cleanupResults.find((result) => {
-        return result.status === "rejected";
-      });
-      if (cleanupFailure?.status === "rejected") {
-        throw cleanupFailure.reason;
-      }
-    });
-    await expect
-      .poll(async () => {
-        return (await readOrgAdmissionLockState(context)).held;
-      })
-      .toBe(true);
-
-    context.mocks.ably.publish.mockClear();
-    const protectedFollowUpRequest = sendChatRunMessage(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "continue reuse-preference session",
-    });
-    cleanupRequests.push(protectedFollowUpRequest);
-    await expect
-      .poll(async () => {
-        return (await readOrgAdmissionLockState(context)).waiting;
-      })
-      .toBe(true);
-    mockNow(queueInsertedAt);
-    await releaseOrgAdmissionLock(context);
-    await admissionLockRequest;
-    const protectedFollowUp = await protectedFollowUpRequest;
-    const exactRunnerPreference = {
-      kind: "preference" as const,
-      runnerIdentity: preferredExactRunner,
-      tier: "exactSandbox" as const,
-      expiresAt: new Date(queueInsertedAt + 1000).toISOString(),
-    };
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "job",
-      expect.objectContaining({
-        runId: protectedFollowUp.runId,
-        reuseKey,
-        historyGenerationRunId: first.runId,
-        runnerPreference: exactRunnerPreference,
-      }),
-    );
-
-    const protectedPoll = await api.requestPollRunner(
-      true,
-      { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-      [200],
-    );
-    if (protectedPoll.status !== 200) {
-      throw new Error("Expected reuse-preference poll to return 200");
-    }
-    expect(protectedPoll.body.job?.runId).toBe(protectedFollowUp.runId);
-    expect(protectedPoll.body.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(protectedPoll.body.job?.reuseKey).toBe(reuseKey);
-    expect(runnerPreference(protectedPoll.body.job)).toStrictEqual(
-      exactRunnerPreference,
-    );
-
-    const protectedClaim = await api.claimRunnerJob(protectedFollowUp.runId);
-    expect(protectedClaim.prompt).toBe("continue reuse-preference session");
-    expect(protectedClaim.reuseKey).toBe(reuseKey);
-    if (typeof protectedClaim.apiStartTime !== "number") {
-      throw new Error("Expected the chat run to retain its API start time");
-    }
-    expect(protectedClaim.apiStartTime).toBeGreaterThanOrEqual(
-      requestStartedAt,
-    );
-    await api.requestCancelRun(actor, protectedFollowUp.runId, [200]);
-    await webhooks.requestAgentComplete(
-      {
-        runId: protectedFollowUp.runId,
-        exitCode: 1,
-        error: "Run cancelled",
-      },
-      { authorization: `Bearer ${protectedClaim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
-    await waitForCancellation(protectedFollowUp.runId);
-
-    const generationExpiredAt = now();
-    const generationExpiredRun = await sendChatRunMessage(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "continue after exact generation protection expires",
-    });
-    mockNow(generationExpiredAt + 1100);
-    const generationExpiredPoll = await api.requestPollRunner(
-      true,
-      { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-      [200],
-    );
-    if (generationExpiredPoll.status !== 200) {
-      throw new Error("Expected reuse-preference poll to return 200");
-    }
-    expect(generationExpiredPoll.body.job?.runId).toBe(
-      generationExpiredRun.runId,
-    );
-    expect(runnerPreference(generationExpiredPoll.body.job)).toStrictEqual({
-      kind: "preference",
-      runnerIdentity: preferredExactRunner,
-      tier: "reusableSandbox",
-      expiresAt: new Date(generationExpiredAt + 2000).toISOString(),
-    });
-    await api.requestCancelRun(actor, generationExpiredRun.runId, [200]);
-    await flushWaitUntilForTest();
-
-    const expiredFollowUp = await sendChatRunMessage(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "continue after reuse-preference protection expires",
-    });
-    mockNow(now() + 60_000);
-    const expiredPoll = await api.requestPollRunner(
-      true,
-      { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-      [200],
-    );
-    if (expiredPoll.status !== 200) {
-      throw new Error("Expected expired reuse-preference poll to return 200");
-    }
-    expect(expiredPoll.body.job?.runId).toBe(expiredFollowUp.runId);
-    const expiredPreference = {
-      kind: "noPreference",
-      reason: "expired",
-    } as const;
-    expect(runnerPreference(expiredPoll.body.job)).toStrictEqual(
-      expiredPreference,
-    );
-    const expiredClaim = await api.requestClaimRunnerJob(
-      true,
-      expiredFollowUp.runId,
-      [200],
-      {
-        runnerIdentity: preferredExactRunner,
-        telemetry: {
-          runnerPreference: expiredPreference,
-        },
-      },
-    );
-    if (expiredClaim.status !== 200) {
-      throw new Error("Expected expired reuse-preference claim to succeed");
-    }
-    expect(expiredClaim.body.prompt).toBe(
-      "continue after reuse-preference protection expires",
-    );
-    await api.requestCancelRun(actor, expiredFollowUp.runId, [200]);
-  });
-
   async function setupOrderedHeartbeats() {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
@@ -5762,49 +5550,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
 
     await api.requestCancelRun(actor, first.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
-  });
-
-  it("does not serialize an empty org queue drain with run admission", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization for queue drain admission");
-    }
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "cancel without an organization queue entry",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(run.status).toBe("pending");
-
-    const admissionLockRequest = holdOrgAdmissionLock(context, actor.orgId);
-    onTestFinished(async () => {
-      const cleanupResults = await Promise.allSettled([
-        releaseOrgAdmissionLock(context),
-        admissionLockRequest,
-      ]);
-      const cleanupFailure = cleanupResults.find((result) => {
-        return result.status === "rejected";
-      });
-      if (cleanupFailure?.status === "rejected") {
-        throw cleanupFailure.reason;
-      }
-    });
-    await expect
-      .poll(async () => {
-        return (await readOrgAdmissionLockState(context)).held;
-      })
-      .toBe(true);
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    await flushWaitUntilForTest();
-
-    await expect(readOrgAdmissionLockState(context)).resolves.toStrictEqual({
-      held: true,
-      waiting: false,
-    });
-    await releaseOrgAdmissionLock(context);
-    await admissionLockRequest;
   });
 
   it("queues runs over the concurrency limit and promotes them after cancellation", async () => {

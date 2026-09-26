@@ -495,6 +495,7 @@ export const startBankingConnectSession$ = command(
 
     const [session] = await db.transaction(async (tx) => {
       await tx.execute(
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${`banking_connect:${connection.id}`}, 0))`,
       );
       await tx

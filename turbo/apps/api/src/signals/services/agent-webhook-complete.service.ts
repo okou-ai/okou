@@ -39,7 +39,6 @@ import {
 import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
-import { lockAgentRunCheckpointLifecycle } from "./agent-run-checkpoint-lifecycle-lock.service";
 import {
   type AgentCheckpointErrorResponse,
   type AgentCheckpointInput,
@@ -967,8 +966,6 @@ export const completeAgentRun$ = command(
     let commit: CompletionCommit;
     while (true) {
       const result = await db.transaction(async (tx) => {
-        await lockAgentRunCheckpointLifecycle(tx, input.body.runId);
-        signal.throwIfAborted();
         const transition = await completeAgentRunTransition(
           tx,
           input,

@@ -40,7 +40,6 @@ import {
   createPiApiFirstTurnUsagePricingResolution,
   claimEnvironment,
   userMessages,
-  eventBackedContents,
   PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
   occurrences,
 } from "./helpers/chat-events-fixture";
@@ -69,7 +68,6 @@ const {
   cancelChatRun,
   modelProviderConnectionsClient,
   sessionHeaders,
-  cancelBeforeLatePiResult,
   mockPiCheckpointObjectStore,
   expectNoPiApiFirstTurnArtifacts,
   piS3Object,
@@ -1380,86 +1378,6 @@ describe("CHAT-02: model-first provider policies", () => {
         promoted.runId,
         [404],
       );
-      expectApiError(claim.body);
-    },
-    90_000,
-  );
-
-  it.each(
-    GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
-      return ["in-flight", "late-result"]
-        .filter((phase) => {
-          return phase === "in-flight" || selectedModel === "gpt-5.6-terra";
-        })
-        .map((phase) => {
-          return { selectedModel, phase };
-        });
-    }),
-  )(
-    "keeps cancelled custom $selectedModel Fast $phase unbilled and unreplayed",
-    async ({ selectedModel, phase }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const gateway = await configureCustomPiModel(actor, selectedModel);
-      mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve(undefined);
-        }
-      });
-      const requests: unknown[] = [];
-      server.use(
-        http.post(gateway.endpoint, async ({ request }) => {
-          expect(request.headers.get("x-api-key")).toBe(
-            `Key ${gateway.secret}`,
-          );
-          expect(request.headers.get("authorization")).toBeNull();
-          requests.push(await request.json());
-          if (!entered.settled()) {
-            entered.resolve(undefined);
-          }
-          await release.promise;
-          return nativeCodexSseResponse(
-            piResponsesTextSse("discarded custom answer", requests.length),
-          );
-        }),
-      );
-      const run = await sendChatRun(actor, {
-        agentId,
-        model: selectedModel,
-        prompt: "cancel custom Fast ownership",
-        runOptions: { codexServiceTier: "fast" },
-      });
-      await entered.promise;
-      if (phase === "late-result") {
-        await cancelBeforeLatePiResult(actor, run.runId, () => {
-          release.resolve(undefined);
-        });
-      } else {
-        await cancelChatRun(actor, run.runId);
-        release.resolve(undefined);
-      }
-      await flushWaitUntilForTest();
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "cancelled",
-      });
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({
-        model: gateway.upstreamModel,
-        service_tier: "priority",
-      });
-      await expectNoBuiltInModelUsage(run.runId);
-      expectNoPiApiFirstTurnArtifacts(run.runId, objects);
-      expect(
-        eventBackedContents(
-          (await chat.listThreadEvents(actor, run.threadId)).events,
-          run.runId,
-        ),
-      ).toHaveLength(0);
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
       expectApiError(claim.body);
     },
     90_000,

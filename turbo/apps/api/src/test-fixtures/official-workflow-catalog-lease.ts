@@ -21,6 +21,7 @@ async function acquireOfficialWorkflowCatalogTestLease(): Promise<
     (async () => {
       await client.connect();
       await client.query(
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         "SELECT pg_advisory_lock(hashtextextended($1::text, 0))",
         [OFFICIAL_WORKFLOW_CATALOG_TEST_LEASE],
       );
@@ -39,6 +40,7 @@ async function acquireOfficialWorkflowCatalogTestLease(): Promise<
     released = true;
     const [unlocked] = await Promise.allSettled([
       client.query<{ readonly unlocked: boolean }>(
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         "SELECT pg_advisory_unlock(hashtextextended($1::text, 0)) AS unlocked",
         [OFFICIAL_WORKFLOW_CATALOG_TEST_LEASE],
       ),

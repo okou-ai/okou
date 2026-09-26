@@ -246,6 +246,7 @@ try {
       try {
         await timeout();
         await client.query(
+          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
           "SELECT pg_advisory_xact_lock(hashtext('vm0'), hashtext('usage_event_compaction'))",
         );
         await client.query(

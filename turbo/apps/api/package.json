@@ -23,7 +23,6 @@
     "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring",
     "test:chat-event-sequences": "tsx scripts/chat-event-sequences/acceptance.ts",
     "test:chat-event-context": "tsx scripts/chat-event-context/acceptance.ts",
-    "test:chat-event-split": "tsx scripts/chat-event-split/acceptance.ts",
     "test:chat-event-auxiliary": "tsx scripts/chat-event-auxiliary/acceptance.ts",
     "check-types:chat-event-acceptance": "tsc -p scripts/chat-event-acceptance/tsconfig.json --checkers $(node ../../scripts/tsc-checkers.mjs)"
   },

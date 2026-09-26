@@ -262,6 +262,7 @@ async function withMorningBriefPreferenceLock<T>(
     const result = await db.transaction(async (tx) => {
       const rows = await executeRawRows(
         tx,
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
         sql`SELECT pg_try_advisory_xact_lock(
           hashtextextended(
             ${`morning_brief_preference:${args.orgId}:${args.member.userId}`},

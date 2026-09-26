@@ -392,13 +392,9 @@ async function createInTransaction(
   input: McpCreateChatThreadInput,
   signal: AbortSignal,
 ): Promise<McpCreateChatThreadOutput> {
-  // Serialize only this idempotency identity, including requests that select
-  // different Agents. PK/event validation still handles non-MCP collisions.
-  const lockKey = `mcp:create_chat_thread:${input.requestId}`;
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
-  );
-  signal.throwIfAborted();
+  // Concurrent requests for one requestId race on the chat_threads primary
+  // key: the loser's INSERT waits for the winner, observes the conflict, and
+  // replays (or conflicts on) the committed creation below.
   const agentId = await resolveCreationAgent(tx, principal, input);
   await assertCreationAgentVisible(tx, principal, agentId);
   signal.throwIfAborted();

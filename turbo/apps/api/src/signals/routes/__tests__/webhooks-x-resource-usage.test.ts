@@ -8,13 +8,10 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
-import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import {
   createUsagePricingFixture,
   type UsagePricingFixture,
 } from "../../../test-fixtures/system-config-seeds";
-import { holdUsageEventCompactionLockFixture } from "../../../test-fixtures/usage-event-compaction";
-import { holdUsageSettlementCreditWriteForTest } from "../../../test-fixtures/usage-settlement-lock";
 import {
   holdXResourceClaimForTest,
   withXResourceClock,
@@ -27,7 +24,6 @@ import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import {
   generatedStripeCustomerId,
@@ -48,7 +44,6 @@ interface RunFixture {
 
 const context = testContext({
   connectorCatalog: true,
-  dbFixtures: [usageEventCompactionDbFixture],
 });
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
@@ -462,84 +457,6 @@ describe("X daily resource usage webhook", () => {
     await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
   });
 
-  it("waits for ongoing credit settlement before deleting a user's ledger and runs", async () => {
-    const configuredPricing = await pricing();
-    const deleted = await createRun();
-    await runs.requestCancelRun(
-      deleted.actor,
-      deleted.runId,
-      [200],
-      configuredPricing.resolution,
-    );
-    await flushWaitUntilForTest();
-    await accept(submit(deleted, [observation([resourceId()])]), [200]);
-    const orgId = deleted.actor.orgId;
-    if (!orgId) {
-      throw new Error("Settlement fixture requires an organization");
-    }
-
-    const callbacks = createWebhookCallbackApi(context);
-    callbacks.configureClerkWebhookSecret();
-    context.mocks.s3.send.mockResolvedValue({});
-    // Keep another member so this user deletion does not also delete the org.
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      { data: [{ publicUserData: { userId: `survivor-${randomUUID()}` } }] },
-    );
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-
-    // Infrastructure exception: pause the real credit deduction after it has
-    // updated this source row, without creating synthetic processed usage.
-    const gate = await holdUsageSettlementCreditWriteForTest(
-      orgId,
-      context.signal,
-    );
-    const completion = Promise.allSettled([gate.done]);
-    const settlement = Promise.allSettled([
-      billing.processOrgUsageEvents(
-        deleted.actor,
-        configuredPricing.resolution,
-      ),
-    ]);
-    onTestFinished(async () => {
-      gate.release();
-      await completion;
-      await settlement;
-      await flushWaitUntilForTest();
-    });
-    await expect.poll(gate.settlementWaiterCount).toBe(1);
-
-    callbacks.verifyNextClerkWebhook({
-      type: "user.deleted",
-      data: { id: deleted.actor.userId },
-    });
-    await callbacks.requestClerkWebhook("{}", {}, [200]);
-    // Cleanup can queue multiple database participants behind the same
-    // settlement. Their exact count is an implementation detail; the contract
-    // here is that cleanup reached the verified blocking chain before release.
-    await expect
-      .poll(gate.cleanupWaiterCount, { timeout: 10_000 })
-      .toBeGreaterThanOrEqual(1);
-    gate.release();
-    const [released] = await completion;
-    if (released.status === "rejected") {
-      throw released.reason;
-    }
-    const [settled] = await settlement;
-    if (settled.status === "rejected") {
-      throw settled.reason;
-    }
-    await flushWaitUntilForTest();
-
-    await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
-    await accept(submit(deleted, [observation([resourceId()])]), [404]);
-    expect(
-      (await billing.readUsageRecord(deleted.actor)).body.totalCredits,
-    ).toBe(0);
-  });
-
   it.each(["user", "organization"] as const)(
     "rejects a source UUID when only its %s owner differs",
     async (scope) => {
@@ -801,77 +718,4 @@ describe("X daily resource usage webhook", () => {
     await accept(submit(survivor, [observation([id])]), [200]);
     await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(0);
   });
-
-  it.each(["user", "organization"] as const)(
-    "waits for compaction before %s Run deletion and then fences old uploads",
-    async (subjectKind) => {
-      const configuredPricing = await pricing();
-      const deleted = await createRun();
-      const survivor = await createRun();
-      const sharedId = resourceId();
-      const freshId = resourceId();
-      const source = observation([sharedId]);
-      await accept(submit(deleted, [source]), [200]);
-      await expect(chargedUnits(deleted, configuredPricing)).resolves.toBe(1);
-
-      const callbacks = createWebhookCallbackApi(context);
-      callbacks.configureClerkWebhookSecret();
-      context.mocks.s3.send.mockResolvedValue({});
-      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-        { data: [] },
-      );
-      context.mocks.stripe.subscriptions.list.mockResolvedValue({
-        data: [],
-        has_more: false,
-      });
-      context.mocks.stripe.subscriptions.retrieve.mockRejectedValue({
-        code: "resource_missing",
-      });
-
-      // Infrastructure exception: HTTP cannot pause compaction between its
-      // source-row lock and the Run KEY SHARE needed by the new rollup's FK.
-      // Lock only this test's API-created source; no historical rows are edited.
-      const gate = await holdUsageEventCompactionLockFixture(context.signal, {
-        idempotencyKey: source.idempotencyKey,
-        runId: deleted.runId,
-      });
-      const completion = Promise.allSettled([gate.done]);
-      onTestFinished(async () => {
-        gate.release();
-        await completion;
-        await flushWaitUntilForTest();
-      });
-      const subjectId =
-        subjectKind === "user" ? deleted.actor.userId : deleted.actor.orgId;
-      if (!subjectId) {
-        throw new Error("Deletion fixture requires an organization");
-      }
-      callbacks.verifyNextClerkWebhook({
-        type: subjectKind === "user" ? "user.deleted" : "organization.deleted",
-        data: { id: subjectId },
-      });
-      await gate.withAcquisitionAttemptTracking(async () => {
-        await callbacks.requestClerkWebhook("{}", {}, [200]);
-      });
-      // User cleanup can finish after the webhook responds. Wait for this
-      // cleanup's own lock attempt before observing its blocked participant.
-      await gate.acquisitionAttempted;
-      await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(1);
-
-      // Clerk must wait before owning the Run. Taking it first would make its
-      // SET NULL wait on the source row and block the compactor's FK check.
-      await runs.requestReadRun(deleted.actor, deleted.runId, [200]);
-      gate.release();
-      const [completed] = await completion;
-      if (completed.status === "rejected") {
-        throw completed.reason;
-      }
-      await flushWaitUntilForTest();
-
-      await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
-      await accept(submit(deleted, [observation([freshId])]), [404]);
-      await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
-      await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
-    },
-  );
 });

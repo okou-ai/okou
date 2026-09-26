@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
-import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import {
   createAuthOrgAgentsBddApi,
@@ -29,7 +28,6 @@ helper gap:
 
 const context = testContext({
   connectorCatalog: true,
-  dbFixtures: [usageEventCompactionDbFixture],
 });
 const api = createAuthOrgAgentsBddApi(context);
 const bdd = createBddApi(context);

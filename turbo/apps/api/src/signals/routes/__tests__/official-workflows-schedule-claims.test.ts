@@ -31,7 +31,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
-import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/chat-events";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   readLegacyAutomation,
@@ -896,127 +895,6 @@ describe("Morning Brief legacy schedule claim journal", () => {
       readMorningBriefScheduleClaimsFixture(brief.automationId),
     ).resolves.toHaveLength(1);
     await expect(briefRunIds(threadId)).resolves.toStrictEqual(runIds);
-  });
-
-  it("yields one occurrence when two ticks compete at the queue admission lock", async () => {
-    const brief = await installJournaledBrief();
-    await pollAt(brief.automationId, brief.anchor + 60_000);
-    const threadId = await briefThreadId(brief.actor, brief.workflowId);
-    const [firstRunId] = await briefRunIds(threadId);
-    if (!firstRunId) {
-      throw new Error("Expected the first occurrence to start a run");
-    }
-    await deliverBriefCallback(firstRunId);
-
-    const advanced = await readBriefState(brief);
-    if (!advanced.nextRunAt) {
-      throw new Error("Expected the completion to publish the next occurrence");
-    }
-    const secondAnchor = Date.parse(advanced.nextRunAt);
-
-    // Both ticks reach the shared thread admission lock before either can
-    // consume the schedule, so the race is observed rather than assumed.
-    const barrier = await holdChatEventQueueAdmissionLockFixture({
-      threadId,
-      signal: context.signal,
-    });
-    // Release the shared admission lock even when an assertion below throws.
-    onTestFinished(async () => {
-      barrier.release();
-      // Await the holding transaction: releasing only resolves its deferred
-      // promise, and the lock survives until that transaction actually ends.
-      await barrier.done;
-    });
-    mockNow(secondAnchor + 60_000);
-    const ticks = Promise.all([
-      accept(
-        automationExecutionClient().execute({
-          body: { automation_id: brief.automationId },
-        }),
-        [200],
-      ),
-      accept(
-        automationExecutionClient().execute({
-          body: { automation_id: brief.automationId },
-        }),
-        [200],
-      ),
-    ]);
-    await expect
-      .poll(async () => {
-        return await barrier.directWaiterCount();
-      })
-      .toBe(2);
-    barrier.release();
-    await barrier.done;
-    await ticks;
-
-    const claims = await readMorningBriefScheduleClaimsFixture(
-      brief.automationId,
-    );
-    expect(claims).toHaveLength(2);
-    expect(claims[1]?.scheduledAnchorAt.getTime()).toBe(secondAnchor);
-    expect(claims[1]?.claimSequence).toBe(2);
-    expect(claims[0]?.settlement).toBe("completed");
-    expect(claims[1]?.settlement).toBe("unsettled");
-    // Exactly one canonical queue event belongs to the new occurrence, and it
-    // is not the event the first occurrence already consumed.
-    expect(claims[1]?.queueEventId).toStrictEqual(expect.any(String));
-    expect(claims[1]?.queueEventId).not.toBe(claims[0]?.queueEventId);
-    // One canonical queue event per occurrence: the losing tick added none.
-    await expect(briefAutomationEventCount(threadId)).resolves.toBe(
-      claims.length,
-    );
-  });
-
-  it("refuses a fresh selected brief that expires while queue admission is blocked", async () => {
-    mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "false");
-    const brief = await installJournaledBrief();
-    await pollAt(brief.automationId, brief.anchor + 60_000);
-    const threadId = await briefThreadId(brief.actor, brief.workflowId);
-    const [firstRunId] = await briefRunIds(threadId);
-    if (!firstRunId) {
-      throw new Error("Expected the first brief Run");
-    }
-    await deliverBriefCallback(firstRunId);
-    const advanced = await readBriefState(brief);
-    if (!advanced.nextRunAt) {
-      throw new Error("Expected a future brief occurrence");
-    }
-    const nextAnchor = Date.parse(advanced.nextRunAt);
-    const barrier = await holdChatEventQueueAdmissionLockFixture({
-      threadId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      barrier.release();
-      await barrier.done;
-    });
-    mockNow(nextAnchor + 29 * 60_000);
-    const tick = accept(
-      automationExecutionClient().execute({
-        body: { automation_id: brief.automationId },
-      }),
-      [200],
-    );
-    await expect
-      .poll(async () => {
-        return await barrier.directWaiterCount();
-      })
-      .toBe(1);
-    mockNow(nextAnchor + 30 * 60_000 + 1);
-    barrier.release();
-    await barrier.done;
-    await tick;
-
-    await expect(briefRunIds(threadId)).resolves.toStrictEqual([firstRunId]);
-    await expect(briefAutomationEventCount(threadId)).resolves.toBe(1);
-    await expect(
-      readMorningBriefScheduleClaimsFixture(brief.automationId),
-    ).resolves.toHaveLength(1);
-    await expect(readBriefState(brief)).resolves.toMatchObject({
-      nextRunAt: advanced.nextRunAt,
-    });
   });
 
   it("binds the journal through the actual Pi launch composition", async () => {

@@ -1731,6 +1731,7 @@ async function findCustomConnectorPrefixConflict(
   },
 ): Promise<BadRequestResponse | null> {
   await tx.execute(
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`custom_connector_prefixes:${args.orgId}`}, 0))`,
   );
   const existingConnectors = await tx

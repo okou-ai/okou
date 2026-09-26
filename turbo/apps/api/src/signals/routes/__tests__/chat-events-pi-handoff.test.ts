@@ -21,7 +21,6 @@ import { env, mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
-  holdPiApiFirstTurnLifecycleLockFixture,
   readRunUsageEventsFixture,
   replacePiSessionHistoryInlineFixture,
   replacePiSessionHistoryJsonlFixture,
@@ -66,7 +65,6 @@ const {
   failChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
-  expectNoPiApiFirstTurnArtifacts,
   expectPiApiFirstTurnTerminalWithoutOutput,
   uploadedPiS3Object,
   publishPendingPiInstructions,
@@ -730,89 +728,6 @@ describe("CHAT-02: model-first provider policies", () => {
           }),
       ).toStrictEqual(["run.failed"]);
       expect(eventBackedContents(events, run.runId)).toStrictEqual([]);
-    },
-    90_000,
-  );
-
-  it.each(["cancelled", "failed"] as const)(
-    "does not publish native-input H0 after lifecycle ownership becomes %s",
-    async (status) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      let modelCalls = 0;
-      server.use(
-        http.post("https://api.openai.com/v1/responses", () => {
-          modelCalls += 1;
-          return nativeCodexSseResponse(
-            piResponsesTextSse("unsafe API turn", modelCalls),
-          );
-        }),
-      );
-      const { anchor, anchorClaim, run, usagePricingResolution } =
-        await queueCapabilityProvenPiRun({
-          actor,
-          agentId,
-          runnerGroup,
-          prompt: "/skill:handoff-skill preserve  arguments",
-        });
-      // Only this run-owned fixture can hold publication at the lifecycle
-      // boundary while a real cancellation or Sandbox failure wins ownership.
-      const lock = await holdPiApiFirstTurnLifecycleLockFixture({
-        runId: run.runId,
-        signal: context.signal,
-      });
-      onTestFinished(async () => {
-        lock.release();
-        await lock.done;
-      });
-      if (status === "cancelled") {
-        const cancellation = api.requestCancelRun(
-          actor,
-          run.runId,
-          [200],
-          usagePricingResolution,
-        );
-        await expect.poll(lock.waiterCount).toBe(1);
-        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-          usagePricingResolution,
-        });
-        await expect.poll(lock.waiterCount).toBe(2);
-        lock.release();
-        await lock.done;
-        await cancellation;
-      } else {
-        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-          usagePricingResolution,
-        });
-        await expect.poll(lock.waiterCount).toBe(1);
-        const claim = await claimChatRun(runnerGroup, run.runId);
-        await failChatRun(
-          run.runId,
-          claim.sandboxHeaders,
-          "Sandbox startup failed before takeover",
-        );
-        lock.release();
-        await lock.done;
-      }
-      await waitForRunStatus(actor, run.runId, status);
-      await flushWaitUntilForTest();
-      expect(modelCalls).toBe(0);
-      expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
-      const events = (await chat.listThreadEvents(actor, run.threadId)).events;
-      expect(
-        events
-          .filter((event) => {
-            return (
-              event.runId === run.runId &&
-              isChatRunTerminalEventType(event.eventType)
-            );
-          })
-          .map((event) => {
-            return event.eventType;
-          }),
-      ).toStrictEqual([`run.${status}`]);
-      expect(eventBackedContents(events, run.runId)).toStrictEqual([]);
-      await api.requestClaimRunnerJob(true, run.runId, [404]);
     },
     90_000,
   );

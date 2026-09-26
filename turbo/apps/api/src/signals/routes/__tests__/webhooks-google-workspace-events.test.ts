@@ -28,9 +28,6 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   clearWorkflowAutomationEventConnectorAsPreviousApi,
-  holdOrgAdmissionLock,
-  readOrgAdmissionLockState,
-  releaseOrgAdmissionLock,
   stageOfficialWorkflowAutomationFixture,
 } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
@@ -890,98 +887,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
     );
     expect(fixture.provider.accounts.primary.deletedUrls).toHaveLength(1);
     expect(fixture.provider.accounts.secondary.createdNames).toHaveLength(1);
-  });
-
-  it("supersedes an old source that changes before queue admission", async () => {
-    const fixture = await setupFixture();
-    const created = await createMeetAutomation(fixture);
-    if (!created.body.chatThreadId) {
-      throw new Error("Expected an automation chat thread");
-    }
-    const primarySubscription =
-      fixture.provider.accounts.primary.createdNames[0];
-    if (!primarySubscription) {
-      throw new Error("Expected a primary Google Meet subscription");
-    }
-    const secondaryConnectorId = await connectGoogleMeet(
-      fixture.actor,
-      fixture.provider,
-      "secondary",
-      fixture.agentId,
-      { intent: "add", displayName: "Secondary Google Meet" },
-    );
-    const admissionLockRequest = holdOrgAdmissionLock(
-      context,
-      `chat_event_queue:${created.body.chatThreadId}`,
-    );
-    const cleanupRequests: Promise<unknown>[] = [admissionLockRequest];
-    onTestFinished(async () => {
-      const cleanupResults = await Promise.allSettled([
-        releaseOrgAdmissionLock(context),
-        ...cleanupRequests,
-      ]);
-      const cleanupFailure = cleanupResults.find((result) => {
-        return result.status === "rejected";
-      });
-      if (cleanupFailure?.status === "rejected") {
-        throw cleanupFailure.reason;
-      }
-    });
-    await expect
-      .poll(async () => {
-        return (await readOrgAdmissionLockState(context)).held;
-      })
-      .toBe(true);
-
-    const oldSourceRequest = postWorkspaceEvent(primarySubscription);
-    cleanupRequests.push(oldSourceRequest);
-    await expect
-      .poll(async () => {
-        return (await readOrgAdmissionLockState(context)).waiting;
-      })
-      .toBe(true);
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.chatThreadId },
-        body: {
-          connectionId: secondaryConnectorId,
-          target: { kind: "builtin", connectorSlug: "google-meet" },
-        },
-      }),
-      [200],
-    );
-    await releaseOrgAdmissionLock(context);
-    await admissionLockRequest;
-
-    const oldSource = await oldSourceRequest;
-    expect(oldSource.status).toBe(200);
-    await expect(oldSource.json()).resolves.toStrictEqual({
-      success: true,
-      watchStates: 1,
-      dispatched: 0,
-      duplicates: 0,
-    });
-    const events = await workflows.readThreadEvents(created.body.chatThreadId);
-    expect(
-      events.filter((event) => {
-        return (
-          chatEventDisplayText(event) === "A Google Meet transcript is ready."
-        );
-      }),
-    ).toStrictEqual([]);
-
-    const secondarySubscription =
-      fixture.provider.accounts.secondary.createdNames[0];
-    if (!secondarySubscription) {
-      throw new Error("Expected a secondary Google Meet subscription");
-    }
-    const currentSource = await postWorkspaceEvent(secondarySubscription);
-    expect(currentSource.status).toBe(200);
-    await expect(currentSource.json()).resolves.toMatchObject({
-      watchStates: 1,
-      dispatched: 1,
-    });
   });
 
   async function setupCopiedMeetAutomation() {

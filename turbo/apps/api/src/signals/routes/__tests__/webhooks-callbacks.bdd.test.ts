@@ -15,7 +15,6 @@ import { server } from "../../../mocks/server";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
-import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import { expireAtomGrantFixture } from "../../../test-fixtures/org-metadata";
 import {
   deleteOrgPlanEntitlementFixture,
@@ -23,7 +22,6 @@ import {
 } from "../../../test-fixtures/org-plan-entitlement";
 import { seedUsagePricingRows } from "../../../test-fixtures/system-config-seeds";
 import { readUsageAllowanceEntitlementFixture } from "../../../test-fixtures/usage-allowance";
-import { holdUsageEventCompactionLockFixture } from "../../../test-fixtures/usage-event-compaction";
 import {
   createBddApi,
   expectApiError,
@@ -69,7 +67,6 @@ import {
 
 const context = testContext({
   connectorCatalog: true,
-  dbFixtures: [usageEventCompactionDbFixture],
 });
 const TERMINAL_RUN_STATUSES = [
   "completed",
@@ -6579,35 +6576,12 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       }
       return Promise.resolve({});
     });
-    const compactionLock = await holdUsageEventCompactionLockFixture(
-      context.signal,
-    );
-    onTestFinished(async () => {
-      compactionLock.release();
-      await compactionLock.done;
-      await flushWaitUntilForTest();
-    });
     api.verifyNextClerkWebhook({
       type: "organization.deleted",
       data: { id: orgOf(actor) },
     });
-    const redelivery = await compactionLock.withAcquisitionAttemptTracking(
-      () => {
-        return api.requestClerkWebhook("{}", {}, [200]);
-      },
-    );
+    const redelivery = await api.requestClerkWebhook("{}", {}, [200]);
     expect(redelivery.body).toBe("OK");
-    await compactionLock.acquisitionAttempted;
-    await expect.poll(compactionLock.waiterCount).toBeGreaterThanOrEqual(1);
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "organization", id: orgOf(actor) },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-    compactionLock.release();
-    await compactionLock.done;
     await flushWaitUntilForTest();
 
     await expect
@@ -6951,124 +6925,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       expect(preserved.tier).toBe("pro");
       expect(preserved.hasSubscription).toBeTruthy();
     }
-
-    it("waits for usage compaction before deleting a user's runs and runner token", async () => {
-      const fixture = await prepareUserDeletion();
-      const { runs, runnerGroup, doomed, sharedAgent } = fixture;
-      const doomedKey = await runs.createCliToken(doomed);
-      const doomedBearer = `Bearer ${doomedKey.token}`;
-      const livePoll = await runs.requestPollRunnerAs(
-        doomedBearer,
-        { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-        [200],
-      );
-      expect(livePoll.status).toBe(200);
-      const run = await runs.createRun(doomed, {
-        agentId: sharedAgent.agentId,
-        prompt: "user teardown run",
-        modelProvider: "anthropic-api-key",
-      });
-      expect(run.status).toBe("pending");
-      await runs.claimRunnerJob(run.runId);
-      await store.set(
-        insertUsageEvent$,
-        {
-          orgId: orgOf(doomed),
-          userId: doomed.userId,
-          runId: run.runId,
-          status: "processed",
-          creditsCharged: 10,
-          processedAt: nowDate(),
-        },
-        context.signal,
-      );
-      await expect(
-        store.set(
-          materializeHourlyUsage$,
-          {
-            orgId: orgOf(doomed),
-            userId: doomed.userId,
-            runId: run.runId,
-          },
-          context.signal,
-        ),
-      ).resolves.toBe(1);
-      await store.set(
-        insertUsageEvent$,
-        {
-          orgId: orgOf(doomed),
-          userId: doomed.userId,
-          runId: run.runId,
-          status: "processed",
-          creditsCharged: 5,
-          processedAt: nowDate(),
-        },
-        context.signal,
-      );
-      await expect(
-        store.set(
-          readUsageStorageCounts$,
-          { scope: "user", id: doomed.userId },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-
-      const compactionLock = await holdUsageEventCompactionLockFixture(
-        context.signal,
-      );
-      onTestFinished(async () => {
-        compactionLock.release();
-        await compactionLock.done;
-        await flushWaitUntilForTest();
-      });
-      context.mocks.ably.publish.mockClear();
-      await compactionLock.withAcquisitionAttemptTracking(() => {
-        return startUserDeletion(fixture);
-      });
-      await compactionLock.acquisitionAttempted;
-      await expect.poll(compactionLock.waiterCount).toBeGreaterThanOrEqual(1);
-      await expect(
-        store.set(
-          readUsageStorageCounts$,
-          { scope: "user", id: doomed.userId },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-      compactionLock.release();
-      await compactionLock.done;
-      await flushWaitUntilForTest();
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
-        runId: run.runId,
-        mode: "hard",
-      });
-
-      let revokedPoll:
-        | Awaited<ReturnType<typeof runs.requestPollRunnerAs>>
-        | undefined;
-      await expect
-        .poll(async () => {
-          revokedPoll = await runs.requestPollRunnerAs(
-            doomedBearer,
-            { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-            [200, 401],
-          );
-          return revokedPoll.status;
-        })
-        .toBe(401);
-      if (!revokedPoll || revokedPoll.status !== 401) {
-        throw new Error("Expected deleted user's runner token to be revoked");
-      }
-      expectApiError(revokedPoll.body);
-      await runs.requestReadRun(doomed, run.runId, [404]);
-      await expect(
-        store.set(
-          readUsageStorageCounts$,
-          { scope: "user", id: doomed.userId },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
-      await expectSurvivingOrganization(fixture);
-    });
 
     it("deletes a user's connector state while preserving peer accounts and grants", async () => {
       const fixture = await prepareUserDeletion();

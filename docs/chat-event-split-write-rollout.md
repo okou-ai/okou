@@ -173,6 +173,13 @@ in both modes without a partial event, and a duplicate delivery is accepted) and
 draft/timestamp/sort/materialization side effects, exercise callback replay,
 and collect late records after a local deletion job is gone. Activity replay has focused unit coverage.
 
+The dedicated `chat-event-split/acceptance.ts` suite was retired on 2026-09-26
+after split activation, contraction and the Release 2 rollback floor were
+complete. It called internal services and installed SQL faults and lock barriers
+that callers cannot construct through production APIs. Its CI entry and
+type-check root were removed together. The other chat-event acceptance suites,
+historical migration replay and schema-equivalence check remain.
+
 Append telemetry reports statement duration plus database allocation/lock-wait
 and insertion phases for returned rows. Empty-conflict appends still report
 statement duration. Auxiliary writes have operation-specific timings and error

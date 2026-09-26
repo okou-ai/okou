@@ -35,17 +35,14 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, count, desc, eq, isNotNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { executeRawRows } from "../../lib/db-raw-rows";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { testOverride } from "../../lib/singleton";
 import type { RouteEntry } from "../route-entry";
-import { createDeferredPromise, onRejection } from "../utils";
 import {
   acquireBuiltInModelKeyFixture,
   releaseBuiltInModelKeyFixture,
@@ -61,20 +58,6 @@ import { queueArtifactCatalogFile } from "../services/artifact-catalog.service";
 import { reconcileSocialKitDownloads$ } from "../services/socialkit-download.service";
 import { steerRunNearTimeBudgetForTest } from "../services/cron-steer-run-time-budget.service";
 import {
-  acquireOfficialWorkflowRunCatalogAdmissionLock,
-  clearOfficialWorkflowRunFinalAdmissionLockedHookForTest,
-  clearOfficialWorkflowRunObservationResolvedHookForTest,
-  resolveOfficialWorkflowRunObservation,
-  setOfficialWorkflowRunFinalAdmissionLockedHookForTest,
-  setOfficialWorkflowRunObservationResolvedHookForTest,
-  validateOfficialWorkflowRunForInsert,
-} from "../services/official-workflow-run.service";
-import {
-  clearOfficialWorkflowBootstrapRequirementHookForTest,
-  setOfficialWorkflowBootstrapRequirementHookForTest,
-  type OfficialWorkflowBootstrapRequirement,
-} from "../services/agent-runs-create.service";
-import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
@@ -83,50 +66,6 @@ import {
 
 const actionBody$ = bodyResultOf(testRuntimeStateContract.action);
 const BUILT_IN_MODEL_KEY_FIXTURE_PREFIX = "built-in-key-runtime-fixture-";
-
-interface OrgAdmissionLockGate {
-  holderPid: number | null;
-  readonly released: ReturnType<typeof createDeferredPromise<void>>;
-  readonly release: () => void;
-}
-
-const orgAdmissionLockGate = testOverride<OrgAdmissionLockGate | null>(() => {
-  return null;
-});
-
-type OfficialWorkflowRunGateKind =
-  | "observation"
-  | "final-admission"
-  | "bootstrap-requirement";
-
-interface OfficialWorkflowRunGate {
-  readonly kind: OfficialWorkflowRunGateKind;
-  arrivals: number;
-  readonly backendPids: Set<number>;
-  bootstrapRequirement: OfficialWorkflowBootstrapRequirement | null;
-  readonly released: ReturnType<typeof createDeferredPromise<void>>;
-  readonly release: () => void;
-}
-
-const officialWorkflowRunGate = testOverride<OfficialWorkflowRunGate | null>(
-  () => {
-    return null;
-  },
-);
-
-const orgAdmissionLockHolderRowSchema = z.object({ holderPid: z.int() });
-const orgAdmissionLockStateRowSchema = z.object({
-  held: z.boolean(),
-  waiting: z.boolean(),
-});
-const officialWorkflowRunGateBackendRowSchema = z.object({
-  backendPid: z.int(),
-});
-const officialWorkflowRunGateLockStateRowSchema = z.object({
-  sharedCatalogHolderCount: z.int().nonnegative(),
-  exclusiveCatalogWaiterCount: z.int().nonnegative(),
-  blockedWaiterCount: z.int().nonnegative(),
-});
 type RunSummaryFixtureAction = Extract<
   TestRuntimeStateActionBody,
   { action: "save-run-summary" }
@@ -155,322 +94,6 @@ async function runSummaryFixtureActionResponse(
   );
   signal.throwIfAborted();
   return { status: 200 as const, body: { ok: true as const } };
-}
-
-function createOrgAdmissionLockGate(signal: AbortSignal): OrgAdmissionLockGate {
-  const released = createDeferredPromise<void>(signal);
-  return {
-    holderPid: null,
-    released,
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-  };
-}
-
-function clearOrgAdmissionLockGate(gate: OrgAdmissionLockGate): void {
-  if (orgAdmissionLockGate.get() === gate) {
-    orgAdmissionLockGate.clear();
-  }
-}
-
-async function holdOrgAdmissionLock(
-  db: Db,
-  orgId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  if (orgAdmissionLockGate.get()) {
-    throw new Error("An org admission lock gate is already active");
-  }
-  const gate = createOrgAdmissionLockGate(signal);
-  orgAdmissionLockGate.set(gate);
-  await onRejection(
-    db.transaction(async (tx) => {
-      const rows = await executeRawRows(
-        tx,
-        sql`
-          SELECT
-            pg_backend_pid() AS "holderPid",
-            pg_advisory_xact_lock(hashtext(${orgId}))
-        `,
-        orgAdmissionLockHolderRowSchema,
-      );
-      signal.throwIfAborted();
-      const holder = rows[0];
-      if (!holder) {
-        throw new Error("Failed to acquire org admission lock");
-      }
-      gate.holderPid = holder.holderPid;
-      await gate.released.promise;
-    }),
-    () => {
-      clearOrgAdmissionLockGate(gate);
-    },
-  );
-  clearOrgAdmissionLockGate(gate);
-}
-
-async function readOrgAdmissionLockState(
-  db: Db,
-  signal: AbortSignal,
-): Promise<{ readonly held: boolean; readonly waiting: boolean }> {
-  const holderPid = orgAdmissionLockGate.get()?.holderPid;
-  if (holderPid === null || holderPid === undefined) {
-    return { held: false, waiting: false };
-  }
-  const rows = await executeRawRows(
-    db,
-    sql`
-      SELECT
-        EXISTS (
-          SELECT 1
-          FROM pg_locks held
-          WHERE
-            held.pid = ${holderPid}
-            AND held.locktype = 'advisory'
-            AND held.granted
-        ) AS "held",
-        EXISTS (
-          SELECT 1
-          FROM pg_locks held
-          INNER JOIN pg_locks waiting
-            ON waiting.locktype = held.locktype
-            AND waiting.database IS NOT DISTINCT FROM held.database
-            AND waiting.classid IS NOT DISTINCT FROM held.classid
-            AND waiting.objid IS NOT DISTINCT FROM held.objid
-            AND waiting.objsubid IS NOT DISTINCT FROM held.objsubid
-          WHERE
-            held.pid = ${holderPid}
-            AND held.locktype = 'advisory'
-            AND held.granted
-            AND NOT waiting.granted
-        ) AS "waiting"
-    `,
-    orgAdmissionLockStateRowSchema,
-  );
-  signal.throwIfAborted();
-  const state = rows[0];
-  if (!state) {
-    throw new Error("Failed to read org admission lock state");
-  }
-  return state;
-}
-
-function createOfficialWorkflowRunGate(
-  kind: OfficialWorkflowRunGateKind,
-  signal: AbortSignal,
-): OfficialWorkflowRunGate {
-  const released = createDeferredPromise<void>(signal);
-  return {
-    kind,
-    arrivals: 0,
-    backendPids: new Set<number>(),
-    bootstrapRequirement: null,
-    released,
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-  };
-}
-
-function clearOfficialWorkflowRunGateHooks(
-  gate: OfficialWorkflowRunGate,
-): void {
-  switch (gate.kind) {
-    case "observation": {
-      clearOfficialWorkflowRunObservationResolvedHookForTest();
-      break;
-    }
-    case "final-admission": {
-      clearOfficialWorkflowRunFinalAdmissionLockedHookForTest();
-      break;
-    }
-    case "bootstrap-requirement": {
-      clearOfficialWorkflowBootstrapRequirementHookForTest();
-      break;
-    }
-  }
-  if (officialWorkflowRunGate.get() === gate) {
-    officialWorkflowRunGate.clear();
-  }
-}
-
-async function waitAtOfficialWorkflowRunGate(
-  gate: OfficialWorkflowRunGate,
-): Promise<void> {
-  gate.arrivals++;
-  await gate.released.promise;
-}
-
-async function holdOfficialWorkflowRunGate(
-  kind: OfficialWorkflowRunGateKind,
-  signal: AbortSignal,
-): Promise<void> {
-  if (officialWorkflowRunGate.get()) {
-    throw new Error("An Official Workflow Run gate is already active");
-  }
-  const gate = createOfficialWorkflowRunGate(kind, signal);
-  officialWorkflowRunGate.set(gate);
-  switch (kind) {
-    case "observation": {
-      setOfficialWorkflowRunObservationResolvedHookForTest(async () => {
-        await waitAtOfficialWorkflowRunGate(gate);
-      });
-      break;
-    }
-    case "final-admission": {
-      setOfficialWorkflowRunFinalAdmissionLockedHookForTest(
-        async (_observation, tx) => {
-          const rows = await executeRawRows(
-            tx,
-            sql`SELECT pg_backend_pid() AS "backendPid"`,
-            officialWorkflowRunGateBackendRowSchema,
-          );
-          const backend = rows[0];
-          if (!backend) {
-            throw new Error("Failed to read the Official Workflow Run backend");
-          }
-          gate.backendPids.add(backend.backendPid);
-          await waitAtOfficialWorkflowRunGate(gate);
-        },
-      );
-      break;
-    }
-    case "bootstrap-requirement": {
-      setOfficialWorkflowBootstrapRequirementHookForTest(
-        async (requirement) => {
-          gate.bootstrapRequirement = requirement;
-          await waitAtOfficialWorkflowRunGate(gate);
-        },
-      );
-      break;
-    }
-  }
-
-  await onRejection(gate.released.promise, () => {
-    clearOfficialWorkflowRunGateHooks(gate);
-  });
-  signal.throwIfAborted();
-  clearOfficialWorkflowRunGateHooks(gate);
-}
-
-function officialWorkflowBootstrapQueueFirstKind(
-  requirement: OfficialWorkflowBootstrapRequirement,
-): "user_message" | "automation_event" | null {
-  if (
-    requirement.queueFirstKind === null ||
-    requirement.queueFirstKind === "user_message" ||
-    requirement.queueFirstKind === "automation_event"
-  ) {
-    return requirement.queueFirstKind;
-  }
-  throw new Error("Unexpected Official Workflow queue-first source");
-}
-
-async function readOfficialWorkflowRunGateLockState(
-  db: Db,
-  gate: OfficialWorkflowRunGate,
-  signal: AbortSignal,
-): Promise<{
-  readonly sharedCatalogHolderCount: number;
-  readonly exclusiveCatalogWaiterCount: number;
-  readonly blockedWaiterCount: number;
-}> {
-  const backendPids = [...gate.backendPids];
-  if (backendPids.length === 0) {
-    return {
-      sharedCatalogHolderCount: 0,
-      exclusiveCatalogWaiterCount: 0,
-      blockedWaiterCount: 0,
-    };
-  }
-  const backendPidList = sql.join(
-    backendPids.map((backendPid) => {
-      return sql`${backendPid}`;
-    }),
-    sql`, `,
-  );
-  const rows = await executeRawRows(
-    db,
-    sql`
-      SELECT
-        (
-          SELECT COUNT(DISTINCT held.pid)::integer
-          FROM pg_locks held
-          WHERE
-            held.pid IN (${backendPidList})
-            AND held.locktype = 'advisory'
-            AND held.mode = 'ShareLock'
-            AND held.granted
-        ) AS "sharedCatalogHolderCount",
-        (
-          SELECT COUNT(DISTINCT waiting.pid)::integer
-          FROM pg_locks held
-          INNER JOIN pg_locks waiting
-            ON waiting.locktype = held.locktype
-            AND waiting.database IS NOT DISTINCT FROM held.database
-            AND waiting.classid IS NOT DISTINCT FROM held.classid
-            AND waiting.objid IS NOT DISTINCT FROM held.objid
-            AND waiting.objsubid IS NOT DISTINCT FROM held.objsubid
-          WHERE
-            held.pid IN (${backendPidList})
-            AND held.locktype = 'advisory'
-            AND held.mode = 'ShareLock'
-            AND held.granted
-            AND waiting.mode = 'ExclusiveLock'
-            AND NOT waiting.granted
-        ) AS "exclusiveCatalogWaiterCount",
-        (
-          SELECT COUNT(DISTINCT waiting.pid)::integer
-          FROM pg_stat_activity waiting
-          WHERE EXISTS (
-            SELECT 1
-            FROM unnest(pg_blocking_pids(waiting.pid)) AS blocker(pid)
-            WHERE blocker.pid IN (${backendPidList})
-          )
-        ) AS "blockedWaiterCount"
-    `,
-    officialWorkflowRunGateLockStateRowSchema,
-  );
-  signal.throwIfAborted();
-  const state = rows[0];
-  if (!state) {
-    throw new Error("Failed to read the Official Workflow Run lock state");
-  }
-  return state;
-}
-
-async function readOfficialWorkflowRunGateState(db: Db, signal: AbortSignal) {
-  const gate = officialWorkflowRunGate.get();
-  if (!gate) {
-    return null;
-  }
-  const lockState = await readOfficialWorkflowRunGateLockState(
-    db,
-    gate,
-    signal,
-  );
-  return {
-    gate: gate.kind,
-    arrivals: gate.arrivals,
-    shared_catalog_holder_count: lockState.sharedCatalogHolderCount,
-    exclusive_catalog_waiter_count: lockState.exclusiveCatalogWaiterCount,
-    blocked_waiter_count: lockState.blockedWaiterCount,
-    bootstrap_requirement: gate.bootstrapRequirement
-      ? {
-          workflow_ids: [...gate.bootstrapRequirement.workflowIds],
-          queue_first_kind: officialWorkflowBootstrapQueueFirstKind(
-            gate.bootstrapRequirement,
-          ),
-          workflow_automation_id:
-            gate.bootstrapRequirement.workflowAutomationId,
-        }
-      : null,
-  };
 }
 
 async function seedBuiltInDefaultModelKey(
@@ -1915,28 +1538,13 @@ type SetOfficialWorkflowAutomationAdmissionStateAction = Extract<
   TestRuntimeStateActionBody,
   { action: "set-official-workflow-automation-admission-state" }
 >;
-type RetargetWorkflowAutomationAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "retarget-workflow-automation" }
->;
-type AssertOfficialWorkflowAutomationFinalAdmissionRejectedAction = Extract<
-  TestRuntimeStateActionBody,
-  {
-    action: "assert-official-workflow-automation-final-admission-rejected";
-  }
->;
 type OfficialWorkflowRunFixtureAction = Extract<
   TestRuntimeStateActionBody,
   {
     action:
       | "read-official-workflow-run-state"
       | "read-agent-run-family-counts"
-      | "set-official-workflow-automation-admission-state"
-      | "retarget-workflow-automation"
-      | "assert-official-workflow-automation-final-admission-rejected"
-      | "hold-official-workflow-run-gate"
-      | "read-official-workflow-run-gate-state"
-      | "release-official-workflow-run-gate";
+      | "set-official-workflow-automation-admission-state";
   }
 >;
 
@@ -1947,11 +1555,6 @@ function isOfficialWorkflowRunFixtureAction(
     "read-official-workflow-run-state",
     "read-agent-run-family-counts",
     "set-official-workflow-automation-admission-state",
-    "retarget-workflow-automation",
-    "assert-official-workflow-automation-final-admission-rejected",
-    "hold-official-workflow-run-gate",
-    "read-official-workflow-run-gate-state",
-    "release-official-workflow-run-gate",
   ].includes(body.action);
 }
 
@@ -2102,81 +1705,6 @@ async function setOfficialWorkflowAutomationAdmissionStateActionResponse(
   return { status: 200 as const, body: { ok: true as const } };
 }
 
-async function retargetWorkflowAutomationActionResponse(
-  db: Db,
-  body: RetargetWorkflowAutomationAction,
-  signal: AbortSignal,
-) {
-  const updated = await db
-    .update(workflowAutomations)
-    .set({ workflowId: body.workflow_id })
-    .where(eq(workflowAutomations.id, body.automation_id))
-    .returning({ id: workflowAutomations.id });
-  signal.throwIfAborted();
-  if (updated.length !== 1) {
-    throw new Error("Workflow Automation is unavailable");
-  }
-  return { status: 200 as const, body: { ok: true as const } };
-}
-
-async function assertOfficialWorkflowAutomationFinalAdmissionRejected(
-  db: Db,
-  body: AssertOfficialWorkflowAutomationFinalAdmissionRejectedAction,
-  signal: AbortSignal,
-) {
-  const [workflow] = await db
-    .select({
-      id: workflows.id,
-      name: workflows.name,
-      definitionName: workflows.officialDefinitionName,
-      orgId: workflows.orgId,
-      userId: workflows.ownerUserId,
-      agentId: workflows.agentId,
-    })
-    .from(workflows)
-    .where(eq(workflows.id, body.official_workflow_id))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!workflow?.definitionName) {
-    throw new Error("Official Workflow fixture is unavailable");
-  }
-  const observation = await resolveOfficialWorkflowRunObservation(
-    db,
-    [
-      {
-        workflowId: workflow.id,
-        workflowName: workflow.name,
-        definitionName: workflow.definitionName,
-        mountPath: `/test/official-workflows/${workflow.id}`,
-      },
-    ],
-    signal,
-  );
-  if (!observation) {
-    throw new Error("Official Workflow observation is unavailable");
-  }
-  const rejection = await db.transaction(async (tx) => {
-    await acquireOfficialWorkflowRunCatalogAdmissionLock(tx, observation);
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext(${workflow.orgId}))`,
-    );
-    return await validateOfficialWorkflowRunForInsert(tx, {
-      observation,
-      orgId: workflow.orgId,
-      userId: workflow.userId,
-      agentId: workflow.agentId,
-      automationId: body.automation_id,
-      runStorageMounts: undefined,
-      allowMissingMountsForFailedRun: true,
-    });
-  });
-  signal.throwIfAborted();
-  if (!rejection) {
-    throw new Error("Mismatched Official Automation admission was accepted");
-  }
-  return { status: 200 as const, body: { ok: true as const } };
-}
-
 async function officialWorkflowRunFixtureActionResponse(
   db: Db,
   body: OfficialWorkflowRunFixtureAction,
@@ -2195,34 +1723,6 @@ async function officialWorkflowRunFixtureActionResponse(
         body,
         signal,
       );
-    }
-    case "retarget-workflow-automation": {
-      return await retargetWorkflowAutomationActionResponse(db, body, signal);
-    }
-    case "assert-official-workflow-automation-final-admission-rejected": {
-      return await assertOfficialWorkflowAutomationFinalAdmissionRejected(
-        db,
-        body,
-        signal,
-      );
-    }
-    case "hold-official-workflow-run-gate": {
-      await holdOfficialWorkflowRunGate(body.gate, signal);
-      return { status: 200 as const, body: { ok: true as const } };
-    }
-    case "read-official-workflow-run-gate-state": {
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          official_workflow_run_gate_state:
-            await readOfficialWorkflowRunGateState(db, signal),
-        },
-      };
-    }
-    case "release-official-workflow-run-gate": {
-      officialWorkflowRunGate.get()?.release();
-      return { status: 200 as const, body: { ok: true as const } };
     }
   }
 }
@@ -2332,25 +1832,6 @@ const postRuntimeStateAction$ = command(
       }
       case "set-runner-job-connector-runtime-targets": {
         await setRunnerJobConnectorRuntimeTargets(db, body, signal);
-        return { status: 200 as const, body: { ok: true as const } };
-      }
-      case "hold-org-admission-lock": {
-        await holdOrgAdmissionLock(db, body.org_id, signal);
-        return { status: 200 as const, body: { ok: true as const } };
-      }
-      case "read-org-admission-lock-state": {
-        const state = await readOrgAdmissionLockState(db, signal);
-        return {
-          status: 200 as const,
-          body: {
-            ok: true as const,
-            admission_lock_held: state.held,
-            admission_lock_waiting: state.waiting,
-          },
-        };
-      }
-      case "release-org-admission-lock": {
-        orgAdmissionLockGate.get()?.release();
         return { status: 200 as const, body: { ok: true as const } };
       }
       case "read-run-uploaded-file-sources": {

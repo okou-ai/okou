@@ -13,7 +13,6 @@ import type { PersistedStorageMount } from "@okouai/db/types";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { testOverride } from "../../lib/singleton";
 import type { ReadonlyDb } from "../external/db";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
@@ -54,47 +53,6 @@ export interface OfficialWorkflowRunObservation {
   readonly releaseId: string;
   readonly definitions: readonly ResolvedOfficialWorkflowRunDefinition[];
   readonly provenance: AgentRunOfficialWorkflowProvenance;
-}
-
-type OfficialWorkflowRunObservationHook = (
-  observation: OfficialWorkflowRunObservation,
-) => Promise<void>;
-
-type OfficialWorkflowRunFinalAdmissionHook = (
-  observation: OfficialWorkflowRunObservation,
-  tx: Tx,
-) => Promise<void>;
-
-const observationResolvedHook = testOverride<
-  OfficialWorkflowRunObservationHook | undefined
->(() => {
-  return undefined;
-});
-
-const finalAdmissionLockedHook = testOverride<
-  OfficialWorkflowRunFinalAdmissionHook | undefined
->(() => {
-  return undefined;
-});
-
-export function setOfficialWorkflowRunObservationResolvedHookForTest(
-  hook: OfficialWorkflowRunObservationHook,
-): void {
-  observationResolvedHook.set(hook);
-}
-
-export function clearOfficialWorkflowRunObservationResolvedHookForTest(): void {
-  observationResolvedHook.clear();
-}
-
-export function setOfficialWorkflowRunFinalAdmissionLockedHookForTest(
-  hook: OfficialWorkflowRunFinalAdmissionHook,
-): void {
-  finalAdmissionLockedHook.set(hook);
-}
-
-export function clearOfficialWorkflowRunFinalAdmissionLockedHookForTest(): void {
-  finalAdmissionLockedHook.clear();
 }
 
 function artifactMatches(
@@ -287,7 +245,6 @@ export async function resolveOfficialWorkflowRunObservation(
     return undefined;
   }
   const observation = await resolveObservation(db, candidates, signal);
-  await observationResolvedHook.get()?.(observation);
   return observation;
 }
 
@@ -299,6 +256,7 @@ export async function acquireOfficialWorkflowRunCatalogAdmissionLock(
     return;
   }
   await tx.execute(
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
   );
 }
@@ -520,6 +478,5 @@ export async function validateOfficialWorkflowRunForInsert(
   ) {
     return new OfficialWorkflowRunAdmissionError();
   }
-  await finalAdmissionLockedHook.get()?.(observation, tx);
   return null;
 }

@@ -340,6 +340,41 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
     ).toBeFalsy();
   });
 
+  it("creates the built-in provider once when upserts race", async () => {
+    const { api, admin } = testActors();
+
+    const results = await Promise.all([
+      api.upsertBuiltInProvider(admin, [200, 201]),
+      api.upsertBuiltInProvider(admin, [200, 201]),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 201]);
+    const providerIds = results.map((result) => {
+      if (!("provider" in result.body)) {
+        throw new Error("Expected built-in provider upsert response");
+      }
+      return result.body.provider.id;
+    });
+    expect(providerIds[0]).toBe(providerIds[1]);
+
+    const replay = await api.upsertBuiltInProvider(admin, [200]);
+    expect(replay.body).toMatchObject({
+      created: false,
+      provider: { id: providerIds[0], type: "built-in" },
+    });
+    const listed = await api.listModelProviders(admin);
+    expect(
+      listed.body.modelProviders.filter((provider) => {
+        return provider.type === "built-in";
+      }),
+    ).toHaveLength(1);
+  });
+
   it("chains personal model provider create, update, list, and delete through public API", async () => {
     const { api, admin } = testActors();
 

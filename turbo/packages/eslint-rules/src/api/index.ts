@@ -7,6 +7,7 @@ import { noGetterSetterParams } from "./rules/no-getter-setter-params.ts";
 import { noGlobalSweepTestRoutes } from "./rules/no-global-sweep-test-routes.ts";
 import { noLegacySharedStateMarkers } from "./rules/no-legacy-shared-state-markers.ts";
 import { noLoggerInfo } from "./rules/no-logger-info.ts";
+import { noNewAdvisoryLock } from "./rules/no-new-advisory-lock.ts";
 import { noNewPromise } from "./rules/no-new-promise.ts";
 import { noPackageVariable } from "./rules/no-package-variable.ts";
 import { noProductionStaffEntitlementMutation } from "./rules/no-production-staff-entitlement-mutation.ts";
@@ -35,6 +36,7 @@ export const apiLintPlugin = {
     "no-global-sweep-test-routes": noGlobalSweepTestRoutes,
     "no-legacy-shared-state-markers": noLegacySharedStateMarkers,
     "no-logger-info": noLoggerInfo,
+    "no-new-advisory-lock": noNewAdvisoryLock,
     "no-new-promise": noNewPromise,
     "no-package-variable": noPackageVariable,
     "no-production-staff-entitlement-mutation":

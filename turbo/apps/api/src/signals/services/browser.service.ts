@@ -852,6 +852,7 @@ async function lockBrowserThread(
   chatThreadId: string,
 ): Promise<void> {
   await tx.execute(
+    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
     sql`SELECT pg_advisory_xact_lock(hashtext('zero_browser:' || ${chatThreadId}))`,
   );
 }
@@ -1039,6 +1040,7 @@ async function lockBrowserProfileCreation(
   chatThreadId: string,
 ): Promise<void> {
   const lockKey = `zero_browser_profile:${chatThreadId}`;
+  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 

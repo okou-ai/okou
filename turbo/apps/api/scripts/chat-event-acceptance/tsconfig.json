@@ -8,7 +8,6 @@
     "*.ts",
     "../chat-event-sequences/*.ts",
     "../chat-event-context/*.ts",
-    "../chat-event-split/*.ts",
     "../chat-event-auxiliary/*.ts"
   ],
   "references": [

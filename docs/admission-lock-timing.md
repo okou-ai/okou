@@ -1,6 +1,6 @@
 # Admission-lock timing
 
-The run-creation path emits an additive, attempt-scoped timing series to the sandbox operation dataset. It does not change the organization advisory lock or any admission check. `api_dispatch_admission_lock_held` and `api_dispatch_admission_lock_wait` remain the existing aggregate series; do not add their independently aggregated percentiles.
+The run-creation path emits an additive, attempt-scoped timing series to the sandbox operation dataset. Ordinary launches take no organization advisory lock: final admission is a coarse count of the org's sandbox-occupying runs, and concurrent launches may overshoot the limit. Only official workflow runs take the organization lock, as the lock-order fence against official workflow reconciliation. `api_dispatch_admission_lock_held` and `api_dispatch_admission_lock_wait` remain the existing aggregate series and are recorded only when that lock is taken; do not add their independently aggregated percentiles. The attempt series below keeps its `admission_lock_*` names; for ordinary launches its held window starts when final admission begins, right after transaction setup.
 
 ## Attempt identity and outcomes
 
@@ -19,7 +19,7 @@ Join the new events by `run_id`, `commit_invocation`, and `transaction_attempt`.
 | `api_dispatch_admission_lock_residual`        | Held time not assigned to an explicit leaf or completion tail, including application gaps and timing overhead.                                                                                         |
 | `api_dispatch_admission_lock_overlap`         | Amount by which measured leaves and completion exceed attempt-held time; nonzero values signal an attribution defect or clock anomaly.                                                                 |
 
-The new durations use one monotonic clock. Leaf duration plus completion tail plus residual should equal attempt-held duration when overlap is zero. The attempt series is emitted after the transaction resolves, so an Axiom ingest call is not itself part of attempt-held time. Existing aggregate timer names and their emission paths remain compatible. For a pre-lock admission rejection, the legacy held timer still records its historical near-zero transaction tail; the new attempt-held event is absent because the organization lock was never acquired.
+The new durations use one monotonic clock. Leaf duration plus completion tail plus residual should equal attempt-held duration when overlap is zero. The attempt series is emitted after the transaction resolves, so an Axiom ingest call is not itself part of attempt-held time. Existing aggregate timer names and their emission paths remain compatible. For an official workflow run rejected before the lock, the legacy held timer still records its historical near-zero transaction tail; the new attempt-held event is absent because the organization lock was never acquired.
 
 ## Production readout
 

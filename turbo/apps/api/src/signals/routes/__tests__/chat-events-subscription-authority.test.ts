@@ -55,7 +55,6 @@ const {
   cancelChatRun,
   requestSendEventRaw,
   requestSendEventWithBearer,
-  cancelBeforeLatePiResult,
   mockPiCheckpointObjectStore,
   completeSandboxFirstPiRun,
   expectNoPiApiFirstTurnArtifacts,
@@ -1318,101 +1317,6 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(requests[1]).toMatchObject({ service_tier: route.wireTier });
       await expectNoBuiltInModelUsage(immediate.body.runId);
       await cancelChatRun(actor, source.runId);
-    },
-    90_000,
-  );
-
-  it.each(
-    USER_OWNED_GPT_FAST_BDD_ROUTES.flatMap((route) => {
-      return (["in-flight", "late-result"] as const)
-        .filter((phase) => {
-          return (
-            phase === "in-flight" ||
-            route.selectedModel === representativeModels[route.type]
-          );
-        })
-        .map((phase) => {
-          return {
-            route,
-            name: route.name,
-            phase,
-          };
-        });
-    }),
-  )(
-    "keeps cancelled $name Fast $phase results unbilled and unreplayed",
-    async ({ route, phase }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const { secret, accountId } = await configureUserOwnedGptPiModel(
-        actor,
-        route,
-      );
-      mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      const requests: unknown[] = [];
-      server.use(
-        http.post(route.endpoint, async ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(`Bearer ${secret}`);
-          expect(request.headers.get("chatgpt-account-id")).toBe(accountId);
-          requests.push(await readCodexRequestJson(request));
-          if (!entered.settled()) {
-            entered.resolve(undefined);
-          }
-          await release.promise;
-          return nativeCodexSseResponse(
-            piResponsesTextSse("discarded Terra answer", requests.length),
-          );
-        }),
-      );
-      const run = await sendChatRun(actor, {
-        agentId,
-        model: route.selectedModel,
-        prompt: "cancel Terra Fast ownership",
-        runOptions: { codexServiceTier: "fast" },
-      });
-      await entered.promise;
-      if (phase === "late-result") {
-        await cancelBeforeLatePiResult(actor, run.runId, () => {
-          release.resolve(undefined);
-        });
-      } else {
-        await cancelChatRun(actor, run.runId);
-        release.resolve(undefined);
-      }
-      await flushWaitUntilForTest();
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "cancelled",
-      });
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({
-        service_tier: route.wireTier,
-        stream: true,
-        store: false,
-      });
-      await expectNoBuiltInModelUsage(run.runId);
-      expect(
-        objects.has(
-          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`,
-        ),
-      ).toBeFalsy();
-      expect(
-        objects.has(
-          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
-        ),
-      ).toBeFalsy();
-      expect(
-        eventBackedContents(
-          (await chat.listThreadEvents(actor, run.threadId)).events,
-          run.runId,
-        ),
-      ).toHaveLength(0);
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.requestClaimRunnerJob(true, run.runId, [404], {
-        capabilities: { piModelConfigGenerations: [1, 2, 3] },
-      });
-      expectApiError(claim.body);
     },
     90_000,
   );

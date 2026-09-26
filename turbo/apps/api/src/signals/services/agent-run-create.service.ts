@@ -5900,16 +5900,17 @@ async function buildPermissionManifest(
 }
 
 /**
- * Caller owns the organization capacity advisory lock. Each older eligible
- * The outcome stays the existing capacity outcome, so a queue-enabled caller
- * queues and a nonqueue caller keeps its current error.
+ * Final admission callers own the organization capacity advisory lock; the
+ * preflight caller reads without it. The outcome stays the existing capacity
+ * outcome, so a queue-enabled caller queues and a nonqueue caller keeps its
+ * current error.
  */
 async function checkRunConcurrencyLimit(
-  tx: DbTransaction,
+  db: Pick<Db, "select">,
   orgId: string,
 ): Promise<CreateRunErrorResult | null> {
   const at = nowDate();
-  const state = await loadOrgConcurrencyAdmissionState(tx, {
+  const state = await loadOrgConcurrencyAdmissionState(db, {
     orgId,
     at,
     activePendingAfter: new Date(at.getTime() - PENDING_RUN_TTL_MS),
@@ -8511,29 +8512,22 @@ async function persistAtomicLaunchRows(
   return persisted;
 }
 
+/**
+ * Early rejection only. Final admission re-checks the same coarse capacity
+ * count inside the launch transaction, so this read needs no lock.
+ */
 async function checkRunConcurrencyPreflight(args: {
   readonly db: Db;
   readonly orgId: string;
   readonly timing: ApiDispatchTimingCollector;
 }): Promise<CreateRunErrorResult | null> {
-  return await args.db.transaction(async (tx) => {
-    await args.timing.measure(
-      "api_dispatch_concurrency_preflight_lock_wait",
-      "nested",
-      async () => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
-        );
-      },
-    );
-    return await args.timing.measure(
-      "api_dispatch_concurrency_preflight_check",
-      "nested",
-      async () => {
-        return await checkRunConcurrencyLimit(tx, args.orgId);
-      },
-    );
-  });
+  return await args.timing.measure(
+    "api_dispatch_concurrency_preflight_check",
+    "nested",
+    async () => {
+      return await checkRunConcurrencyLimit(args.db, args.orgId);
+    },
+  );
 }
 
 async function resolveQueueFirstAdmissionForLaunch(args: {
@@ -8625,6 +8619,7 @@ async function persistFailedLaunch(
   );
   if (args.context.officialWorkflowRun) {
     await tx.execute(
+      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`SELECT pg_advisory_xact_lock(hashtext(${args.createArgs.orgId}))`,
     );
   }
@@ -9082,7 +9077,7 @@ async function validateCapturedSubscriptionAccount(
   return undefined;
 }
 
-async function commitPreparedLaunchUnderLock(
+async function commitPreparedLaunchAdmission(
   tx: DbTransaction,
   args: PreparedCommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
@@ -9342,6 +9337,32 @@ async function finishAdmittedLaunch(
   }
 }
 
+/**
+ * Enter final admission. Ordinary launches take no organization lock: the
+ * capacity check is a coarse count of the org's sandbox-occupying runs, and
+ * concurrent launches may overshoot the limit. Official workflow runs keep the
+ * org lock as the lock-order fence against official workflow reconciliation,
+ * which locks the org plan row and then workflow/automation rows under this
+ * key, while official admission locks workflow/automation rows before the plan
+ * row in `persistAtomicLaunchRows`. Returns when the org lock was acquired.
+ */
+async function enterFinalLaunchAdmission(
+  tx: DbTransaction,
+  args: CommitPreparedLaunchArgs,
+): Promise<number | null> {
+  if (!args.context.officialWorkflowRun) {
+    return null;
+  }
+  await args.timing.measure(
+    "api_dispatch_admission_lock_wait",
+    "nested",
+    async () => {
+      await lockPreparedLaunchAdmission(tx, args.createArgs.orgId);
+    },
+  );
+  return now();
+}
+
 async function commitPreparedLaunch(
   args: CommitPreparedLaunchArgs,
 ): Promise<AtomicLaunchCommitCompletion> {
@@ -9379,19 +9400,12 @@ async function commitPreparedLaunch(
           tx,
           preparedArgs.context.officialWorkflowRun,
         );
-        await preparedArgs.timing.measure(
-          "api_dispatch_admission_lock_wait",
-          "nested",
-          async () => {
-            await lockPreparedLaunchAdmission(
-              tx,
-              preparedArgs.createArgs.orgId,
-            );
-          },
+        const admissionLockHeldStartedAt = await enterFinalLaunchAdmission(
+          tx,
+          preparedArgs,
         );
-        const admissionLockHeldStartedAt = now();
-        admissionTiming.lockAcquired();
-        const result = await commitPreparedLaunchUnderLock(
+        admissionTiming.admissionStarted();
+        const result = await commitPreparedLaunchAdmission(
           tx,
           attemptArgs,
           payload,
@@ -9412,7 +9426,10 @@ async function commitPreparedLaunch(
     ? admissionAttemptOutcome(settledTransaction.value.result)
     : "rolled_back";
   const transactionReturnedAt = now();
-  if (settledTransaction.ok) {
+  if (
+    settledTransaction.ok &&
+    settledTransaction.value.admissionLockHeldStartedAt !== null
+  ) {
     args.timing.recordElapsed(
       "api_dispatch_admission_lock_held",
       "nested",

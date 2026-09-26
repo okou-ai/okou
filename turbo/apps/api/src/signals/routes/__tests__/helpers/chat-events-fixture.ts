@@ -41,10 +41,7 @@ import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { computeHmacSignature } from "../../../../lib/event-consumer/hmac";
 import { server } from "../../../../mocks/server";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../../test-fixtures/built-in-model-runtime-route";
-import {
-  holdPiApiFirstTurnLifecycleLockFixture,
-  readRunUsageEventsFixture,
-} from "../../../../test-fixtures/chat-events";
+import { readRunUsageEventsFixture } from "../../../../test-fixtures/chat-events";
 import {
   readmitPiMemoryStage1CandidateFixture,
   readPiConversationIdentityFixture,
@@ -1434,36 +1431,6 @@ export function createChatEventsFixture(context: TestContext) {
     });
   }
 
-  async function cancelBeforeLatePiResult(
-    actor: ApiTestUser,
-    runId: string,
-    releaseProvider: () => void,
-    usagePricingResolution?: UsagePricingFixture["resolution"],
-  ): Promise<void> {
-    // No public API holds the lifecycle transaction open; this scoped lock
-    // makes cancellation commit before a completed provider result publishes.
-    const lock = await holdPiApiFirstTurnLifecycleLockFixture({
-      runId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      lock.release();
-      await lock.done;
-    });
-    const cancellation = api.requestCancelRun(
-      actor,
-      runId,
-      [200],
-      usagePricingResolution,
-    );
-    await expect.poll(lock.waiterCount).toBe(1);
-    releaseProvider();
-    await expect.poll(lock.waiterCount).toBe(2);
-    lock.release();
-    await lock.done;
-    await cancellation;
-  }
-
   function mockPiCheckpointObjectStore(): Map<string, Buffer> {
     const objects = new Map<string, Buffer>();
     const fallback = context.mocks.s3.send.getMockImplementation();
@@ -1903,7 +1870,6 @@ export function createChatEventsFixture(context: TestContext) {
     lastThreadPiAutomationRun,
     expectThreadPiTerminal,
     claimGptPiSandbox,
-    cancelBeforeLatePiResult,
     mockPiCheckpointObjectStore,
     expectNoPiApiFirstTurnArtifacts,
     expectPiApiFirstTurnTerminalWithoutOutput,

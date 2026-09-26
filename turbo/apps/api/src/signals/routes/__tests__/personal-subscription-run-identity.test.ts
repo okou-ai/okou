@@ -1,22 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
-import {
-  countWaitingPersonalSubscriptionMutationsFixture,
-  createPinnedSubscriptionRunFixture,
-  observePreparedLaunchAdmissionFixture,
-} from "../../../test-fixtures/personal-subscription";
+import { createPinnedSubscriptionRunFixture } from "../../../test-fixtures/personal-subscription";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import {
   upsertOrgPlanEntitlementFixture,
   deleteOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { readPiMemoryStage1DayFixture } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { createDeferredPromise } from "../../utils";
-import {
-  holdOrgAdmissionLockFixture,
-  readRunUsageEventsFixture,
-} from "../../../test-fixtures/chat-events";
+import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -763,68 +755,6 @@ describe("personal subscription run identity", () => {
   });
 
   it.each([false, true])(
-    "fails captured admission when disconnect commits before run insertion (organization API: %s)",
-    async (organizationApi) => {
-      const f = await fixture("codex-oauth-token");
-      if (organizationApi) {
-        await configureOrganizationApi(f, "custom");
-      }
-      await support.updateFeatureSwitches(f.actor, {
-        [FeatureSwitchKey.PiMemory]: true,
-      });
-      if (!f.actor.orgId) {
-        throw new Error("Expected an organization");
-      }
-      // Infrastructure exception: the API cannot pause a transaction at its
-      // admission lock; the fixture only orders competing production requests.
-      const lock = await holdOrgAdmissionLockFixture({
-        orgId: f.actor.orgId,
-        signal: context.signal,
-      });
-      const holdingSettled = Promise.allSettled([lock.done]);
-      const admission = observePreparedLaunchAdmissionFixture({
-        orgId: f.actor.orgId,
-        signal: context.signal,
-      });
-      const sending = admission.track(() => {
-        return createChatFilesBddApi(context).requestSendEvent(
-          f.actor,
-          { agentId: f.agentId, prompt: "admission race", model: f.model },
-          [409],
-        );
-      });
-      const sendingSettled = Promise.allSettled([sending]);
-      onTestFinished(async () => {
-        lock.release();
-        await Promise.all([holdingSettled, sendingSettled]);
-      });
-      // The held PostgreSQL lock prevents final validation/insertion after
-      // this request finishes preparation, even before its waiter is visible.
-      // Surface early HTTP errors instead of timing out waiting for admission.
-      await Promise.race([
-        admission.attempted,
-        (async () => {
-          const early = await sending;
-          throw new Error(
-            `Chat request completed before final admission: ${early.status}`,
-          );
-        })(),
-      ]);
-      await support.deletePersonalModelProviderAccount(f.actor, f.connected.id);
-      await connect(f.actor, f.type, "identity-b");
-      lock.release();
-      await lock.done;
-      const denied = await sending;
-      expect(denied.status).toBe(409);
-      expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
-      // Infrastructure exception: no endpoint exposes the persistent daily
-      // decision. A rejected captured account must leave this budget unconsumed.
-      await expect(
-        readPiMemoryStage1DayFixture(f.actor.userId),
-      ).resolves.toBeNull();
-    },
-  );
-  it.each([false, true])(
     "retains pending and queued bindings when a replacement changes the active identity (organization API: %s)",
     async (organizationApi) => {
       const f = await fixture("codex-oauth-token");
@@ -1154,77 +1084,6 @@ describe("personal subscription run identity", () => {
       captured,
     );
   }, 20_000);
-
-  it("shares same-identity reconnect and serializes retained-account refresh", async () => {
-    const f = await fixture("codex-oauth-token");
-    const runId = await f.start();
-    const claim = await f.claim(runId);
-    const captured = accountId(claim, f.type);
-    const reconnected = await connect(f.actor, f.type, "identity-a", true);
-    expect(reconnected.id).toBe(captured);
-    await support.deletePersonalModelProviderAccount(f.actor, captured);
-    let refreshes = 0;
-    const refreshEntered = createDeferredPromise<void>(context.signal);
-    const refreshReleased = createDeferredPromise<void>(context.signal);
-    firewall.mockCodexTokenRefresh(async () => {
-      refreshes += 1;
-      refreshEntered.resolve(undefined);
-      await refreshReleased.promise;
-      return HttpResponse.json({
-        access_token: "refreshed-a",
-        refresh_token: "rotated-a",
-        expires_in: 7200,
-      });
-    });
-    if (!f.actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const orgId = f.actor.orgId;
-    const requests: Promise<unknown>[] = [];
-    onTestFinished(async () => {
-      if (!refreshReleased.settled()) {
-        refreshReleased.resolve(undefined);
-      }
-      await Promise.allSettled(requests);
-    });
-    const first = resolve(claim, f.type);
-    requests.push(first);
-    await refreshEntered.promise;
-    const second = resolve(claim, f.type);
-    requests.push(second);
-    // Infrastructure exception: no API exposes PostgreSQL lock timing. The
-    // second refresh waits for the first one's provider-state lock.
-    await expect
-      .poll(async () => {
-        return await countWaitingPersonalSubscriptionMutationsFixture({
-          orgId,
-          userId: f.actor.userId,
-          type: f.type,
-        });
-      })
-      .toBeGreaterThan(0);
-    refreshReleased.resolve(undefined);
-    const responses = await Promise.all([first, second]);
-    for (const headers of responses) {
-      expect(headers.Authorization).toBe("Bearer refreshed-a");
-      expect(headers["ChatGPT-Account-ID"]).toBe("identity-a");
-    }
-    expect(refreshes).toBe(1);
-    expect(
-      (
-        await support.resetPersonalModelProviderAccount(
-          f.actor,
-          captured,
-          randomUUID(),
-          [404],
-        )
-      ).status,
-    ).toBe(404);
-    expect(
-      (await support.listPersonalModelProviders(f.actor, [200])).body,
-    ).toMatchObject({ modelProviders: [] });
-    await runs.requestCancelRun(f.actor, runId, [200]);
-  });
 });
 
 describe("exact subscription selection", () => {
