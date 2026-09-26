@@ -5,7 +5,9 @@
   },
   "include": [
     "src/**/*.d.ts",
-    "src/test/setup.ts",
+    "src/test/**/*",
+    "src/mocks/**/*",
+    "src/shared-database/test-bridge.ts",
     "src/**/__tests__/**/*",
     "src/**/__benches__/**/*",
     "src/**/*.test.ts",
