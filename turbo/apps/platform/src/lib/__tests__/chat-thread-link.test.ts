@@ -13,14 +13,29 @@ test("A link to a chat in this App or the production App names its thread", () =
     `${CURRENT_ORIGIN}/chats/${THREAD_ID}`,
     `/chats/${THREAD_ID}`,
   ]) {
-    expect(parseChatThreadLink(href, CURRENT_ORIGIN)).toBe(THREAD_ID);
+    expect(parseChatThreadLink(href, CURRENT_ORIGIN)).toStrictEqual({
+      threadId: THREAD_ID,
+    });
   }
   expect(
     parseChatThreadLink(
       `http://localhost:5173/chats/${THREAD_ID}`,
       "http://localhost:5173",
     ),
-  ).toBe(THREAD_ID);
+  ).toStrictEqual({ threadId: THREAD_ID });
+});
+
+test("A chat link keeps its query and hash", () => {
+  const link = parseChatThreadLink(
+    `https://app.okou.ai/chats/${THREAD_ID}?tab=files#run-1`,
+    CURRENT_ORIGIN,
+  );
+  expect(link?.threadId).toBe(THREAD_ID);
+  expect(link?.searchParams?.get("tab")).toBe("files");
+  expect(link?.hash).toBe("run-1");
+  expect(
+    parseChatThreadLink(`/chats/${THREAD_ID}/#run-2`, CURRENT_ORIGIN),
+  ).toStrictEqual({ threadId: THREAD_ID, hash: "run-2" });
 });
 
 test("Any other link stays external", () => {
@@ -31,8 +46,6 @@ test("Any other link stays external", () => {
     `https://app.okou.ai.example.com/chats/${THREAD_ID}`,
     `https://user@app.okou.ai/chats/${THREAD_ID}`,
     `//app.okou.ai/chats/${THREAD_ID}`,
-    `https://app.okou.ai/chats/${THREAD_ID}?tab=files`,
-    `https://app.okou.ai/chats/${THREAD_ID}#run-1`,
     `https://app.okou.ai/chats/${THREAD_ID}/files`,
     `https://app.okou.ai/chats/${THREAD_ID.toUpperCase()}`,
     "https://app.okou.ai/chats/not-a-thread",

@@ -1,8 +1,7 @@
-import { useGet } from "ccstate-react";
 import { MessageCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { chatThreadTitlesById$ } from "../../signals/chat-page/chat-thread-link-titles.ts";
+import type { ChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 
@@ -29,13 +28,18 @@ const MARKDOWN_CHIP_RESET_CLASS =
   "dark:bg-orange-400/15! dark:text-orange-300! " +
   "dark:hover:bg-orange-400/20! dark:active:bg-orange-400/25!";
 
-/** An in-App link to a chat thread, shown as an inline chip with its title. */
+/**
+ * An in-App link to a chat thread, shown as an inline chip with its title.
+ * A link found in message text also carries its query and hash, so a deep
+ * link such as `#run-<id>` still lands where it points.
+ */
 export function ChatThreadLinkChip({
   threadId,
+  searchParams,
+  hash,
   title,
   insideMarkdown = false,
-}: {
-  readonly threadId: string;
+}: ChatThreadLink & {
   readonly title: string;
   readonly insideMarkdown?: boolean;
 }) {
@@ -43,7 +47,7 @@ export function ChatThreadLinkChip({
   return (
     <Link
       pathname={ROUTES.chat}
-      options={{ pathParams: { threadId } }}
+      options={{ pathParams: { threadId }, searchParams, hash }}
       aria-label={t(
         ($) => {
           return $.chat.thread.openNamedChat;
@@ -60,36 +64,5 @@ export function ChatThreadLinkChip({
       <MessageCircle size={13} className="shrink-0" />
       <span className="min-w-0 truncate">{title}</span>
     </Link>
-  );
-}
-
-/**
- * A chip for a chat thread link found in message text. An explicit label is
- * the author's title for it; otherwise the thread's own title is used when
- * this user's thread list knows it, and a neutral name when it does not.
- */
-export function LinkedChatThreadChip({
-  threadId,
-  label,
-  insideMarkdown = false,
-}: {
-  readonly threadId: string;
-  readonly label?: string;
-  readonly insideMarkdown?: boolean;
-}) {
-  const { t } = useTranslation();
-  const knownTitle = useGet(chatThreadTitlesById$).get(threadId);
-  const title =
-    label?.trim() ||
-    knownTitle?.trim() ||
-    t(($) => {
-      return $.chat.thread.linkedChatFallback;
-    });
-  return (
-    <ChatThreadLinkChip
-      threadId={threadId}
-      title={title}
-      insideMarkdown={insideMarkdown}
-    />
   );
 }

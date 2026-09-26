@@ -9,21 +9,18 @@ import {
 import {
   context,
   installMessageExperienceChat,
-  MESSAGE_EXPERIENCE_AGENT_ID,
 } from "./chat-message-experience-test-helpers.ts";
 
 const CREATED_AT = "2026-08-20T12:00:00.000Z";
 const RUN_ID = "d0000000-0000-4000-a000-000000000071";
 const LINKED_THREAD_ID = "b0000000-0000-4000-a000-000000000071";
-const UNKNOWN_THREAD_ID = "b0000000-0000-4000-a000-000000000072";
 const LINKED_URL = `https://app.okou.ai/chats/${LINKED_THREAD_ID}`;
-const UNKNOWN_URL = `https://app.okou.ai/chats/${UNKNOWN_THREAD_ID}`;
 const EXTERNAL_URL = `https://example.com/chats/${LINKED_THREAD_ID}`;
-const QUERY_URL = `${LINKED_URL}?tab=files`;
+const RUN_URL = `${LINKED_URL}?tab=files#run-1`;
 
-const PROMPT = `Compare ${LINKED_URL} with ${EXTERNAL_URL} and ${QUERY_URL} please`;
+const PROMPT = `Compare ${LINKED_URL} with ${EXTERNAL_URL} and ${RUN_URL} please`;
 const REPLY = [
-  `Reply: see ${LINKED_URL} and ${UNKNOWN_URL}.`,
+  `Reply: see ${LINKED_URL}.`,
   "",
   `Also [Planning notes](/chats/${LINKED_THREAD_ID}) and ${EXTERNAL_URL}.`,
   "",
@@ -34,7 +31,7 @@ async function openChat(chipsEnabled: boolean): Promise<{
   message: HTMLElement;
   reply: HTMLElement;
 }> {
-  const control = installMessageExperienceChat({
+  installMessageExperienceChat({
     threadId: context.resourceId,
     threadTitle: "Current chat",
     chatEvents: [
@@ -56,23 +53,6 @@ async function openChat(chipsEnabled: boolean): Promise<{
       },
     ],
   });
-  control.setThreadList([
-    {
-      id: context.resourceId,
-      title: "Current chat",
-      agent: { id: MESSAGE_EXPERIENCE_AGENT_ID, avatarUrl: null },
-      createdAt: CREATED_AT,
-      updatedAt: "2026-08-20T12:02:00.000Z",
-    },
-    {
-      id: LINKED_THREAD_ID,
-      title: "Launch plan",
-      agent: { id: MESSAGE_EXPERIENCE_AGENT_ID, avatarUrl: null },
-      createdAt: CREATED_AT,
-      updatedAt: "2026-08-20T12:01:00.000Z",
-    },
-  ]);
-
   await setupPage({
     context,
     path: `/chats/${context.resourceId}`,
@@ -122,27 +102,30 @@ test("Links to App chats read as chat chips in messages and replies", async () =
   const { message, reply } = await openChat(true);
 
   await waitFor(() => {
-    expect(chipNamed(message, "Launch plan")).toHaveLength(1);
+    expect(chipNamed(message, LINKED_URL)).toHaveLength(1);
   });
-  const [messageChip] = chipNamed(message, "Launch plan");
+  // A bare URL keeps its own text, so the chip never waits on a title.
+  const [messageChip] = chipNamed(message, LINKED_URL);
   expect(messageChip).toHaveAttribute("href", `/chats/${LINKED_THREAD_ID}`);
   expect(messageChip).not.toHaveAttribute("target");
-  expect(messageChip).toHaveTextContent("Launch plan");
+  expect(messageChip).toHaveTextContent(LINKED_URL);
+  // A deep link keeps its query and hash.
+  const [runChip] = chipNamed(message, RUN_URL);
+  expect(runChip).toHaveAttribute(
+    "href",
+    `/chats/${LINKED_THREAD_ID}?tab=files#run-1`,
+  );
   expect(externalLinkTo(message, EXTERNAL_URL)).toHaveTextContent(EXTERNAL_URL);
-  expect(externalLinkTo(message, QUERY_URL)).toHaveTextContent(QUERY_URL);
 
-  const [replyChip] = chipNamed(reply, "Launch plan");
+  const [replyChip] = chipNamed(reply, LINKED_URL);
   expect(replyChip).toHaveAttribute("href", `/chats/${LINKED_THREAD_ID}`);
-  expect(replyChip).toHaveTextContent("Launch plan");
-  // A chat this user's list does not know still opens, under a neutral name.
-  const [unknownChip] = chipNamed(reply, "Chat");
-  expect(unknownChip).toHaveAttribute("href", `/chats/${UNKNOWN_THREAD_ID}`);
+  expect(replyChip).toHaveTextContent(LINKED_URL);
   // An authored label, such as a serialized chat mention, is kept.
   const [labeledChip] = chipNamed(reply, "Planning notes");
   expect(labeledChip).toHaveAttribute("href", `/chats/${LINKED_THREAD_ID}`);
   expect(externalLinkTo(reply, EXTERNAL_URL)).toHaveTextContent(EXTERNAL_URL);
   expect(reply.querySelector("code")).toHaveTextContent(LINKED_URL);
-  expect(linksIn(reply)).toHaveLength(4);
+  expect(linksIn(reply)).toHaveLength(3);
 });
 
 test("Without the switch, links to App chats stay ordinary links", async () => {

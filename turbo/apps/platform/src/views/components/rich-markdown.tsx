@@ -51,7 +51,7 @@ import {
   SitePreviewContent,
   SitePreviewViewport,
 } from "../okou-page/attachment-preview.tsx";
-import { LinkedChatThreadChip } from "./chat-thread-link-chip.tsx";
+import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
@@ -319,7 +319,7 @@ function MediaLinkRenderer(
   const { children, ...rest } = props;
   const features = useLastResolved(featureSwitch$);
   const node = props.node;
-  const threadId =
+  const chatThreadLink =
     features?.[FeatureSwitchKey.ChatThreadLinkChips] === true &&
     node !== undefined &&
     node.data?.card === undefined &&
@@ -327,14 +327,13 @@ function MediaLinkRenderer(
     typeof props.href === "string"
       ? parseChatThreadLink(props.href, window.location.origin)
       : null;
-  if (threadId !== null && node !== undefined) {
-    // An autolinked URL reads as its own address, so it takes the thread's
-    // title; an authored label, such as a serialized chat mention, is kept.
-    const label = markdownNodeText(node);
+  if (chatThreadLink !== null && node !== undefined) {
+    // The chip reads as the link's own text: an autolinked URL shows itself,
+    // an authored label such as a serialized chat mention is kept.
     return (
-      <LinkedChatThreadChip
-        threadId={threadId}
-        label={label === props.href ? undefined : label}
+      <ChatThreadLinkChip
+        {...chatThreadLink}
+        title={markdownNodeText(node)}
         insideMarkdown
       />
     );

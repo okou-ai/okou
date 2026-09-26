@@ -2941,7 +2941,6 @@
       "empty": "Envie uma mensagem para iniciar a conversa",
       "frequentlyUsed": "Usados com frequência",
       "icon": "Ícone da conversa",
-      "linkedChatFallback": "Conversa",
       "locator": {
         "you": "Você"
       },

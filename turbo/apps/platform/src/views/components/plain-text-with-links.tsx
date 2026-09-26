@@ -5,7 +5,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { LinkedChatThreadChip } from "./chat-thread-link-chip.tsx";
+import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 
 /**
  * User-authored text with its plain http(s) URLs made clickable.
@@ -37,12 +37,18 @@ export function PlainTextWithLinks({
     <>
       {splitPlainTextUrls(text).map((segment, index) => {
         const key = `${String(index)}:${segment.value}`;
-        const threadId =
+        const chatThreadLink =
           showChatThreadChips && segment.type === "url"
             ? parseChatThreadLink(segment.value, window.location.origin)
             : null;
-        if (threadId !== null) {
-          return <LinkedChatThreadChip key={key} threadId={threadId} />;
+        if (chatThreadLink !== null) {
+          return (
+            <ChatThreadLinkChip
+              key={key}
+              {...chatThreadLink}
+              title={segment.value}
+            />
+          );
         }
         return segment.type === "url" ? (
           <a
