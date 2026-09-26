@@ -30,6 +30,8 @@ case "${1:-}" in
       [ "${MOCK_CHAT_THREAD_DRAFT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38" ]; then
       [ "${MOCK_CHAT_THREAD_DRAFT_OWNER_KEY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "cdeec36c168636b1a2e510e660eb6139c9c4e07a" ]; then
+      [ "${MOCK_COMPUTER_USE_AUDIT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
       [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
@@ -155,6 +157,7 @@ grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222
 grep -Fxq "git merge-base --is-ancestor 3d93ff8d4b4a07a5888e3030e69b340f40da0ad4 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the R2-only chat thread snapshot floor"
 grep -Fxq "git merge-base --is-ancestor 3333333333333333333333333333333333333333 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the agent_runs heartbeat column drop floor"
 grep -Fxq "git merge-base --is-ancestor 4444444444444444444444444444444444444444 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the personal subscription account-only floor"
+grep -Fxq "git merge-base --is-ancestor cdeec36c168636b1a2e510e660eb6139c9c4e07a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the computer-use audit column cutover floor"
 grep -Fxq "git merge-base --is-ancestor 5555555555555555555555555555555555555555 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -170,6 +173,15 @@ grep -Fq '4558c9fac46ce1a96a25745b477b32b70dab7ae6' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/chat-thread-draft-floor.output" ] || fail "pre-child-writer API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-child-writer API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the computer-use audit approval column cutover" \
+  run_resolver "${tmp_dir}/computer-use-audit-floor.output" MOCK_COMPUTER_USE_AUDIT_FLOOR_VALID=0
+grep -Fq 'cdeec36c168636b1a2e510e660eb6139c9c4e07a' "${tmp_dir}/failure.err" || fail "audit column contraction rejection must identify the cutover commit"
+[ ! -s "${tmp_dir}/computer-use-audit-floor.output" ] || fail "pre-cutover API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-cutover API target must fail before artifact or host access"
 fi
 
 for retirement_commit in "" invalid; do

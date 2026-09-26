@@ -13,6 +13,10 @@ readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70
 # pair the primary key and drops the columns, so earlier APIs fail draft saves
 # and thread inserts.
 readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
+# #36984 stopped naming computer_use_command_audit_events.approval_outcome in
+# audit INSERT and SELECT. Migration 1263 drops that column, so earlier APIs
+# fail every Computer Use audit write.
+readonly COMPUTER_USE_AUDIT_WRITER_COMMIT=cdeec36c168636b1a2e510e660eb6139c9c4e07a
 # #36945 made every non-empty chat thread snapshot response R2-only. API targets
 # before it may still return inline data to an old header-less client.
 readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40da0ad4
@@ -67,6 +71,9 @@ if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT" "$TAR
 fi
 if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread draft owner key writer: ${CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$COMPUTER_USE_AUDIT_WRITER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the computer-use audit approval column cutover: ${COMPUTER_USE_AUDIT_WRITER_COMMIT}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames

@@ -108,8 +108,6 @@ export const cronProjectChatEventSearchResponseSchema = z.object({
   indexedEvents: z.number(),
   deletedDocs: z.number(),
   orphanedThreads: z.number(),
-  /** Candidates deferred by GIN maintenance this tick. */
-  deferredThreads: z.number().int().nonnegative(),
   convergence: z.object({
     eligibleThreads: z.number(),
     durableCaughtUpThreads: z.number(),

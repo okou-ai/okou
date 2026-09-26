@@ -26,10 +26,7 @@ const projectChatEventSearchTestRoute$ = command(
     }
     const result = await set(
       projectChatEventSearchTestScope$,
-      {
-        chatThreadIds: bodyResult.data.chat_thread_ids,
-        ginIndexNames: bodyResult.data.gin_index_names,
-      },
+      { chatThreadIds: bodyResult.data.chat_thread_ids },
       signal,
     );
     signal.throwIfAborted();

@@ -24,9 +24,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatSearchIndexText } from "../../lib/chat-search-bigram";
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
-import { isLockNotAvailable, isStatementTimeout } from "../../lib/pg-errors";
 import { writeDb$, type Db } from "../external/db";
-import { settle } from "../utils";
 import {
   projectUserMessage,
   requiredUserMessageForEvent,
@@ -36,14 +34,12 @@ import {
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";
-import { maintainChatSearchGin } from "./chat-search-gin.service";
 
 interface ChatEventSearchProjectionStats {
   readonly threads: number;
   readonly indexedEvents: number;
   readonly deletedDocs: number;
   readonly orphanedThreads: number;
-  readonly deferredThreads: number;
   readonly convergence: ChatEventSearchProjectionConvergence;
 }
 
@@ -88,12 +84,10 @@ interface SearchProjectionWriteStats {
 
 interface ChatEventSearchProjectionOptions {
   readonly chatThreadIds?: readonly string[];
-  readonly ginIndexNames?: readonly string[];
 }
 
 interface ChatEventSearchTestProjectionOptions {
   readonly chatThreadIds: readonly string[];
-  readonly ginIndexNames?: readonly string[];
 }
 
 type SearchableRole = "user" | "assistant";
@@ -112,7 +106,6 @@ interface CanonicalSearchMessageInsert {
 
 const DEFAULT_THREAD_BATCH_SIZE = 500;
 const THREAD_EVENT_LIMIT = 1000;
-const GIN_MAINTENANCE_BUDGET_MS = 30_000;
 
 function chatEventSearchThreadBatchSize(): number {
   const raw = optionalEnv("CHAT_EVENT_SEARCH_PROJECTION_BATCH_SIZE");
@@ -617,41 +610,6 @@ async function projectionConvergence(
   return stats;
 }
 
-async function maintainChatSearchGinIndexes(
-  db: Db,
-  indexNames: readonly string[],
-  budgetMs: number,
-  signal: AbortSignal,
-): Promise<{
-  readonly remainingBudgetMs: number;
-  readonly deferRemaining: boolean;
-}> {
-  let remainingBudgetMs = budgetMs;
-  for (const indexName of indexNames) {
-    if (remainingBudgetMs <= 0) {
-      return { remainingBudgetMs, deferRemaining: true };
-    }
-    const started = performance.now();
-    const maintained = await settle(
-      maintainChatSearchGin(db, indexName, remainingBudgetMs, signal),
-    );
-    signal.throwIfAborted();
-    remainingBudgetMs -= performance.now() - started;
-    if (!maintained.ok) {
-      if (
-        !isLockNotAvailable(maintained.error) &&
-        !isStatementTimeout(maintained.error)
-      ) {
-        throw maintained.error;
-      }
-      // Avoid repeatedly charging a failed cleanup to every candidate. The
-      // untouched threads and their watermarks remain eligible next tick.
-      return { remainingBudgetMs, deferRemaining: true };
-    }
-  }
-  return { remainingBudgetMs, deferRemaining: remainingBudgetMs <= 0 };
-}
-
 async function projectChatEventSearch(
   db: Db,
   options: ChatEventSearchProjectionOptions,
@@ -665,30 +623,10 @@ async function projectChatEventSearch(
   let threads = 0;
   let indexedEvents = 0;
   let deletedDocs = 0;
-  let deferredThreads = 0;
-  let maintenanceBudgetMs = GIN_MAINTENANCE_BUDGET_MS;
-  let attemptedThreads = 0;
   for (const thread of candidateThreads) {
     signal.throwIfAborted();
-    if (options.ginIndexNames !== undefined) {
-      // One shared budget for the whole tick and every index, not 30 seconds
-      // per thread or index. A large pre-existing backlog may need a separate
-      // operational drain.
-      const maintained = await maintainChatSearchGinIndexes(
-        db,
-        options.ginIndexNames,
-        maintenanceBudgetMs,
-        signal,
-      );
-      maintenanceBudgetMs = maintained.remainingBudgetMs;
-      if (maintained.deferRemaining) {
-        deferredThreads += candidateThreads.length - attemptedThreads;
-        break;
-      }
-    }
     const stats = await projectThread(db, thread);
     signal.throwIfAborted();
-    attemptedThreads += 1;
     threads += stats.thread;
     indexedEvents += stats.indexedEvents;
     deletedDocs += stats.deletedDocs;
@@ -700,7 +638,6 @@ async function projectChatEventSearch(
     indexedEvents,
     deletedDocs,
     orphanedThreads,
-    deferredThreads,
     convergence,
   };
 }
@@ -711,15 +648,7 @@ export const projectChatEventSearch$ = command(
     signal: AbortSignal,
   ): Promise<ChatEventSearchProjectionStats> => {
     const db = set(writeDb$);
-    return await projectChatEventSearch(
-      db,
-      {
-        // Every GIN index on the projection keeps fastupdate; drain each one
-        // before its pending list reaches the foreground flush threshold.
-        ginIndexNames: ["public.chat_event_search_messages_user_tsv_gin_idx"],
-      },
-      signal,
-    );
+    return await projectChatEventSearch(db, {}, signal);
   },
 );
 
@@ -732,12 +661,7 @@ export const projectChatEventSearchTestScope$ = command(
     const db = set(writeDb$);
     return await projectChatEventSearch(
       db,
-      {
-        chatThreadIds: options.chatThreadIds,
-        // Scoped route tests must never drain another test's shared index. GIN
-        // maintenance tests supply their own disposable index explicitly.
-        ginIndexNames: options.ginIndexNames,
-      },
+      { chatThreadIds: options.chatThreadIds },
       signal,
     );
   },
