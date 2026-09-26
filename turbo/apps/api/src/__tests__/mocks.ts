@@ -683,7 +683,12 @@ function defaultBrowserUseCdpResult(command: BrowserUseCdpCommand): unknown {
   return {};
 }
 
-export function browserUseCdpHandler(url: string) {
+export function browserUseCdpHandler(
+  url: string,
+  eventsBeforeReply?: (
+    command: BrowserUseCdpCommand,
+  ) => readonly Readonly<Record<string, unknown>>[],
+) {
   const cdp = ws.link(url);
   return cdp.addEventListener("connection", ({ client }) => {
     apiTestMocks.browserUseCdp.connect(url);
@@ -693,6 +698,9 @@ export function browserUseCdpHandler(url: string) {
       }
       const command = browserUseCdpCommandSchema.parse(JSON.parse(event.data));
       const mockedResult = apiTestMocks.browserUseCdp.command(command);
+      for (const beforeReply of eventsBeforeReply?.(command) ?? []) {
+        client.send(JSON.stringify(beforeReply));
+      }
       if (mockedResult instanceof Error) {
         client.send(
           JSON.stringify({

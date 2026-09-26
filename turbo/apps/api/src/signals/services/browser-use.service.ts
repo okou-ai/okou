@@ -22,6 +22,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import {
+  createDeferredPromise,
   readBoundedResponseText,
   safeJsonParse,
   safeSync,
@@ -313,49 +314,63 @@ async function sendBrowserUseCdpCommand(
 ): Promise<unknown> {
   const { id, method, params, sessionId, maxResponseBytes } = command;
   signal.throwIfAborted();
-  const sent = safeSync(() => {
-    socket.send(
-      JSON.stringify({
-        id,
-        method,
-        params,
-        ...(sessionId ? { sessionId } : {}),
-      }),
-    );
-  });
-  if ("error" in sent) {
-    throw sent.error;
-  }
-  while (true) {
-    const received = await nextBrowserUseCdpSocketEvent(
-      socket,
-      ["message", "error", "close"],
-      signal,
-    );
-    if (received.name !== "message") {
-      throw new Error("Browser Use CDP connection closed");
+  // Keep one listener for the entire command: a nonmatching CDP event and its
+  // reply can arrive back-to-back before an awaited one-shot listener re-arms.
+  const pending = createDeferredPromise<unknown>(signal);
+  const onDisconnect = () => {
+    if (!pending.settled()) {
+      pending.reject(new Error("Browser Use CDP connection closed"));
     }
-    if (!(received.event instanceof MessageEvent)) {
-      continue;
-    }
+  };
+  const onMessage = (event: MessageEvent) => {
     if (
-      typeof received.event.data !== "string" ||
-      received.event.data.length >
+      pending.settled() ||
+      typeof event.data !== "string" ||
+      event.data.length >
         (maxResponseBytes ?? MAX_BROWSER_USE_CDP_RESPONSE_BYTES)
     ) {
-      continue;
+      return;
     }
     const response = browserUseCdpResponseSchema.safeParse(
-      safeJsonParse(received.event.data),
+      safeJsonParse(event.data),
     );
     if (!response.success || response.data.id !== id) {
-      continue;
+      return;
     }
     if (response.data.error) {
-      throw new BrowserUseCdpCommandError(response.data.error.message);
+      pending.reject(
+        new BrowserUseCdpCommandError(response.data.error.message),
+      );
+      return;
     }
-    return response.data.result;
+    pending.resolve(response.data.result);
+  };
+  socket.addEventListener("message", onMessage);
+  socket.addEventListener("error", onDisconnect);
+  socket.addEventListener("close", onDisconnect);
+  if (!pending.settled()) {
+    const sent = safeSync(() => {
+      socket.send(
+        JSON.stringify({
+          id,
+          method,
+          params,
+          ...(sessionId ? { sessionId } : {}),
+        }),
+      );
+    });
+    if ("error" in sent && !pending.settled()) {
+      pending.reject(sent.error);
+    }
   }
+  const result = await settleIncludingAbort(pending.promise);
+  socket.removeEventListener("message", onMessage);
+  socket.removeEventListener("error", onDisconnect);
+  socket.removeEventListener("close", onDisconnect);
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
 }
 
 async function withBrowserUseCdpSocket<T>(

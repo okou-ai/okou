@@ -240,7 +240,9 @@ function nativePasswordRequest(callbackPrompt: string) {
   };
 }
 
-async function createNativePasswordActionForPreflightTest(): Promise<{
+async function createNativePasswordActionForPreflightTest(
+  eventsBeforeReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[1]>,
+): Promise<{
   readonly token: string;
   readonly providerId: string;
 }> {
@@ -256,7 +258,7 @@ async function createNativePasswordActionForPreflightTest(): Promise<{
     [FeatureSwitchKey.BrowserNativeInput]: true,
   });
   const providerId = randomUUID();
-  acceptBrowserUseCdpSessions([providerId]);
+  acceptBrowserUseCdpSessions([providerId], eventsBeforeReply);
   mockNativeInputTarget();
   server.use(
     http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
@@ -1241,6 +1243,27 @@ describe("Browser user-action route", () => {
       status: 503,
       body: { error: { code: "BROWSER_USE_TIMEOUT" } },
     });
+  });
+
+  it("preflights when an attach event and reply arrive back-to-back", async () => {
+    let emitAttachEvent = false;
+    const { token } = await createNativePasswordActionForPreflightTest(
+      (command) => {
+        return emitAttachEvent && command.method === "Target.attachToTarget"
+          ? [{ method: "Target.attachedToTarget", params: {} }]
+          : [];
+      },
+    );
+    emitAttachEvent = true;
+    const checked = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: {},
+      }),
+      [200],
+    );
+    expect(checked.body.state).toBe("pending");
   });
 
   it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
@@ -4634,6 +4657,7 @@ function browserUseCdpWebSocketUrl(providerSessionId: string): string {
 
 function acceptBrowserUseCdpSessions(
   providerSessionIds: readonly string[],
+  eventsBeforeReply?: NonNullable<Parameters<typeof browserUseCdpHandler>[1]>,
 ): void {
   for (const providerSessionId of providerSessionIds) {
     const webSocketUrl = browserUseCdpWebSocketUrl(providerSessionId);
@@ -4644,7 +4668,7 @@ function acceptBrowserUseCdpSessions(
           return HttpResponse.json({ webSocketDebuggerUrl: webSocketUrl });
         },
       ),
-      browserUseCdpHandler(webSocketUrl),
+      browserUseCdpHandler(webSocketUrl, eventsBeforeReply),
     );
   }
 }
