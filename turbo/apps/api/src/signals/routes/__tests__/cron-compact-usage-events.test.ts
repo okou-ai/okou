@@ -10,6 +10,7 @@ import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import { nowDate } from "../../../lib/time";
 import {
   attachUsageAllowance$,
@@ -28,7 +29,9 @@ import {
 } from "./helpers/usage-state";
 import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 
-const context = testContext({});
+const context = testContext({
+  dbFixtures: [usageEventCompactionDbFixture],
+});
 const store = createStore();
 const CRON_SECRET = "test-compact-usage-events-secret";
 const RAW_SEED_LIMIT = 500;

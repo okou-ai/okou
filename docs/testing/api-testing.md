@@ -184,9 +184,16 @@ gates to construct or assert an API scenario. Exercise concurrent requests and
 assert their responses and subsequent user-visible state. A production lock
 removal must not require preserving a test-only pause point.
 
+Compaction behavior tests opt in through
+`testContext({ dbFixtures: [usageEventCompactionDbFixture] })`. The fixture gives
+each test a UUID-owned async-local lock namespace, including hooks and
+background work, so its compaction cannot block unrelated deletion tests. It
+only isolates owned data; do not add lock-waiter observation or pause points.
+The production key remains unchanged outside this fixture.
+
 Compaction behavior tests must call the organization-scoped test route so a
-global sweep never touches another test's rows. X-resource retention tests use
-the resource-ID-scoped test route to construct historical rows and a
+scoped lock never protects a global sweep over another test's rows. X-resource
+retention tests use the resource-ID-scoped test route to construct historical rows and a
 request-scoped database clock; never invoke a successful production-global
 cleanup in a shared test database.
 
