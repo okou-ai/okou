@@ -569,15 +569,17 @@ async function observeBrowserUseCdpPhase<T>(
 }
 
 function nativeInputCdpPhaseObserver(
-  operation: "preflight" | "apply",
+  operation: "create" | "preflight" | "apply",
   attemptId: string,
 ): BrowserUseCdpPhaseObserver {
   return (phase, outcome, durationMs, attachReplyObserved) => {
     const fields = {
       type:
-        operation === "preflight"
-          ? "browser_input_preflight_phase"
-          : "browser_input_apply_phase",
+        operation === "create"
+          ? "browser_input_create_phase"
+          : operation === "preflight"
+            ? "browser_input_preflight_phase"
+            : "browser_input_apply_phase",
       attemptId,
       operation,
       phase,
@@ -588,9 +590,11 @@ function nativeInputCdpPhaseObserver(
         : {}),
     };
     const message =
-      operation === "preflight"
-        ? "Browser input preflight CDP phase"
-        : "Browser input apply CDP phase";
+      operation === "create"
+        ? "Browser input create CDP phase"
+        : operation === "preflight"
+          ? "Browser input preflight CDP phase"
+          : "Browser input apply CDP phase";
     if (outcome === "ok" && durationMs < 1000) {
       L.debug(message, fields);
     } else {
@@ -1587,21 +1591,79 @@ async function inspectBrowserUseRadioGroup(
   };
 }
 
+async function observeBrowserUseAttach(
+  socket: WebSocket,
+  targetInfo: { readonly targetId: string; readonly url: string },
+  id: number,
+  signal: AbortSignal,
+  observePhase?: BrowserUseCdpPhaseObserver,
+): Promise<AttachedBrowserUsePage> {
+  let attachReplyObserved = false;
+  // Observe only whether the matching reply reaches this socket. Never retain
+  // or log the response body, which contains a provider session identifier.
+  const onAttachMessage = (event: MessageEvent) => {
+    if (
+      typeof event.data !== "string" ||
+      event.data.length > MAX_BROWSER_USE_CDP_RESPONSE_BYTES
+    ) {
+      return;
+    }
+    const response = browserUseCdpResponseSchema.safeParse(
+      safeJsonParse(event.data),
+    );
+    if (response.success && response.data.id === id) {
+      attachReplyObserved = true;
+    }
+  };
+  if (observePhase) {
+    socket.addEventListener("message", onAttachMessage);
+  }
+  const attachment = await settleIncludingAbort(
+    observeBrowserUseCdpPhase(
+      "attach",
+      signal,
+      observePhase
+        ? (phase, outcome, durationMs) => {
+            observePhase(phase, outcome, durationMs, attachReplyObserved);
+          }
+        : undefined,
+      async () => {
+        return await attachBrowserUsePage(socket, targetInfo, id, signal);
+      },
+    ),
+  );
+  if (observePhase) {
+    socket.removeEventListener("message", onAttachMessage);
+  }
+  if (!attachment.ok) {
+    throw attachment.error;
+  }
+  return attachment.value;
+}
+
 async function openBrowserUseValidationPage(
   socket: WebSocket,
   pageTargetId: string,
   signal: AbortSignal,
+  observePhase?: BrowserUseCdpPhaseObserver,
 ): Promise<{
   readonly page: AttachedBrowserUsePage;
   readonly commandId: number;
 }> {
-  const targets = browserUseCdpTargetsSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      { id: 1, method: "Target.getTargets", params: {} },
-      signal,
-    ),
-    { reportInput: true },
+  const targets = await observeBrowserUseCdpPhase(
+    "targets",
+    signal,
+    observePhase,
+    async () => {
+      return browserUseCdpTargetsSchema.parse(
+        await sendBrowserUseCdpCommand(
+          socket,
+          { id: 1, method: "Target.getTargets", params: {} },
+          signal,
+        ),
+        { reportInput: true },
+      );
+    },
   );
   const pageTarget = targets.targetInfos.find((target) => {
     return target.type === "page" && target.targetId === pageTargetId;
@@ -1610,7 +1672,13 @@ async function openBrowserUseValidationPage(
     throw new BrowserUseUserActionValidationError("page_target_not_found");
   }
   return {
-    page: await attachBrowserUsePage(socket, pageTarget, 2, signal),
+    page: await observeBrowserUseAttach(
+      socket,
+      pageTarget,
+      2,
+      signal,
+      observePhase,
+    ),
     commandId: 3,
   };
 }
@@ -1717,25 +1785,34 @@ async function validateBrowserUseUserActionOnSocket(
     readonly backendNodeIds: readonly number[];
   },
   signal: AbortSignal,
+  observePhase?: BrowserUseCdpPhaseObserver,
 ): Promise<BrowserUseUserActionValidation> {
   const opened = await openBrowserUseValidationPage(
     socket,
     target.pageTargetId,
     signal,
+    observePhase,
   );
   let commandId = opened.commandId;
-  const frameTree = browserUseCdpFrameTreeSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: commandId,
-        method: "Page.getFrameTree",
-        params: {},
-        sessionId: opened.page.sessionId,
-      },
-      signal,
-    ),
-    { reportInput: true },
+  const frameTree = await observeBrowserUseCdpPhase(
+    "frame",
+    signal,
+    observePhase,
+    async () => {
+      return browserUseCdpFrameTreeSchema.parse(
+        await sendBrowserUseCdpCommand(
+          socket,
+          {
+            id: commandId,
+            method: "Page.getFrameTree",
+            params: {},
+            sessionId: opened.page.sessionId,
+          },
+          signal,
+        ),
+        { reportInput: true },
+      );
+    },
   );
   commandId += 1;
   const pageUrl = httpPageUrl(frameTree.frameTree.frame.url);
@@ -1839,15 +1916,23 @@ export async function validateBrowserUseUserAction(
     readonly backendNodeIds: readonly number[];
   },
   signal: AbortSignal,
+  attemptId: string,
 ): Promise<BrowserUseUserActionValidation> {
   return await withBrowserUseCdpDeadline(signal, async (cdpSignal) => {
-    return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
-      return await validateBrowserUseUserActionOnSocket(
-        socket,
-        target,
-        cdpSignal,
-      );
-    });
+    const observePhase = nativeInputCdpPhaseObserver("create", attemptId);
+    return await withBrowserUseCdpSocket(
+      cdpUrl,
+      cdpSignal,
+      async (socket) => {
+        return await validateBrowserUseUserActionOnSocket(
+          socket,
+          target,
+          cdpSignal,
+          observePhase,
+        );
+      },
+      observePhase,
+    );
   });
 }
 
@@ -1953,47 +2038,13 @@ async function openBrowserUseApplyPage(
   if (!targetInfo) {
     return null;
   }
-  let attachReplyObserved = false;
-  // Observe only whether the matching reply reaches this socket. Never retain
-  // or log the response body, which contains a provider session identifier.
-  const onAttachMessage = (event: MessageEvent) => {
-    if (
-      typeof event.data !== "string" ||
-      event.data.length > MAX_BROWSER_USE_CDP_RESPONSE_BYTES
-    ) {
-      return;
-    }
-    const response = browserUseCdpResponseSchema.safeParse(
-      safeJsonParse(event.data),
-    );
-    if (response.success && response.data.id === 2) {
-      attachReplyObserved = true;
-    }
-  };
-  if (observePhase) {
-    socket.addEventListener("message", onAttachMessage);
-  }
-  const attachment = await settleIncludingAbort(
-    observeBrowserUseCdpPhase(
-      "attach",
-      signal,
-      observePhase
-        ? (phase, outcome, durationMs) => {
-            observePhase(phase, outcome, durationMs, attachReplyObserved);
-          }
-        : undefined,
-      async () => {
-        return await attachBrowserUsePage(socket, targetInfo, 2, signal);
-      },
-    ),
+  const attached = await observeBrowserUseAttach(
+    socket,
+    targetInfo,
+    2,
+    signal,
+    observePhase,
   );
-  if (observePhase) {
-    socket.removeEventListener("message", onAttachMessage);
-  }
-  if (!attachment.ok) {
-    throw attachment.error;
-  }
-  const attached = attachment.value;
   const frameTree = await observeBrowserUseCdpPhase(
     "frame",
     signal,

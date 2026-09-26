@@ -6,17 +6,22 @@ preview timeouts; the diagnostic change in #37001 does not resolve their cause.
 
 ## Reading stage observations
 
-Native-input preflight and apply report an operation-local random `attemptId`,
-`operation`, `phase`, `outcome` and rounded `durationMs` in structured API logs.
-A preflight also retains the aggregate `target` phase for comparison with older
-logs. Its `targets`, `attach` and `frame` child observations describe the **same
-attempt**, not additional failures. They correspond to `Target.getTargets`,
-`Target.attachToTarget`, and `Page.getFrameTree`. `discovery` is the CDP
+Native-input request creation, preflight and apply report an operation-local
+random `attemptId`, `operation`, `phase`, `outcome` and rounded `durationMs` in
+structured API logs. A preflight also retains the aggregate `target` phase for
+comparison with older logs. Its `targets`, `attach` and `frame` child
+observations describe the **same attempt**, not additional failures. They
+correspond to `Target.getTargets`, `Target.attachToTarget`, and
+`Page.getFrameTree`; creation reports the same three stages when validating its
+exact control before persisting a request. `discovery` is the CDP
 `/json/version` request and `connection` the WebSocket opening. `controls` is
-control resolution; `validation` applies only where a separate pre-write value
-check is needed. An apply failure observation records only whether a write may
-have started (`writeStarted`). If `writeStarted` is true, treat website side
-effects as ambiguous and never automatically retry.
+control resolution on preflight/apply; creation's later control-resolution
+commands are not separately staged. Creation observations begin after the
+provider session fetch; no creation phase event does not identify a CDP command
+failure. `validation` applies only where a separate pre-write value check is
+needed. An apply failure observation records only whether a write may have
+started (`writeStarted`). If `writeStarted` is true, treat website side effects
+as ambiguous and never automatically retry.
 
 An `attach` observation also reports `attachReplyObserved`, a Boolean captured
 by a short-lived, passive listener on the same WebSocket before the command is

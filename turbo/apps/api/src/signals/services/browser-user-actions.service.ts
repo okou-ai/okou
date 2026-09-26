@@ -722,6 +722,7 @@ async function prepareBrowserUserAction(
         }),
       },
       signal,
+      randomUUID(),
     ),
   );
   signal.throwIfAborted();
