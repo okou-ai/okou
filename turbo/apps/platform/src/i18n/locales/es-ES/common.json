@@ -2614,7 +2614,7 @@
         "back": "Explorar workflows",
         "browse": "Explorar workflows",
         "close": "Cerrar",
-        "contextPrefix": "Lo importante para mí: {{context}}",
+        "contextPrefix": "Lo importante para mí: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "A diario o semanalmente",

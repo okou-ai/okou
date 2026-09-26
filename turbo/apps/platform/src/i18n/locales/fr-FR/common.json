@@ -2614,7 +2614,7 @@
         "back": "Parcourir les workflows",
         "browse": "Parcourir les workflows",
         "close": "Fermer",
-        "contextPrefix": "Ce qui compte pour moi : {{context}}",
+        "contextPrefix": "Ce qui compte pour moi : {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Chaque jour ou chaque semaine",

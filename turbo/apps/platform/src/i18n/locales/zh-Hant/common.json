@@ -2558,7 +2558,7 @@
         "back": "瀏覽工作流",
         "browse": "瀏覽工作流",
         "close": "關閉",
-        "contextPrefix": "我在意的是：{{context}}",
+        "contextPrefix": "我在意的是：{{preference}}",
         "items": {
           "competitors": {
             "cadence": "每天或每週",
