@@ -106,8 +106,8 @@ The persisted lifecycle consists of five additive tables:
   newer head or resurrect a revoked/deleted source.
 - `pi_stable_context_artifact_resources` retains every exact Storage/version
   dependency. Live heads therefore do not rely on run-only inference-object
-  retention. Weekly cleanup removes only old artifacts with no head; erasure
-  removes owner artifacts and the deliberately non-FK generation fence.
+  retention. Weekly cleanup removes only old artifacts with no head; Clerk
+  account cleanup removes owner artifacts and the deliberately non-FK generation fence.
 
 Workflow metadata and synthesized volume publication are a real two-stage
 boundary. Metadata first publishes its source-keyed pending token. The upload

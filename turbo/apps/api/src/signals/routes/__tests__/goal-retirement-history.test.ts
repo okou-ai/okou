@@ -23,6 +23,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import {
   seedLiteralGoalArchive,
+  seedRetainedGoalGroupedOutput,
   removeSnapshottedGoalFixtureEvents,
   seedFilteredGoalArchiveProjections,
   seedMalformedGoalArchiveFixture,
@@ -144,6 +145,68 @@ describe("retired Goal logical history", () => {
       (await chat.searchChat(actor, "Before")).results[0]?.matchedMessage
         .content,
     ).toBe(`${prefix}Before  after`);
+  });
+
+  it("preserves Goal grouping for hot, archived and already-shared history", async () => {
+    const actor = bdd.user({ orgId: `org_${randomUUID()}` });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Retained Goal group",
+    });
+    const thread = await chat.createThread(actor, { agentId: agent.agentId });
+    const eventId = await seedRetainedGoalGroupedOutput(
+      thread.id,
+      randomUUID(),
+    );
+    const shares = setupApp({ context, routes: sharedThreadRoutes })(
+      sharedThreadsContract,
+    );
+    const createShare = async () => {
+      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      const created = await accept(
+        shares.create({
+          params: { threadId: thread.id },
+          headers: { authorization: "Bearer clerk-session" },
+          body: { eventIds: [eventId] },
+        }),
+        [201],
+      );
+      const shared = await accept(
+        shares.get({ params: { id: created.body.id } }),
+        [200],
+      );
+      return { id: created.body.id, messages: shared.body.messages };
+    };
+    const hotShare = await createShare();
+    expect(hotShare.messages).toStrictEqual([
+      {
+        messageIndex: 0,
+        role: "assistant",
+        content: "Retained Goal grouped output",
+        runGroupIndex: 0,
+      },
+    ]);
+
+    await accept(
+      setupApp({ context, routes: testChatEventSnapshotRoutes })(
+        testChatEventSnapshotContract,
+      ).snapshot({
+        body: { chat_thread_ids: [thread.id], r2_object_keys: [] },
+      }),
+      [200],
+    );
+    await accept(
+      setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
+        testChatEventSearchProjectionContract,
+      ).project({ body: { chat_thread_ids: [thread.id] } }),
+      [200],
+    );
+    await removeSnapshottedGoalFixtureEvents(thread.id);
+    expect((await createShare()).messages).toStrictEqual(hotShare.messages);
+    const persisted = await accept(
+      shares.get({ params: { id: hotShare.id } }),
+      [200],
+    );
+    expect(persisted.body.messages).toStrictEqual(hotShare.messages);
   });
 
   it.each(["active", "paused", "blocked", "complete"] as const)(

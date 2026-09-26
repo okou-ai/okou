@@ -31,7 +31,7 @@ const morningBriefChatSkipReasonSchema = z.enum([
   "unsupported_thread_provenance",
   /** Deleted, or its Agent ownership changed, between selection and the read. */
   "thread_unavailable",
-  /** Membership, Agent visibility, or erasure state no longer permits the read. */
+  /** Membership or Agent visibility no longer permits the read. */
   "owner_context_unavailable",
   /** A Run started on the thread, so its latest output is not settled. */
   "active_run",

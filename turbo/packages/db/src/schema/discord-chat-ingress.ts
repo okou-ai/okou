@@ -22,7 +22,7 @@ export type DiscordChatIngressStatus =
   | "processed"
   | "terminal";
 
-/** Durable, erasure-owned message admission before any thread-creation side effect. */
+/** Durable, deletion-owned message admission before any thread-creation side effect. */
 export const discordChatIngress = pgTable(
   "discord_chat_ingress",
   {

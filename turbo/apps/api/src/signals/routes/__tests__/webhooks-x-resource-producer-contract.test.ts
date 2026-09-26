@@ -13,7 +13,7 @@ import {
   createUsagePricingFixture,
   type UsagePricingFixture,
 } from "../../../test-fixtures/system-config-seeds";
-import { withXResourceClock } from "../../../test-fixtures/x-resource-admission";
+import { withXResourceClock } from "../../../test-fixtures/x-resource-usage";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";

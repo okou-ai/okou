@@ -126,8 +126,8 @@ type AgentRunRecord = AgentRunRequestAgent;
  * Request-scoped preparation facts from an entry point that already authorized
  * this exact user, organization, and Agent. These observations can remove
  * equivalent preflight reads, but they never authorize the later launch
- * transaction: compute admission still locks and revalidates Agent ownership
- * and erasure state before it claims input or inserts a Run.
+ * transaction: compute admission still resolves the Agent and its ownership
+ * again before it claims input or inserts a Run.
  *
  * When this object is present, nullable Agent metadata and feature overrides
  * are authoritative observations. The bootstrap materializer may enrich an
@@ -1651,9 +1651,7 @@ export const createQueueFirstAgentRun$ = command(
     args: CreateQueueFirstAgentRunCommandArgs,
     signal: AbortSignal,
   ) => {
-    if (
-      isUnsupportedRunAdmission(args.triggerSource, args.queueFirstAssociation)
-    ) {
+    if (isUnsupportedRunAdmission(args.queueFirstAssociation)) {
       return conflict("Unsupported run input");
     }
     const result = await set(createAgentRunInternal$, args, signal);

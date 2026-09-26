@@ -6,7 +6,6 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
-import { chatContentErasureSubjects } from "@okouai/db/schema/chat-content-erasure-subject";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client, Pool } from "pg";
 import { http, HttpResponse } from "msw";
@@ -14,19 +13,9 @@ import { setupServer } from "msw/node";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
-import {
-  chatThreadEvents,
-  chatThreadEventSequences,
-} from "@okouai/db/schema/chat-thread-event";
-import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
-import { completeChatContentDeletion } from "@okouai/db/operations/chat-content-erasure";
+import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { insertChatEvent } from "../../src/signals/services/chat-event.service";
 import { touchChatThreadLastMessageAtIndependently } from "../../src/signals/services/chat-event-shared.service";
-import {
-  cleanupLateChatContent,
-  sweepLateChatContent,
-} from "../../src/signals/services/chat-content-erasure-cleanup.service";
 import { flushLogs } from "../../src/lib/log";
 import { flushWaitUntilForTest } from "../../src/signals/context/wait-until";
 
@@ -54,7 +43,6 @@ const document = {
   version: 1 as const,
   parts: [{ type: "text" as const, text: "Synthetic message" }],
 };
-const signal = AbortSignal.timeout(120_000);
 
 async function fixture() {
   const userId = `user_${randomUUID()}`;
@@ -128,130 +116,6 @@ try {
     );
     await pool.query(
       "DROP TRIGGER fail_sort_touch ON chat_thread_events; DROP FUNCTION fail_sort_touch()",
-    );
-  });
-
-  await test("completed deletion catches late rows after its local job is absent, without touching survivors", async () => {
-    for (const subjectKind of ["user", "organization"] as const) {
-      const erased = await fixture();
-      const survivor = await fixture();
-      const subject = {
-        subjectKind,
-        subjectId: subjectKind === "user" ? erased.userId : erased.orgId,
-      };
-      await erased.append();
-      assert.equal(
-        await cleanupLateChatContent(db, subject, signal),
-        0,
-        "absence of confirmed deletion grants no cleanup authority",
-      );
-      await db
-        .delete(chatEvents)
-        .where(eq(chatEvents.chatThreadId, erased.threadId));
-      await completeChatContentDeletion(db, {
-        ...subject,
-        sourceReference: randomUUID(),
-      });
-      // No job row exists: the durable receipt deliberately outlives retirement.
-      await erased.append();
-      await survivor.append();
-      await db.insert(chatSlackContext).values({
-        chatThreadId: erased.threadId,
-        conversationContext: "Synthetic late history",
-      });
-      await touchChatThreadLastMessageAtIndependently(db, erased.threadId, {
-        authorizedScope: erased,
-      });
-      assert.ok((await cleanupLateChatContent(db, subject, signal)) >= 3);
-      assert.equal(
-        (
-          await db
-            .select()
-            .from(chatEvents)
-            .where(eq(chatEvents.chatThreadId, erased.threadId))
-        ).length,
-        0,
-      );
-      assert.equal(
-        (
-          await db
-            .select()
-            .from(chatSlackContext)
-            .where(eq(chatSlackContext.chatThreadId, erased.threadId))
-        ).length,
-        0,
-      );
-      assert.equal(
-        (
-          await db
-            .select()
-            .from(chatEventSequences)
-            .where(eq(chatEventSequences.chatThreadId, erased.threadId))
-        ).length,
-        0,
-      );
-      assert.equal(
-        (
-          await db
-            .select()
-            .from(chatEvents)
-            .where(eq(chatEvents.chatThreadId, survivor.threadId))
-        ).length,
-        1,
-      );
-      assert.equal(
-        (
-          await db
-            .select()
-            .from(chatThreadEventSequences)
-            .where(eq(chatThreadEventSequences.userId, erased.userId))
-        ).length,
-        0,
-      );
-      assert.equal(await cleanupLateChatContent(db, subject, signal), 0);
-    }
-  });
-  await test("periodic sweep revisits late writes for a completed subject", async () => {
-    const erased = await fixture();
-    const survivor = await fixture();
-    await erased.append();
-    await survivor.append();
-    await completeChatContentDeletion(db, {
-      subjectKind: "user",
-      subjectId: erased.userId,
-      sourceReference: randomUUID(),
-    });
-    const first = await sweepLateChatContent(db, signal);
-    assert.ok(first.deleted >= 2);
-    const [receipt] = await db
-      .select()
-      .from(chatContentErasureSubjects)
-      .where(eq(chatContentErasureSubjects.subjectId, erased.userId));
-    assert.ok(receipt?.completedAt);
-    await erased.append();
-    await db
-      .update(chatContentErasureSubjects)
-      .set({ nextSweepAt: new Date(0) })
-      .where(eq(chatContentErasureSubjects.subjectId, erased.userId));
-    const second = await sweepLateChatContent(db, signal);
-    assert.ok(second.deleted >= 2);
-    assert.equal(
-      (
-        await db
-          .select()
-          .from(chatEvents)
-          .where(eq(chatEvents.chatThreadId, erased.threadId))
-      ).length,
-      0,
-    );
-    assert.equal(
-      (
-        await db
-          .select()
-          .from(chatEvents)
-          .where(eq(chatEvents.chatThreadId, survivor.threadId))
-      ).length,
-      1,
     );
   });
 } finally {

@@ -7121,7 +7121,6 @@
       "invalidHost": "请输入有效的主机名或IP地址，不要包含URL、用户名或端口。",
       "invalidInput": "请检查VNC配置后重试。",
       "invalidTrust": "请输入有效的证书包：最多8个公开CA证书，总大小不超过64 KiB。",
-      "ownerChanged": "你的工作区访问权限已变更，请刷新后再继续。",
       "revisionExhausted": "该配置已无法继续更新，请新建一个。"
     },
     "host": "主机名或IP地址",

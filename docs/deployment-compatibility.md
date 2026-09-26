@@ -3,7 +3,7 @@
 ## Public brand retirement contraction (2026-09-25)
 
 Phase 2 of #36766 contracts the columns that Phase 1 stopped reading. Migration
-`1254_retire_public_brand` drops `public_brand` from `slack_org_installations`,
+`1255_retire_public_brand` drops `public_brand` from `slack_org_installations`,
 `slack_chat_ingress`, `chat_slack_context`, `discord_chat_ingress`,
 `chat_discord_context`, `feishu_org_installations`, `feishu_org_connections`,
 `feishu_chat_ingress`, `chat_feishu_context`, `teams_org_installations`,
@@ -64,14 +64,87 @@ policies, delivery records, preview grants, pointers and manifests, the
 `run_uploaded_files.metadata`, and the `<segment>` path components. Legacy
 links keep resolving: the host Worker reads only R2 and is unaffected by the
 column rename, and the API reads the unchanged `okou` / `vm0` values from
-`link_layout_segment` to lay out records derived from existing content. OAuth and install states are
-unaffected; Phase 1 already removed the brand from them.
+`link_layout_segment` to lay out records derived from existing content. OAuth
+and install states are unaffected; Phase 1 already removed the brand from them.
 
 Rollback promotes artifacts without restoring schema. The production rollback
 resolver therefore rejects API targets that predate the canonical main commit
-that added `1254_retire_public_brand.sql`. Recovering past that commit requires
+that added `1255_retire_public_brand.sql`. Recovering past that commit requires
 a forward-fix migration that restores the columns and the old layout column
 name, not an artifact rollback.
+
+## Account erasure retirement (2026-09-25)
+
+The whole account-erasure mechanism from EPIC #33745 is removed. It will be
+redesigned from scratch; until then account deletion runs the legacy Clerk
+cleanup, narrowed so that user deletion never deletes an Agent.
+
+- **Writer and reader fence.** API writes and reads no longer check whether
+  their user or organization was closed for erasure, take the shared subject
+  advisory lock, or set a custom `lock_timeout`/`statement_timeout` for it.
+  Nothing returns `subject_closed`, `account_closed`, "Account unavailable" or a
+  closure-only 404. The Computer Use host stop and command completion contracts
+  drop their `403` response; the Desktop client only handles `401`/`409` there.
+  `VNC_OWNER_CHANGED` leaves the VNC error contract and the App.
+- **Deletion hold (#36842).** The `clerk-user-deletion` job no longer yields for
+  24 hours before cleanup. Auth, firewall credential handoff, runner
+  cancellation state and X resource usage no longer look up a pending deletion
+  job; Clerk stops issuing tokens for a deleted user.
+- **Deletion job.** The Clerk `user.deleted` webhook still revokes shared-thread
+  artifacts, records one durable `clerk-user-deletion` job (#36236) and starts
+  it; the per-minute background-job cron reclaims unfinished work. The job now
+  runs only the legacy cleanup (`cleanupClerkDeletedUser$`, including the
+  empty-organization branch) and completes. There is no capture or verify
+  phase. Jobs queued by an older API with a `phase` or `safetyHold` checkpoint
+  simply run the idempotent cleanup. `organization.deleted` is unchanged: billing
+  cleanup in the webhook, then `cleanupClerkDeletedOrg$`.
+- **Agents are retained on user deletion.** User cleanup deletes no Agent and
+  never cascades through one. It removes only the user's own data by `user_id`:
+  their runs (cancelled first), sessions, chat threads and drafts, usage, stable
+  context, credentials, connectors, storages and the other per-user rows.
+  Agents the user owned keep `owner` pointing at the deleted user (no ownership
+  transfer), together with their instructions Storage, Workflows, Morning Brief
+  deliveries, other members' stable context, and other members' sessions,
+  threads and runs.
+  Other members' runs on those Agents are no longer cancelled. Organization
+  deletion is unchanged and still deletes every Agent in the organization.
+- **Executor and collectors.** The user executor, selector, ownership coverage
+  guard, relational sweep, every object/remote collector, shared blob erasure,
+  chat content deletion receipts and their late-content sweep, the dormant Clerk
+  bridge and the separate decision journal are deleted. Blob retention uses the
+  plain reference count again and upload intents are gone.
+- **X resource retention.** Clerk cleanup, telemetry ingestion and the
+  retention cron no longer take a global `x_resource_reads` advisory lock.
+  Ingestion still validates the UTC today/yesterday window, serializes claims
+  by the resource primary key, and holds the Run's SHARE lock while writing
+  usage. Cron reads at most 1,000 expired keys, then deletes only those keys
+  with a repeated day predicate in a separate statement. An insert committed
+  just after its final time check at midnight can leave an expired key until
+  the next retention tick; it cannot reopen the admission window. Database
+  global timeouts replace the per-transaction X resource and 100 ms Clerk
+  lifecycle overrides. An upload holding its Run lock may delay cleanup;
+  the user deletion job retries a failed attempt, organization cleanup does not.
+
+Rows written for a deleted account after its legacy cleanup committed are no
+longer swept by anything. That is the accepted gap until the redesign.
+
+Migration `1254_drop_account_erasure` follows the VNC migration `1253`, required
+agent-run context ownership migration `1252`, and Computer Use migration `1251`.
+It replaces the earlier, never-released
+`1248_drop_pi_stable_context_erasure_fences`. It drops the `account_erasure_*`
+tables (jobs, work, pages, sinks, selector dependencies, bridge ingress and
+replay), `chat_content_erasure_subjects`, `pi_stable_context_erasure_fences`,
+`blob_upload_intents`, and `blobs.erasure_pending`/`erasure_eligible_at` with
+their check constraint, in the same release by explicit decision rather than
+after a rollback window. An older API still serving during the overlap fails
+every path that touches those relations: account-erasure fence admission on
+almost every write, membership-cache refresh, Pi stable-context, connector,
+permission and Workflow admission, session-history blob retention and Clerk
+deletion. **Rolling the API back below this revision is unsupported.**
+
+Older entries below that mention account erasure, erasure admission, the
+relational sweep, collectors, the Clerk erasure bridge or deletion-status
+capabilities describe the retired mechanism.
 
 ## Computer Use audit approval column: reader cutover (2026-09-25)
 
@@ -120,22 +193,18 @@ by older APIs; on 2026-09-25 all 955 had lost their source thread, so no owner
 could be derived. No code reads these rows, and the `chat_events.context_id`
 values that referenced 70 of them carry no foreign key.
 
-Account erasure and Clerk cleanup now remove these rows by copied owner only;
-the source-thread reach and the Clerk cleanup's thread subqueries are removed.
-That changes the relational sweep plan, so `RELATIONAL_ERASURE_COLLECTOR_VERSION`
-changes. When it changed, no account erasure job was incomplete (production had
-two `verified_erased` jobs), so no captured sink carries the old version into
-replay. A job that an older API captures during the release overlap or after a
-rollback registers its relational sink under the old version, which this API
-refuses to execute. Check for such jobs after the release and after any rollback
-until the older APIs leave the rollback window.
+The Clerk legacy cleanup deletes these rows by copied ownership. The account-
+erasure collector and its captured replay are retired by this PR; older API
+instances cannot safely run against the dropped relations, and API rollback
+below this revision is unsupported as noted above.
 
 ## Computer Use erasure admission and legacy host retirement (2026-09-25)
 
 Host START, command creation, the host directory and the audit-event list no
 longer take account-erasure admission or open transactions; START is one
 upsert and creation is a bounded host read plus one INSERT. A closed erasure
-subject is no longer refused with `403` by these routes.
+subject is no longer refused with `403` by these routes; late writes
+are not swept until the deletion mechanism is redesigned.
 
 `POST /api/computer-use/hosts/start` now requires `installationId`. Hosts
 registered without one (the last was seen in August 2026) are no longer
@@ -164,7 +233,7 @@ heartbeats every 15s instead of 2s.
 Observable differences:
 
 - A closed erasure subject is no longer refused with `403` by these routes; late
-  writes are left to erasure cleanup.
+  writes are not swept until the deletion mechanism is redesigned.
 - Claim is no longer serialized with stop. A claim that read the host just
   before a concurrent stop can still start one command, which then fails
   through the normal running-command timeout.
@@ -1683,17 +1752,13 @@ or production backfill. Deploy the additive migration before an API that writes
 these rows. Existing Runner, Sandbox, CLI and persisted Pi resource-snapshot
 wire readers are unchanged.
 
-Legacy Clerk user and organization deletion closes a one-way subject digest in
-`pi_stable_context_erasure_fences` under the existing account-erasure advisory
-lock, in the same transaction that removes stable-context lifecycle rows. The
-real Clerk membership-cache refresh shares that admission and refuses a closed
-subject; generation initialization, demand registration, and publication make
-the same check. A refresh admitted before closure either finishes first and is
-subsequently cleaned up, or waits and observes the fence. The table is
-feature-local deletion finality: it does not register the dormant account-
-erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
-other product data. Keep stable-context activation on hold until migration 1168
-and this API writer are present on every serving API instance.
+Legacy Clerk user and organization deletion no longer writes
+`pi_stable_context_erasure_fences`, and no writer or reader consults it:
+membership-cache refresh, generation initialization, demand registration,
+publication, and connector, permission and Workflow writes proceed after
+deletion. Migration `1254_drop_account_erasure` drops the table. Keep
+stable-context activation on hold until migration 1168 is present on every
+serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
 generation/head treats the exact variant as missing and uses canonical

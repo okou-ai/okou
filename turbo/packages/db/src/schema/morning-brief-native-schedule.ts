@@ -158,7 +158,7 @@ export const morningBriefNativeSchedules = pgTable(
       // content-free deduplication and drain facts. Cascading from either would
       // let an eviction or an ordinary deletion erase authoritative scheduling
       // state and make a delivered occurrence replayable. Membership loss,
-      // organization and user erasure, and Agent deletion instead run the
+      // organization and user deletion, and Agent deletion instead run the
       // explicit revocation writer, which fences admission, clears the
       // obligation and records the drain it still owes.
       foreignKey({

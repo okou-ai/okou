@@ -530,7 +530,7 @@ async function readDeliveryRecord(
     // Publication and thread records recheck their policy before content.
     // Legacy files have no policy, so their registry key is the revocation
     // authority. A warm alias must not reach the one-year content cache after
-    // erasure has removed that key.
+    // that key has been removed.
     if (record.kind === "legacy-file" && !(await bucket.head(key))) {
       return null;
     }

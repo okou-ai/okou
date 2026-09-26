@@ -8,12 +8,9 @@ import { agents } from "@okouai/db/schema/agent";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
 import { executeRawRows } from "../../lib/db-raw-rows";
-import type { Tx } from "../../lib/db-types";
-import { resourceUnavailable } from "../../lib/error";
-import { withChatThreadAgentReadWrite } from "../services/chat-thread-agent-read-erasure-admission.service";
 import { latestReadWatermarkEventSubquery } from "../services/chat-thread-read-state-query";
 import type { RouteEntry } from "../route-entry";
 
@@ -48,7 +45,7 @@ const updatedThreadRowSchema = z.object({ id: z.string().uuid() });
  * cursor value.
  */
 async function markAgentThreadsRead(
-  tx: Tx,
+  db: Db,
   args: {
     readonly agentId: string;
     readonly userId: string;
@@ -56,10 +53,10 @@ async function markAgentThreadsRead(
   },
 ): Promise<readonly string[]> {
   const latestReadWatermark = latestReadWatermarkEventSubquery(
-    tx,
+    db,
     chatThreads.id,
   );
-  const unreadThreads = tx
+  const unreadThreads = db
     .select({
       threadId: chatThreads.id,
       latestReadWatermarkAt: latestReadWatermark.createdAt,
@@ -79,7 +76,7 @@ async function markAgentThreadsRead(
       ),
     )
     .as("unread_threads");
-  const updateEveryMatchingThread = tx
+  const updateEveryMatchingThread = db
     .update(chatThreads)
     .set({ lastReadAt: unreadThreads.latestReadWatermarkAt })
     .from(unreadThreads)
@@ -96,7 +93,7 @@ async function markAgentThreadsRead(
     )
     .returning({ threadId: chatThreads.id });
   const updated = await executeRawRows(
-    tx,
+    db,
     sql`WITH "updated_threads" AS (${updateEveryMatchingThread.getSQL()}) SELECT "id" FROM "updated_threads" LIMIT ${NOTIFIED_THREAD_ID_BUDGET + 1}`,
     updatedThreadRowSchema,
   );
@@ -117,44 +114,13 @@ const markAgentReadInner$ = command(
 
     const { agentId } = bodyResult.data;
     const writeDb = set(writeDb$);
-    // Every matched row carries the same actor user and the same Agent, so the
-    // canonical subject set is the actor, the Agent's owner and the Agent's
-    // organization whether one thread or every thread matches. Resolving the
-    // Agent by primary key admits those three subjects without scanning threads
-    // or reading any account content, and the existing organization scope stays
-    // the route's own authorization: an Agent this caller may not read resolves
-    // to the unchanged 204, before any other account's subject lock is taken.
-    const result = await withChatThreadAgentReadWrite(
-      writeDb,
-      {
-        agentId,
-        actorUserId: auth.userId,
-        authorize: (identity) => {
-          return identity.orgId === auth.orgId;
-        },
-      },
-      async (tx) => {
-        return await markAgentThreadsRead(tx, {
-          agentId,
-          userId: auth.userId,
-          orgId: auth.orgId,
-        });
-      },
-      signal,
-    );
+    const updatedThreadIds = await markAgentThreadsRead(writeDb, {
+      agentId,
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
     signal.throwIfAborted();
 
-    if (result.outcome === "closed") {
-      // An admitted Agent whose canonical subject is closed. The message names
-      // no subject and no reason, and it is returned before the unread match is
-      // computed, so a closed account cannot be told apart by row count.
-      return resourceUnavailable("Chat read state is unavailable");
-    }
-    if (result.outcome === "missing") {
-      return { status: 204 as const, body: undefined };
-    }
-
-    const updatedThreadIds = result.value;
     if (updatedThreadIds.length > 0) {
       await publishChatThreadReadCursorUpdatedSafely(
         { userId: auth.userId, orgId: auth.orgId },

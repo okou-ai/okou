@@ -1,6 +1,5 @@
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { xResourceReads } from "@okouai/db/schema/x-resource-usage";
@@ -10,13 +9,7 @@ import type { z } from "zod";
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import type { Db } from "../external/db";
-import { settle } from "../utils";
-import {
-  hasHeldClerkUserDeletion,
-  lockXResourceAdmission,
-  readXResourceClock,
-  setXResourceTransactionTimeouts,
-} from "./x-resource-usage-lifecycle";
+import { readXResourceClock } from "./x-resource-usage-lifecycle";
 
 type UsageBody = z.output<typeof webhookUsageEventContract.send.body>;
 type UsageObservation = UsageBody["events"][number];
@@ -246,28 +239,7 @@ export async function ingestXResourceUsage(
   }
   await db.transaction(
     async (tx) => {
-      await setXResourceTransactionTimeouts(tx);
-      const admission = await settle(
-        assertErasureSubjectWritable(tx, [
-          { subjectKind: "user", subjectId: auth.userId },
-          { subjectKind: "organization", subjectId: auth.orgId },
-        ]),
-      );
-      if (!admission.ok) {
-        if (
-          admission.error instanceof Error &&
-          admission.error.message === "account_erasure:subject_closed"
-        ) {
-          throw new XResourceUsageError(404, "Run not found");
-        }
-        throw admission.error;
-      }
-      await lockXResourceAdmission(tx, "shared");
-      if (await hasHeldClerkUserDeletion(tx, auth.userId)) {
-        throw new XResourceUsageError(404, "Run not found");
-      }
-      // Admission precedes Run ownership, matching account cleanup's order.
-      // SHARE prevents deletion/owner updates while source rows are created.
+      // SHARE prevents Run deletion/owner updates while source rows are created.
       const [run] = await tx
         .select({
           createdAt: agentRuns.createdAt,
@@ -302,8 +274,9 @@ export async function ingestXResourceUsage(
       const owned = await reserveUsageSources(tx, billable, body.runId, auth);
       await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
       const quantities = await claimResources(tx, billable, owned);
-      // Locks acquired by INSERT may have crossed midnight. Cleanup is still
-      // excluded; an expired batch rolls all sources and claims back together.
+      // INSERT may have waited across midnight. An expired batch rolls all
+      // sources and claims back together. Retention cleanup only deletes
+      // dates older than yesterday and never changes admission's date window.
       await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
       const positive = [...quantities].filter(([, quantity]) => {
         return quantity > 0;

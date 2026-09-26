@@ -35,7 +35,7 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *1254_retire_public_brand.sql* ]]; then
+    if [[ "$*" == *1255_retire_public_brand.sql* ]]; then
       printf '%s\n' "${MOCK_PUBLIC_BRAND_RETIREMENT_COMMIT-2222222222222222222222222222222222222222}"
     else
       exit 2

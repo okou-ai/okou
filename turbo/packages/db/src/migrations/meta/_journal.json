@@ -1237,8 +1237,15 @@
     {
       "idx": 1254,
       "version": "7",
-      "when": 1790356979805,
-      "tag": "1254_retire_public_brand",
+      "when": 1790356985326,
+      "tag": "1254_drop_account_erasure",
+      "breakpoints": true
+    },
+    {
+      "idx": 1255,
+      "version": "7",
+      "when": 1790380349486,
+      "tag": "1255_retire_public_brand",
       "breakpoints": true
     }
   ]

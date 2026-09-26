@@ -60,9 +60,6 @@ export const prepareConfiguredPiApiFirstTurn$ = command(
     { set },
     input: CreatorAuthorizedPiPreparation,
   ): PiApiFirstTurnPreparation => {
-    if (input.triggerSource === "goal") {
-      throw new Error("Unsupported Pi preparation source");
-    }
     const commandValue = configurationStore.get(configuredPreparationCommand$);
     if (commandValue === undefined) {
       throw new Error("Pi API first-turn preparation is not configured");

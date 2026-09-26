@@ -457,12 +457,6 @@ export type IntegrationsTeamsMessageContract =
  */
 const sendPhoneMessageBodySchema = z.object({
   agentphoneAgentId: z.string().min(1, "Phone agent ID is required").optional(),
-  /**
-   * @deprecated Ignored; the API always sends to the caller's linked handle.
-   * Accepted only so CLIs released before this change keep working. Remove
-   * once those CLI versions are no longer in use (docs/deployment-compatibility.md).
-   */
-  toNumber: z.string().optional(),
   text: z.string().min(1, "Message text is required"),
 });
 
@@ -1198,8 +1192,6 @@ export const integrationsPhoneUploadInitContract = c.router({
 const phoneUploadCompleteBodySchema = z.object({
   uploadId: z.string().uuid("Upload ID must be a UUID"),
   agentphoneAgentId: z.string().min(1, "Phone agent ID is required").optional(),
-  /** @deprecated Ignored; see `sendPhoneMessageBodySchema.toNumber`. */
-  toNumber: z.string().optional(),
   contentType: z.string().min(1).max(200).optional(),
   caption: z.string().max(1024).optional(),
 });

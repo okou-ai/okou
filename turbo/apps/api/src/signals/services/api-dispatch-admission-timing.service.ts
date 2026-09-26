@@ -11,7 +11,6 @@ import { settleIncludingAbort } from "../utils";
 export type AdmissionLockLeaf =
   | "official_workflow"
   | "thread_session"
-  | "compute_session"
   | "maintenance"
   | "subscription"
   | "concurrency"
@@ -44,7 +43,6 @@ interface AdmissionAttemptTimingArgs {
   readonly triggerSource?: TriggerSource;
   readonly dimensions: Readonly<Record<string, string>>;
   readonly commitInvocation: number;
-  readonly transactionAttempt: number;
 }
 
 const L = logger("ApiDispatchAdmissionTiming");
@@ -142,7 +140,6 @@ export class AdmissionAttemptTiming {
         dispatch_path: "direct",
         span_kind: "nested",
         commit_invocation: boundedAttempt(this.args.commitInvocation),
-        transaction_attempt: boundedAttempt(this.args.transactionAttempt),
         admission_outcome: outcome,
         run_persisted: persisted ? "true" : "false",
         query_count_coverage: "unavailable",

@@ -1,4 +1,3 @@
-import { cleanupLateChatContent$ } from "../services/chat-content-erasure-cleanup.service";
 import { command } from "ccstate";
 import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import type { RouteEntry } from "../route-entry";
@@ -9,8 +8,6 @@ import {
   executeOnboardingRecommendationWork$,
 } from "../services/onboarding-recommendation.service";
 import { executeClerkUserDeletionWork$ } from "../services/clerk-user-deletion-job.service";
-import { pruneExpiredBlobUploadIntents } from "../services/blob-upload-intent.service";
-import { writeDb$ } from "../external/db";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const process$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -18,16 +15,9 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
     return cronUnauthorized();
   }
   const workSignal = AbortSignal.any([signal, AbortSignal.timeout(50_000)]);
-  const [
-    cleanedExports,
-    cleanedRecommendations,
-    cleanedBlobIntents,
-    cleanedChatContent,
-  ] = await Promise.all([
+  const [cleanedExports, cleanedRecommendations] = await Promise.all([
     set(cleanupDurableUserExports$, {}, workSignal),
     set(cleanupOnboardingRecommendationJobs$, {}, workSignal),
-    pruneExpiredBlobUploadIntents(set(writeDb$)),
-    set(cleanupLateChatContent$, workSignal),
   ]);
   signal.throwIfAborted();
   // Each kind owns a disjoint queue, so a long export cannot keep a fresh
@@ -43,11 +33,7 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: {
       processed:
         exports.processed + recommendations.processed + deletions.processed,
-      cleaned:
-        cleanedExports.processed +
-        cleanedRecommendations.processed +
-        cleanedBlobIntents +
-        cleanedChatContent.deleted,
+      cleaned: cleanedExports.processed + cleanedRecommendations.processed,
     },
   };
 });

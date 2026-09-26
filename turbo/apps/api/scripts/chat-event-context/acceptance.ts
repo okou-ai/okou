@@ -12,7 +12,6 @@ import { insertChatEvent } from "../../src/signals/services/chat-event.service";
 import { withNativeChatEventThreadTouch } from "../../src/signals/services/native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "../../src/signals/services/queued-launch-enrichment.service";
 import { flushLogs } from "../../src/lib/log";
-import { assertErasureReplayRejectsDrift } from "./erasure-compatibility";
 
 // Infrastructure acceptance: a server-private context storage failure is
 // deliberately not constructible through public APIs. Writers use real
@@ -125,7 +124,6 @@ try {
     maxBuffer: 20 * 1024 * 1024,
   });
   await client.connect();
-  await assertErasureReplayRejectsDrift(drizzle(client));
   await client.query(`CREATE SCHEMA ${schema}`);
   await client.query(`SET search_path TO ${schema}, public`);
   for (const table of tables) {

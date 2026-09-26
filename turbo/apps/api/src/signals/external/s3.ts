@@ -401,38 +401,11 @@ export function listS3ObjectsPage(
   prefix: string,
   maxKeys: number,
 ): Computed<Promise<S3ObjectPage>> {
-  return listS3ObjectsPageWithClient(
-    s3ClientForBucket(bucket),
-    bucket,
-    prefix,
-    maxKeys,
-  );
-}
-
-export function listHostedSitesObjectsPage(
-  bucket: string,
-  prefix: string,
-  maxKeys: number,
-): Computed<Promise<S3ObjectPage>> {
-  return listS3ObjectsPageWithClient(
-    hostedSitesS3Client$,
-    bucket,
-    boundedListPrefix(prefix),
-    maxKeys,
-  );
-}
-
-function listS3ObjectsPageWithClient(
-  client$: Computed<S3Client>,
-  bucket: string,
-  prefix: string,
-  maxKeys: number,
-): Computed<Promise<S3ObjectPage>> {
   if (!Number.isInteger(maxKeys) || maxKeys <= 0 || maxKeys > 1000) {
     throw new Error("S3 list page size must be an integer between 1 and 1000");
   }
   return computed(async (get): Promise<S3ObjectPage> => {
-    const client = get(client$);
+    const client = get(s3ClientForBucket(bucket));
     const response = await client.send(
       new ListObjectsV2Command({
         Bucket: bucket,
@@ -442,7 +415,7 @@ function listS3ObjectsPageWithClient(
     );
     const objects = (response.Contents ?? []).flatMap((item) => {
       if (!item.Key || item.Size === undefined || !item.LastModified) {
-        throw new Error("S3 list response omitted object identity or metadata");
+        return [];
       }
       return [
         {
@@ -1730,13 +1703,6 @@ export function s3ObjectExists(
   key: string,
 ): Computed<Promise<boolean>> {
   return s3ObjectExistsWithClient(s3ClientForBucket(bucket), bucket, key);
-}
-
-export function hostedSitesObjectExists(
-  bucket: string,
-  key: string,
-): Computed<Promise<boolean>> {
-  return s3ObjectExistsWithClient(hostedSitesS3Client$, bucket, key);
 }
 
 function s3ObjectExistsWithClient(

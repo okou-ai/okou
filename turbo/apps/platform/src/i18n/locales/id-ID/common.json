@@ -7121,7 +7121,6 @@
       "invalidHost": "Masukkan nama host atau alamat IP yang valid tanpa URL, nama pengguna, atau port.",
       "invalidInput": "Periksa konfigurasi VNC dan coba lagi.",
       "invalidTrust": "Masukkan kumpulan valid berisi maksimal 8 sertifikat CA publik, dengan ukuran total tidak lebih dari 64 KiB.",
-      "ownerChanged": "Akses ruang kerja Anda telah berubah. Segarkan sebelum melanjutkan.",
       "revisionExhausted": "Konfigurasi ini tidak dapat diperbarui lagi. Buat yang baru."
     },
     "host": "Nama host atau alamat IP",

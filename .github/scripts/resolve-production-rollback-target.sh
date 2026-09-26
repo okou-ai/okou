@@ -8,7 +8,7 @@ readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b
 # every draft row. Migration contract_chat_thread_drafts makes user_id and
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
 readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70dab7ae6
-readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1254_retire_public_brand.sql
+readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -55,7 +55,7 @@ if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT" "$TAR
   fail "Rollback target predates the chat thread draft child-only writer: ${CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT}."
 fi
 
-# Migration 1254 drops the remaining non-link public_brand columns and renames
+# Migration 1255 drops the remaining non-link public_brand columns and renames
 # five persisted link-layout columns. Earlier APIs implicitly name the retired
 # columns in INSERT/SELECT, so rollback below the canonical migration is unsafe.
 public_brand_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \

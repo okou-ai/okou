@@ -98,7 +98,6 @@ import {
   type DispatchCompleteSideEffectsInput,
 } from "./agent-webhook-complete.service";
 import { createPiApiFirstTurnCheckpoint$ } from "./agent-webhook-checkpoints.service";
-import { reserveBlobUploadIntent } from "./blob-upload-intent.service";
 import { logPiApiFirstTurnExecutionFailure } from "./pi-api-first-turn-failure-log.service";
 import {
   isTerminalChatgptRefreshErrorCode,
@@ -352,53 +351,48 @@ const persistIdentitySessionBlob$ = command(
     { get },
     args: {
       readonly db: Db;
-      readonly runId: string;
       readonly hash: string;
       readonly bytes: Buffer;
     },
     signal: AbortSignal,
   ): Promise<void> {
+    await args.db
+      .insert(blobs)
+      .values({
+        hash: args.hash,
+        rawSize: args.bytes.length,
+        encoding: SESSION_HISTORY_ENCODING_IDENTITY,
+        encodedSize: args.bytes.length,
+        refCount: 0,
+      })
+      .onConflictDoNothing();
     signal.throwIfAborted();
-    await args.db.transaction(async (tx) => {
-      await tx
-        .insert(blobs)
-        .values({
-          hash: args.hash,
-          rawSize: args.bytes.length,
-          encoding: SESSION_HISTORY_ENCODING_IDENTITY,
-          encodedSize: args.bytes.length,
-          refCount: 0,
-        })
-        .onConflictDoNothing();
-      signal.throwIfAborted();
-      await tx
-        .update(blobs)
-        .set({
-          rawSize: args.bytes.length,
-          encoding: SESSION_HISTORY_ENCODING_IDENTITY,
-          encodedSize: args.bytes.length,
-        })
-        .where(and(eq(blobs.hash, args.hash), eq(blobs.rawSize, 0)));
-      const [metadata] = await tx
-        .select({
-          rawSize: blobs.rawSize,
-          encoding: blobs.encoding,
-          encodedSize: blobs.encodedSize,
-        })
-        .from(blobs)
-        .where(eq(blobs.hash, args.hash))
-        .limit(1);
-      if (
-        metadata?.rawSize !== args.bytes.length ||
-        metadata.encodedSize !== args.bytes.length ||
-        metadata.encoding !== SESSION_HISTORY_ENCODING_IDENTITY
-      ) {
-        throw new Error("Pi API first-turn blob metadata is incompatible");
-      }
-      await reserveBlobUploadIntent(tx, { hash: args.hash, runId: args.runId });
-      signal.throwIfAborted();
-    });
+    await args.db
+      .update(blobs)
+      .set({
+        rawSize: args.bytes.length,
+        encoding: SESSION_HISTORY_ENCODING_IDENTITY,
+        encodedSize: args.bytes.length,
+      })
+      .where(and(eq(blobs.hash, args.hash), eq(blobs.rawSize, 0)));
     signal.throwIfAborted();
+    const [metadata] = await args.db
+      .select({
+        rawSize: blobs.rawSize,
+        encoding: blobs.encoding,
+        encodedSize: blobs.encodedSize,
+      })
+      .from(blobs)
+      .where(eq(blobs.hash, args.hash))
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      metadata?.rawSize !== args.bytes.length ||
+      metadata.encodedSize !== args.bytes.length ||
+      metadata.encoding !== SESSION_HISTORY_ENCODING_IDENTITY
+    ) {
+      throw new Error("Pi API first-turn blob metadata is incompatible");
+    }
     await get(
       putImmutableS3Object(
         env("R2_USER_STORAGES_BUCKET_NAME"),
@@ -590,7 +584,6 @@ function validateApiFirstTurnLifecycle(
   }
   if (
     !state ||
-    state.triggerSource === "goal" ||
     (state.status !== "pending" && state.status !== "running") ||
     state.userId !== args.activation.userId ||
     state.orgId !== args.activation.orgId ||
@@ -1997,9 +1990,6 @@ export const prepareCreatedPiApiFirstTurn$ = command(
     { set },
     input: CreatorAuthorizedPiPreparation,
   ): PiApiFirstTurnPreparation => {
-    if (input.triggerSource === "goal") {
-      throw new Error("Unsupported Pi preparation source");
-    }
     return set(startApiFirstTurnPreparation$, input.activation);
   },
 );
@@ -2073,7 +2063,6 @@ const persistCompleteTurnCheckpoint$ = command(
       persistIdentitySessionBlob$,
       {
         db: args.db,
-        runId: args.activation.runId,
         hash: prepared.sessionHash,
         bytes: prepared.sessionBytes,
       },
@@ -2713,7 +2702,7 @@ export const runPiApiFirstTurn$ = command(
         signal,
       );
       signal.throwIfAborted();
-      if (!run || run.triggerSource === "goal") {
+      if (!run) {
         return undefined;
       }
       // Queue promotion prepares only after canonical authorization, with its

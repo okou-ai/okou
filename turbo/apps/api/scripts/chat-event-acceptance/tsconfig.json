@@ -1,6 +1,11 @@
 {
-  "extends": "../erasure-bridge/tsconfig.json",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "disableSourceOfProjectReferenceRedirect": true,
+    "rootDir": "../.."
+  },
   "include": [
+    "*.ts",
     "../chat-event-sequences/*.ts",
     "../chat-event-context/*.ts",
     "../chat-event-split/*.ts",

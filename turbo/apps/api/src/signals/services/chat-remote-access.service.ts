@@ -17,7 +17,6 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import { publishSshRunnerInvalidation } from "./ssh-runtime-wakeup.service";
 import { enterVncWrite } from "./vnc-owner-lifecycle.service";
@@ -153,18 +152,14 @@ async function notifyRemoteAccessChange(
   }
 }
 
-async function admitRemoteAccessWrite(
+async function enterRemoteAccessWrite(
   tx: Tx,
   owner: Owner,
   protocol: RemoteAccessProtocol,
-): Promise<boolean> {
-  if (protocol === "vnc" && !(await enterVncWrite(tx, owner))) {
-    return false;
+): Promise<void> {
+  if (protocol === "vnc") {
+    await enterVncWrite(tx, owner);
   }
-  return await admitPiStableContextSubjects(tx, [
-    { subjectKind: "organization", subjectId: owner.orgId },
-    { subjectKind: "user", subjectId: owner.userId },
-  ]);
 }
 
 function toHostDefault(row: {
@@ -263,9 +258,7 @@ export async function updateRemoteHostDefault(
   enabled: boolean,
 ): Promise<RemoteHostDefault | null> {
   const result = await db.transaction(async (tx) => {
-    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
-      return null;
-    }
+    await enterRemoteAccessWrite(tx, owner, protocol);
     if (protocol === "ssh") {
       const [row] = await tx
         .update(sshConnections)
@@ -384,9 +377,7 @@ export async function setThreadRemoteAccessOverride(
   enabled: boolean,
 ): Promise<ThreadRemoteHostAccess | null> {
   const result = await db.transaction(async (tx) => {
-    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
-      return null;
-    }
+    await enterRemoteAccessWrite(tx, owner, protocol);
     if (!(await ownedThreadExists(tx, owner))) {
       return null;
     }
@@ -471,9 +462,7 @@ export async function clearThreadRemoteAccessOverride(
   protocol: RemoteAccessProtocol,
 ): Promise<ThreadRemoteHostAccess | null> {
   const result = await db.transaction(async (tx) => {
-    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
-      return null;
-    }
+    await enterRemoteAccessWrite(tx, owner, protocol);
     if (!(await ownedThreadExists(tx, owner))) {
       return null;
     }
