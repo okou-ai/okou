@@ -526,20 +526,24 @@ function browserUseCdpSignal(signal: AbortSignal): AbortSignal {
   ]);
 }
 
-type BrowserUseCdpPreflightPhase =
+type BrowserUseCdpPhase =
   | "discovery"
   | "connection"
   | "target"
-  | "controls";
+  | "targets"
+  | "attach"
+  | "frame"
+  | "controls"
+  | "validation";
 type BrowserUseCdpPhaseOutcome = "ok" | "timeout" | "cancelled" | "error";
 type BrowserUseCdpPhaseObserver = (
-  phase: BrowserUseCdpPreflightPhase,
+  phase: BrowserUseCdpPhase,
   outcome: BrowserUseCdpPhaseOutcome,
   durationMs: number,
 ) => void;
 
 async function observeBrowserUseCdpPhase<T>(
-  phase: BrowserUseCdpPreflightPhase,
+  phase: BrowserUseCdpPhase,
   signal: AbortSignal,
   observe: BrowserUseCdpPhaseObserver | undefined,
   operation: () => Promise<T>,
@@ -561,6 +565,34 @@ async function observeBrowserUseCdpPhase<T>(
     throw result.error;
   }
   return result.value;
+}
+
+function nativeInputCdpPhaseObserver(
+  operation: "preflight" | "apply",
+  attemptId: string,
+): BrowserUseCdpPhaseObserver {
+  return (phase, outcome, durationMs) => {
+    const fields = {
+      type:
+        operation === "preflight"
+          ? "browser_input_preflight_phase"
+          : "browser_input_apply_phase",
+      attemptId,
+      operation,
+      phase,
+      outcome,
+      durationMs,
+    };
+    const message =
+      operation === "preflight"
+        ? "Browser input preflight CDP phase"
+        : "Browser input apply CDP phase";
+    if (outcome === "ok" && durationMs < 1000) {
+      L.debug(message, fields);
+    } else {
+      L.warn(message, fields);
+    }
+  };
 }
 
 async function withBrowserUseCdpDeadline<T>(
@@ -1892,14 +1924,22 @@ async function openBrowserUseApplyPage(
   socket: WebSocket,
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
+  observePhase?: BrowserUseCdpPhaseObserver,
 ): Promise<(AttachedBrowserUsePage & { readonly frameId: string }) | null> {
-  const targets = browserUseCdpTargetsSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      { id: 1, method: "Target.getTargets", params: {} },
-      signal,
-    ),
-    { reportInput: true },
+  const targets = await observeBrowserUseCdpPhase(
+    "targets",
+    signal,
+    observePhase,
+    async () => {
+      return browserUseCdpTargetsSchema.parse(
+        await sendBrowserUseCdpCommand(
+          socket,
+          { id: 1, method: "Target.getTargets", params: {} },
+          signal,
+        ),
+        { reportInput: true },
+      );
+    },
   );
   const targetInfo = targets.targetInfos.find((candidate) => {
     return (
@@ -1909,19 +1949,33 @@ async function openBrowserUseApplyPage(
   if (!targetInfo) {
     return null;
   }
-  const attached = await attachBrowserUsePage(socket, targetInfo, 2, signal);
-  const frameTree = browserUseCdpFrameTreeSchema.parse(
-    await sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: 3,
-        method: "Page.getFrameTree",
-        params: {},
-        sessionId: attached.sessionId,
-      },
-      signal,
-    ),
-    { reportInput: true },
+  const attached = await observeBrowserUseCdpPhase(
+    "attach",
+    signal,
+    observePhase,
+    async () => {
+      return await attachBrowserUsePage(socket, targetInfo, 2, signal);
+    },
+  );
+  const frameTree = await observeBrowserUseCdpPhase(
+    "frame",
+    signal,
+    observePhase,
+    async () => {
+      return browserUseCdpFrameTreeSchema.parse(
+        await sendBrowserUseCdpCommand(
+          socket,
+          {
+            id: 3,
+            method: "Page.getFrameTree",
+            params: {},
+            sessionId: attached.sessionId,
+          },
+          signal,
+        ),
+        { reportInput: true },
+      );
+    },
   );
   const currentPageUrl = httpPageUrl(frameTree.frameTree.frame.url);
   if (
@@ -2139,24 +2193,7 @@ export async function preflightBrowserUseUserAction(
   | { readonly kind: "stale" }
 > {
   return await withBrowserUseCdpDeadline(signal, async (cdpSignal) => {
-    const observePhase: BrowserUseCdpPhaseObserver = (
-      phase,
-      outcome,
-      durationMs,
-    ) => {
-      const fields = {
-        type: "browser_input_preflight_phase",
-        attemptId,
-        phase,
-        outcome,
-        durationMs,
-      };
-      if (outcome === "ok" && durationMs < 1000) {
-        L.debug("Browser input preflight CDP phase", fields);
-      } else {
-        L.warn("Browser input preflight CDP phase", fields);
-      }
-    };
+    const observePhase = nativeInputCdpPhaseObserver("preflight", attemptId);
     return await withBrowserUseCdpSocket(
       cdpUrl,
       cdpSignal,
@@ -2166,7 +2203,12 @@ export async function preflightBrowserUseUserAction(
           cdpSignal,
           observePhase,
           async () => {
-            return await openBrowserUseApplyPage(socket, target, cdpSignal);
+            return await openBrowserUseApplyPage(
+              socket,
+              target,
+              cdpSignal,
+              observePhase,
+            );
           },
         );
         if (!attached) {
@@ -2728,79 +2770,94 @@ async function resolveBrowserUseFileControl(
   target: BrowserUseUserActionExactTarget,
   field: BrowserUseUserActionApplyField,
   signal: AbortSignal,
+  observePhase?: BrowserUseCdpPhaseObserver,
 ): Promise<{
   readonly page: AttachedBrowserUsePage;
   readonly objectId: string;
   readonly observed: BrowserUseControlInspection;
 } | null> {
-  const page = await openBrowserUseApplyPage(socket, target, signal);
+  const page = await openBrowserUseApplyPage(
+    socket,
+    target,
+    signal,
+    observePhase,
+  );
   if (!page) {
     return null;
   }
-  const world = z
-    .object({ executionContextId: z.number().int().positive() })
-    .parse(
-      await sendBrowserUseCdpCommand(
-        socket,
-        {
-          id: 4,
-          method: "Page.createIsolatedWorld",
-          params: {
-            frameId: page.frameId,
-            worldName: "okou-native-file-input",
-            grantUniveralAccess: false,
-          },
-          sessionId: page.sessionId,
-        },
-        signal,
-      ),
-    );
-  const remoteResult = await settle(
-    sendBrowserUseCdpCommand(
-      socket,
-      {
-        id: 5,
-        method: "DOM.resolveNode",
-        params: {
-          backendNodeId: field.backendNodeId,
-          executionContextId: world.executionContextId,
-        },
-        sessionId: page.sessionId,
-      },
-      signal,
-    ),
-  );
-  if (!remoteResult.ok) {
-    if (isMissingBrowserUseNode(remoteResult.error)) {
-      return null;
-    }
-    throw remoteResult.error;
-  }
-  const remote = browserUseCdpRemoteObjectSchema.safeParse(remoteResult.value);
-  if (!remote.success) {
-    throw new Error("Browser Use CDP node resolution failed");
-  }
-  const objectId = remote.data.object.objectId;
-  const [observed] = await inspectBrowserUseControls(
-    socket,
-    page.sessionId,
-    [objectId],
-    6,
+  return await observeBrowserUseCdpPhase(
+    "controls",
     signal,
+    observePhase,
+    async () => {
+      const world = z
+        .object({ executionContextId: z.number().int().positive() })
+        .parse(
+          await sendBrowserUseCdpCommand(
+            socket,
+            {
+              id: 4,
+              method: "Page.createIsolatedWorld",
+              params: {
+                frameId: page.frameId,
+                worldName: "okou-native-file-input",
+                grantUniveralAccess: false,
+              },
+              sessionId: page.sessionId,
+            },
+            signal,
+          ),
+        );
+      const remoteResult = await settle(
+        sendBrowserUseCdpCommand(
+          socket,
+          {
+            id: 5,
+            method: "DOM.resolveNode",
+            params: {
+              backendNodeId: field.backendNodeId,
+              executionContextId: world.executionContextId,
+            },
+            sessionId: page.sessionId,
+          },
+          signal,
+        ),
+      );
+      if (!remoteResult.ok) {
+        if (isMissingBrowserUseNode(remoteResult.error)) {
+          return null;
+        }
+        throw remoteResult.error;
+      }
+      const remote = browserUseCdpRemoteObjectSchema.safeParse(
+        remoteResult.value,
+      );
+      if (!remote.success) {
+        throw new Error("Browser Use CDP node resolution failed");
+      }
+      const objectId = remote.data.object.objectId;
+      const [observed] = await inspectBrowserUseControls(
+        socket,
+        page.sessionId,
+        [objectId],
+        6,
+        signal,
+      );
+      if (
+        !observed ||
+        !observed.writable ||
+        !observed.connected ||
+        !observed.mainDocument ||
+        observed.tagName !== "INPUT" ||
+        observed.inputType !== "file" ||
+        !observed.fileSetFingerprint ||
+        !observed.files
+      ) {
+        return null;
+      }
+      return { page, objectId, observed };
+    },
   );
-  if (
-    !observed ||
-    !observed.writable ||
-    !observed.connected ||
-    !observed.mainDocument ||
-    observed.tagName !== "INPUT" ||
-    observed.inputType !== "file" ||
-    !observed.fileSetFingerprint ||
-    !observed.files
-  ) {
-    return null;
-  }
-  return { page, objectId, observed };
 }
 
 function assessBrowserUseFileChoice(
@@ -2837,6 +2894,7 @@ async function applyBrowserUseFileActionOnSocket(
   target: BrowserUseUserActionExactTarget,
   mutation: { writeStarted: boolean },
   signal: AbortSignal,
+  observePhase?: BrowserUseCdpPhaseObserver,
 ): Promise<"succeeded" | "stale" | "invalid"> {
   const field = target.fields[0];
   if (
@@ -2852,6 +2910,7 @@ async function applyBrowserUseFileActionOnSocket(
     target,
     field,
     signal,
+    observePhase,
   );
   if (!resolved) {
     return "stale";
@@ -2960,6 +3019,7 @@ async function applyBrowserUseUserActionOnSocket(
   target: BrowserUseUserActionExactTarget,
   mutation: { writeStarted: boolean },
   signal: AbortSignal,
+  observePhase: BrowserUseCdpPhaseObserver,
 ): Promise<"succeeded" | "stale" | "invalid"> {
   if (
     target.fields.some((field) => {
@@ -2971,32 +3031,51 @@ async function applyBrowserUseUserActionOnSocket(
       target,
       mutation,
       signal,
+      observePhase,
     );
   }
-  const attached = await openBrowserUseApplyPage(socket, target, signal);
+  const attached = await openBrowserUseApplyPage(
+    socket,
+    target,
+    signal,
+    observePhase,
+  );
   if (!attached) {
     return "stale";
   }
-  const resolved = await resolveBrowserUseApplyFields(
-    socket,
-    attached.sessionId,
-    target.fields,
+  const resolved = await observeBrowserUseCdpPhase(
+    "controls",
     signal,
+    observePhase,
+    async () => {
+      return await resolveBrowserUseApplyFields(
+        socket,
+        attached.sessionId,
+        target.fields,
+        signal,
+      );
+    },
   );
   if (!resolved) {
     return "stale";
   }
-  if (
-    !(await validateBrowserUseApplyValues(
-      socket,
-      {
-        sessionId: attached.sessionId,
-        fields: resolved.fields,
-        commandId: resolved.commandId,
-      },
-      signal,
-    ))
-  ) {
+  const valid = await observeBrowserUseCdpPhase(
+    "validation",
+    signal,
+    observePhase,
+    async () => {
+      return await validateBrowserUseApplyValues(
+        socket,
+        {
+          sessionId: attached.sessionId,
+          fields: resolved.fields,
+          commandId: resolved.commandId,
+        },
+        signal,
+      );
+    },
+  );
+  if (!valid) {
     return "invalid";
   }
   const writeArgs = {
@@ -3035,20 +3114,36 @@ export async function applyBrowserUseUserAction(
   cdpUrl: string,
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
+  attemptId: string,
 ): Promise<"succeeded" | "stale" | "invalid"> {
   const mutation = { writeStarted: false };
   const cdpSignal = browserUseCdpSignal(signal);
+  const observePhase = nativeInputCdpPhaseObserver("apply", attemptId);
   const operation = await settleIncludingAbort(
-    withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
-      return await applyBrowserUseUserActionOnSocket(
-        socket,
-        target,
-        mutation,
-        cdpSignal,
-      );
-    }),
+    withBrowserUseCdpSocket(
+      cdpUrl,
+      cdpSignal,
+      async (socket) => {
+        return await applyBrowserUseUserActionOnSocket(
+          socket,
+          target,
+          mutation,
+          cdpSignal,
+          observePhase,
+        );
+      },
+      observePhase,
+    ),
   );
   if (!operation.ok) {
+    L.warn("Browser input apply CDP failed", {
+      type: "browser_input_apply_failure",
+      attemptId,
+      writeStarted:
+        operation.error instanceof BrowserUseUserActionMutationError
+          ? operation.error.writeStarted
+          : mutation.writeStarted,
+    });
     if (operation.error instanceof BrowserUseUserActionMutationError) {
       throw operation.error;
     }

@@ -169,3 +169,5 @@ surface; the index does not replace their detailed rules.
 - [Chat Event Snapshot timeout diagnostics](./chat-event-snapshot-timeout-logging.md):
   expected per-head deadlines, stage diagnostics, convergence and retention
   safety, and archive-lag alerting.
+- [Native Browser input CDP diagnostics](./browser-input-cdp-diagnostics.md):
+  private phase timings, pending/uncertain safety and a bounded preview comparison.

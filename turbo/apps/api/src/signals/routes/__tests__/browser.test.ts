@@ -1349,6 +1349,55 @@ describe("Browser user-action route", () => {
     expect(pending.body.state).toBe("pending");
   });
 
+  it.each(["Target.getTargets", "Target.attachToTarget", "Page.getFrameTree"])(
+    "keeps an input request pending after a pre-write %s failure",
+    async (method) => {
+      const { token } = await createNativePasswordActionForPreflightTest();
+      const originalCommand =
+        context.mocks.browserUseCdp.command.getMockImplementation();
+      if (!originalCommand) {
+        throw new Error("Browser CDP mock has no command implementation");
+      }
+      let failCommand = true;
+      context.mocks.browserUseCdp.command.mockImplementation((command) => {
+        if (failCommand && command.method === method) {
+          return new Error("Synthetic pre-write CDP failure");
+        }
+        return originalCommand(command);
+      });
+      const writesBefore = browserInputWrites().length;
+      const failed = await userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [{ key: "password", value: "synthetic-secret" }] },
+      });
+      expect(failed).toMatchObject({
+        status: 502,
+        body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+      });
+      expect(browserInputWrites()).toHaveLength(writesBefore);
+      failCommand = false;
+      const pending = await accept(
+        userActionClient().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: token },
+        }),
+        [200],
+      );
+      expect(pending.body.state).toBe("pending");
+      const checked = await accept(
+        userActionClient().preflight({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: token },
+          body: {},
+        }),
+        [200],
+      );
+      expect(checked.body.state).toBe("pending");
+      expect(browserInputWrites()).toHaveLength(writesBefore);
+    },
+  );
+
   it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();

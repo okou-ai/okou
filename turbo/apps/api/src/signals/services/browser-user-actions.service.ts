@@ -1227,6 +1227,7 @@ async function inspectPendingBrowserUserAction(
   const providerPhase = {
     type: "browser_input_preflight_phase",
     attemptId,
+    operation: "preflight",
     phase: "provider_session",
     outcome: provider.ok ? "ok" : "error",
     durationMs: Math.round(performance.now() - providerStartedAt),
@@ -1439,9 +1440,24 @@ async function applyClaimedBrowserUserAction(
       : conflict("Browser input state changed during application");
   }
   const target = exactInputTarget(payload);
+  const attemptId = randomUUID();
+  const providerStartedAt = performance.now();
   const provider = await settleIncludingAbort(
     getBrowserUseSession(claimed.providerSessionId, signal),
   );
+  const providerPhase = {
+    type: "browser_input_apply_phase",
+    attemptId,
+    operation: "apply",
+    phase: "provider_session",
+    outcome: provider.ok ? "ok" : "error",
+    durationMs: Math.round(performance.now() - providerStartedAt),
+  };
+  if (provider.ok && providerPhase.durationMs < 1000) {
+    L.debug("Browser input apply provider phase", providerPhase);
+  } else {
+    L.warn("Browser input apply provider phase", providerPhase);
+  }
   if (!provider.ok) {
     await restorePending(db, claimed.requestTokenHash);
     return providerFailure(provider.error);
@@ -1460,6 +1476,7 @@ async function applyClaimedBrowserUserAction(
         }),
       },
       signal,
+      attemptId,
     ),
   );
   if (!operation.ok) {
