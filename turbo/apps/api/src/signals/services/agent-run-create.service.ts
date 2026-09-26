@@ -17,6 +17,7 @@ import {
 import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
+import { legacyQueuedRunAdmissionEnabledForTest } from "./legacy-queued-run-admission.service";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -11693,16 +11694,19 @@ const createAtomicLaunchRun$ = command(
     input: AtomicLaunchRunInput,
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
+    const args: CreateAgentRunArgs = legacyQueuedRunAdmissionEnabledForTest()
+      ? { ...input.args, queueOnConcurrencyLimit: true }
+      : input.args;
     const identity = prepareLaunchRunIdentity({
       resolved: input.context.resolved,
     });
     if (
-      !input.args.queueOnConcurrencyLimit &&
-      !input.args.ignoreConcurrencyLimit
+      !args.queueOnConcurrencyLimit &&
+      !args.ignoreConcurrencyLimit
     ) {
       const preflightConcurrency = await checkRunConcurrencyPreflight({
         db: input.db,
-        orgId: input.args.orgId,
+        orgId: args.orgId,
         timing: input.timing,
       });
       signal.throwIfAborted();
@@ -11713,7 +11717,7 @@ const createAtomicLaunchRun$ = command(
 
     const callbackRows = await prepareRunCallbackRows({
       runId: identity.runId,
-      callbacks: input.args.callbacks,
+      callbacks: args.callbacks,
       featureSwitchContext: input.context.featureSwitchContext,
       timing: input.timing,
     });
@@ -11728,7 +11732,7 @@ const createAtomicLaunchRun$ = command(
             buildAtomicLaunchPayload(
               input.db,
               {
-                createArgs: input.args,
+                createArgs: args,
                 context: input.context,
                 run: {
                   id: identity.runId,
@@ -11756,7 +11760,7 @@ const createAtomicLaunchRun$ = command(
       }
       return await commitFailedLaunch({
         db: input.db,
-        createArgs: input.args,
+        createArgs: args,
         context: input.context,
         identity,
         callbackRows,
