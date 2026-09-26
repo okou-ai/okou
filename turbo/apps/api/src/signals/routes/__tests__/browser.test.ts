@@ -1266,6 +1266,46 @@ describe("Browser user-action route", () => {
     expect(checked.body.state).toBe("pending");
   });
 
+  it("keeps an input request pending when an interleaved attach reply is a CDP error", async () => {
+    let emitAttachEvent = false;
+    const { token } = await createNativePasswordActionForPreflightTest(
+      (command) => {
+        return emitAttachEvent && command.method === "Target.attachToTarget"
+          ? [{ method: "Target.attachedToTarget", params: {} }]
+          : [];
+      },
+    );
+    const originalCommand =
+      context.mocks.browserUseCdp.command.getMockImplementation();
+    if (!originalCommand) {
+      throw new Error("Browser CDP mock has no command implementation");
+    }
+    context.mocks.browserUseCdp.command.mockImplementation((command) => {
+      if (command.method === "Target.attachToTarget") {
+        return new Error("Synthetic attach failure");
+      }
+      return originalCommand(command);
+    });
+    emitAttachEvent = true;
+    const failed = await userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    expect(failed).toMatchObject({
+      status: 502,
+      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+    });
+    const pending = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+      }),
+      [200],
+    );
+    expect(pending.body.state).toBe("pending");
+  });
+
   it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
