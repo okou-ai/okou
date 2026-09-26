@@ -94,12 +94,16 @@ async function state() {
   ).rows;
 }
 
-async function site(user = "audit-owner", brand = "okou", deleted = false) {
+async function site(
+  user = "audit-owner",
+  layoutSegment = "okou",
+  deleted = false,
+) {
   const id = randomUUID();
   await writer.query(
-    `INSERT INTO hosted_sites (id, org_id, user_id, slug, public_slug, public_brand, deleted_at)
+    `INSERT INTO hosted_sites (id, org_id, user_id, slug, public_slug, link_layout_segment, deleted_at)
       VALUES ($1::uuid, 'audit-org', $2, $1::text, $1::text, $3, CASE WHEN $4 THEN now() ELSE NULL END)`,
-    [id, user, brand, deleted],
+    [id, user, layoutSegment, deleted],
   );
   return id;
 }
@@ -118,7 +122,7 @@ async function deployment(args: {
     : "hosted_deployments";
   await writer.query(
     `INSERT INTO ${table}
-      (id, site_id, org_id, user_id, public_brand, status,
+      (id, site_id, org_id, user_id, link_layout_segment, status,
        artifact_url, r2_prefix, manifest, manifest_hash, content_hash, file_count, size_bytes, url)
       VALUES ($1, $2, 'audit-org', $3, 'okou', $4,
         'private-url-sentinel', 'private-path-sentinel', $5, $6, $6, 1, 10, 'private-url-sentinel')`,
@@ -218,7 +222,7 @@ try {
   }
   for (const target of [mixed, deleted, randomUUID()]) {
     await writer.query(
-      `INSERT INTO artifact_shares (user_id, org_id, public_brand, target_kind, target_id)
+      `INSERT INTO artifact_shares (user_id, org_id, link_layout_segment, target_kind, target_id)
         VALUES ('audit-owner', 'audit-org', 'okou', 'html', $1)`,
       [target],
     );

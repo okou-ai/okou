@@ -23,18 +23,6 @@ export const teamsDeliveryTargetSchema = z.object({
   teamsUserPrincipalName: z.string().nullable(),
   botId: z.string().nullable(),
   botName: z.string().nullable(),
-  /**
-   * Rollback shim (#36766): API builds before brand retirement require this
-   * key in persisted Teams targets. Ignore any stored value and always emit
-   * `okou` so those builds still parse targets written by this API. Remove
-   * after older API deployments drain.
-   */
-  publicBrand: z
-    .unknown()
-    .optional()
-    .transform((): "okou" => {
-      return "okou";
-    }),
   files: z.array(teamsChatCallbackFileSchema).optional(),
 });
 

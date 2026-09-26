@@ -185,7 +185,6 @@ import {
   type TemplateUsageLogContext,
 } from "../../lib/template-usage-log";
 import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   resolveMcpSubmission,
   type McpSubmissionIdentity,
@@ -3766,10 +3765,6 @@ function buildCreateAgentRunArgs(params: {
         payload: {
           threadId: prepared.thread.threadId,
           agentId: args.body.agentId,
-          // Rollout fallback (new API -> old API): older API instances default a
-          // missing brand to VM0. Stop writing it once those APIs no longer serve
-          // and are not rollback targets (#36766 Phase 2).
-          publicBrand: PUBLIC_BRAND,
         },
       },
     ],

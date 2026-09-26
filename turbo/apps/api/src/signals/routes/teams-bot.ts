@@ -4,7 +4,7 @@ import {
   type TeamsInboundActivity,
 } from "@okouai/api-contracts/contracts/teams-bot";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import {
   normalizeTeamsActivity,
@@ -204,7 +204,7 @@ function buildTeamsInstallWelcomeContent(
   readonly text: string;
   readonly entities?: readonly TeamsMentionEntity[];
 } {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   const botName = teamsBotDisplayName(installation.botName);
   const mention = buildTeamsInstallWelcomeMention(activity, botName);
   if (!mention) {

@@ -41,11 +41,6 @@ export const chatTeamsContext = pgTable(
     threadId: text("thread_id"),
     serviceUrl: text("service_url"),
     teamsAppId: text("teams_app_id"),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou").notNull(),
     senderUserId: text("sender_user_id"),
     senderDisplayName: text("sender_display_name"),
     senderPrincipalName: text("sender_principal_name"),

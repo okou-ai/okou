@@ -1,6 +1,5 @@
 import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import { randomBytes } from "node:crypto";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
@@ -273,16 +272,13 @@ export function buildWorkflowAutomationCallbacks(
       payload: {
         automationId: automation.id,
         workflowName,
-        // Write-only: APIs before #36766 require this key when they parse the
-        // callback during rollout or rollback. No current reader uses it.
-        publicBrand: PUBLIC_BRAND,
       },
     });
   }
   callbacks.push({
     internalKind: "chat",
     secret: generateCallbackSecret(),
-    payload: { threadId: chatThreadId, agentId, publicBrand: PUBLIC_BRAND },
+    payload: { threadId: chatThreadId, agentId },
   });
   return callbacks;
 }

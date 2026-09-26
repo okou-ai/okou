@@ -26,7 +26,6 @@ import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
@@ -320,7 +319,6 @@ const annotationProjectionInputs = [
     context: {
       feishuContext: {
         conversationHistory: "",
-        publicBrand: "vm0",
         messageText: "feishu linked",
         messageFiles: [],
         chatType: "p2p",
@@ -683,18 +681,6 @@ export async function setTelegramThinkingMessageIdFixture(
   await db()
     .update(chatTelegramContext)
     .set({ thinkingMessageId })
-    .where(eq(chatTelegramContext.id, event.contextId));
-}
-
-/** Reproduce a pending Telegram context stored with a retired brand value. */
-export async function setTelegramContextLegacyBrandFixture(
-  eventId: string,
-  publicBrand: string | null,
-): Promise<void> {
-  const event = await pendingTelegramEventContext(eventId);
-  await db()
-    .update(chatTelegramContext)
-    .set({ publicBrand })
     .where(eq(chatTelegramContext.id, event.contextId));
 }
 
@@ -1089,69 +1075,6 @@ export async function withChatEventDeletedAfterReadFixture<T>(args: {
     throw closed.reason;
   }
   return result.value;
-}
-
-/**
- * Reproduce a queued Feishu input persisted before the brand retirement: its
- * context has no brand and its installation still carries `vm0`.
- */
-export async function setLegacyFeishuPublicBrandFixture(args: {
-  readonly eventId: string;
-  readonly installationId: string;
-}): Promise<void> {
-  const [event] = await db()
-    .select({ contextId: chatEvents.contextId })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.contextType, "feishu"),
-      ),
-    )
-    .limit(1);
-  if (!event?.contextId) {
-    throw new Error("Expected a Feishu chat event with context");
-  }
-  const contexts = await db()
-    .update(chatFeishuContext)
-    .set({ publicBrand: null })
-    .where(eq(chatFeishuContext.id, event.contextId))
-    .returning({ id: chatFeishuContext.id });
-  const installations = await db()
-    .update(feishuOrgInstallations)
-    .set({ publicBrand: "vm0" })
-    .where(eq(feishuOrgInstallations.id, args.installationId))
-    .returning({ id: feishuOrgInstallations.id });
-  if (contexts.length !== 1 || installations.length !== 1) {
-    throw new Error("Expected one Feishu context and installation");
-  }
-}
-
-/** Read the stored Feishu delivery callback payloads of a run. */
-export async function readFeishuCallbackPayloadsFixture(
-  runId: string,
-): Promise<
-  readonly { readonly internalKind: string; readonly payload: unknown }[]
-> {
-  const callbacks = await db()
-    .select({
-      internalKind: agentRunCallbacks.internalKind,
-      payload: agentRunCallbacks.payload,
-    })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        inArray(agentRunCallbacks.internalKind, ["feishu:chat", "feishu:org"]),
-      ),
-    )
-    .orderBy(asc(agentRunCallbacks.internalKind));
-  return callbacks.map((callback) => {
-    return {
-      internalKind: callback.internalKind ?? "",
-      payload: callback.payload,
-    };
-  });
 }
 
 /** Attach GitHub delivery metadata that is normally persisted by GitHub ingress. */

@@ -9,9 +9,10 @@ readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b
 # draft_user_message NOT NULL, so earlier APIs fail every draft save.
 readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70dab7ae6
 # #36960 stopped implicitly selecting computer_use_command_audit_events.approval_outcome.
-# Migration 1255 drops that column before promoting its API. Older API
+# Migration 1256 drops that column before promoting its API. Older API
 # artifacts would fail the audit list with 42703 after migration or rollback.
 readonly COMPUTER_USE_AUDIT_READER_COMMIT=41cc9918009622ccad7c64e433d09db1a8dfbe9c
+readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -59,6 +60,18 @@ if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT" "$TAR
 fi
 if ! git merge-base --is-ancestor "$COMPUTER_USE_AUDIT_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the computer-use audit approval column reader cutover: ${COMPUTER_USE_AUDIT_READER_COMMIT}."
+fi
+
+# Migration 1255 drops the remaining non-link public_brand columns and renames
+# five persisted link-layout columns. Earlier APIs implicitly name the retired
+# columns in INSERT/SELECT, so rollback below the canonical migration is unsafe.
+public_brand_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PUBLIC_BRAND_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$public_brand_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged public_brand retirement on main."
+fi
+if ! git merge-base --is-ancestor "$public_brand_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the public_brand retirement: ${public_brand_retirement_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

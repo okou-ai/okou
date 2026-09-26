@@ -45,7 +45,7 @@ type SnapshotIdentity = Pick<
 > & {
   // The shared thread's stored link-layout segment. Conversation snapshots
   // created before the layout change stay under the legacy segment.
-  readonly publicBrand: string;
+  readonly linkLayoutSegment: string;
 };
 
 /** Match the delivery Worker's authority without reopening the owner's live resource. */
@@ -154,7 +154,7 @@ function readPolicy(identity: SnapshotIdentity, signal: AbortSignal) {
         readArtifactSharePolicyObject(
           sharedThreadArtifactsBucket(),
           sharedThreadArtifactPolicyKey(
-            storedLinkLayoutSegment(identity.publicBrand),
+            storedLinkLayoutSegment(identity.linkLayoutSegment),
             identity.id,
           ),
           signal,
@@ -175,7 +175,7 @@ function readPolicy(identity: SnapshotIdentity, signal: AbortSignal) {
       policy.threadId !== identity.id ||
       policy.ownerId !== identity.userId ||
       policy.orgId !== identity.orgId ||
-      policy.publicBrand !== identity.publicBrand
+      policy.publicBrand !== identity.linkLayoutSegment
     ) {
       throw new Error("Conversation artifact policy does not match its owner");
     }
@@ -276,7 +276,7 @@ const changeSharedThreadArtifactPhase$ = command(
         writeArtifactSharePolicyObject(
           sharedThreadArtifactsBucket(),
           sharedThreadArtifactPolicyKey(
-            storedLinkLayoutSegment(row.publicBrand),
+            storedLinkLayoutSegment(row.linkLayoutSegment),
             row.id,
           ),
           JSON.stringify({ ...current.policy, status: "active" }),
@@ -330,7 +330,7 @@ function revokePolicy(identity: SnapshotIdentity, signal: AbortSignal) {
         writeArtifactSharePolicyObject(
           sharedThreadArtifactsBucket(),
           sharedThreadArtifactPolicyKey(
-            storedLinkLayoutSegment(identity.publicBrand),
+            storedLinkLayoutSegment(identity.linkLayoutSegment),
             identity.id,
           ),
           JSON.stringify({ ...current.policy, status: "revoked" }),
@@ -359,7 +359,7 @@ export function removeSharedThreadArtifactCopies(
       if (target.kind === "file") {
         files.push(target.key);
       } else {
-        const prefix = `shared-artifacts/${storedLinkLayoutSegment(identity.publicBrand)}/${target.snapshotId}/${target.id}`;
+        const prefix = `shared-artifacts/${storedLinkLayoutSegment(identity.linkLayoutSegment)}/${target.snapshotId}/${target.id}`;
         siteFiles.push(
           `${prefix}/manifest.json`,
           ...Object.keys(target.manifest.files).map((path) => {

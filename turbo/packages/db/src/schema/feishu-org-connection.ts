@@ -34,11 +34,6 @@ export const feishuOrgConnections = pgTable(
       { onDelete: "set null" },
     ),
     feishuUserName: varchar("feishu_user_name", { length: 255 }),
-    /**
-     * Retired (#36766): current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou"),
     dmWelcomeSent: boolean("dm_welcome_sent").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

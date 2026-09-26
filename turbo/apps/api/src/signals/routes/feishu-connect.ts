@@ -7,7 +7,7 @@ import {
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -71,7 +71,7 @@ const feishuIntegrationEnabled$ = computed(async (get) => {
 
 function appIdInUse(platformName: string) {
   return conflict(
-    `This ${platformName} App ID is already registered in ${PUBLIC_BRAND_PRESENTATION.brandName}`,
+    `This ${platformName} App ID is already registered in ${BRAND_PRESENTATION.brandName}`,
   );
 }
 

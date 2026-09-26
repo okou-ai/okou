@@ -390,7 +390,7 @@ const persistSharedThread$ = command(
             sourceChatThreadId: args.threadId,
             title: initialTitle,
             ...sharedThreadMessageColumns(plan?.messages ?? messages),
-            publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
+            linkLayoutSegment: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
             createdAt,
           })
           .returning({ id: sharedThreads.id });
@@ -448,7 +448,7 @@ const persistSharedThread$ = command(
               id,
               userId: args.userId,
               orgId: args.orgId,
-              publicBrand: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
+              linkLayoutSegment: SHARED_THREAD_LINK_LAYOUT_SEGMENT,
               hasArtifactSnapshot: true,
             },
             cleanupSignal,
@@ -664,7 +664,7 @@ export const readSharedThread$ = command(
         messages: sharedThreads.messages,
         messageAttachments: sharedThreads.messageAttachments,
         // Selects the stored shared-artifact layout of existing shares.
-        publicBrand: sharedThreads.publicBrand,
+        linkLayoutSegment: sharedThreads.linkLayoutSegment,
         userId: sharedThreads.userId,
         orgId: sharedThreads.orgId,
         hasArtifactSnapshot: sharedThreads.hasArtifactSnapshot,
@@ -708,7 +708,7 @@ export const readSharedThreadMeta$ = command(
         hasArtifactSnapshot: sharedThreads.hasArtifactSnapshot,
         title: sharedThreads.title,
         // Selects the stored shared-artifact layout of existing shares.
-        publicBrand: sharedThreads.publicBrand,
+        linkLayoutSegment: sharedThreads.linkLayoutSegment,
       })
       .from(sharedThreads)
       .where(eq(sharedThreads.id, id))

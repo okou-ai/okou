@@ -50,11 +50,6 @@ export const emailOutbox = pgTable(
     subject: text("subject").notNull(),
     replyTo: text("reply_to"),
     headers: jsonb("headers").$type<EmailOutboxHeaders>(),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou").notNull(),
 
     // Template (discriminated union stored as JSONB)
     template: jsonb("template").$type<EmailOutboxTemplate>().notNull(),

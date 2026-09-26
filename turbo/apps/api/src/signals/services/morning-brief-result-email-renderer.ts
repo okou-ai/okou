@@ -1,4 +1,4 @@
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import { renderEmailLayout } from "./email-layout";
 import {
@@ -54,7 +54,7 @@ function morningBriefResultEmailHtml(
   resultBodyHtml: string,
   unsubscribeUrl: string,
 ): string {
-  const assistantName = PUBLIC_BRAND_PRESENTATION.assistantName;
+  const assistantName = BRAND_PRESENTATION.assistantName;
   return renderEmailLayout({
     title: props.title,
     heroUrl: MORNING_BRIEF_HERO_URL,

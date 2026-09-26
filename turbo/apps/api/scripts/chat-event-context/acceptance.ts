@@ -84,7 +84,6 @@ function agentphoneInput(id: string, chatThreadId: string) {
       toNumber: "+15550001002",
       userLinkId: phoneLink,
       agentphoneAgentId: "phone-agent",
-      publicBrand: "okou",
     },
   } as const;
 }
