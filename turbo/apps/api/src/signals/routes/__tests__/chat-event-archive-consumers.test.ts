@@ -4,7 +4,6 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { gunzipSync } from "node:zlib";
 
 import { HttpResponse } from "msw";
 import {
@@ -231,50 +230,6 @@ function snapshotCoverage(entryName: string): number {
   return Number(/\/snapshots\/(\d+)-/u.exec(entryName)?.[1] ?? 0);
 }
 
-function readDurableChatRows(zip: AdmZip, threadId: string) {
-  // Snapshot entry names embed their covered sequence bound, so the newest
-  // snapshot is the authoritative one without any per-thread index file.
-  const snapshot = zip
-    .getEntries()
-    .filter((entry) => {
-      return entry.entryName.startsWith(`chat-messages/${threadId}/snapshots/`);
-    })
-    .sort((left, right) => {
-      return (
-        snapshotCoverage(left.entryName) - snapshotCoverage(right.entryName)
-      );
-    })
-    .at(-1);
-  if (!snapshot) {
-    throw new Error("Expected the authoritative exported chat snapshot");
-  }
-  const coverage = snapshotCoverage(snapshot.entryName);
-  const upperSeqId = exportedUpperSeqId(zip, threadId, coverage);
-  const archived = gunzipSync(snapshot.getData())
-    .toString("utf8")
-    .trimEnd()
-    .split("\n")
-    .map((line) => {
-      return chatEventRowSchema.parse(JSON.parse(line));
-    });
-  const tail = zip
-    .getEntries()
-    .filter((entry) => {
-      return entry.entryName.startsWith(`chat-messages/${threadId}/tail/`);
-    })
-    .flatMap((entry) => {
-      return readExportJsonLines(zip, entry.entryName).map((row) => {
-        return chatEventRowSchema.parse(row);
-      });
-    })
-    .filter((row) => {
-      return row.seqId > coverage && row.seqId <= upperSeqId;
-    });
-  return [...archived, ...tail].sort((left, right) => {
-    return left.seqId - right.seqId;
-  });
-}
-
 async function readChatTailRows(
   fixture: ArchiveFixture,
   after: ChatEventRow,
@@ -439,6 +394,29 @@ function expectExportMessageBytes(
   }
 }
 
+function registerExportJobCleanup(actor: ApiTestUser, jobId: string): void {
+  onTestFinished(async () => {
+    await accept(
+      setupApp({ context, routes: testUserExportWorkRoutes })(
+        testUserExportWorkContract,
+      ).action({ body: { userId: actor.userId, jobId, action: "delete" } }),
+      [200],
+    );
+    const outbox = createEmailOutboxStateApi(context);
+    const emails = await outbox.findItems({
+      toAddress: actor.email,
+      subject: "Your data export is ready",
+    });
+    if (emails.length > 0) {
+      await outbox.deleteItems(
+        emails.map((email) => {
+          return email.id;
+        }),
+      );
+    }
+  });
+}
+
 describe("archived chat event consumers", () => {
   const recordedPuts: RecordedChatEventPut[] = [];
 
@@ -454,41 +432,50 @@ describe("archived chat event consumers", () => {
     const archivedVisible = `archived-export-${randomUUID()} \`${escapedOpen}\` suffix`;
     // Each message stays within PostgreSQL's indexed document limit while
     // their combined compressed snapshot crosses the export range boundary.
-    const archivedTexts = Array.from({ length: 24 }, () => {
+    const archivedTexts = Array.from({ length: 18 }, () => {
       return (
         withHiddenCitation(archivedVisible) +
         randomBytes(256 * 1024).toString("base64")
       );
     });
-    const archivedEventIds: string[] = [];
-    for (const content of archivedTexts) {
-      archivedEventIds.push(
-        await store.set(
-          seedRetentionOutputEvent$,
-          { chatThreadId: fixture.threadId, content, offsetMs: -60_000 },
-          context.signal,
-        ),
-      );
-    }
+    // Only a historical retention fixture can create expired source rows;
+    // keep every write scoped to this test-owned thread.
+    const archivedEventIds = await store.set(
+      seedRetentionOutputEvents$,
+      {
+        chatThreadId: fixture.threadId,
+        count: archivedTexts.length,
+        contents: archivedTexts,
+        offsetMs: -60_000,
+      },
+      context.signal,
+    );
     await archiveAndRetain(fixture.threadId, archivedEventIds);
+    const snapshot = recordedPuts.find((put) => {
+      return put.key.startsWith(`chat-events/${fixture.threadId}/`);
+    });
+    expect(snapshot?.body.length).toBeGreaterThan(4 * 1024 * 1024);
+
     const tailVisible = `hot-tail-${randomUUID()} \`${escapedOpen}\` suffix`;
-    const tailTexts = Array.from({ length: 100 }, (_, index) => {
+    // Each 64 KiB payload counts twice toward the 2 MiB export page bound;
+    // 20 rows still cross a page without writing 100 large rows.
+    const tailTexts = Array.from({ length: 20 }, (_, index) => {
       return `${withHiddenCitation(tailVisible)} ${index} ${"x".repeat(64 * 1024)}`;
     });
-    const tailEventIds: string[] = [];
-    for (const content of tailTexts) {
-      tailEventIds.push(
-        await store.set(
-          seedRetentionOutputEvent$,
-          { chatThreadId: fixture.threadId, content },
-          context.signal,
-        ),
-      );
-    }
+    const tailEventIds = await store.set(
+      seedRetentionOutputEvents$,
+      {
+        chatThreadId: fixture.threadId,
+        count: tailTexts.length,
+        contents: tailTexts,
+      },
+      context.signal,
+    );
 
     const exportApi = createOpsLogsApi(context);
     const storage = installDurableUserExportStorage(context);
     const started = await exportApi.requestPostUserExport(fixture.actor, [202]);
+    registerExportJobCleanup(fixture.actor, started.body.jobId);
     await flushWaitUntilForTest();
     await accept(
       setupApp({ context, routes: testUserExportWorkRoutes })(
@@ -512,8 +499,12 @@ describe("archived chat event consumers", () => {
     if (!downloadUrl) {
       throw new Error("Expected a downloadable user export");
     }
-    const zip = new AdmZip(storage.download(downloadUrl));
-    const messages = readDurableChatRows(zip, fixture.threadId);
+    const archiveBytes = storage.download(downloadUrl);
+    const zip = new AdmZip(archiveBytes);
+    const messages = await restoreDownloadedChatRows(
+      archiveBytes,
+      fixture.threadId,
+    );
     expectExportMessageBytes(messages, {
       ids: archivedEventIds,
       texts: archivedTexts,
@@ -591,24 +582,7 @@ describe("archived chat event consumers", () => {
         userId: fixture.actor.userId,
         jobId: started.body.jobId,
       };
-      onTestFinished(async () => {
-        await accept(
-          worker().action({ body: { ...workerRequest, action: "delete" } }),
-          [200],
-        );
-        const outbox = createEmailOutboxStateApi(context);
-        const emails = await outbox.findItems({
-          toAddress: fixture.actor.email,
-          subject: "Your data export is ready",
-        });
-        if (emails.length > 0) {
-          await outbox.deleteItems(
-            emails.map((email) => {
-              return email.id;
-            }),
-          );
-        }
-      });
+      registerExportJobCleanup(fixture.actor, started.body.jobId);
       await flushWaitUntilForTest();
       await accept(
         worker().action({ body: { ...workerRequest, action: "make-due" } }),
