@@ -1,6 +1,5 @@
 import { initContract } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
-  CHAT_THREAD_SNAPSHOT_R2_HEADER,
   CLIENT_FORCE_UPGRADE_STATUS,
   CHAT_EVENT_SCHEMA_VERSION_HEADER,
   CLIENT_PRODUCT_HEADER,
@@ -1030,7 +1029,7 @@ describe("createApp", () => {
           origin: "https://app.okou.ai",
           "access-control-request-method": "GET",
           "access-control-request-headers":
-            "authorization,x-client-version,x-client-type,x-client-product,x-client-session-id,x-client-request-id,x-chat-thread-snapshot-r2,x-chat-event-schema-version",
+            "authorization,x-client-version,x-client-type,x-client-product,x-client-session-id,x-client-request-id,x-chat-event-schema-version",
         },
       });
 
@@ -1050,7 +1049,6 @@ describe("createApp", () => {
       expect(allowHeaders).toContain("X-Client-Product");
       expect(allowHeaders).toContain("X-Client-Session-Id");
       expect(allowHeaders).toContain("X-Client-Request-Id");
-      expect(allowHeaders).toContain(CHAT_THREAD_SNAPSHOT_R2_HEADER);
       expect(allowHeaders).toContain(CHAT_EVENT_SCHEMA_VERSION_HEADER);
       expect(
         response.headers.get("access-control-expose-headers") ?? "",

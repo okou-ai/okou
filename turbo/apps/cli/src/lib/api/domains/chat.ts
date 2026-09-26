@@ -122,26 +122,20 @@ export async function getChatThreadSnapshot(): Promise<ChatThreadSnapshot> {
   const client = initClient(chatThreadsContract, config);
   const result = await client.snapshot();
   if (result.status === 200) {
-    if ("url" in result.body) {
-      const response = await fetch(result.body.url);
-      if (!response.ok) {
-        throw new Error(
-          `Failed to download chat thread snapshot: ${response.status.toString()}`,
-        );
-      }
-      const archive = chatThreadSnapshotArchiveSchema.parse(
-        await response.json(),
-      );
-      return {
-        chatThreads: archive.chatThreads,
-        latestEventId: result.body.latestEventId,
-        latestSeqId: result.body.latestSeqId,
-      };
+    if ("chatThreads" in result.body) {
+      return result.body;
     }
-    // Rollback-window APIs may still return an inline snapshot. The current
-    // API returns this shape only for a scope without a snapshot row.
+    const response = await fetch(result.body.url);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to download chat thread snapshot: ${response.status.toString()}`,
+      );
+    }
+    const archive = chatThreadSnapshotArchiveSchema.parse(
+      await response.json(),
+    );
     return {
-      chatThreads: result.body.chatThreads,
+      chatThreads: archive.chatThreads,
       latestEventId: result.body.latestEventId,
       latestSeqId: result.body.latestSeqId,
     };

@@ -7,6 +7,7 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 
 import {
+  mockChatThreadSnapshotResponse,
   chatEventRowsResponse,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
@@ -111,29 +112,32 @@ export function createMarkdownChatFixture(
         },
       ]);
       context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-        return respond(200, {
-          chatThreads: [
-            {
-              id: threadId,
-              agentId: MARKDOWN_AGENT_ID,
-              title: "Rich content",
-              sortAt: CREATED_AT,
-              createdAt: CREATED_AT,
-              updatedAt: CREATED_AT,
-              pinnedAt: null,
-              archived: false,
-              renamedAt: null,
-              selectedModel: "claude-sonnet-5",
-              serviceTier: null,
-              computerUseHostId: null,
-              cloudBrowserEnabled: false,
-              selectedVideoModel: null,
-              selectedImageModel: null,
-            },
-          ],
-          latestEventId: null,
-          latestSeqId: null,
-        });
+        return respond(
+          200,
+          mockChatThreadSnapshotResponse(context, {
+            chatThreads: [
+              {
+                id: threadId,
+                agentId: MARKDOWN_AGENT_ID,
+                title: "Rich content",
+                sortAt: CREATED_AT,
+                createdAt: CREATED_AT,
+                updatedAt: CREATED_AT,
+                pinnedAt: null,
+                archived: false,
+                renamedAt: null,
+                selectedModel: "claude-sonnet-5",
+                serviceTier: null,
+                computerUseHostId: null,
+                cloudBrowserEnabled: false,
+                selectedVideoModel: null,
+                selectedImageModel: null,
+              },
+            ],
+            latestEventId: null,
+            latestSeqId: null,
+          }),
+        );
       });
       context.mocks.api(chatThreadsContract.events, ({ respond }) => {
         return respond(200, { events: [], hasMore: false });

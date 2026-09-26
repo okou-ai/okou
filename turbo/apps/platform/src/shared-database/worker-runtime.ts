@@ -1046,8 +1046,6 @@ export class SharedDatabaseWorkerRuntime {
       throw new SharedDatabaseHttpError(snapshot.status);
     }
     if ("chatThreads" in snapshot.body) {
-      // A rollback-window API can still return an inline snapshot. The current
-      // API returns this shape only for a scope without a snapshot row.
       return snapshot.body;
     }
     const response = await fetchResource(snapshot.body.url, {}, signal);

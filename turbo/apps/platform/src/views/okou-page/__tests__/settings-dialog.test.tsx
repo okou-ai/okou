@@ -16,7 +16,10 @@ import {
   startPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { OKOU_LOCALE_COOKIE_NAME } from "../../../i18n/locale-fallback.ts";
 
 const context = testContext();
@@ -454,29 +457,32 @@ async function setupSnapshotMeasurement() {
       snapshotRequested.resolve();
     }
     await releaseSnapshot.promise;
-    return respond(200, {
-      chatThreads: ["Snapshot 文 😀", "Second thread", "Third thread"].map(
-        (title) => {
-          return {
-            id: crypto.randomUUID(),
-            agentId,
-            title,
-            sortAt: "2026-09-05T00:00:00Z",
-            createdAt: "2026-09-05T00:00:00Z",
-            updatedAt: "2026-09-05T00:00:00Z",
-            pinnedAt: null,
-            archived: false,
-            renamedAt: null,
-            selectedModel: null,
-            serviceTier: null,
-            computerUseHostId: null,
-            selectedVideoModel: null,
-          };
-        },
-      ),
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: ["Snapshot 文 😀", "Second thread", "Third thread"].map(
+          (title) => {
+            return {
+              id: crypto.randomUUID(),
+              agentId,
+              title,
+              sortAt: "2026-09-05T00:00:00Z",
+              createdAt: "2026-09-05T00:00:00Z",
+              updatedAt: "2026-09-05T00:00:00Z",
+              pinnedAt: null,
+              archived: false,
+              renamedAt: null,
+              selectedModel: null,
+              serviceTier: null,
+              computerUseHostId: null,
+              selectedVideoModel: null,
+            };
+          },
+        ),
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

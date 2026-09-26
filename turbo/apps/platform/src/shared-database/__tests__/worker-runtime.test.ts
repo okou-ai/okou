@@ -16,6 +16,7 @@ import { createAuthedContractClient } from "../../signals/api-client-base.ts";
 import type { ApiClientFactory } from "../../signals/api-client.ts";
 import { CHAT_IDB_VERSION } from "../../signals/external/chat-idb-schema.ts";
 import {
+  mockChatThreadSnapshotResponse,
   chatEventRowsResponse,
   testContext,
 } from "../../signals/__tests__/test-helpers.ts";
@@ -578,13 +579,16 @@ test("Rebuild chat data after its saved cursor expires", async () => {
     let returnExpiry = false;
     context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
       const current = snapshotVersion === 1;
-      return respond(200, {
-        chatThreads: [
-          snapshotThread(current ? "old snapshot" : "new snapshot"),
-        ],
-        latestEventId: crypto.randomUUID(),
-        latestSeqId: current ? 1 : 10,
-      });
+      return respond(
+        200,
+        mockChatThreadSnapshotResponse(context, {
+          chatThreads: [
+            snapshotThread(current ? "old snapshot" : "new snapshot"),
+          ],
+          latestEventId: crypto.randomUUID(),
+          latestSeqId: current ? 1 : 10,
+        }),
+      );
     });
     context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
       if (returnExpiry && query.sinceSeqId === oldEvent.seqId) {
@@ -768,7 +772,7 @@ test("Serve remote chat data without Sentry reports when IndexedDB write transac
     return respond(200, chatEventRowsResponse([remoteRow], query));
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, snapshot);
+    return respond(200, mockChatThreadSnapshotResponse(context, snapshot));
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

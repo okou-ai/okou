@@ -22,7 +22,10 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 export const context = testContext();
 
@@ -240,7 +243,13 @@ export function mockChatThreadSnapshot(
 ): void {
   targetContext.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await remoteGate;
-    return respond(200, sidebarThreadSnapshot(threads()));
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(
+        targetContext,
+        sidebarThreadSnapshot(threads()),
+      ),
+    );
   });
   targetContext.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

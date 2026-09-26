@@ -1294,7 +1294,7 @@ export const chatThreadsContract = c.router({
     headers: authHeadersSchema,
     responses: {
       200: z.union([
-        // Every compacted snapshot lives in R2; capable clients download the
+        // Every compacted snapshot lives in R2; clients download the
         // archive from this short-lived URL.
         z.object({
           url: z.string().url(),
@@ -1302,13 +1302,11 @@ export const chatThreadsContract = c.router({
           latestEventId: chatThreadEventIdSchema.nullable(),
           latestSeqId: z.number().int().positive().nullable(),
         }),
-        // A scope without a snapshot row returns an empty inline response.
-        // Keep the broader inline variant while rollback-window APIs can still
-        // return non-empty inline data to new App and CLI clients.
+        // A scope without a snapshot row returns an empty response.
         z.object({
-          chatThreads: z.array(chatThreadSnapshotProjectionSchema),
-          latestEventId: chatThreadEventIdSchema.nullable(),
-          latestSeqId: z.number().int().positive().nullable(),
+          chatThreads: z.tuple([]),
+          latestEventId: z.null(),
+          latestSeqId: z.null(),
         }),
       ]),
       401: apiErrorSchema,

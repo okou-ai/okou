@@ -20,6 +20,7 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { expect, vi } from "vitest";
 import {
+  mockChatThreadSnapshotResponse,
   testContext,
   chatEventRowsResponse,
 } from "../../../signals/__tests__/test-helpers.ts";
@@ -285,28 +286,31 @@ export function mockThread(options?: {
     });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [
-        {
-          id: THREAD_ID,
-          agentId: AGENT_ID,
-          title: "My thread",
-          sortAt: "2026-03-10T00:00:00Z",
-          createdAt: "2026-03-10T00:00:00Z",
-          updatedAt: "2026-03-10T00:00:00Z",
-          pinnedAt: null,
-          archived: false,
-          renamedAt: null,
-          selectedModel: options?.selectedModel ?? null,
-          serviceTier: null,
-          computerUseHostId: null,
-          selectedVideoModel: options?.selectedVideoModel ?? null,
-          selectedImageModel: options?.selectedImageModel ?? null,
-        },
-      ],
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [
+          {
+            id: THREAD_ID,
+            agentId: AGENT_ID,
+            title: "My thread",
+            sortAt: "2026-03-10T00:00:00Z",
+            createdAt: "2026-03-10T00:00:00Z",
+            updatedAt: "2026-03-10T00:00:00Z",
+            pinnedAt: null,
+            archived: false,
+            renamedAt: null,
+            selectedModel: options?.selectedModel ?? null,
+            serviceTier: null,
+            computerUseHostId: null,
+            selectedVideoModel: options?.selectedVideoModel ?? null,
+            selectedImageModel: options?.selectedImageModel ?? null,
+          },
+        ],
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

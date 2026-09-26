@@ -17,6 +17,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
+  mockChatThreadSnapshotResponse,
   testContext,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
@@ -116,29 +117,32 @@ function installWorkflowQueueFixture(
     });
   });
   testContextValue.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [
-        {
-          id: threadId,
-          agentId: AGENT_ID,
-          title: "Workflow queue",
-          sortAt: "2026-08-01T00:00:00.000Z",
-          createdAt: "2026-08-01T00:00:00.000Z",
-          updatedAt: "2026-08-01T00:00:00.000Z",
-          pinnedAt: null,
-          archived: false,
-          renamedAt: null,
-          selectedModel: "claude-sonnet-5",
-          serviceTier: null,
-          computerUseHostId: null,
-          cloudBrowserEnabled: false,
-          selectedVideoModel: null,
-          selectedImageModel: null,
-        },
-      ],
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(testContextValue, {
+        chatThreads: [
+          {
+            id: threadId,
+            agentId: AGENT_ID,
+            title: "Workflow queue",
+            sortAt: "2026-08-01T00:00:00.000Z",
+            createdAt: "2026-08-01T00:00:00.000Z",
+            updatedAt: "2026-08-01T00:00:00.000Z",
+            pinnedAt: null,
+            archived: false,
+            renamedAt: null,
+            selectedModel: "claude-sonnet-5",
+            serviceTier: null,
+            computerUseHostId: null,
+            cloudBrowserEnabled: false,
+            selectedVideoModel: null,
+            selectedImageModel: null,
+          },
+        ],
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   testContextValue.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

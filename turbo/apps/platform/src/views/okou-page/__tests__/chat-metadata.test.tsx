@@ -16,7 +16,10 @@ import {
   startPage,
   type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const FIRST_THREAD_ID = "b0000000-0000-4000-a000-000000000101";
@@ -202,11 +205,14 @@ test("Late thread details do not replace the conversation the user chose", async
   configureChatPrerequisites();
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await availableThreadList.promise;
-    return respond(200, {
-      chatThreads: [snapshotThread(SECOND_THREAD_ID, "Chosen conversation")],
-      latestEventId: SNAPSHOT_EVENT_ID,
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [snapshotThread(SECOND_THREAD_ID, "Chosen conversation")],
+        latestEventId: SNAPSHOT_EVENT_ID,
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -263,11 +269,14 @@ test("A newly available thread appears after a thread-list event", async () => {
 
   configureChatPrerequisites();
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [snapshotThread(FIRST_THREAD_ID, "Original online chat")],
-      latestEventId: SNAPSHOT_EVENT_ID,
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [snapshotThread(FIRST_THREAD_ID, "Original online chat")],
+        latestEventId: SNAPSHOT_EVENT_ID,
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
     return respond(200, {
@@ -370,13 +379,16 @@ test("Metadata opens a cold conversation while canonical synchronization continu
     async ({ request, respond }) => {
       snapshotRequested.resolve(request.signal);
       await snapshot.promise;
-      return respond(200, {
-        chatThreads: [
-          snapshotThread(FIRST_THREAD_ID, "Canonical conversation"),
-        ],
-        latestEventId: SNAPSHOT_EVENT_ID,
-        latestSeqId: 1,
-      });
+      return respond(
+        200,
+        mockChatThreadSnapshotResponse(context, {
+          chatThreads: [
+            snapshotThread(FIRST_THREAD_ID, "Canonical conversation"),
+          ],
+          latestEventId: SNAPSHOT_EVENT_ID,
+          latestSeqId: 1,
+        }),
+      );
     },
   );
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
@@ -405,11 +417,14 @@ test("Canonical synchronization wins and cancels the losing metadata request", a
   const metadata = context.mocks.deferred<void>();
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await snapshot.promise;
-    return respond(200, {
-      chatThreads: [snapshotThread(FIRST_THREAD_ID, "Stream conversation")],
-      latestEventId: SNAPSHOT_EVENT_ID,
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [snapshotThread(FIRST_THREAD_ID, "Stream conversation")],
+        latestEventId: SNAPSHOT_EVENT_ID,
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(
     chatThreadMetadataContract.get,
@@ -442,14 +457,17 @@ test("Unavailable metadata still waits for the canonical conversation", async ()
   const metadataRequested = context.mocks.deferred<void>();
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     await snapshot.promise;
-    return respond(200, {
-      chatThreads: [
-        snapshotThread(FIRST_THREAD_ID, "Recovered conversation"),
-        snapshotThread(SECOND_THREAD_ID, "Available sidebar conversation"),
-      ],
-      latestEventId: SNAPSHOT_EVENT_ID,
-      latestSeqId: 1,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [
+          snapshotThread(FIRST_THREAD_ID, "Recovered conversation"),
+          snapshotThread(SECOND_THREAD_ID, "Available sidebar conversation"),
+        ],
+        latestEventId: SNAPSHOT_EVENT_ID,
+        latestSeqId: 1,
+      }),
+    );
   });
   context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
     if (params.id === SECOND_THREAD_ID) {

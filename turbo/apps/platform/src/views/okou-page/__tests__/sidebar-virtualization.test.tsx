@@ -12,7 +12,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -35,29 +38,32 @@ function mockThreads(count: number): void {
     },
   ]);
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: Array.from({ length: count }, (_, index) => {
-        return {
-          id: threadId(index),
-          agentId: AGENT_ID,
-          title: `History ${index + 1}`,
-          sortAt: new Date(
-            Date.parse("2026-03-10T00:00:00Z") + (count - index) * 1000,
-          ).toISOString(),
-          createdAt: "2026-03-10T00:00:00Z",
-          updatedAt: "2026-03-10T00:00:00Z",
-          pinnedAt: null,
-          archived: false,
-          renamedAt: null,
-          selectedModel: null,
-          serviceTier: null,
-          computerUseHostId: null,
-          selectedVideoModel: null,
-        };
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: Array.from({ length: count }, (_, index) => {
+          return {
+            id: threadId(index),
+            agentId: AGENT_ID,
+            title: `History ${index + 1}`,
+            sortAt: new Date(
+              Date.parse("2026-03-10T00:00:00Z") + (count - index) * 1000,
+            ).toISOString(),
+            createdAt: "2026-03-10T00:00:00Z",
+            updatedAt: "2026-03-10T00:00:00Z",
+            pinnedAt: null,
+            archived: false,
+            renamedAt: null,
+            selectedModel: null,
+            serviceTier: null,
+            computerUseHostId: null,
+            selectedVideoModel: null,
+          };
+        }),
+        latestEventId: null,
+        latestSeqId: null,
       }),
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

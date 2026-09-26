@@ -62,6 +62,38 @@ export function chatEventRowsResponse(
   };
 }
 
+export function mockChatThreadSnapshotResponse(
+  context: TestContext,
+  snapshot: {
+    readonly chatThreads: readonly unknown[];
+    readonly latestEventId: string | null;
+    readonly latestSeqId: number | null;
+  },
+) {
+  if (
+    snapshot.chatThreads.length === 0 &&
+    snapshot.latestEventId === null &&
+    snapshot.latestSeqId === null
+  ) {
+    return {
+      chatThreads: [] as [],
+      latestEventId: null,
+      latestSeqId: null,
+    };
+  }
+
+  const url = `https://r2.example.com/chat-thread-snapshots/${crypto.randomUUID()}.json`;
+  context.mocks.http.get(url, () => {
+    return Response.json({ chatThreads: snapshot.chatThreads });
+  });
+  return {
+    url,
+    expiresInSeconds: 900,
+    latestEventId: snapshot.latestEventId,
+    latestSeqId: snapshot.latestSeqId,
+  };
+}
+
 export interface TestContext {
   readonly mocks: TestMocks;
   readonly resourceId: string;

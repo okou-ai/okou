@@ -10,6 +10,7 @@ import {
   chatThreadEventSchema,
   chatThreadArtifactGoogleDriveSyncSchema,
   chatThreadsContract,
+  chatThreadSnapshotArchiveSchema,
   chatEventSchema,
   generationTemplateRequestSchema,
   userMessageDocumentSchema,
@@ -231,15 +232,28 @@ describe("chat thread event sequence contract", () => {
       renamedAt: null,
       selectedVideoModel: null,
     };
-    const snapshotResponse = {
-      chatThreads: [snapshotThread],
-      latestEventId: null,
-      latestSeqId: null,
-    };
-
     expect(
-      chatThreadsContract.snapshot.responses[200].safeParse(snapshotResponse)
-        .success,
+      chatThreadSnapshotArchiveSchema.safeParse({
+        chatThreads: [snapshotThread],
+      }).success,
+    ).toBe(true);
+    expect(
+      chatThreadsContract.snapshot.responses[200].safeParse({
+        url: "https://r2.example.com/snapshot.json",
+        expiresInSeconds: 900,
+        latestEventId: null,
+        latestSeqId: null,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts an empty response when no snapshot row exists", () => {
+    expect(
+      chatThreadsContract.snapshot.responses[200].safeParse({
+        chatThreads: [],
+        latestEventId: null,
+        latestSeqId: null,
+      }).success,
     ).toBe(true);
   });
 });

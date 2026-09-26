@@ -15,6 +15,7 @@ import {
   type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
 import {
+  mockChatThreadSnapshotResponse,
   chatEventRowsResponse,
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
@@ -195,11 +196,14 @@ function mockThreadSnapshot(
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
     options.onRequest?.();
     await options.gate;
-    return respond(200, {
-      chatThreads: [...readThreads()],
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [...readThreads()],
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CHAT_THREAD_SNAPSHOT_R2_HEADER,
   CLIENT_FORCE_UPGRADE_STATUS,
   CLIENT_HEADER_NAMES,
   CLIENT_PRODUCT_HEADER,
@@ -46,7 +45,6 @@ describe("client header contract", () => {
       CLIENT_PRODUCT_HEADER,
       CLIENT_SESSION_ID_HEADER,
       CLIENT_REQUEST_ID_HEADER,
-      CHAT_THREAD_SNAPSHOT_R2_HEADER,
       CHAT_EVENT_SCHEMA_VERSION_HEADER,
     ]);
     expect(CLIENT_HEADER_NAMES).toStrictEqual([
@@ -55,7 +53,6 @@ describe("client header contract", () => {
       "X-Client-Product",
       "X-Client-Session-Id",
       "X-Client-Request-Id",
-      "X-Chat-Thread-Snapshot-R2",
       "X-Chat-Event-Schema-Version",
     ]);
   });
