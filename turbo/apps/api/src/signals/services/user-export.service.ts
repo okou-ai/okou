@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { command, computed, type Computed } from "ccstate";
 import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { enqueueBackgroundJob } from "./background-job.service";
@@ -15,6 +17,7 @@ import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { generatePresignedGetUrl } from "../external/s3";
 import { nowDate } from "../../lib/time";
+import { settle } from "../utils";
 import { buildFromAddress } from "./email-common.service";
 
 const RATE_LIMIT_MS = 24 * 60 * 60 * 1000;
@@ -38,6 +41,8 @@ type StartUserExportResult =
       readonly shouldExecute: boolean;
     }
   | { readonly kind: "rate_limited" };
+
+class UserExportCooldownError extends Error {}
 
 interface ExportRuntime {
   readonly db: Db;
@@ -206,88 +211,95 @@ export const startUserExport$ = command(
   ): Promise<StartUserExportResult> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    return await db.transaction(async (tx) => {
-      // Serialize admission and cooldown for this owner, not execution. This also
-      // covers a previous job completing while another POST is being admitted.
-      await tx.execute(
-        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`select pg_advisory_xact_lock(hashtextextended(${`user-export:${args.userId}`}, 0))`,
-      );
-      signal.throwIfAborted();
-      const [active] = await tx
-        .select({
-          id: exportJobs.id,
-          status: exportJobs.status,
-        })
-        .from(exportJobs)
-        .where(
-          and(
-            eq(exportJobs.userId, args.userId),
-            inArray(exportJobs.status, ["pending", "running"]),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (active) {
+    const result = await settle(
+      db.transaction(async (tx): Promise<StartUserExportResult> => {
+        // Keep the existing key until every serving writer handles active-index
+        // conflicts. Outgoing versions still INSERT after an unlocked active read.
+        await tx.execute(
+          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+          sql`select pg_advisory_xact_lock(hashtextextended(${`user-export:${args.userId}`}, 0))`,
+        );
+        signal.throwIfAborted();
+        const jobId = randomUUID();
+        // Claim before checking cooldown so a concurrently completed job cannot
+        // disappear between the check and admission. A no-op conflict update
+        // returns the locked active owner directly, without a second-read gap.
+        const [claimed] = await tx
+          .insert(exportJobs)
+          .values({
+            id: jobId,
+            userId: args.userId,
+            orgId: args.orgId,
+            status: "pending",
+            executionMode: "durable-v1",
+            createdAt: nowDate(),
+          })
+          .onConflictDoUpdate({
+            target: exportJobs.userId,
+            targetWhere: sql`${exportJobs.status} IN ('pending', 'running')`,
+            set: { id: sql`${exportJobs.id}` },
+          })
+          .returning({ id: exportJobs.id, status: exportJobs.status });
+        signal.throwIfAborted();
+        if (!claimed) {
+          throw new Error("Failed to claim export job");
+        }
+        if (claimed.id !== jobId) {
+          return {
+            kind: "accepted",
+            jobId: claimed.id,
+            status: activeExportJobStatus(claimed.status),
+            shouldExecute: false,
+          };
+        }
+        const [recent] = await tx
+          .select({ id: exportJobs.id })
+          .from(exportJobs)
+          .where(
+            and(
+              eq(exportJobs.userId, args.userId),
+              eq(exportJobs.status, "completed"),
+              gt(
+                exportJobs.completedAt,
+                new Date(nowDate().getTime() - RATE_LIMIT_MS),
+              ),
+            ),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (recent) {
+          // Roll back the claim; a rejected request must not leave an active job.
+          throw new UserExportCooldownError("Export cooldown has not expired");
+        }
+        await enqueueBackgroundJob(
+          tx,
+          {
+            id: jobId,
+            kind: "user-export",
+            handlerVersion: 1,
+            userId: args.userId,
+            orgId: args.orgId,
+            input: {},
+          },
+          signal,
+        );
+        signal.throwIfAborted();
         return {
           kind: "accepted",
-          jobId: active.id,
-          status: activeExportJobStatus(active.status),
-          shouldExecute: false,
-        };
-      }
-      const [recent] = await tx
-        .select({ id: exportJobs.id })
-        .from(exportJobs)
-        .where(
-          and(
-            eq(exportJobs.userId, args.userId),
-            eq(exportJobs.status, "completed"),
-            gt(
-              exportJobs.completedAt,
-              new Date(nowDate().getTime() - RATE_LIMIT_MS),
-            ),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (recent) {
-        return { kind: "rate_limited" };
-      }
-      const [created] = await tx
-        .insert(exportJobs)
-        .values({
-          userId: args.userId,
-          orgId: args.orgId,
+          jobId,
           status: "pending",
-          executionMode: "durable-v1",
-          createdAt: nowDate(),
-        })
-        .returning({ id: exportJobs.id });
-      signal.throwIfAborted();
-      if (!created) {
-        throw new Error("Failed to create export job");
-      }
-      await enqueueBackgroundJob(
-        tx,
-        {
-          id: created.id,
-          kind: "user-export",
-          handlerVersion: 1,
-          userId: args.userId,
-          orgId: args.orgId,
-          input: {},
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      return {
-        kind: "accepted",
-        jobId: created.id,
-        status: "pending",
-        shouldExecute: true,
-      };
-    });
+          shouldExecute: true,
+        };
+      }),
+      signal,
+    );
+    if (result.ok) {
+      return result.value;
+    }
+    if (result.error instanceof UserExportCooldownError) {
+      return { kind: "rate_limited" };
+    }
+    throw result.error;
   },
 );
 

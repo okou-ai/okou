@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  chatThreadByIdContract,
+  chatThreadMetadataContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+
 import { testGmailWatchRenewalContract } from "@okouai/api-contracts/contracts/test-gmail-watch-renewal";
 import { testGoogleCalendarWatchRenewalContract } from "@okouai/api-contracts/contracts/test-google-calendar-watch-renewal";
 import { testGoogleFormsWatchRenewalContract } from "@okouai/api-contracts/contracts/test-google-forms-watch-renewal";
@@ -48,6 +53,8 @@ import { cronRenewGoogleFormsWatchesRoutes } from "../cron-renew-google-forms-wa
 import { testGmailWatchRenewalRoutes } from "../test-gmail-watch-renewal";
 import { testGoogleCalendarWatchRenewalRoutes } from "../test-google-calendar-watch-renewal";
 import { testGoogleFormsWatchRenewalRoutes } from "../test-google-forms-watch-renewal";
+import { chatThreadDeleteRoutes } from "../chat-threads-delete";
+import { chatThreadGetRoutes } from "../chat-threads-get";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { webhooksGoogleCalendarRoutes } from "../webhooks-google-calendar";
@@ -917,61 +924,77 @@ describe("okou workflow automations", () => {
     expect(listedAutomation.webhookSecret).toBeUndefined();
   });
 
-  it("stores automation chat threads at the workflow-user level", async () => {
+  it("shares a destination across concurrent creates and rebinds after deletion", async () => {
     const { workflowId } = await setupFixture("team");
-    const seed = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: { kind: "event", eventType: "webhook-received" },
-      }),
-      [201],
-    );
-    if (!seed.body.chatThreadId) {
+    const createAutomation = () => {
+      return accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          params: { workflowId },
+          body: { kind: "event", eventType: "webhook-received" },
+        }),
+        [201],
+      );
+    };
+    const [first, second] = await Promise.all([
+      createAutomation(),
+      createAutomation(),
+    ]);
+    const threadId = first.body.chatThreadId;
+    if (!threadId) {
       throw new Error("Expected the event automation to bind a chat thread");
     }
-    const threadId = seed.body.chatThreadId;
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(),
-        params: { id: seed.body.id },
-      }),
-      [204],
-    );
-    const first = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: { schedule: { type: "loop", intervalSeconds: 60 } },
-      }),
-      [201],
-    );
-    const second = await accept(
-      automationsClient().create({
-        headers: authHeaders(),
-        params: { workflowId },
-        body: { schedule: { type: "loop", intervalSeconds: 120 } },
-      }),
-      [201],
-    );
-
-    // Both automations share the workflow-user thread, and both are listed on
-    // the workflow.
-    expect(first.body.chatThreadId).toBe(threadId);
     expect(second.body.chatThreadId).toBe(threadId);
     const listed = await accept(
-      automationsClient().list({
+      automationsClient().listForChatThread({
         headers: authHeaders(),
-        params: { workflowId },
+        params: { threadId },
       }),
       [200],
     );
-    expect(listed.body).toHaveLength(2);
     expect(
-      listed.body.map((automation) => {
-        return automation.chatThreadId;
-      }),
-    ).toStrictEqual([threadId, threadId]);
+      listed.body
+        .map((automation) => {
+          return automation.id;
+        })
+        .sort(),
+    ).toStrictEqual([first.body.id, second.body.id].sort());
+
+    await accept(
+      setupApp({ context, routes: chatThreadDeleteRoutes })(
+        chatThreadByIdContract,
+      ).delete({ headers: authHeaders(), params: { id: threadId } }),
+      [204],
+    );
+    for (const automationId of [first.body.id, second.body.id]) {
+      const stopped = await accept(
+        automationsClient().get({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200],
+      );
+      expect(stopped.body.enabled).toBeFalsy();
+      expect(stopped.body.chatThreadId).toBeNull();
+    }
+
+    const rebound = await createAutomation();
+    const reboundThreadId = rebound.body.chatThreadId;
+    if (!reboundThreadId) {
+      throw new Error("Expected a fresh destination after thread deletion");
+    }
+    expect(reboundThreadId).not.toBe(threadId);
+    const threads = setupApp({ context, routes: chatThreadGetRoutes })(
+      chatThreadMetadataContract,
+    );
+    await accept(
+      threads.get({ headers: authHeaders(), params: { id: threadId } }),
+      [404],
+    );
+    await accept(
+      threads.get({ headers: authHeaders(), params: { id: reboundThreadId } }),
+      [200],
+    );
   });
 
   it("creates and updates one-time schedules from local atTime and timezone", async () => {

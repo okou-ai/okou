@@ -217,6 +217,16 @@ test("continues the same export across bounded requests after a staged write los
   ).toBeNull();
   await work(user, started.body.jobId, "run", 200);
   const zip = await completedZip(user, started.body.jobId, storage);
+  await Promise.all([
+    api.requestPostUserExport(user, [429]),
+    api.requestPostUserExport(user, [429]),
+  ]);
+  const afterCooldownRejection = await api.requestGetUserExport(user, [200]);
+  expect(afterCooldownRejection.body).toMatchObject({
+    job: { id: started.body.jobId, status: "completed" },
+    canExport: false,
+    nextExportAt: expect.any(String),
+  });
   expect(
     JSON.parse(readExportText(zip, `chat-threads/${thread.id}.json`)),
   ).toMatchObject({

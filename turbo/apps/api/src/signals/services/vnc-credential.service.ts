@@ -11,6 +11,7 @@ import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import {
   isVncProfileCompatible,
@@ -19,8 +20,8 @@ import {
   type VncTransaction,
 } from "./vnc-configuration.utils";
 import {
-  checkVncCreationId,
   inspectVncCreationId,
+  resolveVncCreationConflict,
 } from "./vnc-creation.service";
 import { enterVncWrite, type VncOwner } from "./vnc-owner-lifecycle.service";
 
@@ -215,30 +216,42 @@ export async function createVncCredential(args: {
     return { ok: true, value: undefined };
   }
   const prepared = await prepareCredential(args.body, args.featureContext);
-  return args.db.transaction(async (tx) => {
-    await enterVncWrite(tx, args.owner);
-    const owner = args.owner;
-    const creation = await checkVncCreationId(
-      tx,
-      owner,
+  const transaction = await settle(
+    args.db.transaction(async (tx) => {
+      await enterVncWrite(tx, args.owner);
+      const owner = args.owner;
+      const creation = await inspectVncCreationId(
+        tx,
+        owner,
+        vncCredentials,
+        args.id,
+      );
+      if (!creation.ok) {
+        return creation;
+      }
+      if (!creation.value) {
+        return { ok: true as const, value: undefined };
+      }
+      const [created] = await tx
+        .insert(vncCredentials)
+        .values({ ...owner, ...prepared, id: args.id })
+        .returning(metadata);
+      if (!created) {
+        throw new Error("VNC credential insert returned no row");
+      }
+      return { ok: true as const, value: response(created, []) };
+    }),
+  );
+  if (!transaction.ok) {
+    return resolveVncCreationConflict(
+      args.db,
+      args.owner,
       vncCredentials,
       args.id,
+      transaction.error,
     );
-    if (!creation.ok) {
-      return creation;
-    }
-    if (!creation.value) {
-      return { ok: true as const, value: undefined };
-    }
-    const [created] = await tx
-      .insert(vncCredentials)
-      .values({ ...owner, ...prepared, id: args.id })
-      .returning(metadata);
-    if (!created) {
-      throw new Error("VNC credential insert returned no row");
-    }
-    return { ok: true as const, value: response(created, []) };
-  });
+  }
+  return transaction.value;
 }
 
 export async function updateVncCredential(args: {

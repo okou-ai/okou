@@ -3,9 +3,9 @@ import type { Db } from "../external/db";
 
 /**
  * Final admission for an official workflow run. The org lock is the
- * lock-order fence against official workflow reconciliation, which locks the
- * org plan row before workflow and automation rows under this key, while this
- * admission locks workflow and automation rows before the plan row.
+ * rollout fence for outgoing admission writers that lock Workflow/Automation
+ * rows before the plan row. New admission uses plan-before-Workflow order,
+ * matching reconciliation. Retire this key after old writers have drained.
  */
 export async function lockPreparedLaunchAdmission(
   db: Pick<Db, "execute">,

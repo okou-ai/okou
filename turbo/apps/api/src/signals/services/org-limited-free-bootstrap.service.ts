@@ -19,7 +19,6 @@ import {
   writeAgentInstructionsStorageInTransaction$,
 } from "./agent-instructions-storage.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
-import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
   grantOnboardingCredits,
   LIMITED_FREE_ONBOARDING_CREDITS,
@@ -161,7 +160,6 @@ async function finalizeBootstrap(
     return { bootstrapped: false, agentId: existingAgentId };
   }
 
-  await lockCanonicalAgentMutation(tx, args.agentId);
   const createdAt = nowDate();
   await tx
     .insert(agents)

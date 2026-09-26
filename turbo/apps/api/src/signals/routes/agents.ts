@@ -37,10 +37,7 @@ import {
   visibleJoinedAgentCondition,
 } from "../services/agent-data.service";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
-import {
-  lockCanonicalAgentMutation,
-  lockCanonicalAgentPublicLimit,
-} from "../services/agent-mutation-lock.service";
+import { lockCanonicalAgentPublicLimit } from "../services/agent-mutation-lock.service";
 import { buildAgentIdentityPrompt } from "../services/agent-identity-prompt.service";
 import {
   invalidatePiStableContext,
@@ -367,11 +364,10 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
 
     const transactionResult = await writeDb.transaction(async (tx) => {
-      await lockCanonicalAgentMutation(tx, agentId);
-      await lockCanonicalAgentPublicLimit(tx, auth.orgId);
-      signal.throwIfAborted();
-
       if (visibility === "public") {
+        await lockCanonicalAgentPublicLimit(tx, auth.orgId);
+        signal.throwIfAborted();
+
         const [publicAgentCount] = await tx
           .select({ value: count() })
           .from(agents)
@@ -536,8 +532,9 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const writeDb = set(writeDb$);
   const result = await writeDb.transaction(async (tx) => {
-    await lockCanonicalAgentMutation(tx, params.id);
-    await lockCanonicalAgentPublicLimit(tx, auth.orgId);
+    if (body.data.visibility === "public") {
+      await lockCanonicalAgentPublicLimit(tx, auth.orgId);
+    }
 
     await tx
       .select({ id: agents.id })
@@ -629,8 +626,9 @@ const updateAgentMetadataInner$ = command(
 
     const writeDb = set(writeDb$);
     const result = await writeDb.transaction(async (tx) => {
-      await lockCanonicalAgentMutation(tx, params.id);
-      await lockCanonicalAgentPublicLimit(tx, auth.orgId);
+      if (body.data.visibility === "public") {
+        await lockCanonicalAgentPublicLimit(tx, auth.orgId);
+      }
 
       await tx
         .select({ id: agents.id })

@@ -52,7 +52,6 @@ import {
   piStableContextInputDigest,
   piStableContextVariantDigest,
 } from "./pi-stable-context-digest.service";
-import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { PI_STABLE_CONTEXT_AGENT_SUBJECT } from "./pi-stable-context-generation.service";
 import { recapturePiStableContextInput } from "./pi-stable-context-recapture.service";
 
@@ -194,7 +193,6 @@ async function lockStableContextOwnerAuthority(
   if (!executingMember) {
     return false;
   }
-  await lockCanonicalAgentMutation(tx, owner.agentId);
   const [agent] = await tx
     .select({ id: agents.id })
     .from(agents)

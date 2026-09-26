@@ -16,7 +16,6 @@ import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import type { Db, ReadonlyDb } from "../external/db";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
-import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
   loadAgentConnectorScope,
   type AgentConnectorScope,
@@ -183,9 +182,30 @@ async function loadLockedOwnedChatThread(
   if (!observed) {
     return undefined;
   }
-  await lockCanonicalAgentMutation(tx, observed.agentId);
-  const current = await loadOwnedChatThread(tx, args);
-  return current?.agentId === observed.agentId ? current : undefined;
+  // A selection and its generation must not outlive either parent. Shared
+  // parent protection still permits unrelated selections on the same Agent.
+  const [agent] = await tx
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.id, observed.agentId), eq(agents.orgId, args.orgId)))
+    .for("key share")
+    .limit(1);
+  if (!agent) {
+    return undefined;
+  }
+  const [thread] = await tx
+    .select({ agentId: chatThreads.agentId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, args.chatThreadId),
+        eq(chatThreads.userId, args.userId),
+        eq(chatThreads.agentId, agent.id),
+      ),
+    )
+    .for("key share")
+    .limit(1);
+  return thread?.agentId ? { agentId: thread.agentId } : undefined;
 }
 
 async function loadSelectionRows(

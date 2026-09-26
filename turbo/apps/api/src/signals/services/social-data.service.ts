@@ -11,6 +11,7 @@ import {
   type SocialDataRequest,
 } from "@okouai/api-contracts/contracts/social-data";
 import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { socialDataJobs } from "@okouai/db/schema/social-data-job";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { command } from "ccstate";
@@ -30,7 +31,7 @@ import { settle, settleIncludingAbort } from "../utils";
 import { completeProcessedOrgUsage$ } from "./credit-usage.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
-  checkManagedCreditsInDb,
+  checkManagedCreditsSnapshotInDb,
   recordManagedUsageInTransaction,
 } from "./managed-usage.service";
 import {
@@ -47,6 +48,7 @@ import {
   type SocialDataProviderPlan,
 } from "./social-data-provider-catalog";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
+import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
 
 export const SOCIAL_DATA_RECONCILIATION_TIMEOUT_MS = 240_000;
 const CLAIM_MS = 180_000;
@@ -292,7 +294,7 @@ async function checkBudget(
     readonly resolution: UsagePricingResolution;
   },
   signal: AbortSignal,
-): Promise<ErrorResponse | null> {
+): Promise<ErrorResponse | "allowance_refresh_required" | null> {
   if (args.maxCredits < args.estimatedCredits) {
     return errorResponse(
       402,
@@ -326,7 +328,7 @@ async function checkBudget(
   if (args.maxCredits === 0) {
     return null;
   }
-  return await checkManagedCreditsInDb(
+  return await checkManagedCreditsSnapshotInDb(
     tx,
     {
       orgId: args.auth.orgId,
@@ -357,12 +359,16 @@ async function admitJob(
     readonly resolution: UsagePricingResolution;
   },
   signal: AbortSignal,
-): Promise<CreatedResponse | ErrorResponse> {
-  await tx.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`social-data:${args.auth.orgId}`}, 0))`,
-  );
+): Promise<CreatedResponse | ErrorResponse | "allowance_refresh_required"> {
+  const [owner] = await tx
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, args.auth.orgId))
+    .for("no key update");
   signal.throwIfAborted();
+  if (!owner) {
+    return errorResponse(404, "NOT_FOUND", "Organization not found.");
+  }
   const [duplicate] = await tx
     .select()
     .from(socialDataJobs)
@@ -442,9 +448,26 @@ export const createSocialDataJob$ = command(
         const estimate = await inspectSocialDataProviderPlan(plan, signal);
         signal.throwIfAborted();
         const resolution = get(usagePricingResolution$);
-        return await db.transaction((tx) => {
+        const admitted = await db.transaction((tx) => {
           return admitJob(tx, { ...args, plan, estimate, resolution }, signal);
         });
+        if (admitted !== "allowance_refresh_required") {
+          return admitted;
+        }
+        // The owner-row transaction has ended. Allowance refresh takes the
+        // credit lock and can call Stripe, so neither belongs under that row.
+        await resolveUsageAllowanceAvailability(db, args.auth.orgId);
+        signal.throwIfAborted();
+        const refreshed = await db.transaction((tx) => {
+          return admitJob(tx, { ...args, plan, estimate, resolution }, signal);
+        });
+        return refreshed === "allowance_refresh_required"
+          ? errorResponse(
+              402,
+              "INSUFFICIENT_CREDITS",
+              "Insufficient credits. Please add credits to continue.",
+            )
+          : refreshed;
       })(),
       signal,
     );

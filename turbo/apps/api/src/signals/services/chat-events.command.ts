@@ -98,10 +98,6 @@ import {
 } from "./chat-thread-model.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
-import {
-  ORDINARY_CHAT_THREAD_PROVENANCE,
-  recordOfficialWorkflowThreadProvenance,
-} from "./morning-brief-thread-provenance.service";
 import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
@@ -1625,10 +1621,6 @@ async function createChatThread(
           userId: args.userId,
           agentId: args.agentId,
           title: null,
-          // Only this successful INSERT may classify the thread. A conflicting
-          // client id resolves to the existing row below and keeps whatever
-          // classification that row already carries.
-          provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
           modelProviderId: pinColumns.modelProviderId,
           modelProviderType: pinColumns.modelProviderType,
           modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
@@ -1683,7 +1675,6 @@ async function createChatThread(
         userId: args.userId,
         agentId: args.agentId,
         title: null,
-        provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
         modelProviderId: pinColumns.modelProviderId,
         modelProviderType: pinColumns.modelProviderType,
         modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
@@ -2034,29 +2025,6 @@ function assertOfficialSourceClaim(
   }
 }
 
-/**
- * Record what a server-owned Official Workflow claim means for this thread.
- *
- * The claim is the authority for what the input is, so classifying it here
- * commits the thread's Morning Brief exclusion in the same transaction as the
- * input that carries the brief. A duplicate client event id inserts nothing and
- * therefore classifies nothing.
- */
-async function recordOfficialSourceThreadProvenance(
-  tx: ChatThreadEventTransaction,
-  params: AppendUnassociatedUserMessageParams,
-): Promise<void> {
-  if (params.requiredOfficialWorkflowIds === undefined) {
-    return;
-  }
-  await recordOfficialWorkflowThreadProvenance(tx, {
-    chatThreadId: params.threadId,
-    userId: params.userId,
-    orgId: params.orgId,
-    workflowIds: params.requiredOfficialWorkflowIds,
-  });
-}
-
 async function resolveExistingMcpSubmission(
   db: Pick<Db, "select">,
   params: AppendUnassociatedUserMessageParams,
@@ -2144,7 +2112,6 @@ async function appendUnassociatedUserMessageTransaction(
     },
   );
   if (inserted) {
-    await recordOfficialSourceThreadProvenance(tx, params);
     if (params.getStartedWorkflowId) {
       await recordGetStartedWorkflow(tx, {
         orgId: params.orgId,
@@ -2246,11 +2213,6 @@ async function appendUnassociatedUserMessage(
     orgId: params.orgId,
     files: params.attachFileMetadata ?? [],
   });
-  if (params.requiredOfficialWorkflowIds !== undefined) {
-    await db.transaction((tx) => {
-      return recordOfficialSourceThreadProvenance(tx, params);
-    });
-  }
   const existing = await resolveExistingMcpSubmission(db, params);
   if (existing) {
     return existing;

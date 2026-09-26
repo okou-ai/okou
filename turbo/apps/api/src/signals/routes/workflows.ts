@@ -101,11 +101,9 @@ import {
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
 import type { Tx } from "../../lib/db-types";
+import { OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE } from "../services/official-workflow-constants";
 import {
-  OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK,
-  OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE,
-} from "../services/official-workflow-constants";
-import {
+  lockAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
 } from "../services/official-workflow-catalog-read.service";
@@ -115,7 +113,6 @@ import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
-import { lockCanonicalAgentMutation } from "../services/agent-mutation-lock.service";
 import {
   invalidatePiStableContext,
   lockPiStableContextGenerationScopes,
@@ -1296,10 +1293,7 @@ async function lockWorkflowCopyInputs(
   prepared?: WorkflowCopySource,
 ): Promise<boolean> {
   if (args.sourceWorkflow.officialDefinitionName !== null) {
-    await tx.execute(
-      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-      sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-    );
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     await tx.execute(
       // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
       sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
@@ -2045,7 +2039,20 @@ async function applyVisibilityUpdate(
   },
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await lockCanonicalAgentMutation(tx, args.workflow.agentId);
+    const [agent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.id, args.workflow.agentId),
+          eq(agents.orgId, args.workflow.orgId),
+        ),
+      )
+      .for("key share")
+      .limit(1);
+    if (!agent) {
+      return false;
+    }
     const workflowCondition = and(
       eq(workflows.id, args.workflow.id),
       eq(workflows.orgId, args.workflow.orgId),

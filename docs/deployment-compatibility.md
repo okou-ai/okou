@@ -16,6 +16,172 @@ of every chat search projection tick; after this migration that call fails with
 the extension. `.github/scripts/resolve-production-rollback-target.sh` enforces
 the floor.
 
+## Resource creation advisory lock retirement (2026-09-26)
+
+VNC host and credential creation now use their existing primary keys to
+arbitrate duplicate IDs. A losing insert rolls back the whole transaction,
+including any inline credential, before resolving an owned replay or an ID
+conflict. Only the requested table's primary-key violation is handled; unrelated
+constraint and database failures still propagate. Existing-resource VNC replays
+still skip KMS. The owner lifecycle locks and first-host Agent grants remain.
+
+Banking Connect creates sessions under a short `FOR NO KEY UPDATE` lock on the
+existing connection row, retaining the partial unique index for one pending
+session. The transaction rechecks ownership and live state, supersedes the old
+session, and inserts the replacement. Provider requests remain outside it. This
+lock mode is compatible with the foreign-key checks used by account syncing.
+
+`VncAccess` and `Banking` are both registered as default-disabled, non-GA
+features. Their advisory locks retire in the same release under the
+[pre-GA policy](fallback.md#2-features-behind-a-feature-switch-need-no-fallback).
+Mixed old/new API writers can make an old request fail with a unique-key error
+during the cutover; the existing constraints still prevent duplicate resources
+or pending sessions. This is the bounded pre-GA cutover exception, not a claim
+that the old and new locking protocols coordinate with each other. The API
+contracts and stored shapes do not change, and no migration is required.
+
+SSH and Cloudflare Access are GA. Their creation paths first gain the same
+exact-primary-key conflict recovery while retaining the existing resource-ID
+advisory lock. Removing it immediately could expose an unhandled unique-key
+failure in an older concurrent writer, including two admins creating the same
+organization-scoped Access configuration. Remove this one remaining acquisition
+only after the preparation version covers every serving writer and older
+transactions have drained; supported rollback targets must also retain this
+conflict recovery. That follow-up keeps the owner lock and removes the
+resource-ID lock, its exemption, and this rollout condition together.
+
+## Resource and lifecycle synchronization cleanup (2026-09-26)
+
+Connector refresh failures now use the existing single conditional UPDATE,
+matching the connector identity, owner, auth method, and exact state revision.
+It cannot mark a subsequently reconnected account as needing reconnection.
+Other connector-state writers keep their current coordination.
+
+Migration `1266_feishu_installation_org_platform_unique` adds the missing
+unique key on Feishu/Lark `(org_id, platform)`. Configuration uses this key and
+the existing global `app_id` key, with exact owner/platform/app predicates on
+updates. The migration runs before the new API and fails on historical duplicate
+installations instead of choosing or deleting a bot. Feishu and Lark remain
+non-GA, so an old concurrent create may receive a unique violation during
+cutover under the pre-GA policy. No compatibility fallback is added.
+
+The canonical Agent mutation advisory key is removed. Its Stage 6 database
+bridge was dropped by #28880 on August 24. Agent edits/deletion retain their
+existing row protection, and child mutations check parent existence with
+compatible KEY SHARE reads before updating their own resources and generations.
+The separate public-Agent quota key remains. No stored shape or API contract
+changes. An outgoing connector-selection writer can still leave an inert
+non-FK generation or publication row after deletion; Agent foreign keys and
+builder existence checks prevent that metadata from restoring a resource or
+authorizing a run. Conflicting outgoing writers retain the existing
+transaction rollback and deletion-conflict responses.
+
+Browser profile creation prepares the external profile outside a transaction,
+then uses the thread's unique profile key to select the owner. Unused external
+profiles are reclaimed. Cleanup checks the target profile and exact session
+identity/version before removing state. **The existing profile advisory key
+remains for the preparation release:** an older cleanup reads profile A and
+then deletes sessions by thread, so it can otherwise delete a replacement B.
+Old and new callers still share the key around their database mutations; new
+provider creation no longer holds it during the network request.
+
+The retired Native Morning Brief collector was the only production consumer
+of `chat_threads.provenance`. Its writes, service, and implementation-only
+tests are removed; the nullable column and historical migrations remain.
+Automation resolution now uses the existing unique owner binding and its row
+lock, without writing a reused destination thread. **Its existing resolver
+advisory key remains for the preparation release:** an outgoing resolver
+reads the destination before locking its binding and throws if a concurrent
+new resolver rebound it in that interval.
+
+Remove the Browser profile and automation resolver keys, their exemptions, and
+these two preparation requirements in a later release after this preparation
+version covers every serving writer, outgoing requests have drained, and all
+supported API rollback targets include these changes. Both are GA paths;
+Morning Brief's use of the shared resolver is not covered by the non-GA
+Official Workflows catalog switch. No new lock or fallback is introduced.
+
+## Scoped advisory cleanup and owner-row preparation (2026-09-26)
+
+Nine more caller entrypoints stop acquiring redundant advisory locks:
+
+- The Workflow queue-head lookup is one primary-database SELECT. It reserves
+  nothing; final launch still claims the event's unique revoke edge and active
+  run identity in its own transaction.
+- Browser screenshot persistence is one UPSERT on the thread primary key.
+- Standalone SSH credential and Cloudflare Access creation retain exact-ID
+  conflict recovery and the creation-ID preparation key, without the owner
+  key. SSH host deletion and host-key reset retain their exact host row lock,
+  ownership, generation, and foreign-key checks without the owner key.
+- Connector account rename retains the exact account row lock and an
+  owner/target-qualified UPDATE without the shared target helper.
+- Remote-host defaults use one owner-qualified UPDATE. The VNC path no longer
+  enters the three cleanup keys and owner key; override and binding mutations
+  keep their existing lifecycle protocol.
+- Failed Official Workflow installation cleanup no longer requests the catalog
+  and organization keys. Its required `installing` state and Workflow row lock
+  arbitrate against the activation CAS; installed uninstall is separate.
+
+These narrow removals preserve coordination with outgoing writers through the
+same primary keys, unique constraints, conditional writes, and existing row
+locks. Public-Agent quota acquisition also becomes conditional: public create
+and requests setting public visibility acquire it before the Agent row;
+private creation and other metadata edits do not. The seven-public-Agent limit
+is unchanged. No persisted shape changes.
+
+Social admission replaces its organization advisory key with
+`FOR NO KEY UPDATE` on the existing organization row. Reservation sums and the
+hundred-unsettled-job limit stay inside that transaction. Its allowance check
+is a read-only snapshot: it must not acquire the credit key while holding the
+organization row, because credit settlement acquires those in the reverse
+order. Only an insufficient-balance request with an expired allowance releases
+the transaction, refreshes the allowance once through the existing billing
+path, and repeats the complete admission check. Requests with sufficient
+credits do not acquire a new Stripe dependency. Provider job requests remain
+outside admission.
+
+Social is non-GA and uses the same-release cutover policy. Outgoing admissions
+still use the retired advisory key, so old and new writers can overshoot the
+reservation limit while overlapping. The new protocol preserves the limits
+among new writers; it does not claim mutual exclusion with old writers. No
+compatibility branch or additional advisory key is introduced.
+
+Five Official catalog readers (copy, run, reconciliation, installation, and
+uninstall) replace shared advisory acquisition with `FOR SHARE` on the existing
+accepted-catalog singleton. This conflicts with the old publisher's pointer
+UPSERT as well as the new publisher's row lock. Exact revisions and storage
+versions are immutable; Official runs and copies do not read a mutable Storage
+HEAD. New publication locks the singleton before changing dependent rows, uses
+the singleton primary key for first publication and an expected-pointer UPDATE
+thereafter, and commits the pointer, revisions, artifact heads, and
+reconciliation work together. A losing first publisher rolls back all writes.
+
+The publisher retains its exclusive catalog advisory key because outgoing
+readers do not yet lock the singleton. Official run admission now takes its
+credit plan row before Workflow/Automation rows, matching reconciliation; the
+five organization-key acquisition sites remain because outgoing admission
+still uses the inverse row order. Remove the publisher key after all old
+readers drain, and the organization keys after all old writers drain. Serving
+versions and supported rollback targets must include this preparation. These
+shared paths include GA Morning Brief, regardless of catalog discovery flags.
+
+Built-in generation admission now locks the existing Run row with
+`FOR NO KEY UPDATE` before expiring and counting admissions and inserting the
+winner. The three-active and fifty-started limits remain, and the transaction
+ends before provider requests. Its original advisory key remains until all
+serving admission writers and rollback targets use the Run row and outgoing
+transactions have drained; old count-then-insert writers otherwise do not
+coordinate with the new row protocol.
+
+User export now claims through the existing active-job partial unique index
+before checking the completed-job cooldown. A conflicting request returns the
+active job from a no-op conflict UPDATE, without a second-read gap or changing
+its timestamps. A new claim that fails the twenty-four-hour cooldown rolls
+back, and only a new accepted claim enqueues work. The GA admission key remains
+until every serving and supported rollback writer uses this protocol and old
+admission transactions drain. An outgoing writer still uses a bare INSERT and
+would otherwise expose an unhandled unique violation during overlap.
+
 ## Workflow import source column (2026-09-25)
 
 Migration `1264_workflow_import_source` adds the nullable

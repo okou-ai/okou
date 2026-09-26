@@ -760,6 +760,113 @@ describe("banking access request lifecycle", () => {
     }
   });
 
+  it("replaces concurrent connect sessions and ignores superseded callbacks", async () => {
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Banking requires an org-scoped actor");
+    }
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Banking Connect Agent",
+      visibility: "private",
+    });
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId },
+      { [FeatureSwitchKey.Banking]: true },
+    );
+
+    const providerCustomerId = randomProviderId("customer");
+    server.use(
+      finicityAuthHandler(),
+      http.post(`${FINICITY_BASE_URL}/aggregation/v2/customers/testing`, () => {
+        return HttpResponse.json({ id: providerCustomerId });
+      }),
+      http.post(FINICITY_CONNECT_URL, () => {
+        return HttpResponse.json({
+          link: "https://connect.example.test/session",
+        });
+      }),
+      http.get(
+        `${FINICITY_BASE_URL}/aggregation/v1/customers/${providerCustomerId}/accounts`,
+        () => {
+          return HttpResponse.json({
+            accounts: [
+              {
+                id: randomProviderId("account"),
+                name: "Superseded Connect Account",
+                institutionLoginId: "login-superseded",
+                type: "checking",
+                status: "active",
+                aggregationStatusCode: 0,
+              },
+            ],
+          });
+        },
+      ),
+    );
+
+    const client = setupApp({ context, routes: bankingRoutes })(
+      bankingUserContract,
+    );
+    const createSession = async () => {
+      return await accept(
+        client.createConnectSession({
+          headers: sessionHeaders(),
+          body: { agentId: agent.agentId, mode: "connect" },
+        }),
+        [200],
+      );
+    };
+    const initial = await createSession();
+    const concurrent = await Promise.all([createSession(), createSession()]);
+    expect(concurrent[0].body.sessionId).not.toBe(concurrent[1].body.sessionId);
+
+    const current = await createSession();
+    const status = await accept(
+      client.accessRequestStatus({
+        headers: sessionHeaders(),
+        params: { agentId: agent.agentId },
+      }),
+      [200],
+    );
+    expect(status.body.session).toMatchObject({
+      id: current.body.sessionId,
+      status: "pending",
+    });
+    const connectionId = status.body.connection?.id;
+    if (!connectionId) {
+      throw new Error("Expected a banking connection");
+    }
+
+    for (const superseded of [initial, ...concurrent]) {
+      const callback = await postWebhook({
+        eventId: randomProviderId("event-superseded"),
+        eventType: "added",
+        customerId: providerCustomerId,
+        webhookData: {
+          uniqueCustomerId: connectionId,
+          uniqueRequestId: superseded.body.sessionId,
+        },
+      });
+      expect(callback.status).toBe(200);
+    }
+
+    const afterCallbacks = await accept(
+      client.accessRequestStatus({
+        headers: sessionHeaders(),
+        params: { agentId: agent.agentId },
+      }),
+      [200],
+    );
+    expect(afterCallbacks.body.session).toMatchObject({
+      id: current.body.sessionId,
+      status: "pending",
+    });
+    expect(afterCallbacks.body.connection?.accounts).toStrictEqual([]);
+  });
+
   it("completes only after signed added and done webhooks", async () => {
     mockEnv("APP_URL", "https://local-app.example.test");
     mockEnv(

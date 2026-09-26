@@ -15,10 +15,8 @@ import { env } from "../../lib/env";
 import { conflict } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { isLockNotAvailable } from "../../lib/pg-errors";
-import { testOverride } from "../../lib/singleton";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { settle } from "../utils";
-import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { deleteAgentStableContextLifecycleData } from "./agent-lifecycle.service";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 import {
@@ -62,25 +60,6 @@ export function agentExistsInOrg(args: {
 
 const DELETE_AGENT_LOCK_TIMEOUT = "100ms";
 
-interface AgentDeletionHooks {
-  readonly afterInitialStableContextCleanup?: (
-    tx: Tx,
-    args: { readonly agentId: string },
-  ) => Promise<void>;
-}
-
-const agentDeletionHooks = testOverride<AgentDeletionHooks>(() => {
-  return {};
-});
-
-export function setAgentDeletionHooksForTest(hooks: AgentDeletionHooks): void {
-  agentDeletionHooks.set(hooks);
-}
-
-export function clearAgentDeletionHooksForTest(): void {
-  agentDeletionHooks.clear();
-}
-
 interface DeleteAgentArgs {
   readonly agentId: string;
   readonly orgId: string;
@@ -88,8 +67,6 @@ interface DeleteAgentArgs {
 }
 
 async function lockAgentLifecycleForDeletion(tx: Tx, args: DeleteAgentArgs) {
-  await lockCanonicalAgentMutation(tx, args.agentId);
-
   const [agent] = await tx
     .select({
       id: agents.id,
@@ -293,9 +270,6 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
 
   // Remove current non-FK lifecycle rows before the Agent cascade.
   await deleteAgentStableContextLifecycleData(tx, args.agentId);
-  await agentDeletionHooks
-    .get()
-    .afterInitialStableContextCleanup?.(tx, { agentId: args.agentId });
   // Revoke unsent native Morning Brief mail before the Agent cascade.
   await revokeMorningBriefDeliveryOwnership(tx, {
     kind: "agent",

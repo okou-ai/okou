@@ -14,13 +14,10 @@ import {
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages } from "@okouai/db/schema/storage";
 import { createStore } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { onTestFinished } from "vitest";
-import { z } from "zod";
 
-import { executeRawRows } from "../lib/db-raw-rows";
 import { writeDb$, type Db } from "../signals/external/db";
-import { createDeferredPromise } from "../signals/utils";
 import {
   clearStableAgentPromptBuildHookForTest,
   clearStableContextCacheIdentityBuildHookForTest,
@@ -29,7 +26,6 @@ import {
 } from "../signals/services/agent-runs-create.service";
 import { piStableContextInputDigest } from "../signals/services/pi-stable-context-digest.service";
 import {
-  beginPiStableContextPublication,
   invalidatePiStableContext,
   withPiStableContextGlobalInvalidationOwnersForTest,
 } from "../signals/services/pi-stable-context-generation.service";
@@ -41,25 +37,6 @@ export async function withOwnedPiStableContextGlobalInvalidationFixture<T>(
   work: () => Promise<T>,
 ): Promise<T> {
   return await withPiStableContextGlobalInvalidationOwnersForTest(owners, work);
-}
-
-export async function clearAgentStableContextLifecycleFixture(
-  agentId: string,
-): Promise<void> {
-  await store.set(writeDb$).transaction(async (tx) => {
-    await tx
-      .delete(piStableContextGenerations)
-      .where(eq(piStableContextGenerations.agentId, agentId));
-    await tx
-      .delete(piStableContextPublications)
-      .where(eq(piStableContextPublications.agentId, agentId));
-    await tx
-      .delete(piStableContextHeads)
-      .where(eq(piStableContextHeads.agentId, agentId));
-    await tx
-      .delete(piStableContextArtifacts)
-      .where(eq(piStableContextArtifacts.agentId, agentId));
-  });
 }
 
 export async function seedAgentStableContextPublicationFixture(args: {
@@ -79,23 +56,6 @@ export async function seedAgentStableContextPublicationFixture(args: {
     });
 }
 
-export async function beginWorkflowStableContextPublicationFixture(args: {
-  readonly orgId: string;
-  readonly userId?: string;
-  readonly agentId: string;
-  readonly workflowId: string;
-}): Promise<void> {
-  await beginPiStableContextPublication(
-    store.set(writeDb$),
-    {
-      orgId: args.orgId,
-      agentId: args.agentId,
-      ...(args.userId ? { userId: args.userId } : {}),
-    },
-    `workflow:${args.workflowId}`,
-  );
-}
-
 export async function countAgentStableContextPublicationsFixture(
   agentId: string,
 ): Promise<number> {
@@ -105,154 +65,6 @@ export async function countAgentStableContextPublicationsFixture(
     .from(piStableContextPublications)
     .where(eq(piStableContextPublications.agentId, agentId));
   return rows.length;
-}
-
-export async function countAgentStableContextGenerationsFixture(
-  agentId: string,
-): Promise<number> {
-  const rows = await store
-    .set(writeDb$)
-    .select({ subject: piStableContextGenerations.subject })
-    .from(piStableContextGenerations)
-    .where(
-      and(
-        eq(piStableContextGenerations.agentId, agentId),
-        eq(piStableContextGenerations.subject, "@agent"),
-      ),
-    );
-  return rows.length;
-}
-
-export async function countUserStableContextGenerationsFixture(args: {
-  readonly agentId: string;
-  readonly userId: string;
-}): Promise<number> {
-  const rows = await store
-    .set(writeDb$)
-    .select({ subject: piStableContextGenerations.subject })
-    .from(piStableContextGenerations)
-    .where(
-      and(
-        eq(piStableContextGenerations.agentId, args.agentId),
-        eq(piStableContextGenerations.subject, args.userId),
-      ),
-    );
-  return rows.length;
-}
-
-const backendPidSchema = z.object({ pid: z.int() });
-
-async function holdStableContextGenerationFixture(
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly subject: string;
-  },
-  signal: AbortSignal,
-) {
-  const started = createDeferredPromise<number>(signal);
-  const released = createDeferredPromise<void>(signal);
-  const db = store.set(writeDb$);
-  const done = db.transaction(async (tx) => {
-    const [generation] = await tx
-      .select({ generation: piStableContextGenerations.generation })
-      .from(piStableContextGenerations)
-      .where(
-        and(
-          eq(piStableContextGenerations.orgId, args.orgId),
-          eq(piStableContextGenerations.agentId, args.agentId),
-          eq(piStableContextGenerations.subject, args.subject),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!generation) {
-      throw new Error("Expected stable-context generation fixture");
-    }
-    const [backend] = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS pid`,
-      backendPidSchema,
-    );
-    if (!backend) {
-      throw new Error("Expected generation-lock backend fixture");
-    }
-    started.resolve(backend.pid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-  return {
-    done,
-    release() {
-      if (!released.settled()) {
-        released.resolve();
-      }
-    },
-    async blockedPids(): Promise<readonly number[]> {
-      const rows = await executeRawRows(
-        db,
-        sql`SELECT pid FROM pg_stat_activity WHERE ${holderPid} = ANY(pg_blocking_pids(pid))`,
-        backendPidSchema,
-      );
-      return rows.map((row) => {
-        return row.pid;
-      });
-    },
-    async blockedByPid(pid: number): Promise<readonly number[]> {
-      const rows = await executeRawRows(
-        db,
-        sql`SELECT pid FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))`,
-        backendPidSchema,
-      );
-      return rows.map((row) => {
-        return row.pid;
-      });
-    },
-  };
-}
-
-export async function holdAgentStableContextGenerationFixture(
-  args: { readonly orgId: string; readonly agentId: string },
-  signal: AbortSignal,
-) {
-  return await holdStableContextGenerationFixture(
-    { ...args, subject: "@agent" },
-    signal,
-  );
-}
-
-export async function holdUserStableContextGenerationFixture(
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly userId: string;
-  },
-  signal: AbortSignal,
-) {
-  return await holdStableContextGenerationFixture(
-    { orgId: args.orgId, agentId: args.agentId, subject: args.userId },
-    signal,
-  );
-}
-
-export async function assertUserStableContextGenerationUnlockedFixture(args: {
-  readonly orgId: string;
-  readonly agentId: string;
-  readonly userId: string;
-}): Promise<void> {
-  await store.set(writeDb$).transaction(async (tx) => {
-    await tx
-      .select({ generation: piStableContextGenerations.generation })
-      .from(piStableContextGenerations)
-      .where(
-        and(
-          eq(piStableContextGenerations.orgId, args.orgId),
-          eq(piStableContextGenerations.agentId, args.agentId),
-          eq(piStableContextGenerations.subject, args.userId),
-        ),
-      )
-      .for("update", { noWait: true });
-  });
 }
 
 async function seedReadyStorageArtifact(
