@@ -1,4 +1,6 @@
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
+import { usageChatProjectionWork } from "@okouai/db/schema/usage-chat-projection-work";
+import { randomUUID } from "node:crypto";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
@@ -18,6 +20,7 @@ import {
   processOrgUsageEventsInTransaction,
 } from "../services/credit-usage.service";
 import { checkOrgCreditsForRunAdmission } from "../services/run-admission.service";
+import { maybeEmitRunUsageEvent$ } from "../services/chat-usage-event.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -27,6 +30,15 @@ import { settle } from "../utils";
 
 const body$ = bodyResultOf(testUsageSettlementContract.process);
 const rollbackBody$ = bodyResultOf(testUsageSettlementContract.rollback);
+const withoutProjectionBody$ = bodyResultOf(
+  testUsageSettlementContract.processWithoutProjection,
+);
+const projectionFaultBody$ = bodyResultOf(
+  testUsageSettlementContract.projectionFault,
+);
+const legacyProjectBody$ = bodyResultOf(
+  testUsageSettlementContract.legacyProject,
+);
 const setupBody$ = bodyResultOf(testUsageSettlementContract.setup);
 const cleanupBody$ = bodyResultOf(testUsageSettlementContract.cleanup);
 const createGrantBody$ = bodyResultOf(testUsageSettlementContract.createGrant);
@@ -46,6 +58,100 @@ const processUsageSettlement$ = command(
     }
 
     await set(processOrgUsageEvents$, bodyResult.data.org_id, signal);
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { ok: true as const } };
+  },
+);
+
+// The response is lost between COMMIT and the optional postcommit callback.
+// This route exists only in tests; the durable cron must reconstruct the card.
+const processWithoutProjection$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!isTestEndpointAllowed(get(request$))) {
+      return testEndpointNotFoundResponse();
+    }
+    const bodyResult = await get(withoutProjectionBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+    const db = set(writeDb$);
+    const pricingResolution = get(usagePricingResolution$);
+    await db.transaction(async (tx) => {
+      await processOrgUsageEventsInTransaction(
+        tx,
+        bodyResult.data.org_id,
+        pricingResolution,
+        signal,
+      );
+    });
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { ok: true as const } };
+  },
+);
+
+// These failure states cannot be triggered through a production endpoint.
+// Test-only routes preserve the Hono boundary without importing a DB handle
+// or internal consumer into an API behavior test.
+const injectProjectionFault$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!isTestEndpointAllowed(get(request$))) {
+      return testEndpointNotFoundResponse();
+    }
+    const bodyResult = await get(projectionFaultBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+    const { run_id: runId, mode } = bodyResult.data;
+    const db = set(writeDb$);
+    if (mode === "drop-ack") {
+      // Re-create only the missing acknowledgement, not a new charge or card.
+      // Completed epochs are normally removed to avoid permanent work rows.
+      const [created] = await db
+        .insert(usageChatProjectionWork)
+        .values({ runId, availableAt: new Date(0) })
+        .onConflictDoNothing({ target: usageChatProjectionWork.runId })
+        .returning({ runId: usageChatProjectionWork.runId });
+      signal.throwIfAborted();
+      if (!created) {
+        throw new Error("Expected a completed projection epoch");
+      }
+    } else {
+      const values =
+        mode === "expire-lease"
+          ? {
+              leaseId: randomUUID(),
+              leaseExpiresAt: new Date(0),
+              availableAt: new Date(0),
+            }
+          : { availableAt: new Date(0) };
+      const [updated] = await db
+        .update(usageChatProjectionWork)
+        .set(values)
+        .where(eq(usageChatProjectionWork.runId, runId))
+        .returning({ runId: usageChatProjectionWork.runId });
+      signal.throwIfAborted();
+      if (!updated) {
+        throw new Error("Expected committed projection work");
+      }
+    }
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { ok: true as const } };
+  },
+);
+
+const legacyUsageProjection$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!isTestEndpointAllowed(get(request$))) {
+      return testEndpointNotFoundResponse();
+    }
+    const bodyResult = await get(legacyProjectBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+    await set(maybeEmitRunUsageEvent$, bodyResult.data.run_id, signal);
     signal.throwIfAborted();
     return { status: 200 as const, body: { ok: true as const } };
   },
@@ -288,6 +394,18 @@ export const testUsageSettlementRoutes: readonly RouteEntry[] = [
   {
     route: testUsageSettlementContract.process,
     handler: processUsageSettlement$,
+  },
+  {
+    route: testUsageSettlementContract.processWithoutProjection,
+    handler: processWithoutProjection$,
+  },
+  {
+    route: testUsageSettlementContract.projectionFault,
+    handler: injectProjectionFault$,
+  },
+  {
+    route: testUsageSettlementContract.legacyProject,
+    handler: legacyUsageProjection$,
   },
   {
     route: testUsageSettlementContract.rollback,
