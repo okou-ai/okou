@@ -19,7 +19,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createOAuthState, slackOauthRoutes } from "../slack-oauth";
+import { slackOauthRoutes } from "../slack-oauth";
 import {
   countSlackOrgConnections$,
   deleteSlackConnectOrg$,
@@ -109,26 +109,6 @@ function installStateFor(
   return signedStateFromStart(
     `/api/slack/oauth/install${search ? `?${search}` : ""}`,
   );
-}
-
-/** Sign a state shaped like one from an API that still serialized the brand. */
-function withRetiredPublicBrand(state: string): string {
-  const [encodedPayload] = state.split(".");
-  if (!encodedPayload) {
-    throw new Error("Expected a signed Slack OAuth state payload");
-  }
-  const payload = JSON.parse(
-    Buffer.from(encodedPayload, "base64url").toString(),
-  ) as SignedOAuthStatePayload;
-  const legacyState = {
-    orgId: payload.orgId,
-    userId: payload.userId,
-    flow: payload.flow,
-    reinstall: payload.reinstall,
-    prompt: payload.prompt,
-    publicBrand: "vm0",
-  };
-  return createOAuthState(legacyState, payload.redirectUri);
 }
 
 function connectStateFor(
@@ -585,49 +565,6 @@ describe("Slack OAuth API routes", () => {
       );
       expect(slackMessages).toContain("connected to Okou");
       expect(slackMessages).toContain("<@B_TEST>");
-    });
-
-    it("accepts a signed state issued with the retired brand field", async () => {
-      const fixture = await track(
-        store.set(
-          seedSlackConnectOrg$,
-          { installationOrgId: null },
-          context.signal,
-        ),
-      );
-      await store.set(deleteSlackConnectOrg$, fixture, context.signal);
-      await seedMembership(fixture.orgId, fixture.userId, "admin");
-      mockOAuthSuccess({
-        teamId: fixture.slackWorkspaceId,
-        teamName: fixture.slackWorkspaceName,
-        authedUserId: fixture.slackUserId,
-        scope: "chat:write,channels:read",
-      });
-      const state = withRetiredPublicBrand(
-        await installStateFor({
-          orgId: fixture.orgId,
-          userId: fixture.userId,
-        }),
-      );
-
-      const response = await appRequest(
-        `/api/integrations/slack/oauth/callback?code=valid-code&state=${encodeURIComponent(state)}`,
-      );
-
-      expect(response.status).toBe(307);
-      expect(response.headers.get("location")).toContain(
-        `${APP_ORIGIN}/settings/slack?status=connected`,
-      );
-      await expect(
-        store.set(
-          findSlackOrgInstallation$,
-          fixture.slackWorkspaceId,
-          context.signal,
-        ),
-      ).resolves.toMatchObject({
-        orgId: fixture.orgId,
-        installedByUserId: fixture.userId,
-      });
     });
 
     it("keeps an Okou flow on Okou while reusing the official installation identity", async () => {

@@ -1009,12 +1009,14 @@ Persisted callback payloads:
   kept writing that literal through `storedDiscordDeliveryTarget` until the
   [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
-Slack OAuth state no longer carries `publicBrand`. The new API accepts states
-issued before this change, because it ignores the key. An older API rejects
-states without it, so an install or connect started on the new API and
-completed on an older one (the rollout window or a rollback) fails with
-"Invalid OAuth state." States expire after 15 minutes; the user restarts the
-flow. The `?publicBrand=` install query parameter was already ignored.
+Slack OAuth state no longer carries `publicBrand`. During the Phase 1 rollout,
+the new API accepted states with the retired key, while an older API rejected
+states without it; the user restarted an affected install or connect. States
+expire after 15 minutes. Since Phase 2 #36909 shipped to `api/production` and
+the rollback floor excludes pre-Phase-2 APIs, no serving or rollback-target API
+can issue the old shape; its synthetic test and test-only signing export are
+removed. Current install/connect, signature and expiry coverage remains. The
+`?publicBrand=` install query parameter was already ignored.
 
 The test-only `/api/test/slack-state` contract no longer accepts
 `public_brand` or returns `publicBrand`; undeclared request keys are stripped.
@@ -1041,11 +1043,13 @@ APIs still require the field, so writers kept stamping the fixed
 `FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND` value until the
 [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) excluded those APIs from rollback.
 
-Feishu OAuth state no longer carries `publicBrand`. States signed by an older
-API still verify, because the extra key is stripped. A state signed by the new
-API and returned to an older API during rollout overlap or after a rollback is
-rejected as an invalid or expired connect state. States live ten minutes, and
-the user retries the connect flow; no compatibility path is kept for them.
+Feishu OAuth state no longer carries `publicBrand`. During the Phase 1 rollout,
+states signed by an older API still verified because the extra key was stripped;
+a new state returned to an older API was rejected and the user retried. States
+expire after ten minutes. Since Phase 2 #36909 shipped to `api/production` and
+the rollback floor excludes pre-Phase-2 APIs, no serving or rollback-target API
+can issue the old shape; its synthetic test is removed. Current state signing,
+validation and expiry coverage remains.
 
 The Feishu and Lark connect status responses no longer return `publicBrand`,
 either at the top level or per installation. The App only copied the value into
