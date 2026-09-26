@@ -2327,18 +2327,16 @@ export const openBrowserForThread$ = command(
     }
     // The viewer runs in the user's browser, so it only ever learns the live
     // view; the CDP endpoint stays inside the agent runtime.
-    const event = await db.transaction(async (tx) => {
-      return await insertChatEvent(
-        tx,
-        {
-          id: args.lifecycleEventId,
-          chatThreadId: context.value.chatThreadId,
-          eventType: "browser.open",
-          content: null,
-        },
-        "id",
-      );
-    });
+    const event = await insertChatEvent(
+      db,
+      {
+        id: args.lifecycleEventId,
+        chatThreadId: context.value.chatThreadId,
+        eventType: "browser.open",
+        content: null,
+      },
+      "id",
+    );
     signal.throwIfAborted();
     if (!event) {
       return conflict(
@@ -2380,18 +2378,16 @@ export const closeBrowserForThread$ = command(
     if (accessError) {
       return accessError;
     }
-    const event = await db.transaction(async (tx) => {
-      return await insertChatEvent(
-        tx,
-        {
-          id: args.lifecycleEventId,
-          chatThreadId: thread.chatThreadId,
-          eventType: "browser.close",
-          content: null,
-        },
-        "id",
-      );
-    });
+    const event = await insertChatEvent(
+      db,
+      {
+        id: args.lifecycleEventId,
+        chatThreadId: thread.chatThreadId,
+        eventType: "browser.close",
+        content: null,
+      },
+      "id",
+    );
     signal.throwIfAborted();
     if (!event) {
       return conflict(
