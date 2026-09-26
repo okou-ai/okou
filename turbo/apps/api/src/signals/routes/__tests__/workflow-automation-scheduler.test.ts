@@ -769,7 +769,7 @@ describe("okou workflow automation scheduler", () => {
   });
 
   it.each([false, true])(
-    "uses the second member automation owner's subscription and retains it after scheduler admission (queued: %s)",
+    "uses the second member automation owner's subscription and retains it from run creation (queued: %s)",
     async (queuedLaunch) => {
       const scenario = await setup();
       const support = createAuthDeviceSupportApi(context);
@@ -868,14 +868,27 @@ describe("okou workflow automation scheduler", () => {
         created.automationId,
       );
       mocks.clerk.session(member.userId, scenario.orgId, "org:member");
-      const message = await onlyWorkflowRunMessage(threadId);
-      expect((await runsApi.readRun(member, message.runId)).status).toBe(
-        queuedLaunch ? "queued" : "pending",
+      // At capacity the scheduler input stays queued in the thread and no run
+      // exists until a released slot picks the thread.
+      expect(await workflowRunMessages(threadId)).toHaveLength(
+        queuedLaunch ? 0 : 1,
       );
-      await connectOwner(member, "later-owner-account");
+      const later = await connectOwner(member, "later-owner-account");
       for (const blocker of blockers) {
         await runsApi.requestCancelRun(scenario.actor, blocker, [200]);
       }
+      mocks.clerk.session(member.userId, scenario.orgId, "org:member");
+      await expect
+        .poll(async () => {
+          return (await workflowRunMessages(threadId)).length;
+        })
+        .toBe(1);
+      const message = await onlyWorkflowRunMessage(threadId);
+      // The run binds the owner's account current at run creation: the
+      // original account for an immediate launch, the later one for a pick.
+      const expectedOwner = queuedLaunch
+        ? { ...later, identity: "later-owner-account" }
+        : { ...owner, identity: "automation-owner" };
       await expect
         .poll(async () => {
           return (await runsApi.readRun(member, message.runId)).status;
@@ -886,7 +899,7 @@ describe("okou workflow automation scheduler", () => {
       expect(claim.cliAgentType).toBe("codex");
       expect(
         claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
-      ).toBe(owner.accountId);
+      ).toBe(expectedOwner.accountId);
       if (!claim.encryptedSecrets) {
         throw new Error("Expected subscription envelope");
       }
@@ -906,8 +919,8 @@ describe("okou workflow automation scheduler", () => {
       );
       expect(resolved.body).toMatchObject({
         headers: {
-          Authorization: `Bearer ${owner.token}`,
-          "ChatGPT-Account-ID": "automation-owner",
+          Authorization: `Bearer ${expectedOwner.token}`,
+          "ChatGPT-Account-ID": expectedOwner.identity,
         },
       });
       await expect(
@@ -915,7 +928,7 @@ describe("okou workflow automation scheduler", () => {
       ).resolves.toMatchObject({
         modelProvider: "codex-oauth-token",
         modelProviderCredentialScope: "member",
-        modelProviderId: owner.accountId,
+        modelProviderId: expectedOwner.accountId,
         creditAdmitted: false,
         builtInModelKeyId: null,
       });

@@ -8,6 +8,7 @@ import {
 } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createDeferredPromise } from "../../utils";
+import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
@@ -348,9 +349,16 @@ describe("personal subscription run identity", () => {
       await owner.run(async () => {
         const admissionCount =
           admissionStatus === "queued" ? f.concurrencyLimit + 1 : 2;
-        for (let index = 0; index < admissionCount; index += 1) {
+        for (let index = 1; index < admissionCount; index += 1) {
           admitted.push(await f.start());
         }
+        // Only earlier API versions queued at the limit; promotion and
+        // identity reads still cover those legacy queued runs.
+        admitted.push(
+          admissionStatus === "queued"
+            ? await createLegacyQueuedRunFixture(f.start)
+            : await f.start(),
+        );
         const target = admitted.at(-1);
         if (!target) {
           throw new Error("Expected the target subscription admission");
@@ -764,7 +772,9 @@ describe("personal subscription run identity", () => {
       const first = await f.start();
       const pending = await f.start();
       const fillers = await f.saturate(2);
-      const queued = await f.start();
+      const queued = await createLegacyQueuedRunFixture(async () => {
+        return await f.start();
+      });
       expect((await runs.readRun(f.actor, queued)).status).toBe("queued");
       const firstClaim = await f.claim(first);
       const captured = accountId(firstClaim, f.type);
@@ -868,7 +878,9 @@ describe("personal subscription run identity", () => {
     const second = await f.start();
     await f.saturate(2);
     const queuedAccount = await connect(f.actor, f.type, "identity-a");
-    const queued = await f.start();
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await f.start();
+    });
     expect((await runs.readRun(f.actor, queued)).status).toBe("queued");
     await support.deletePersonalModelProviderAccount(f.actor, queuedAccount.id);
     // Infrastructure exception: only the scheduler can advance wall-clock

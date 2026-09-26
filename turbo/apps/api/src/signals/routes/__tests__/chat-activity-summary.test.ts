@@ -18,6 +18,7 @@ import {
   readActiveAgentRunFixture,
 } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -308,16 +309,20 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   });
 
-  it("rejects queued and superseded run identities before cached or model output", async () => {
+  it("rejects legacy queued and superseded run identities before cached or model output", async () => {
     const f = await fixture();
     const inputs = provider();
     await summarize(f.actor, f.run);
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const queued = await chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agentId, prompt: "Wait for capacity" },
-      [201],
-    );
+    // Only earlier API versions queue a run at the org cap; those queued runs
+    // remain until promotion drains them.
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await chat.requestSendEvent(
+        f.actor,
+        { agentId: f.agentId, prompt: "Wait for capacity" },
+        [201],
+      );
+    });
     if (queued.status !== 201 || !queued.body.runId) {
       throw new Error("Expected queued run identity");
     }
@@ -1073,14 +1078,18 @@ describe("thread activity summary", () => {
     expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   });
 
-  it("releases a queued run's active row when it is cancelled", async () => {
+  it("releases a legacy queued run's active row when it is cancelled", async () => {
     const f = await fixture();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const queued = await chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agentId, prompt: "Wait for capacity" },
-      [201],
-    );
+    // Only earlier API versions queue a run at the org cap; those queued runs
+    // remain until promotion drains them.
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await chat.requestSendEvent(
+        f.actor,
+        { agentId: f.agentId, prompt: "Wait for capacity" },
+        [201],
+      );
+    });
     if (queued.status !== 201 || !queued.body.runId) {
       throw new Error("Expected queued run identity");
     }

@@ -17,6 +17,7 @@ import {
   revokeReservedActiveInputFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { expectApiError } from "./helpers/api-bdd";
 import { cleanupTimedOutRun } from "./helpers/api-bdd-run-timeout";
@@ -1588,7 +1589,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
 });
 
 describe("CHAT-02: org queue markers", () => {
-  it("marks queued chat runs and revokes the marker on dequeue", async () => {
+  it("marks legacy queued chat runs and revokes the marker on dequeue", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
@@ -1603,11 +1604,15 @@ describe("CHAT-02: org queue markers", () => {
     }
     expect(blocker.body.status).toBe("pending");
 
-    const queuedRun = await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "wait behind the active run" },
-      [201],
-    );
+    // Only earlier API versions queue a run at the capacity limit; the markers
+    // under test belong to those legacy queued runs.
+    const queuedRun = await createLegacyQueuedRunFixture(async () => {
+      return await chat.requestSendEvent(
+        actor,
+        { agentId, prompt: "wait behind the active run" },
+        [201],
+      );
+    });
     if (queuedRun.status !== 201 || queuedRun.body.runId === null) {
       throw new Error("Expected the second send to create a queued run");
     }

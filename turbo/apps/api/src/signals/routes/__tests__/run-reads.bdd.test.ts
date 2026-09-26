@@ -15,6 +15,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { readCanonicalAgentNameFixture } from "../../../test-fixtures/canonical-agent-authority";
 import { clearRunLaunchSnapshotFixture } from "../../../test-fixtures/agent-runs";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import {
   createBddApi,
   expectApiError,
@@ -638,17 +639,34 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(agentQueue.body.estimatedTimePerRun).not.toBeNull();
 
     const longPrompt = "q".repeat(220);
-    const queuedOwn = await api.createRun(actor, {
-      agentId: agent.agentId,
-      sessionId: seedRun.sessionId,
-      prompt: longPrompt,
-      modelProvider: "anthropic-api-key",
+    const rejected = await api.requestCreateRun(
+      actor,
+      {
+        agentId: agent.agentId,
+        prompt: "run over the concurrency limit",
+        modelProvider: "anthropic-api-key",
+      },
+      [429],
+    );
+    expect(rejected.body).toMatchObject({
+      error: { code: "CONCURRENT_RUN_LIMIT" },
+    });
+    // Earlier API versions queued at the limit; the queue still lists them.
+    const queuedOwn = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(actor, {
+        agentId: agent.agentId,
+        sessionId: seedRun.sessionId,
+        prompt: longPrompt,
+        modelProvider: "anthropic-api-key",
+      });
     });
     expect(queuedOwn.status).toBe("queued");
-    const queuedForeign = await api.createRun(member, {
-      agentId: memberAgent.agentId,
-      prompt: "member queued secret",
-      modelProvider: "anthropic-api-key",
+    const queuedForeign = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(member, {
+        agentId: memberAgent.agentId,
+        prompt: "member queued secret",
+        modelProvider: "anthropic-api-key",
+      });
     });
     expect(queuedForeign.status).toBe("queued");
 
@@ -807,10 +825,12 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "occupy slot two",
     });
-    const queued = await api.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "queued run to cancel",
-      modelProvider: "anthropic-api-key",
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(actor, {
+        agentId: agent.agentId,
+        prompt: "queued run to cancel",
+        modelProvider: "anthropic-api-key",
+      });
     });
     expect(queued.status).toBe("queued");
     const queuedCancelled = await api.requestCancelRun(
@@ -855,16 +875,20 @@ describe("RUN-03: queue position", () => {
       agentId: compose.agentId,
       prompt: "pending run",
     });
-    const queued = await api.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "queued run",
-      modelProvider: "anthropic-api-key",
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(actor, {
+        agentId: agent.agentId,
+        prompt: "queued run",
+        modelProvider: "anthropic-api-key",
+      });
     });
     expect(queued.status).toBe("queued");
-    const memberQueued = await api.createRun(member, {
-      agentId: memberAgent.agentId,
-      prompt: "member queued run",
-      modelProvider: "anthropic-api-key",
+    const memberQueued = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(member, {
+        agentId: memberAgent.agentId,
+        prompt: "member queued run",
+        modelProvider: "anthropic-api-key",
+      });
     });
     expect(memberQueued.status).toBe("queued");
 

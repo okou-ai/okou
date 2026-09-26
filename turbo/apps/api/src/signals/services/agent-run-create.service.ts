@@ -11691,22 +11691,25 @@ const commitAndActivateAtomicLaunch$ = command(
 const createAtomicLaunchRun$ = command(
   async (
     { get, set },
-    input: AtomicLaunchRunInput,
+    launchInput: AtomicLaunchRunInput,
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
-    const args: CreateAgentRunArgs = legacyQueuedRunAdmissionEnabledForTest()
-      ? { ...input.args, queueOnConcurrencyLimit: true }
-      : input.args;
+    const input: AtomicLaunchRunInput = legacyQueuedRunAdmissionEnabledForTest()
+      ? {
+          ...launchInput,
+          args: { ...launchInput.args, queueOnConcurrencyLimit: true },
+        }
+      : launchInput;
     const identity = prepareLaunchRunIdentity({
       resolved: input.context.resolved,
     });
     if (
-      !args.queueOnConcurrencyLimit &&
-      !args.ignoreConcurrencyLimit
+      !input.args.queueOnConcurrencyLimit &&
+      !input.args.ignoreConcurrencyLimit
     ) {
       const preflightConcurrency = await checkRunConcurrencyPreflight({
         db: input.db,
-        orgId: args.orgId,
+        orgId: input.args.orgId,
         timing: input.timing,
       });
       signal.throwIfAborted();
@@ -11717,7 +11720,7 @@ const createAtomicLaunchRun$ = command(
 
     const callbackRows = await prepareRunCallbackRows({
       runId: identity.runId,
-      callbacks: args.callbacks,
+      callbacks: input.args.callbacks,
       featureSwitchContext: input.context.featureSwitchContext,
       timing: input.timing,
     });
@@ -11732,7 +11735,7 @@ const createAtomicLaunchRun$ = command(
             buildAtomicLaunchPayload(
               input.db,
               {
-                createArgs: args,
+                createArgs: input.args,
                 context: input.context,
                 run: {
                   id: identity.runId,
@@ -11760,7 +11763,7 @@ const createAtomicLaunchRun$ = command(
       }
       return await commitFailedLaunch({
         db: input.db,
-        createArgs: args,
+        createArgs: input.args,
         context: input.context,
         identity,
         callbackRows,

@@ -63,6 +63,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { generateOkouToken, verifyOkouToken } from "../../auth/tokens";
 import {
@@ -5327,10 +5328,14 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
         prompt: "hold second slot",
         modelProvider: "anthropic-api-key",
       });
-      const queued = await api.createRun(actor, {
-        agentId,
-        prompt: "queued before model retirement",
-        modelProvider: "anthropic-api-key",
+      // Only earlier API versions queued at the limit; promotion still drains
+      // those legacy queued runs.
+      const queued = await createLegacyQueuedRunFixture(async () => {
+        return await api.createRun(actor, {
+          agentId,
+          prompt: "queued before model retirement",
+          modelProvider: "anthropic-api-key",
+        });
       });
       expect(queued.status).toBe("queued");
       // The previous API could enqueue this snapshot. The current write APIs
@@ -5552,7 +5557,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
-  it("queues runs over the concurrency limit and promotes them after cancellation", async () => {
+  it("rejects runs over the concurrency limit and promotes legacy queued runs after cancellation", async () => {
     // Two admitted runs keep the next one queued, independent of the plan.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
@@ -5572,10 +5577,25 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     });
     expect(second.status).toBe("pending");
 
-    const third = await api.createRun(actor, {
-      agentId,
-      prompt: "queued run three",
-      modelProvider: "anthropic-api-key",
+    const rejected = await api.requestCreateRun(
+      actor,
+      {
+        agentId,
+        prompt: "run over the concurrency limit",
+        modelProvider: "anthropic-api-key",
+      },
+      [429],
+    );
+    expectApiError(rejected.body);
+    expect(rejected.body.error.code).toBe("CONCURRENT_RUN_LIMIT");
+
+    // Earlier API versions queued at the limit; promotion still drains them.
+    const third = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(actor, {
+        agentId,
+        prompt: "queued run three",
+        modelProvider: "anthropic-api-key",
+      });
     });
     expect(third.status).toBe("queued");
 
@@ -5649,10 +5669,12 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     });
     expect(second.status).toBe("pending");
 
-    const queued = await api.createRun(actor, {
-      agentId,
-      prompt: "queued run promoted after pending ttl",
-      modelProvider: "anthropic-api-key",
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(actor, {
+        agentId,
+        prompt: "queued run promoted after pending ttl",
+        modelProvider: "anthropic-api-key",
+      });
     });
     expect(queued.status).toBe("queued");
     const queuedRegistration = await readConnectorDiagnosticRegistration(
@@ -5680,20 +5702,22 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     });
     expect(fresh.status).toBe("pending");
 
-    const overLimit = await api.createRun(actor, {
-      agentId,
-      prompt: "run should queue behind promoted active item",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(overLimit.status).toBe("queued");
+    const overLimit = await api.requestCreateRun(
+      actor,
+      {
+        agentId,
+        prompt: "run should be rejected beside promoted active item",
+        modelProvider: "anthropic-api-key",
+      },
+      [429],
+    );
+    expectApiError(overLimit.body);
+    expect(overLimit.body.error.code).toBe("CONCURRENT_RUN_LIMIT");
 
     const queue = await api.readRunQueue(actor);
     expect(queue.body.concurrency.active).toBe(2);
-    expect(queue.body.queue).toContainEqual(
-      expect.objectContaining({ runId: overLimit.runId }),
-    );
+    expect(queue.body.queue).toHaveLength(0);
 
-    await api.requestCancelRun(actor, overLimit.runId, [200]);
     await api.requestCancelRun(actor, fresh.runId, [200]);
     await api.requestCancelRun(actor, queued.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
@@ -5722,10 +5746,12 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       datasets: [SANDBOX_OP_LOG_DATASET],
     });
 
-    const queued = await api.createRun(actor, {
-      agentId,
-      prompt: "queued run should survive telemetry failure",
-      modelProvider: "anthropic-api-key",
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(actor, {
+        agentId,
+        prompt: "queued run should survive telemetry failure",
+        modelProvider: "anthropic-api-key",
+      });
     });
 
     expect(queued.status).toBe("queued");
@@ -13452,7 +13478,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
     const firstPending = await createNonTerminalRun("pending refresh one");
     const secondPending = await createNonTerminalRun("pending refresh two");
-    const queued = await createNonTerminalRun("queued refresh");
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await createNonTerminalRun("queued refresh");
+    });
     expect(firstPending.status).toBe("pending");
     expect(secondPending.status).toBe("pending");
     expect(queued.status).toBe("queued");
@@ -14512,10 +14540,12 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       prompt: "active run two",
       modelProvider: "anthropic-api-key",
     });
-    const queued = await api.createRun(actor, {
-      agentId,
-      prompt: "queued run three",
-      modelProvider: "anthropic-api-key",
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(actor, {
+        agentId,
+        prompt: "queued run three",
+        modelProvider: "anthropic-api-key",
+      });
     });
     expect(queued.status).toBe("queued");
     const queuedLaunchSnapshot = await readRunLaunchSnapshotFixture(
@@ -16380,9 +16410,13 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       agentId,
       prompt: "occupy the second concurrency slot",
     });
-    const queued = await sendChatRunMessage(actor, {
-      agentId,
-      prompt: "promote this chat run",
+    // Earlier API versions queued chat runs at the limit; promotion still
+    // drains those legacy queued runs.
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await sendChatRunMessage(actor, {
+        agentId,
+        prompt: "promote this chat run",
+      });
     });
     expect((await api.readRun(actor, queued.runId)).status).toBe("queued");
     await expect(readRunApiStart(context, queued.runId)).resolves.toBeNull();

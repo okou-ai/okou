@@ -58,6 +58,7 @@ const {
   configureBuiltInPiModel,
   configureBuiltInPiModelOnOpenRouter,
   sendChatRun,
+  sendWaitingChatInput,
   claimChatRun,
   waitForThreadMessages,
   waitForRunStatus,
@@ -109,13 +110,8 @@ describe("CHAT-02: model-first provider policies", () => {
         runnerGroup,
         prompt: "/skill:long-session finish in sandbox",
       });
-      await completeChatRunOk(
-        queued.anchor.runId,
-        queued.anchorClaim.sandboxHeaders,
-        { usagePricingResolution: queued.usagePricingResolution },
-      );
+      const run = await queued.launch();
       await flushWaitUntilForTest();
-      const { run } = queued;
       const claimed = await claimChatRun(runnerGroup, run.runId);
       const session = MemoryPiSession.create({
         cwd: "/home/user/workspace",
@@ -429,14 +425,7 @@ describe("CHAT-02: model-first provider policies", () => {
         runnerGroup,
         prompt,
       });
-      await completeChatRunOk(
-        queued.anchor.runId,
-        queued.anchorClaim.sandboxHeaders,
-        {
-          usagePricingResolution: queued.usagePricingResolution,
-        },
-      );
-      let run = queued.run;
+      let run = await queued.launch();
       let expectedH0: Buffer | undefined;
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
       for (const turn of [1, 2]) {
@@ -666,15 +655,16 @@ describe("CHAT-02: model-first provider policies", () => {
           );
         }),
       );
-      const { anchor, anchorClaim, run, usagePricingResolution } =
+      const { usagePricingResolution, launch } =
         await queueCapabilityProvenPiRun({
           actor,
           agentId,
           runnerGroup,
           prompt: "/skill:handoff-skill preserve  arguments",
         });
-      const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`;
-      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
+      // The run id exists only once the pick launches the waiting input, so
+      // match this test's only API-first session object by its key shape.
+      const firstTurnPrefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/`;
       const send = context.mocks.s3.send.getMockImplementation();
       if (!send) {
         throw new Error("Expected the checkpoint object-store boundary");
@@ -683,27 +673,29 @@ describe("CHAT-02: model-first provider policies", () => {
       mockNow(apiStartedAt);
       context.mocks.s3.send.mockImplementation((command: unknown) => {
         const candidate = command as PiCheckpointS3Command;
+        const key = piS3ObjectKey(candidate);
         if (
           candidate.constructor?.name === "GetObjectCommand" &&
-          piS3ObjectKey(candidate) === sessionKey
+          key !== undefined &&
+          key.startsWith(firstTurnPrefix) &&
+          key.endsWith("/session.jsonl")
         ) {
           if (failure === "coordination deadline") {
             mockNow(apiStartedAt + API_FIRST_TURN_COORDINATION_BUDGET_MS);
           } else {
-            const bytes = checkpointObjects.get(sessionKey);
+            const bytes = checkpointObjects.get(key);
             if (!bytes) {
               throw new Error("Expected uploaded H0 before readback");
             }
             const corrupted = Buffer.from(bytes);
             corrupted[0] = 0;
-            checkpointObjects.set(sessionKey, corrupted);
+            checkpointObjects.set(key, corrupted);
           }
         }
         return send(command);
       });
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-        usagePricingResolution,
-      });
+      const run = await launch();
+      const manifestKey = `${firstTurnPrefix}${run.runId}/manifest.json`;
       await waitForRunStatus(actor, run.runId, "failed");
       await flushWaitUntilForTest();
       expect(modelCalls).toBe(0);
@@ -794,15 +786,17 @@ describe("CHAT-02: model-first provider policies", () => {
       );
       const checkpointObjects = mockPiCheckpointObjectStore();
       const fallbackPrompt = "execute this fallback prompt exactly once";
-      const fallback = await sendChatRun(actor, {
+      // At capacity the fallback prompt waits without a run; the anchor's
+      // completion picks its thread and launches the Pi run.
+      const waitingFallback = await sendWaitingChatInput(actor, {
         agentId,
         prompt: fallbackPrompt,
         model: selectedModel,
       });
-      await waitForRunStatus(actor, fallback.runId, "queued");
 
       await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
       await flushWaitUntilForTest();
+      const fallback = await waitingFallback.launchedRun();
       const fallbackManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fallback.runId}/manifest.json`;
       expect(checkpointObjects.get(fallbackManifestKey)).toBeInstanceOf(Buffer);
       expect(modelCalls).toBe(0);
@@ -850,12 +844,11 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       const postProviderPrompt =
         "fail a credential rejection after one provider request";
-      const postProvider = await sendChatRun(actor, {
+      const waitingPostProvider = await sendWaitingChatInput(actor, {
         agentId,
         prompt: postProviderPrompt,
         model: selectedModel,
       });
-      await waitForRunStatus(actor, postProvider.runId, "queued");
 
       mockPiResourceArchiveDownloads();
       sandboxSession.appendMessage({
@@ -955,6 +948,8 @@ describe("CHAT-02: model-first provider policies", () => {
         status: "completed",
       });
       await waitForRunStatus(actor, fallback.runId, "completed", 5000);
+      await flushWaitUntilForTest();
+      const postProvider = await waitingPostProvider.launchedRun();
       await waitForRunStatus(actor, postProvider.runId, "failed", 5000);
       await flushWaitUntilForTest();
 
@@ -1128,8 +1123,10 @@ describe("CHAT-02: model-first provider policies", () => {
 
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const prompt = "preserve this original prompt for official compaction";
-    const second = await withOpenRouterRoute(async () => {
-      return await sendChatRun(
+    // At capacity the resume prompt waits without a run; the anchor's
+    // completion picks the thread and launches it on the OpenRouter route.
+    const waitingSecond = await withOpenRouterRoute(async () => {
+      return await sendWaitingChatInput(
         actor,
         {
           agentId,
@@ -1141,8 +1138,12 @@ describe("CHAT-02: model-first provider policies", () => {
         usagePricingResolution,
       );
     });
-    await waitForRunStatus(actor, second.runId, "queued");
-    await completeChatRunOk(anchor.runId, anchorSandboxHeaders);
+    await withOpenRouterRoute(async () => {
+      await completeChatRunOk(anchor.runId, anchorSandboxHeaders, {
+        usagePricingResolution,
+      });
+    });
+    const second = await waitingSecond.launchedRun();
 
     const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`;
     await expect

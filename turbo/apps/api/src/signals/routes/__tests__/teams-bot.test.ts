@@ -2563,7 +2563,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       prepared = await setupConnectedTeamsBotActor();
     });
 
-    it("replies when a connected Teams run is queued", async () => {
+    it("replies when a connected Teams message waits for org capacity", async () => {
       // Two active runs keep the third queued, independent of the plan's own
       // concurrency limit.
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
@@ -2636,7 +2636,10 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect(queuedResponse.status).toBe(200);
       const queuedBody = await readTeamsBotResponseAndFlush(queuedResponse);
       expect(queuedBody).not.toHaveProperty("dispatch");
-      const queuedRunId = await runIdForPrompt(actor, "queued run three");
+      // At the org limit the message waits as thread input; no run exists yet.
+      await expect(runIdForPrompt(actor, "queued run three")).rejects.toThrow(
+        "Expected Teams run for prompt: queued run three",
+      );
 
       expect(outboundRequests).toHaveLength(4);
       expect(
@@ -2686,8 +2689,12 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect(outboundRequests[3]?.body).not.toHaveProperty("text");
       expect(outboundRequests.reactions).toHaveLength(0);
 
-      await runsApi.requestCancelRun(actor, queuedRunId, [200]);
+      // Freeing a slot picks the waiting thread and launches its message.
       await runsApi.requestCancelRun(actor, firstRunId, [200]);
+      await flushWaitUntilForTest();
+      const queuedRunId = await runIdForPrompt(actor, "queued run three");
+
+      await runsApi.requestCancelRun(actor, queuedRunId, [200]);
       await runsApi.requestCancelRun(actor, secondRunId, [200]);
     });
   });

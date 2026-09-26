@@ -107,8 +107,9 @@ async function extractOwnedThreadPiMemory(
       { once: true },
     ),
   );
-  // A later UTC day needs its own committed startup; a real queued Pi launch
-  // exercises the common admission hook without making a foreground model call.
+  // A later UTC day needs its own committed startup. A real Pi launch
+  // exercises the common admission hook; its foreground API-first request is
+  // held in flight and the run is cancelled before any model answer exists.
   const nextDay = new Date(candidate.sourceCompletedAt);
   nextDay.setUTCHours(24, 0, 0, 0);
   mockNow(
@@ -117,44 +118,31 @@ async function extractOwnedThreadPiMemory(
       candidate.sourceCompletedAt.getTime() + 7 * 3_600_000,
     ),
   );
-  mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-  await updateFeatureSwitchesForUser(context, scope, {
-    [FeatureSwitchKey.PiMemory]: false,
+  const foregroundEntered = createDeferredPromise<void>(context.signal);
+  const foregroundRelease = createDeferredPromise<void>(context.signal);
+  onTestFinished(() => {
+    if (!foregroundRelease.settled()) {
+      foregroundRelease.resolve(undefined);
+    }
   });
-  // The anchor must hold the only concurrency slot: Astra stays on the native
-  // Runner and remains pending, while a Terra anchor would finish API-first.
-  await seedBuiltInModelKey("gpt-6-astra");
-  await api.updateOrgModelPolicies(actor, [
-    {
-      model: "gpt-5.6-terra",
-      isDefault: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    },
-    {
-      model: "gpt-6-astra",
-      isDefault: false,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    },
-  ]);
-  const anchor = await sendChatRun(actor, {
-    agentId,
-    prompt: "hold daily startup admission",
-    model: "gpt-6-astra",
-  });
-  await flushWaitUntilForTest();
-  await updateFeatureSwitchesForUser(context, scope, {
-    [FeatureSwitchKey.PiMemory]: true,
-  });
+  server.use(
+    http.post("https://api.openai.com/v1/responses", async () => {
+      if (!foregroundEntered.settled()) {
+        foregroundEntered.resolve(undefined);
+      }
+      await foregroundRelease.promise;
+      return HttpResponse.json(
+        { error: "foreground turn was cancelled" },
+        { status: 500 },
+      );
+    }),
+  );
   const startup = await sendChatRun(actor, {
     agentId,
     prompt: "request the daily Pi batch",
     model: "gpt-5.6-terra",
   });
-  await waitForRunStatus(actor, startup.runId, "queued");
+  await foregroundEntered.promise;
   await expect(
     readPiMemoryStage1DayFixture(actor.userId),
   ).resolves.toMatchObject({
@@ -188,7 +176,8 @@ async function extractOwnedThreadPiMemory(
     rawMemory: "The owner prefers concise progress reports.",
   });
   await api.requestCancelRun(actor, startup.runId, [200]);
-  await api.requestCancelRun(actor, anchor.runId, [200]);
+  foregroundRelease.resolve(undefined);
+  await flushWaitUntilForTest();
 }
 
 describe("thread-bound Pi Automation and Goal execution", () => {

@@ -9,6 +9,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import {
   seedOrgMetadata,
   seedUsagePricingRows,
@@ -314,11 +315,9 @@ describe("Usage Allowance", () => {
       });
       const api = createRunsApi(context);
       const first = await createBuiltInRun(actor, agentId, "active run");
-      const queued = await createBuiltInRun(
-        actor,
-        agentId,
-        "queued built-in run",
-      );
+      const queued = await createLegacyQueuedRunFixture(async () => {
+        return await createBuiltInRun(actor, agentId, "queued built-in run");
+      });
       expect(queued.status).toBe("queued");
       await api.requestCancelRun(actor, first.runId, [200]);
       await flushWaitUntilForTest();
@@ -342,7 +341,9 @@ describe("Usage Allowance", () => {
     });
     const api = createRunsApi(context);
     const first = await createBuiltInRun(actor, agentId, "free active run");
-    const queued = await createBuiltInRun(actor, agentId, "free queued run");
+    const queued = await createLegacyQueuedRunFixture(async () => {
+      return await createBuiltInRun(actor, agentId, "free queued run");
+    });
     expect(queued.status).toBe("queued");
     await seedOrgMetadata({ orgId, tier: "pro", credits: 1 });
 
@@ -795,18 +796,22 @@ describe("Usage Allowance", () => {
       agentId,
       "active built-in two",
     );
-    const unfunded = await createBuiltInRun(
-      actor,
-      agentId,
-      "queued built-in loses admission",
-    );
+    const unfunded = await createLegacyQueuedRunFixture(async () => {
+      return await createBuiltInRun(
+        actor,
+        agentId,
+        "queued built-in loses admission",
+      );
+    });
     expect(unfunded.status).toBe("queued");
 
     await api.ensureOrgModelProvider(actor);
-    const byok = await api.createRun(actor, {
-      agentId,
-      prompt: "queued BYOK remains admissible",
-      modelProvider: "anthropic-api-key",
+    const byok = await createLegacyQueuedRunFixture(async () => {
+      return await api.createRun(actor, {
+        agentId,
+        prompt: "queued BYOK remains admissible",
+        modelProvider: "anthropic-api-key",
+      });
     });
     expect(byok.status).toBe("queued");
 

@@ -7,6 +7,7 @@ import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { setChatThreadVideoModelFixture } from "../../../test-fixtures/chat-thread-events";
 import {
   readRunImageModelSnapshotFixture,
@@ -30,6 +31,7 @@ const {
   chat,
   entitledNativeChatActor,
   sendChatRun,
+  sendWaitingChatInput,
   claimChatRun,
   cancelChatRun,
 } = createChatEventsFixture(context);
@@ -496,36 +498,28 @@ describe("CHAT-02: run image model snapshot", () => {
     ).resolves.toBe("gpt-image-2");
   }, 90_000);
 
-  it("persists the resolved image model on a queued run", async () => {
+  it("persists the resolved image model on a run picked from the org queue", async () => {
     const { actor, agentId } = await imageModelSnapshotActor();
     await chat.updateUserModelPreference(actor, null, "fal-ai/flux-pro/v1.1");
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
 
-    const blocker = await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "occupy image snapshot concurrency" },
-      [201],
-    );
-    if (blocker.status !== 201 || blocker.body.runId === null) {
-      throw new Error("Expected the blocking send to create a run");
-    }
-    expect(blocker.body.status).toBe("pending");
+    const blocker = await sendChatRun(actor, {
+      agentId,
+      prompt: "occupy image snapshot concurrency",
+    });
+    const waiting = await sendWaitingChatInput(actor, {
+      agentId,
+      prompt: "queue an image model snapshot",
+    });
 
-    const queued = await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "queue an image model snapshot" },
-      [201],
+    await cancelChatRun(actor, blocker.runId);
+    await flushWaitUntilForTest();
+    const picked = await waiting.launchedRun();
+    await expect(readRunImageModelSnapshotFixture(picked.runId)).resolves.toBe(
+      "fal-ai/flux-pro/v1.1",
     );
-    if (queued.status !== 201 || queued.body.runId === null) {
-      throw new Error("Expected the second send to create a queued run");
-    }
-    expect(queued.body.status).toBe("queued");
-    await expect(
-      readRunImageModelSnapshotFixture(queued.body.runId),
-    ).resolves.toBe("fal-ai/flux-pro/v1.1");
 
-    await cancelChatRun(actor, queued.body.runId);
-    await cancelChatRun(actor, blocker.body.runId);
+    await cancelChatRun(actor, picked.runId);
   }, 90_000);
 
   it("snapshots direct runs and re-resolves on session continuation", async () => {

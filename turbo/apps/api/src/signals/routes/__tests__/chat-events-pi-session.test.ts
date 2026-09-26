@@ -790,17 +790,17 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "execute the original prompt once in Sandbox";
-    const { anchor, anchorClaim, run } = await queueCapabilityProvenPiRun({
+    const { launch } = await queueCapabilityProvenPiRun({
       actor,
       agentId,
       runnerGroup,
       prompt,
     });
 
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    const run = await launch();
     await resourceEntered.promise;
-    // Speculative queued preparation can read resources before promotion; the
-    // durable pending status is the Runner claim boundary.
+    // The picked launch prepares resources in the background; the durable
+    // pending status is the Runner claim boundary.
     await waitForRunStatus(actor, run.runId, "pending", 5000);
     const claimed = await claimChatRun(runnerGroup, run.runId);
     await waitForRunStatus(actor, run.runId, "running", 5000);
@@ -915,14 +915,14 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
     const originalPrompt = "settle this original API prompt once";
-    const { anchor, anchorClaim, run } = await queueCapabilityProvenPiRun({
+    const { launch } = await queueCapabilityProvenPiRun({
       actor,
       agentId,
       runnerGroup,
       prompt: originalPrompt,
     });
 
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    const run = await launch();
     await providerEntered.promise;
     const claimed = await claimChatRun(runnerGroup, run.runId);
     const activeInput = "continue H1 with exactly one new prompt";
@@ -1155,14 +1155,14 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
     const originalPrompt = "start one provider request with a pending tool";
-    const { anchor, anchorClaim, run } = await queueCapabilityProvenPiRun({
+    const { launch } = await queueCapabilityProvenPiRun({
       actor,
       agentId,
       runnerGroup,
       prompt: originalPrompt,
     });
 
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    const run = await launch();
     await providerEntered.promise;
     const claimed = await claimChatRun(runnerGroup, run.runId);
     const activeInput = "steer once after the pending tool boundary";

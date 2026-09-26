@@ -51,6 +51,7 @@ import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createLegacyQueuedRunFixture } from "../../../test-fixtures/legacy-queued-runs";
 import { createDeferredPromise, settle } from "../../utils";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -2294,14 +2295,14 @@ describe("CHAT-02: completed chat callback", () => {
     await flushWaitUntilForTest();
   }, 90_000);
 
-  it("marks an auto-sent follow-up when org concurrency queues the new run", async () => {
+  it("keeps an auto-sent follow-up pending until org concurrency frees a slot", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
 
     const first = await startChatRun(actor, {
       agentId,
-      prompt: "finish before auto-send queues",
+      prompt: "finish before auto-send meets the org cap",
     });
     const blocker = await startChatRun(actor, {
       agentId,
@@ -2310,21 +2311,11 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, first.runId, "pending");
     await waitForRunStatus(actor, blocker.runId, "pending");
 
-    await queueChatEvent(actor, {
+    const queuedEventId = await queueChatEvent(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "queued while org cap is full",
     });
-    const queuedBeforeComplete = await chat.listThreadEvents(
-      actor,
-      first.threadId,
-    );
-    const queued = userMessages(queuedBeforeComplete.events).find((message) => {
-      return chatEventDisplayText(message) === "queued while org cap is full";
-    });
-    if (!queued) {
-      throw new Error("Expected the queued user message to be listed");
-    }
 
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const sandboxHeaders = await claimChatRun(runnerGroup, first.runId);
@@ -2332,52 +2323,41 @@ describe("CHAT-02: completed chat callback", () => {
     await completeChatRunOk(first.runId, sandboxHeaders, {
       lastEventSequence: 0,
     });
-
-    const afterAutoSend = await waitForThreadMessages(
-      actor,
-      first.threadId,
-      (messages) => {
-        const claimed = userMessages(messages).find((message) => {
-          return (
-            message.revokesEventId === queued.id && message.runId !== undefined
-          );
-        });
-        return (
-          claimed !== undefined &&
-          assistantMessages(messages).some((message) => {
-            return (
-              message.runId === claimed.runId &&
-              message.runEventId === "queue:queued"
-            );
-          })
-        );
-      },
-    );
-    const claimed = userMessages(afterAutoSend.events).find((message) => {
-      return message.revokesEventId === queued.id;
-    });
-    if (!claimed?.runId) {
-      throw new Error("Expected the queued message to auto-send");
-    }
-    const marker = assistantMessages(afterAutoSend.events).find((message) => {
-      return (
-        message.runId === claimed.runId && message.runEventId === "queue:queued"
-      );
-    });
-    if (!marker) {
-      throw new Error("Expected an assistant queue marker");
-    }
-    expect(marker).toMatchObject({
-      content: "Waiting in queue...",
-      runId: claimed.runId,
-    });
+    await waitForRunStatus(actor, first.runId, "completed");
     await flushWaitUntilForTest();
 
+    // At the org cap the auto-send starts no run: the input stays pending in
+    // the thread and no queued-run marker is written.
+    const whileFull = await chat.listThreadEvents(actor, first.threadId);
+    expect(
+      userMessages(whileFull.events).filter((message) => {
+        return message.revokesEventId === queuedEventId;
+      }),
+    ).toHaveLength(0);
+    expect(
+      userMessages(whileFull.events).find((message) => {
+        return message.id === queuedEventId;
+      }),
+    ).toBeDefined();
+    expect(
+      assistantMessages(whileFull.events).some((message) => {
+        return message.runEventId === "queue:queued";
+      }),
+    ).toBe(false);
+
+    // Freeing the org slot picks the waiting thread and launches its input.
     await api.requestCancelRun(actor, blocker.runId, [200]);
     await waitForRunStatus(actor, blocker.runId, "cancelled");
-    await waitForRunStatus(actor, claimed.runId, "pending");
-    await api.requestCancelRun(actor, claimed.runId, [200]);
-    await waitForRunStatus(actor, claimed.runId, "cancelled");
+    await flushWaitUntilForTest();
+    const pickedRunId = await waitForQueuedEventReplacement(
+      actor,
+      first.threadId,
+      queuedEventId,
+    );
+    expect(pickedRunId).not.toBe(first.runId);
+    await waitForRunStatus(actor, pickedRunId, "pending");
+    await api.requestCancelRun(actor, pickedRunId, [200]);
+    await waitForRunStatus(actor, pickedRunId, "cancelled");
     await flushWaitUntilForTest();
   }, 90_000);
 });
@@ -2411,7 +2391,7 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     await flushWaitUntilForTest();
   }, 90_000);
 
-  it("preserves immediate release when an org-queued run is cancelled", async () => {
+  it("preserves immediate release when a legacy org-queued run is cancelled", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
@@ -2420,9 +2400,13 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
       prompt: "hold the only org run slot",
     });
     await waitForRunStatus(actor, blocker.runId, "pending");
-    const queuedRun = await startChatRun(actor, {
-      agentId,
-      prompt: "cancel while waiting for the org slot",
+    // Only earlier API versions queue a run at the org cap; their queued runs
+    // can still be cancelled.
+    const queuedRun = await createLegacyQueuedRunFixture(async () => {
+      return await startChatRun(actor, {
+        agentId,
+        prompt: "cancel while waiting for the org slot",
+      });
     });
     await waitForRunStatus(actor, queuedRun.runId, "queued");
     const queuedEventId = await queueChatEvent(actor, {
@@ -2432,6 +2416,14 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     });
 
     await api.requestCancelRun(actor, queuedRun.runId, [200]);
+    await waitForRunStatus(actor, queuedRun.runId, "cancelled");
+    await expectCancellationRecoveryPending(actor, queuedRun.threadId, false);
+
+    // The blocker still fills the org, so the follow-up waits as input until
+    // the slot frees and the thread is picked.
+    await api.requestCancelRun(actor, blocker.runId, [200]);
+    await waitForRunStatus(actor, blocker.runId, "cancelled");
+    await flushWaitUntilForTest();
     const replacementRunId = await waitForQueuedEventReplacement(
       actor,
       queuedRun.threadId,
@@ -2442,8 +2434,6 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
 
     await api.requestCancelRun(actor, replacementRunId, [200]);
     await waitForRunStatus(actor, replacementRunId, "cancelled");
-    await api.requestCancelRun(actor, blocker.runId, [200]);
-    await waitForRunStatus(actor, blocker.runId, "cancelled");
     await flushWaitUntilForTest();
   }, 90_000);
 
