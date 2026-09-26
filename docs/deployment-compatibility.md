@@ -146,12 +146,21 @@ the run-level and queued-launch brand. The Phase 1 readers of those payloads do
 not declare or read the field, and stored payloads that still carry it keep
 parsing because the current readers strip unknown keys.
 
-The `agentphone:chat` payload is the exception. The Phase 1 reader
-(`agentPhoneChatCallbackPayloadSchema`) still requires `publicBrand`, and a
-Phase 1 instance can process a callback this release writes during the rolling
-deploy, so this release keeps writing the literal `"okou"` there. Its own reader
-no longer declares the field. Stop writing it in a later release, once no
-serving or rollback-target API predates this one.
+The `agentphone:chat` payload was the rolling-deploy exception. The Phase 1
+reader (`agentPhoneChatCallbackPayloadSchema`) required `publicBrand`, so Phase 2
+kept writing the literal `"okou"` while Phase 1 instances might still serve or
+be selected as rollback targets. The Phase 2 reader no longer declares the field.
+
+Follow-up #36913 stops writing that literal. Phase 2's migration and API shipped
+to `api/production` in release #36970 (`191d95c`): the production migration
+completed at 2026-09-26 00:50 UTC and API deployment succeeded. The most recent
+pre-Phase-2 API (`4ecb619`) was marked inactive at 00:50 UTC and no longer has a
+Vercel production alias; at the 02:29 UTC check, production API aliases pointed
+to the later Phase-2-descendant `355e1ac`. The production rollback workflow
+checks out `main`, where its target resolver rejects any commit predating the
+canonical `1255_retire_public_brand` migration merge; the resolver test passes.
+Stored callbacks with the old extra field still parse because the current reader
+strips unknown keys.
 
 Stored R2 records keep their historical names: the `publicBrand` field of
 policies, delivery records, preview grants, pointers and manifests, the
