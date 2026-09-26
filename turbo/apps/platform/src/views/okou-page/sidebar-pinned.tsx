@@ -9,6 +9,7 @@ import {
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Plus, ChevronRight, Pin, PinOff, CheckCheck } from "lucide-react";
 import {
+  Button,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -59,6 +60,8 @@ import {
   AgentRowSideActions,
   type AgentRowMenuAction,
 } from "./sidebar-agent-row-actions.tsx";
+
+const PINNED_AGENTS_CONTENT_ID = "sidebar-pinned-agents-content";
 
 const pinnedAgentGridCardFrameClassName =
   "flex w-full min-w-0 flex-col items-center gap-1.5 rounded-lg p-1.5";
@@ -558,103 +561,114 @@ export function PinnedAgentListSection({
 
   return (
     <div className="shrink-0">
-      <div
-        className="group flex h-8 cursor-pointer items-center rounded-lg px-2 hover:bg-state-hover transition-colors"
+      <Button
+        type="button"
+        variant="quiet"
+        size="sm"
+        aria-expanded={!collapsed}
+        aria-controls={PINNED_AGENTS_CONTENT_ID}
+        className="group flex h-8 w-full cursor-pointer items-center rounded-lg px-2 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
         data-testid="pinned-section-header"
         onClick={() => {
           return setCollapsed(!collapsed);
         }}
       >
-        <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-nav-copy-muted group-hover:text-nav-copy transition-colors">
+        <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-nav-copy-muted group-hover:text-nav-copy group-focus-visible:text-nav-copy transition-colors">
           {t(($) => {
             return $.sidebar.pinned;
           })}
-          <span className="shrink-0 opacity-0 group-hover:opacity-100">
+          <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">
             <ChevronRight
               className={`opacity-35 ${collapsed ? "" : "rotate-90"}`}
               size={12}
             />
           </span>
         </span>
-      </div>
-      {!collapsed && (
-        <div ref={refreshLayoutRef} className="flex flex-col gap-0.5 mt-1">
-          {pinnedAgentsLoadable.state === "loading" && (
-            <>
-              <div
-                ref={refreshLayoutRef}
-                className="flex h-8 items-center gap-2 px-2"
-              >
-                <div className="h-5 w-5 shrink-0 rounded-md bg-muted animate-pulse" />
-                <div className="h-3 w-20 rounded bg-muted animate-pulse" />
-              </div>
-              <div className="flex h-8 items-center gap-2 px-2">
-                <div className="h-5 w-5 shrink-0 rounded-md bg-muted animate-pulse" />
-                <div className="h-3 w-16 rounded bg-muted animate-pulse" />
-              </div>
-            </>
-          )}
-          {pinnedAgentsLoadable.state === "hasData" &&
-            displayedPinnedAgents.map((agent) => {
-              const isPrimarySelected =
-                isChatRoute(activeRoute) && selectedAgentId === agent.agentId;
-              const isFromChat = sidebarAgentId === agent.agentId;
-              const isPinned = pinnedAgentIds.has(agent.agentId);
-              const hasUnread = unreadAgentIds?.has(agent.agentId) ?? false;
-              const isDefaultAgent = agent.agentId === defaultAgentId;
-              const hasSideActions = hasUnread || (!isDefaultAgent && isPinned);
-              return (
+      </Button>
+      <div id={PINNED_AGENTS_CONTENT_ID} hidden={collapsed}>
+        {!collapsed && (
+          <div ref={refreshLayoutRef} className="flex flex-col gap-0.5 mt-1">
+            {pinnedAgentsLoadable.state === "loading" && (
+              <>
                 <div
-                  key={agent.agentId}
                   ref={refreshLayoutRef}
-                  className="group relative"
-                  data-testid="pinned-agent-card"
+                  className="flex h-8 items-center gap-2 px-2"
                 >
-                  <Link
-                    pathname="/agents/:agentId/chat"
-                    options={{ pathParams: { agentId: agent.agentId } }}
-                    aria-current={isPrimarySelected ? "page" : undefined}
-                    onClick={(e) => {
-                      if (e.metaKey || e.ctrlKey || e.shiftKey) {
-                        return;
-                      }
-                      e.preventDefault();
-                      selectPinnedAgent({ agentId: agent.agentId, hasUnread });
-                      setExpanded(false);
-                    }}
-                    className={`flex w-full h-8 shrink-0 items-center gap-2 rounded-lg text-left text-sm leading-5 no-underline transition-colors duration-200 ${
-                      hasSideActions ? "pl-2 pr-8" : "px-2"
-                    } ${
-                      isPrimarySelected
-                        ? "bg-state-selected text-sidebar-foreground font-medium"
-                        : isFromChat
-                          ? "border-l-2 border-[hsl(var(--gray-400))] bg-state-hover text-sidebar-foreground hover:bg-state-selected-hover"
-                          : "text-sidebar-foreground hover:bg-state-hover"
-                    }`}
-                  >
-                    <AgentAvatarImg
-                      name={agent.agentId}
-                      alt={agent.displayName ?? agent.agentId}
-                      className="h-5 w-5 shrink-0 rounded-md object-cover object-top"
-                    />
-                    <span className="text-[color:var(--nav-copy,inherit)] truncate">
-                      {agent.displayName ?? agent.agentId}
-                    </span>
-                  </Link>
-                  {hasSideActions ? (
-                    <PinnedAgentSideDecorator
-                      agentId={agent.agentId}
-                      isDefaultAgent={isDefaultAgent}
-                      isPinned={isPinned}
-                      isPrimarySelected={isPrimarySelected}
-                      hasUnread={hasUnread}
-                    />
-                  ) : null}
+                  <div className="h-5 w-5 shrink-0 rounded-md bg-muted animate-pulse" />
+                  <div className="h-3 w-20 rounded bg-muted animate-pulse" />
                 </div>
-              );
-            })}
-        </div>
-      )}
+                <div className="flex h-8 items-center gap-2 px-2">
+                  <div className="h-5 w-5 shrink-0 rounded-md bg-muted animate-pulse" />
+                  <div className="h-3 w-16 rounded bg-muted animate-pulse" />
+                </div>
+              </>
+            )}
+            {pinnedAgentsLoadable.state === "hasData" &&
+              displayedPinnedAgents.map((agent) => {
+                const isPrimarySelected =
+                  isChatRoute(activeRoute) && selectedAgentId === agent.agentId;
+                const isFromChat = sidebarAgentId === agent.agentId;
+                const isPinned = pinnedAgentIds.has(agent.agentId);
+                const hasUnread = unreadAgentIds?.has(agent.agentId) ?? false;
+                const isDefaultAgent = agent.agentId === defaultAgentId;
+                const hasSideActions =
+                  hasUnread || (!isDefaultAgent && isPinned);
+                return (
+                  <div
+                    key={agent.agentId}
+                    ref={refreshLayoutRef}
+                    className="group relative"
+                    data-testid="pinned-agent-card"
+                  >
+                    <Link
+                      pathname="/agents/:agentId/chat"
+                      options={{ pathParams: { agentId: agent.agentId } }}
+                      aria-current={isPrimarySelected ? "page" : undefined}
+                      onClick={(e) => {
+                        if (e.metaKey || e.ctrlKey || e.shiftKey) {
+                          return;
+                        }
+                        e.preventDefault();
+                        selectPinnedAgent({
+                          agentId: agent.agentId,
+                          hasUnread,
+                        });
+                        setExpanded(false);
+                      }}
+                      className={`flex w-full h-8 shrink-0 items-center gap-2 rounded-lg text-left text-sm leading-5 no-underline transition-colors duration-200 ${
+                        hasSideActions ? "pl-2 pr-8" : "px-2"
+                      } ${
+                        isPrimarySelected
+                          ? "bg-state-selected text-sidebar-foreground font-medium"
+                          : isFromChat
+                            ? "border-l-2 border-[hsl(var(--gray-400))] bg-state-hover text-sidebar-foreground hover:bg-state-selected-hover"
+                            : "text-sidebar-foreground hover:bg-state-hover"
+                      }`}
+                    >
+                      <AgentAvatarImg
+                        name={agent.agentId}
+                        alt={agent.displayName ?? agent.agentId}
+                        className="h-5 w-5 shrink-0 rounded-md object-cover object-top"
+                      />
+                      <span className="text-[color:var(--nav-copy,inherit)] truncate">
+                        {agent.displayName ?? agent.agentId}
+                      </span>
+                    </Link>
+                    {hasSideActions ? (
+                      <PinnedAgentSideDecorator
+                        agentId={agent.agentId}
+                        isDefaultAgent={isDefaultAgent}
+                        isPinned={isPinned}
+                        isPrimarySelected={isPrimarySelected}
+                        hasUnread={hasUnread}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
