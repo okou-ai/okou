@@ -22,10 +22,7 @@ import {
   holdChatEventInsertTransactionFixture,
   holdChatThreadDeleteTransactionFixture,
 } from "../../../test-fixtures/chat-events";
-import {
-  createChatSearchGinFixture,
-  withChatSearchStatementFailureFixture,
-} from "../../../test-fixtures/chat-search-gin";
+import { withChatSearchStatementFailureFixture } from "../../../test-fixtures/chat-search-statement-failure";
 import { settleIncludingAbort } from "../../utils";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
@@ -36,7 +33,6 @@ const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const CRON_SECRET = "durable-chat-search-projection-secret";
-const BLOCKED = { interval: 10, timeout: 10_000 } as const;
 
 function cronClient() {
   mockEnv("CRON_SECRET", CRON_SECRET);
@@ -46,10 +42,7 @@ function cronClient() {
   })(cronProjectChatEventSearchContract);
 }
 
-async function projectOwnedChatEventSearch(
-  chatThreadIds: readonly string[],
-  ginIndexNames?: readonly string[],
-) {
+async function projectOwnedChatEventSearch(chatThreadIds: readonly string[]) {
   const client = setupApp({
     context,
     routes: testChatEventSearchProjectionRoutes,
@@ -57,10 +50,7 @@ async function projectOwnedChatEventSearch(
   })(testChatEventSearchProjectionContract);
   const response = await accept(
     client.project({
-      body: {
-        chat_thread_ids: [...chatThreadIds],
-        gin_index_names: ginIndexNames ? [...ginIndexNames] : undefined,
-      },
+      body: { chat_thread_ids: [...chatThreadIds] },
     }),
     [200],
   );
@@ -295,103 +285,6 @@ describe("GET /api/cron/project-chat-event-search", () => {
       },
     });
     await expectNoProjection(threadId);
-  });
-
-  it("drains a GIN backlog at tick start but preserves a small pending list", async () => {
-    const gin = await createChatSearchGinFixture();
-    const { threadId } = await createProjectionFixture();
-    await seedProjectionContent(threadId, `smallgin ${randomUUID()}`);
-    await gin.insert(10);
-    const small = await gin.pendingPages();
-    expect(small).toBeGreaterThan(0);
-    expect(small).toBeLessThan(64);
-    await expect(
-      projectOwnedChatEventSearch([threadId], [gin.indexName]),
-    ).resolves.toMatchObject({ threads: 1, deferredThreads: 0 });
-    await expect(gin.pendingPages()).resolves.toBe(small);
-
-    await gin.insert(600);
-    await expect(gin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
-    await insertSearchablePromptFixture({
-      chatThreadId: threadId,
-      text: `largegin ${randomUUID()}`,
-    });
-    await expect(
-      projectOwnedChatEventSearch([threadId], [gin.indexName]),
-    ).resolves.toMatchObject({
-      threads: 1,
-      indexedEvents: 1,
-      deferredThreads: 0,
-    });
-    await expect(gin.pendingPages()).resolves.toBe(0);
-  });
-
-  it("drains the backlog of every configured GIN index in one tick", async () => {
-    const tsvGin = await createChatSearchGinFixture();
-    const userTsvGin = await createChatSearchGinFixture();
-    await tsvGin.insert(600);
-    await userTsvGin.insert(600);
-    await expect(tsvGin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
-    await expect(userTsvGin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
-    const { threadId } = await createProjectionFixture();
-    await seedProjectionContent(threadId, `everygin ${randomUUID()}`);
-
-    await expect(
-      projectOwnedChatEventSearch(
-        [threadId],
-        [tsvGin.indexName, userTsvGin.indexName],
-      ),
-    ).resolves.toMatchObject({ threads: 1, deferredThreads: 0 });
-    await expect(tsvGin.pendingPages()).resolves.toBe(0);
-    await expect(userTsvGin.pendingPages()).resolves.toBe(0);
-  });
-
-  it("checks the pending list again between thread transactions", async () => {
-    const gin = await createChatSearchGinFixture();
-    const fixtures = [
-      await createProjectionFixture(),
-      await createProjectionFixture(),
-    ];
-    const [first, second] = fixtures.sort((a, b) => {
-      return a.threadId.localeCompare(b.threadId);
-    });
-    if (!first || !second) {
-      throw new Error("Expected two owned projection threads");
-    }
-    await seedProjectionContent(first.threadId, `beforegin ${randomUUID()}`);
-    await projectOwnedChatEventSearch([first.threadId]);
-    await insertSearchablePromptFixture({
-      chatThreadId: first.threadId,
-      text: `laggingbeforegin ${randomUUID()}`,
-    });
-    await seedProjectionContent(second.threadId, `aftergin ${randomUUID()}`);
-    // The existing watermark is read without a row lock; the first thread's
-    // upsert blocks here, after its search message is written and before the
-    // second thread's maintenance check.
-    const held = await holdChatEventSearchWatermarkRowLockFixture({
-      chatThreadId: first.threadId,
-      signal: context.signal,
-    });
-    const tick = projectOwnedChatEventSearch(
-      [first.threadId, second.threadId],
-      [gin.indexName],
-    );
-    onTestFinished(async () => {
-      held.release();
-      await Promise.allSettled([held.done, tick]);
-    });
-    await expect.poll(held.blockedWaiterCount, BLOCKED).toBeGreaterThan(0);
-    await gin.insert(600);
-    await expect(gin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
-    held.release();
-    await held.done;
-    const projected = await tick;
-    expect(projected).toMatchObject({
-      threads: 2,
-      indexedEvents: 3,
-      deferredThreads: 0,
-    });
-    await expect(gin.pendingPages()).resolves.toBe(0);
   });
 
   it("removes a later projection that races orphan cleanup", async () => {

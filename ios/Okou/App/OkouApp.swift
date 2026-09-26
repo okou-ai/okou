@@ -105,6 +105,7 @@ private struct WorkspaceRootView: View {
       let sidebarWidth = min(300, geometry.size.width - 56)
       let topInset = geometry.safeAreaInsets.top
       let screenHeight = geometry.size.height + topInset + geometry.safeAreaInsets.bottom
+      let panelCornerRadius: CGFloat = isSidebarOpen ? 30 : 0
       ZStack(alignment: .leading) {
         Color(uiColor: .systemBackground).ignoresSafeArea()
 
@@ -137,7 +138,7 @@ private struct WorkspaceRootView: View {
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
         .background(alignment: .top) {
-          RoundedRectangle(cornerRadius: isSidebarOpen ? 30 : 0)
+          RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
             .fill(Color(uiColor: .systemBackground))
             .frame(width: geometry.size.width, height: screenHeight)
             .offset(y: -topInset)
@@ -145,7 +146,7 @@ private struct WorkspaceRootView: View {
         .overlay(alignment: .top) {
           Color(uiColor: .secondarySystemBackground)
             .frame(width: geometry.size.width, height: screenHeight)
-            .clipShape(RoundedRectangle(cornerRadius: isSidebarOpen ? 30 : 0))
+            .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
             .opacity(isSidebarOpen ? 0.82 : 0)
             .offset(y: -topInset)
             .allowsHitTesting(isSidebarOpen)
@@ -154,6 +155,12 @@ private struct WorkspaceRootView: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityHidden(!isSidebarOpen)
         }
+        .mask(alignment: .top) {
+          RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
+            .frame(width: geometry.size.width, height: screenHeight)
+            .offset(y: -topInset)
+        }
+        .compositingGroup()
         .shadow(color: .black.opacity(isSidebarOpen ? 0.3 : 0), radius: 18, x: -5)
         .offset(x: isSidebarOpen ? sidebarWidth : 0)
         .accessibilityHidden(isSidebarOpen)

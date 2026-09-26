@@ -847,6 +847,7 @@ interface ValidatedThreadSessionSnapshot {
   readonly kind: "validated-thread-session-snapshot";
   readonly chatThreadId: string;
   readonly agentSessionId: string | null;
+  readonly agentSessionRunId: string | null;
   readonly [validatedThreadSessionTransaction]: DbTransaction;
 }
 
@@ -8222,7 +8223,14 @@ function launchThreadBindingCte(args: {
         agentSessionId: args.identity.sessionId,
         agentSessionRunId: returnedCteId(args.insertedRun),
       })
-      .where(eq(chatThreads.id, args.chatThreadId))
+      // Compare-and-set: another launch that rebound the thread since the
+      // snapshot makes this launch lose its claim.
+      .where(
+        and(
+          eq(chatThreads.id, args.chatThreadId),
+          sql`${chatThreads.agentSessionRunId} IS NOT DISTINCT FROM ${args.validatedThreadSession.agentSessionRunId}::uuid`,
+        ),
+      )
       .returning({ id: chatThreads.id }),
   );
 }
@@ -8365,7 +8373,10 @@ async function persistPendingAtomicLaunch(
     })
     .from(context.insertedRun)
     .innerJoin(insertedQueue, eq(insertedQueue.runId, context.insertedRun.id));
-  if (!row || (context.updatedThread && !row.boundThreadId)) {
+  if (row && context.updatedThread && !row.boundThreadId) {
+    throw new ChatThreadBindingChanged();
+  }
+  if (!row) {
     throw new Error("Atomic pending launch persistence returned no row");
   }
   return {
@@ -8427,7 +8438,10 @@ async function persistQueuedAtomicLaunch(
     .from(context.insertedRun)
     .innerJoin(insertedQueue, eq(insertedQueue.runId, context.insertedRun.id))
     .crossJoin(visibleQueueDepth);
-  if (!row || (context.updatedThread && !row.boundThreadId)) {
+  if (row && context.updatedThread && !row.boundThreadId) {
+    throw new ChatThreadBindingChanged();
+  }
+  if (!row) {
     throw new Error("Atomic queued launch persistence returned no row");
   }
   return {
@@ -8520,7 +8534,6 @@ async function resolveQueueFirstAdmissionForLaunch(args: {
   readonly tx: DbTransaction;
   readonly createArgs: CreateAgentRunArgs;
   readonly sessionSnapshotState: QueueFirstRunSessionSnapshotState;
-  readonly threadAlreadyLocked?: true;
   readonly timing: ApiDispatchTimingCollector;
 }): Promise<QueueFirstRunAdmission | undefined> {
   const association = args.createArgs.queueFirstAssociation;
@@ -8538,7 +8551,6 @@ async function resolveQueueFirstAdmissionForLaunch(args: {
     association,
     sessionSnapshotState: args.sessionSnapshotState,
     timing: args.timing,
-    ...(args.threadAlreadyLocked ? { threadAlreadyLocked: true } : {}),
   });
 }
 
@@ -8784,7 +8796,6 @@ async function persistThreadSessionBinding(
             .select({ agentSessionId: chatThreads.agentSessionId })
             .from(chatThreads)
             .where(eq(chatThreads.id, chatThreadId))
-            .for("no key update")
             .limit(1);
           return loaded;
         },
@@ -8871,15 +8882,14 @@ async function validateThreadSessionSnapshot(
         })
         .from(chatThreads)
         .where(eq(chatThreads.id, chatThreadId))
-        .for("no key update")
         .limit(1);
     },
   );
   if (!thread) {
     throw new Error("Chat thread not found while validating session snapshot");
   }
-  // Even callers without a prepared snapshot later bind this thread. Take its
-  // row lock before the provider lock, just like completion and timeout.
+  // No thread row lock: the binding update compares this run id, and the
+  // final active-run insert is the per-thread lock.
   if (!resolution) {
     return undefined;
   }
@@ -8900,6 +8910,7 @@ async function validateThreadSessionSnapshot(
       kind: "validated-thread-session-snapshot",
       chatThreadId,
       agentSessionId: thread.agentSessionId,
+      agentSessionRunId: thread.agentSessionRunId,
       [validatedThreadSessionTransaction]: tx,
     });
   }
@@ -8929,6 +8940,7 @@ async function validateThreadSessionSnapshot(
     kind: "validated-thread-session-snapshot",
     chatThreadId,
     agentSessionId: thread.agentSessionId,
+    agentSessionRunId: thread.agentSessionRunId,
     [validatedThreadSessionTransaction]: tx,
   });
 }
@@ -9151,7 +9163,6 @@ async function commitValidatedPreparedLaunch(
         tx,
         createArgs: args.createArgs,
         sessionSnapshotState: threadSessionValidation.reason,
-        threadAlreadyLocked: true,
         timing: args.timing,
       });
       if (!queueFirstAdmission || queueFirstAdmission.kind === "idle") {
@@ -9200,7 +9211,6 @@ async function commitValidatedPreparedLaunch(
               sessionSnapshotState: validatedThreadSession
                 ? "current"
                 : "unvalidated",
-              ...(validatedThreadSession ? { threadAlreadyLocked: true } : {}),
               timing: args.timing,
             },
           );
@@ -9233,7 +9243,6 @@ async function commitValidatedPreparedLaunch(
           sessionSnapshotState: validatedThreadSession
             ? "current"
             : "unvalidated",
-          ...(validatedThreadSession ? { threadAlreadyLocked: true } : {}),
           timing: args.timing,
         });
         return await claimQueueFirstAssociationForLaunch({
@@ -9252,6 +9261,40 @@ async function commitValidatedPreparedLaunch(
     validatedThreadSession,
     validatedAccountIdentity,
   });
+}
+
+/** Another launch committed this thread's active run first. */
+class ChatThreadActiveRunTaken extends Error {
+  constructor() {
+    super("Chat thread already has an active run");
+    this.name = "ChatThreadActiveRunTaken";
+  }
+}
+
+/** The thread's session binding changed after the launch read its snapshot. */
+class ChatThreadBindingChanged extends Error {
+  constructor() {
+    super("Chat thread session binding changed during launch");
+    this.name = "ChatThreadBindingChanged";
+  }
+}
+
+/** Map the launch's compare-and-set misses to their retryable results. */
+function launchConflictResult(
+  args: Pick<CommitPreparedLaunchArgs, "createArgs" | "identity">,
+  error: unknown,
+): AtomicLaunchCommitResult | undefined {
+  if (error instanceof ChatThreadActiveRunTaken) {
+    return { kind: "queue-first-claim-lost" };
+  }
+  if (error instanceof ChatThreadBindingChanged) {
+    return threadSessionSnapshotStale({
+      createArgs: args.createArgs,
+      identity: args.identity,
+      reason: "binding_changed",
+    });
+  }
+  return undefined;
 }
 
 /**
@@ -9276,13 +9319,22 @@ async function finishAdmittedLaunch(
       completedAt: null,
     });
   });
-  await tx.insert(activeAgentRuns).values({
-    runId: run.id,
-    orgId: args.createArgs.orgId,
-    userId: args.createArgs.userId,
-    chatThreadId: args.createArgs.chatThreadId ?? null,
-    lastHeartbeatAt: run.createdAt,
-  });
+  // The unique chat_thread_id row is the thread's active-run lock. A conflict
+  // means another run owns the thread, so this launch loses its queue claim.
+  const inserted = await tx
+    .insert(activeAgentRuns)
+    .values({
+      runId: run.id,
+      orgId: args.createArgs.orgId,
+      userId: args.createArgs.userId,
+      chatThreadId: args.createArgs.chatThreadId ?? null,
+      lastHeartbeatAt: run.createdAt,
+    })
+    .onConflictDoNothing({ target: activeAgentRuns.chatThreadId })
+    .returning({ runId: activeAgentRuns.runId });
+  if (inserted.length !== 1) {
+    throw new ChatThreadActiveRunTaken();
+  }
 }
 
 /**
@@ -9384,6 +9436,13 @@ async function commitPreparedLaunch(
       settledTransaction.value.admissionLockHeldStartedAt,
       transactionReturnedAt,
     );
+  }
+  const launchConflict = settledTransaction.ok
+    ? undefined
+    : launchConflictResult(preparedArgs, settledTransaction.error);
+  if (launchConflict) {
+    await admissionTiming.finish(admissionAttemptOutcome(launchConflict));
+    return { result: launchConflict, transactionReturnedAt };
   }
   await admissionTiming.finish(outcome);
   if (!settledTransaction.ok) {

@@ -1,53 +1,11 @@
-import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
 import { Client } from "pg";
-import { onTestFinished } from "vitest";
 import { z } from "zod";
-import { closeDbPool, db } from "../lib/db";
-import { executeRawRows } from "../lib/db-raw-rows";
+import { closeDbPool } from "../lib/db";
 import { settleIncludingAbort } from "../signals/utils";
 import {
   barrierQueryBinds,
   barrierQueryText,
 } from "./database-transaction-barrier";
-
-/** GIN storage/maintenance cannot be controlled through the message API. Each
- * fixture owns a separate table and index; concurrent suites
- * keep their own pending lists and never change the shared projection index.
- */
-export async function createChatSearchGinFixture() {
-  const suffix = randomUUID().replaceAll("-", "");
-  const table = sql.identifier(`chat_search_gin_table_${suffix}`);
-  const indexName = `chat_search_gin_test_${suffix}`;
-  await db().execute(
-    sql`CREATE TABLE ${table} (body tsvector) WITH (autovacuum_enabled = false)`,
-  );
-  onTestFinished(async () => {
-    await db().execute(sql`DROP TABLE ${table}`);
-  });
-  await db().execute(
-    sql`CREATE INDEX ${sql.identifier(indexName)} ON ${table} USING gin (body)`,
-  );
-  return {
-    indexName,
-    async insert(rows: number) {
-      await db().execute(sql`INSERT INTO ${table} (body)
-        SELECT to_tsvector('simple', (SELECT string_agg('term' || term::text, ' ')
-          FROM generate_series(1, 100) term)) FROM generate_series(1, ${rows})`);
-    },
-    async pendingPages() {
-      const [row] = await executeRawRows(
-        db(),
-        sql`SELECT pending_pages FROM public.pgstatginindex(${indexName}::regclass)`,
-        z.object({ pending_pages: z.int().nonnegative() }),
-      );
-      if (!row) {
-        throw new Error("Missing fixture GIN statistics");
-      }
-      return row.pending_pages;
-    },
-  };
-}
 
 /** A real server failure after message writes, before or at the watermark.
  * The API cannot deliberately stall a backend. A test-owned watermark row lock

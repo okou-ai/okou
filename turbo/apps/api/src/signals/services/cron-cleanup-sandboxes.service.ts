@@ -57,7 +57,6 @@ import {
 } from "./threadless-run-cleanup.service";
 import { cleanupExpiredPiApiFirstTurnData$ } from "./pi-api-first-turn-cleanup.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
-import { lockChatQueueThread } from "./chat-event-queue.service";
 import {
   finalizeActiveInputDelivery,
   type FinalizeActiveInputDeliveryResult,
@@ -347,11 +346,6 @@ async function commitStaleRunTimeout(
   while (true) {
     const result = await db.transaction(
       async (tx): Promise<TimeoutTransactionResult> => {
-        const threadLocked =
-          expectedChatThreadId === null
-            ? false
-            : await lockChatQueueThread(tx, expectedChatThreadId);
-        signal.throwIfAborted();
         const lockedRun = await lockTimeoutRun(tx, run.id);
         signal.throwIfAborted();
         if (!lockedRun) {
@@ -359,9 +353,6 @@ async function commitStaleRunTimeout(
         }
         if (lockedRun.chatThreadId !== expectedChatThreadId) {
           return { kind: "retry", chatThreadId: lockedRun.chatThreadId };
-        }
-        if (expectedChatThreadId !== null && !threadLocked) {
-          throw new Error("Agent run retained a missing chat thread");
         }
         if (
           lockedRun.status !== run.status ||
@@ -702,6 +693,10 @@ function logQueueMaintenance(args: {
 
 const cleanupGlobalMaintenance$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
+    // Release silent terminal runs first so the stale drain can admit the
+    // threads they held in the same pass.
+    await set(releaseStaleTerminalActiveAgentRuns$, null, signal);
+    signal.throwIfAborted();
     await set(
       drainStaleChatThreadQueues$,
       { dispatchFailedCallbacks: dispatchFailedRunCallbacks },
@@ -724,8 +719,6 @@ const cleanupGlobalMaintenance$ = command(
       L.error("Failed to retry Feishu connect welcomes", { error });
     });
     signal.throwIfAborted();
-    await set(releaseStaleTerminalActiveAgentRuns$, null, signal);
-    signal.throwIfAborted();
     await set(cleanupExpiredPiApiFirstTurnData$, signal);
     signal.throwIfAborted();
   },
@@ -737,7 +730,11 @@ const cleanupFixtureMaintenance$ = command(
     scope: Extract<CleanupSandboxesScope, { kind: "fixtures" }>,
     signal: AbortSignal,
   ): Promise<void> => {
-    await set(releaseStaleTerminalActiveAgentRuns$, scope.runIds, signal);
+    await set(
+      releaseStaleTerminalActiveAgentRuns$,
+      { runIds: scope.runIds, chatThreadIds: scope.chatThreadIds },
+      signal,
+    );
     signal.throwIfAborted();
     await set(
       drainStaleChatThreadQueues$,

@@ -36,7 +36,6 @@ import {
   finalizeActiveInputDelivery,
   type FinalizeActiveInputDeliveryResult,
 } from "./active-input-delivery.service";
-import { lockChatQueueThread } from "./chat-event-queue.service";
 import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
@@ -522,19 +521,14 @@ async function completeAgentRunTransition(
 ): Promise<CompletionTransactionResult> {
   const { checkpointInput, checkpointPreparation, expectedChatThreadId } =
     context;
-  const threadLocked =
-    expectedChatThreadId === null
-      ? false
-      : await lockChatQueueThread(tx, expectedChatThreadId);
+  // Thread admission is the active run row, which the terminal transition
+  // releases; the run row lock serializes completion against other writers.
   const run = await lockCompletionRun(tx, input);
   if (!run) {
     return { kind: "not-found" };
   }
   if (run.chatThreadId !== expectedChatThreadId) {
     return { kind: "retry", chatThreadId: run.chatThreadId };
-  }
-  if (expectedChatThreadId !== null && !threadLocked) {
-    throw new Error("Agent run retained a missing chat thread");
   }
   if (run.status === "timeout") {
     return {

@@ -2259,11 +2259,6 @@
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "Crie um apresentador para o próximo conteúdo",
-          "prompt": "Crie um apresentador avatar falante para o meu próximo vídeo.",
-          "title": "Criar um avatar"
-        },
         "illustration": {
           "description": "Crie um visual finalizado no estilo que você quiser",
           "prompt": "Crie uma ilustração no estilo que eu descrever.",
@@ -2273,11 +2268,6 @@
           "description": "Transforme um tema ou documento em um deck",
           "prompt": "Crie uma apresentação a partir de um tema ou documento que eu fornecer.",
           "title": "Criar uma apresentação"
-        },
-        "video": {
-          "description": "Transforme sua ideia em um vídeo pronto",
-          "prompt": "Transforme minha ideia ou meus arquivos em um vídeo pronto.",
-          "title": "Criar um vídeo"
         },
         "website": {
           "description": "Crie e publique uma página compartilhável",
@@ -4330,9 +4320,7 @@
       "common": {
         "back": "Voltar",
         "continue": "Continuar",
-        "finish": "Concluir configuração",
-        "notNow": "Agora não",
-        "skip": "Pular por enquanto"
+        "notNow": "Agora não"
       },
       "compliance": {
         "frameworks": {

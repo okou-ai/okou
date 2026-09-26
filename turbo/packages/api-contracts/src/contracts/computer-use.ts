@@ -333,9 +333,10 @@ const computerUseCommandResultSchema = z.record(z.string(), z.unknown());
 /**
  * Screenshot pointer shapes for `computer_use_commands.result.screenshot`.
  *
- * Old rows store the screenshot as a `data:image/...;base64,...` string. New
- * rows store the bytes in private object storage and keep only a pointer here.
- * The stored pointer carries `bucket`/`key`; the client-facing pointer omits
+ * Valid image data URLs are offloaded on completion; stored screenshots keep
+ * only a private object pointer. Unrecognized strings can still be persisted
+ * but are not downloadable as screenshots. The stored pointer carries
+ * `bucket`/`key`; the client-facing pointer omits
  * them so internal storage layout never leaves the API. After retention
  * deletes the object the pointer is rewritten to `{ type: "expired" }`.
  */

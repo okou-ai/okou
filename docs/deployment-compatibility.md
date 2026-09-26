@@ -1,5 +1,99 @@
 # Deployment Compatibility
 
+## Chat search GIN index drops fastupdate and API maintenance; audit approval column contracted (2026-09-26)
+
+Migration `1263_chat_search_gin_fastupdate_off_drop_audit_approval` is
+non-transactional and does two things.
+
+It first drops `computer_use_command_audit_events.approval_outcome` under a 1 s
+`lock_timeout` and 10 s `statement_timeout`, since `DROP COLUMN` needs a brief
+ACCESS EXCLUSIVE lock. #36984 stopped naming that column in audit INSERT and
+SELECT, and its API reached production on 2026-09-26T02:28Z (release
+`d9daec96`). **API rollback floor: `cdeec36c168636b1a2e510e660eb6139c9c4e07a`**
+(#36984's merge commit). Earlier API artifacts name the column in every audit
+INSERT and would fail with `42703`; rollback does not restore the column.
+`.github/scripts/resolve-production-rollback-target.sh` enforces the floor. The
+migration-consistency adapter that restored this column in the generated
+schema is removed.
+
+It then runs
+`ALTER INDEX chat_event_search_messages_user_tsv_gin_idx SET (fastupdate = false)`
+and `gin_clean_pending_list` on that index, with `lock_timeout` raised to 10
+minutes and `statement_timeout` disabled, then resets both. `SET` takes SHARE
+UPDATE EXCLUSIVE and the flush works page by page, so neither blocks chat
+search reads or projector writes.
+
+The search projector no longer drains the pending list: it has no GIN
+maintenance budget, advisory lock or `pgstatginindex` call, and never defers
+candidates. `deferredThreads` is removed from the
+`/api/cron/project-chat-event-search` response, whose only caller is the Vercel
+cron, and the test-only projection route no longer accepts `gin_index_names`.
+
+A production-branch benchmark on 2026-09-26 (5,000 sampled real messages per
+run, one INSERT per transaction, warm cache) measured 21.2 s and 25.5 s total
+with fastupdate off against 14.6 s plus a 0.2 s flush with it on. p50 rose from
+0.11 ms to 0.55 ms and p99 from 46 ms to 67-79 ms. The largest single insert
+stayed about 0.5-0.6 s in both modes.
+
+New API/old DB is compatible: until the migration runs, PostgreSQL still
+flushes a full 4 MiB pending list in the foreground. Old API/new DB is
+compatible for the index: an older API finds zero pending pages and skips
+cleanup. The audit column floor above bounds API rollback. The `pgstattuple`
+extension stays installed for rollback targets that still call
+`pgstatginindex`; removing it needs a separate API rollback floor.
+
+## R2-only chat thread snapshot API rollback floor (2026-09-26)
+
+The production API rollback resolver now rejects targets before the #36945
+main merge commit `3d93ff8d4b4a07a5888e3030e69b340f40da0ad4`. That API
+returns an R2 URL for every existing snapshot row, regardless of the request
+header; older rollback-window APIs can still return non-empty inline snapshots.
+The commit preceded release #36948 (`4ecb619b5c409396edd5815a1ce65941cb29cd74`),
+whose production API promotion succeeded on 2026-09-25 at 23:13:47 UTC
+([release run](https://github.com/okou-ai/okou/actions/runs/36198938622/job/108284233073)).
+
+This floor must be deployed before a separate follow-up removes Web App and CLI
+non-empty inline readers, the capability request header, and the inline
+contract variant for non-empty rows. The empty inline response for a scope
+without a snapshot row is permanent and stays supported. Removing client
+compatibility in this floor-setting release would not establish that the floor
+was already active in production. Recheck the serving API and floor before the
+follow-up enters its release path.
+
+## Chat thread snapshot JSONB column retired (2026-09-26)
+
+Migration `1261_drop_chat_thread_snapshot_jsonb` drops only
+`chat_thread_snapshots.chat_threads`. The API already reads the snapshot cursor
+and scoped R2 `object_key`, not the old JSONB body; the archive in R2 and the
+empty response for a scope without a snapshot row remain unchanged. A masked
+production census on 2026-09-26 00:14 UTC visited all 5,549 snapshot scopes
+in stable key order and observed no null `object_key` (paginated reads, not a
+single-transaction snapshot). This does not establish that every R2 object
+exists. The migration discards the old JSONB column and its contents, but
+leaves all R2 objects and their pointers untouched.
+
+Outgoing API artifacts still write an empty JSONB array on snapshot
+publication (via raw SQL or Drizzle). The owner explicitly accepts a temporary
+failure of that job while
+migrations run before the replacement API is promoted. It may upload an
+unreferenced immutable R2 object before its publish statement fails with
+`42703`; that invocation does not proceed to lifecycle-event pruning or R2
+snapshot garbage collection. Existing snapshot pointers, their R2 downloads,
+and the separate lifecycle-events API do not read the column. A new scope
+without a published snapshot takes the existing empty-snapshot plus event-tail
+path until the new compactor catches up. Verify the outgoing API is already an
+R2-only reader and that no older JSONB reader is still serving at migration
+time. The new API omits the column from both INSERT and UPDATE, so its
+compaction works against either side of the migration.
+
+Rollback does not restore the dropped column. The production rollback resolver
+therefore finds the first-parent main commit adding this migration and rejects
+all API targets before it, including the previous release whose compactor
+would fail and earlier APIs that still read JSONB. Until the new release is
+READY in production, no pre-migration API target is eligible; recovery requires
+fixing forward. This is the accepted single-release compatibility trade-off.
+The R2 JSON archive and its response contract are unchanged.
+
 ## Personal subscription credentials become account-only (2026-09-26)
 
 Personal (`user_id <> '__org__'`) `claude-code-oauth-token` and
@@ -66,6 +160,45 @@ writers. The follow-up #36969 must remove the narrow migration-consistency
 test adapter for this retained nullable text column when it drops the physical
 column, and must raise the rollback floor to this cutover's canonical main
 merge commit. No screenshot decoder or index changes belong to this step.
+The contraction, adapter removal and rollback floor shipped with migration
+`1263_chat_search_gin_fastupdate_off_drop_audit_approval` (see the entry above).
+
+## Chat run admission moves to the `active_agent_runs` thread slot (pending)
+
+**Release ordering:** #36900 shipped separately in release #36948. #36955
+merged into main with migration `1258_active_agent_runs_step2.sql` and shipped
+separately in release #36974. #36980's step-3 migration
+`1259_drop_agent_runs_last_heartbeat_at.sql` must ship alone in its own release
+(#36986), with the previous API drained. #36975's
+`1261_drop_chat_thread_snapshot_jsonb.sql` must also ship independently and
+its previous API must drain before #36929 enters the merge queue. Only then
+may #36929 ship with migration `1262_active_agent_runs_chat_thread_slot.sql`,
+after #36976's `1260_personal_subscription_account_only.sql` and #36975's
+`1261` in the migration journal. The slot rollout requires the deployed
+step-3 API as its predecessor; the effective rollback floor also inherits the
+stricter #36976 account-only and #36975 snapshot-drop floors.
+
+#36955 owns the backfill for queued, pending, running and started terminal runs
+still within the recovery grace or heartbeating. #36929 does **not** repeat
+that backfill. Its migration keeps only the newest active row slotted per
+thread and adds the plain unique index on `active_agent_runs.chat_thread_id`.
+NULL thread IDs remain distinct. The new API's last launch statement inserts
+the active row with `ON CONFLICT (chat_thread_id) DO NOTHING`; a collision rolls
+back that launch as a lost queue claim and keeps the message queued. Queue-first
+admission, Web preflight and queue drain read the slot. Admission, completion,
+timeout and queued-run markers no longer lock the thread row; the session
+binding uses compare-and-set.
+
+**Mixed-version risk:** the step-3 API still inserts active rows without a
+thread-slot conflict handler. If its launch races a new API launch or a still-
+finishing terminal run, the unique index can reject its insert (`23505`): its
+launch rolls back and inline send returns a temporary HTTP 500. The separately
+enqueued input remains durable and can drain after slot release; no second run
+starts. This is a user-visible error, not seamless compatibility. The release
+owner must explicitly accept it and monitor errors and queue progress, or
+first provide an older-API conflict handler / avoid serving the older API
+after the index is created. Separating releases alone does not remove the
+rolling mixed-version window.
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
@@ -146,12 +279,21 @@ the run-level and queued-launch brand. The Phase 1 readers of those payloads do
 not declare or read the field, and stored payloads that still carry it keep
 parsing because the current readers strip unknown keys.
 
-The `agentphone:chat` payload is the exception. The Phase 1 reader
-(`agentPhoneChatCallbackPayloadSchema`) still requires `publicBrand`, and a
-Phase 1 instance can process a callback this release writes during the rolling
-deploy, so this release keeps writing the literal `"okou"` there. Its own reader
-no longer declares the field. Stop writing it in a later release, once no
-serving or rollback-target API predates this one.
+The `agentphone:chat` payload was the rolling-deploy exception. The Phase 1
+reader (`agentPhoneChatCallbackPayloadSchema`) required `publicBrand`, so Phase 2
+kept writing the literal `"okou"` while Phase 1 instances might still serve or
+be selected as rollback targets. The Phase 2 reader no longer declares the field.
+
+Follow-up #36913 stops writing that literal. Phase 2's migration and API shipped
+to `api/production` in release #36970 (`191d95c`): the production migration
+completed at 2026-09-26 00:50 UTC and API deployment succeeded. The most recent
+pre-Phase-2 API (`4ecb619`) was marked inactive at 00:50 UTC and no longer has a
+Vercel production alias; at the 02:29 UTC check, production API aliases pointed
+to the later Phase-2-descendant `355e1ac`. The production rollback workflow
+checks out `main`, where its target resolver rejects any commit predating the
+canonical `1255_retire_public_brand` migration merge; the resolver test passes.
+Stored callbacks with the old extra field still parse because the current reader
+strips unknown keys.
 
 Stored R2 records keep their historical names: the `publicBrand` field of
 policies, delivery records, preview grants, pointers and manifests, the
@@ -483,14 +625,19 @@ The API no longer downloads and decompresses the R2 archive on behalf of a
 header-less client. A scope without a snapshot row still returns
 `{ chatThreads: [], latestEventId: null, latestSeqId: null }`.
 
-The iOS TestFlight client currently decodes only inline `chatThreads`, so a
-header-less iOS build cannot load a non-empty compacted chat thread list from
-this API. Updating iOS to download the R2 URL remains separate work; this PR
-does not provide a minimum-version gate for iOS. Web App and CLI still send the
-capability header and accept inline responses for the existing API rollback
-window: an older API behind the current rollback floor still branches on that
-header. Keep the header in CORS and the shared inline response variant until
-the API rollback floor advances past that implementation.
+Pre-fix iOS TestFlight builds decode only inline `chatThreads`, so they cannot
+load a non-empty compacted chat thread list from this API. The updated native
+client downloads and decodes the R2 archive. It also accepts inline responses
+from a scope without a snapshot row or a rollback-window API. Installed pre-fix
+builds remain incompatible until users install a TestFlight build containing
+the native client fix. There is no iOS minimum-version gate. This preserves
+the explicitly accepted break rather
+than reintroducing API-side R2 download and decompression for header-less
+requests. Web App and CLI still send the capability header and accept inline
+responses for the existing API rollback window: an older API behind the
+current rollback floor still branches on that header. Keep the header in CORS
+and the shared inline response variant until the API rollback floor advances
+past that implementation.
 
 ## Thread draft contraction, release 2 (2026-09-25)
 

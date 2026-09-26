@@ -45,7 +45,6 @@ import {
   chatQueueEventPriority,
   listPendingChatQueueEvents,
   loadPendingChatQueueEvent,
-  lockChatQueueThread,
   pendingChatQueueEventCondition,
   pendingChatQueueEventConditionFor,
 } from "./chat-event-queue.service";
@@ -197,17 +196,6 @@ export type QueueFirstRunSessionSnapshotState =
   | "current"
   | "session_changed"
   | "unvalidated";
-
-/**
- * Thread lock for queue-first run admission. Claims, rejections and
- * revocations consume an event through its unique revoke edge instead.
- */
-export async function lockUserMessageQueueThread(
-  db: Db,
-  threadId: string,
-): Promise<boolean> {
-  return await lockChatQueueThread(db, threadId);
-}
 
 /** Whether the outer ChatEvent row is an unclaimed, unrevoked prompt. */
 export function queuedUserMessageExists(db: Pick<Db, "select">): SQL {
@@ -733,7 +721,6 @@ async function loadQueueFirstAdmissionProjection(
     .select({
       admissionBlocked: sql`${chatThreadAdmissionBlockerCondition(db, {
         threadId: args.association.threadId,
-        apiStartTime: args.admissionTime,
       })}`.mapWith(pgBooleanDecoder),
       head: {
         id: head.id,
@@ -755,8 +742,9 @@ async function loadQueueFirstAdmissionProjection(
 }
 
 /**
- * Resolve the transaction-scoped thread admission consumed by queue claim.
- * Both successful and failed launches arbitrate through the thread lock.
+ * Resolve the thread admission consumed by queue claim. The read is a hint:
+ * launch's final active-run insert is the authoritative per-thread lock, and
+ * the head's unique revoke edge makes the claim itself exclusive.
  */
 export async function resolveQueueFirstRunAdmission(
   db: DbTransaction,
@@ -764,7 +752,6 @@ export async function resolveQueueFirstRunAdmission(
     readonly admissionTime: number;
     readonly association: QueueFirstRunAssociation;
     readonly sessionSnapshotState: QueueFirstRunSessionSnapshotState;
-    readonly threadAlreadyLocked?: true;
     readonly timing: ApiDispatchTimingCollector;
   },
 ): Promise<QueueFirstRunAdmission> {
@@ -773,23 +760,6 @@ export async function resolveQueueFirstRunAdmission(
     "api_dispatch_resolve_queue_first_admission",
     "nested",
     async () => {
-      const threadExists =
-        args.threadAlreadyLocked ??
-        (await args.timing.measure(
-          "api_dispatch_queue_first_thread_lock_wait",
-          "nested",
-          async () => {
-            return await lockUserMessageQueueThread(
-              db,
-              args.association.threadId,
-            );
-          },
-        ));
-      if (!threadExists) {
-        outcome = "blocked";
-        return { kind: "blocked" };
-      }
-
       const projection = await args.timing.measure(
         "api_dispatch_queue_first_admission_projection",
         "nested",

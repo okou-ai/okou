@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.969.0](https://github.com/okou-ai/okou/compare/app-v0.968.0...app-v0.969.0) (2026-09-26)
+
+
+### Features
+
+* **platform:** let continue wait for each optional onboarding step's action ([#36931](https://github.com/okou-ai/okou/issues/36931)) ([c54001e](https://github.com/okou-ai/okou/commit/c54001e60241d8813afe117da0d3b54607c27c96))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.514.4
+    * @okouai/core bumped to 8.711.1
+
 ## [0.968.0](https://github.com/okou-ai/okou/compare/app-v0.967.2...app-v0.968.0) (2026-09-26)
 
 

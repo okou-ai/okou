@@ -524,7 +524,14 @@ export function AgentChatPage() {
               The ordering the wrapper carried moved onto the section itself. */}
           <HomeTaskRecommendations agentId={currentChatAgentId} />
 
-          <div className="order-2 sm:order-none">
+          {/* Start cards are desktop-only. `hidden` rather than skipping the
+              render: a `display: none` wrapper leaves the flex flow, so the
+              phone column does not pay a `gap` for an empty box. */}
+          <div
+            className={
+              taskChipsEnabled ? "order-2 sm:order-none" : "hidden sm:block"
+            }
+          >
             {taskChipsEnabled ? (
               <ComposerTaskChips signals={composerSignals} />
             ) : (

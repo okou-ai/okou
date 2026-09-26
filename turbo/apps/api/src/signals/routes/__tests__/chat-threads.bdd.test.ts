@@ -52,7 +52,6 @@ import {
   insertCanonicalOrphanChatThreadEventFixture,
   insertChatThreadEventTransactionFixture,
   readChatThreadEventIdsFixture,
-  readChatThreadSnapshotStorageFixture,
   setChatThreadSnapshotBoundaryFixture,
   setChatThreadSnapshotObjectKeyFixture,
   setChatThreadVideoModelFixture,
@@ -949,15 +948,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       title: "R2 snapshot pointer thread",
     });
     await compactChatThreadSnapshots(actor);
-    await expect(
-      readChatThreadSnapshotStorageFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-      }),
-    ).resolves.toStrictEqual({
-      objectKey: expect.any(String),
-      chatThreads: [],
-    });
     const materialized = await chat.getThreadSnapshot(actor);
     expect(materialized.chatThreads).toContainEqual(
       expect.objectContaining({ title: "R2 snapshot pointer thread" }),
