@@ -21,6 +21,8 @@ import {
 
 const context = testContext();
 const orgId = "org_cloudflare_access";
+const impactAcknowledgement =
+  "I understand these members' SSH hosts will remain saved but cannot connect until their owners rebind them or explicitly choose Direct.";
 const timestamp = "2026-09-22T00:00:00.000Z";
 const config: ScopedCloudflareAccessConfig = Object.freeze({
   id: "a0000000-0000-4000-8000-000000000001",
@@ -616,9 +618,7 @@ test("admin conversion lists affected members and only the aggregate host count 
   expect(getAction("button", "Cancel", dialog)).toBeEnabled();
   expect(confirm).toBeDisabled();
   await userEvent.click(
-    within(dialog).getByRole("checkbox", {
-      name: /I understand these hosts will need their owners/u,
-    }),
+    within(dialog).getByRole("checkbox", { name: impactAcknowledgement }),
   );
   expect(confirm).toBeEnabled();
   click(confirm);
@@ -712,7 +712,7 @@ test("changed conversion impact requires a fresh warning and confirmation", asyn
   const dialog = await screen.findByRole("dialog", { name: "Make personal" });
   await within(dialog).findByText(/1 member and 1 SSH host/u);
   const acknowledge = within(dialog).getByRole("checkbox", {
-    name: /I understand these hosts will need their owners/u,
+    name: impactAcknowledgement,
   });
   await userEvent.click(acknowledge);
   click(getAction("button", "Make personal", dialog));
@@ -950,7 +950,10 @@ test("reviewed shared deletion names affected owners and requires re-review when
   expect(
     getAction("button", "Delete Cloudflare Access", dialog),
   ).toBeDisabled();
-  await userEvent.click(within(dialog).getByRole("checkbox"));
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", { name: impactAcknowledgement }),
+  );
+  expect(getAction("button", "Delete Cloudflare Access", dialog)).toBeEnabled();
   click(getAction("button", "Delete Cloudflare Access", dialog));
   await within(dialog).findByText(/affected hosts changed/u);
   expect(bodies).toStrictEqual([
