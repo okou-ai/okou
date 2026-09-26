@@ -1244,15 +1244,22 @@
     {
       "idx": 1255,
       "version": "7",
-      "when": 1790380278389,
-      "tag": "1255_drop_redundant_chat_thread_indexes",
+      "when": 1790380349486,
+      "tag": "1255_retire_public_brand",
       "breakpoints": true
     },
     {
       "idx": 1256,
       "version": "7",
-      "when": 1790380294961,
-      "tag": "1256_drop_chat_thread_draft_columns",
+      "when": 1790382132921,
+      "tag": "1256_drop_redundant_chat_thread_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 1257,
+      "version": "7",
+      "when": 1790382154084,
+      "tag": "1257_drop_chat_thread_draft_columns",
       "breakpoints": true
     }
   ]

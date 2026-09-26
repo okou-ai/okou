@@ -4,9 +4,9 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { command, computed } from "ccstate";
 import {
   DEFAULT_AGENT_DISPLAY_NAME,
-  PUBLIC_BRAND_PRESENTATION,
+  BRAND_PRESENTATION,
   agentDisplayName,
-} from "@okouai/core/public-brand";
+} from "@okouai/core/brand-presentation";
 import { v5 as uuidv5 } from "uuid";
 import {
   getCanonicalModelDisplayName,
@@ -2129,7 +2129,7 @@ const handleTelegramAgentMessage$ = command(
         chatId,
         text:
           args.userLinkKind === "official"
-            ? `The workspace default agent is not configured. Please choose an agent in ${PUBLIC_BRAND_PRESENTATION.brandName} first.`
+            ? `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`
             : "The agent is not available. Please contact the admin.",
         replyToMessageId: args.message.message_id,
       });
@@ -2611,7 +2611,7 @@ const handleOfficialCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const presentation = PUBLIC_BRAND_PRESENTATION;
+    const presentation = BRAND_PRESENTATION;
     const assistantName = presentation.assistantName;
     const reply = async (text: string, sig: AbortSignal): Promise<void> => {
       await postTelegramMessage({
@@ -3101,7 +3101,7 @@ const processOfficialWebhookMessage$ = command(
         fromUserId: String(args.message.from?.id ?? 0),
         telegramUsername: args.message.from?.username ?? null,
         telegramDisplayName: displayName,
-        agentName: PUBLIC_BRAND_PRESENTATION.assistantName,
+        agentName: BRAND_PRESENTATION.assistantName,
         replyToMessageId:
           args.message.chat.type === "private"
             ? undefined
@@ -3117,7 +3117,7 @@ const processOfficialWebhookMessage$ = command(
       await postTelegramMessage({
         botToken: config.botToken,
         chatId,
-        text: `The workspace default agent is not configured. Please choose an agent in ${PUBLIC_BRAND_PRESENTATION.brandName} first.`,
+        text: `The workspace default agent is not configured. Please choose an agent in ${BRAND_PRESENTATION.brandName} first.`,
         replyToMessageId:
           args.message.chat.type === "private"
             ? undefined

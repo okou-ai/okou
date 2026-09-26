@@ -1,3 +1,4 @@
+import type { LinkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
   pgTable,
   text,
@@ -15,7 +16,10 @@ export const artifactShares = pgTable(
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
     // Link-layout segment inherited from the shared content.
-    publicBrand: text("public_brand").notNull().default("okou"),
+    linkLayoutSegment: text("link_layout_segment")
+      .$type<LinkLayoutSegment>()
+      .notNull()
+      .default("okou"),
     targetKind: text("target_kind").$type<"file" | "html">().notNull(),
     targetId: uuid("target_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

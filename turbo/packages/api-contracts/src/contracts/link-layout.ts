@@ -19,8 +19,8 @@ export const CURRENT_LINK_LAYOUT: LinkLayout = "current";
 /**
  * Frozen storage segments. They appear in R2 keys (for example
  * `artifact-shares/<segment>/<id>.json`), in the layout marker of stored R2
- * policies and manifests, in object metadata, and in the `public_brand` column
- * of hosted-site and artifact-share rows. These strings are storage
+ * policies and manifests, in object metadata, and in the `link_layout_segment`
+ * column of hosted-site, artifact-share and shared-thread rows. These strings are storage
  * identifiers and must never change.
  */
 const LINK_LAYOUT_SEGMENTS = {
@@ -50,7 +50,7 @@ export function linkLayoutFromSegment(segment: string): LinkLayout {
   throw new Error(`Unknown link layout segment: ${segment}`);
 }
 
-/** Validate a stored segment, such as a row's `public_brand` value. */
+/** Validate a stored segment, such as a row's `link_layout_segment` value. */
 export function storedLinkLayoutSegment(value: string): LinkLayoutSegment {
   return linkLayoutSegment(linkLayoutFromSegment(value));
 }

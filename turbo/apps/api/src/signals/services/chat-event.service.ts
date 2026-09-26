@@ -51,7 +51,7 @@ type ChatEventIdentity = {
 export type DiscordChatEventContext = Readonly<
   Omit<
     typeof chatDiscordContext.$inferSelect,
-    "id" | "chatThreadId" | "publicBrand" | "createdAt"
+    "id" | "chatThreadId" | "createdAt"
   >
 >;
 

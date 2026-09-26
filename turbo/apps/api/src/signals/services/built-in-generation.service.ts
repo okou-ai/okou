@@ -7,10 +7,6 @@ import {
   type BuiltInGenerationType,
 } from "@okouai/db/schema/built-in-generation-job";
 import type { BuiltInGenerationResponse } from "@okouai/api-contracts/contracts/built-in-generation";
-import {
-  CURRENT_LINK_LAYOUT,
-  linkLayoutSegment,
-} from "@okouai/api-contracts/contracts/link-layout";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -114,10 +110,6 @@ export function builtInGenerationRequestWithInternal(
     [BUILT_IN_GENERATION_INTERNAL_REQUEST_KEY]: compactObject({
       admissionId: internal.admissionId,
       privateArtifacts: internal.privateArtifacts,
-      // Rollback compatibility: an older API completing this job reads a
-      // missing marker as the legacy artifact layout. Remove after that API
-      // is no longer a rollback target (#36766).
-      publicBrand: linkLayoutSegment(CURRENT_LINK_LAYOUT),
       provider: internal.provider,
       providerJobId: internal.providerJobId,
       providerSessionId: internal.providerSessionId,

@@ -28,11 +28,6 @@ export const feishuOrgInstallations = pgTable(
     botOpenId: varchar("bot_open_id", { length: 255 }),
     botName: varchar("bot_name", { length: 255 }),
     botAvatarUrl: text("bot_avatar_url"),
-    /**
-     * Retired (#36766): current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou").notNull(),
     encryptedAppSecret: text("encrypted_app_secret").notNull(),
     encryptedVerificationToken: text("encrypted_verification_token").notNull(),
     encryptedEncryptKey: text("encrypted_encrypt_key").notNull(),

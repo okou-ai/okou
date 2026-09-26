@@ -29,11 +29,6 @@ export const teamsOrgInstallations = pgTable(
     serviceUrl: text("service_url"),
     orgId: text("org_id"),
     installedByUserId: text("installed_by_user_id"),
-    /**
-     * Retired: current APIs neither read nor write it and rely on the
-     * `okou` default; drop it after older API deployments drain.
-     */
-    publicBrand: text("public_brand").default("okou").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

@@ -2,7 +2,7 @@
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 
-**Draft columns and owner key.** Migration `1256_drop_chat_thread_draft_columns` drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`, and makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.
+**Draft columns and owner key.** Migration `1257_drop_chat_thread_draft_columns` drops `chat_threads.draft_user_message`, `draft_attachments` and `chat_threads_draft_user_message_check`, and makes `(chat_thread_id, user_id)` the `chat_thread_drafts` primary key.
 
 `PATCH /api/chat-threads/:id` no longer reads the thread. It upserts or deletes the caller's own row and always returns `204`; the contract no longer declares `404`. A write to a missing or foreign thread lands in a row keyed to the caller that nobody else reads.
 
@@ -16,7 +16,7 @@
 
 Responses are unchanged.
 
-**Indexes.** Migration `1255_drop_redundant_chat_thread_indexes` (non-transactional) drops `idx_chat_threads_user_agent_updated` and `idx_chat_threads_user_last_read` with `CONCURRENTLY`. The planner serves their prefixes from `idx_chat_threads_user_agent_last_message` and `idx_chat_threads_user_last_message_id`. Read-cursor-only updates become HOT-eligible. No API names these indexes.
+**Indexes.** Migration `1256_drop_redundant_chat_thread_indexes` (non-transactional) drops `idx_chat_threads_user_agent_updated` and `idx_chat_threads_user_last_read` with `CONCURRENTLY`. The planner serves their prefixes from `idx_chat_threads_user_agent_last_message` and `idx_chat_threads_user_last_message_id`. Read-cursor-only updates become HOT-eligible. No API names these indexes.
 
 **Snapshot compaction.** The cron no longer unions every thread, event and snapshot scope:
 
@@ -27,6 +27,79 @@ Responses are unchanged.
 - it prunes compacted events with bounded reads and one `DELETE` by id.
 
 Agent deletion reads the affected thread ids and owners in bounded keyset pages before the deletion transaction. After commit it appends `deleted` lifecycle events in small batches using the single-statement sequence allocator, with the captured org id (the Agent is already gone). Batch failures are logged, not retried, and never roll back deletion; as with `sort_touched`, an occasional missing event is accepted. Event-page reads keep `deleted` tombstones visible after the Agent is gone while continuing to filter other events by live Agent. With these events driving snapshot invalidation, the 24-hour full refresh and repeated empty-scope publication are removed. A scope with no visible event and no snapshot remains empty. The projection's timestamp strings keep the exact `jsonb_build_object` format.
+
+## Public brand retirement contraction (2026-09-25)
+
+Phase 2 of #36766 contracts the columns that Phase 1 stopped reading. Migration
+`1255_retire_public_brand` drops `public_brand` from `slack_org_installations`,
+`slack_chat_ingress`, `chat_slack_context`, `discord_chat_ingress`,
+`chat_discord_context`, `feishu_org_installations`, `feishu_org_connections`,
+`feishu_chat_ingress`, `chat_feishu_context`, `teams_org_installations`,
+`chat_teams_context`, `telegram_installations`, `telegram_official_user_links`,
+`chat_telegram_context`, `github_installations` (with `setup_public_brand`),
+`chat_github_context`, `chat_automation_context`, `push_subscriptions`,
+`email_outbox`, `export_jobs`, `usage_pack_invitation_purchases`,
+`browser_sessions` and `socialkit_download_jobs`, and removes their Drizzle
+declarations.
+
+The per-row link layout marker is renamed, not dropped: `public_brand` becomes
+`link_layout_segment` on `hosted_sites`, `hosted_deployments`,
+`private_hosted_deployments`, `artifact_shares` and `shared_threads`, with the
+same `okou` / `vm0` values, `NOT NULL` and `DEFAULT 'okou'`. The unique key
+`idx_hosted_sites_id_public_brand` and the foreign keys
+`fk_hosted_deployments_site_public_brand` and
+`fk_private_hosted_deployments_site_public_brand` are renamed to their
+`link_layout_segment` spellings with `RENAME CONSTRAINT`, so no index is rebuilt
+and no foreign key is revalidated. Every statement is a catalog-only change
+under the default 1s lock timeout; no table is rewritten or scanned. No
+function, trigger or view references the retired columns.
+
+Gate evidence: the seven Phase 1 slices (#36768, #36770–#36774, #36777) are all
+in API release `api-v1.676.0`, and `api/production` serves release #36892
+(`api-v1.677.1`, `2be63cd`) since 2026-09-25 11:25 UTC; every earlier
+production API that remains deployable contains Phase 1.
+
+Phase 1 APIs no longer read these columns, but they still declare them.
+Drizzle names every declared column in `insert` column lists and in bare
+`select()`, so those APIs still reach `public_brand` on every table above,
+including the five layout tables. As with `1228`, `test:migration-consistency`
+requires the declaration and the physical schema to agree, so the declaration
+changes and the migration ship in one release. Migrations run before API
+promotion. In the window before the previous API drains, its Slack, Discord,
+Feishu, Teams, Telegram, GitHub and automation ingress/context statements,
+push, email, export, usage-pack invitation, browser-session and SocialKit
+statements, and its hosted-site, artifact-share and shared-thread statements
+receive `42703`. Release this change alone at low traffic; the promotion window
+after migration completion is about 20 seconds.
+
+This release also stops writing the rollout-only `publicBrand: "okou"` in chat,
+Slack, Discord, Feishu, Teams, Telegram, GitHub and workflow-automation
+result-email callback payloads and in built-in generation requests, and removes
+the run-level and queued-launch brand. The Phase 1 readers of those payloads do
+not declare or read the field, and stored payloads that still carry it keep
+parsing because the current readers strip unknown keys.
+
+The `agentphone:chat` payload is the exception. The Phase 1 reader
+(`agentPhoneChatCallbackPayloadSchema`) still requires `publicBrand`, and a
+Phase 1 instance can process a callback this release writes during the rolling
+deploy, so this release keeps writing the literal `"okou"` there. Its own reader
+no longer declares the field. Stop writing it in a later release, once no
+serving or rollback-target API predates this one.
+
+Stored R2 records keep their historical names: the `publicBrand` field of
+policies, delivery records, preview grants, pointers and manifests, the
+`public-brand` object metadata, the `publicBrand` key of
+`run_uploaded_files.metadata`, and the `<segment>` path components. Legacy
+links keep resolving: the host Worker reads only R2 and is unaffected by the
+column rename, and the API reads the unchanged `okou` / `vm0` values from
+`link_layout_segment` to lay out records derived from existing content. OAuth
+and install states are unaffected; Phase 1 already removed the brand from them.
+
+Rollback promotes artifacts without restoring schema. The production rollback
+resolver therefore rejects API targets that predate the canonical main commit
+that added `1255_retire_public_brand.sql`. Recovering past that commit requires
+a forward-fix migration that restores the columns and the old layout column
+name, not an artifact rollback.
 
 ## Account erasure retirement (2026-09-25)
 
@@ -666,8 +739,8 @@ Migration `1237_public_brand_okou_default_platform` sets the column default to
 `browser_sessions` and `socialkit_download_jobs`). An old API reads `okou` from
 rows the new API inserts, and its own inserts still carry an explicit brand, so
 old API/new DB and rollback remain compatible. The columns and their ORM
-declarations stay in place; drop them in a separate migration after older API
-deployments drain.
+declarations stayed in place until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 `GET /api/shared-threads/:id` and `GET /api/shared-threads/:id/meta` no longer
 return `publicBrand`. No App code reads it, and the App does not validate
@@ -676,8 +749,8 @@ responses. The test-only email outbox state endpoint no longer returns
 
 Chat run callbacks no longer read `publicBrand`. The persisted `chat` callback
 payload still carries a fixed `publicBrand: "okou"`, because an older API
-instance that processes the callback defaults a missing value to `vm0`; stop
-writing it after older API deployments drain. Stored callbacks that carry any
+instance that processes the callback defaults a missing value to `vm0`; the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) stopped writing it. Stored callbacks that carry any
 `publicBrand`, including `vm0`, keep parsing because the payload schema passes
 unknown keys through, and the value is ignored. Provider delivery callback
 payloads keep the fixed value until their provider slices retire the field.
@@ -723,15 +796,15 @@ default), `chat_telegram_context` (previously no default),
 from rows the new API inserts, including the non-null brand its Telegram
 queued-launch path requires, so old API/new DB and rollback remain compatible.
 Existing rows keep their stored values; no current reader observes them. The
-columns and their ORM declarations stay in place; drop them in a separate
-migration after older API deployments drain.
+columns and their ORM declarations stayed in place until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 Teams and Telegram chat callback payloads, and the Teams delivery target inside
 persisted run payloads, still carry `publicBrand: "okou"`. APIs before this
 change require that key when they parse a pending callback or a claimed run, so
 removing it would break delivery during a rolling deploy or after an API
-rollback. The new readers ignore any stored value, including `vm0`. Stop
-writing the key when the column-drop follow-up lands.
+rollback. The new readers ignore any stored value, including `vm0`. The
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) stopped writing the key.
 
 The Teams OAuth `state` no longer carries `publicBrand`, and the callback no
 longer requires it. A state issued by an older API still parses because the
@@ -753,20 +826,20 @@ to `'okou'` on `slack_chat_ingress`, `chat_slack_context`,
 `discord_chat_ingress` and `chat_discord_context` (previously no default);
 `slack_org_installations` already defaulted to `'okou'`. An old API therefore
 reads a non-null `okou` brand from rows the new API inserts, so old API/new DB
-and rollback remain compatible. The columns and their ORM declarations stay in
-place; drop them in a separate migration after older API deployments drain.
+and rollback remain compatible. The columns and their ORM declarations stayed in
+place until the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 Persisted callback payloads:
 
 - `slack:chat`: the reader no longer declares `publicBrand`, so stored payloads
   that carry it keep parsing (the key is stripped). Older APIs require the
-  field, so the writer still emits the literal `publicBrand: "okou"`. Remove
-  that write once no API rollback target predates this change.
+  field, so the writer kept emitting the literal `publicBrand: "okou"` until
+  the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 - `chat` callback `discordDelivery`: the target no longer declares
   `publicBrand`; stored targets that carry it keep parsing. Older APIs require
   `publicBrand: "okou"` on the stored target, so the persisted `chat` callback
-  still writes that literal through `storedDiscordDeliveryTarget`. Remove it
-  once no API rollback target predates this change.
+  kept writing that literal through `storedDiscordDeliveryTarget` until the
+  [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 Slack OAuth state no longer carries `publicBrand`. The new API accepts states
 issued before this change, because it ignores the key. An older API rejects
@@ -792,13 +865,13 @@ Migration `1231_feishu_public_brand_okou_default` sets the column default to
 had none). An old API therefore reads `okou` from rows the new API inserts,
 including the non-null brand that its ingress processor and queued-launch path
 require, so old API/new DB and rollback remain compatible. The columns and their
-ORM declarations stay until a later migration drops them.
+ORM declarations stayed until the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 Stored `feishu:chat` and `feishu:org` callback payloads keep parsing: current
 readers no longer declare `publicBrand`, so a stored brand is ignored. Older
-APIs still require the field, so writers keep stamping the fixed
-`FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND` value until those APIs are no longer
-rollback targets.
+APIs still require the field, so writers kept stamping the fixed
+`FEISHU_CALLBACK_ROLLBACK_PUBLIC_BRAND` value until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) excluded those APIs from rollback.
 
 Feishu OAuth state no longer carries `publicBrand`. States signed by an older
 API still verify, because the extra key is stripped. A state signed by the new
@@ -854,14 +927,15 @@ The segment appears in R2 keys (`artifact-shares/<segment>/`,
 `publicBrand` field of stored R2 policies, delivery records, preview grants,
 pointers and manifests, in the `public-brand` object metadata, in the
 `publicBrand` key of `run_uploaded_files.metadata` and chat attachment
-metadata, and in the `public_brand` column of `hosted_sites`,
+metadata, and in the `link_layout_segment` column (named `public_brand` until
+the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25)) of `hosted_sites`,
 `hosted_deployments`, `private_hosted_deployments` and `artifact_shares`.
 Where a marker is absent — V1 artifact objects, V2 objects and canonical assets
 stored before the marker, pointers and manifests written before it, and
 historical public delivery writes — the layout is `legacy`. Present unknown
 values fail. The host Worker (#36766 slice G) uses the same segment names.
-Conversation snapshots are addressed through `shared_threads.public_brand`,
-which therefore remains readable as their layout marker until Phase 2.
+Conversation snapshots are addressed through
+`shared_threads.link_layout_segment`, which remains their layout marker.
 
 Writers therefore keep emitting the `okou` marker on every current-layout
 object: deployed Workers and an older API treat a missing marker as legacy.
@@ -881,15 +955,14 @@ hosted sites, deployments, shares and shared threads, using the same layout that
 selects their URLs and keys, so rows do not depend on the migration having run.
 Old API/new DB and rollback remain compatible. The columns, the
 `(site_id, public_brand)` foreign keys and their unique key stay: they are the
-per-row layout marker for roughly 13.4k sites and 22.5k deployments. Phase 2
-may replace the marker with a neutral column (for example a `legacy_link_layout`
-boolean backfilled from `public_brand = 'vm0'`) before dropping
-`public_brand`; that requires its own expand/contract release.
+per-row layout marker for roughly 13.4k sites and 22.5k deployments. The
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) renamed the column, its unique key and foreign keys to
+`link_layout_segment` with unchanged values.
 
-Built-in generation jobs no longer read a brand. New job requests keep writing
-`__builtInGeneration.publicBrand = "okou"` so an older API that completes the
-job during rollout or rollback does not publish its result in the legacy
-layout. Stored requests that still carry any `publicBrand` value parse and the
+Built-in generation jobs no longer read a brand. New job requests kept writing
+`__builtInGeneration.publicBrand = "okou"` until the
+[public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25), so an older API that completed the job during rollout or rollback
+did not publish its result in the legacy layout. Stored requests that still carry any `publicBrand` value parse and the
 value is ignored.
 
 Environment names are unchanged because renaming deployed secrets is not safe
@@ -942,7 +1015,7 @@ to `'okou'` on `github_installations.setup_public_brand`,
 `'okou'`. An old API therefore reads `okou`, including the non-null automation
 brand its queue drain requires, from rows the new API inserts. Old API/new DB
 and rollback remain compatible. The columns and their Drizzle declarations
-stay until a separate Phase 2 drop.
+stayed until the [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25).
 
 GitHub App install state no longer carries `publicBrand` / `publicBrandSig`.
 The callback-redirect and requested-scope HMACs no longer include a brand and
@@ -960,8 +1033,8 @@ earlier APIs still parse. The `github:chat` reader ignores the field in the
 same way. Writers still emit `publicBrand: "okou"` in the result-email payload
 because earlier APIs require the key in their strict schema; the generic
 `chat` callback brand and the `github:chat` writer belong to the run-level
-brand cleanup. Remove these writes when the Phase 2 rollback floor excludes
-APIs that require them. No App, CLI or public contract changes.
+brand cleanup. The [public brand retirement contraction](#public-brand-retirement-contraction-2026-09-25) removed these writes and raised the rollback
+floor past the APIs that require them. No App, CLI or public contract changes.
 
 ## Discord canonical Chat sources (2026-09-24)
 

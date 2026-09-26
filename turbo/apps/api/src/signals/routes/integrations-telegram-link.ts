@@ -4,7 +4,7 @@ import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
@@ -114,7 +114,7 @@ function missingBotUsernameResponse(official: boolean) {
 }
 
 function linkConflictResponse(reason: LinkTelegramUserConflictReason) {
-  const brandName = PUBLIC_BRAND_PRESENTATION.brandName;
+  const brandName = BRAND_PRESENTATION.brandName;
   const message =
     reason === "telegram-user-linked"
       ? `This Telegram account is already connected to another ${brandName} account for this bot. Disconnect it before connecting a different account.`
@@ -129,7 +129,7 @@ function officialLinkConflictResponse(
   reason: LinkOfficialTelegramUserConflictReason,
   botUsername: string,
 ) {
-  const brandName = PUBLIC_BRAND_PRESENTATION.brandName;
+  const brandName = BRAND_PRESENTATION.brandName;
   const botLabel = `official Telegram bot @${botUsername}`;
   const message =
     reason === "telegram-user-linked"
@@ -176,7 +176,7 @@ function sendConnectSuccessMessage(args: {
   readonly official: boolean;
 }): void {
   const text = args.official
-    ? `✅ Account linked.\nSend me a message to start chatting with ${PUBLIC_BRAND_PRESENTATION.assistantName}.`
+    ? `✅ Account linked.\nSend me a message to start chatting with ${BRAND_PRESENTATION.assistantName}.`
     : "✅ Account linked.\nSend me a message to start chatting with your agent.";
 
   waitUntil(

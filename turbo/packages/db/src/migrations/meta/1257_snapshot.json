@@ -1,6 +1,6 @@
 {
-  "id": "ae276968-c27f-4500-adbf-9f1293c8c092",
-  "prevId": "58c28b5d-1ba9-46b3-8f87-761ece71bc01",
+  "id": "1de8b03f-87d8-4057-b5ec-4768516d3b1f",
+  "prevId": "d777c3ab-bde8-4d19-bbe0-953f0eca91d6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8417,35 +8417,15 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "uq_chat_thread_drafts_thread_user": {
-          "name": "uq_chat_thread_drafts_thread_user",
-          "columns": [
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "chat_thread_drafts_chat_thread_id_pk": {
-          "name": "chat_thread_drafts_chat_thread_id_pk",
+        "chat_thread_drafts_chat_thread_id_user_id_pk": {
+          "name": "chat_thread_drafts_chat_thread_id_user_id_pk",
           "columns": [
-            "chat_thread_id"
+            "chat_thread_id",
+            "user_id"
           ]
         }
       },
@@ -9157,69 +9137,9 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "draft_user_message": {
-          "name": "draft_user_message",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "draft_attachments": {
-          "name": "draft_attachments",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "idx_chat_threads_user_agent_updated": {
-          "name": "idx_chat_threads_user_agent_updated",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "updated_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_chat_threads_user_last_read": {
-          "name": "idx_chat_threads_user_last_read",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "last_read_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_chat_threads_user_agent_pinned": {
           "name": "idx_chat_threads_user_agent_pinned",
           "columns": [
@@ -9341,10 +9261,6 @@
         "chat_threads_computer_access_check": {
           "name": "chat_threads_computer_access_check",
           "value": "NOT (\"chat_threads\".\"cloud_browser_enabled\" AND \"chat_threads\".\"computer_use_host_id\" IS NOT NULL)"
-        },
-        "chat_threads_draft_user_message_check": {
-          "name": "chat_threads_draft_user_message_check",
-          "value": "\"chat_threads\".\"draft_user_message\" IS NOT NULL\n          OR COALESCE(\"chat_threads\".\"draft_attachments\", '[]'::jsonb) = '[]'::jsonb"
         }
       },
       "isRLSEnabled": false

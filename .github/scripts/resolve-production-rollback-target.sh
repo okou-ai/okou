@@ -13,6 +13,7 @@ readonly CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT=4558c9fac46ce1a96a25745b477b32b70
 # pair the primary key and drops the columns, so earlier APIs fail draft saves
 # and thread inserts.
 readonly CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT=7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38
+readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -60,6 +61,18 @@ if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_CHILD_WRITER_COMMIT" "$TAR
 fi
 if ! git merge-base --is-ancestor "$CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat thread draft owner key writer: ${CHAT_THREAD_DRAFT_OWNER_KEY_COMMIT}."
+fi
+
+# Migration 1255 drops the remaining non-link public_brand columns and renames
+# five persisted link-layout columns. Earlier APIs implicitly name the retired
+# columns in INSERT/SELECT, so rollback below the canonical migration is unsafe.
+public_brand_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PUBLIC_BRAND_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$public_brand_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged public_brand retirement on main."
+fi
+if ! git merge-base --is-ancestor "$public_brand_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the public_brand retirement: ${public_brand_retirement_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

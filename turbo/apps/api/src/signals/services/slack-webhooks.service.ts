@@ -1,6 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
   getBuiltInVisibleModels,
   isSupportedRunModel,
@@ -371,7 +371,7 @@ function buildOrgConnectUrl(
 }
 
 function buildNotInstalledMessage(detail?: string): unknown[] {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "section",
@@ -1349,7 +1349,7 @@ export const handleSlackCommands$ = command(
         );
       }
       if (connection) {
-        const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+        const { assistantName } = BRAND_PRESENTATION;
         return ephemeral(
           buildSuccessMessage(
             `You are already connected to ${assistantName}.\nMention ${officialSlackBotMention(installation.botUserId)} in any channel or send a DM to start chatting with your agent.`,

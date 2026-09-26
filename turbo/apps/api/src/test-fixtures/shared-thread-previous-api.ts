@@ -1,5 +1,5 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { publicBrandSchema } from "@okouai/api-contracts/contracts/public-brand";
+import { linkLayoutSegmentSchema } from "@okouai/api-contracts/contracts/link-layout";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { command } from "ccstate";
 import { eq, sql } from "drizzle-orm";
@@ -16,6 +16,9 @@ import type { RouteEntry } from "../signals/route-entry";
  * A current production endpoint cannot select the previous server version.
  * Retain its real column selection and strict response shape here to exercise
  * rolling deployment against shares created through the current public API.
+ * The stored layout column was later renamed from `public_brand` to
+ * `link_layout_segment`; the fixture reads the renamed column while keeping
+ * the previous response field name.
  */
 const previousReadContract = Object.freeze({
   ...sharedThreadsContract.get,
@@ -24,7 +27,7 @@ const previousReadContract = Object.freeze({
     200: z.object({
       id: z.string().uuid(),
       title: z.string(),
-      publicBrand: publicBrandSchema,
+      publicBrand: linkLayoutSegmentSchema,
       messages: z.array(
         z
           .object({
@@ -47,7 +50,7 @@ const previousRead$ = command(async ({ get }, signal: AbortSignal) => {
       id: sharedThreads.id,
       title: sharedThreads.title,
       messages: sharedThreads.messages,
-      publicBrand: sharedThreads.publicBrand,
+      publicBrand: sharedThreads.linkLayoutSegment,
     })
     .from(sharedThreads)
     .where(eq(sharedThreads.id, id))
@@ -65,7 +68,8 @@ export const previousSharedThreadReadRoutes: readonly RouteEntry[] = [
 /**
  * Freeze the previous writer's INSERT columns. The current create endpoint
  * cannot issue an old-version write, and the current Drizzle schema would
- * include new defaulted columns even if values omitted them.
+ * include new defaulted columns even if values omitted them. Only the later
+ * rename of `public_brand` to `link_layout_segment` is applied here.
  */
 export const createPreviousSharedThread$ = command(
   async (
@@ -83,7 +87,7 @@ export const createPreviousSharedThread$ = command(
     ]);
     await set(writeDb$).execute(sql`
       INSERT INTO shared_threads
-        (id, user_id, source_chat_thread_id, title, messages, public_brand)
+        (id, user_id, source_chat_thread_id, title, messages, link_layout_segment)
       VALUES
         (${id}, ${input.userId}, ${input.threadId}, 'Previous API share',
          ${messages}::jsonb, 'vm0')

@@ -9,7 +9,7 @@ import type {
   McpThreadReadResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
-import { agentDisplayName } from "@okouai/core/public-brand";
+import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";

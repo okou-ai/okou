@@ -426,7 +426,7 @@ async function seedHostedPublication(
       userId: run.userId,
       slug: publicSlug,
       ...scope,
-      publicBrand: "okou",
+      linkLayoutSegment: "okou",
       publicSlug,
       createdFromRunId: run.id,
     });
@@ -443,7 +443,7 @@ async function seedHostedPublication(
       orgId: run.orgId,
       userId: run.userId,
       runId: run.id,
-      publicBrand: "okou",
+      linkLayoutSegment: "okou",
       status: "ready",
       artifactUrl: `https://storage.example/${hostedDeploymentId}.zip`,
       r2Prefix: `hosted/${hostedDeploymentId}`,
