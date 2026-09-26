@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { and, asc, eq, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lte, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -99,30 +99,53 @@ export async function deleteQueuedChatThread(
     );
 }
 
+/** Keyset position in the (queued_at, chat_thread_id) order. */
+export interface QueuedChatThreadCursor {
+  readonly queuedAt: Date;
+  readonly chatThreadId: string;
+}
+
 /**
  * Oldest queued threads whose lease is free or expired, optionally within one
- * organization. Busy threads are filtered by the pick itself.
+ * organization, strictly after a keyset cursor. Busy threads are filtered by
+ * the pick itself.
  */
 export async function listPickableQueuedChatThreads(
   db: ReadDb,
-  args: { readonly orgId?: string; readonly limit: number },
-): Promise<readonly string[]> {
-  const rows = await db
-    .select({ chatThreadId: queuedChatThreads.chatThreadId })
+  args: {
+    readonly orgId?: string;
+    readonly after?: QueuedChatThreadCursor;
+    readonly limit: number;
+  },
+): Promise<readonly QueuedChatThreadCursor[]> {
+  return await db
+    .select({
+      queuedAt: queuedChatThreads.queuedAt,
+      chatThreadId: queuedChatThreads.chatThreadId,
+    })
     .from(queuedChatThreads)
     .where(
       and(
         args.orgId === undefined
           ? undefined
           : eq(queuedChatThreads.orgId, args.orgId),
+        args.after === undefined
+          ? undefined
+          : or(
+              gt(queuedChatThreads.queuedAt, args.after.queuedAt),
+              and(
+                eq(queuedChatThreads.queuedAt, args.after.queuedAt),
+                gt(queuedChatThreads.chatThreadId, args.after.chatThreadId),
+              ),
+            ),
         leaseFree(nowDate()),
       ),
     )
-    .orderBy(asc(queuedChatThreads.queuedAt))
+    .orderBy(
+      asc(queuedChatThreads.queuedAt),
+      asc(queuedChatThreads.chatThreadId),
+    )
     .limit(args.limit);
-  return rows.map(({ chatThreadId }) => {
-    return chatThreadId;
-  });
 }
 
 /** Whether the thread's active-run slot is taken. */

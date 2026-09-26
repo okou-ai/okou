@@ -4234,6 +4234,13 @@ const sendQueueFirstNormalEvent$ = command(
       return response;
     }
 
+    // Queued input always has a row, including input this send launches
+    // itself; a later pick deletes the row once it finds the queue empty.
+    await markChatThreadQueued(prepared.db, {
+      chatThreadId: threadId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
     const result = await set(
       createNormalChatRun$,
       {
@@ -4251,11 +4258,6 @@ const sendQueueFirstNormalEvent$ = command(
     if (result.body.error.code === "CONCURRENT_RUN_LIMIT") {
       // The organization is at capacity: nothing was created, the message
       // stays queued, and the thread's row lets a later pick launch it.
-      await markChatThreadQueued(prepared.db, {
-        chatThreadId: threadId,
-        orgId: args.orgId,
-      });
-      signal.throwIfAborted();
       await publishChatEventCreated({
         userId: args.userId,
         orgId: args.orgId,
