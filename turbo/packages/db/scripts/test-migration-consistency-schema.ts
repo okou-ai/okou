@@ -782,24 +782,52 @@ async function validateChatEventContextPointerConstraints(
   }
 }
 
-// Keep the physical contraction visible in both historical migration replay
-// and a fresh schema, rather than adapting either disposable database.
-async function assertComputerUseAuditColumnAbsent(
-  dbUrl: string,
+// #36969 removes this transition adapter when its later migration drops the
+// physical column. Only the runtime Drizzle declaration changes in this first
+// release: the replayed migrations correctly retain the column, while a fresh
+// schema generated from current code does not. Restore exactly that one nullable
+// text column in the disposable generated database before the full comparison.
+type ComputerUseAuditColumnMetadata = {
+  readonly dataType: string;
+  readonly isNullable: string;
+  readonly columnDefault: string | null;
+};
+
+async function alignRetainedComputerUseAuditColumnForComparison(
+  existingDbUrl: string,
+  generatedDbUrl: string,
 ): Promise<void> {
-  const client = new Client({ connectionString: dbUrl });
-  await client.connect();
+  const columnQuery = `
+    SELECT data_type AS "dataType", is_nullable AS "isNullable",
+      column_default AS "columnDefault"
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'computer_use_command_audit_events'
+      AND column_name = 'approval_outcome'
+  `;
+  const existing = new Client({ connectionString: existingDbUrl });
+  await existing.connect();
   try {
-    const { rows } = await client.query(`
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = 'computer_use_command_audit_events'
-        AND column_name = 'approval_outcome'
-    `);
-    assert.deepEqual(rows, []);
+    const { rows } =
+      await existing.query<ComputerUseAuditColumnMetadata>(columnQuery);
+    assert.deepEqual(rows, [
+      { dataType: "text", isNullable: "YES", columnDefault: null },
+    ]);
   } finally {
-    await client.end();
+    await existing.end();
+  }
+
+  const generated = new Client({ connectionString: generatedDbUrl });
+  await generated.connect();
+  try {
+    const { rows } =
+      await generated.query<ComputerUseAuditColumnMetadata>(columnQuery);
+    assert.deepEqual(rows, []);
+    await generated.query(
+      `ALTER TABLE "computer_use_command_audit_events" ADD COLUMN "approval_outcome" text`,
+    );
+  } finally {
+    await generated.end();
   }
 }
 
@@ -3293,9 +3321,10 @@ async function main(): Promise<void> {
     await restoreMigrations();
     migrationsBackedUp = false;
 
-    // Step 5: Both migration replay and fresh schema must exclude the retired column.
-    await assertComputerUseAuditColumnAbsent(dbUrl1);
-    await assertComputerUseAuditColumnAbsent(dbUrl2);
+    // Step 5: The physical audit column stays until #36969's later release.
+    // Only align this one proven transition column in the disposable clone;
+    // normalized comparison still validates all other schema differences.
+    await alignRetainedComputerUseAuditColumnForComparison(dbUrl1, dbUrl2);
     console.log("=== Phase 4: Normalized schema comparison ===\n");
     const comparisonPassed = await runNormalizedComparison(dbUrl1, dbUrl2);
 

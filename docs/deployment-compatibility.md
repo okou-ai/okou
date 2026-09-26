@@ -1,50 +1,5 @@
 # Deployment Compatibility
 
-## Computer Use audit column contraction after independent writer release (2026-09-26)
-
-Migration `1262_drop_computer_use_audit_approval_outcome` drops only the retired
-`computer_use_command_audit_events.approval_outcome` column. #36960 narrowed the
-audit-list SELECT in main commit `41cc9918`; #36984 removed the Drizzle column
-mapping from audit INSERTs without changing the physical database, in main
-commit `cdeec36c168636b1a2e510e660eb6139c9c4e07a`. New INSERTs and SELECTs
-omit the column while the nullable physical column remains. #36984 shipped
-independently in release #36986 (`355e1acda73b9e89a47c2700c93d55052f9f92cb`):
-`promote-api-production` and `deploy-api-schema` succeeded, and the production
-Vercel API deployment became READY at 2026-09-26 02:28:35 UTC. At 02:35:42 UTC,
-the new deployment retained all four production API aliases, the previous
-`f08b39d0` deployment had none, and more than the API's configured 300-second
-maximum request lifetime had elapsed since first observing the alias switch.
-MaskDB still exposed the physical nullable text column before this PR's DROP.
-#36974 had already published the preceding `1256`–`1258` migrations separately;
-main subsequently assigned `1259` to agent-runs heartbeat, `1260` to personal
-subscription credentials and `1261` to chat thread snapshots. The latter two
-migrations need their own completed production release before this PR is queued.
-
-On a production-derived Neon branch created after the writer release, an
-aggregate-only census found 0 string screenshots among 16,603 commands and 0
-non-null approval outcomes among 11,248 audit rows. No screenshot bytes or
-individual user records were read. The temporary branch was deleted and its
-absence confirmed. This supports retiring the historical valid-inline-string
-screenshot **download** decoder. The current completion path still offloads
-valid data URLs to private object storage before persistence, passes through
-unrecognized strings (which were never downloadable), and retains 30-day
-string tombstoning. Preserve `idx_computer_use_commands_host_status`,
-`idx_computer_use_commands_created` and the partial unique running-host index:
-branch-local `idx_scan=0` cannot establish zero production use, and index plans
-still support host-status and created-time access. Production index-use counts
-remain unknown.
-
-Production migrations run before API promotion, so the independently promoted
-writer mapping must remain the rollback floor after the column DROP. The
-production rollback resolver enforces both #36960's reader floor and #36984's
-writer floor (`cdeec36c`), rather than using this migration's eventual merge
-commit; rollback never restores the dropped column. Before queue admission,
-reconfirm that no intervening migration PR occupies `1262`, current production
-API still contains the writer cutover, and all preceding migrations were
-independently released. A DDL lock-timeout failure must stop promotion rather
-than deploy incompatible code. The separate writer release and drain remove the
-known old-INSERT `42703` window; they do not guarantee zero deployment errors.
-
 ## R2-only chat thread snapshot API rollback floor (2026-09-26)
 
 The production API rollback resolver now rejects targets before the #36945
@@ -146,7 +101,7 @@ Overlap and rollback:
 
 ## Computer Use audit column: code-only read/write cutover (2026-09-26)
 
-At the #36984 preparatory release, the production database still had
+The production database still has
 `computer_use_command_audit_events.approval_outcome`. #36960 already changed
 the audit-list SELECT to project only response fields, but its Drizzle schema
 still declares the retired column. Drizzle therefore names it in audit INSERTs

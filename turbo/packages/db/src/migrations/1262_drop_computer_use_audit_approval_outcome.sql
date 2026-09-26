@@ -1,1 +1,0 @@
-ALTER TABLE "computer_use_command_audit_events" DROP COLUMN "approval_outcome";

@@ -28,10 +28,6 @@ case "${1:-}" in
       [ "${MOCK_BALANCE_RUNNER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4558c9fac46ce1a96a25745b477b32b70dab7ae6" ]; then
       [ "${MOCK_CHAT_THREAD_DRAFT_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "41cc9918009622ccad7c64e433d09db1a8dfbe9c" ]; then
-      [ "${MOCK_COMPUTER_USE_AUDIT_FLOOR_VALID:-1}" = "1" ]
-    elif [ "${3:-}" = "cdeec36c168636b1a2e510e660eb6139c9c4e07a" ]; then
-      [ "${MOCK_COMPUTER_USE_AUDIT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38" ]; then
       [ "${MOCK_CHAT_THREAD_DRAFT_OWNER_KEY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
@@ -154,8 +150,6 @@ assert_failure() {
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
-grep -Fxq "git merge-base --is-ancestor 41cc9918009622ccad7c64e433d09db1a8dfbe9c ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the computer-use audit reader floor"
-grep -Fxq "git merge-base --is-ancestor cdeec36c168636b1a2e510e660eb6139c9c4e07a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the computer-use audit writer cutover floor"
 grep -Fxq "git merge-base --is-ancestor 7a187fa0a3fe2f23a134c7cdff66ee9c7e2bdb38 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft owner key floor"
 grep -Fxq "git merge-base --is-ancestor 2222222222222222222222222222222222222222 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the public_brand retirement floor"
 grep -Fxq "git merge-base --is-ancestor 3d93ff8d4b4a07a5888e3030e69b340f40da0ad4 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the R2-only chat thread snapshot floor"
@@ -190,24 +184,6 @@ assert_failure "Rollback target predates the public_brand retirement" \
 [ ! -s "${tmp_dir}/public-brand-floor.output" ] || fail "pre-retirement API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "public_brand retirement floor must fail before artifact or host access"
-fi
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the computer-use audit approval column reader cutover" \
-  run_resolver "${tmp_dir}/computer-use-audit-floor.output" MOCK_COMPUTER_USE_AUDIT_FLOOR_VALID=0
-grep -Fq '41cc9918009622ccad7c64e433d09db1a8dfbe9c' "${tmp_dir}/failure.err" || fail "audit column rollback rejection must identify the canonical cutover"
-[ ! -s "${tmp_dir}/computer-use-audit-floor.output" ] || fail "incompatible API target must not publish outputs"
-if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "audit reader floor must be checked before artifact or host access"
-fi
-
-: >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates the computer-use audit writer cutover" \
-  run_resolver "${tmp_dir}/computer-use-audit-writer-floor.output" MOCK_COMPUTER_USE_AUDIT_WRITER_FLOOR_VALID=0
-grep -Fq 'cdeec36c168636b1a2e510e660eb6139c9c4e07a' "${tmp_dir}/failure.err" || fail "audit rollback rejection must identify the canonical writer cutover"
-[ ! -s "${tmp_dir}/computer-use-audit-writer-floor.output" ] || fail "pre-writer API target must not publish outputs"
-if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "audit writer floor must be checked before artifact or host access"
 fi
 
 for drop_commit in "" invalid; do
