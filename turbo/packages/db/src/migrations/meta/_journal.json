@@ -1286,8 +1286,15 @@
     {
       "idx": 1261,
       "version": "7",
-      "when": 1790390254380,
-      "tag": "1261_chat_search_gin_fastupdate_off_drop_audit_approval",
+      "when": 1790389782946,
+      "tag": "1261_drop_chat_thread_snapshot_jsonb",
+      "breakpoints": true
+    },
+    {
+      "idx": 1262,
+      "version": "7",
+      "when": 1790391177890,
+      "tag": "1262_chat_search_gin_fastupdate_off_drop_audit_approval",
       "breakpoints": true
     }
   ]

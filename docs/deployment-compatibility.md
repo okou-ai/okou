@@ -2,7 +2,7 @@
 
 ## Chat search GIN index drops fastupdate and API maintenance; audit approval column contracted (2026-09-26)
 
-Migration `1261_chat_search_gin_fastupdate_off_drop_audit_approval` is
+Migration `1262_chat_search_gin_fastupdate_off_drop_audit_approval` is
 non-transactional and does two things.
 
 It first drops `computer_use_command_audit_events.approval_outcome` under a 1 s
@@ -41,6 +41,58 @@ compatible for the index: an older API finds zero pending pages and skips
 cleanup. The audit column floor above bounds API rollback. The `pgstattuple`
 extension stays installed for rollback targets that still call
 `pgstatginindex`; removing it needs a separate API rollback floor.
+
+## R2-only chat thread snapshot API rollback floor (2026-09-26)
+
+The production API rollback resolver now rejects targets before the #36945
+main merge commit `3d93ff8d4b4a07a5888e3030e69b340f40da0ad4`. That API
+returns an R2 URL for every existing snapshot row, regardless of the request
+header; older rollback-window APIs can still return non-empty inline snapshots.
+The commit preceded release #36948 (`4ecb619b5c409396edd5815a1ce65941cb29cd74`),
+whose production API promotion succeeded on 2026-09-25 at 23:13:47 UTC
+([release run](https://github.com/okou-ai/okou/actions/runs/36198938622/job/108284233073)).
+
+This floor must be deployed before a separate follow-up removes Web App and CLI
+non-empty inline readers, the capability request header, and the inline
+contract variant for non-empty rows. The empty inline response for a scope
+without a snapshot row is permanent and stays supported. Removing client
+compatibility in this floor-setting release would not establish that the floor
+was already active in production. Recheck the serving API and floor before the
+follow-up enters its release path.
+
+## Chat thread snapshot JSONB column retired (2026-09-26)
+
+Migration `1261_drop_chat_thread_snapshot_jsonb` drops only
+`chat_thread_snapshots.chat_threads`. The API already reads the snapshot cursor
+and scoped R2 `object_key`, not the old JSONB body; the archive in R2 and the
+empty response for a scope without a snapshot row remain unchanged. A masked
+production census on 2026-09-26 00:14 UTC visited all 5,549 snapshot scopes
+in stable key order and observed no null `object_key` (paginated reads, not a
+single-transaction snapshot). This does not establish that every R2 object
+exists. The migration discards the old JSONB column and its contents, but
+leaves all R2 objects and their pointers untouched.
+
+Outgoing API artifacts still write an empty JSONB array on snapshot
+publication (via raw SQL or Drizzle). The owner explicitly accepts a temporary
+failure of that job while
+migrations run before the replacement API is promoted. It may upload an
+unreferenced immutable R2 object before its publish statement fails with
+`42703`; that invocation does not proceed to lifecycle-event pruning or R2
+snapshot garbage collection. Existing snapshot pointers, their R2 downloads,
+and the separate lifecycle-events API do not read the column. A new scope
+without a published snapshot takes the existing empty-snapshot plus event-tail
+path until the new compactor catches up. Verify the outgoing API is already an
+R2-only reader and that no older JSONB reader is still serving at migration
+time. The new API omits the column from both INSERT and UPDATE, so its
+compaction works against either side of the migration.
+
+Rollback does not restore the dropped column. The production rollback resolver
+therefore finds the first-parent main commit adding this migration and rejects
+all API targets before it, including the previous release whose compactor
+would fail and earlier APIs that still read JSONB. Until the new release is
+READY in production, no pre-migration API target is eligible; recovery requires
+fixing forward. This is the accepted single-release compatibility trade-off.
+The R2 JSON archive and its response contract are unchanged.
 
 ## Personal subscription credentials become account-only (2026-09-26)
 
@@ -109,7 +161,7 @@ test adapter for this retained nullable text column when it drops the physical
 column, and must raise the rollback floor to this cutover's canonical main
 merge commit. No screenshot decoder or index changes belong to this step.
 The contraction, adapter removal and rollback floor shipped with migration
-`1261_chat_search_gin_fastupdate_off_drop_audit_approval` (see the entry above).
+`1262_chat_search_gin_fastupdate_off_drop_audit_approval` (see the entry above).
 
 ## Chat thread hot-path cleanup and draft contraction, release 3 (2026-09-25)
 

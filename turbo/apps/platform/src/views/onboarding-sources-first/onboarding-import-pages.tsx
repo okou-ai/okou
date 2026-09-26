@@ -291,13 +291,14 @@ export function OnboardingSkillsPage() {
   if (providerName === null) {
     return null;
   }
+  const imported = skillImport.imported.length > 0;
 
   return (
     <OnboardingStepLayout
       currentStep={flow.currentStep}
       totalSteps={flow.totalSteps}
       title={
-        skillImport.imported.length > 0
+        imported
           ? t(($) => {
               return $.onboarding.sourcesFirst.skills.importedTitle;
             })
@@ -314,11 +315,11 @@ export function OnboardingSkillsPage() {
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
-      // Nothing on this step is required: a run that imports no skill at all
-      // leaves it the same way as one that imports ten.
+      // Continue waits for an imported skill; Not now leaves without one.
       onPrimary={flow.goNext}
+      primaryDisabled={!imported}
       secondaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.skip;
+        return $.onboarding.sourcesFirst.common.notNow;
       })}
       onSecondary={flow.goSkip}
       onBack={flow.goBack}
@@ -967,11 +968,13 @@ export function OnboardingSlackPage() {
             })
       }
       primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.finish;
+        return $.onboarding.sourcesFirst.common.continue;
       })}
+      // Continue waits for Slack; Not now leaves without it.
       onPrimary={flow.goNext}
+      primaryDisabled={!connected}
       secondaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.skip;
+        return $.onboarding.sourcesFirst.common.notNow;
       })}
       onSecondary={flow.goSkip}
       onBack={flow.goBack}

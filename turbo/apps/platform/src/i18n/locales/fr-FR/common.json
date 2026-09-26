@@ -4330,9 +4330,7 @@
       "common": {
         "back": "Retour",
         "continue": "Continuer",
-        "finish": "Terminer la configuration",
-        "notNow": "Pas maintenant",
-        "skip": "Passer pour l'instant"
+        "notNow": "Pas maintenant"
       },
       "compliance": {
         "frameworks": {

@@ -4254,9 +4254,7 @@
       "common": {
         "back": "戻る",
         "continue": "次へ",
-        "finish": "セットアップを完了",
-        "notNow": "後で",
-        "skip": "今はスキップ"
+        "notNow": "後で"
       },
       "compliance": {
         "frameworks": {

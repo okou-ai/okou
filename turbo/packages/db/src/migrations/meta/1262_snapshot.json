@@ -1,6 +1,6 @@
 {
-  "id": "83d0dfc4-7248-4f50-88f7-ab511f9e3bd3",
-  "prevId": "a073cf34-c077-4746-9491-1eef0ea4545c",
+  "id": "6f53c07d-1b7e-4b7a-9f37-359320c9b3a6",
+  "prevId": "83d0dfc4-7248-4f50-88f7-ab511f9e3bd3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6873,7 +6873,9 @@
           "isUnique": false,
           "concurrently": false,
           "method": "gin",
-          "with": {}
+          "with": {
+            "fastupdate": false
+          }
         }
       },
       "foreignKeys": {},
@@ -9958,12 +9960,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "approval_outcome": {
-          "name": "approval_outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "redacted_result": {
           "name": "redacted_result",
