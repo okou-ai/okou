@@ -40,7 +40,7 @@ async fn missing_and_unsafe_socket_directory_fail_before_runner_ready_or_claims(
 }
 
 #[tokio::test]
-async fn listener_accepts_before_ready_and_is_removed_after_stop() {
+async fn listener_starts_before_ready_and_is_removed_after_stop() {
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let dir = env._temp_dir.path().join("wss");
     std::fs::create_dir(&dir).unwrap();
@@ -54,15 +54,17 @@ async fn listener_accepts_before_ready_and_is_removed_after_stop() {
             .wait_startup_readiness_entered(Duration::from_secs(2))
             .await
     );
-    // A socket bound without an accept loop would fill its backlog; here the
-    // connection is accepted and queued while readiness remains Starting.
+    // run() awaits the accept task's start signal before entering provider
+    // readiness. Verify its socket is connectable while status is Starting.
+    let mut connected = false;
     for _ in 0..40 {
         if UnixStream::connect(&path).await.is_ok() {
+            connected = true;
             break;
         }
         tokio::task::yield_now().await;
     }
-    assert!(path.exists());
+    assert!(connected, "WSS socket must be connectable before ready");
     let state: serde_json::Value =
         serde_json::from_slice(&tokio::fs::read(&status_path).await.unwrap()).unwrap();
     assert_eq!(state["mode"], "starting");
