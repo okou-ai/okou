@@ -939,7 +939,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     const cleanup = await cleanupTimedOutRun(context, {
       runId: active.runId,
       chatThreadId: active.threadId,
-      orgId: actor.orgId,
     });
     expect(cleanup.body).toMatchObject({ cleaned: 1, errors: 0 });
     await waitForRunStatus(actor, active.runId, "timeout");
