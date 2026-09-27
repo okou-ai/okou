@@ -85,6 +85,11 @@ export interface BrowserRangeDraft {
   readonly value: string;
 }
 
+export interface BrowserColorDraft {
+  readonly observedColor: string;
+  readonly value: string;
+}
+
 export interface BrowserFileDraft {
   readonly operation: "keep" | "replace" | "clear";
   readonly files: readonly File[];
@@ -102,6 +107,9 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly rangeDraft$: Computed<ReadonlyMap<string, BrowserRangeDraft>>;
   readonly updateRangeDraft$: Command<void, [string, BrowserRangeDraft]>;
   readonly removeRangeDraft$: Command<void, [string]>;
+  readonly colorDraft$: Computed<ReadonlyMap<string, BrowserColorDraft>>;
+  readonly updateColorDraft$: Command<void, [string, BrowserColorDraft]>;
+  readonly removeColorDraft$: Command<void, [string]>;
   readonly fileDraft$: Computed<ReadonlyMap<string, BrowserFileDraft>>;
   readonly updateFileDraft$: Command<void, [string, BrowserFileDraft]>;
   readonly removeFileDraft$: Command<void, [string]>;
@@ -496,6 +504,35 @@ function createRangeDraftSignals() {
   };
 }
 
+function createColorDraftSignals() {
+  const internalColorDraft$ = state<ReadonlyMap<string, BrowserColorDraft>>(
+    new Map(),
+  );
+  const colorDraft$ = computed((get) => {
+    return get(internalColorDraft$);
+  });
+  const updateColorDraft$ = command(
+    ({ set }, key: string, choice: BrowserColorDraft): void => {
+      set(internalColorDraft$, (current) => {
+        return new Map(current).set(key, choice);
+      });
+    },
+  );
+  const removeColorDraft$ = command(({ set }, key: string): void => {
+    set(internalColorDraft$, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+  });
+  return {
+    internalColorDraft$,
+    colorDraft$,
+    updateColorDraft$,
+    removeColorDraft$,
+  };
+}
+
 function createScalarDraftUpdater(
   internalDraft$: State<ReadonlyMap<string, string>>,
 ) {
@@ -570,7 +607,7 @@ function createFileDraftSignals() {
   return { internalFileDraft$, fileDraft$, updateFileDraft$, removeFileDraft$ };
 }
 
-function createDraftSignals(): Pick<
+type BrowserDraftSignals = Pick<
   BrowserUserActionSignals,
   | "draft$"
   | "choiceDraft$"
@@ -579,6 +616,9 @@ function createDraftSignals(): Pick<
   | "rangeDraft$"
   | "updateRangeDraft$"
   | "removeRangeDraft$"
+  | "colorDraft$"
+  | "updateColorDraft$"
+  | "removeColorDraft$"
   | "fileDraft$"
   | "updateFileDraft$"
   | "removeFileDraft$"
@@ -593,12 +633,15 @@ function createDraftSignals(): Pick<
   | "clearDraft$"
   | "clearDraftRef$"
   | "formRef$"
-> {
+>;
+
+function createDraftSignals(): BrowserDraftSignals {
   const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
   const selectSignals = createSelectDraftSignals();
   const checkboxSignals = createCheckboxDraftSignals();
   const radioSignals = createRadioDraftSignals();
   const rangeSignals = createRangeDraftSignals();
+  const colorSignals = createColorDraftSignals();
   const fileSignals = createFileDraftSignals();
   const ownerCount$ = state(0);
   const draft$ = computed((get) => {
@@ -611,6 +654,7 @@ function createDraftSignals(): Pick<
     set(checkboxSignals.internalCheckboxDraft$, new Map());
     set(radioSignals.internalRadioDraft$, new Map());
     set(rangeSignals.internalRangeDraft$, new Map());
+    set(colorSignals.internalColorDraft$, new Map());
     set(fileSignals.internalFileDraft$, new Map());
   });
   const removeDraft$ = command(({ set }, key: string): void => {
@@ -675,6 +719,9 @@ function createDraftSignals(): Pick<
     rangeDraft$: rangeSignals.rangeDraft$,
     updateRangeDraft$: rangeSignals.updateRangeDraft$,
     removeRangeDraft$: rangeSignals.removeRangeDraft$,
+    colorDraft$: colorSignals.colorDraft$,
+    updateColorDraft$: colorSignals.updateColorDraft$,
+    removeColorDraft$: colorSignals.removeColorDraft$,
     fileDraft$: fileSignals.fileDraft$,
     updateFileDraft$: fileSignals.updateFileDraft$,
     removeFileDraft$: fileSignals.removeFileDraft$,
@@ -714,6 +761,7 @@ interface BrowserUserActionMutationContext {
   readonly checkboxDraft$: BrowserUserActionSignals["checkboxDraft$"];
   readonly radioDraft$: BrowserUserActionSignals["radioDraft$"];
   readonly rangeDraft$: BrowserUserActionSignals["rangeDraft$"];
+  readonly colorDraft$: BrowserUserActionSignals["colorDraft$"];
   readonly fileDraft$: BrowserUserActionSignals["fileDraft$"];
   readonly entryAction$: BrowserUserActionSignals["entryAction$"];
   readonly entryState$: BrowserUserActionSignals["entryState$"];
@@ -975,6 +1023,40 @@ function browserRangeSubmissionValue(
     : null;
 }
 
+function browserColorSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  colorDraft: ReadonlyMap<string, BrowserColorDraft>,
+):
+  | Extract<
+      BrowserUserActionApplyRequest["values"][number],
+      { observedColor: string }
+    >
+  | null
+  | undefined {
+  const observedColor = field.control.colorValue;
+  if (field.control.colorMode !== "opaque-srgb" || !observedColor) {
+    return null;
+  }
+  const choice = colorDraft.get(field.key);
+  if (!choice) {
+    return field.required || field.control.siteRequired ? null : undefined;
+  }
+  return choice.observedColor === observedColor &&
+    /^#[0-9a-f]{6}$/u.test(choice.value)
+    ? { key: field.key, ...choice }
+    : null;
+}
+
+function browserNativeChoiceSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  rangeDraft: ReadonlyMap<string, BrowserRangeDraft>,
+  colorDraft: ReadonlyMap<string, BrowserColorDraft>,
+) {
+  return field.fieldKind === "color"
+    ? browserColorSubmissionValue(field, colorDraft)
+    : browserRangeSubmissionValue(field, rangeDraft);
+}
+
 function browserScalarSubmissionValue(
   field: BrowserInputAction["fields"][number],
   draft: ReadonlyMap<string, string>,
@@ -1002,6 +1084,7 @@ async function browserInputSubmissionValues(
     readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
     readonly radioDraft: ReadonlyMap<string, BrowserRadioDraft>;
     readonly rangeDraft: ReadonlyMap<string, BrowserRangeDraft>;
+    readonly colorDraft: ReadonlyMap<string, BrowserColorDraft>;
     readonly fileDraft: ReadonlyMap<string, BrowserFileDraft>;
   },
 ): Promise<BrowserUserActionApplyRequest["values"] | null> {
@@ -1011,17 +1094,22 @@ async function browserInputSubmissionValues(
     checkboxDraft,
     radioDraft,
     rangeDraft,
+    colorDraft,
     fileDraft,
   } = drafts;
   const values: BrowserUserActionApplyRequest["values"][number][] = [];
   for (const field of action.fields) {
-    if (field.fieldKind === "range") {
-      const range = browserRangeSubmissionValue(field, rangeDraft);
-      if (range === null) {
+    if (field.fieldKind === "color" || field.fieldKind === "range") {
+      const choice = browserNativeChoiceSubmissionValue(
+        field,
+        rangeDraft,
+        colorDraft,
+      );
+      if (choice === null) {
         return null;
       }
-      if (range !== undefined) {
-        values.push(range);
+      if (choice !== undefined) {
+        values.push(choice);
       }
       continue;
     }
@@ -1116,6 +1204,7 @@ function createSubmitSignal({
   checkboxDraft$,
   radioDraft$,
   rangeDraft$,
+  colorDraft$,
   fileDraft$,
   entryAction$,
   entryState$,
@@ -1167,6 +1256,7 @@ function createSubmitSignal({
         checkboxDraft: get(checkboxDraft$),
         radioDraft: get(radioDraft$),
         rangeDraft: get(rangeDraft$),
+        colorDraft: get(colorDraft$),
         fileDraft: get(fileDraft$),
       }),
     );
@@ -1344,6 +1434,7 @@ function createMutationSignals({
   checkboxDraft$,
   radioDraft$,
   rangeDraft$,
+  colorDraft$,
   fileDraft$,
   clearDraft$,
   entryAction$,
@@ -1359,6 +1450,7 @@ function createMutationSignals({
   | "checkboxDraft$"
   | "radioDraft$"
   | "rangeDraft$"
+  | "colorDraft$"
   | "fileDraft$"
   | "clearDraft$"
   | "entryAction$"
@@ -1407,6 +1499,7 @@ function createMutationSignals({
     checkboxDraft$,
     radioDraft$,
     rangeDraft$,
+    colorDraft$,
     fileDraft$,
     entryAction$,
     entryState$,
@@ -1495,6 +1588,7 @@ export function createBrowserUserActionSignals(
     checkboxDraft$: draftSignals.checkboxDraft$,
     radioDraft$: draftSignals.radioDraft$,
     rangeDraft$: draftSignals.rangeDraft$,
+    colorDraft$: draftSignals.colorDraft$,
     fileDraft$: draftSignals.fileDraft$,
     clearDraft$: draftSignals.clearDraft$,
     entryAction$: entrySignals.entryAction$,

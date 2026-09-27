@@ -197,6 +197,12 @@ function publicRequest(
                 ...(observed.rangeValue === undefined
                   ? {}
                   : { rangeValue: observed.rangeValue }),
+                ...(observed.colorValue === undefined
+                  ? {}
+                  : {
+                      colorValue: observed.colorValue,
+                      colorMode: observed.colorMode,
+                    }),
                 ...(observed.radioGroupFingerprint === undefined
                   ? {}
                   : {
@@ -1099,6 +1105,41 @@ function validSubmittedFiles(
   return entry.files.length <= BROWSER_USER_ACTION_MAX_FILES;
 }
 
+function submittedValueMatchesField(
+  field: BrowserUserActionInputField,
+  entry: SubmittedBrowserValue,
+): boolean {
+  if (
+    ("observedValue" in entry && field.fieldKind !== "range") ||
+    ("observedColor" in entry && field.fieldKind !== "color")
+  ) {
+    return false;
+  }
+  switch (field.fieldKind) {
+    case "range": {
+      return "observedValue" in entry;
+    }
+    case "color": {
+      return "observedColor" in entry;
+    }
+    case "select": {
+      return "optionIndexes" in entry;
+    }
+    case "checkbox": {
+      return "checked" in entry;
+    }
+    case "radio": {
+      return "memberIndex" in entry;
+    }
+    case "file": {
+      return "files" in entry && validSubmittedFiles(entry);
+    }
+    default: {
+      return "value" in entry;
+    }
+  }
+}
+
 function submittedValues(
   payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
   input: BrowserUserActionApplyRequest,
@@ -1116,22 +1157,7 @@ function submittedValues(
   if (
     input.values.some((entry) => {
       const field = allowed.get(entry.key);
-      return (
-        !field ||
-        (field.fieldKind === "range" && !("observedValue" in entry)) ||
-        (field.fieldKind !== "range" && "observedValue" in entry) ||
-        (field.fieldKind === "select" && !("optionIndexes" in entry)) ||
-        (field.fieldKind === "checkbox" && !("checked" in entry)) ||
-        (field.fieldKind === "radio" && !("memberIndex" in entry)) ||
-        (field.fieldKind === "file" &&
-          (!("files" in entry) || !validSubmittedFiles(entry))) ||
-        (field.fieldKind !== "range" &&
-          field.fieldKind !== "select" &&
-          field.fieldKind !== "checkbox" &&
-          field.fieldKind !== "radio" &&
-          field.fieldKind !== "file" &&
-          !("value" in entry))
-      );
+      return !field || !submittedValueMatchesField(field, entry);
     })
   ) {
     return failure(
@@ -1148,7 +1174,7 @@ function submittedValues(
       const entry = values.get(field.key);
       return (
         !entry ||
-        ("observedValue" in entry
+        ("observedValue" in entry || "observedColor" in entry
           ? entry.value.length === 0
           : "optionIndexes" in entry
             ? entry.optionIndexes.length === 0
@@ -1405,31 +1431,33 @@ function browserApplyField(
       ? {}
       : "observedValue" in entry
         ? { rangeChoice: entry }
-        : "value" in entry
-          ? { value: entry.value }
-          : "checked" in entry
-            ? {
-                checkbox: {
-                  checked: entry.checked,
-                  observedChecked: entry.observedChecked,
-                },
-              }
-            : "files" in entry
-              ? { fileChoice: entry }
-              : "memberIndex" in entry
-                ? {
-                    radioChoice: {
-                      memberIndex: entry.memberIndex,
-                      observedSelectedIndex: entry.observedSelectedIndex,
-                      groupFingerprint: entry.groupFingerprint,
-                    },
-                  }
-                : {
-                    selection: {
-                      optionIndexes: entry.optionIndexes,
-                      optionSetFingerprint: entry.optionSetFingerprint,
-                    },
-                  }),
+        : "observedColor" in entry
+          ? { colorChoice: entry }
+          : "value" in entry
+            ? { value: entry.value }
+            : "checked" in entry
+              ? {
+                  checkbox: {
+                    checked: entry.checked,
+                    observedChecked: entry.observedChecked,
+                  },
+                }
+              : "files" in entry
+                ? { fileChoice: entry }
+                : "memberIndex" in entry
+                  ? {
+                      radioChoice: {
+                        memberIndex: entry.memberIndex,
+                        observedSelectedIndex: entry.observedSelectedIndex,
+                        groupFingerprint: entry.groupFingerprint,
+                      },
+                    }
+                  : {
+                      selection: {
+                        optionIndexes: entry.optionIndexes,
+                        optionSetFingerprint: entry.optionSetFingerprint,
+                      },
+                    }),
   };
 }
 

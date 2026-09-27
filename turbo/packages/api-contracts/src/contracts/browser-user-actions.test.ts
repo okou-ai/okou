@@ -108,6 +108,33 @@ describe("Browser user-action contracts", () => {
     }
   });
 
+  it("accepts only explicit, canonical native color observations and choices", () => {
+    const color = { key: "swatch", observedColor: "#123abc", value: "#00ff00" };
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({ values: [color] })
+        .success,
+    ).toBe(true);
+    // The generic {key,value} shape remains valid for text fields; the API
+    // rejects it when the stored fieldKind is color.
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({
+        values: [{ key: "swatch", value: "#00ff00" }],
+      }).success,
+    ).toBe(true);
+    for (const invalid of [
+      { ...color, observedColor: "#123ABC" },
+      { ...color, value: "#00ff0080" },
+      { ...color, value: "color(display-p3 1 0 0)" },
+      { ...color, value: "red" },
+      { ...color, extra: "secret" },
+    ]) {
+      expect(
+        browserUserActionApplyRequestSchema.safeParse({ values: [invalid] })
+          .success,
+      ).toBe(false);
+    }
+  });
+
   it("bounds native file selections and keeps content out of the persisted creation request", () => {
     const created = browserUserActionCreateRequestSchema.parse({
       kind: "input",

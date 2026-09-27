@@ -121,6 +121,37 @@ describe("Browser user-action JSONB payload", () => {
     }
   });
 
+  it("binds native color only to INPUT/color and stores no selection", () => {
+    const field = {
+      key: "swatch",
+      label: "Swatch",
+      fieldKind: "color",
+      required: false,
+      backendNodeId: 45,
+      fingerprint: { tagName: "INPUT", inputType: "color" },
+    };
+    const payload = {
+      version: 1,
+      kind: "input",
+      callbackIds,
+      target: { ...inputTarget, fields: [field] },
+    };
+    expect(
+      parseBrowserUserActionPayload(payload).target.fields[0],
+    ).toMatchObject(field);
+    for (const invalid of [
+      { ...field, fingerprint: { tagName: "INPUT", inputType: "text" } },
+      { ...field, colorValue: "#123abc" },
+    ]) {
+      expect(() => {
+        return parseBrowserUserActionPayload({
+          ...payload,
+          target: { ...inputTarget, fields: [invalid] },
+        });
+      }).toThrow("Invalid Browser user-action payload");
+    }
+  });
+
   it("accepts genuine number targets but keeps semantic kinds distinct", () => {
     const field = {
       key: "quantity",

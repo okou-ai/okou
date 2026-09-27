@@ -75,6 +75,8 @@ export function browserUserActionFieldSupportsTarget(
       return fingerprint.inputType === "number";
     case "range":
       return fingerprint.inputType === "range";
+    case "color":
+      return fingerprint.inputType === "color";
     case "date_time":
       return ["date", "time", "datetime-local", "month", "week"].includes(
         fingerprint.inputType,
@@ -224,6 +226,7 @@ function decodeField(value: unknown): BrowserUserActionInputField | null {
       "one_time_code",
       "number",
       "range",
+      "color",
       "date_time",
       "select",
       "checkbox",

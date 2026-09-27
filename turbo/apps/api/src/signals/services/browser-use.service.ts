@@ -776,6 +776,8 @@ export interface BrowserUseControlInspection {
   readonly multiple: boolean;
   readonly checked?: boolean;
   readonly rangeValue?: string;
+  readonly colorValue?: string;
+  readonly colorMode?: "opaque-srgb";
   readonly accept?: string;
   readonly files?: readonly {
     readonly name: string;
@@ -955,6 +957,19 @@ function validRangeInspection(
   );
 }
 
+function validColorInspection(
+  candidate: Readonly<Record<string, unknown>>,
+): boolean {
+  if (candidate.inputType !== "color" || !candidate.writable) {
+    return true;
+  }
+  return (
+    candidate.colorMode === "opaque-srgb" &&
+    typeof candidate.colorValue === "string" &&
+    /^#[0-9a-f]{6}$/u.test(candidate.colorValue)
+  );
+}
+
 function validFileInspection(
   candidate: Readonly<Record<string, unknown>>,
 ): boolean {
@@ -995,6 +1010,7 @@ function validControlShape(
     typeof candidate.multiple === "boolean" &&
     validCheckboxInspection(candidate) &&
     validRangeInspection(candidate) &&
+    validColorInspection(candidate) &&
     boundedOptionalControlMetadata(candidate)
   );
 }
@@ -1031,6 +1047,12 @@ function safeControlInspection(
     ...optionalCheckboxMetadata(candidate),
     ...(candidate.inputType === "range" && candidate.writable
       ? { rangeValue: candidate.rangeValue as string }
+      : {}),
+    ...(candidate.inputType === "color" && candidate.writable
+      ? {
+          colorValue: candidate.colorValue as string,
+          colorMode: "opaque-srgb" as const,
+        }
       : {}),
     ...optionalControlMetadata(candidate),
     ...(candidate.inputType === "file" && candidate.writable
@@ -1070,7 +1092,7 @@ function browserUseControlInspectionFunction(): string {
   return `function (...otherControls) {
     const controls = [this, ...otherControls];
     const supportedInputTypes = new Set([
-      "text", "password", "email", "tel", "url", "search", "number", "range",
+      "text", "password", "email", "tel", "url", "search", "number", "range", "color",
       "date", "time", "datetime-local", "month", "week", "checkbox", "radio", "file"
     ]);
     const dateTimeTypes = new Set(["date", "time", "datetime-local", "month", "week"]);
@@ -1084,8 +1106,11 @@ function browserUseControlInspectionFunction(): string {
           option.value.length <= ${BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH}));
       const supported =
         textarea || select || (input && supportedInputTypes.has(control.type));
-      const textual = supported && (textarea || !["number", "range", "date", "time", "datetime-local", "month", "week", "checkbox", "radio", "file"].includes(control.type));
+      const textual = supported && (textarea || !["number", "range", "color", "date", "time", "datetime-local", "month", "week", "checkbox", "radio", "file"].includes(control.type));
       const range = input && control.type === "range";
+      const color = input && control.type === "color";
+      const boundedColor = !color || (!control.hasAttribute("alpha") && !control.hasAttribute("colorspace") &&
+        /^#[0-9a-f]{6}$/.test(control.value));
       const constrained = input && (control.type === "number" || range || dateTimeTypes.has(control.type));
       const file = input && control.type === "file";
       const boundedFiles = !file || (!control.webkitdirectory &&
@@ -1112,10 +1137,11 @@ function browserUseControlInspectionFunction(): string {
         inputType: input ? control.type : textarea ? "textarea" : select ? (control.multiple ? "select-multiple" : "select-one") : "",
         connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
-        writable: supported && boundedFiles && boundedNumberConstraints && boundedRange && boundedOptions && !control.readOnly && !control.matches(":disabled") && !(input && control.type === "checkbox" && control.indeterminate),
+        writable: supported && boundedFiles && boundedNumberConstraints && boundedRange && boundedColor && boundedOptions && !control.readOnly && !control.matches(":disabled") && !(input && control.type === "checkbox" && control.indeterminate),
         siteRequired: supported && control.required === true,
         ...(input && control.type === "checkbox" ? { checked: control.checked } : {}),
         ...(range && boundedRange ? { rangeValue: control.value } : {}),
+        ...(color && boundedColor ? { colorValue: control.value, colorMode: "opaque-srgb" } : {}),
         multiple: select ? control.multiple : input && (control.type === "email" || file) && control.multiple === true,
         ...(file && boundedFiles ? { accept: control.accept, files: [...control.files].map((item) => ({
           name: item.name, size: item.size, type: item.type,
@@ -1872,6 +1898,10 @@ export interface BrowserUseUserActionApplyField {
     readonly observedStep?: string;
     readonly value: string;
   };
+  readonly colorChoice?: {
+    readonly observedColor: string;
+    readonly value: string;
+  };
   readonly checkbox?: {
     readonly checked: boolean;
     readonly observedChecked: boolean;
@@ -1922,6 +1952,10 @@ interface ResolvedBrowserUseUserActionField {
     readonly observedMin?: string;
     readonly observedMax?: string;
     readonly observedStep?: string;
+    readonly value: string;
+  };
+  readonly colorChoice?: {
+    readonly observedColor: string;
     readonly value: string;
   };
   readonly radio?: BrowserUseRadioGroup;
@@ -2062,6 +2096,9 @@ function browserUseApplyChoiceMatches(
         inspection.min === field.rangeChoice.observedMin &&
         inspection.max === field.rangeChoice.observedMax &&
         inspection.step === field.rangeChoice.observedStep)) &&
+    (field.colorChoice === undefined ||
+      (inspection.colorMode === "opaque-srgb" &&
+        inspection.colorValue === field.colorChoice.observedColor)) &&
     (field.radioChoice === undefined ||
       (radio !== null &&
         radio !== undefined &&
@@ -2070,6 +2107,12 @@ function browserUseApplyChoiceMatches(
     (field.selection === undefined ||
       inspection.optionSetFingerprint === field.selection.optionSetFingerprint)
   );
+}
+
+function browserUseSubmittedScalarValue(
+  field: BrowserUseUserActionApplyField,
+): string | undefined {
+  return field.colorChoice?.value ?? field.rangeChoice?.value ?? field.value;
 }
 
 function resolveBrowserUseApplyField(
@@ -2103,6 +2146,7 @@ function resolveBrowserUseApplyField(
   ) {
     return null;
   }
+  const value = browserUseSubmittedScalarValue(field);
   return {
     objectId,
     inspection,
@@ -2111,12 +2155,13 @@ function resolveBrowserUseApplyField(
     ...(field.radioChoice === undefined
       ? {}
       : { radioChoice: field.radioChoice }),
-    ...(field.value === undefined && field.rangeChoice === undefined
-      ? {}
-      : { value: field.rangeChoice?.value ?? field.value }),
+    ...(value === undefined ? {} : { value }),
     ...(field.rangeChoice === undefined
       ? {}
       : { rangeChoice: field.rangeChoice }),
+    ...(field.colorChoice === undefined
+      ? {}
+      : { colorChoice: field.colorChoice }),
     ...(field.checkbox === undefined ? {} : { checkbox: field.checkbox }),
     ...(field.selection === undefined ? {} : { selection: field.selection }),
   };
@@ -2572,11 +2617,11 @@ function browserUseMixedControlWriterFunction(): string {
                 : control instanceof HTMLTextAreaElement ? "textarea" : null;
               if (control.tagName !== spec.tagName || actualType !== spec.inputType || control.readOnly ||
                   control.required !== spec.required) return false;
-              const dateTime = control instanceof HTMLInputElement &&
-                ["date", "time", "datetime-local", "month", "week"].includes(control.type);
-              const textual = control instanceof HTMLTextAreaElement ||
-                (control instanceof HTMLInputElement && !["number", "range", "date", "time", "datetime-local", "month", "week", "checkbox", "radio"].includes(control.type));
+              const dateTime = control instanceof HTMLInputElement && ["date", "time", "datetime-local", "month", "week"].includes(control.type);
+              const textual = control instanceof HTMLTextAreaElement || (control instanceof HTMLInputElement && !["number", "range", "color", "date", "time", "datetime-local", "month", "week", "checkbox", "radio"].includes(control.type));
               const constrained = control instanceof HTMLInputElement && (control.type === "number" || control.type === "range" || dateTime);
+              if (actualType === "color" && (spec.colorMode !== "opaque-srgb" || control.hasAttribute("alpha") ||
+                  control.hasAttribute("colorspace") || !/^#[0-9a-f]{6}$/.test(control.value))) return false;
               if ((control instanceof HTMLInputElement && control.type === "email" ? control.multiple : false) !== spec.multiple ||
                   (textual && (control.minLength !== (spec.minLength ?? -1) ||
                     control.maxLength !== (spec.maxLength ?? -1) ||
@@ -2585,7 +2630,7 @@ function browserUseMixedControlWriterFunction(): string {
                     (control.max || undefined) !== spec.max ||
                     (control.step || undefined) !== spec.step))) return false;
               if (spec.value === null) {
-                if (spec.rangeValue !== undefined && control.value !== spec.rangeValue) return false;
+                if ((spec.rangeValue !== undefined && control.value !== spec.rangeValue) || (spec.colorValue !== undefined && control.value !== spec.colorValue)) return false;
                 if (!spec.required) return true;
                 // Website handlers can invalidate other required controls; validity reads dispatch no invalid event.
                 const value = control.value;
@@ -2594,7 +2639,7 @@ function browserUseMixedControlWriterFunction(): string {
                   control.validity.valid;
               }
               return final ? control.value === spec.value && (!dateTime || control.validity.valid)
-                : spec.rangeValue === undefined || control.value === spec.rangeValue;
+                : (spec.rangeValue === undefined || control.value === spec.rangeValue) && (spec.colorValue === undefined || control.value === spec.colorValue);
             }
             if (!(control instanceof HTMLSelectElement) ||
                 (control.multiple ? "select-multiple" : "select-one") !== spec.mode ||
@@ -2634,7 +2679,7 @@ function browserUseMixedControlWriterFunction(): string {
               if (!setter) return false;
               setter.call(control, spec.checked);
             } else if (spec.kind === "scalar" && spec.value !== null) {
-              if (spec.rangeValue !== undefined && spec.value === spec.rangeValue) continue;
+              if ((spec.rangeValue !== undefined && spec.value === spec.rangeValue) || (spec.colorValue !== undefined && spec.value === spec.colorValue)) continue;
               const prototype = control instanceof HTMLTextAreaElement
                 ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
               const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
@@ -2659,9 +2704,15 @@ function needsIndependentBrowserUseVerification(
   return fields.some((field) => {
     return (
       field.radio !== undefined ||
-      ["date", "time", "datetime-local", "month", "week", "range"].includes(
-        field.inspection.inputType,
-      )
+      [
+        "date",
+        "time",
+        "datetime-local",
+        "month",
+        "week",
+        "range",
+        "color",
+      ].includes(field.inspection.inputType)
     );
   });
 }
@@ -2719,6 +2770,8 @@ async function writeBrowserUseMixedControlFields(
               max: field.inspection.max,
               step: field.inspection.step,
               rangeValue: field.inspection.rangeValue,
+              colorValue: field.inspection.colorValue,
+              colorMode: field.inspection.colorMode,
               value: field.value ?? null,
             };
   };
@@ -3081,6 +3134,7 @@ async function applyBrowserUseUserActionOnSocket(
         field.inspection.inputType === "checkbox" ||
         field.inspection.inputType === "radio" ||
         field.inspection.inputType === "range" ||
+        field.inspection.inputType === "color" ||
         (resolved.fields.some((candidate) => {
           return candidate.value !== undefined;
         }) &&

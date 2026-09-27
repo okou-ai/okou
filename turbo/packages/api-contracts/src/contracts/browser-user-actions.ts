@@ -40,6 +40,7 @@ export const browserUserActionFieldKindSchema = z.enum([
   "one_time_code",
   "number",
   "range",
+  "color",
   "date_time",
   "select",
   "checkbox",
@@ -157,6 +158,13 @@ const browserUserActionRangeValueSchema = z
       .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH),
   })
   .strict();
+const browserUserActionColorValueSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    observedColor: z.string().regex(/^#[0-9a-f]{6}$/u),
+    value: z.string().regex(/^#[0-9a-f]{6}$/u),
+  })
+  .strict();
 const browserUserActionCheckboxValueSchema = z
   .object({
     key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
@@ -227,6 +235,7 @@ const browserUserActionFileValueSchema = z
 export const browserUserActionSubmittedValueSchema = z.union([
   browserUserActionScalarValueSchema,
   browserUserActionRangeValueSchema,
+  browserUserActionColorValueSchema,
   browserUserActionSelectValueSchema,
   browserUserActionCheckboxValueSchema,
   browserUserActionRadioValueSchema,
@@ -277,6 +286,7 @@ export const browserUserActionDisplayFieldSchema = z
           "password",
           "number",
           "range",
+          "color",
           "date",
           "time",
           "datetime-local",
@@ -381,6 +391,11 @@ export const browserUserActionDisplayFieldSchema = z
           .min(1)
           .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)
           .optional(),
+        colorValue: z
+          .string()
+          .regex(/^#[0-9a-f]{6}$/u)
+          .optional(),
+        colorMode: z.literal("opaque-srgb").optional(),
         min: z
           .string()
           .max(BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH)

@@ -323,6 +323,7 @@ interface NativeConstrainedMockArgs {
   readonly inputType?: () => string;
   readonly siteRequired?: () => boolean;
   readonly rangeValue?: () => string;
+  readonly colorValue?: () => string;
   readonly writable?: () => boolean;
   readonly validValue?: (value: unknown) => boolean;
 }
@@ -338,6 +339,12 @@ function nativeVerifyOnly(argumentsValue: unknown): boolean {
     "verifyOnly" in first.value &&
     first.value.verifyOnly === true
   );
+}
+
+function nativeObservedColorMetadata(args: NativeConstrainedMockArgs) {
+  return args.inputType?.() === "color" && args.writable?.() !== false
+    ? { colorValue: args.colorValue?.() ?? "#000000", colorMode: "opaque-srgb" }
+    : {};
 }
 
 function mockNativeConstrainedInspection(args: NativeConstrainedMockArgs) {
@@ -356,6 +363,7 @@ function mockNativeConstrainedInspection(args: NativeConstrainedMockArgs) {
           ...(args.inputType?.() === "range" && args.writable?.() !== false
             ? { rangeValue: args.rangeValue?.() ?? "50" }
             : {}),
+          ...nativeObservedColorMetadata(args),
           ...(min ? { min } : {}),
           ...(max ? { max } : {}),
           ...(step ? { step } : {}),
@@ -2864,6 +2872,239 @@ describe("Browser user-action route", () => {
       },
     });
     expect(disabled.status).toBe(409);
+  });
+
+  it("guards native opaque color selection, unchanged values, stale targets and independent readback", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Choose a website color",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    let color = "#123abc";
+    let writable = true;
+    let readbackMatches = true;
+    mockNativeNumberTarget({
+      constraints: () => {
+        return { min: "", max: "", step: "" };
+      },
+      inputType: () => {
+        return "color";
+      },
+      colorValue: () => {
+        return color;
+      },
+      writable: () => {
+        return writable;
+      },
+      verificationMatches: () => {
+        return readbackMatches;
+      },
+      validValue: (value) => {
+        return value === null || value === "#123abc" || value === "#00ff00";
+      },
+    });
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const create = (required = false) => {
+      return accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after choosing a color",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "swatch",
+                label: "Swatch",
+                fieldKind: "color",
+                required,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+    };
+    const apply = (
+      token: string,
+      values: readonly { key: string; observedColor: string; value: string }[],
+    ) => {
+      return userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [...values] },
+      });
+    };
+    const choice = (value: string) => {
+      return {
+        key: "swatch",
+        observedColor: "#123abc",
+        value,
+      };
+    };
+    const untouched = await create();
+    expect(untouched.body.action.fields[0]?.control).toMatchObject({
+      inputType: "color",
+    });
+    expect(JSON.stringify(untouched.body)).not.toContain("#123abc");
+    const preflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: untouched.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(preflight.body.fields[0]?.control).toMatchObject({
+      inputType: "color",
+      colorValue: "#123abc",
+      colorMode: "opaque-srgb",
+    });
+    expect(
+      (await accept(apply(untouched.body.action.requestToken, []), [200])).body
+        .state,
+    ).toBe("succeeded");
+    expect(browserSelectWrites().at(-2)?.[0].params.arguments).toMatchObject([
+      {
+        value: {
+          kind: "scalar",
+          inputType: "color",
+          colorValue: "#123abc",
+          colorMode: "opaque-srgb",
+          value: null,
+        },
+      },
+      { value: 0 },
+    ]);
+    expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+      { value: { verifyOnly: true } },
+      { value: 0 },
+    ]);
+    const required = await create(true);
+    expect((await apply(required.body.action.requestToken, [])).status).toBe(
+      400,
+    );
+    expect(
+      (
+        await userActionClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: required.body.action.requestToken },
+          body: { values: [{ key: "swatch", value: "#00ff00" }] },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await accept(
+          apply(required.body.action.requestToken, [choice("#123abc")]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("succeeded");
+    expect(browserSelectWrites().at(-2)?.[0].params.arguments).toMatchObject([
+      {
+        value: { inputType: "color", colorValue: "#123abc", value: "#123abc" },
+      },
+      { value: 0 },
+    ]);
+    const invalid = await create();
+    expect(
+      (await apply(invalid.body.action.requestToken, [choice("#ff0000")]))
+        .status,
+    ).toBe(409);
+    expect(
+      (
+        await accept(
+          apply(invalid.body.action.requestToken, [choice("#00ff00")]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("succeeded");
+    const attributed = await create();
+    writable = false; // A newly added alpha/colorspace attribute makes inspection unwritable.
+    expect(
+      (
+        await accept(
+          apply(attributed.body.action.requestToken, [choice("#00ff00")]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("stale");
+    writable = true;
+    color = "#00ff00";
+    const drift = await create();
+    expect(
+      (
+        await accept(
+          apply(drift.body.action.requestToken, [choice("#123abc")]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("stale");
+    color = "#123abc";
+    const rollback = await create();
+    readbackMatches = false;
+    expect(
+      (
+        await accept(
+          apply(rollback.body.action.requestToken, [choice("#00ff00")]),
+          [200],
+        )
+      ).body.state,
+    ).toBe("uncertain");
+    readbackMatches = true;
+    writable = false; // Also models unsupported alpha/colorspace modes: inspected as non-writable.
+    expect(
+      (
+        await userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: {
+            kind: "input",
+            callbackPrompt: "Continue after choosing a color",
+            pageTargetId: "native-input-target",
+            fields: [
+              {
+                key: "swatch",
+                label: "Swatch",
+                fieldKind: "color",
+                required: false,
+                backendNodeId: 45,
+              },
+            ],
+          },
+        })
+      ).status,
+    ).toBe(409);
   });
 
   it("validates all five native date/time subtypes, empty/required values and independent readback", async () => {

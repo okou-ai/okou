@@ -902,6 +902,84 @@ test("An inline Browser slider confirms the observed website position without na
   expect(window.location.href).toBe(currentUrl);
 });
 
+test("An inline Browser color picker confirms the observed website selection without navigation", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  const colorAction = (preflight: boolean) => {
+    return {
+      ...browserInputAction(state),
+      fields: [
+        {
+          key: "swatch",
+          label: "Swatch",
+          fieldKind: "color" as const,
+          required: true,
+          control: {
+            tagName: "INPUT" as const,
+            inputType: "color" as const,
+            ...(preflight
+              ? {
+                  siteRequired: false,
+                  colorMode: "opaque-srgb" as const,
+                  colorValue: "#123abc",
+                }
+              : {}),
+          },
+        },
+      ],
+    };
+  };
+  installCapabilityChat({
+    events: completedConversation(`[Choose a color](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, colorAction(false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, colorAction(true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      { key: "swatch", observedColor: "#123abc", value: "#123abc" },
+    ]);
+    state = "succeeded";
+    return respond(200, colorAction(false));
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.prompt).toBe(BROWSER_INPUT_CALLBACK);
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: RUN_THREAD_ID,
+    });
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  const currentUrl = window.location.href;
+  click(await findButton("Enter information"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  const picker = await within(dialog).findByLabelText(/Swatch/u);
+  await waitFor(() => {
+    return expect(picker).toHaveValue("#123abc");
+  });
+  const submitButton = buttonsByName("Add to browser", dialog)[0];
+  const confirmButton = buttonsByName("Use current value", dialog)[0];
+  if (!submitButton || !confirmButton) {
+    throw new Error("Missing color controls");
+  }
+  expect(submitButton).toBeDisabled();
+  click(confirmButton);
+  expect(submitButton).toBeEnabled();
+  click(submitButton);
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(window.location.href).toBe(currentUrl);
+});
+
 test("An inline Browser file picker binds local bytes only after confirmation", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   let uploaded = false;

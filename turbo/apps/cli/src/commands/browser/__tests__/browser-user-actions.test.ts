@@ -421,6 +421,36 @@ describe("okou browser user-action commands", () => {
     );
   });
 
+  it("captures a native color node without disclosing its selector or value", async () => {
+    installCdp({ nodeName: "INPUT" });
+    let requestBody: unknown;
+    installCreateRoute((body) => {
+      requestBody = body;
+    });
+    await browserCommand.parseAsync([
+      "node",
+      "okou",
+      "input-request",
+      "--field",
+      JSON.stringify({
+        key: "swatch",
+        label: "Swatch",
+        fieldKind: "color",
+        required: true,
+        target: "#private-swatch",
+      }),
+      "--callback-prompt",
+      "Continue after choosing a color",
+    ]);
+    expect(requestBody).toMatchObject({
+      fields: [{ key: "swatch", fieldKind: "color", backendNodeId: 42 }],
+    });
+    expect(JSON.stringify(requestBody)).not.toContain("#private-swatch");
+    expect(consoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "#private-swatch",
+    );
+  });
+
   it("captures a native date/time field by node, leaving subtype discovery to the API", async () => {
     installCdp({ nodeName: "INPUT" });
     let requestBody: unknown;

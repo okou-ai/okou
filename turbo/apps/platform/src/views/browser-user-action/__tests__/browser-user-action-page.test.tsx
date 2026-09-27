@@ -102,6 +102,31 @@ function rangeAction(required: boolean, preflight: boolean) {
   };
 }
 
+function colorAction(required: boolean, preflight: boolean) {
+  return {
+    ...action("pending"),
+    fields: [
+      {
+        key: "swatch",
+        label: "Swatch",
+        fieldKind: "color" as const,
+        required,
+        control: {
+          tagName: "INPUT" as const,
+          inputType: "color" as const,
+          ...(preflight
+            ? {
+                siteRequired: false,
+                colorMode: "opaque-srgb" as const,
+                colorValue: "#123abc",
+              }
+            : {}),
+        },
+      },
+    ],
+  };
+}
+
 const FILE_FINGERPRINT = "f".repeat(64);
 function fileAction(args: {
   readonly required: boolean;
@@ -545,6 +570,137 @@ test("An optional native slider submits a changed position with its observed sna
         observedStep: "any",
         value: "16",
       },
+    ]);
+  });
+});
+
+test("A required native color starts from the website and needs explicit confirmation", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, colorAction(true, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, colorAction(true, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...colorAction(true, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const picker = within(form).getByLabelText(/Swatch/u) as HTMLInputElement;
+  await waitFor(() => {
+    return expect(picker).toHaveValue("#123abc");
+  });
+  expect(within(form).getByText("#123abc")).toBeInTheDocument();
+  expect(button("Add to browser")).toBeDisabled();
+  click(button("Use current value"));
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([
+      { key: "swatch", observedColor: "#123abc", value: "#123abc" },
+    ]);
+  });
+});
+
+test("An optional native color remains untouched or submits an explicit change", async () => {
+  const submissions: unknown[] = [];
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, colorAction(false, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, colorAction(false, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    submissions.push(body.values);
+    return respond(200, {
+      ...colorAction(false, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const picker = within(form).getByLabelText(/Swatch/u) as HTMLInputElement;
+  await waitFor(() => {
+    return expect(picker).toHaveValue("#123abc");
+  });
+  fireEvent.change(picker, { target: { value: "#00ff00" } });
+  await waitFor(() => {
+    return expect(within(form).getByText("#00ff00")).toBeInTheDocument();
+  });
+  click(button("Leave website value unchanged"));
+  expect(picker).toHaveValue("#123abc");
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(submissions).toStrictEqual([[]]);
+  });
+});
+
+test("A changed native color submits its observed website snapshot", async () => {
+  let sent: unknown = null;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, colorAction(false, false));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, colorAction(false, true));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    sent = body.values;
+    return respond(200, {
+      ...colorAction(false, false),
+      state: "succeeded" as const,
+      completedAt: "2026-09-25T05:00:00.000Z",
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const picker = within(form).getByLabelText(/Swatch/u) as HTMLInputElement;
+  await waitFor(() => {
+    return expect(picker).toHaveValue("#123abc");
+  });
+  fireEvent.change(picker, { target: { value: "#00ff00" } });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(sent).toStrictEqual([
+      { key: "swatch", observedColor: "#123abc", value: "#00ff00" },
     ]);
   });
 });
