@@ -8878,7 +8878,10 @@ function useComposerPrimaryAction(
   signals: ComposerSignals,
   actions: ComposerActions,
 ): ComposerPrimaryAction {
-  const action = useResolved(signals.submission.primaryAction$) ?? "disabled";
+  // Keep the last action while the thread's events resync; falling back to
+  // "disabled" on every recompute would unmount and remount Stop mid-run.
+  const action =
+    useLastResolved(signals.submission.primaryAction$) ?? "disabled";
   const selectedModelOauthAvailable =
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
   return selectedModelOauthAvailable &&

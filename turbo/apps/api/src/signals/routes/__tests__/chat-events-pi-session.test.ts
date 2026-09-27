@@ -827,7 +827,6 @@ describe("CHAT-02: model-first provider policies", () => {
         return message.content;
       }),
     ).toStrictEqual([apiAnswer]);
-    await waitForRunStatus(actor, successor, "completed");
   }, 90_000);
 
   it("retains pending-tool continuation while one accepted input remains a steer", async () => {

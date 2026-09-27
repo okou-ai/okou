@@ -703,12 +703,7 @@ test("Recover from a personal model account limit", async () => {
   click(await findButton("Reset · 2 left"));
 
   await expect(screen.findByText("continue")).resolves.toBeVisible();
-  // The run starts from the persisted input carrying its runId, not from the
-  // send response, so Stop is awaited as the synced state rather than a single
-  // query that a later event sync could re-render away.
-  await waitFor(() => {
-    expect(queryButton("Stop")).toBeVisible();
-  });
+  await expect(findButton("Stop")).resolves.toBeVisible();
 });
 
 // Opening the thread reads the subscription before the limit exists. The card
@@ -795,12 +790,7 @@ test("Recover when a model is at capacity", async () => {
   click(await findButton("Try again"));
 
   await expect(screen.findByText("continue")).resolves.toBeVisible();
-  // The run starts from the persisted input carrying its runId, not from the
-  // send response, so Stop is awaited as the synced state rather than a single
-  // query that a later event sync could re-render away.
-  await waitFor(() => {
-    expect(queryButton("Stop")).toBeVisible();
-  });
+  await expect(findButton("Stop")).resolves.toBeVisible();
 });
 
 test("Reset the current route's active subscription account", async () => {
