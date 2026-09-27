@@ -1,0 +1,236 @@
+# Stage host ingress only on an explicitly selected NON-PRODUCTION host.
+# Never called by provision/build/promote/release; never starts Caddy, opens 443,
+# modifies DNS, or changes an existing Caddy listener.
+# ansible-playbook -i 'staging-host.example.net,' playbooks/stage-runner-wss-ingress.yml \
+#   -e 'ansible_user=ubuntu wss_nonproduction_stage=true wss_acme_email=ops@example.net'
+- name: Stage Runner WSS ingress without activation
+  hosts: all
+  become: true
+  vars:
+    wss_caddy_group: okou-wss-caddy
+  tasks:
+    - name: Require deliberate nonproduction staging and direct public hostname
+      ansible.builtin.assert:
+        that:
+          - wss_nonproduction_stage | default(false) | bool
+          - wss_acme_email is defined
+          - wss_acme_email is match('^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,63}\\Z')
+          - inventory_hostname is match('^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\\Z')
+          - inventory_hostname | length <= 253
+          - inventory_hostname is not match('^[0-9.]+$')
+          - inventory_hostname is not search('\\.(local|localhost|internal|test|example|invalid|home\\.arpa)\\Z')
+        fail_msg: >-
+          Refusing ingress staging: explicitly select a nonproduction public-DNS-shaped
+          inventory_hostname and provide wss_nonproduction_stage=true and wss_acme_email.
+      become: false
+
+    - name: Require a functioning systemd host before changing files
+      ansible.builtin.command: systemctl show --property=Version --value
+      changed_when: false
+
+    - name: Inspect system Caddy listener (do not disturb it)
+      ansible.builtin.command: systemctl is-active --quiet caddy.service
+      register: wss_existing_caddy
+      changed_when: false
+      failed_when: false
+
+    - name: Inspect dedicated ingress listener (never restart it during staging)
+      ansible.builtin.command: systemctl is-active --quiet okou-wss-caddy.service
+      register: wss_existing_ingress
+      changed_when: false
+      failed_when: false
+
+    - name: Inspect boot activation of both Caddy units
+      ansible.builtin.command: "systemctl is-enabled --quiet {{ item }}"
+      loop:
+        - caddy.service
+        - okou-wss-caddy.service
+      register: wss_enabled_services
+      changed_when: false
+      failed_when: false
+
+    - name: Reject active or boot-enabled Caddy listeners
+      ansible.builtin.assert:
+        that:
+          - wss_existing_caddy.rc != 0
+          - wss_existing_ingress.rc != 0
+          - wss_enabled_services.results | selectattr('rc', 'equalto', 0) | list | length == 0
+        fail_msg: Ingress staging cannot change an active or boot-enabled Caddy service.
+
+    - name: Inspect installed Caddy binary ownership without following symlinks
+      ansible.builtin.stat:
+        path: /usr/bin/caddy
+        follow: false
+      register: wss_caddy_binary
+
+    - name: Refuse non-regular or writable Caddy binary
+      ansible.builtin.assert:
+        that:
+          - wss_caddy_binary.stat.isreg | default(false)
+          - wss_caddy_binary.stat.pw_name == 'root'
+          - wss_caddy_binary.stat.gr_name == 'root'
+          - wss_caddy_binary.stat.mode == '0755'
+        fail_msg: Install a trusted root-owned, non-group/world-writable Caddy binary at /usr/bin/caddy.
+
+    - name: Inspect installed Caddy binary
+      ansible.builtin.command: /usr/bin/caddy version
+      register: wss_caddy_version_output
+      changed_when: false
+
+    - name: Require reviewed Caddy version
+      ansible.builtin.assert:
+        that:
+          - wss_caddy_version_output.stdout.split(' ')[0] == 'v2.11.4'
+        fail_msg: Caddy v2.11.4 must be installed separately with its default service inactive.
+
+    - name: Create dedicated Caddy connector (no Runner writer membership)
+      ansible.builtin.group:
+        name: "{{ wss_caddy_group }}"
+        system: true
+
+    - name: Create unprivileged Caddy service account
+      ansible.builtin.user:
+        name: okou-wss-caddy
+        group: "{{ wss_caddy_group }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: /var/lib/okou-wss-caddy
+        create_home: false
+
+    - name: Inspect ingress paths without following symlinks
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+        follow: false
+      loop:
+        - { path: /run/okou-ws, owner: root, group: okou-wss-caddy, mode: '0710' }
+        - { path: /etc/okou-wss, owner: root, group: root, mode: '0755' }
+        - { path: /var/lib/okou-wss-caddy, owner: okou-wss-caddy, group: okou-wss-caddy, mode: '0700' }
+        - { path: /var/lib/okou-wss-caddy/data, owner: okou-wss-caddy, group: okou-wss-caddy, mode: '0700' }
+      register: wss_paths
+
+    - name: Refuse foreign or unsafe existing directories
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists or item.stat.isdir
+          - not item.stat.exists or item.stat.pw_name == item.item.owner
+          - not item.stat.exists or item.stat.gr_name == item.item.group
+          - not item.stat.exists or item.stat.mode == item.item.mode
+        fail_msg: "Unsafe pre-existing ingress path: {{ item.item.path }} (no repair or symlink traversal)."
+      loop: "{{ wss_paths.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+
+    - name: Inspect staged files without following symlinks
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /etc/okou-wss/Caddyfile
+        - /etc/okou-wss/routes.caddy
+        - /etc/systemd/system/okou-wss-caddy.service
+        - /etc/tmpfiles.d/okou-wss.conf
+      register: wss_existing_files
+
+    - name: Refuse foreign file types or ownership before staging
+      ansible.builtin.assert:
+        that:
+          - not item.stat.exists or item.stat.isreg
+          - not item.stat.exists or item.stat.pw_name == 'root'
+          - not item.stat.exists or item.stat.gr_name == 'root'
+          - not item.stat.exists or item.stat.mode == '0644'
+        fail_msg: "Unsafe pre-existing ingress file: {{ item.item }}."
+      loop: "{{ wss_existing_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Read existing ingress file markers
+      ansible.builtin.slurp:
+        src: "{{ item.item }}"
+      loop: "{{ wss_existing_files.results | selectattr('stat.exists') | list }}"
+      loop_control:
+        label: "{{ item.item }}"
+      register: wss_file_contents
+
+    - name: Refuse to replace foreign ingress files
+      ansible.builtin.assert:
+        that:
+          - >-
+            (item.item.item == '/etc/tmpfiles.d/okou-wss.conf' and
+             (item.content | b64decode) == 'd /run/okou-ws 0710 root okou-wss-caddy - -\n') or
+            (item.item.item != '/etc/tmpfiles.d/okou-wss.conf' and
+             (item.content | b64decode).startswith('# Managed by ansible/playbooks/stage-runner-wss-ingress.yml.') and
+             (item.item.item != '/etc/okou-wss/Caddyfile' or
+              ('\n' ~ inventory_hostname ~ ' {\n') in (item.content | b64decode)))
+        fail_msg: "Foreign ingress file: {{ item.item.item }}."
+      loop: "{{ wss_file_contents.results }}"
+      loop_control:
+        label: "{{ item.item.item }}"
+
+    - name: Create protected root-owned socket directory
+      ansible.builtin.file:
+        path: /run/okou-ws
+        state: directory
+        owner: root
+        group: "{{ wss_caddy_group }}"
+        mode: '0710'
+
+    - name: Create root-owned config directory
+      ansible.builtin.file:
+        path: /etc/okou-wss
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Create persistent certificate directory
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: okou-wss-caddy
+        group: "{{ wss_caddy_group }}"
+        mode: '0700'
+      loop:
+        - /var/lib/okou-wss-caddy
+        - /var/lib/okou-wss-caddy/data
+
+    - name: Restore protected socket directory across reboots
+      ansible.builtin.copy:
+        dest: /etc/tmpfiles.d/okou-wss.conf
+        content: "d /run/okou-ws 0710 root okou-wss-caddy - -\n"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install fixed UUID-to-socket route
+      ansible.builtin.copy:
+        src: ../files/runner-wss-routes.caddy
+        dest: /etc/okou-wss/routes.caddy
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install hostname-derived ACME Caddyfile
+      ansible.builtin.template:
+        src: ../templates/runner-wss-Caddyfile.j2
+        dest: /etc/okou-wss/Caddyfile
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Validate Caddyfile without starting listener or acquiring a certificate
+      ansible.builtin.command: /usr/bin/caddy adapt --config /etc/okou-wss/Caddyfile --adapter caddyfile --validate
+      changed_when: false
+
+    - name: Stage dedicated systemd unit (not enabled or started)
+      ansible.builtin.copy:
+        src: ../files/okou-wss-caddy.service
+        dest: /etc/systemd/system/okou-wss-caddy.service
+        owner: root
+        group: root
+        mode: '0644'
+      register: wss_unit_file
+
+    - name: Register unit without activation
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: wss_unit_file.changed

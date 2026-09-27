@@ -181,6 +181,8 @@ surface; the index does not replace their detailed rules.
   hostname-derived origin, claimed Runner/liveness checks and separate fleet and ingress gates.
 - [Private run-scoped Guest duplex](./runner-guest-duplex.md): exact live executor assignment,
   bounded opaque framing, cancellation and the #37027 attachment contract.
+- [Runner WSS host ingress](./runner-wss-host-ingress.md): opt-in nonproduction
+  Caddy/socket staging, per-host DNS/TLS checks and rollback boundaries.
 - [Guest memory policy](./runner-memory-policy.md): shared workload capacity,
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):

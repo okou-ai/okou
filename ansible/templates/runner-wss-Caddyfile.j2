@@ -1,0 +1,10 @@
+# Managed by ansible/playbooks/stage-runner-wss-ingress.yml. No per-release edits.
+{
+    email {{ wss_acme_email }}
+    admin off
+    auto_https disable_redirects
+}
+
+{{ inventory_hostname }} {
+    import /etc/okou-wss/routes.caddy
+}
