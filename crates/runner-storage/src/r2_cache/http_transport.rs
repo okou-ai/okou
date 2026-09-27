@@ -491,7 +491,6 @@ async fn status_error(operation: &str, response: Response) -> R2Error {
 }
 
 #[cfg(test)]
-#[path = "http_transport_tests.rs"]
 mod wire_tests;
 
 #[cfg(test)]
