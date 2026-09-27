@@ -50,14 +50,17 @@ export async function measureWorkflowAdmissionStep<T>(
     return await operation();
   }
   const startedAt = performance.now();
-  return await operation().finally(async () => {
-    await recordWorkflowAdmissionDuration(
-      timing,
-      actionType,
-      performance.now() - startedAt,
-      dimensions,
-    );
-  });
+  const measured = await settleIncludingAbort(operation);
+  await recordWorkflowAdmissionDuration(
+    timing,
+    actionType,
+    performance.now() - startedAt,
+    dimensions,
+  );
+  if (!measured.ok) {
+    throw measured.error;
+  }
+  return measured.value;
 }
 
 /** Preserve the admission result and count exactly one terminal attempt, even on abort. */

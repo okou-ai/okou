@@ -1,5 +1,3 @@
-import { performance } from "node:perf_hooks";
-
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -38,10 +36,7 @@ import type { Tx } from "../../lib/db-types";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import {
-  measureWorkflowAdmissionStep,
-  recordWorkflowAdmissionDuration,
-} from "./workflow-queue-admission-timing.service";
+import { measureWorkflowAdmissionStep } from "./workflow-queue-admission-timing.service";
 
 const automationEventRevoker = alias(chatEvents, "automation_event_revoker");
 
@@ -198,7 +193,6 @@ async function admitWorkflowQueueInTransaction(
   event: Parameters<typeof insertChatEvent>[1],
 ): Promise<WorkflowQueueAdmission> {
   const { automation, scheduleClaim, persistSourceTransition } = args;
-  let lockAcquiredAt: number | undefined;
   if (automation.kind === "schedule") {
     // Manual schedule runs must also coordinate with coalescing cron ticks.
     await measureWorkflowAdmissionStep(
@@ -208,7 +202,6 @@ async function admitWorkflowQueueInTransaction(
         await chatEventQueueAdmissionLock(tx, args.chatThreadId);
       },
     );
-    lockAcquiredAt = performance.now();
   }
 
   const admit = async (): Promise<WorkflowQueueAdmission> => {
@@ -288,15 +281,11 @@ async function admitWorkflowQueueInTransaction(
     }
     return { kind: "inserted", eventId: inserted.id };
   };
-  return await admit().finally(async () => {
-    if (lockAcquiredAt !== undefined) {
-      await recordWorkflowAdmissionDuration(
-        args.timing,
-        "api_dispatch_workflow_admission_schedule_lock_held",
-        performance.now() - lockAcquiredAt,
-      );
-    }
-  });
+  return await measureWorkflowAdmissionStep(
+    automation.kind === "schedule" ? args.timing : undefined,
+    "api_dispatch_workflow_admission_schedule_lock_held",
+    admit,
+  );
 }
 
 async function attemptWorkflowQueueAdmission(
