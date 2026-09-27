@@ -46,9 +46,8 @@ final recovery path. A successful receipt reuses the existing Runner
 notification channel when another prompt is queued; the 30-second poll remains
 notification-loss recovery rather than normal steering latency.
 
-Pi API-first turns do not steer. A message sent during such a turn stays queued
-and is picked after the run completes and releases its slot. A turn that needs
-tools launches a sandbox, and the Runner steers there under the rules above.
+Pi runs execute in the Sandbox from their first turn, so the Runner steers
+them under the rules above. The retired API-first turn never steered.
 
 ## Steering Without Delivery IDs
 

@@ -58,7 +58,6 @@ The Stage 1 row is updated by #34267; the other foundation entries are unchanged
 | `managed-usage.service.ts`                                                              | Raw trigger plus supplied original run ID; explicit runless when actor has no run.                                     |
 | `openrouter-usage.service.ts`                                                           | Raw trigger; explicit runless for request-local no-run usage.                                                          |
 | `webhooks-agent-health-usage-telemetry.ts`                                              | Raw trigger, runner-supplied run ID; current idempotent INSERT unchanged.                                              |
-| `pi-api-first-turn-usage.service.ts`                                                    | Raw trigger in current idempotency-validation transaction.                                                             |
 | `pi-memory-stage1-usage.service.ts`                                                     | Explicit `pi_memory_stage1`; existing deterministic category keys and billing semantics.                               |
 | `image-generation.service.ts`, `video-generation.service.ts`, `avatar-video.service.ts` | Raw trigger; callbacks carry original job billing identity; synchronous image requests carry request-local provenance. |
 | `voice-io-post.service.ts`                                                              | Raw trigger; explicit request-local runless classification.                                                            |

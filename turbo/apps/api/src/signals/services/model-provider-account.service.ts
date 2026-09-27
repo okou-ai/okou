@@ -1276,43 +1276,6 @@ async function readAccountCiphertexts(
     : null;
 }
 
-/** Pi Codex first-turn fast path: copy only the access token and account ID
- * ciphertexts of a connected, healthy account. Callers check token freshness
- * before decrypting. */
-export async function capturePiCodexCredentialCiphertexts(
-  args: Omit<SubscriptionCredentialOwner, "type" | "featureSwitchContext"> & {
-    readonly type: typeof CODEX_TYPE;
-    readonly sourceId: string;
-  },
-): Promise<{
-  readonly tokenExpiresAt: Date | null;
-  readonly accessTokenCiphertext: string;
-  readonly accountIdCiphertext: string;
-} | null> {
-  const current = await readAccountCiphertexts(args);
-  if (
-    !current ||
-    current.account.disconnectedAt !== null ||
-    current.account.needsReconnect
-  ) {
-    return null;
-  }
-  const byName = new Map(
-    current.secrets.map((secret) => {
-      return [secret.name, secret.encryptedValue] as const;
-    }),
-  );
-  const accessTokenCiphertext = byName.get("CHATGPT_ACCESS_TOKEN");
-  const accountIdCiphertext = byName.get(CODEX_ACCOUNT_ID_SECRET);
-  return accessTokenCiphertext && accountIdCiphertext
-    ? {
-        tokenExpiresAt: current.account.tokenExpiresAt,
-        accessTokenCiphertext,
-        accountIdCiphertext,
-      }
-    : null;
-}
-
 async function credentialValues(
   rows: readonly { readonly name: string; readonly encryptedValue: string }[],
   featureSwitchContext: FeatureSwitchContext,

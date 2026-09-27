@@ -79,6 +79,32 @@ current Runner keeps using reserve, receipt and `activeInputDeliveryIds`, so the
 additive endpoints need no deploy order. A later Runner that calls them
 requires an API at or above this release.
 
+## Pi API-first retirement (release 4, API side)
+
+The API no longer runs Pi first turns in-process. Every Pi run goes to the
+Sandbox. Run creation publishes the no-inference `sandbox-first` handoff under
+`pi-api-first-turn/<runId>/` (v3 manifest plus session object, or a v4 manifest
+referencing blob-backed history) before the run and its runner job commit.
+`piLaunchConfig.apiFirstTurn` stays populated because the Runner validator and
+the CLI handoff resolver still require it; the contract, Runner, Guest and CLI
+are unchanged and are cleaned up in a later release. The `pi_api_first_turn`
+advisory lock is gone. No database migration.
+
+Old and new instances during deploy:
+
+- An old API instance still runs its in-flight API-first attempts in its own
+  process and completes, fails or hands them off itself; new instances need no
+  state from it. Cancellation handled by a new instance no longer takes the
+  lock or aborts the old process's provider call; the status-guarded terminal
+  transition still decides the winner, and a losing attempt stops at its own
+  deadline.
+- Completion deletes the handoff objects of every Pi run, and the sandbox
+  cleanup cron still sweeps the unchanged `pi-api-first-turn/` prefix after the
+  presigned URL TTL, so objects written by old instances are not orphaned.
+
+**Rollback:** safe down to the release 3 floor; an earlier API resumes API-first
+for new runs and reads nothing this release writes differently.
+
 ## Unified chat queue (release 3)
 
 Every input, from web sends and MCP to integrations and automations, enters

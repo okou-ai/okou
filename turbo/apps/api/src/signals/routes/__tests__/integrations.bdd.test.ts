@@ -660,114 +660,6 @@ function mockPiResourceArchiveDownloads(
   );
 }
 
-function piResponsesTextSse(text: string, sequence: number): string {
-  const responseId = `resp_connector_pi_${sequence.toString()}`;
-  const messageId = `msg_connector_pi_${sequence.toString()}`;
-  const message = {
-    type: "message",
-    id: messageId,
-    role: "assistant",
-    status: "completed",
-    content: [{ type: "output_text", text, annotations: [] }],
-  };
-  return [
-    {
-      type: "response.created",
-      response: {
-        id: responseId,
-        object: "response",
-        status: "in_progress",
-        output: [],
-        usage: null,
-      },
-    },
-    {
-      type: "response.output_item.added",
-      output_index: 0,
-      item: { ...message, status: "in_progress", content: [] },
-    },
-    {
-      type: "response.output_text.delta",
-      output_index: 0,
-      content_index: 0,
-      delta: text,
-    },
-    { type: "response.output_item.done", output_index: 0, item: message },
-    {
-      type: "response.completed",
-      response: {
-        id: responseId,
-        object: "response",
-        status: "completed",
-        output: [message],
-        usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
-      },
-    },
-  ]
-    .map((event) => {
-      return `data: ${JSON.stringify(event)}\n\n`;
-    })
-    .join("");
-}
-
-function piResponsesToolSse(sequence: number): string {
-  const responseId = `resp_connector_pi_${sequence.toString()}`;
-  const itemId = `fc_connector_pi_${sequence.toString()}`;
-  const functionArguments = JSON.stringify({ command: "okou --help" });
-  const item = {
-    type: "function_call",
-    id: itemId,
-    call_id: `call_connector_pi_${sequence.toString()}`,
-    name: "bash",
-    arguments: functionArguments,
-    status: "completed",
-  };
-  return [
-    {
-      type: "response.created",
-      response: {
-        id: responseId,
-        object: "response",
-        status: "in_progress",
-        output: [],
-        usage: null,
-      },
-    },
-    {
-      type: "response.output_item.added",
-      output_index: 0,
-      item: { ...item, arguments: "", status: "in_progress" },
-    },
-    {
-      type: "response.function_call_arguments.delta",
-      output_index: 0,
-      item_id: itemId,
-      delta: functionArguments,
-    },
-    {
-      type: "response.function_call_arguments.done",
-      output_index: 0,
-      item_id: itemId,
-      arguments: functionArguments,
-    },
-    { type: "response.output_item.done", output_index: 0, item },
-    {
-      type: "response.completed",
-      response: {
-        id: responseId,
-        object: "response",
-        status: "completed",
-        output: [item],
-        usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
-      },
-    },
-  ]
-    .map((event) => {
-      return `data: ${JSON.stringify(event)}\n\n`;
-    })
-    .join("");
-}
-
 type SlackPiModel = "gpt-5.6-terra" | "gpt-5.6-sol" | "gpt-5.6-luna";
 
 interface SlackPiActorSetup {
@@ -775,11 +667,6 @@ interface SlackPiActorSetup {
   readonly actor: ReturnType<typeof bdd.user>;
   readonly orgId: string;
   readonly runnerGroup: ReturnType<typeof runs.configureRunnerGroup>;
-}
-
-interface PiProviderRequest {
-  readonly authorization: string | null;
-  readonly body: unknown;
 }
 
 async function configureCanonicalSlackPiActor(
@@ -824,7 +711,6 @@ async function configureCanonicalSlackPiActor(
   await integrations.updateUserModelPreference(actor, "claude-fable-5-1");
   return { actor, orgId, runnerGroup, selectedModel };
 }
-
 async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
   const slackUserId = uniqueSlackUserId();
   const { teamId } = await integrations.installSlackWorkspace(args.actor, {
@@ -913,35 +799,136 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
   };
 }
 
-function mockCanonicalSlackPiProvider(): PiProviderRequest[] {
-  const providerRequests: PiProviderRequest[] = [];
-  server.use(
-    http.post("https://api.openai.com/v1/responses", async ({ request }) => {
-      const sequence = providerRequests.length;
-      providerRequests.push({
-        authorization: request.headers.get("authorization"),
-        body: await request.json(),
-      });
-      const answer =
-        sequence === 0
-          ? "Canonical Slack Pi answer"
-          : sequence === 2
-            ? "Continued Slack Pi answer"
-            : null;
-      return new HttpResponse(
-        answer === null
-          ? piResponsesToolSse(sequence)
-          : piResponsesTextSse(answer, sequence),
-        { headers: { "content-type": "text/event-stream" } },
-      );
-    }),
-  );
-  return providerRequests;
-}
-
 type CanonicalSlackPiScenario = Awaited<
   ReturnType<typeof establishCanonicalSlackHistory>
 >;
+
+type SlackPiClaim = Awaited<ReturnType<typeof runs.claimRunnerJob>>;
+
+/**
+ * Read the no-inference launch handoff run creation published for the
+ * Sandbox, and the H0 session bytes it names.
+ */
+function readSlackPiSandboxHandoff(
+  scenario: CanonicalSlackPiScenario,
+  runId: string,
+) {
+  const prefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${runId}/`;
+  const manifestBytes = scenario.checkpointObjects.get(
+    `${prefix}manifest.json`,
+  );
+  if (!manifestBytes) {
+    throw new Error("Expected a Slack Pi sandbox handoff manifest");
+  }
+  const manifest = piApiFirstTurnManifestSchema.parse(
+    JSON.parse(manifestBytes.toString("utf8")),
+  );
+  expect(manifest).toMatchObject({
+    outcome: "ownership-transfer",
+    mode: "sandbox-first",
+    apiUsage: { schemaVersion: 1, state: "no-inference" },
+  });
+  const sessionObjectKey =
+    manifest.schemaVersion === 4
+      ? new URL(manifest.history.url).searchParams.get("object")
+      : `${prefix}session.jsonl`;
+  const sessionBytes = sessionObjectKey
+    ? scenario.checkpointObjects.get(sessionObjectKey)
+    : undefined;
+  if (!sessionBytes) {
+    throw new Error("Expected the Slack Pi handoff session bytes");
+  }
+  return { manifest, session: sessionBytes.toString("utf8") };
+}
+
+/** Complete a claimed Slack Pi turn the way the Sandbox does. */
+async function completeSlackPiTurnInSandbox(args: {
+  readonly scenario: CanonicalSlackPiScenario;
+  readonly runId: string;
+  readonly claim: SlackPiClaim;
+  readonly prompt: string;
+  readonly answer: string;
+}): Promise<void> {
+  const handoff = readSlackPiSandboxHandoff(args.scenario, args.runId);
+  const session = MemoryPiSession.fromJsonl(handoff.session);
+  session.appendMessage({ role: "user", content: args.prompt, timestamp: 1 });
+  session.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: args.answer }],
+    api: "openai-responses",
+    provider: "openai",
+    model: args.scenario.selectedModel,
+    usage: {
+      input: 5,
+      output: 3,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 8,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: 2,
+  });
+  const history = session.toJsonl();
+  const historyHash = createHash("sha256").update(history).digest("hex");
+  const sandboxHeaders = { authorization: `Bearer ${args.claim.sandboxToken}` };
+  await webhooks.requestAgentCheckpointPrepareHistory(
+    {
+      runId: args.runId,
+      hash: historyHash,
+      rawSize: Buffer.byteLength(history),
+      encodedSize: Buffer.byteLength(history),
+      encoding: "identity",
+    },
+    sandboxHeaders,
+    [200],
+  );
+  args.scenario.checkpointObjects.set(
+    `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${historyHash}.blob`,
+    Buffer.from(history, "utf8"),
+  );
+  const sequenceStart = handoff.manifest.sandboxEventSequenceStart;
+  await webhooks.requestAgentEvents(
+    {
+      runId: args.runId,
+      events: [
+        {
+          type: "assistant",
+          sequenceNumber: sequenceStart,
+          message: { content: [{ type: "text", text: args.answer }] },
+        },
+        {
+          type: "result",
+          sequenceNumber: sequenceStart + 1,
+          result: args.answer,
+        },
+      ],
+    },
+    sandboxHeaders,
+    [200],
+  );
+  await webhooks.requestAgentComplete(
+    {
+      runId: args.runId,
+      exitCode: 0,
+      lastEventSequence: sequenceStart + 1,
+      checkpoint: {
+        cliAgentType: "pi",
+        cliAgentSessionId: args.scenario.chatThreadId,
+        cliAgentSessionHistoryHash: historyHash,
+      },
+    },
+    sandboxHeaders,
+    [200],
+  );
+  await flushWaitUntilForTest();
+  expect((await runs.readRun(args.scenario.actor, args.runId)).status).toBe(
+    "completed",
+  );
+  await expect(
+    readRunLaunchSnapshotFixture(context, args.runId),
+  ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
+}
 
 async function runFirstCanonicalSlackPiTurn(
   scenario: CanonicalSlackPiScenario,
@@ -957,41 +944,46 @@ async function runFirstCanonicalSlackPiTurn(
     channel: scenario.channelId,
     channel_type: "channel",
   });
-  // Webhook acknowledgement precedes the tracked Pi turn and its callbacks.
+  // Webhook acknowledgement precedes the tracked ingress that creates the run.
   await flushWaitUntilForTest();
+  const runId = await pollSlackRun(scenario.runnerGroup);
   const state = await integrations.readSlackTestState(scenario.teamId);
-  const runId = state.recent_runs.find((run) => {
-    return run.promptPreview?.includes(prompt) === true;
-  })?.id;
-  if (!runId) {
-    throw new Error("Expected the first canonical Slack Pi run");
-  }
-  expect((await runs.readRun(scenario.actor, runId)).status).toBe("completed");
-  return { prompt, runId };
+  expect(
+    state.recent_runs.find((run) => {
+      return run.id === runId;
+    })?.promptPreview,
+  ).toContain(prompt);
+  const claim = await runs.claimRunnerJob(runId, {
+    capabilities: { piModelConfigGenerations: [1, 2] },
+  });
+  return { prompt, runId, claim };
 }
 
 async function expectFirstSlackPiExecution(args: {
   readonly scenario: CanonicalSlackPiScenario;
-  readonly providerRequests: readonly PiProviderRequest[];
   readonly turn: Awaited<ReturnType<typeof runFirstCanonicalSlackPiTurn>>;
 }): Promise<string> {
-  expect(args.providerRequests).toHaveLength(1);
-  expect(args.providerRequests[0]).toMatchObject({
-    authorization: "Bearer bdd-slack-terra-api-key",
-    body: {
-      model: args.scenario.selectedModel,
-      store: false,
-      stream: true,
-      reasoning: { effort: "max" },
-    },
+  const { claim } = args.turn;
+  expect(claim.cliAgentType).toBe("pi");
+  expect(claim.piSessionId).toBe(args.scenario.chatThreadId);
+  expect(claim.piModelConfig).toMatchObject({
+    provider: "openai",
+    model: args.scenario.selectedModel,
+    thinkingLevel: "max",
   });
-  const providerInput = JSON.stringify(args.providerRequests[0]?.body);
-  expect(providerInput).toContain("establish non-Pi Slack history");
-  expect(providerInput).toContain("Historical Claude answer");
-  expect(providerInput).toContain(args.turn.prompt);
-  await expect(
-    readRunLaunchSnapshotFixture(context, args.turn.runId),
-  ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
+  // The fresh Pi session still carries the canonical Slack history to the
+  // Sandbox that executes the first turn.
+  const launchInput = JSON.stringify(claim);
+  expect(launchInput).toContain("establish non-Pi Slack history");
+  expect(launchInput).toContain("Historical Claude answer");
+  expect(launchInput).toContain(args.turn.prompt);
+  await completeSlackPiTurnInSandbox({
+    scenario: args.scenario,
+    runId: args.turn.runId,
+    claim,
+    prompt: args.turn.prompt,
+    answer: "Canonical Slack Pi answer",
+  });
   const binding = await readThreadSessionBinding(
     context,
     args.scenario.chatThreadId,
@@ -1079,7 +1071,6 @@ async function expectSlackPiOwnership(args: {
 
 async function claimContinuedSlackPiTurn(args: {
   readonly scenario: CanonicalSlackPiScenario;
-  readonly providerRequests: readonly PiProviderRequest[];
   readonly firstPrompt: string;
   readonly firstSessionId: string;
 }) {
@@ -1122,7 +1113,6 @@ async function claimContinuedSlackPiTurn(args: {
     args.scenario.chatThreadId,
   );
   expect(binding.agent_session_id).toBe(args.firstSessionId);
-  expect(args.providerRequests).toHaveLength(1);
   const manifestBytes = args.scenario.checkpointObjects.get(
     `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${runId}/manifest.json`,
   );
@@ -1158,7 +1148,6 @@ async function claimContinuedSlackPiTurn(args: {
 
 async function cancelContinuedSlackPiTurn(args: {
   readonly scenario: CanonicalSlackPiScenario;
-  readonly providerRequests: readonly PiProviderRequest[];
   readonly turn: Awaited<ReturnType<typeof claimContinuedSlackPiTurn>>;
 }): Promise<void> {
   await runs.requestCancelRun(args.scenario.actor, args.turn.runId, [200]);
@@ -1174,7 +1163,6 @@ async function cancelContinuedSlackPiTurn(args: {
   );
   await flushWaitUntilForTest();
 
-  expect(args.providerRequests).toHaveLength(1);
   expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledOnce();
   expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -1211,7 +1199,6 @@ async function cancelContinuedSlackPiTurn(args: {
 
 async function runSuccessfulContinuedSlackPiTurn(args: {
   readonly scenario: CanonicalSlackPiScenario;
-  readonly providerRequests: readonly PiProviderRequest[];
   readonly firstPrompt: string;
   readonly firstSessionId: string;
 }) {
@@ -1231,106 +1218,17 @@ async function runSuccessfulContinuedSlackPiTurn(args: {
   const claim = await runs.claimRunnerJob(completedRunId, {
     capabilities: { piModelConfigGenerations: [1, 2] },
   });
-  expect(args.providerRequests).toHaveLength(1);
-  const manifestBytes = args.scenario.checkpointObjects.get(
-    `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${completedRunId}/manifest.json`,
-  );
-  if (!manifestBytes) {
-    throw new Error("Expected continued Slack Pi handoff manifest");
-  }
-  const manifest = piApiFirstTurnManifestSchema.parse(
-    JSON.parse(manifestBytes.toString("utf8")),
-  );
-  if (manifest.schemaVersion !== 4) {
-    throw new Error("Expected referenced Slack Pi session");
-  }
-  const objectKey = new URL(manifest.history.url).searchParams.get("object");
-  const resumeBytes = objectKey
-    ? args.scenario.checkpointObjects.get(objectKey)
-    : undefined;
-  if (!resumeBytes) {
-    throw new Error("Expected continued Slack Pi history bytes");
-  }
-  const session = MemoryPiSession.fromJsonl(resumeBytes.toString("utf8"));
-  expect(resumeBytes.toString("utf8")).toContain(args.firstPrompt);
-  expect(resumeBytes.toString("utf8")).toContain("Canonical Slack Pi answer");
-  session.appendMessage({ role: "user", content: prompt, timestamp: 1 });
-  const answer = "Continued Slack Pi answer";
-  session.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: answer }],
-    api: "openai-responses",
-    provider: "openai",
-    model: args.scenario.selectedModel,
-    usage: {
-      input: 5,
-      output: 3,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 8,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: 2,
+  const handoff = readSlackPiSandboxHandoff(args.scenario, completedRunId);
+  expect(handoff.manifest.schemaVersion).toBe(4);
+  expect(handoff.session).toContain(args.firstPrompt);
+  expect(handoff.session).toContain("Canonical Slack Pi answer");
+  await completeSlackPiTurnInSandbox({
+    scenario: args.scenario,
+    runId: completedRunId,
+    claim,
+    prompt,
+    answer: "Continued Slack Pi answer",
   });
-  const h2 = session.toJsonl();
-  const h2Hash = createHash("sha256").update(h2).digest("hex");
-  const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
-  await webhooks.requestAgentCheckpointPrepareHistory(
-    {
-      runId: completedRunId,
-      hash: h2Hash,
-      rawSize: Buffer.byteLength(h2),
-      encodedSize: Buffer.byteLength(h2),
-      encoding: "identity",
-    },
-    sandboxHeaders,
-    [200],
-  );
-  args.scenario.checkpointObjects.set(
-    `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
-    Buffer.from(h2, "utf8"),
-  );
-  await webhooks.requestAgentEvents(
-    {
-      runId: completedRunId,
-      events: [
-        {
-          type: "assistant",
-          sequenceNumber: manifest.sandboxEventSequenceStart,
-          message: { content: [{ type: "text", text: answer }] },
-        },
-        {
-          type: "result",
-          sequenceNumber: manifest.sandboxEventSequenceStart + 1,
-          result: answer,
-        },
-      ],
-    },
-    sandboxHeaders,
-    [200],
-  );
-  await webhooks.requestAgentComplete(
-    {
-      runId: completedRunId,
-      exitCode: 0,
-      lastEventSequence: manifest.sandboxEventSequenceStart + 1,
-      checkpoint: {
-        cliAgentType: "pi",
-        cliAgentSessionId: args.scenario.chatThreadId,
-        cliAgentSessionHistoryHash: h2Hash,
-      },
-    },
-    sandboxHeaders,
-    [200],
-  );
-  await flushWaitUntilForTest();
-  expect((await runs.readRun(args.scenario.actor, completedRunId)).status).toBe(
-    "completed",
-  );
-  await expect(
-    readRunLaunchSnapshotFixture(context, completedRunId),
-  ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
   const binding = await readThreadSessionBinding(
     context,
     args.scenario.chatThreadId,
@@ -3335,11 +3233,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const scenario = await establishCanonicalSlackHistory(
         await configureCanonicalSlackPiActor(selectedModel),
       );
-      const providerRequests = mockCanonicalSlackPiProvider();
       const firstTurn = await runFirstCanonicalSlackPiTurn(scenario);
       const firstSessionId = await expectFirstSlackPiExecution({
         scenario,
-        providerRequests,
         turn: firstTurn,
       });
       await expectSlackPiOwnership({
@@ -3353,13 +3249,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const continuedTurn = await claimContinuedSlackPiTurn({
         scenario,
-        providerRequests,
         firstPrompt: firstTurn.prompt,
         firstSessionId,
       });
       await cancelContinuedSlackPiTurn({
         scenario,
-        providerRequests,
         turn: continuedTurn,
       });
       await expect(
@@ -3371,7 +3265,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
       const successfulContinuation = await runSuccessfulContinuedSlackPiTurn({
         scenario,
-        providerRequests,
         firstPrompt: firstTurn.prompt,
         firstSessionId,
       });

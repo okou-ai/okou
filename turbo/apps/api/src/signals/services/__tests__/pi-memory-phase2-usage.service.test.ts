@@ -404,13 +404,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
     },
   );
 
-  it.each([
-    "missing-callback",
-    "mismatched-owner",
-    "non-pi",
-    "owned-thread",
-    "api-first",
-  ])(
+  it.each(["missing-callback", "mismatched-owner", "non-pi", "owned-thread"])(
     "cannot turn %s into a private maintenance billing exemption",
     async (fault) => {
       const run = await launchMaintenance();
@@ -435,11 +429,6 @@ describe("Pi memory Phase 2 proxy billing", () => {
         await db()
           .update(agentRuns)
           .set({ chatThreadId: threadId })
-          .where(eq(agentRuns.id, run.runId));
-      } else if (fault === "api-first") {
-        await db()
-          .update(agentRuns)
-          .set({ modelProvider: null, triggerSource: "api" })
           .where(eq(agentRuns.id, run.runId));
       } else {
         await db()

@@ -6,19 +6,15 @@ import {
 } from "@okouai/api-contracts/contracts/pi-native";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
 import { createHash, randomUUID } from "node:crypto";
-import { crc32 } from "node:zlib";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
-import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isPiNativeModel } from "@okouai/core/pi-execution";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
 import {
@@ -34,13 +30,12 @@ import {
   createChatEventsFixture,
   configureNativeCliArtifact,
   requireOrgId,
-  expectPiApiUsage,
   expectNoBuiltInModelUsage,
-  createPiApiFirstTurnUsagePricingResolution,
+  createGptUsagePricingResolution,
+  createPiUsagePricingResolution,
   claimEnvironment,
   expectExactPrivatePiMemoryAdmission,
 } from "./helpers/chat-events-fixture";
-import { piResponsesTextSse } from "./helpers/pi-responses";
 
 const context = testContext();
 const {
@@ -67,148 +62,8 @@ const {
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
+  expectPiSandboxHandoff,
 } = createChatEventsFixture(context);
-
-function nativeMessagesResponse(model: string, answer: string, tool = false) {
-  const events = [
-    {
-      type: "message_start",
-      message: {
-        id: randomUUID(),
-        type: "message",
-        role: "assistant",
-        model,
-        content: [],
-        stop_reason: null,
-        usage: {
-          input_tokens: 5,
-          output_tokens: 0,
-          cache_read_input_tokens: 3,
-          cache_creation_input_tokens: 2,
-        },
-      },
-    },
-    {
-      type: "content_block_start",
-      index: 0,
-      content_block: { type: "thinking", thinking: "" },
-    },
-    {
-      type: "content_block_delta",
-      index: 0,
-      delta: { type: "thinking_delta", thinking: "route-bound reasoning" },
-    },
-    {
-      type: "content_block_delta",
-      index: 0,
-      delta: { type: "signature_delta", signature: "route-bound-signature" },
-    },
-    { type: "content_block_stop", index: 0 },
-    {
-      type: "content_block_start",
-      index: 1,
-      content_block: tool
-        ? { type: "tool_use", id: randomUUID(), name: "read", input: {} }
-        : { type: "text", text: "" },
-    },
-    {
-      type: "content_block_delta",
-      index: 1,
-      delta: tool
-        ? {
-            type: "input_json_delta",
-            partial_json: '{"path":"/home/user/workspace/AGENTS.md"}',
-          }
-        : { type: "text_delta", text: answer },
-    },
-    { type: "content_block_stop", index: 1 },
-    {
-      type: "message_delta",
-      delta: { stop_reason: tool ? "tool_use" : "end_turn" },
-      usage: { output_tokens: 3 },
-    },
-    { type: "message_stop" },
-  ];
-  return new HttpResponse(
-    events
-      .map((event) => {
-        return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
-      })
-      .join(""),
-    { headers: { "content-type": "text/event-stream" } },
-  );
-}
-
-function nativeBedrockResponse(tool = false) {
-  function frame(event: string, payload: unknown): Buffer {
-    const headers = Buffer.concat(
-      Object.entries({
-        ":message-type": "event",
-        ":event-type": event,
-        ":content-type": "application/json",
-      }).map(([name, value]) => {
-        const length = Buffer.alloc(2);
-        length.writeUInt16BE(Buffer.byteLength(value));
-        return Buffer.concat([
-          Buffer.from([name.length]),
-          Buffer.from(name),
-          Buffer.from([7]),
-          length,
-          Buffer.from(value),
-        ]);
-      }),
-    );
-    const body = Buffer.from(JSON.stringify(payload));
-    const prefix = Buffer.alloc(12);
-    prefix.writeUInt32BE(16 + headers.length + body.length);
-    prefix.writeUInt32BE(headers.length, 4);
-    prefix.writeUInt32BE(crc32(prefix.subarray(0, 8)), 8);
-    const data = Buffer.concat([prefix, headers, body]);
-    const checksum = Buffer.alloc(4);
-    checksum.writeUInt32BE(crc32(data));
-    return Buffer.concat([data, checksum]);
-  }
-  return new HttpResponse(
-    new Uint8Array(
-      Buffer.concat([
-        frame("messageStart", { role: "assistant" }),
-        ...(tool
-          ? [
-              frame("contentBlockStart", {
-                contentBlockIndex: 0,
-                start: {
-                  toolUse: { toolUseId: "native-bedrock-tool", name: "read" },
-                },
-              }),
-            ]
-          : []),
-        frame("contentBlockDelta", {
-          contentBlockIndex: 0,
-          delta: tool
-            ? { toolUse: { input: '{"path":"README.md"}' } }
-            : { text: "Exact Bedrock deployment answer" },
-        }),
-        frame("contentBlockStop", { contentBlockIndex: 0 }),
-        frame("messageStop", { stopReason: tool ? "tool_use" : "end_turn" }),
-        frame("metadata", {
-          usage: {
-            inputTokens: 5,
-            outputTokens: 3,
-            cacheReadInputTokens: 3,
-            cacheWriteInputTokens: 2,
-            totalTokens: 13,
-          },
-        }),
-      ]),
-    ),
-    {
-      headers: {
-        "content-type": "application/vnd.amazon.eventstream",
-        "x-amzn-requestid": "selected-bedrock-response",
-      },
-    },
-  );
-}
 
 async function completeNativeToolHandoff({
   actor,
@@ -216,20 +71,16 @@ async function completeNativeToolHandoff({
   run,
   claim,
   objects,
-  prefix,
   model,
   surfaceId,
-  requests,
 }: {
   actor: ApiTestUser;
   agentId: string;
   run: Awaited<ReturnType<typeof sendChatRun>>;
   claim: Awaited<ReturnType<typeof api.claimRunnerJob>>;
   objects: Map<string, Buffer>;
-  prefix: string;
   model: "claude-sonnet-5";
   surfaceId: string | null;
-  requests: readonly { body: unknown }[];
 }): Promise<void> {
   const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
   const activeInput = "include this native active input exactly once";
@@ -261,29 +112,46 @@ async function completeNativeToolHandoff({
       reserved.deliveryId,
     ),
   ).resolves.toStrictEqual({ outcome: "delivered" });
-  const h1 = objects.get(`${prefix}/session.jsonl`);
-  const manifestBytes = objects.get(`${prefix}/manifest.json`);
-  if (!h1 || !manifestBytes) {
-    throw new Error("Expected native handoff history");
+  const { manifest, session: h0 } = expectPiSandboxHandoff(run.runId, objects);
+  if (!h0) {
+    throw new Error("Expected native sandbox-first history");
   }
-  const manifest = piApiFirstTurnManifestSchema.parse(
-    JSON.parse(manifestBytes.toString("utf8")),
-  );
-  const history = MemoryPiSession.fromJsonl(h1.toString("utf8"));
-  const assistant = history.buildSessionContext().messages.at(-1);
-  if (assistant?.role !== "assistant") {
-    throw new Error("Expected native pending assistant");
-  }
-  const tool = assistant.content.find((block) => {
-    return block.type === "toolCall";
+  // The sandbox runs the whole native turn: a tool call with an image result,
+  // the delivered active input, and the final answer.
+  const history = MemoryPiSession.fromJsonl(h0.toString("utf8"));
+  const assistant = {
+    role: "assistant",
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+  } as const;
+  const toolCallId = randomUUID();
+  history.appendMessage({ role: "user", content: claim.prompt, timestamp: 1 });
+  history.appendMessage({
+    ...assistant,
+    content: [
+      {
+        type: "toolCall",
+        id: toolCallId,
+        name: "read",
+        arguments: { path: "/home/user/workspace/AGENTS.md" },
+      },
+    ],
+    stopReason: "toolUse",
+    timestamp: 2,
   });
-  if (tool?.type !== "toolCall") {
-    throw new Error("Expected native pending tool");
-  }
   history.appendMessage({
     role: "toolResult",
-    toolCallId: tool.id,
-    toolName: tool.name,
+    toolCallId,
+    toolName: "read",
     content: [
       { type: "text", text: "native tool result" },
       {
@@ -382,26 +250,13 @@ async function completeNativeToolHandoff({
     threadId: run.threadId,
     prompt: "continue with the native tool image and accepted input",
   });
-  await expect
-    .poll(() => {
-      return objects.has(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${resumed.runId}/manifest.json`,
-      );
-    })
-    .toBe(true);
   await flushWaitUntilForTest();
-  const resumedManifestBytes = objects.get(
-    `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${resumed.runId}/manifest.json`,
-  );
-  if (!resumedManifestBytes) {
-    throw new Error("Expected resumed native manifest");
-  }
-  const resumedManifest = piApiFirstTurnManifestSchema.parse(
-    JSON.parse(resumedManifestBytes.toString("utf8")),
+  const { manifest: resumedManifest } = expectPiSandboxHandoff(
+    resumed.runId,
+    objects,
   );
   expect(resumedManifest).toMatchObject({
     schemaVersion: 4,
-    mode: "sandbox-first",
     baseSession: { sessionId: run.threadId, sha256: hash },
   });
   if (resumedManifest.schemaVersion !== 4) {
@@ -410,33 +265,17 @@ async function completeNativeToolHandoff({
   expect(new URL(resumedManifest.history.url).searchParams.get("object")).toBe(
     `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.blob`,
   );
-  expect(h2).toContain("image/png");
-  expect(h2).toContain(activeInput);
-  expect(h2).toContain("route-bound-signature");
-  expect(requests).toHaveLength(1);
   await cancelChatRun(actor, resumed.runId);
 }
 
 describe("shared native Pi route activation", () => {
   it.each([
-    {
-      type: "openrouter-codex",
-      model: "deepseek-v4.1-flash",
-      url: "https://openrouter.ai/api/v1/responses",
-    },
-    {
-      type: "deepseek",
-      model: "deepseek-v4-flash",
-      url: "https://api.deepseek.com/responses",
-    },
-    {
-      type: "openrouter-codex",
-      model: "deepseek-v4-flash",
-      url: "https://openrouter.ai/api/v1/responses",
-    },
+    { type: "openrouter-codex", model: "deepseek-v4.1-flash" },
+    { type: "deepseek", model: "deepseek-v4-flash" },
+    { type: "openrouter-codex", model: "deepseek-v4-flash" },
   ] as const)(
     "launches canonical $type $model Responses and continues the owned Pi session",
-    async ({ type, model, url }) => {
+    async ({ type, model }) => {
       if (model === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
@@ -454,58 +293,53 @@ describe("shared native Pi route activation", () => {
           modelProviderId: providerId,
         },
       ]);
+      const pricing = await createGptUsagePricingResolution();
 
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
-      const requests: unknown[] = [];
-      server.use(
-        http.post(url, async ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer selected-deepseek-key",
-          );
-          requests.push(await request.json());
-          return new HttpResponse(
-            piResponsesTextSse("DeepSeek BYOK answer", requests.length),
-            { headers: { "content-type": "text/event-stream" } },
-          );
-        }),
-      );
       const first = await sendChatRun(actor, {
         agentId,
         model,
         prompt: "remember the selected DeepSeek route",
       });
-      await waitForRunStatus(actor, first.runId, "completed");
+      // The first turn is a no-inference sandbox-first handoff.
+      expect(expectPiSandboxHandoff(first.runId, objects).session).toBeTruthy();
       await flushWaitUntilForTest();
+      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      expect(firstClaim.claim).toMatchObject({
+        piSessionId: first.threadId,
+        piModelConfig: { model: getProviderRuntimeModel(type, model) },
+      });
+      await completeSandboxFirstPiRun({
+        actor,
+        run: first,
+        claim: firstClaim,
+        checkpointObjects: objects,
+        prompt: "remember the selected DeepSeek route",
+        answer: "DeepSeek BYOK answer",
+        responsesModel: {
+          provider: "deepseek",
+          model: getProviderRuntimeModel(type, model),
+        },
+        usagePricingResolution: pricing,
+      });
       const second = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
         prompt: "continue with the same history",
       });
-      const secondManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`;
-      await expect
-        .poll(() => {
-          return objects.has(secondManifestKey);
-        })
-        .toBe(true);
-      const secondManifestBytes = objects.get(secondManifestKey);
-      if (!secondManifestBytes) {
-        throw new Error("Expected resumed DeepSeek manifest");
-      }
-      const secondManifest = piApiFirstTurnManifestSchema.parse(
-        JSON.parse(secondManifestBytes.toString("utf8")),
-      );
-      expect(secondManifest).toMatchObject({
+      expect(
+        expectPiSandboxHandoff(second.runId, objects).manifest,
+      ).toMatchObject({
         schemaVersion: 4,
-        mode: "sandbox-first",
-        baseSession: { sessionId: first.threadId, sha256: expect.any(String) },
-      });
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({
-        model: getProviderRuntimeModel(type, model),
+        baseSession: {
+          sessionId: first.threadId,
+          sha256: expect.any(String),
+        },
       });
       await expectNoBuiltInModelUsage(first.runId);
       await expectNoBuiltInModelUsage(second.runId);
+      await flushWaitUntilForTest();
       const secondClaim = await claimChatRun(runnerGroup, second.runId);
       expect(secondClaim.claim).toMatchObject({
         piSessionId: first.threadId,
@@ -521,7 +355,7 @@ describe("shared native Pi route activation", () => {
   // Fable frontier line runs on the Claude Code vendor harness, so it has no
   // native Pi run to assert here. Enumerate from the admission decision.
   it.each(piNativeCatalogModelSchema.options.filter(isPiNativeModel))(
-    "runs built-in %s API-first with native billing and exact session continuation",
+    "runs built-in %s in the sandbox with the route effort and exact session continuation",
     async (model) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       configureNativeCliArtifact();
@@ -536,21 +370,9 @@ describe("shared native Pi route activation", () => {
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiMemory]: true,
       });
-      const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
+      const pricing = await createPiUsagePricingResolution(model);
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
-      const requests: unknown[] = [];
-      server.use(
-        http.post(
-          "https://api.anthropic.com/v1/messages",
-          async ({ request }) => {
-            expect(request.headers.get("x-api-key")).toBeTruthy();
-            expect(request.headers.get("authorization")).toBeNull();
-            requests.push(await request.json());
-            return nativeMessagesResponse(model, "Native Claude answer");
-          },
-        ),
-      );
       const first = await sendChatRun(
         actor,
         {
@@ -561,8 +383,30 @@ describe("shared native Pi route activation", () => {
         },
         pricing,
       );
-      await waitForRunStatus(actor, first.runId, "completed");
       await flushWaitUntilForTest();
+      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      expect(firstClaim.claim).toMatchObject({
+        cliAgentType: "pi",
+        piSessionId: first.threadId,
+        piModelConfig: {
+          schemaVersion: 4,
+          catalogModel: model,
+          billingOwner: "builtin",
+        },
+      });
+      expect(firstClaim.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
+        "low",
+      );
+      await completeSandboxFirstPiRun({
+        actor,
+        answer: "Native Claude sandbox answer",
+        checkpointObjects: objects,
+        claim: firstClaim,
+        prompt: "retain this Claude native preference",
+        run: first,
+        nativeModel: model,
+        usagePricingResolution: pricing,
+      });
       await expectExactPrivatePiMemoryAdmission({
         orgId: requireOrgId(actor),
         userId: actor.userId,
@@ -592,20 +436,12 @@ describe("shared native Pi route activation", () => {
         nativeModel: model,
         usagePricingResolution: pricing,
       });
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({ model });
-      expect(JSON.stringify(requests[0])).toContain('"effort":"low"');
       await expect(
         chat.readThreadMetadata(actor, first.threadId),
       ).resolves.toMatchObject({
         modelSettings: { [model]: { effort: "extra" } },
       });
-      await expectPiApiUsage(first.runId, model, "", {
-        input: 5,
-        output: 3,
-        cacheRead: 3,
-        cacheCreation: 2,
-      });
+      await expectNoBuiltInModelUsage(first.runId);
       await expectNoBuiltInModelUsage(second.runId);
       for (const run of [first, second]) {
         await api.requestClaimRunnerJob(true, run.runId, [404], {
@@ -702,48 +538,12 @@ describe("shared native Pi route activation", () => {
         "azure-foundry":
           "https://native-resource.services.ai.azure.com/anthropic/v1/messages",
       };
-      const requests: {
-        body: unknown;
-        auth: string | null;
-        key: string | null;
-        custom: string | null;
-      }[] = [];
-      server.use(
-        http.post(urls[type], async ({ request }) => {
-          requests.push({
-            body: await request.json(),
-            auth: request.headers.get("authorization"),
-            key: request.headers.get("x-api-key"),
-            custom: request.headers.get("x-provider-key"),
-          });
-          return nativeMessagesResponse(upstreamModel, "", true);
-        }),
-      );
       const run = await sendChatRun(actor, {
         agentId,
         model,
         prompt: "read the workspace with the selected native route",
       });
-      const prefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}`;
-      await expect
-        .poll(() => {
-          return objects.has(`${prefix}/manifest.json`);
-        })
-        .toBe(true);
       await flushWaitUntilForTest();
-      expect(requests).toHaveLength(1);
-      const bearer =
-        type === "openrouter-api-key" || type === "vercel-ai-gateway";
-      expect(requests[0]).toMatchObject({
-        body: { model: upstreamModel },
-        auth: bearer ? `Bearer ${secret}` : null,
-        key:
-          type === "anthropic-api-key" || type === "azure-foundry"
-            ? secret
-            : null,
-        custom:
-          type === "custom-anthropic-messages" ? `Custom ${secret}` : null,
-      });
       if (type !== "custom-anthropic-messages") {
         await upsertOrgModelProvider(
           actor,
@@ -840,10 +640,8 @@ describe("shared native Pi route activation", () => {
           run,
           claim,
           objects,
-          prefix,
           model,
           surfaceId,
-          requests,
         });
       } else {
         await cancelChatRun(actor, run.runId, sandboxHeaders);
@@ -865,7 +663,6 @@ describe("shared native Pi route activation", () => {
       });
       expect(terminal).toHaveLength(1);
       await expectNoBuiltInModelUsage(run.runId);
-      expect(requests).toHaveLength(1);
     },
     90_000,
   );
@@ -910,63 +707,34 @@ describe("shared native Pi route activation", () => {
       });
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
-      let requests = 0;
-      server.use(
-        http.post(
-          "https://bedrock-runtime.us-east-1.amazonaws.com/*",
-          async ({ request }) => {
-            requests += 1;
-            expect(decodeURIComponent(new URL(request.url).pathname)).toBe(
-              `/model/${profile}/converse-stream`,
-            );
-            expect(request.headers.get("x-api-key")).toBeNull();
-            if (mode === "api-key") {
-              expect(request.headers.get("authorization")).toBe(
-                "Bearer selected-bedrock-bearer",
-              );
-            } else {
-              expect(request.headers.get("authorization")).toContain(
-                "Credential=AKIASELECTED/",
-              );
-            }
-            expect(request.headers.get("x-amz-security-token")).toBe(
-              mode === "temporary-access-keys"
-                ? "selected-session-token"
-                : null,
-            );
-            await expect(request.json()).resolves.toMatchObject({
-              messages: expect.any(Array),
-            });
-            return nativeBedrockResponse(requests === 2);
-          },
-        ),
-      );
       const first = await sendChatRun(actor, {
         agentId,
         model,
         prompt: "use the explicit Bedrock profile",
       });
-      await waitForRunStatus(actor, first.runId, "completed");
       await flushWaitUntilForTest();
+      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      await completeSandboxFirstPiRun({
+        actor,
+        run: first,
+        claim: firstClaim,
+        checkpointObjects: objects,
+        prompt: "use the explicit Bedrock profile",
+        answer: "Exact Bedrock deployment answer",
+        nativeModel: model,
+        usagePricingResolution: await createGptUsagePricingResolution(),
+      });
       await expectNoBuiltInModelUsage(first.runId);
       await expectExactPrivatePiMemoryAdmission({
         orgId: requireOrgId(actor),
         userId: actor.userId,
         runId: first.runId,
       });
-      expect(requests).toBe(1);
       const second = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
         prompt: "continue with a tool on the same Bedrock profile",
       });
-      await expect
-        .poll(() => {
-          return objects.has(
-            `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`,
-          );
-        })
-        .toBe(true);
       await flushWaitUntilForTest();
       await upsertOrgModelProvider(actor, {
         type: "aws-bedrock",
@@ -1035,7 +803,6 @@ describe("shared native Pi route activation", () => {
               },
             },
       );
-      expect(requests).toBe(1);
       await expectNoBuiltInModelUsage(second.runId);
       await cancelChatRun(actor, second.runId, sandboxHeaders);
     },
@@ -1087,17 +854,6 @@ describe("shared native Pi route activation", () => {
           `https://static.okou.io/okou-cli/${"b".repeat(40)}/package.tgz`,
         );
       }
-      let calls = 0;
-      server.use(
-        http.post("https://api.anthropic.com/*", () => {
-          calls += 1;
-          return nativeMessagesResponse(model, "must not run");
-        }),
-        http.post("https://bedrock-runtime.us-east-1.amazonaws.com/*", () => {
-          calls += 1;
-          return nativeBedrockResponse();
-        }),
-      );
       const response = await chat.requestSendEvent(
         actor,
         {
@@ -1112,7 +868,6 @@ describe("shared native Pi route activation", () => {
       expect({ status: response.status, body: response.body }).toMatchObject({
         status: 400,
       });
-      expect(calls).toBe(0);
     },
     90_000,
   );
@@ -1135,24 +890,25 @@ describe("shared native Pi route activation", () => {
       },
     ]);
     mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
-    let apiCalls = 0;
-    server.use(
-      http.post("https://api.anthropic.com/v1/messages", () => {
-        apiCalls += 1;
-        return nativeMessagesResponse(
-          model,
-          "org API answer before personal connection",
-        );
-      }),
-    );
+    const objects = mockPiCheckpointObjectStore();
     const first = await sendChatRun(actor, {
       agentId,
       model,
       prompt: "use the organization API",
     });
-    await waitForRunStatus(actor, first.runId, "completed");
     await flushWaitUntilForTest();
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    expect(firstClaim.claim.cliAgentType).toBe("pi");
+    await completeSandboxFirstPiRun({
+      actor,
+      run: first,
+      claim: firstClaim,
+      checkpointObjects: objects,
+      prompt: "use the organization API",
+      answer: "org API answer before personal connection",
+      nativeModel: model,
+      usagePricingResolution: await createGptUsagePricingResolution(),
+    });
     const original = await readThreadSessionBinding(context, first.threadId);
     await misc.upsertPersonalModelProvider(
       actor,
@@ -1186,57 +942,13 @@ describe("shared native Pi route activation", () => {
     });
     await expectNoThreadModelUpdateEvent(actor, first.threadId, model);
     await expectNoBuiltInModelUsage(second.runId);
-    expect(apiCalls).toBe(1);
     await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
   });
 
-  it("does not switch the captured native route after a provider authentication failure", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    configureNativeCliArtifact();
-    const model = "claude-sonnet-5";
-    await configureBuiltInPiModel(actor, model);
-
-    mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
-    let directCalls = 0;
-    let alternateCalls = 0;
-    server.use(
-      http.post("https://api.anthropic.com/v1/messages", () => {
-        directCalls += 1;
-        return HttpResponse.json(
-          {
-            type: "error",
-            error: {
-              type: "authentication_error",
-              message: "selected credential rejected",
-            },
-          },
-          { status: 401 },
-        );
-      }),
-      http.post("https://openrouter.ai/*", () => {
-        alternateCalls += 1;
-        return nativeMessagesResponse(model, "forbidden alternate");
-      }),
-    );
-    const run = await sendChatRun(actor, {
-      agentId,
-      model,
-      prompt: "retain the selected route on failure",
-    });
-    await waitForRunStatus(actor, run.runId, "failed");
-    await flushWaitUntilForTest();
-    expect(directCalls).toBe(1);
-    expect(alternateCalls).toBe(0);
-    await api.requestClaimRunnerJob(true, run.runId, [404], {
-      capabilities: { piModelConfigGenerations: [4] },
-    });
-  }, 90_000);
-
   it.each([false, true])(
-    "captures the managed OpenRouter Claude key with US switch %s and charges native categories once",
+    "captures the managed OpenRouter Claude route with US switch %s in the native claim",
     async (usRoutingEnabled) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       configureNativeCliArtifact();
       const model = "claude-sonnet-5";
       const withSelectedRoute = await configureBuiltInPiModelOnOpenRouter(
@@ -1246,32 +958,9 @@ describe("shared native Pi route activation", () => {
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
       });
-      const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
+      const pricing = await createPiUsagePricingResolution(model);
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
-      let openRouterCalls = 0;
-      let anthropicCalls = 0;
-      server.use(
-        http.post("https://api.anthropic.com/*", () => {
-          anthropicCalls += 1;
-          return nativeMessagesResponse(model, "unselected");
-        }),
-        http.post(
-          `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/messages`,
-          async ({ request }) => {
-            openRouterCalls += 1;
-            expect(request.headers.get("authorization")).toMatch(/^Bearer .+/u);
-            expect(request.headers.get("x-api-key")).toBeNull();
-            await expect(request.json()).resolves.toMatchObject({
-              model: "anthropic/claude-sonnet-5",
-            });
-            return nativeMessagesResponse(
-              "anthropic/claude-sonnet-5",
-              "Managed native response",
-            );
-          },
-        ),
-      );
       const run = await withSelectedRoute(() => {
         return sendChatRun(
           actor,
@@ -1283,16 +972,22 @@ describe("shared native Pi route activation", () => {
           pricing,
         );
       });
-      await waitForRunStatus(actor, run.runId, "completed");
       await flushWaitUntilForTest();
-      expect(openRouterCalls).toBe(1);
-      expect(anthropicCalls).toBe(0);
-      await expectPiApiUsage(run.runId, model, "", {
-        input: 5,
-        output: 3,
-        cacheRead: 3,
-        cacheCreation: 2,
+      const { claim, sandboxHeaders } = await claimChatRun(
+        runnerGroup,
+        run.runId,
+      );
+      const config = piModelConfigV4Schema.parse(claim.piModelConfig);
+      expect(config).toMatchObject({
+        route: "openrouter-api-key",
+        catalogModel: model,
+        model: "anthropic/claude-sonnet-5",
+        billingOwner: "builtin",
       });
+      expect(piNativeInferenceUrl(config)).toBe(
+        `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/messages`,
+      );
+      await cancelChatRun(actor, run.runId, sandboxHeaders);
     },
     90_000,
   );
@@ -1321,7 +1016,7 @@ describe("shared native Pi route activation", () => {
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiMemory]: true,
       });
-      const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
+      const pricing = await createGptUsagePricingResolution();
       const workflows = createWorkflowsBddApi(context);
       const workflowId = await workflows.createWorkflow(actor, {
         agentId,
@@ -1443,13 +1138,6 @@ describe("shared native Pi route activation", () => {
       },
     ]);
 
-    let nativeCalls = 0;
-    server.use(
-      http.post("https://api.anthropic.com/*", () => {
-        nativeCalls += 1;
-        return nativeMessagesResponse(model, "must not call Pi");
-      }),
-    );
     const run = await sendChatRun(actor, {
       agentId,
       model,
@@ -1462,7 +1150,6 @@ describe("shared native Pi route activation", () => {
     expect(claim.cliAgentType).toBe("claude-code");
     expect(claim.piModelConfig).toBeUndefined();
     expect(claimEnvironment(claim).CLAUDE_CODE_OAUTH_TOKEN).toBeTruthy();
-    expect(nativeCalls).toBe(0);
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 90_000);
 });

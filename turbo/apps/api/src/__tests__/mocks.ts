@@ -10,10 +10,8 @@ import type {
 import type { LookupFunction } from "node:net";
 import { computed } from "ccstate";
 import { ws } from "msw";
-import { onTestFinished, vi, type Mock } from "vitest";
+import { vi, type Mock } from "vitest";
 import { z } from "zod";
-
-import { createDeferredPromise } from "../signals/utils";
 
 import { mockStripeClient } from "../signals/external/stripe-client";
 
@@ -51,18 +49,6 @@ type AxiomLoggerConstructorArguments = ConstructorParameters<
 type AxiomJSTransportConstructorArguments = ConstructorParameters<
   typeof import("@axiomhq/logging").AxiomJSTransport
 >;
-type PiCodingAgentSdk = typeof import("@earendil-works/pi-coding-agent");
-type PiSdkCreateSession = PiCodingAgentSdk["createAgentSessionFromServices"];
-type PiSdkSessionCreationControl = (
-  options: Parameters<PiSdkCreateSession>[0],
-  createSession: PiSdkCreateSession,
-) => ReturnType<PiSdkCreateSession>;
-
-const piSdkInitializationControl = vi.hoisted(
-  (): { current?: PiSdkSessionCreationControl } => {
-    return {};
-  },
-);
 
 function resolveDefaultStripePrice(priceId: unknown): Promise<unknown> {
   return Promise.resolve({
@@ -109,9 +95,6 @@ type PinnedRequestCallback = (
 ) => void;
 
 export interface ApiTestMocks {
-  readonly piSdk: {
-    readonly controlInitialization: typeof controlPiSdkInitialization;
-  };
   readonly abortSignal: {
     readonly timeout: AbortSignalTimeoutMock;
   };
@@ -569,11 +552,6 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   };
 
   return {
-    piSdk: {
-      controlInitialization: async (input, signal) => {
-        return await controlPiSdkInitialization(input, signal);
-      },
-    },
     abortSignal: {
       timeout: vi.fn<(milliseconds: number) => AbortSignal | undefined>(),
     },
@@ -726,21 +704,6 @@ export function browserUseCdpHandler(
     });
   });
 }
-
-vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
-  const actual = await importOriginal<PiCodingAgentSdk>();
-  return {
-    ...actual,
-    createAgentSessionFromServices: async (
-      options: Parameters<PiSdkCreateSession>[0],
-    ) => {
-      const control = piSdkInitializationControl.current;
-      return control
-        ? await control(options, actual.createAgentSessionFromServices)
-        : await actual.createAgentSessionFromServices(options);
-    },
-  };
-});
 
 vi.mock("@aws-sdk/client-s3", () => {
   class AbortMultipartUploadCommand {
@@ -1479,150 +1442,6 @@ export function mockAxiomSdkTelemetryFailure(
       return undefined;
     },
   );
-}
-
-/**
- * Only the external SDK can delay session creation after runtime services are
- * ready. The wrapper calls the real public factory and matches the unique
- * session/instruction pair; route tests still create runs and inspect outcomes
- * through production APIs.
- */
-async function controlPiSdkInitialization(
-  input: {
-    readonly sessionId: string;
-    readonly instructions: string;
-    readonly holdInitialization: boolean;
-    readonly initializationFailure?: Error;
-  },
-  signal: AbortSignal,
-) {
-  const { AgentSession, SettingsManager } =
-    await import("@earendil-works/pi-coding-agent");
-  type AgentSessionInstance = InstanceType<typeof AgentSession>;
-  type SettingsManagerInstance = ReturnType<typeof SettingsManager.inMemory>;
-  const entered = createDeferredPromise<void>(signal);
-  const ready = createDeferredPromise<void>(signal);
-  const disposed = createDeferredPromise<void>(signal);
-  const failed = createDeferredPromise<Error>(signal);
-  const release = createDeferredPromise<void>(signal);
-  let sessionSettings: SettingsManagerInstance | undefined;
-  let initializationCount = 0;
-  let disposeCount = 0;
-  const originalThinkingLevel:
-    | ((this: AgentSessionInstance) => AgentSessionInstance["thinkingLevel"])
-    | undefined = Object.getOwnPropertyDescriptor(
-    AgentSession.prototype,
-    "thinkingLevel",
-  )?.get;
-  if (!originalThinkingLevel) {
-    throw new Error("Expected the official Pi session thinking-level getter");
-  }
-  if (piSdkInitializationControl.current) {
-    throw new Error("Pi SDK initialization is already controlled by this test");
-  }
-  const originalCompactionSettings =
-    SettingsManager.prototype.getCompactionSettings;
-  const originalDispose = AgentSession.prototype.dispose;
-  const thinkingSpy = vi.spyOn(AgentSession.prototype, "thinkingLevel", "get");
-
-  const sessionCreationControl: PiSdkSessionCreationControl = async (
-    options,
-    createSession,
-  ) => {
-    const matchesSession =
-      options.sessionManager.getSessionId() === input.sessionId;
-    const matchesInstructions = options.services.resourceLoader
-      .getAgentsFiles()
-      .agentsFiles.some((file) => {
-        return file.content === input.instructions;
-      });
-    if (!matchesSession || !matchesInstructions) {
-      return await createSession(options);
-    }
-    initializationCount += 1;
-    if (!entered.settled()) {
-      entered.resolve(undefined);
-    }
-    // The production attempt cannot abort this test-owned SDK gate. Its late
-    // session must still be released when the test permits completion.
-    await release.promise;
-    if (input.initializationFailure) {
-      if (!failed.settled()) {
-        failed.resolve(input.initializationFailure);
-      }
-      throw input.initializationFailure;
-    }
-    return await createSession(options);
-  };
-  piSdkInitializationControl.current = sessionCreationControl;
-  thinkingSpy.mockImplementation(function (this: AgentSessionInstance) {
-    if (
-      this.sessionId === input.sessionId &&
-      this.systemPrompt.includes(input.instructions)
-    ) {
-      sessionSettings = this.settingsManager;
-    }
-    return originalThinkingLevel.call(this);
-  });
-  const compactionSpy = vi
-    .spyOn(SettingsManager.prototype, "getCompactionSettings")
-    .mockImplementation(function (this: SettingsManagerInstance) {
-      const settings = originalCompactionSettings.call(this);
-      if (this === sessionSettings) {
-        // The created SDK session has been finalized; this is the final
-        // synchronous preflight before the prepared turn is returned.
-        if (!ready.settled()) {
-          ready.resolve(undefined);
-        }
-      }
-      return settings;
-    });
-  const disposeSpy = vi
-    .spyOn(AgentSession.prototype, "dispose")
-    .mockImplementation(function (this: AgentSessionInstance) {
-      originalDispose.call(this);
-      if (
-        this.sessionId === input.sessionId &&
-        this.systemPrompt.includes(input.instructions)
-      ) {
-        disposeCount += 1;
-        if (!disposed.settled()) {
-          disposed.resolve(undefined);
-        }
-      }
-    });
-
-  const releaseInitialization = () => {
-    if (!release.settled()) {
-      release.resolve(undefined);
-    }
-  };
-  if (!input.holdInitialization) {
-    releaseInitialization();
-  }
-  onTestFinished(() => {
-    releaseInitialization();
-    if (piSdkInitializationControl.current === sessionCreationControl) {
-      piSdkInitializationControl.current = undefined;
-    }
-    thinkingSpy.mockRestore();
-    compactionSpy.mockRestore();
-    disposeSpy.mockRestore();
-  });
-
-  return {
-    entered: entered.promise,
-    ready: ready.promise,
-    disposed: disposed.promise,
-    failed: failed.promise,
-    release: releaseInitialization,
-    initializationCount: () => {
-      return initializationCount;
-    },
-    disposeCount: () => {
-      return disposeCount;
-    },
-  };
 }
 
 export function getApiTestMocks(): ApiTestMocks {
