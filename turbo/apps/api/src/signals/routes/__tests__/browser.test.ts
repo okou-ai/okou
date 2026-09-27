@@ -2,6 +2,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
 import { createHash, randomUUID } from "node:crypto";
+import { runInNewContext } from "node:vm";
 
 import { testBrowserReconcileContract } from "@okouai/api-contracts/contracts/test-browser-reconcile";
 import {
@@ -98,6 +99,42 @@ function browserControlInspections() {
       command.params.functionDeclaration.includes("controls.map")
     );
   });
+}
+
+function inspectShadowTextControl(declaration: string, type: string): unknown {
+  const document = {};
+  const shadowRoot = {};
+  class NativeInput {
+    readonly tagName = "INPUT";
+    readonly isConnected = true;
+    readonly ownerDocument = document;
+    readonly required = false;
+    readonly readOnly = false;
+    readonly multiple = false;
+    readonly minLength = -1;
+    readonly maxLength = -1;
+    readonly pattern = "";
+    readonly value = "synthetic";
+
+    constructor(readonly type: string) {}
+
+    getRootNode() {
+      return shadowRoot;
+    }
+
+    matches() {
+      return false;
+    }
+  }
+  // Run the actual CDP function rather than fabricating its inspection flags.
+  return runInNewContext(`(${declaration}).call(control)`, {
+    control: new NativeInput(type),
+    document,
+    HTMLInputElement: NativeInput,
+    HTMLTextAreaElement: class {},
+    HTMLSelectElement: class {},
+    HTMLOptGroupElement: class {},
+  }) as unknown;
 }
 
 function browserSelectWrites() {
@@ -3447,6 +3484,21 @@ describe("Browser user-action route", () => {
           typeof command.params.functionDeclaration === "string"
             ? command.params.functionDeclaration
             : "";
+        if (
+          !controlMainDocument &&
+          declaration.includes("supportedInputTypes")
+        ) {
+          return {
+            result: {
+              value: inspectShadowTextControl(
+                declaration,
+                command.params.objectId === "native-code-object"
+                  ? "tel"
+                  : "password",
+              ),
+            },
+          };
+        }
         if (declaration.includes("expected")) {
           return {
             result: { value: verificationMatches && controlConnected },
