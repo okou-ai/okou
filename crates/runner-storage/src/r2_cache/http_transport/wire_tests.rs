@@ -113,6 +113,38 @@ async fn head_signs_s3_request_and_treats_only_404_as_miss() {
 }
 
 #[tokio::test]
+async fn head_accepts_all_sdk_success_statuses_but_not_304() {
+    let server = MockServer::start_async().await;
+    let statuses = [200u16, 201, 204, 206, 304];
+    let mut mocks = Vec::new();
+    for status in statuses {
+        let key = format!("/test-bucket/runner-templates/status-{status}.tar.zst");
+        mocks.push(
+            server
+                .mock_async(move |when, then| {
+                    when.method("HEAD").path(&key);
+                    then.status(status);
+                })
+                .await,
+        );
+    }
+    let c = client(&server);
+    for status in statuses {
+        let result = c
+            .head(&format!("runner-templates/status-{status}.tar.zst"))
+            .await;
+        if status == 304 {
+            assert!(result.is_err(), "304 must not be treated as success");
+        } else {
+            assert!(result.unwrap(), "SDK treats HEAD {status} as a hit");
+        }
+    }
+    for mock in mocks {
+        mock.assert_calls_async(1).await;
+    }
+}
+
+#[tokio::test]
 async fn get_streams_body_and_only_nosuchkey_is_a_miss() {
     let server = MockServer::start_async().await;
     let body = server
@@ -670,6 +702,96 @@ async fn complete_retries_embedded_internal_error_but_not_invalid_part() {
 }
 
 #[tokio::test]
+async fn nonstreaming_200_embedded_errors_retry_across_sdk_operations() {
+    let failed = || {
+        mock_reply(
+            "200 OK",
+            "<Error><Code>InternalError</Code></Error>",
+            "x-amz-retry-after: 0\r\nETag: \"bad\"\r\n",
+        )
+    };
+    let (url, requests) = scripted_server(vec![
+        failed(),
+        mock_reply("200 OK", "<InitiateMultipartUploadResult><UploadId>id</UploadId></InitiateMultipartUploadResult>", ""),
+    ]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert_eq!(
+        c.create_multipart("runner-templates/h.tar.zst")
+            .await
+            .unwrap(),
+        "id"
+    );
+    assert_eq!(requests.await.unwrap().len(), 2);
+
+    let (url, requests) = scripted_server(vec![
+        failed(),
+        mock_reply("200 OK", "", "ETag: \"good\"\r\n"),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert_eq!(
+        c.upload_part(
+            "runner-templates/h.tar.zst",
+            "id",
+            1,
+            Bytes::from_static(b"part")
+        )
+        .await
+        .unwrap()
+        .etag,
+        "\"good\""
+    );
+    assert_eq!(requests.await.unwrap().len(), 2);
+
+    let (url, requests) =
+        scripted_server(vec![failed(), mock_reply("204 No Content", "", "")]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    c.abort_multipart("runner-templates/h.tar.zst", "id")
+        .await
+        .unwrap();
+    assert_eq!(requests.await.unwrap().len(), 2);
+
+    let server = MockServer::start_async().await;
+    let invalid_part = server
+        .mock_async(|when, then| {
+            when.method("PUT")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(200)
+                .header("etag", "\"bad\"")
+                .body("<Error><Code>InvalidPart</Code></Error>");
+        })
+        .await;
+    let c = client(&server);
+    let error = c
+        .upload_part(
+            "runner-templates/h.tar.zst",
+            "id",
+            1,
+            Bytes::from_static(b"part"),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("InvalidPart"), "{error}");
+    invalid_part.assert_calls_async(1).await;
+
+    let server = MockServer::start_async().await;
+    let no_code = server
+        .mock_async(|when, then| {
+            when.method("DELETE")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(200).body("<Error/>");
+        })
+        .await;
+    let c = client(&server);
+    assert!(
+        c.abort_multipart("runner-templates/h.tar.zst", "id")
+            .await
+            .is_err()
+    );
+    no_code.assert_calls_async(1).await;
+}
+
+#[tokio::test]
 async fn xml_body_read_failures_retry_within_the_same_attempt_budget() {
     let (url, server) = scripted_server(vec![
         "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
@@ -697,6 +819,28 @@ async fn xml_body_read_failures_retry_within_the_same_attempt_budget() {
             .is_none()
     );
     assert_eq!(server.await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn upload_part_200_body_read_failure_retries_within_attempt_budget() {
+    let (url, requests) = scripted_server(vec![
+        "HTTP/1.1 200 OK\r\nETag: \"misleading\"\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nETag: \"real\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+    ]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert_eq!(
+        c.upload_part(
+            "runner-templates/h.tar.zst",
+            "id",
+            1,
+            Bytes::from_static(b"part")
+        )
+        .await
+        .unwrap()
+        .etag,
+        "\"real\""
+    );
+    assert_eq!(requests.await.unwrap().len(), 2);
 }
 
 #[tokio::test]

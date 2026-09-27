@@ -392,15 +392,23 @@ impl R2HttpClient {
                     xml: None,
                 });
             }
+            let xml_output = matches!(
+                expected,
+                ExpectedBody::CreateXml | ExpectedBody::CompleteXml
+            );
             if status.is_success()
-                && matches!(
-                    expected,
-                    ExpectedBody::CreateXml | ExpectedBody::CompleteXml
-                )
+                && (xml_output || method == Method::PUT || method == Method::DELETE)
             {
-                // The SDK also retries transient failures while reading XML
-                // responses. Complete may carry an Error inside HTTP 200.
-                let body = match bounded_bytes(&mut response, MAX_XML_BYTES).await {
+                // The SDK buffers all non-streaming successful responses and
+                // checks their XML root for <Error>, not just Complete. A part
+                // can even include an ETag yet fail with HTTP 200 InternalError.
+                // Keep the normal XML and unexpected raw-response reads bounded.
+                let max = if xml_output {
+                    MAX_XML_BYTES
+                } else {
+                    MAX_ERROR_BYTES
+                };
+                let body = match bounded_bytes(&mut response, max).await {
                     Ok(body) => body,
                     Err(BodyReadError::Transport(e))
                         if attempt < MAX_ATTEMPTS
@@ -412,32 +420,49 @@ impl R2HttpClient {
                     }
                     Err(error) => return Err(error.into()),
                 };
-                if matches!(expected, ExpectedBody::CompleteXml) {
-                    let document = parse_xml(&body)?;
-                    if document.root_element().tag_name().name() != "CompleteMultipartUploadResult"
+                if body.is_empty() && !xml_output {
+                    self.reward_success(&mut retry_permit);
+                    return Ok(TransportReply {
+                        response,
+                        xml: None,
+                    });
+                }
+                let document = parse_xml(&body);
+                if document
+                    .as_ref()
+                    .is_ok_and(|doc| doc.root_element().tag_name().name() == "Error")
+                {
+                    let code = xml_code(&body);
+                    if attempt < MAX_ATTEMPTS
+                        && is_retryable(status, code.as_deref(), measured_skew)
+                        && self
+                            .reserve_retry(&mut retry_permit, retry_cost(status, code.as_deref()))
                     {
-                        let code = xml_code(&body);
-                        if attempt < MAX_ATTEMPTS
-                            && is_retryable(status, code.as_deref(), measured_skew)
-                            && self.reserve_retry(
-                                &mut retry_permit,
-                                retry_cost(status, code.as_deref()),
-                            )
-                        {
-                            retry_delay(attempt, retry_after).await;
-                            continue;
-                        }
-                        return Err(R2Error::S3(format!(
-                            "complete_multipart_upload: unexpected response {}",
-                            code.as_deref().unwrap_or("unknown")
-                        )));
+                        retry_delay(attempt, retry_after).await;
+                        continue;
                     }
-                    validate_complete_fields(document.root_element())?;
+                    return Err(R2Error::S3(format!(
+                        "R2 request: HTTP {status} embedded error {}",
+                        code.as_deref().unwrap_or("unknown")
+                    )));
+                }
+                if xml_output {
+                    let document = document?;
+                    if matches!(expected, ExpectedBody::CompleteXml) {
+                        if document.root_element().tag_name().name()
+                            != "CompleteMultipartUploadResult"
+                        {
+                            return Err(R2Error::S3(
+                                "complete_multipart_upload: unexpected response unknown".into(),
+                            ));
+                        }
+                        validate_complete_fields(document.root_element())?;
+                    }
                 }
                 self.reward_success(&mut retry_permit);
                 return Ok(TransportReply {
                     response,
-                    xml: Some(body),
+                    xml: xml_output.then_some(body),
                 });
             }
             if !status.is_success() {
@@ -518,10 +543,12 @@ impl R2HttpClient {
             )
             .await?
             .response;
-        match response.status() {
-            StatusCode::OK => Ok(true),
-            StatusCode::NOT_FOUND => Ok(false),
-            _ => Err(status_error("head_object", response).await),
+        if response.status().is_success() {
+            Ok(true)
+        } else if response.status() == StatusCode::NOT_FOUND {
+            Ok(false)
+        } else {
+            Err(status_error("head_object", response).await)
         }
     }
 
