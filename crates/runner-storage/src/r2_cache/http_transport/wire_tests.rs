@@ -145,6 +145,208 @@ async fn head_accepts_all_sdk_success_statuses_but_not_304() {
 }
 
 #[tokio::test]
+async fn modeled_success_headers_fail_closed_like_the_sdk() {
+    let server = MockServer::start_async().await;
+    let headers = [
+        ("parts", "x-amz-mp-parts-count", "not-a-number"),
+        ("date", "last-modified", "not-a-date"),
+        (
+            "bool",
+            "x-amz-server-side-encryption-bucket-key-enabled",
+            "maybe",
+        ),
+    ];
+    let mut mocks = Vec::new();
+    for (suffix, header, value) in headers {
+        for method in ["HEAD", "GET"] {
+            let path = format!("/test-bucket/runner-templates/{method}-{suffix}.tar.zst");
+            mocks.push(
+                server
+                    .mock_async(move |when, then| {
+                        when.method(method).path(&path);
+                        then.status(200).header(header, value).body("data");
+                    })
+                    .await,
+            );
+        }
+    }
+    let c = client(&server);
+    for (suffix, ..) in headers {
+        assert!(
+            c.head(&format!("runner-templates/HEAD-{suffix}.tar.zst"))
+                .await
+                .is_err()
+        );
+        assert!(
+            c.get(&format!("runner-templates/GET-{suffix}.tar.zst"))
+                .await
+                .is_err()
+        );
+    }
+    let good = server
+        .mock_async(|when, then| {
+            when.method("HEAD")
+                .path("/test-bucket/runner-templates/good.tar.zst");
+            then.status(200)
+                .header("x-amz-mp-parts-count", "2")
+                .header("last-modified", "Sun, 06 Nov 1994 08:49:37 GMT")
+                .header("x-amz-server-side-encryption-bucket-key-enabled", "false");
+        })
+        .await;
+    assert!(c.head("runner-templates/good.tar.zst").await.unwrap());
+    for mock in mocks {
+        mock.assert_calls_async(1).await;
+    }
+    good.assert_calls_async(1).await;
+}
+
+#[test]
+fn http_dates_use_pinned_smithy_parser_not_generic_httpdate() {
+    let mut headers = HeaderMap::new();
+    for value in [
+        "Sunday, 06-Nov-94 08:49:37 GMT",
+        "Sun Nov  6 08:49:37 1994",
+        "invalid date",
+    ] {
+        headers.insert("last-modified", value.parse().unwrap());
+        assert!(
+            validate_date_header(&headers, "last-modified", SmithyDateFormat::HttpDate).is_err(),
+            "{value}"
+        );
+    }
+    for value in [
+        "Sun, 06 Nov 1994 08:49:37 GMT",
+        "Mon, 16 Dec 2019 23:48:18.123 GMT",
+    ] {
+        headers.insert("last-modified", value.parse().unwrap());
+        assert!(
+            validate_date_header(&headers, "last-modified", SmithyDateFormat::HttpDate).is_ok()
+        );
+    }
+    headers.insert(
+        "x-amz-object-lock-retain-until-date",
+        "2026-09-27T01:00:00+01:00".parse().unwrap(),
+    );
+    assert!(
+        validate_date_header(
+            &headers,
+            "x-amz-object-lock-retain-until-date",
+            SmithyDateFormat::DateTimeWithOffset
+        )
+        .is_ok()
+    );
+}
+
+#[tokio::test]
+async fn duplicate_part_etag_and_invalid_create_abort_date_are_not_success() {
+    let server = MockServer::start_async().await;
+    let part = server
+        .mock_async(|when, then| {
+            when.method("PUT")
+                .path("/test-bucket/runner-templates/duplicate.tar.zst");
+            then.status(200)
+                .header("etag", "\"one\"")
+                .header("etag", "\"two\"");
+        })
+        .await;
+    let create = server.mock_async(|when, then| {
+        when.method("POST").path("/test-bucket/runner-templates/create.tar.zst");
+        then.status(200).header("x-amz-abort-date", "not-a-date")
+            .body("<InitiateMultipartUploadResult><UploadId>id</UploadId></InitiateMultipartUploadResult>");
+    }).await;
+    let c = client(&server);
+    let err = c
+        .upload_part(
+            "runner-templates/duplicate.tar.zst",
+            "id",
+            1,
+            Bytes::from_static(b"data"),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("invalid R2 etag response header"),
+        "{err}"
+    );
+    assert!(
+        c.create_multipart("runner-templates/create.tar.zst")
+            .await
+            .is_err()
+    );
+    part.assert_calls_async(1).await;
+    create.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn modeled_single_value_headers_reject_duplicates_across_operations() {
+    let server = MockServer::start_async().await;
+    let head = server
+        .mock_async(|when, then| {
+            when.method("HEAD")
+                .path("/test-bucket/runner-templates/head.tar.zst");
+            then.status(200)
+                .header("x-amz-meta-example", "first")
+                .header("x-amz-meta-example", "second");
+        })
+        .await;
+    let get = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/get.tar.zst");
+            then.status(200)
+                .header("x-amz-checksum-crc32", "first")
+                .header("x-amz-checksum-crc32", "second")
+                .body("object");
+        })
+        .await;
+    let complete = server
+        .mock_async(|when, then| {
+            when.method("POST")
+                .path("/test-bucket/runner-templates/complete.tar.zst")
+                .query_param("uploadId", "id");
+            then.status(200)
+                .header("x-amz-version-id", "first")
+                .header("x-amz-version-id", "second")
+                .body("<CompleteMultipartUploadResult/>");
+        })
+        .await;
+    let abort = server
+        .mock_async(|when, then| {
+            when.method("DELETE")
+                .path("/test-bucket/runner-templates/abort.tar.zst");
+            then.status(204)
+                .header("x-amz-request-charged", "first")
+                .header("x-amz-request-charged", "second");
+        })
+        .await;
+    let c = client(&server);
+    let error = c.head("runner-templates/head.tar.zst").await.unwrap_err();
+    assert!(error.to_string().contains("x-amz-meta-example"), "{error}");
+    let error = c.get("runner-templates/get.tar.zst").await.err().unwrap();
+    assert!(
+        error.to_string().contains("x-amz-checksum-crc32"),
+        "{error}"
+    );
+    let error = c
+        .complete_multipart("runner-templates/complete.tar.zst", "id", &[])
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("x-amz-version-id"), "{error}");
+    let error = c
+        .abort_multipart("runner-templates/abort.tar.zst", "id")
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("x-amz-request-charged"),
+        "{error}"
+    );
+    head.assert_calls_async(1).await;
+    get.assert_calls_async(1).await;
+    complete.assert_calls_async(1).await;
+    abort.assert_calls_async(1).await;
+}
+
+#[tokio::test]
 async fn get_streams_body_and_only_nosuchkey_is_a_miss() {
     let server = MockServer::start_async().await;
     let body = server

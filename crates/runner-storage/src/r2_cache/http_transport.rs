@@ -21,13 +21,15 @@ use aws_sigv4::{
     },
     sign::v4,
 };
+use aws_smithy_http::header as smithy_header;
 use aws_smithy_runtime_api::client::identity::Identity;
+use aws_smithy_types::{date_time::Format as SmithyDateFormat, primitive::Parse};
 use base64::Engine as _;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use reqwest::{
     Client, Method, Request, Response, StatusCode,
-    header::{CONTENT_TYPE, ETAG},
+    header::{CONTENT_TYPE, ETAG, HeaderMap},
 };
 use tokio::{
     io::AsyncRead,
@@ -421,6 +423,7 @@ impl R2HttpClient {
                     Err(error) => return Err(error.into()),
                 };
                 if body.is_empty() && !xml_output {
+                    validate_success_headers(&method, expected, response.headers())?;
                     self.reward_success(&mut retry_permit);
                     return Ok(TransportReply {
                         response,
@@ -459,6 +462,7 @@ impl R2HttpClient {
                         validate_complete_fields(document.root_element())?;
                     }
                 }
+                validate_success_headers(&method, expected, response.headers())?;
                 self.reward_success(&mut retry_permit);
                 return Ok(TransportReply {
                     response,
@@ -520,6 +524,7 @@ impl R2HttpClient {
                     code.as_deref().unwrap_or("unknown")
                 )));
             }
+            validate_success_headers(&method, expected, response.headers())?;
             self.reward_success(&mut retry_permit);
             return Ok(TransportReply {
                 response,
@@ -722,6 +727,185 @@ impl R2HttpClient {
         }
         Ok(())
     }
+}
+
+// The generated SDK response deserializers reject malformed or repeated
+// modeled headers even when the cache only consumes existence, body, or ETag.
+// Mirror the six output header shapes before rewarding a retry or disarming
+// the multipart guard; this includes object metadata's header prefix.
+fn validate_success_headers(
+    method: &Method,
+    expected: ExpectedBody,
+    headers: &HeaderMap,
+) -> Result<(), R2Error> {
+    let object = *method == Method::HEAD || matches!(expected, ExpectedBody::GetMissingXml);
+    let part = *method == Method::PUT;
+    let abort = *method == Method::DELETE;
+    if object {
+        validate_primitive_header::<i64>(headers, "content-length")?;
+        for name in [
+            "x-amz-missing-meta",
+            "x-amz-object-lock-event-hold-duration-days",
+            "x-amz-object-lock-event-hold-duration-years",
+            "x-amz-mp-parts-count",
+            "x-amz-tagging-count",
+        ] {
+            validate_primitive_header::<i32>(headers, name)?;
+        }
+        validate_primitive_header::<bool>(headers, "x-amz-delete-marker")?;
+        for name in ["expires", "last-modified"] {
+            validate_date_header(headers, name, SmithyDateFormat::HttpDate)?;
+        }
+        validate_date_header(
+            headers,
+            "x-amz-object-lock-retain-until-date",
+            SmithyDateFormat::DateTimeWithOffset,
+        )?;
+        for name in [
+            "accept-ranges",
+            "cache-control",
+            "content-disposition",
+            "content-encoding",
+            "content-language",
+            "content-range",
+            "content-type",
+            "etag",
+            "expiresstring",
+            "x-amz-checksum-crc32",
+            "x-amz-checksum-crc32c",
+            "x-amz-checksum-crc64nvme",
+            "x-amz-checksum-md5",
+            "x-amz-checksum-sha1",
+            "x-amz-checksum-sha256",
+            "x-amz-checksum-sha512",
+            "x-amz-checksum-type",
+            "x-amz-checksum-xxhash128",
+            "x-amz-checksum-xxhash3",
+            "x-amz-checksum-xxhash64",
+            "x-amz-expiration",
+            "x-amz-object-lock-event-hold",
+            "x-amz-object-lock-legal-hold",
+            "x-amz-object-lock-mode",
+            "x-amz-replication-status",
+            "x-amz-request-charged",
+            "x-amz-restore",
+            "x-amz-server-side-encryption-customer-algorithm",
+            "x-amz-server-side-encryption-customer-key-md5",
+            "x-amz-server-side-encryption-aws-kms-key-id",
+            "x-amz-server-side-encryption",
+            "x-amz-storage-class",
+            "x-amz-version-id",
+            "x-amz-website-redirect-location",
+        ] {
+            validate_single_header(headers, name)?;
+        }
+        if *method == Method::HEAD {
+            validate_single_header(headers, "x-amz-archive-status")?;
+        }
+        for name in headers
+            .keys()
+            .filter(|name| name.as_str().starts_with("x-amz-meta-"))
+        {
+            validate_single_header(headers, name.as_str())?;
+        }
+    }
+    if !abort {
+        validate_primitive_header::<bool>(
+            headers,
+            "x-amz-server-side-encryption-bucket-key-enabled",
+        )?;
+    }
+    match expected {
+        ExpectedBody::CreateXml => {
+            validate_date_header(headers, "x-amz-abort-date", SmithyDateFormat::HttpDate)?;
+            for name in [
+                "x-amz-abort-rule-id",
+                "x-amz-checksum-algorithm",
+                "x-amz-checksum-type",
+                "x-amz-request-charged",
+                "x-amz-server-side-encryption-customer-algorithm",
+                "x-amz-server-side-encryption-customer-key-md5",
+                "x-amz-server-side-encryption-context",
+                "x-amz-server-side-encryption-aws-kms-key-id",
+                "x-amz-server-side-encryption",
+            ] {
+                validate_single_header(headers, name)?;
+            }
+        }
+        ExpectedBody::CompleteXml => {
+            for name in [
+                "x-amz-expiration",
+                "x-amz-request-charged",
+                "x-amz-server-side-encryption-aws-kms-key-id",
+                "x-amz-server-side-encryption",
+                "x-amz-version-id",
+            ] {
+                validate_single_header(headers, name)?;
+            }
+        }
+        ExpectedBody::Raw if part => {
+            for name in [
+                "etag",
+                "x-amz-checksum-crc32",
+                "x-amz-checksum-crc32c",
+                "x-amz-checksum-crc64nvme",
+                "x-amz-checksum-md5",
+                "x-amz-checksum-sha1",
+                "x-amz-checksum-sha256",
+                "x-amz-checksum-sha512",
+                "x-amz-checksum-xxhash128",
+                "x-amz-checksum-xxhash3",
+                "x-amz-checksum-xxhash64",
+                "x-amz-request-charged",
+                "x-amz-server-side-encryption-customer-algorithm",
+                "x-amz-server-side-encryption-customer-key-md5",
+                "x-amz-server-side-encryption-aws-kms-key-id",
+                "x-amz-server-side-encryption",
+            ] {
+                validate_single_header(headers, name)?;
+            }
+        }
+        ExpectedBody::Raw if abort => {
+            validate_single_header(headers, "x-amz-request-charged")?;
+        }
+        ExpectedBody::Raw | ExpectedBody::GetMissingXml => {}
+    }
+    Ok(())
+}
+
+fn header_error(name: &str) -> R2Error {
+    R2Error::S3(format!("invalid R2 {name} response header"))
+}
+
+fn validate_single_header(headers: &HeaderMap, name: &str) -> Result<(), R2Error> {
+    smithy_header::one_or_none_bytes::<String>(headers.get_all(name).iter().map(|v| v.as_bytes()))
+        .map(|_| ())
+        .map_err(|_| header_error(name))
+}
+
+fn validate_primitive_header<T: Parse>(headers: &HeaderMap, name: &str) -> Result<(), R2Error> {
+    let values = smithy_header::read_many_primitive_bytes::<T>(
+        headers.get_all(name).iter().map(|v| v.as_bytes()),
+    )
+    .map_err(|_| header_error(name))?;
+    if values.len() > 1 {
+        return Err(header_error(name));
+    }
+    Ok(())
+}
+
+fn validate_date_header(
+    headers: &HeaderMap,
+    name: &str,
+    format: SmithyDateFormat,
+) -> Result<(), R2Error> {
+    let values =
+        smithy_header::many_dates_bytes(headers.get_all(name).iter().map(|v| v.as_bytes()), format)
+            .map_err(|_| header_error(name))?;
+    if values.len() > 1 {
+        return Err(header_error(name));
+    }
+    Ok(())
 }
 
 fn adjust_signing_time(now: SystemTime, skew_ms: i64) -> SystemTime {

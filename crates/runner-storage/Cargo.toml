@@ -18,7 +18,9 @@ sandbox.workspace = true
 async-trait.workspace = true
 aws-credential-types.workspace = true
 aws-sigv4 = { workspace = true, features = ["http1", "sign-http"] }
+aws-smithy-http.workspace = true
 aws-smithy-runtime-api = { workspace = true, features = ["client"] }
+aws-smithy-types.workspace = true
 base64 = { workspace = true, features = ["alloc"] }
 bytes = { workspace = true, features = ["std"] }
 crc32fast.workspace = true
