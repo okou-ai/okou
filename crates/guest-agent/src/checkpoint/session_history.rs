@@ -23,8 +23,9 @@ use guest_telemetry::telemetry::{
 use guest_telemetry::{log_error, log_info, log_warn};
 use session_history_selector::{
     ClaudeHistoryCandidate, ClaudeHistoryIneligibleReason, ClaudeHistorySelection,
-    CodexHistoryCandidate, CodexHistoryIneligibleReason, CodexHistorySelection, PiHistoryCandidate,
-    PiHistorySelection, select_claude_compact_generation_from_file,
+    CodexHistoryCandidate, CodexHistoryIneligibleReason, CodexHistorySelection,
+    PI_COMPACT_GENERATION_MAX_BYTES, PiHistoryCandidate, PiHistorySelection,
+    select_claude_compact_generation_from_file,
     select_claude_compact_generation_from_file_with_candidate_limit_for_test,
     select_codex_compact_generation, select_codex_compact_generation_with_candidate_limit_for_test,
     select_pi_compact_generation, select_pi_compact_generation_with_candidate_limit_for_test,
@@ -58,6 +59,7 @@ enum SessionHistoryPruneReason {
     Selector(&'static str),
     CompressedSource,
     SelectorIo,
+    ReplacementStageFailed,
 }
 
 impl SessionHistoryPruneReason {
@@ -66,6 +68,7 @@ impl SessionHistoryPruneReason {
             Self::Selector(reason) => reason,
             Self::CompressedSource => "compressed_source",
             Self::SelectorIo => "selector_io",
+            Self::ReplacementStageFailed => "replacement_stage_failed",
         }
     }
 }
@@ -76,7 +79,8 @@ fn record_session_history_prune(
     reason: Option<SessionHistoryPruneReason>,
 ) {
     let reason = reason.map(SessionHistoryPruneReason::as_str);
-    let error = matches!(outcome, SessionHistoryPruneOutcome::Error).then_some("selector_io");
+    let error = matches!(outcome, SessionHistoryPruneOutcome::Error)
+        .then_some(reason.unwrap_or("selector_io"));
     record_sandbox_op_with_dimensions(
         "session_history_prune",
         started.elapsed(),
@@ -99,6 +103,16 @@ pub(super) enum CheckpointSessionHistoryLimits {
 }
 
 impl CheckpointSessionHistoryLimits {
+    fn pi_compact_trigger_bytes(self) -> u64 {
+        match self {
+            Self::Production => PI_COMPACT_GENERATION_MAX_BYTES,
+            Self::BoundedForTest {
+                candidate_max_bytes,
+                ..
+            } => candidate_max_bytes,
+        }
+    }
+
     fn checkpoint_max_bytes(self) -> u64 {
         match self {
             Self::Production => RESUME_SESSION_HISTORY_MAX_BYTES,
@@ -742,10 +756,14 @@ fn prepare_session_history(
     }
 
     let checkpoint_max_bytes = limits.checkpoint_max_bytes();
-    if mode.can_prune_history()
-        && framework == env::Framework::Pi
-        && resolved.encoded_len()? > checkpoint_max_bytes
-    {
+    let pi_source_size = if mode.can_prune_history() && framework == env::Framework::Pi {
+        Some(resolved.encoded_len()?)
+    } else {
+        None
+    };
+    if pi_source_size.is_some_and(|size| size > limits.pi_compact_trigger_bytes()) {
+        let original_fits_checkpoint =
+            pi_source_size.is_some_and(|size| size <= checkpoint_max_bytes);
         let prune_start = std::time::Instant::now();
         if let Some(file) = resolved.plain_file_mut() {
             match limits.select_pi(file, cli_agent_session_id) {
@@ -755,27 +773,38 @@ fn prepare_session_history(
                             reason: "candidate_too_large",
                         });
                     }
-                    let replacement = PendingNativeHistoryReplacement::stage(
+                    match PendingNativeHistoryReplacement::stage(
                         resolved.replacement_target(),
                         candidate.as_bytes(),
-                    )
-                    .map_err(|_| {
-                        AgentError::PiCompactGenerationUnavailable {
-                            reason: "replacement_stage_failed",
+                    ) {
+                        Ok(replacement) => {
+                            let mut prepared =
+                                prepare_native_session_history(history_read_start, candidate)?;
+                            record_session_history_prune(
+                                prune_start,
+                                SessionHistoryPruneOutcome::Selected,
+                                None,
+                            );
+                            prepared.live_history = PreparedLiveHistory::NativeCandidate {
+                                kind: NativeHistoryKind::Pi,
+                                replacement: Some(replacement),
+                            };
+                            return Ok(PreparedSessionHistoryOutcome::Upload(prepared));
                         }
-                    })?;
-                    let mut prepared =
-                        prepare_native_session_history(history_read_start, candidate)?;
-                    record_session_history_prune(
-                        prune_start,
-                        SessionHistoryPruneOutcome::Selected,
-                        None,
-                    );
-                    prepared.live_history = PreparedLiveHistory::NativeCandidate {
-                        kind: NativeHistoryKind::Pi,
-                        replacement: Some(replacement),
-                    };
-                    return Ok(PreparedSessionHistoryOutcome::Upload(prepared));
+                        Err(error) => {
+                            record_session_history_prune(
+                                prune_start,
+                                SessionHistoryPruneOutcome::Error,
+                                Some(SessionHistoryPruneReason::ReplacementStageFailed),
+                            );
+                            log_warn!(LOG_TAG, "Pi history replacement staging failed: {error}");
+                            if !original_fits_checkpoint {
+                                return Err(AgentError::PiCompactGenerationUnavailable {
+                                    reason: "replacement_stage_failed",
+                                });
+                            }
+                        }
+                    }
                 }
                 Ok(PiHistorySelection::Ineligible(reason)) => {
                     record_session_history_prune(
@@ -783,9 +812,11 @@ fn prepare_session_history(
                         SessionHistoryPruneOutcome::Ineligible,
                         Some(SessionHistoryPruneReason::Selector(reason.as_str())),
                     );
-                    return Err(AgentError::PiCompactGenerationUnavailable {
-                        reason: reason.as_str(),
-                    });
+                    if !original_fits_checkpoint {
+                        return Err(AgentError::PiCompactGenerationUnavailable {
+                            reason: reason.as_str(),
+                        });
+                    }
                 }
                 Err(error) => {
                     record_session_history_prune(
@@ -794,12 +825,15 @@ fn prepare_session_history(
                         Some(SessionHistoryPruneReason::SelectorIo),
                     );
                     log_warn!(LOG_TAG, "Pi session history selection failed: {error}");
-                    return Err(AgentError::PiCompactGenerationUnavailable {
-                        reason: "selector_io",
-                    });
+                    if !original_fits_checkpoint {
+                        return Err(AgentError::PiCompactGenerationUnavailable {
+                            reason: "selector_io",
+                        });
+                    }
                 }
             }
         }
+        // A valid original below the upload cap remains usable when pruning fails.
     }
     let source = resolved
         .into_checkpoint_source_bounded(checkpoint_max_bytes)

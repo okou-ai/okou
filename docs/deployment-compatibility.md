@@ -3812,17 +3812,20 @@ provider ownership, a larger saved checkpoint selects sandbox-first execution
 from blob metadata. A V4 ownership-transfer manifest carries a presigned history
 reference; only the sandbox downloads and decompresses H0 for the next turn. The
 API still validates complete H2 history at checkpoint time, so its peak memory
-and validation work can exceed the raw file size. A Guest with Pi compact-generation
-selection can turn an over-limit append-only native JSONL into a bounded native
-H2 blob, preserving the session ID, active context and latest native session
-name; it replaces its live file only after the API accepts the checkpoint.
-Without a usable latest compact boundary, or when opaque extension state,
-globally visible labels or retained references cannot be preserved safely, the
-new Guest fails explicitly rather than sending a missing H2 hash.
+and validation work can exceed the raw file size. Like Claude and Codex, a
+Guest with Pi compact-generation selection attempts to select a 64 MiB-or-less
+native JSONL generation when the source exceeds 64 MiB, preserving the session
+ID, active context and latest native session name. It replaces its live file
+only after the API accepts the checkpoint. If selection or replacement staging
+fails while the original still fits within the 128 MiB upload bound, the Guest
+uploads the original instead. When the original exceeds that bound, selection
+failures (including unsafe opaque extension state, globally visible labels or
+retained references) and replacement staging failures cause the new Guest to
+fail explicitly rather than send a missing H2 hash.
 An older Guest can still fail the existing H2 hash check on oversized Pi files
 until its running jobs drain. New and old APIs read the selected native v3 H2
-through the existing blob/hash contract; no wire change, migration, or fallback
-is introduced. Rolling back the Guest restores the old oversized-file failure
+through the existing blob/hash contract; no wire change or migration is
+introduced. Rolling back the Guest restores the old oversized-file failure
 for new runs, but committed bounded native histories remain readable.
 
 V3 manifests remain the active format for API-produced H1 and small

@@ -19,6 +19,14 @@ fn write_oversized_pi_history(
     session_id: &str,
     with_compact: bool,
 ) -> std::io::Result<(PiHistoryFileGuard, Vec<u8>)> {
+    write_pi_history(session_id, with_compact, CHECKPOINT_TEST_MAX_BYTES as usize)
+}
+
+fn write_pi_history(
+    session_id: &str,
+    with_compact: bool,
+    old_payload_bytes: usize,
+) -> std::io::Result<(PiHistoryFileGuard, Vec<u8>)> {
     let session_dir = std::path::Path::new(
         api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR,
     );
@@ -28,7 +36,7 @@ fn write_oversized_pi_history(
     for record in [
         json!({"type":"session","version":3,"id":session_id,"cwd":"/home/user/workspace","timestamp":"2026-09-27T00:00:00Z"}),
         json!({"type":"thinking_level_change","id":"think","parentId":null,"thinkingLevel":"high","timestamp":"2026-09-27T00:00:00Z"}),
-        json!({"type":"message","id":"old","parentId":"think","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"x".repeat(CHECKPOINT_TEST_MAX_BYTES as usize)}}),
+        json!({"type":"message","id":"old","parentId":"think","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"x".repeat(old_payload_bytes)}}),
         json!({"type":"message","id":"kept","parentId":"old","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"kept"}}),
     ] {
         history.extend_from_slice(record.to_string().as_bytes());
@@ -131,7 +139,115 @@ async fn pi_checkpoint_commits_bounded_native_generation_after_ack() {
 }
 
 #[tokio::test]
-async fn pi_checkpoint_leaves_under_limit_native_history_unchanged() {
+async fn pi_checkpoint_compacts_history_below_upload_cap_after_ack() {
+    let api = SharedApiMock::new().await;
+    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let server = api.server();
+    let mut runtime = checkpoint_runtime().unwrap();
+    runtime.config.framework = guest_agent::env::Framework::Pi;
+    let _files_guard = SessionCheckpointFilesGuard::new();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
+    let (history_file, original) = write_pi_history(
+        &session_id,
+        true,
+        CHECKPOINT_TEST_CANDIDATE_MAX_BYTES as usize + 1024,
+    )
+    .unwrap();
+    assert!(original.len() as u64 > CHECKPOINT_TEST_CANDIDATE_MAX_BYTES);
+    assert!(original.len() as u64 <= CHECKPOINT_TEST_MAX_BYTES);
+    let selection =
+        session_history_selector::select_pi_compact_generation_with_candidate_limit_for_test(
+            &mut std::fs::File::open(&history_file.0).unwrap(),
+            &session_id,
+            CHECKPOINT_TEST_CANDIDATE_MAX_BYTES,
+        )
+        .unwrap();
+    let session_history_selector::PiHistorySelection::Candidate(candidate) = selection else {
+        panic!("expected bounded Pi history");
+    };
+    let expected = candidate.as_bytes();
+    let hash = hex::encode(Sha256::digest(expected));
+    let prepare = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .json_body_includes(format!(r#"{{"hash":"{hash}"}}"#));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"existing":true}));
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/complete")
+            .json_body_includes(format!(
+                r#"{{"checkpoint":{{"cliAgentSessionHistoryHash":"{hash}"}}}}"#
+            ));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"success":true,"status":"completed"}));
+    });
+    create_bounded_checkpoint(&runtime).await.unwrap();
+    prepare.assert_calls_async(1).await;
+    complete.assert_calls_async(1).await;
+    assert_eq!(std::fs::read(&history_file.0).unwrap(), expected);
+    assert_session_history_prune_operation(&runtime, "selected", None, true).unwrap();
+}
+
+#[tokio::test]
+async fn pi_checkpoint_uploads_original_without_compact_below_upload_cap() {
+    let api = SharedApiMock::new().await;
+    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
+    let server = api.server();
+    let mut runtime = checkpoint_runtime().unwrap();
+    runtime.config.framework = guest_agent::env::Framework::Pi;
+    let _files_guard = SessionCheckpointFilesGuard::new();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
+    let (history_file, original) = write_pi_history(
+        &session_id,
+        false,
+        CHECKPOINT_TEST_CANDIDATE_MAX_BYTES as usize + 1024,
+    )
+    .unwrap();
+    assert!(original.len() as u64 > CHECKPOINT_TEST_CANDIDATE_MAX_BYTES);
+    assert!(original.len() as u64 <= CHECKPOINT_TEST_MAX_BYTES);
+    let hash = hex::encode(Sha256::digest(&original));
+    let prepare = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/checkpoints/prepare-history")
+            .json_body_includes(format!(
+                r#"{{"hash":"{hash}","rawSize":{}}}"#,
+                original.len()
+            ));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"existing":true,"encoding":"zstd"}));
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/agent/complete")
+            .json_body_includes(format!(
+                r#"{{"checkpoint":{{"cliAgentSessionHistoryHash":"{hash}"}}}}"#
+            ));
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .json_body(json!({"success":true,"status":"completed"}));
+    });
+    create_bounded_checkpoint(&runtime).await.unwrap();
+    prepare.assert_calls_async(1).await;
+    complete.assert_calls_async(1).await;
+    assert_eq!(std::fs::read(&history_file.0).unwrap(), original);
+    assert_session_history_prune_operation(
+        &runtime,
+        "ineligible",
+        Some("no_compact_boundary"),
+        true,
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn pi_checkpoint_leaves_under_compact_trigger_native_history_unchanged() {
     let api = SharedApiMock::new().await;
     let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
     let server = api.server();
@@ -152,7 +268,7 @@ async fn pi_checkpoint_leaves_under_limit_native_history_unchanged() {
         panic!("expected short native fixture");
     };
     let original = selected.as_bytes().to_vec();
-    assert!(original.len() as u64 <= CHECKPOINT_TEST_MAX_BYTES);
+    assert!(original.len() as u64 <= CHECKPOINT_TEST_CANDIDATE_MAX_BYTES);
     std::fs::write(&history_file.0, &original).unwrap();
     let hash = hex::encode(Sha256::digest(&original));
     let prepare = server.mock(|when, then| {
