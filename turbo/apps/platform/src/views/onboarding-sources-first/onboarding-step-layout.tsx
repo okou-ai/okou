@@ -105,6 +105,77 @@ function OnboardingStepExplanation({
 }
 
 /**
+ * The step's way on. A phone's sheet is narrower than three full-size
+ * actions, so they tighten there, and a label too long even then wraps onto
+ * its own row rather than being cut.
+ */
+function OnboardingStepActions({
+  primaryLabel,
+  onPrimary,
+  primaryDisabled,
+  primaryBusy,
+  secondaryLabel,
+  onSecondary,
+  onBack,
+}: {
+  readonly primaryLabel: string;
+  readonly onPrimary: () => void;
+  readonly primaryDisabled: boolean;
+  readonly primaryBusy: boolean;
+  readonly secondaryLabel?: string;
+  readonly onSecondary?: () => void;
+  readonly onBack?: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-6 py-4 max-sm:gap-2 max-sm:px-4 lg:px-8">
+      {onBack ? (
+        <Button
+          type="button"
+          size="lg"
+          variant="ghost"
+          onClick={onBack}
+          className="max-sm:px-3"
+        >
+          {t(($) => {
+            return $.onboarding.sourcesFirst.common.back;
+          })}
+        </Button>
+      ) : (
+        <span />
+      )}
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        {secondaryLabel && onSecondary ? (
+          <Button
+            type="button"
+            size="lg"
+            variant="ghost"
+            onClick={onSecondary}
+            className="max-sm:px-3"
+          >
+            {secondaryLabel}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          size="lg"
+          onClick={onPrimary}
+          disabled={primaryDisabled || primaryBusy}
+          aria-busy={primaryBusy}
+          className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))] max-sm:w-auto max-sm:px-4"
+        >
+          {primaryBusy ? (
+            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+          ) : null}
+          {primaryLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Every sources-first step reads the same way: the app's rail on the left, and
  * the step centred on the canvas -- the question and its one action beside the
  * cards that answer it.
@@ -146,8 +217,6 @@ export function OnboardingStepLayout({
   readonly contentAlign?: "center" | "start";
   readonly children: ReactNode;
 }) {
-  const { t } = useTranslation();
-
   return (
     <div className="relative box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-sidebar pb-safe text-foreground">
       <SettingsDialogMount />
@@ -186,59 +255,15 @@ export function OnboardingStepLayout({
               {children}
             </div>
           </div>
-          {/* A phone's sheet is narrower than three full-size actions, so they
-              tighten there, and a label too long even then wraps onto its own
-              row rather than being cut. */}
-          <div
-            data-testid="onboarding-step-actions"
-            className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-6 py-4 max-sm:gap-2 max-sm:px-4 lg:px-8"
-          >
-            {onBack ? (
-              <Button
-                type="button"
-                size="lg"
-                variant="ghost"
-                onClick={onBack}
-                className="max-sm:px-3"
-              >
-                {t(($) => {
-                  return $.onboarding.sourcesFirst.common.back;
-                })}
-              </Button>
-            ) : (
-              <span />
-            )}
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-              {secondaryLabel && onSecondary ? (
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="ghost"
-                  onClick={onSecondary}
-                  className="max-sm:px-3"
-                >
-                  {secondaryLabel}
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                size="lg"
-                onClick={onPrimary}
-                disabled={primaryDisabled || primaryBusy}
-                aria-busy={primaryBusy}
-                className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))] max-sm:w-auto max-sm:px-4"
-              >
-                {primaryBusy ? (
-                  <Loader2
-                    size={16}
-                    className="animate-spin"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {primaryLabel}
-              </Button>
-            </div>
-          </div>
+          <OnboardingStepActions
+            primaryLabel={primaryLabel}
+            onPrimary={onPrimary}
+            primaryDisabled={primaryDisabled}
+            primaryBusy={primaryBusy}
+            secondaryLabel={secondaryLabel}
+            onSecondary={onSecondary}
+            onBack={onBack}
+          />
         </div>
       </main>
     </div>
