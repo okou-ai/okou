@@ -27,6 +27,13 @@ RUNNER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2"
 RUNNER_MISSING = "cccccccc-cccc-4ccc-8ccc-ccccccccccc3"
 
 
+def websocket_accept(key):
+    # RFC 6455 section 4.2.2 mandates SHA-1 for this public handshake checksum.
+    # It is not used as a signature or credential; SHA-256 would break browsers.
+    raw = (key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("ascii")
+    return base64.b64encode(hashlib.sha1(raw, usedforsecurity=False).digest())  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
+
+
 def recv_exact(sock, size):
     data = b""
     while len(data) < size:
@@ -73,7 +80,7 @@ class SocketRunner:
                     if match is None or not re.search(r"^Upgrade: websocket\r?$", headers, re.M | re.I):
                         conn.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                         continue
-                    accept = base64.b64encode(hashlib.sha1((match.group(1).strip() + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest())
+                    accept = websocket_accept(match.group(1).strip())
                     conn.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept + b"\r\n\r\n")
                     # First application frame is deliberately synthetic; real ticket admission is not tested here.
                     head = recv_exact(conn, 2)
@@ -119,7 +126,7 @@ def request(ctx, port, path, upgrade=False, host="wss.localhost"):
             stream.sendall(headers.encode())
             response = receive_headers(stream)
             if upgrade and response.startswith(b"HTTP/1.1 101 "):
-                assert b"Sec-WebSocket-Accept: " + base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()) in response
+                assert b"Sec-WebSocket-Accept: " + websocket_accept(key) in response
                 stream.sendall(b"\x81\x82\x01\x02\x03\x04" + bytes((ord("h") ^ 1, ord("i") ^ 2)))
                 # The response might already contain a WebSocket frame after CRLFCRLF.
                 payload = response.split(b"\r\n\r\n", 1)[1]
@@ -143,6 +150,8 @@ def main():
         raise SystemExit("CADDY_BIN must point to Caddy v2.11.4")
     version = subprocess.check_output([str(binary), "version"], text=True).split()[0]
     assert version == "v2.11.4", version
+    # RFC 6455 section 1.3 example; protects the test double against a bad checksum algorithm.
+    assert websocket_accept("dGhlIHNhbXBsZSBub25jZQ==") == b"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
     with tempfile.TemporaryDirectory(prefix="okou-wss-caddy-") as base:
         root = Path(base)
         sockets = root / "sockets"
