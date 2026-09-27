@@ -78,6 +78,33 @@ describe("okou browser command", () => {
     ).toStrictEqual(["use", "lease", "new", "status", "view", "input-request"]);
   });
 
+  it("guides agents to native credential input before last-resort takeover", () => {
+    let help = "";
+    browserCommand.configureOutput({
+      writeOut: (text: string) => {
+        help += text;
+      },
+    });
+    browserCommand.outputHelp();
+    browserCommand.configureOutput({
+      writeOut: (text: string) => {
+        process.stdout.write(text);
+      },
+    });
+
+    expect(help).toContain('"fieldKind":"password"');
+    expect(help).toContain('"fieldKind":"one_time_code"');
+    expect(help).toContain(
+      "prefer input-request for user-held values in supported exact controls",
+    );
+    expect(help).toContain(
+      "Direct Browser takeover is a last resort for unsupported or unavailable input",
+    );
+    expect(help.indexOf("Request login credentials:")).toBeLessThan(
+      help.indexOf("Direct Browser takeover is a last resort"),
+    );
+  });
+
   it("prints the existing Browser viewer URL for a user takeover", async () => {
     server.use(
       http.get("http://localhost:3000/api/browsers/current", () => {

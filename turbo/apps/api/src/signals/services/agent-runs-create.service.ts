@@ -10,11 +10,7 @@ import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
 import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -84,7 +80,10 @@ import {
 } from "./model-provider-account.service";
 import { piStableContextVariantDigest } from "./pi-stable-context.service";
 import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
-import { buildAgentToolsPrompt } from "./agent-tools-prompt.service";
+import {
+  buildAgentToolsPrompt,
+  buildAgentToolsPromptInputs,
+} from "./agent-tools-prompt.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
@@ -406,6 +405,7 @@ function buildStableAgentPrompt(args: {
   readonly agent: AgentRunRecord;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
+  readonly browserNativeInputEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
@@ -422,6 +422,7 @@ function buildStableAgentPrompt(args: {
       privateArtifactsEnabled: args.privateArtifactsEnabled,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
+      browserNativeInputEnabled: args.browserNativeInputEnabled,
       bankingEnabled: args.bankingEnabled,
       vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
@@ -915,39 +916,11 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
   readonly initialStablePrompt: PiStableContextPromptProjection;
   readonly piStableContext: NonNullable<CreateAgentRunArgs["piStableContext"]>;
 } {
-  const promptInputs = {
-    privateArtifactsEnabled: isFeatureEnabled(
-      FeatureSwitchKey.PrivateArtifacts,
-      args.featureSwitchContext,
-    ),
-    bankingEnabled: isFeatureEnabled(
-      FeatureSwitchKey.Banking,
-      args.featureSwitchContext,
-    ),
-    vncEnabled: isFeatureEnabled(
-      FeatureSwitchKey.VncAccess,
-      args.featureSwitchContext,
-    ),
-    discordEnabled: isFeatureEnabled(
-      FeatureSwitchKey.DiscordIntegration,
-      args.featureSwitchContext,
-    ),
-    larkEnabled: isFeatureEnabled(
-      FeatureSwitchKey.LarkIntegration,
-      args.featureSwitchContext,
-    ),
-    deliveryFormatGuidanceEnabled: isFeatureEnabled(
-      FeatureSwitchKey.DeliveryFormatGuidance,
-      args.featureSwitchContext,
-    ),
-    presentationConvertEnabled: isFeatureEnabled(
-      FeatureSwitchKey.PresentationConvert,
-      args.featureSwitchContext,
-    ),
-    customConnectorMcpEnabled: true,
+  const promptInputs = buildAgentToolsPromptInputs({
+    featureSwitchContext: args.featureSwitchContext,
     triggerSource: args.command.triggerSource ?? "web",
     cloudBrowserEnabled: args.cloudBrowserEnabled,
-  };
+  });
   const userInfo = { ...args.userInfo, ...args.command.userInfoExtras };
   const connectorScope = {
     allowedConnectorSlugs: args.allowedConnectorSlugs,

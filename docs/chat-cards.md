@@ -792,9 +792,13 @@ keeps its draft mounted when the user switches tabs; submit revalidates the
 Browser target. The Platform and API both enforce
 `BrowserNativeInput`.
 
-For direct Browser takeover, the agent shares the current `okou browser view`
-link and explains the step in its response. The user opens the existing thread
-Browser card or viewer, then replies in chat when finished or blocked. The
+For user-held values in supported exact controls (including a password or
+one-time code), the agent prefers native input while the `BrowserNativeInput`
+switch is enabled. Direct Browser takeover is a last resort for unsupported
+interactions or when native input is unavailable. The agent then shares the
+current `okou browser view` link and explains the step in its response. The
+user opens the existing thread Browser card or viewer, then replies in chat
+when finished or blocked. The
 ordinary user message starts the next agent round; no Browser user-action
 request or Done/Cancel callback is created. Browser reconciliation removes
 retired direct-action rows in bounded batches even while their Browser remains

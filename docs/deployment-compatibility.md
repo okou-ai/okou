@@ -1,5 +1,22 @@
 # Deployment Compatibility
 
+## Browser native-input handoff guidance (#37087)
+
+The agent tool prompt now prefers native input over direct Browser takeover only
+when both thread Browser access and the existing `BrowserNativeInput` switch are
+enabled. The API still enforces the switch for input actions; an older CLI or
+agent prompt cannot grant access. When the switch is off, the new prompt does
+not advertise native input and keeps viewer takeover as a last resort.
+
+The optional `browserNativeInputEnabled` prompt input is written on new runs and
+recomputed from the current feature context on stable-context recapture. Older
+persisted inputs without it remain accepted; recapture computes the current
+switch state before building the replacement prompt, and the prompt builder
+treats an absent value as disabled. The flag participates in the feature-prompt
+digest so a changed switch state cannot silently reuse the old cached
+guidance. Older API versions ignore the new semantic field; no database
+migration or rollback floor is needed.
+
 ## Member source-first onboarding completion column (2026-09-27)
 
 Migration `1269_org_member_onboarding_completed_at` adds the nullable

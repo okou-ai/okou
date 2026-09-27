@@ -1,10 +1,6 @@
 import { PI_SKILLS_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import {
   getCustomConnectorSkillName,
   getCustomConnectorSkillStorageName,
@@ -37,7 +33,10 @@ import {
   type CustomConnectorDefinitionVersion,
 } from "./agent-connector-scope.service";
 import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
-import { buildAgentToolsPrompt } from "./agent-tools-prompt.service";
+import {
+  buildAgentToolsPrompt,
+  buildAgentToolsPromptInputs,
+} from "./agent-tools-prompt.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { loadConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
@@ -90,33 +89,11 @@ function featurePromptInputs(
   previous: PiStableContextPromptInputs,
   featureContext: FeatureSwitchContext,
 ): PiStableContextPromptInputs {
-  return {
-    privateArtifactsEnabled: isFeatureEnabled(
-      FeatureSwitchKey.PrivateArtifacts,
-      featureContext,
-    ),
-    bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, featureContext),
-    vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext),
-    discordEnabled: isFeatureEnabled(
-      FeatureSwitchKey.DiscordIntegration,
-      featureContext,
-    ),
-    larkEnabled: isFeatureEnabled(
-      FeatureSwitchKey.LarkIntegration,
-      featureContext,
-    ),
-    deliveryFormatGuidanceEnabled: isFeatureEnabled(
-      FeatureSwitchKey.DeliveryFormatGuidance,
-      featureContext,
-    ),
-    presentationConvertEnabled: isFeatureEnabled(
-      FeatureSwitchKey.PresentationConvert,
-      featureContext,
-    ),
-    customConnectorMcpEnabled: true,
+  return buildAgentToolsPromptInputs({
+    featureSwitchContext: featureContext,
     triggerSource: previous.triggerSource,
     cloudBrowserEnabled: previous.cloudBrowserEnabled,
-  };
+  });
 }
 
 async function loadFeaturePromptInputs(

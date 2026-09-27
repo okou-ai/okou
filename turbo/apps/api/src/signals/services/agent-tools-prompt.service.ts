@@ -1,6 +1,12 @@
 import { PLAN_UPGRADE_CLI_HINT } from "@okouai/api-contracts/contracts/errors";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { PiStableContextPromptInputs } from "@okouai/db/jsonb-contracts/pi-stable-context";
+import {
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_WORKING_DIR,
@@ -51,10 +57,49 @@ function buildIntegrationToolsPrompt(
   ];
 }
 
+export function buildAgentToolsPromptInputs(args: {
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly triggerSource: TriggerSource;
+  readonly cloudBrowserEnabled: boolean | undefined;
+}): PiStableContextPromptInputs & {
+  readonly browserNativeInputEnabled: boolean;
+} {
+  const context = args.featureSwitchContext;
+  return {
+    privateArtifactsEnabled: isFeatureEnabled(
+      FeatureSwitchKey.PrivateArtifacts,
+      context,
+    ),
+    bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
+    vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, context),
+    discordEnabled: isFeatureEnabled(
+      FeatureSwitchKey.DiscordIntegration,
+      context,
+    ),
+    larkEnabled: isFeatureEnabled(FeatureSwitchKey.LarkIntegration, context),
+    deliveryFormatGuidanceEnabled: isFeatureEnabled(
+      FeatureSwitchKey.DeliveryFormatGuidance,
+      context,
+    ),
+    presentationConvertEnabled: isFeatureEnabled(
+      FeatureSwitchKey.PresentationConvert,
+      context,
+    ),
+    browserNativeInputEnabled: isFeatureEnabled(
+      FeatureSwitchKey.BrowserNativeInput,
+      context,
+    ),
+    customConnectorMcpEnabled: true,
+    triggerSource: args.triggerSource,
+    cloudBrowserEnabled: args.cloudBrowserEnabled,
+  };
+}
+
 export function buildAgentToolsPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
+  readonly browserNativeInputEnabled?: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
@@ -88,9 +133,17 @@ export function buildAgentToolsPrompt(args: {
     "- Browser access: `agent-browser` provides rendered-page inspection and interaction. For one known public URL when you only need page content, prefer `okou scrape <url> --format markdown`; use `agent-browser` when you need browser state, authentication, JavaScript, screenshots, or interaction.",
     ...(args.cloudBrowserEnabled === true
       ? [
-          "- Okou Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser owned by the current chat thread, attaches it to `agent-browser`, and gives the user an authenticated `/browsers/:threadId` live view they can take over. `okou computer-use` drives apps on a desktop host the user connected separately. Running `agent-browser` on its own drives a local browser inside this sandbox: it creates no Okou Browser session and no user-viewable link.",
+          "- Okou Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser owned by the current chat thread, attaches it to `agent-browser`, and provides an authenticated `/browsers/:threadId` live view for last-resort user takeover. `okou computer-use` drives apps on a desktop host the user connected separately. Running `agent-browser` on its own drives a local browser inside this sandbox: it creates no Okou Browser session and no user-viewable link.",
           "- Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes and report when Okou will reclaim it. The session survives the end of this run, so a later run in the same thread attaches to the same live window and the user can keep working in it. Call `okou browser lease` while a long task keeps the browser idle; a reclaimed session can still resume its saved login profile and reopen its last captured HTTP(S) tab URLs on a best-effort basis.",
-          "- Browser form input: use `okou browser input-request` only when the user must personally enter supported form values. It opens a dedicated input form (not other Browser interactions); entered values are not included in the action URL or callback. Fill ordinary forms with `agent-browser` instead.",
+          ...(args.browserNativeInputEnabled === true
+            ? [
+                "- Browser user input priority: keep control of the Browser. When the user must personally supply values to supported exact page controls, especially login username, password, or one-time code, inspect the live page and prefer `okou browser input-request` over direct Browser takeover. It opens a native form, not a general Browser interaction; never ask for secrets in chat or put values in CLI arguments, action URLs, or callback prompts. Fill ordinary values you can supply with `agent-browser` instead.",
+                "- Browser input completion: `input-request` fills the exact controls but does not submit the website form. After it succeeds, return its exact action URL and use no further Browser commands in this turn. On callback, inspect the current page, submit if needed, and verify the result. A supported one-time-code field can use another input request; needing credentials or a code alone is not a reason for direct takeover. If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write.",
+              ]
+            : [
+                "- Browser native input is off for this run. Do not offer `okou browser input-request` or request website secrets in chat. Use `agent-browser` for steps you can perform yourself; if a user-only step remains, use the last-resort Browser takeover below.",
+              ]),
+          "- Direct Browser takeover is a last resort, not the default for login: use `okou browser view` only when the required user-only interaction cannot be handled with available exact native input controls and `agent-browser` (for example, a passkey prompt or unsupported widget), or native input is unavailable. Explain the specific step and ask the user to reply when finished or blocked; stop using the Browser in this turn.",
         ]
       : []),
     ...(args.cloudBrowserEnabled === false
