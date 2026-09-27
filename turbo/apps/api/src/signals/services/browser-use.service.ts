@@ -941,8 +941,8 @@ function validRangeInspection(
       Number.isFinite(Number(value))
     );
   };
-  const min = candidate.min === undefined ? 0 : Number(candidate.min);
-  const max = candidate.max === undefined ? 100 : Number(candidate.max);
+  // Chromium clamps a range to its minimum when min exceeds max (including
+  // default bounds). This is a valid single-position control, not corruption.
   return (
     numeric(candidate.rangeValue) &&
     (candidate.min === undefined || numeric(candidate.min)) &&
@@ -950,9 +950,8 @@ function validRangeInspection(
     (candidate.step === undefined ||
       candidate.step === "any" ||
       (numeric(candidate.step) && Number(candidate.step) > 0)) &&
-    min <= max &&
-    Math.abs(min) <= 1e9 &&
-    Math.abs(max) <= 1e9
+    Math.abs(candidate.min === undefined ? 0 : Number(candidate.min)) <= 1e9 &&
+    Math.abs(candidate.max === undefined ? 100 : Number(candidate.max)) <= 1e9
   );
 }
 
@@ -1105,7 +1104,7 @@ function browserUseControlInspectionFunction(): string {
       const boundedRange = !range || (boundedNumberConstraints &&
         (!control.min || numeric(control.min)) && (!control.max || numeric(control.max)) &&
         (!control.step || control.step === "any" || (numeric(control.step) && Number(control.step) > 0)) &&
-        rangeMin <= rangeMax && Math.abs(rangeMin) <= 1e9 && Math.abs(rangeMax) <= 1e9 &&
+        Math.abs(rangeMin) <= 1e9 && Math.abs(rangeMax) <= 1e9 &&
         control.value.length > 0 && control.value.length <= ${BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH} &&
         numeric(control.value));
       return {

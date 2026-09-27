@@ -2565,8 +2565,8 @@ describe("Browser user-action route", () => {
     acceptBrowserUseCdpSessions([providerId]);
     let value = "19";
     let min = "10";
-    const max = "20";
-    const step = "3";
+    let max = "20";
+    let step = "3";
     let writable = true;
     let readbackMatches = true;
     mockNativeNumberTarget({
@@ -2586,7 +2586,14 @@ describe("Browser user-action route", () => {
         return readbackMatches;
       },
       validValue: (next) => {
-        return next === null || next === "19" || next === "16";
+        return (
+          next === null ||
+          next === "19" ||
+          next === "16" ||
+          next === "50" ||
+          next === "51" ||
+          next === "200"
+        );
       },
     });
     server.use(
@@ -2779,6 +2786,65 @@ describe("Browser user-action route", () => {
       ).body.state,
     ).toBe("uncertain");
     readbackMatches = true;
+    min = "";
+    max = "";
+    step = "";
+    value = "50";
+    const defaultBounds = await create(true);
+    const defaultPreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: defaultBounds.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(defaultPreflight.body.fields[0]?.control).toMatchObject({
+      inputType: "range",
+      rangeValue: "50",
+    });
+    expect(defaultPreflight.body.fields[0]?.control).not.toHaveProperty("min");
+    expect(defaultPreflight.body.fields[0]?.control).not.toHaveProperty("max");
+    expect(defaultPreflight.body.fields[0]?.control).not.toHaveProperty("step");
+    await expect(
+      accept(
+        apply(defaultBounds.body.action.requestToken, [
+          { key: "level", observedValue: "50", value: "51" },
+        ]),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: { state: "succeeded" } });
+    // Chromium treats min=200 and an absent max (default 100) as a valid
+    // single-position slider at 200, rather than an invalid control.
+    min = "200";
+    value = "200";
+    const singlePosition = await create(true);
+    const singlePreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: singlePosition.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(singlePreflight.body.fields[0]?.control).toMatchObject({
+      inputType: "range",
+      rangeValue: "200",
+      min: "200",
+    });
+    await expect(
+      accept(
+        apply(singlePosition.body.action.requestToken, [
+          {
+            key: "level",
+            observedValue: "200",
+            observedMin: "200",
+            value: "200",
+          },
+        ]),
+        [200],
+      ),
+    ).resolves.toMatchObject({ body: { state: "succeeded" } });
     writable = false;
     const disabled = await userActionClient().create({
       headers: current.claim.browserHeaders,
