@@ -1352,6 +1352,13 @@
       "when": 1790506860311,
       "tag": "1270_drop_github_chat_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 1271,
+      "version": "7",
+      "when": 1790511298430,
+      "tag": "1271_drop_agent_run_queue",
+      "breakpoints": true
     }
   ]
 }

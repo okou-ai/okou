@@ -50,6 +50,26 @@ Old and new versions during deploy:
 
 No API rollback floor is needed.
 
+## `agent_run_queue` dropped (release 3)
+
+Migration `1271_drop_agent_run_queue` drops `agent_run_queue` and its schema.
+#37063 (`84ac71914345b8360f3df43cc2cd47f0a8af7a23`) removed every read and write
+of the table. Before this release, production evidence showed (2026-09-27, read
+at 12:12–12:14 UTC):
+
+- The first production API containing #37063 (`6b624e6e`) went live at
+  08:34:16Z; every API promotion since contains it.
+- Axiom `vm0-traces-prod`: the last `vm0-api` span from a version without
+  #37063 was at 08:34:15Z; the last hour only has versions containing it.
+- MaskDB: `agent_run_queue` has 0 rows, `agent_runs` has no `queued` run, and no
+  `run.queued` event was written in the last 24 hours.
+
+**API rollback floor: `84ac71914345b8360f3df43cc2cd47f0a8af7a23`** (#37063),
+raised from #37034 and enforced by `resolve-production-rollback-target.sh`. The
+#37034 API still reads `agent_run_queue` while promoting, so it would fail on
+the dropped table. The KMS 013 recovery manifest treats the table as optional so
+snapshots from either side of the drop verify.
+
 ## Legacy queued-run promotion retired (release 2)
 
 #37034 stopped creating `agent_runs` rows with `status = 'queued'`: input that
