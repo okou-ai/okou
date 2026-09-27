@@ -109,6 +109,14 @@ They finalize the delivery and apply or observe the terminal run state in one
 short transaction. The shared lock order decides whether direct receipt or
 terminal finalization committed first.
 
+A run's time budget steer that no delivery consumed is revoked after that
+commit rather than inside it. Steering appends only while the run is running,
+so the committed terminal state guarantees no later budget input. The budget
+event ID is derived from the run, so expiry is one primary-key read and one
+`control.revoke` append; the unique revoke edge decides a race with receipt or
+settlement. Expiry is best effort: a lost race or failure leaves an inert
+pending budget row that no later run reserves.
+
 Realtime publication, callbacks, usage work, and queue drain run only after
 commit. A first late finalization drains the thread without replaying the run's
 ordinary terminal callbacks or billing work.

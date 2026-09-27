@@ -32,6 +32,7 @@ import {
 } from "./agent-run-callback.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
 import {
+  expireRunTimeBudgetInput,
   finalizeActiveInputDelivery,
   type FinalizeActiveInputDeliveryResult,
 } from "./active-input-delivery.service";
@@ -877,6 +878,29 @@ export const dispatchCompleteSideEffectsCore$ = command(
   },
 );
 
+/**
+ * Expire the run's unconsumed time budget steer after the completion commit;
+ * the heartbeat-timeout branch never finalizes input, so it is skipped too.
+ */
+async function expireCommittedRunTimeBudget(
+  db: Db,
+  runId: string,
+  commit: CompletionCommit,
+  signal: AbortSignal,
+): Promise<CompletionCommit> {
+  if (commit.run.chatThreadId === null || commit.run.status === "timeout") {
+    return commit;
+  }
+  const expired = await expireRunTimeBudgetInput(
+    db,
+    { runId, chatThreadId: commit.run.chatThreadId },
+    signal,
+  );
+  return expired
+    ? { ...commit, finalization: { finalized: true, chatEventsAppended: true } }
+    : commit;
+}
+
 export const completeAgentRun$ = command(
   async (
     { set },
@@ -945,6 +969,13 @@ export const completeAgentRun$ = command(
       commit = result.commit;
       break;
     }
+
+    commit = await expireCommittedRunTimeBudget(
+      db,
+      input.body.runId,
+      commit,
+      signal,
+    );
 
     if (commit.transitioned) {
       const terminalCommittedAt = now();

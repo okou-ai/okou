@@ -47,6 +47,7 @@ import {
 import { cleanupExpiredPiApiFirstTurnData$ } from "./pi-api-first-turn-cleanup.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
 import {
+  expireRunTimeBudgetInput,
   finalizeActiveInputDelivery,
   type FinalizeActiveInputDeliveryResult,
 } from "./active-input-delivery.service";
@@ -429,6 +430,14 @@ const cleanupSingleRun$ = command(
       L.debug("Run already transitioned, skipping timeout", { runId: run.id });
       return undefined;
     }
+    const budgetExpired =
+      committed.previousStatus === "running" && committed.chatThreadId !== null
+        ? await expireRunTimeBudgetInput(
+            db,
+            { runId: run.id, chatThreadId: committed.chatThreadId },
+            signal,
+          )
+        : false;
 
     await publishRunQueueChangedForOrgSafely(committed.orgId);
     signal.throwIfAborted();
@@ -459,7 +468,8 @@ const cleanupSingleRun$ = command(
               deliveryNotification: {
                 userId: committed.userId,
                 chatThreadId: committed.chatThreadId,
-                chatEventsAppended: committed.finalization.chatEventsAppended,
+                chatEventsAppended:
+                  committed.finalization.chatEventsAppended || budgetExpired,
               },
             }
           : {}),

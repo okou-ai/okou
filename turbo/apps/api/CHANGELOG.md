@@ -8,6 +8,36 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.684.0](https://github.com/okou-ai/okou/compare/api-v1.683.0...api-v1.684.0) (2026-09-27)
+
+
+### Features
+
+* **api:** resolve wss targets from existing run attribution ([#37040](https://github.com/okou-ai/okou/issues/37040)) ([99fed99](https://github.com/okou-ai/okou/commit/99fed99c45f1c2f0b58513eb4f463fda6996d880))
+* **browser:** support native color inputs ([#37067](https://github.com/okou-ai/okou/issues/37067)) ([351704f](https://github.com/okou-ai/okou/commit/351704facfd73434f93af3d8973b5efc8610f2bd))
+* **browser:** support native range input requests ([#37047](https://github.com/okou-ai/okou/issues/37047)) ([8a221c9](https://github.com/okou-ai/okou/commit/8a221c9632f40ba9b711659e3accfbeda2a9523c))
+
+
+### Refactoring
+
+* **api:** narrow advisory lock entrypoints ([#37071](https://github.com/okou-ai/okou/issues/37071)) ([4db4b7d](https://github.com/okou-ai/okou/commit/4db4b7d57746288aeda19808016fc96bd0670ffb))
+* **api:** retire prepared advisory locks and narrow shared admission ([#37057](https://github.com/okou-ai/okou/issues/37057)) ([256a2b8](https://github.com/okou-ai/okou/commit/256a2b8defe4e5e09e4ea6aca6649fe241383a5f))
+
+
+### Performance Improvements
+
+* **api:** attribute workflow queue admission ([#37068](https://github.com/okou-ai/okou/issues/37068)) ([da9c52c](https://github.com/okou-ai/okou/commit/da9c52cd2fccc1c278c96fc31a4f63dfeb577faf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.516.0
+    * @okouai/core bumped to 8.712.3
+    * @okouai/db bumped to 1.306.0
+    * @okouai/pi-agent-runtime bumped to 1.40.31
+
 ## [1.683.0](https://github.com/okou-ai/okou/compare/api-v1.682.4...api-v1.683.0) (2026-09-27)
 
 
