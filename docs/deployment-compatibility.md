@@ -3812,7 +3812,16 @@ provider ownership, a larger saved checkpoint selects sandbox-first execution
 from blob metadata. A V4 ownership-transfer manifest carries a presigned history
 reference; only the sandbox downloads and decompresses H0 for the next turn. The
 API still validates complete H2 history at checkpoint time, so its peak memory
-and validation work can exceed the raw file size.
+and validation work can exceed the raw file size. A Guest with Pi compact-generation
+selection can turn an over-limit append-only native JSONL into a bounded native
+H2 blob, preserving the session ID and active context; it replaces its live file
+only after the API accepts the checkpoint. Without a usable latest compact
+boundary, the new Guest fails explicitly rather than sending a missing H2 hash.
+An older Guest can still fail the existing H2 hash check on oversized Pi files
+until its running jobs drain. New and old APIs read the selected native v3 H2
+through the existing blob/hash contract; no wire change, migration, or fallback
+is introduced. Rolling back the Guest restores the old oversized-file failure
+for new runs, but committed bounded native histories remain readable.
 
 V3 manifests remain the active format for API-produced H1 and small
 sandbox-first H0. The CLI accepts both formats and retains the same V2 Guest
@@ -3824,7 +3833,7 @@ contexts select the new reader. Old Runners already support 128 MiB history.
 Eligible routes use Pi. Rolling the API back below this change
 restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
-There is no history truncation, migration, or alternate reader for that rollback.
+That API rollback adds no stored-history rewrite, migration, or alternate reader.
 
 ### Pi Langfuse trace relay
 

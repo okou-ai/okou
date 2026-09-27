@@ -49,6 +49,10 @@ pub enum AgentError {
     #[error("checkpoint: Session history exceeds maximum size of {max_bytes} bytes")]
     CheckpointHistoryTooLarge { max_bytes: u64 },
 
+    /// Pi H2 needs a bounded native history; an unavailable hash cannot complete it.
+    #[error("checkpoint: Pi history has no safe bounded compact generation ({reason})")]
+    PiCompactGenerationUnavailable { reason: &'static str },
+
     /// Telemetry flush channel is unavailable because the uploader task was not
     /// initialized, has exited, or dropped the per-flush response channel.
     #[error("telemetry uploader unavailable")]

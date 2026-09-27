@@ -23,10 +23,11 @@ use guest_telemetry::telemetry::{
 use guest_telemetry::{log_error, log_info, log_warn};
 use session_history_selector::{
     ClaudeHistoryCandidate, ClaudeHistoryIneligibleReason, ClaudeHistorySelection,
-    CodexHistoryCandidate, CodexHistoryIneligibleReason, CodexHistorySelection,
-    select_claude_compact_generation_from_file,
+    CodexHistoryCandidate, CodexHistoryIneligibleReason, CodexHistorySelection, PiHistoryCandidate,
+    PiHistorySelection, select_claude_compact_generation_from_file,
     select_claude_compact_generation_from_file_with_candidate_limit_for_test,
     select_codex_compact_generation, select_codex_compact_generation_with_candidate_limit_for_test,
+    select_pi_compact_generation, select_pi_compact_generation_with_candidate_limit_for_test,
 };
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -128,6 +129,24 @@ impl CheckpointSessionHistoryLimits {
         }
     }
 
+    fn select_pi(
+        self,
+        source: &mut std::fs::File,
+        expected_session_id: &str,
+    ) -> std::io::Result<PiHistorySelection> {
+        match self {
+            Self::Production => select_pi_compact_generation(source, expected_session_id),
+            Self::BoundedForTest {
+                candidate_max_bytes,
+                ..
+            } => select_pi_compact_generation_with_candidate_limit_for_test(
+                source,
+                expected_session_id,
+                candidate_max_bytes,
+            ),
+        }
+    }
+
     fn select_codex(
         self,
         source: &mut std::fs::File,
@@ -185,6 +204,12 @@ impl NativeSessionHistoryCandidate for CodexHistoryCandidate {
     }
 }
 
+impl NativeSessionHistoryCandidate for PiHistoryCandidate {
+    fn into_bytes(self) -> Vec<u8> {
+        self.into_bytes()
+    }
+}
+
 pub(super) enum PreparedLiveHistory {
     MatchesCheckpoint,
     NativeCandidate {
@@ -197,6 +222,7 @@ pub(super) enum PreparedLiveHistory {
 pub(super) enum NativeHistoryKind {
     ClaudeCode,
     Codex,
+    Pi,
 }
 
 impl NativeHistoryKind {
@@ -204,6 +230,7 @@ impl NativeHistoryKind {
         match self {
             Self::ClaudeCode => "Claude",
             Self::Codex => "Codex",
+            Self::Pi => "Pi",
         }
     }
 }
@@ -715,6 +742,65 @@ fn prepare_session_history(
     }
 
     let checkpoint_max_bytes = limits.checkpoint_max_bytes();
+    if mode.can_prune_history()
+        && framework == env::Framework::Pi
+        && resolved.encoded_len()? > checkpoint_max_bytes
+    {
+        let prune_start = std::time::Instant::now();
+        if let Some(file) = resolved.plain_file_mut() {
+            match limits.select_pi(file, cli_agent_session_id) {
+                Ok(PiHistorySelection::Candidate(candidate)) => {
+                    if candidate.candidate_size() > checkpoint_max_bytes {
+                        return Err(AgentError::PiCompactGenerationUnavailable {
+                            reason: "candidate_too_large",
+                        });
+                    }
+                    let replacement = PendingNativeHistoryReplacement::stage(
+                        resolved.replacement_target(),
+                        candidate.as_bytes(),
+                    )
+                    .map_err(|_| {
+                        AgentError::PiCompactGenerationUnavailable {
+                            reason: "replacement_stage_failed",
+                        }
+                    })?;
+                    let mut prepared =
+                        prepare_native_session_history(history_read_start, candidate)?;
+                    record_session_history_prune(
+                        prune_start,
+                        SessionHistoryPruneOutcome::Selected,
+                        None,
+                    );
+                    prepared.live_history = PreparedLiveHistory::NativeCandidate {
+                        kind: NativeHistoryKind::Pi,
+                        replacement: Some(replacement),
+                    };
+                    return Ok(PreparedSessionHistoryOutcome::Upload(prepared));
+                }
+                Ok(PiHistorySelection::Ineligible(reason)) => {
+                    record_session_history_prune(
+                        prune_start,
+                        SessionHistoryPruneOutcome::Ineligible,
+                        Some(SessionHistoryPruneReason::Selector(reason.as_str())),
+                    );
+                    return Err(AgentError::PiCompactGenerationUnavailable {
+                        reason: reason.as_str(),
+                    });
+                }
+                Err(error) => {
+                    record_session_history_prune(
+                        prune_start,
+                        SessionHistoryPruneOutcome::Error,
+                        Some(SessionHistoryPruneReason::SelectorIo),
+                    );
+                    log_warn!(LOG_TAG, "Pi session history selection failed: {error}");
+                    return Err(AgentError::PiCompactGenerationUnavailable {
+                        reason: "selector_io",
+                    });
+                }
+            }
+        }
+    }
     let source = resolved
         .into_checkpoint_source_bounded(checkpoint_max_bytes)
         .map_err(|error| {
@@ -1035,12 +1121,18 @@ pub(super) async fn prepare_and_upload_session_history(
         ));
     }
     let cli_agent_session_id = inputs.cli_agent_session_id.clone();
+    let framework = inputs.framework;
     let prepared =
         match run_session_history_blocking(move || prepare_checkpoint_session_history(inputs))
             .await?
         {
             Ok(prepared) => prepared,
             Err(error) => {
+                if framework == env::Framework::Pi
+                    && matches!(error, AgentError::PiCompactGenerationUnavailable { .. })
+                {
+                    return Err(error);
+                }
                 log_warn!(
                     LOG_TAG,
                     "Session history is unavailable; continuing checkpoint without history: {error}"

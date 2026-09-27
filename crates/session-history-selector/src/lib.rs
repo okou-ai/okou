@@ -5,6 +5,7 @@
 //! session IDs or modifying live JSONL files.
 
 mod codex;
+mod pi;
 #[cfg(test)]
 mod property_tests;
 
@@ -20,6 +21,11 @@ pub use codex::{
     CODEX_COMPACT_GENERATION_MAX_BYTES, CODEX_JSONL_RECORD_MAX_BYTES, CodexHistoryCandidate,
     CodexHistoryIneligibleReason, CodexHistorySelection, select_codex_compact_generation,
     select_codex_compact_generation_with_candidate_limit_for_test,
+};
+pub use pi::{
+    PI_COMPACT_GENERATION_MAX_BYTES, PI_JSONL_RECORD_MAX_BYTES, PiHistoryCandidate,
+    PiHistoryIneligibleReason, PiHistorySelection, select_pi_compact_generation,
+    select_pi_compact_generation_with_candidate_limit_for_test,
 };
 
 /// Maximum decoded size of an accepted Claude compact generation.
