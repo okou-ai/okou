@@ -117,7 +117,7 @@ export function VncEndpointFields({
   ];
   return (
     <div className="grid gap-3">
-      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_6rem]">
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
         {apple ? (
           <div className="grid min-w-0 gap-2 text-sm">
             <label htmlFor="vnc-loopback-host">{t(($) => $.vnc.host)}</label>
