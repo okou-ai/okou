@@ -164,6 +164,62 @@ async fn get_streams_body_and_only_nosuchkey_is_a_miss() {
 }
 
 #[tokio::test]
+async fn get_models_nosuchkey_by_xml_code_even_on_non_404_status() {
+    let server = MockServer::start_async().await;
+    let bad_request = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/bad-request.tar.zst");
+            then.status(400)
+                .body("<Error><Code>NoSuchKey</Code></Error>");
+        })
+        .await;
+    let forbidden = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/forbidden.tar.zst");
+            then.status(403)
+                .body("<Error><Code>NoSuchKey</Code></Error>");
+        })
+        .await;
+    let missing_bucket = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/missing-bucket.tar.zst");
+            then.status(403)
+                .body("<Error><Code>NoSuchBucket</Code></Error>");
+        })
+        .await;
+    let malformed = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/malformed.tar.zst");
+            then.status(400).body("<Error><Code>NoSuchKey");
+        })
+        .await;
+    let c = client(&server);
+    for key in ["bad-request", "forbidden"] {
+        assert!(
+            c.get(&format!("runner-templates/{key}.tar.zst"))
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    for key in ["missing-bucket", "malformed"] {
+        assert!(
+            c.get(&format!("runner-templates/{key}.tar.zst"))
+                .await
+                .is_err()
+        );
+    }
+    bad_request.assert_calls_async(1).await;
+    forbidden.assert_calls_async(1).await;
+    missing_bucket.assert_calls_async(1).await;
+    malformed.assert_calls_async(1).await;
+}
+
+#[tokio::test]
 async fn multipart_wire_protocol_preserves_query_body_and_etag() {
     let server = MockServer::start_async().await;
     let key = "/test-bucket/runner-templates/h.tar.zst";
@@ -678,4 +734,103 @@ async fn upload_part_requires_etag_and_validates_key_segments() {
     );
     assert!(c.head("runner-templates/../h.tar.zst").await.is_err());
     no_etag.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn complete_rejects_unparseable_modeled_scalar_fields() {
+    // On the pinned SDK, the first response fails deserialization rather than
+    // returning success. Mixed text/nested markup is accepted by its parser.
+    let server = MockServer::start_async().await;
+    let invalid = server
+        .mock_async(|when, then| {
+            when.method("POST")
+                .path("/test-bucket/runner-templates/h.tar.zst")
+                .query_param("uploadId", "invalid");
+            then.status(200).body("<CompleteMultipartUploadResult><ETag><nested/></ETag></CompleteMultipartUploadResult>");
+        })
+        .await;
+    let mixed = server
+        .mock_async(|when, then| {
+            when.method("POST")
+                .path("/test-bucket/runner-templates/h.tar.zst")
+                .query_param("uploadId", "mixed");
+            then.status(200).body("<CompleteMultipartUploadResult><ETag>okay<nested/></ETag></CompleteMultipartUploadResult>");
+        })
+        .await;
+    let c = client(&server);
+    assert!(
+        c.complete_multipart("runner-templates/h.tar.zst", "invalid", &[])
+            .await
+            .is_err()
+    );
+    c.complete_multipart("runner-templates/h.tar.zst", "mixed", &[])
+        .await
+        .unwrap();
+    invalid.assert_calls_async(1).await;
+    mixed.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn get_stalled_body_fails_before_request_read_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut headers = Vec::new();
+        loop {
+            let mut block = [0u8; 2048];
+            let n = socket.read(&mut block).await.unwrap();
+            assert!(n > 0);
+            headers.extend_from_slice(&block[..n]);
+            if headers.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+        }
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\na")
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_secs(9)).await;
+    });
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    let mut download = c.get("runner-templates/h.tar.zst").await.unwrap().unwrap();
+    let mut first = [0u8; 1];
+    download.body.read_exact(&mut first).await.unwrap();
+    assert_eq!(&first, b"a");
+    let error = tokio::time::timeout(Duration::from_secs(8), download.body.read_exact(&mut first))
+        .await
+        .expect("stalled GET did not fail within the SDK window")
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    server.abort();
+}
+
+#[tokio::test]
+async fn get_wait_for_first_response_keeps_original_budget() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut headers = Vec::new();
+        loop {
+            let mut block = [0u8; 2048];
+            let n = socket.read(&mut block).await.unwrap();
+            assert!(n > 0);
+            headers.extend_from_slice(&block[..n]);
+            if headers.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(7)).await;
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\na")
+            .await
+            .unwrap();
+    });
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    let mut download = c.get("runner-templates/h.tar.zst").await.unwrap().unwrap();
+    let mut bytes = Vec::new();
+    download.body.read_to_end(&mut bytes).await.unwrap();
+    assert_eq!(bytes, b"a");
+    server.await.unwrap();
 }

@@ -24,7 +24,7 @@ use aws_sigv4::{
 use aws_smithy_runtime_api::client::identity::Identity;
 use base64::Engine as _;
 use bytes::Bytes;
-use futures_util::TryStreamExt;
+use futures_util::StreamExt;
 use reqwest::{
     Client, Method, Request, Response, StatusCode,
     header::{CONTENT_TYPE, ETAG},
@@ -41,6 +41,11 @@ use super::R2Error;
 const MAX_XML_BYTES: usize = 64 * 1024;
 const MAX_ERROR_BYTES: usize = 16 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
+// The pinned SDK protects GET response bodies against stalled downloads after
+// a one-second observation window and five-second grace period. Keep the
+// first-response budget at 60 seconds; this bound applies only between body
+// chunks, so a stopped peer cannot pin the archive consumer for a minute.
+const DOWNLOAD_STALL_TIMEOUT: Duration = Duration::from_secs(6);
 const PART_TIMEOUT: Duration = Duration::from_secs(300);
 // The original S3 client uses the standard retry policy (three attempts).
 // Retain the bounded attempt count; every attempt is signed afresh.
@@ -427,6 +432,7 @@ impl R2HttpClient {
                             code.as_deref().unwrap_or("unknown")
                         )));
                     }
+                    validate_complete_fields(document.root_element())?;
                 }
                 self.reward_success(&mut retry_permit);
                 return Ok(TransportReply {
@@ -473,8 +479,11 @@ impl R2HttpClient {
                     retry_delay(attempt, retry_after).await;
                     continue;
                 }
-                if status == StatusCode::NOT_FOUND
-                    && matches!(expected, ExpectedBody::GetMissingXml)
+                // The SDK models NoSuchKey by XML error code, not by HTTP
+                // status: even a 400 or 403 carrying that exact code is a
+                // cache miss. Do not infer a miss from status alone.
+                if matches!(expected, ExpectedBody::GetMissingXml)
+                    && code.as_deref() == Some("NoSuchKey")
                 {
                     return Ok(TransportReply {
                         response,
@@ -527,16 +536,10 @@ impl R2HttpClient {
                 ExpectedBody::GetMissingXml,
             )
             .await?;
-        if response.status() == StatusCode::NOT_FOUND {
-            // Unlike HEAD, a 404 may be a missing bucket. Require NoSuchKey.
+        if !response.status().is_success() {
             if xml.as_deref().and_then(xml_code).as_deref() == Some("NoSuchKey") {
                 return Ok(None);
             }
-            return Err(R2Error::S3(
-                "get_object returned 404 without NoSuchKey".into(),
-            ));
-        }
-        if !response.status().is_success() {
             return Err(status_error("get_object", response).await);
         }
         let content_length = response
@@ -544,7 +547,27 @@ impl R2HttpClient {
             .get(reqwest::header::CONTENT_LENGTH)
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<i64>().ok());
-        let stream = response.bytes_stream().map_err(io::Error::other);
+        // SDK downloads fail a stalled response body independently of the
+        // request's 60-second first-response timeout. Do not retry a body
+        // after returning it: its consumer may already have unpacked bytes.
+        let stream = futures_util::stream::unfold(
+            Some(Box::pin(response.bytes_stream())),
+            |state| async move {
+                let mut stream = state?;
+                match tokio::time::timeout(DOWNLOAD_STALL_TIMEOUT, stream.as_mut().next()).await {
+                    Ok(Some(Ok(bytes))) => Some((Ok(bytes), Some(stream))),
+                    Ok(Some(Err(error))) => Some((Err(io::Error::other(error)), None)),
+                    Ok(None) => None,
+                    Err(_) => Some((
+                        Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "R2 download body stalled",
+                        )),
+                        None,
+                    )),
+                }
+            },
+        );
         Ok(Some(DownloadResponse {
             content_length,
             body: Box::pin(StreamReader::new(stream)),
@@ -791,6 +814,40 @@ async fn retry_delay(attempt: usize, retry_after: Option<Duration>) {
     // randomness is only for the delay, never for signing.
     let backoff = Duration::from_secs(1 << (attempt - 1));
     tokio::time::sleep(backoff.mul_f64(fastrand::f64())).await;
+}
+
+fn validate_complete_fields(root: roxmltree::Node<'_, '_>) -> Result<(), R2Error> {
+    // The SDK deserializes each modeled scalar field. A well-formed root is
+    // not enough: e.g. <ETag><nested/></ETag> produces a deserialization
+    // error, not a successful Complete (which would disarm the Abort guard).
+    for field in root.children().filter(|node| node.is_element()) {
+        if matches!(
+            field.tag_name().name(),
+            "ETag"
+                | "Location"
+                | "Bucket"
+                | "Key"
+                | "ChecksumCRC32"
+                | "ChecksumCRC32C"
+                | "ChecksumCRC64NVME"
+                | "ChecksumSHA1"
+                | "ChecksumSHA256"
+                | "ChecksumSHA512"
+                | "ChecksumType"
+                | "ChecksumMD5"
+                | "ChecksumXXHASH3"
+                | "ChecksumXXHASH64"
+                | "ChecksumXXHASH128"
+        ) && field.text().is_none()
+            && field.children().any(|node| node.is_element())
+        {
+            return Err(R2Error::S3(format!(
+                "complete_multipart_upload: invalid {} field",
+                field.tag_name().name()
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn xml_escape(value: &str) -> String {
