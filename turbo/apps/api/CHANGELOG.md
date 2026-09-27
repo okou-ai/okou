@@ -8,6 +8,20 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.683.0](https://github.com/okou-ai/okou/compare/api-v1.682.4...api-v1.683.0) (2026-09-27)
+
+
+### Features
+
+* **api:** pick queued chat threads instead of creating queued runs ([#37034](https://github.com/okou-ai/okou/issues/37034)) ([4d4c759](https://github.com/okou-ai/okou/commit/4d4c7599bbece03bab5c1851da467702685bc1ea))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.305.0
+
 ## [1.682.4](https://github.com/okou-ai/okou/compare/api-v1.682.3...api-v1.682.4) (2026-09-26)
 
 
