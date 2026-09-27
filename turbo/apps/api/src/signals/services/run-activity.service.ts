@@ -111,7 +111,7 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
     const outcome = await settleIncludingAbort(
       (async () => {
         // Only terminal, silent rows enter the oldest-first bounded batch.
-        // Filtering terminal status after LIMIT would let queued/pending rows
+        // Filtering terminal status after LIMIT would let pending/running rows
         // starve a leaked thread slot indefinitely. The correlated PK lookup
         // avoids a JOIN or CTE and excludes terminal rows with a recent heartbeat.
         const silent = await db
@@ -133,11 +133,7 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
                   .where(
                     and(
                       eq(agentRuns.id, activeAgentRuns.runId),
-                      notInArray(agentRuns.status, [
-                        "queued",
-                        "pending",
-                        "running",
-                      ]),
+                      notInArray(agentRuns.status, ["pending", "running"]),
                       lt(agentRuns.completedAt, staleBefore),
                     ),
                   ),

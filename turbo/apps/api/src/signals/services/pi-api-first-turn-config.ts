@@ -144,32 +144,3 @@ export function piApiFirstTurnObjectKey(
     object === "session" ? "l" : ""
   }`;
 }
-
-export function refreshPiApiFirstTurnDeadline<
-  T extends {
-    readonly apiStartTime?: number;
-    readonly piLaunchConfig?: PiLaunchConfig;
-  },
->(context: T, apiStartTime: number): T {
-  const launchConfig = context.piLaunchConfig;
-  if (!launchConfig) {
-    return { ...context, apiStartTime } as T;
-  }
-  const slot = launchConfig.apiFirstTurn;
-  if (slot.schemaVersion !== 1) {
-    throw new Error("Deferred Pi work cannot enter legacy queue promotion");
-  }
-  return {
-    ...context,
-    apiStartTime,
-    piLaunchConfig: {
-      ...launchConfig,
-      apiFirstTurn: {
-        ...slot,
-        // The wire deadline is the absolute API-to-Sandbox coordination cap.
-        // API ownership ends earlier and is derived from apiStartTime.
-        deadlineAt: apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
-      },
-    },
-  } as T;
-}

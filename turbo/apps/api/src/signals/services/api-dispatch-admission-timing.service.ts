@@ -22,11 +22,9 @@ export type AdmissionLockLeaf =
 
 export type AdmissionAttemptOutcome =
   | "pending"
-  | "queued"
   | "rejected"
   | "thread_session_snapshot_stale"
   | "queue_first_claim_lost"
-  | "queue_payload_required"
   | "rolled_back";
 
 interface AdmissionTimingRecord {
@@ -42,14 +40,9 @@ interface AdmissionAttemptTimingArgs {
   readonly profile: string;
   readonly triggerSource?: TriggerSource;
   readonly dimensions: Readonly<Record<string, string>>;
-  readonly commitInvocation: number;
 }
 
 const L = logger("ApiDispatchAdmissionTiming");
-
-function boundedAttempt(attempt: number): string {
-  return attempt <= 3 ? String(attempt) : "4_plus";
-}
 
 export class AdmissionAttemptTiming {
   private readonly startedAt: number;
@@ -136,7 +129,7 @@ export class AdmissionAttemptTiming {
     }
 
     const emission = await settleIncludingAbort(() => {
-      const persisted = outcome === "pending" || outcome === "queued";
+      const persisted = outcome === "pending";
       const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
       const dimensions = {
         ...this.args.dimensions,
@@ -144,7 +137,6 @@ export class AdmissionAttemptTiming {
         profile: this.args.profile,
         dispatch_path: "direct",
         span_kind: "nested",
-        commit_invocation: boundedAttempt(this.args.commitInvocation),
         admission_outcome: outcome,
         run_persisted: persisted ? "true" : "false",
         query_count_coverage: "unavailable",

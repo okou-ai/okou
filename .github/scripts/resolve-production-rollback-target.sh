@@ -27,6 +27,9 @@ readonly ADVISORY_LOCK_PREPARATION_COMMIT=c639e3397602b5c9b049315c7a99f5ed2e23e6
 # #36945 made every non-empty chat thread snapshot response R2-only. API targets
 # before it may still return inline data to an old header-less client.
 readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40da0ad4
+# #37034 stopped creating queued runs. Later APIs no longer promote them, so
+# earlier APIs would park chat input in runs that nothing ever starts.
+readonly QUEUED_RUN_CREATION_REMOVAL_COMMIT=4d4c7599bbece03bab5c1851da467702685bc1ea
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -88,6 +91,9 @@ if ! git merge-base --is-ancestor "$CHAT_SEARCH_GIN_MAINTENANCE_REMOVAL_COMMIT" 
 fi
 if ! git merge-base --is-ancestor "$ADVISORY_LOCK_PREPARATION_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the advisory lock replacement protocols: ${ADVISORY_LOCK_PREPARATION_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$QUEUED_RUN_CREATION_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the queued run creation removal: ${QUEUED_RUN_CREATION_REMOVAL_COMMIT}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames

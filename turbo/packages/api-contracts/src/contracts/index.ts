@@ -1647,10 +1647,6 @@ export {
   type SlackChannel,
 } from "./slack-channels";
 export {
-  queuePositionContract,
-  type QueuePositionContract,
-} from "./queue-position";
-export {
   computerUseAuditEventSchema,
   computerUseAuditEventsContract,
   computerUseAuthorizationRequestsContract,

@@ -119,7 +119,6 @@ import {
   withAgentRunSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
-import { appendQueuedRunAssistantMarker } from "./chat-queue-marker.service";
 import {
   discardUnclaimedUserMessage,
   loadNextUnclaimedQueuedUserMessage,
@@ -2291,7 +2290,6 @@ async function appendAssociatedUserMessage(params: {
   readonly touchThreadSort: boolean;
   readonly revokesEventId: string | undefined;
   readonly userMessage: UserMessageDocument;
-  readonly appendQueueMarker: boolean;
   readonly triggerSource: "web" | "agent";
 }): Promise<boolean> {
   await registerCanonicalWebInputAssets(params.db, {
@@ -2322,15 +2320,6 @@ async function appendAssociatedUserMessage(params: {
           authorizedScope: { userId: params.userId, orgId: params.orgId },
         },
       );
-    });
-  }
-  if (params.appendQueueMarker) {
-    await params.db.transaction((tx) => {
-      return appendQueuedRunAssistantMarker(tx, {
-        chatThreadId: params.threadId,
-        runId: params.runId,
-        createdAfter: inserted?.createdAt ?? nowDate(),
-      });
     });
   }
   return inserted !== null;
@@ -3303,7 +3292,6 @@ function scheduleAssociatedUserMessage(params: {
   readonly userId: string;
   readonly orgId: string;
   readonly runId: string;
-  readonly appendQueueMarker: boolean;
   readonly touchThreadSort: boolean;
   readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
   readonly triggerSource: "web" | "agent";
@@ -3323,7 +3311,6 @@ function scheduleAssociatedUserMessage(params: {
         touchThreadSort: params.touchThreadSort,
         revokesEventId: params.body.revokesEventId,
         userMessage: params.body.userMessage,
-        appendQueueMarker: params.appendQueueMarker,
         triggerSource: params.triggerSource,
       });
       if (inserted) {
@@ -3350,7 +3337,6 @@ function scheduleCreatedChatRunSideEffects(params: {
   readonly userId: string;
   readonly orgId: string;
   readonly runId: string;
-  readonly runStatus: string;
   readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
   readonly touchThreadSort: boolean;
   readonly triggerSource: "web" | "agent";
@@ -3369,14 +3355,9 @@ function scheduleCreatedChatRunSideEffects(params: {
   });
   if (params.queueFirstClaim) {
     scheduleClaimedQueueFirstEventSideEffects({
-      db: params.db,
-      body: params.body,
       threadId: params.thread.threadId,
       userId: params.userId,
       orgId: params.orgId,
-      runId: params.runId,
-      createdAt: params.queueFirstClaim.createdAt,
-      appendQueueMarker: params.runStatus === "queued",
     });
     return;
   }
@@ -3387,7 +3368,6 @@ function scheduleCreatedChatRunSideEffects(params: {
     userId: params.userId,
     orgId: params.orgId,
     runId: params.runId,
-    appendQueueMarker: params.runStatus === "queued",
     touchThreadSort: params.touchThreadSort,
     attachFileMetadata: params.attachFileMetadata,
     triggerSource: params.triggerSource,
@@ -3397,29 +3377,15 @@ function scheduleCreatedChatRunSideEffects(params: {
 /**
  * Queue-first counterpart of `scheduleAssociatedUserMessage`: the launch
  * transaction already appended the run-associated replacement, so only
- * publish the append and add the optional run markers here.
+ * publish the append here.
  */
 function scheduleClaimedQueueFirstEventSideEffects(params: {
-  readonly db: Db;
-  readonly body: RuntimeNormalSendBody;
   readonly threadId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly runId: string;
-  readonly createdAt: Date;
-  readonly appendQueueMarker: boolean;
 }): void {
   waitUntil(
     (async () => {
-      if (params.appendQueueMarker) {
-        await params.db.transaction(async (tx) => {
-          await appendQueuedRunAssistantMarker(tx, {
-            chatThreadId: params.threadId,
-            runId: params.runId,
-            createdAfter: params.createdAt,
-          });
-        });
-      }
       await publishChatEventCreated({
         userId: params.userId,
         orgId: params.orgId,
@@ -3803,7 +3769,6 @@ function scheduleNormalChatRunSideEffects(params: {
   readonly args: NormalSendArgs;
   readonly prepared: PreparedNormalSend;
   readonly runId: string;
-  readonly runStatus: string;
   readonly queueFirstClaimedAt: Date;
 }): void {
   scheduleCreatedChatRunSideEffects({
@@ -3813,7 +3778,6 @@ function scheduleNormalChatRunSideEffects(params: {
     userId: params.args.userId,
     orgId: params.args.orgId,
     runId: params.runId,
-    runStatus: params.runStatus,
     attachFileMetadata: params.prepared.attachFileMetadata,
     touchThreadSort: shouldTouchThreadSortFromNormalSend(
       params.args.agentRunPreCreateSource,
@@ -3990,7 +3954,6 @@ const createNormalChatRun$ = command(
       args,
       prepared,
       runId: runResult.body.runId,
-      runStatus: runResult.body.status,
       queueFirstClaimedAt,
     });
 

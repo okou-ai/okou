@@ -27,7 +27,6 @@ import {
 } from "@okouai/api-contracts/contracts/run-routes";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
-import { queuePositionContract } from "@okouai/api-contracts/contracts/queue-position";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import {
@@ -144,7 +143,6 @@ export function threadListSnapshot(threads: readonly ThreadListItem[]) {
 
 interface MockLifecycleControl {
   setRunStatus: (status: RunStatus) => void;
-  setQueuePosition: (n: number) => void;
   setRunOutput: (content: string) => void;
   setThreadList: (list: ThreadListItem[]) => void;
   setCodexServiceTier: (tier: CodexServiceTier | null) => void;
@@ -415,7 +413,6 @@ export function mockChatLifecycle(
 
   let runStatus: RunStatus = "running";
   let runError: string | null = null;
-  let queuePosition = 0;
   let resultContent = "";
   let threadListOverride: ThreadListItem[] | null = null;
   let runPrompt: string | null = null;
@@ -943,9 +940,6 @@ export function mockChatLifecycle(
       createdAt: "2026-03-10T00:00:00Z",
     });
   });
-  context.mocks.api(queuePositionContract.getPosition, ({ respond }) => {
-    return respond(200, { position: queuePosition, total: 0 });
-  });
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [] });
   });
@@ -967,9 +961,6 @@ export function mockChatLifecycle(
   return {
     setRunStatus: (s) => {
       runStatus = s;
-    },
-    setQueuePosition: (n) => {
-      queuePosition = n;
     },
     setRunOutput: (content) => {
       resultContent = content;

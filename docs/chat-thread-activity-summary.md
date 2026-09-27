@@ -23,8 +23,8 @@ The typed contract is `chatThreadActivitySummaryContract` in
 | `messages` | At most four plain-text lines of at most 60 grapheme clusters each |
 | `status`   | `available`, `ineligible`, or `unavailable`                        |
 
-`available` is the stored batch. `ineligible` is an owned run that is queued or
-terminal, or has no active row. `unavailable` means no batch is stored yet while
+`available` is the stored batch. `ineligible` is an owned run that is terminal
+(or a historical queued run), or has no active row. `unavailable` means no batch is stored yet while
 another caller holds the claim or the attempt interval is still running.
 
 Authentication/validation errors use the existing 400/401/403 error contract.
@@ -122,8 +122,10 @@ verifies the run owner, thread and status. Subsequent requests use a
 15-second interval. Each viewer serializes requests, including an aborted
 transport still settling after a ref change.
 
-Hiding, navigating away, unmounting, losing thread access, queuing,
-ending or replacing a run cancels demand and rejects late responses. An
+Hiding, navigating away, unmounting, losing thread access, ending or
+replacing a run cancels demand and rejects late responses. No API appends
+`run.queued`/`run.dequeued` markers anymore; historical markers still render,
+and a run they still fold as queued gets no summary demand. An
 `ineligible`, 401, 403 or 404 response clears dynamic copy for that run identity.
 An `unavailable`, malformed or failed response keeps the current run's last
 usable batch, or the existing generic indicator when it never had one.

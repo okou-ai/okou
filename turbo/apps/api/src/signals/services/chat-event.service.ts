@@ -296,20 +296,6 @@ type OutputFollowupsEvent = ChatEventIdentity & {
   readonly content: string;
 };
 
-type RunQueuedEvent = ChatEventIdentity & {
-  readonly eventType: "run.queued";
-  readonly runId: string;
-  readonly content: string;
-  readonly runEventId: "queue:queued";
-};
-
-type RunDequeuedEvent = ChatEventIdentity & {
-  readonly eventType: "run.dequeued";
-  readonly runId: string;
-  readonly content?: null;
-  readonly runEventId: "queue:dequeued";
-};
-
 type RunCompletedEvent = ChatEventIdentity & {
   readonly eventType: "run.completed";
   readonly runId: string;
@@ -366,8 +352,6 @@ export type NewChatEvent =
   | OutputErrorEvent
   | OutputThinkingEvent
   | OutputFollowupsEvent
-  | RunQueuedEvent
-  | RunDequeuedEvent
   | RunCompletedEvent
   | RunFailedEvent
   | RunCancelledEvent
@@ -376,10 +360,7 @@ export type NewChatEvent =
   | BrowserLifecycleEvent
   | UsageRecordedEvent;
 
-type AppendChatEvent = Exclude<
-  NewChatEvent,
-  RunDequeuedEvent | ControlRevokeEvent
->;
+type AppendChatEvent = Exclude<NewChatEvent, ControlRevokeEvent>;
 
 interface ChatEventCommandResult {
   readonly id: string;
@@ -1235,7 +1216,7 @@ export async function replaceLoadedChatEvent(
 export async function revokeChatEvent(
   tx: ChatEventWriteTransaction,
   eventId: string,
-  revocation: ControlRevokeEvent | RunDequeuedEvent,
+  revocation: ControlRevokeEvent,
 ): Promise<ChatEventCommandResult | null> {
   return await replaceChatEvent(tx, eventId, {
     ...revocation,

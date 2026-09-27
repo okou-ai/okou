@@ -5,15 +5,11 @@ import {
   testCronCleanupSandboxesStateContract,
 } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
-import {
-  agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  MIN_EPOCH_MS_TIMESTAMP,
-} from "@okouai/api-contracts/contracts/runners";
+import { agentRunConnectorDiagnosticRegistrationPayloadSchema } from "@okouai/api-contracts/contracts/runners";
 import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { browserSessions } from "@okouai/db/schema/browser-session";
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
-import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -40,10 +36,6 @@ import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import {
-  encryptQueuedRunnerJobPayload,
-  queuedRunnerJobPayload,
-} from "../services/agent-run-queue-payload.service";
-import {
   normalizeRunMetadata,
   writeRunMetadata,
 } from "../services/agent-run-metadata-write.service";
@@ -54,7 +46,6 @@ import {
 } from "../services/agent-run-terminal-transition.service";
 import { deleteArtifactCatalogForHostedSiteId } from "../services/artifact-catalog-deletion.service";
 import { cleanupSandboxes$ } from "../services/cron-cleanup-sandboxes.service";
-import { insertChatEvent } from "../services/chat-event.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -191,12 +182,10 @@ async function seedRunForAction(
 
   const threadless = readOptionalBoolean(body, "threadless") === true;
   const status = readOptionalString(body, "status") ?? "pending";
-  // Queued fixtures can be promoted through the production metadata writer.
-  // Lifecycle-only fixtures that never enter that path intentionally stay null.
-  const runMetadata =
-    threadless || status === "queued"
-      ? normalizeRunMetadata({ triggerSource: triggerSource.data })
-      : null;
+  // Lifecycle-only fixtures intentionally keep null run metadata.
+  const runMetadata = threadless
+    ? normalizeRunMetadata({ triggerSource: triggerSource.data })
+    : null;
   const [run] = await db
     .insert(agentRuns)
     .values({
@@ -223,7 +212,7 @@ async function seedRunForAction(
   if (!run) {
     return actionBadRequest("failed to seed run");
   }
-  if (["queued", "pending", "running"].includes(status)) {
+  if (["pending", "running"].includes(status)) {
     await db.insert(activeAgentRuns).values({
       runId: run.id,
       orgId,
@@ -388,8 +377,6 @@ async function deleteRunForAction(
       );
     signal.throwIfAborted();
   }
-  await db.delete(agentRunQueue).where(eq(agentRunQueue.runId, runId));
-  signal.throwIfAborted();
   await db.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
   signal.throwIfAborted();
   await db.delete(agentRuns).where(eq(agentRuns.id, runId));
@@ -761,121 +748,6 @@ async function seedRunnerJobForAction(
   return actionOk();
 }
 
-async function seedQueueEntryForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  const expiresAt = readDate(body, "expires_at");
-  if (!runId || !expiresAt) {
-    return actionBadRequest("run_id and expires_at are required");
-  }
-  const [run] = await db
-    .select({
-      userId: agentRuns.userId,
-      orgId: agentRuns.orgId,
-      createdAt: agentRuns.createdAt,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    return actionBadRequest("run not found");
-  }
-  const encryptedParams =
-    readOptionalString(body, "encrypted_params") ??
-    (await encryptQueuedRunnerJobPayload(
-      queuedRunnerJobPayload({
-        runnerGroup: "vm0/test",
-        profile: "vm0/default",
-        cliAgentSessionId: null,
-        reuseKey: null,
-        executionContext: {
-          storageMounts: [],
-          environment: null,
-          platformEnvironment: {},
-          secretValueEnvironmentKeys: null,
-          resumeSession: null,
-          encryptedSecrets: null,
-          connectorRuntimeTargets: [],
-          cliAgentType: "claude-code",
-          apiStartTime: MIN_EPOCH_MS_TIMESTAMP,
-        },
-      }),
-    ));
-  signal.throwIfAborted();
-  await db.insert(agentRunQueue).values({
-    runId,
-    userId: run.userId,
-    orgId: run.orgId,
-    createdAt: run.createdAt,
-    expiresAt,
-    encryptedParams,
-  });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
-async function seedQueueMarkerForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [run] = await db
-    .select({
-      userId: agentRuns.userId,
-      sessionId: agentRuns.sessionId,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    return actionBadRequest("run not found");
-  }
-  const [session] = await db
-    .select({ agentId: agentSessions.agentId })
-    .from(agentSessions)
-    .where(eq(agentSessions.id, run.sessionId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!session) {
-    return actionBadRequest("session not found");
-  }
-  const [thread] = await db
-    .insert(chatThreads)
-    .values({
-      userId: run.userId,
-      agentId: session.agentId,
-      title: "cron cleanup marker test",
-    })
-    .returning({ id: chatThreads.id });
-  signal.throwIfAborted();
-  if (!thread) {
-    return actionBadRequest("failed to seed chat thread");
-  }
-  const marker = await db.transaction(async (tx) => {
-    return await insertChatEvent(tx, {
-      chatThreadId: thread.id,
-      eventType: "run.queued",
-      content: "Waiting in queue...",
-      runId,
-      runEventId: "queue:queued",
-    });
-  });
-  signal.throwIfAborted();
-  if (!marker) {
-    return actionBadRequest("failed to seed queue marker");
-  }
-  return actionOk({ marker_id: marker.id, thread_id: thread.id });
-}
-
 async function attachRunThreadForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -1009,46 +881,6 @@ async function getRunnerJobForAction(
   return actionOk({ runner_job: job ?? null });
 }
 
-async function getQueueEntryForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [entry] = await db
-    .select({ runId: agentRunQueue.runId })
-    .from(agentRunQueue)
-    .where(eq(agentRunQueue.runId, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ queue_entry: entry ?? null });
-}
-
-async function getQueueMarkerRevokerForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const markerId = readString(body, "marker_id");
-  if (!markerId) {
-    return actionBadRequest("marker_id is required");
-  }
-  const [revoker] = await db
-    .select({
-      id: chatEvents.id,
-      revokesEventId: chatEvents.revokesEventId,
-      runEventId: chatEvents.runEventId,
-    })
-    .from(chatEvents)
-    .where(eq(chatEvents.revokesEventId, markerId))
-    .limit(1);
-  signal.throwIfAborted();
-  return actionOk({ queue_marker_revoker: revoker ?? null });
-}
-
 async function getExportJobForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -1120,15 +952,11 @@ const cronCleanupSandboxesActionHandlers = {
   "delete-run-ownership": deleteRunOwnershipForAction,
   "delete-run-thread": deleteRunThreadForAction,
   "seed-runner-job": seedRunnerJobForAction,
-  "seed-queue-entry": seedQueueEntryForAction,
-  "seed-queue-marker": seedQueueMarkerForAction,
   "seed-export-job": seedExportJobForAction,
   "delete-export-job": deleteExportJobForAction,
   "get-run": getRunForAction,
   "get-run-ownership": getRunOwnershipForAction,
   "get-runner-job": getRunnerJobForAction,
-  "get-queue-entry": getQueueEntryForAction,
-  "get-queue-marker-revoker": getQueueMarkerRevokerForAction,
   "get-export-job": getExportJobForAction,
   "seed-connector-diagnostic-registration":
     seedConnectorDiagnosticRegistrationForAction,

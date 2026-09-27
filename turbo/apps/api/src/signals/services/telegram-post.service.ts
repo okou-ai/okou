@@ -2021,7 +2021,7 @@ async function telegramMessageDispatchState(
 ): Promise<TelegramMessageDispatchResult> {
   const [[run], [queued]] = await Promise.all([
     db
-      .select({ runId: agentRuns.id, status: agentRuns.status })
+      .select({ runId: agentRuns.id })
       .from(chatEvents)
       .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
       .where(
@@ -2052,7 +2052,7 @@ async function telegramMessageDispatchState(
       )
       .limit(1),
   ]);
-  if (queued || run?.status === "queued") {
+  if (queued) {
     return {
       kind: "queued",
       ...(run ? { runId: run.runId } : {}),

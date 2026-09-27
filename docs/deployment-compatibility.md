@@ -1,5 +1,45 @@
 # Deployment Compatibility
 
+## Legacy queued-run promotion retired (release 2)
+
+#37034 stopped creating `agent_runs` rows with `status = 'queued'`: input that
+arrives at org capacity stays in `chat_events` without a run and
+`queued_chat_threads` schedules its thread. #37034 kept the legacy promotion
+(`agent_run_queue` payload decryption, `drainOrgQueue$` and the
+`run.queued`/`run.dequeued` markers) only to drain queued runs left by older
+instances. This release deletes it: no API reads or writes `agent_run_queue`,
+and nothing appends queue markers. Historical `run.queued`/`run.dequeued` rows
+still parse and render, and `queued` stays a valid historical run status. The
+`agent_run_queue` table and schema remain until release 3 drops them.
+
+Migration `1268_retire_legacy_run_queue_promotion` deletes any
+`active_agent_runs` row whose run is still `queued` (the production gate
+expects none), so the table only holds rows of pending and running runs, plus
+started terminal runs until their runner is released. It also drops
+`chat_events_pending_queue_idx` concurrently: every pending-input read is
+scoped to one thread (or a bounded set of threads) and takes run-less input
+rows through the thread indexes, then drops revoked rows through
+`chat_events_revokes_event_id_not_null_unique`.
+
+**Release gate:** ship this release only after the #37034 release is live in
+production and every earlier API has drained, so no queued run remains to be
+promoted.
+
+**API rollback floor: `4d4c7599bbece03bab5c1851da467702685bc1ea`** (#37034's
+merge commit). Rolling back to #37034 is safe: it creates only pending runs,
+and its leftover promotion finds nothing to promote. Older APIs create queued
+runs that no deployed API promotes, so those messages would never start.
+`resolve-production-rollback-target.sh` rejects targets below this floor.
+
+Old and new instances during deploy:
+
+- This API with the #37034 API: both create only pending runs and admit queued
+  input through `queued_chat_threads`. The #37034 API still runs the legacy
+  promotion, which finds no queued run; this API ignores `agent_run_queue`.
+- Either API with the migrated database: neither depends on
+  `chat_events_pending_queue_idx`, and neither expects an active row for a
+  queued run.
+
 ## pgstattuple extension dropped (2026-09-26)
 
 Migration `1265_drop_pgstattuple` runs `DROP EXTENSION IF EXISTS pgstattuple`.

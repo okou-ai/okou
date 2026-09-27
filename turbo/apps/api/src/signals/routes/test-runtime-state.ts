@@ -19,7 +19,6 @@ import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contrac
 import { compatibleStoredExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import {
@@ -1631,7 +1630,7 @@ async function readAgentRunFamilyCountsActionResponse(
 ) {
   const agentRunJoin = eq(agentRuns.sessionId, agentSessions.id);
   const agentCondition = eq(agentSessions.agentId, body.agent_id);
-  const [[runs], [callbacks], [runnerJobs], [launchQueue]] = await Promise.all([
+  const [[runs], [callbacks], [runnerJobs]] = await Promise.all([
     db
       .select({ value: count() })
       .from(agentRuns)
@@ -1649,15 +1648,9 @@ async function readAgentRunFamilyCountsActionResponse(
       .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
       .innerJoin(agentSessions, agentRunJoin)
       .where(agentCondition),
-    db
-      .select({ value: count() })
-      .from(agentRunQueue)
-      .innerJoin(agentRuns, eq(agentRunQueue.runId, agentRuns.id))
-      .innerJoin(agentSessions, agentRunJoin)
-      .where(agentCondition),
   ]);
   signal.throwIfAborted();
-  if (!runs || !callbacks || !runnerJobs || !launchQueue) {
+  if (!runs || !callbacks || !runnerJobs) {
     throw new Error("Agent Run-family count is incomplete");
   }
   return {
@@ -1668,7 +1661,6 @@ async function readAgentRunFamilyCountsActionResponse(
         run_count: runs.value,
         callback_count: callbacks.value,
         runner_job_count: runnerJobs.value,
-        launch_queue_count: launchQueue.value,
       },
     },
   };

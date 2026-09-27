@@ -22,7 +22,6 @@ export type PiApiFirstTurnPreparedInputs =
     };
 
 export type PiPreparationDiscardReason =
-  | "queued"
   | "claim-lost"
   | "stale"
   | "admission-failed"

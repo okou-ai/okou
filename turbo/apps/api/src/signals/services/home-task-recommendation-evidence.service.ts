@@ -4,7 +4,7 @@ import { chatEventCompatibilityRole } from "@okouai/api-contracts/contracts/chat
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { and, desc, eq, inArray, notExists } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, notExists } from "drizzle-orm";
 
 import { stripMarkdown } from "../../lib/strip-markdown";
 import type { Db } from "../external/db";
@@ -14,7 +14,7 @@ import {
 } from "./canonical-chat-event-read.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { pendingChatQueueEventCondition } from "./chat-event-queue.service";
+import { revokedChatEventIds } from "./chat-event-queue.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
   projectUserMessage,
@@ -104,21 +104,46 @@ async function recentThreads(
               ),
             ),
         ),
-        notExists(
-          db
-            .select({ id: chatEvents.id })
-            .from(chatEvents)
-            .where(
-              and(
-                eq(chatEvents.chatThreadId, chatThreads.id),
-                pendingChatQueueEventCondition(db),
-              ),
-            ),
-        ),
       ),
     )
     .orderBy(desc(chatThreads.lastMessageAt), desc(chatThreads.id))
     .limit(THREAD_LIMIT);
+}
+
+/**
+ * The given threads that still hold pending (run-less, unrevoked) queue input,
+ * read in two steps scoped to exactly these threads: their run-less input
+ * rows, then the revocations of those rows. Input held by an open active
+ * delivery belongs to an active run, which already excludes its thread.
+ */
+export async function threadIdsWithPendingInput(
+  db: Pick<Db, "select">,
+  threadIds: readonly string[],
+): Promise<ReadonlySet<string>> {
+  if (threadIds.length === 0) {
+    return new Set();
+  }
+  const candidates = await db
+    .select({ id: chatEvents.id, chatThreadId: chatEvents.chatThreadId })
+    .from(chatEvents)
+    .where(
+      and(
+        inArray(chatEvents.chatThreadId, [...threadIds]),
+        isNull(chatEvents.runId),
+        chatEventTypeIn(["input.prompt", "input.automation"]),
+      ),
+    );
+  const revoked = await revokedChatEventIds(
+    db,
+    candidates.map(({ id }) => {
+      return id;
+    }),
+  );
+  return new Set(
+    candidates.flatMap((event) => {
+      return revoked.has(event.id) ? [] : [event.chatThreadId];
+    }),
+  );
 }
 
 /**
@@ -182,11 +207,21 @@ export async function collectHomeTaskEvidence(
   args: HomeTaskEvidenceScope,
   signal: AbortSignal,
 ): Promise<HomeTaskEvidence> {
-  const [threadRows, gmail] = await Promise.all([
+  const [recentThreadRows, gmail] = await Promise.all([
     recentThreads(db, args),
     collectHomeTaskGmailEvidence(db, args, signal),
   ]);
   signal.throwIfAborted();
+  const pendingThreadIds = await threadIdsWithPendingInput(
+    db,
+    recentThreadRows.map((row) => {
+      return row.id;
+    }),
+  );
+  signal.throwIfAborted();
+  const threadRows = recentThreadRows.filter((row) => {
+    return !pendingThreadIds.has(row.id);
+  });
   const messages =
     threadRows.length === 0
       ? new Map<string, RecentMessage[]>()

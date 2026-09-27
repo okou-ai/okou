@@ -7,7 +7,6 @@ import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { nowDate } from "../../lib/time";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { secrets } from "@okouai/db/schema/secret";
@@ -236,14 +235,6 @@ async function revokeOrgMemberRunAuthority(
       userId: args.userId,
     });
 
-    await tx
-      .delete(agentRunQueue)
-      .where(
-        and(
-          eq(agentRunQueue.orgId, args.orgId),
-          eq(agentRunQueue.userId, args.userId),
-        ),
-      );
     await tx
       .delete(modelProviders)
       .where(

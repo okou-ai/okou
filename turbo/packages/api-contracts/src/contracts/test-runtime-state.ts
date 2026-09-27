@@ -394,7 +394,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
       run_count: z.int().nonnegative(),
       callback_count: z.int().nonnegative(),
       runner_job_count: z.int().nonnegative(),
-      launch_queue_count: z.int().nonnegative(),
     })
     .optional(),
   thread_session_binding: z

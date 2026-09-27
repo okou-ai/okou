@@ -712,7 +712,7 @@ export async function resolveUsageAllowanceAvailability(
       const lockStartedAt = performance.now();
       await lockOrgCredits(tx, orgId);
       lockWaitMs = Math.round(performance.now() - lockStartedAt);
-      return await resolveUsageAllowanceAvailabilityForLockedOrg(tx, orgId);
+      return await resolveAvailabilityInLockedTransaction(tx, orgId);
     });
   }
   // Availability is a snapshot, not a reservation. Include any refresh COMMIT
@@ -735,13 +735,6 @@ export async function resolveUsageAllowanceAvailability(
     ]);
   });
   return availability;
-}
-
-export async function resolveUsageAllowanceAvailabilityForLockedOrg(
-  tx: UsageAllowanceStore,
-  orgId: string,
-): Promise<UsageAllowanceAvailability | null> {
-  return await resolveAvailabilityInLockedTransaction(tx, orgId);
 }
 
 export async function activateUsageAllowanceWindowsForRun(

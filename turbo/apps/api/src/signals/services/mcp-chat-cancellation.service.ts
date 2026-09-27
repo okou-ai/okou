@@ -51,8 +51,10 @@ export const revokeQueuedMcpMessage$ = command(
     const db = set(writeDb$);
     const result = await db.transaction(
       async (tx): Promise<McpRevokeQueuedMessageOutput> => {
-        // This is the same row lock used by queue claims and active-input
-        // reservations, with authorization established under that lock.
+        // Authorization is established under the thread row lock. Queue picks
+        // and active-input reservations take no thread lock; the unique
+        // revocation edge on the target event keeps this revoke and a
+        // concurrent consumer from both replacing it.
         const [thread] = await tx
           .select({ id: chatThreads.id })
           .from(chatThreads)

@@ -134,7 +134,6 @@ import { orgMembersRoutes } from "./routes/org-members";
 import { orgMembershipRequestsRoutes } from "./routes/org-membership-requests";
 import { orgReadRoutes } from "./routes/org-read";
 import { pushSubscriptionsRoutes } from "./routes/push-subscriptions";
-import { queuePositionRoutes } from "./routes/queue-position";
 import { realtimeTokenRoutes } from "./routes/realtime-token";
 import { imageRecognitionRoutes } from "./routes/image-recognition";
 import { runDetailRoutes } from "./routes/run-detail";
@@ -388,7 +387,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...voiceIoTranscribeRoutes,
   ...webDownloadRoutes,
   ...webFileUrlRoutes,
-  ...queuePositionRoutes,
   ...realtimeTokenRoutes,
   ...imageRecognitionRoutes,
   ...runDetailRoutes,

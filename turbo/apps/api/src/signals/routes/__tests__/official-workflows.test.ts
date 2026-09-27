@@ -4710,7 +4710,6 @@ describe("Official Workflow installations", () => {
       run_count: 0,
       callback_count: 0,
       runner_job_count: 0,
-      launch_queue_count: 0,
     });
     const storage = installCatalogStorageFixture();
     const objectsBeforeCopy = storage.objectCount();
@@ -8786,7 +8785,6 @@ describe("Official Workflow Run admission", () => {
         run_count: beforeRunFamily.run_count + 1,
         callback_count: beforeRunFamily.callback_count + 2,
         runner_job_count: beforeRunFamily.runner_job_count,
-        launch_queue_count: beforeRunFamily.launch_queue_count,
       });
     },
   );
@@ -8873,7 +8871,6 @@ describe("Official Workflow Run admission", () => {
       run_count: beforeRunFamily.run_count + 2,
       callback_count: beforeRunFamily.callback_count + 4,
       runner_job_count: beforeRunFamily.runner_job_count,
-      launch_queue_count: beforeRunFamily.launch_queue_count,
     });
   });
 
@@ -9551,7 +9548,6 @@ describe("Official Workflow Run admission", () => {
         run_count: beforeQueuedRunFamily.run_count + 1,
         callback_count: beforeQueuedRunFamily.callback_count + 1,
         runner_job_count: beforeQueuedRunFamily.runner_job_count + 1,
-        launch_queue_count: beforeQueuedRunFamily.launch_queue_count,
       });
 
       await assertOfficialQueueSnapshot(
@@ -9592,7 +9588,6 @@ describe("Official Workflow Run admission", () => {
         run_count: beforeQueuedRunFamily.run_count + 1,
         callback_count: beforeQueuedRunFamily.callback_count + 1,
         runner_job_count: beforeQueuedRunFamily.runner_job_count + 1,
-        launch_queue_count: beforeQueuedRunFamily.launch_queue_count,
       };
       await expect(
         readAgentRunFamilyCountsFixture(context, agentId),

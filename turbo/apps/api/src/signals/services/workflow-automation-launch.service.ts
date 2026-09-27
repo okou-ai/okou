@@ -596,10 +596,7 @@ async function recordWorkflowAutomationRunStart(
   input: {
     readonly db: Db;
     readonly args: WorkflowAutomationLaunchArgs;
-    readonly run: {
-      readonly body: { readonly runId: string; readonly status: string };
-      readonly queueFirstClaim: { readonly createdAt: Date };
-    };
+    readonly run: { readonly body: { readonly runId: string } };
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -607,13 +604,9 @@ async function recordWorkflowAutomationRunStart(
   const runId = input.run.body.runId;
   const { automation, chatThreadId } = args.due;
   await finalizeClaimedRunUserMessage({
-    db,
     orgId: automation.orgId,
     threadId: chatThreadId,
     userId: automation.ownerUserId,
-    runId,
-    runStatus: input.run.body.status,
-    createdAt: input.run.queueFirstClaim.createdAt,
   });
   signal.throwIfAborted();
 

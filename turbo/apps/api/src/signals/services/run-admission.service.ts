@@ -15,18 +15,13 @@ import {
 } from "../../lib/db-structured-result";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
-import {
-  lockOrgCredits,
-  resolveUsageAllowanceAvailability,
-  resolveUsageAllowanceAvailabilityForLockedOrg,
-} from "./usage-allowance.service";
+import { resolveUsageAllowanceAvailability } from "./usage-allowance.service";
 
 type RunAdmissionFailure =
   | ReturnType<typeof insufficientCredits>
@@ -233,27 +228,6 @@ async function checkResolvedOrgCreditsForRunAdmissionWithAllowance(params: {
   return allowance && allowance.remainingUnits > 0
     ? undefined
     : insufficientCredits();
-}
-
-export async function checkOrgCreditsForRunAdmissionInTransaction(params: {
-  readonly db: Tx;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelProviderType: string | null | undefined;
-  readonly selectedModel?: string | null;
-}): Promise<RunAdmissionFailure | undefined> {
-  await lockOrgCredits(params.db, params.orgId);
-  const availability = await resolveOrgCreditAvailability(params);
-  return await checkResolvedOrgCreditsForRunAdmissionWithAllowance({
-    ...params,
-    availability,
-    resolveAllowance: async () => {
-      return await resolveUsageAllowanceAvailabilityForLockedOrg(
-        params.db,
-        params.orgId,
-      );
-    },
-  });
 }
 
 export function checkOrgPlanRunAdmission(params: {

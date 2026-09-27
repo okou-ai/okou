@@ -97,7 +97,6 @@ describe("chatEvents schema", () => {
     ).toStrictEqual([
       "chat_events_control_interrupt_run_id_unique",
       "chat_events_input_automation_context_idx",
-      "chat_events_pending_queue_idx",
       "chat_events_revokes_event_id_not_null_unique",
       "chat_events_run_event_seq_unique",
       "chat_events_run_terminal_unique",

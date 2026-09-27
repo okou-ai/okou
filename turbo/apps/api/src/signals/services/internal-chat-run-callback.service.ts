@@ -148,7 +148,6 @@ import {
 } from "./chat-user-message.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { buildWebChatAppendSystemPrompt } from "./web-chat-session-prompt.service";
-import { appendQueuedRunAssistantMarker } from "./chat-queue-marker.service";
 import {
   integrationCompletionFallbackEventIdForRun,
   followupsEventIdForRun,
@@ -278,7 +277,6 @@ type ChatCallbackPreCreateTimingActionType =
   | "api_dispatch_pre_create_agent_chat_callback_auto_send_check_active_run"
   | "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age"
   | "api_dispatch_pre_create_agent_chat_callback_auto_send_create_run"
-  | "api_dispatch_pre_create_agent_chat_callback_auto_send_append_marker"
   | "api_dispatch_pre_create_agent_chat_callback_auto_send_publish_signals";
 
 interface ChatCallbackPreCreateTimingRecord {
@@ -499,8 +497,6 @@ interface AgentForAutoSend {
 
 type CreatedQueuedRun = {
   readonly runId: string;
-  readonly status: "queued" | "pending" | "running";
-  readonly claimedEventCreatedAt: Date;
 };
 
 type CreateQueuedRun = (
@@ -897,10 +893,8 @@ type DrainOutcome =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: unknown };
 
-function isCreatedQueuedRunStatus(
-  status: string,
-): status is CreatedQueuedRun["status"] {
-  return status === "queued" || status === "pending" || status === "running";
+function isCreatedQueuedRunStatus(status: string): boolean {
+  return status === "pending" || status === "running";
 }
 
 function generateCallbackSecret(): string {
@@ -3453,35 +3447,6 @@ async function buildCreateQueuedChatRunInput(
   };
 }
 
-async function appendAutoSentQueuedRunMarker(args: {
-  readonly db: Db;
-  readonly createdAfter: Date;
-  readonly runId: string;
-  readonly threadId: string;
-}): Promise<boolean> {
-  const marker = await settle(
-    args.db.transaction(async (tx) => {
-      await appendQueuedRunAssistantMarker(tx, {
-        chatThreadId: args.threadId,
-        runId: args.runId,
-        createdAfter: args.createdAfter,
-      });
-    }),
-  );
-  if (marker.ok) {
-    return true;
-  }
-  // The atomic launch can commit immediately before thread deletion. Keep the
-  // normal marker path query-free and classify only that expected FK race.
-  if (
-    isForeignKeyViolation(marker.error) &&
-    !(await chatThreadExists(args.db, args.threadId))
-  ) {
-    return false;
-  }
-  throw marker.error;
-}
-
 async function createAutoSentQueuedRun(args: {
   readonly createRun: (
     input: CreateQueuedChatRunInput,
@@ -3495,30 +3460,6 @@ async function createAutoSentQueuedRun(args: {
     "top_level",
     () => {
       return args.createRun(args.runInput);
-    },
-  );
-}
-
-async function appendAutoSentQueuedRunMarkerIfQueued(args: {
-  readonly db: Db;
-  readonly run: CreatedQueuedRun;
-  readonly threadId: string;
-  readonly timing: ChatCallbackPreCreateTimingCollector;
-}): Promise<boolean> {
-  if (args.run.status !== "queued") {
-    return true;
-  }
-  return await measureChatCallbackPreCreateTiming(
-    args.timing,
-    "api_dispatch_pre_create_agent_chat_callback_auto_send_append_marker",
-    "nested",
-    () => {
-      return appendAutoSentQueuedRunMarker({
-        db: args.db,
-        createdAfter: args.run.claimedEventCreatedAt,
-        runId: args.run.runId,
-        threadId: args.threadId,
-      });
     },
   );
 }
@@ -4060,15 +4001,6 @@ async function autoSendQueuedMessageForThread(
         return null;
       }
       createdRunId = createdRun.runId;
-      const shouldPublishSignals = await appendAutoSentQueuedRunMarkerIfQueued({
-        db: args.db,
-        run: createdRun,
-        threadId,
-        timing: args.timing,
-      });
-      if (!shouldPublishSignals) {
-        return createdRun;
-      }
       await publishAutoSentQueuedRunSignals({
         threadId,
         userId,
@@ -5179,11 +5111,7 @@ const createQueuedRunForChatCallback$ = command(
       });
       return null;
     }
-    return {
-      runId: runResult.body.runId,
-      status: runResult.body.status,
-      claimedEventCreatedAt: runResult.queueFirstClaim.createdAt,
-    };
+    return { runId: runResult.body.runId };
   },
 );
 

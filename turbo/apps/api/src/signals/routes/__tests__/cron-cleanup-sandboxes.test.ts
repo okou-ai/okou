@@ -102,17 +102,6 @@ interface ExportJobFixture {
   readonly id: string;
 }
 
-interface QueueMarkerFixture {
-  readonly markerId: string;
-  readonly threadId: string;
-}
-
-interface QueueMarkerRevoker {
-  readonly id: string;
-  readonly revokesEventId: string;
-  readonly runEventId: string | null;
-}
-
 interface RunOwnershipFixture {
   readonly usageEventId: string;
   readonly uploadedFileId: string;
@@ -282,21 +271,6 @@ async function insertRunFixture(args?: {
   };
 }
 
-async function insertQueueEntry(
-  fixture: RunFixture,
-  expiresAt: Date,
-  options?: {
-    readonly encryptedParams?: string;
-  },
-): Promise<void> {
-  await postCronCleanupState({
-    action: "seed-queue-entry",
-    run_id: fixture.runId,
-    expires_at: expiresAt.toISOString(),
-    encrypted_params: options?.encryptedParams,
-  });
-}
-
 async function insertRunOwnership(
   fixture: RunFixture,
 ): Promise<RunOwnershipFixture> {
@@ -323,19 +297,6 @@ async function findRunOwnership(
     action: "get-run-ownership",
     ...ownershipActionFields(fixture),
   });
-}
-
-async function insertQueueMarker(
-  fixture: RunFixture,
-): Promise<QueueMarkerFixture> {
-  const response = await postCronCleanupState({
-    action: "seed-queue-marker",
-    run_id: fixture.runId,
-  });
-  return {
-    markerId: stringField(response, "marker_id"),
-    threadId: stringField(response, "thread_id"),
-  };
 }
 
 async function insertRunnerJobEntry(
@@ -458,34 +419,6 @@ async function findRunnerJob(runId: string): Promise<{
   return row ? { runId: stringField(row, "runId") } : null;
 }
 
-async function findQueueEntry(runId: string): Promise<{
-  readonly runId: string;
-} | null> {
-  const response = await postCronCleanupState({
-    action: "get-queue-entry",
-    run_id: runId,
-  });
-  const row = recordField(response, "queue_entry");
-  return row ? { runId: stringField(row, "runId") } : null;
-}
-
-async function findQueueMarkerRevoker(
-  markerId: string,
-): Promise<QueueMarkerRevoker | null> {
-  const response = await postCronCleanupState({
-    action: "get-queue-marker-revoker",
-    marker_id: markerId,
-  });
-  const row = recordField(response, "queue_marker_revoker");
-  return row
-    ? {
-        id: stringField(row, "id"),
-        revokesEventId: stringField(row, "revokesEventId"),
-        runEventId: nullableString(row.runEventId),
-      }
-    : null;
-}
-
 async function findExportJob(jobId: string): Promise<{
   readonly status: string;
   readonly error: string | null;
@@ -510,7 +443,6 @@ describe("sandbox cleanup", () => {
     cleanupRunOwnershipFixture,
   );
   let registeredRunIds: string[] = [];
-  let registeredOrgIds: string[] = [];
   let registeredExportJobIds: string[] = [];
 
   async function trackRun(
@@ -518,9 +450,6 @@ describe("sandbox cleanup", () => {
   ): Promise<RunFixture> {
     const fixture = await trackRunForTeardown(fixturePromise);
     registeredRunIds.push(fixture.runId);
-    if (!registeredOrgIds.includes(fixture.orgId)) {
-      registeredOrgIds.push(fixture.orgId);
-    }
     return fixture;
   }
 
@@ -539,7 +468,6 @@ describe("sandbox cleanup", () => {
       body: await cleanupScopedSandboxes({
         chatThreadIds: [],
         runIds: [...registeredRunIds],
-        orgIds: [...registeredOrgIds],
         exportJobIds: [...registeredExportJobIds],
       }),
     };
@@ -547,7 +475,6 @@ describe("sandbox cleanup", () => {
 
   beforeEach(() => {
     registeredRunIds = [];
-    registeredOrgIds = [];
     registeredExportJobIds = [];
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
     mockNow(FIXED_NOW_MS);
@@ -1437,139 +1364,6 @@ describe("sandbox cleanup", () => {
     });
   });
 
-  it("times out expired queued runs", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "queued", createdAt: minutesAgo(130) }),
-    );
-    await insertQueueEntry(fixture, minutesAgo(1));
-    await insertConnectorDiagnosticRegistration(fixture);
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(1);
-    expect(response.body.errors).toBe(0);
-    expect(response.body.results).toStrictEqual([
-      {
-        runId: fixture.runId,
-        sandboxId: null,
-        status: "cleaned",
-        reason: "Queued run expired (exceeded queue TTL)",
-      },
-    ]);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "timeout",
-      error: "Queued run expired (exceeded queue TTL)",
-    });
-    await expect(findQueueEntry(fixture.runId)).resolves.toBeNull();
-    await expect(
-      findConnectorDiagnosticRegistration(fixture.runId),
-    ).resolves.toBeNull();
-  });
-
-  it("cleans up queued runs missing queue entries after the grace threshold", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "queued", createdAt: minutesAgo(6) }),
-    );
-    const marker = await insertQueueMarker(fixture);
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(1);
-    expect(response.body.errors).toBe(0);
-    expect(response.body.results).toStrictEqual([
-      {
-        runId: fixture.runId,
-        sandboxId: null,
-        status: "cleaned",
-        reason: "Queued run timed out before queue entry was persisted",
-      },
-    ]);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "timeout",
-      error: "Queued run timed out before queue entry was persisted",
-    });
-    await expect(findQueueEntry(fixture.runId)).resolves.toBeNull();
-    await expect(
-      findQueueMarkerRevoker(marker.markerId),
-    ).resolves.toMatchObject({
-      revokesEventId: marker.markerId,
-      runEventId: "queue:dequeued",
-    });
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadMessageCreated:${marker.threadId}`,
-      null,
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "threadListChanged",
-      null,
-    );
-  });
-
-  it("does not clean up fresh queued runs missing queue entries", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "queued", createdAt: minutesAgo(1) }),
-    );
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(0);
-    expect(response.body.results).toHaveLength(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "queued",
-      error: null,
-    });
-    await expect(findQueueEntry(fixture.runId)).resolves.toBeNull();
-  });
-
-  it("deletes expired stale queue entries without changing terminal runs", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "cancelled", createdAt: minutesAgo(130) }),
-    );
-    await insertQueueEntry(fixture, minutesAgo(1));
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "cancelled",
-      error: null,
-    });
-    await expect(findQueueEntry(fixture.runId)).resolves.toBeNull();
-  });
-
-  it("drains queued runs when an org has no active runs", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "queued", createdAt: minutesAgo(1) }),
-    );
-    await insertQueueEntry(fixture, minutesAgo(-60));
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "pending",
-      error: null,
-    });
-  });
-
-  it("removes stale queue entries before decrypting queued payloads", async () => {
-    const fixture = await trackRun(
-      insertRunFixture({ status: "cancelled", createdAt: minutesAgo(1) }),
-    );
-    await insertQueueEntry(fixture, minutesAgo(-60), {
-      encryptedParams: "invalid-encrypted-payload",
-    });
-
-    const response = await cleanupRegisteredFixtures();
-
-    expect(response.body.cleaned).toBe(0);
-    await expect(findRun(fixture.runId)).resolves.toMatchObject({
-      status: "cancelled",
-      error: null,
-    });
-    await expect(findQueueEntry(fixture.runId)).resolves.toBeNull();
-  });
-
   it.each(["request rejection", "per-key error"] as const)(
     "preserves expired export jobs for retry when S3 deletion returns a %s",
     async (failure) => {
@@ -1604,7 +1398,6 @@ describe("sandbox cleanup", () => {
           body: JSON.stringify({
             chatThreadIds: [],
             runIds: [],
-            orgIds: [],
             exportJobIds: [expiredJob.id],
           }),
         },

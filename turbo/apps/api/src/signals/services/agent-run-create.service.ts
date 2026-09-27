@@ -176,7 +176,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -205,7 +204,6 @@ import { variables } from "@okouai/db/schema/variable";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import {
   and,
-  count,
   desc,
   eq,
   inArray,
@@ -304,11 +302,8 @@ import {
   type OfficialWorkflowRunObservation,
 } from "./official-workflow-run.service";
 import { projectLegacyWritebackArtifacts } from "./storage-legacy-projection.service";
-import {
-  encryptQueuedRunnerJobPayload,
-  queuedRunnerJobPayload,
-} from "./agent-run-queue-payload.service";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
+import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { resolvePiSandboxModelConfig } from "./pi-sandbox-config";
 import { PiNativeConfigurationError } from "./pi-native-model-config";
@@ -770,12 +765,40 @@ function runnerReuseKey(chatThreadId: string | undefined): string | null {
   return chatThreadId ? `thread:${chatThreadId}` : null;
 }
 
+interface RunnerJobPayload {
+  readonly runnerGroup: string;
+  readonly profile: string;
+  readonly cliAgentSessionId: string | null;
+  readonly reuseKey: string | null;
+  readonly historyGenerationRunId: string | undefined;
+  readonly executionContext: StoredExecutionContext;
+}
+
+function runnerJobPayload(args: {
+  readonly runnerGroup: string;
+  readonly profile: string;
+  readonly cliAgentSessionId: string | null;
+  readonly reuseKey: string | null;
+  readonly executionContext: StoredExecutionContext;
+}): RunnerJobPayload {
+  return {
+    runnerGroup: args.runnerGroup,
+    profile: args.profile,
+    cliAgentSessionId: args.cliAgentSessionId,
+    reuseKey: args.reuseKey,
+    historyGenerationRunId: historyGenerationRunIdForStoredExecutionContext(
+      args.executionContext,
+    ),
+    executionContext: args.executionContext,
+  };
+}
+
 interface RunRecord {
   readonly id: string;
   readonly createdAt: Date;
   readonly sessionId: string;
   readonly shouldCreateSession: boolean;
-  readonly status: "pending" | "queued";
+  readonly status: "pending";
 }
 
 interface LaunchRunIdentity {
@@ -784,7 +807,7 @@ interface LaunchRunIdentity {
   readonly shouldCreateSession: boolean;
 }
 
-type LaunchRunStatus = "pending" | "queued" | "failed";
+type LaunchRunStatus = "pending" | "failed";
 
 type ThreadSessionBindingAction = ChatThreadSessionResolutionAction;
 
@@ -795,22 +818,13 @@ interface ThreadSessionBindingWrite {
   readonly action: ThreadSessionBindingAction;
 }
 
-type PersistedAtomicLaunchRows =
-  | {
-      readonly kind: "pending";
-      readonly run: RunRecord;
-      readonly runnerJobCreatedAt: Date;
-      readonly threadSessionBinding: ThreadSessionBindingWrite | undefined;
-    }
-  | {
-      readonly kind: "queued";
-      readonly run: RunRecord;
-      readonly queueDepth: number;
-      readonly telemetryTimestamp: string;
-      readonly threadSessionBinding: ThreadSessionBindingWrite | undefined;
-    };
+interface PersistedAtomicLaunchRows {
+  readonly kind: "pending";
+  readonly run: RunRecord;
+  readonly runnerJobCreatedAt: Date;
+  readonly threadSessionBinding: ThreadSessionBindingWrite | undefined;
+}
 
-type RunnerJobPayload = ReturnType<typeof queuedRunnerJobPayload>;
 interface PreparedRunnerLaunch {
   readonly runnerJobPayload: RunnerJobPayload;
   readonly runContextSnapshot: RunContextAxiomSnapshot;
@@ -860,25 +874,8 @@ type AtomicLaunchCommitResult =
       readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
       readonly threadSessionBinding: ThreadSessionBindingWrite | undefined;
     }
-  | {
-      readonly kind: "queued";
-      readonly run: RunRecord;
-      readonly runnerJobPayload: RunnerJobPayload;
-      readonly queueDepth: number;
-      readonly telemetryTimestamp: string;
-      readonly runContextSnapshot: RunContextAxiomSnapshot;
-      readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
-      readonly threadSessionBinding: ThreadSessionBindingWrite | undefined;
-    }
-  | {
-      readonly kind: "queue-payload-required";
-    }
   | ThreadSessionSnapshotStale
   | QueueFirstRunClaimLost;
-type QueuePayloadRequiredResult = Extract<
-  AtomicLaunchCommitResult,
-  { readonly kind: "queue-payload-required" }
->;
 type AtomicLaunchCommitAttempt =
   | AtomicLaunchCommitResult
   | CreateRunErrorResult;
@@ -886,14 +883,9 @@ interface AtomicLaunchCommitCompletion {
   readonly result: AtomicLaunchCommitAttempt;
   readonly transactionReturnedAt: number;
 }
-type CommitAtomicLaunch = (
-  encryptedQueuedParams: string | undefined,
-) => Promise<AtomicLaunchCommitCompletion>;
 type CommittedAtomicLaunchResult = Exclude<
   AtomicLaunchCommitResult,
-  | { readonly kind: "queue-payload-required" }
-  | QueueFirstRunClaimLost
-  | ThreadSessionSnapshotStale
+  QueueFirstRunClaimLost | ThreadSessionSnapshotStale
 >;
 
 type FailedLaunchCommitResult =
@@ -955,9 +947,7 @@ interface CommitPreparedLaunchArgs {
   readonly identity: LaunchRunIdentity;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly launch: PreparedRunnerLaunch;
-  readonly encryptedQueuedParams: string | undefined;
   readonly timing: ApiDispatchTimingCollector;
-  readonly commitInvocation: number;
 }
 
 interface HttpRunCallback {
@@ -1142,11 +1132,6 @@ export interface CreateAgentRunArgs {
   readonly validateEnvironmentReferences?: boolean;
   readonly agentRunMetadata?: AgentRunMetadata;
   /**
-   * Legacy queued-run admission. No production launch sets it; it remains
-   * only while promotion drains queued runs left by earlier API versions.
-   */
-  readonly queueOnConcurrencyLimit?: boolean;
-  /**
    * Admit without the organization capacity check. The run still occupies an
    * active slot and counts toward later capacity checks.
    */
@@ -1160,7 +1145,7 @@ export interface CreateAgentRunArgs {
    * belongs to. It runs only after the exact original queue event has been
    * claimed, inside the same launch transaction that still has to insert the
    * Run, so a lost claim or a rolled-back INSERT leaves no binding. It is never
-   * serialized into run metadata or the durable queue payload.
+   * serialized into run metadata.
    */
   readonly bindClaimedQueueFirstRun?: (tx: Tx, runId: string) => Promise<void>;
   readonly agentRunModelPin?: AgentRunModelPin;
@@ -5908,9 +5893,9 @@ async function buildPermissionManifest(
 }
 
 /**
- * Both preflight and final admission read the same coarse capacity count.
- * Concurrent launches can exceed the limit; a queue-enabled caller queues
- * when the observed count is full and a nonqueue caller keeps its error.
+ * Coarse count of the org's sandbox-occupying runs, taken without a lock by
+ * preflight, queue pickers, and final admission alike. Concurrent launches may
+ * overshoot the limit.
  */
 async function checkRunConcurrencyLimit(
   db: Pick<Db, "select">,
@@ -6681,7 +6666,7 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
     selectedVideoModel: args.selectedVideoModel,
     selectedImageModel: args.selectedImageModel,
     chatThreadId: args.chatThreadId ?? null,
-    apiStartedAt: args.status === "queued" ? null : new Date(args.apiStartTime),
+    apiStartedAt: new Date(args.apiStartTime),
     firstAssistantEventAcknowledgedAt: null,
     summary: null,
   });
@@ -7065,29 +7050,9 @@ function ingestRunContextSnapshot(snapshot: RunContextAxiomSnapshot): void {
   });
 }
 
-function recordQueuedRunEnqueueTelemetry(args: {
-  readonly runId: string;
-  readonly queueDepth: number;
-  readonly timestamp: string;
-}): void {
-  bestEffortTelemetry(() => {
-    recordSandboxOperation({
-      sandboxType: "runner",
-      actionType: "enqueue_agent_run",
-      durationMs: 0,
-      success: true,
-      runId: args.runId,
-      timestamp: args.timestamp,
-      dimensions: {
-        queue_depth: args.queueDepth,
-      },
-    });
-  });
-}
-
 function recordThreadSessionBindingTelemetry(args: {
   readonly binding: ThreadSessionBindingWrite;
-  readonly runStatus: "pending" | "queued";
+  readonly runStatus: "pending";
 }): void {
   bestEffortTelemetry(() => {
     recordSandboxOperation({
@@ -8073,7 +8038,7 @@ function buildRunnerJobPayload(
       storedContext.resumeSession?.sessionId ??
       null;
     return {
-      runnerJobPayload: queuedRunnerJobPayload({
+      runnerJobPayload: runnerJobPayload({
         runnerGroup: group,
         profile: args.launchSnapshot.runnerProfile,
         cliAgentSessionId,
@@ -8092,14 +8057,13 @@ function buildRunnerJobPayload(
 
 function preparedLaunchRowsArgs(args: {
   readonly commit: CommitPreparedLaunchArgs;
-  readonly status: Extract<LaunchRunStatus, "pending" | "queued">;
   readonly runnerGroup: string;
 }): LaunchRunRowsArgs {
   return {
     userId: args.commit.createArgs.userId,
     orgId: args.commit.createArgs.orgId,
     identity: args.commit.identity,
-    status: args.status,
+    status: "pending",
     resolved: args.commit.context.resolved,
     body: args.commit.context.body,
     runStorageMounts: args.commit.launch.runStorageMounts,
@@ -8131,12 +8095,7 @@ interface PreparedAtomicLaunchRows {
 
 interface PreparedAtomicLaunchPersistence {
   readonly payload: RunnerJobPayload;
-  readonly rows: Readonly<
-    Record<
-      Extract<LaunchRunStatus, "pending" | "queued">,
-      PreparedAtomicLaunchRows
-    >
-  >;
+  readonly rows: PreparedAtomicLaunchRows;
   readonly diagnosticRegistrationPayload: z.infer<
     typeof agentRunConnectorDiagnosticRegistrationPayloadSchema
   >;
@@ -8150,26 +8109,17 @@ interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
 function prepareAtomicLaunchPersistence(
   commit: CommitPreparedLaunchArgs,
 ): PreparedAtomicLaunchPersistence {
-  const payload = queuedRunnerJobPayload({
+  const payload = runnerJobPayload({
     ...commit.launch.runnerJobPayload,
     reuseKey: runnerReuseKey(commit.createArgs.chatThreadId),
   });
-  const prepareRows = (
-    status: Extract<LaunchRunStatus, "pending" | "queued">,
-  ): PreparedAtomicLaunchRows => {
-    const rowsArgs = preparedLaunchRowsArgs({
-      commit,
-      status,
-      runnerGroup: payload.runnerGroup,
-    });
-    return { rowsArgs, metadata: launchRunMetadataValues(rowsArgs) };
-  };
+  const rowsArgs = preparedLaunchRowsArgs({
+    commit,
+    runnerGroup: payload.runnerGroup,
+  });
   return {
     payload,
-    rows: {
-      pending: prepareRows("pending"),
-      queued: prepareRows("queued"),
-    },
+    rows: { rowsArgs, metadata: launchRunMetadataValues(rowsArgs) },
     diagnosticRegistrationPayload:
       agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
         version: 1,
@@ -8186,7 +8136,6 @@ interface ValidatedPreparedLaunchAdmission {
 interface PersistAtomicLaunchRowsArgs extends ValidatedPreparedLaunchAdmission {
   readonly tx: DbTransaction;
   readonly commit: PreparedCommitPreparedLaunchArgs;
-  readonly status: Extract<LaunchRunStatus, "pending" | "queued">;
   readonly payload: RunnerJobPayload;
 }
 
@@ -8257,8 +8206,7 @@ function buildAtomicLaunchCteContext(
   args: PersistAtomicLaunchRowsArgs,
   creditAdmitted: boolean,
 ) {
-  const preparedRows = args.commit.persistence.rows[args.status];
-  const { rowsArgs, metadata } = preparedRows;
+  const { rowsArgs, metadata } = args.commit.persistence.rows;
   const createdAt = nowDate();
   const ctes: WithSubquery[] = [];
   const insertedSession = rowsArgs.identity.shouldCreateSession
@@ -8356,7 +8304,7 @@ function atomicThreadSessionBinding(args: {
 async function persistPendingAtomicLaunch(
   args: PersistAtomicLaunchRowsArgs,
   context: AtomicLaunchCteContext,
-): Promise<Extract<PersistedAtomicLaunchRows, { readonly kind: "pending" }>> {
+): Promise<PersistedAtomicLaunchRows> {
   const timestamps = runnerJobQueueTimestamps();
   const insertedQueue = args.tx.$with("inserted_launch_runner_job").as(
     args.tx
@@ -8415,91 +8363,15 @@ async function persistPendingAtomicLaunch(
   };
 }
 
-async function persistQueuedAtomicLaunch(
-  args: PersistAtomicLaunchRowsArgs,
-  context: AtomicLaunchCteContext,
-): Promise<Extract<PersistedAtomicLaunchRows, { readonly kind: "queued" }>> {
-  const insertedQueue = args.tx.$with("inserted_launch_run_queue").as(
-    args.tx
-      .insert(agentRunQueue)
-      .values({
-        runId: returnedCteId(context.insertedRun),
-        userId: args.commit.createArgs.userId,
-        orgId: args.commit.createArgs.orgId,
-        encryptedParams: args.commit.encryptedQueuedParams,
-        createdAt: context.createdAt,
-        expiresAt: sql`now() + interval '2 hours'`,
-      })
-      .returning({ runId: agentRunQueue.runId }),
-  );
-  const ctes = [...context.ctes, insertedQueue];
-  if (context.updatedThread) {
-    ctes.push(context.updatedThread);
-  }
-  const visibleQueueDepth = args.tx
-    .select({ depth: count().as("depth") })
-    .from(agentRunQueue)
-    .where(eq(agentRunQueue.orgId, args.commit.createArgs.orgId))
-    .as("visible_launch_queue_depth");
-  const [row] = await args.tx
-    .with(...ctes)
-    .select({
-      runId: context.insertedRun.id,
-      createdAt: context.insertedRun.createdAt,
-      queueDepth: sql`(${visibleQueueDepth.depth} + 1)`.mapWith(
-        pgInt8ToBigIntDecoder,
-      ),
-      boundThreadId: nullableReturnedCteId(context.updatedThread).mapWith(
-        nullableDriverValueDecoder(pgTextDecoder),
-      ),
-    })
-    .from(context.insertedRun)
-    .innerJoin(insertedQueue, eq(insertedQueue.runId, context.insertedRun.id))
-    .crossJoin(visibleQueueDepth);
-  if (row && context.updatedThread && !row.boundThreadId) {
-    throw new ChatThreadBindingChanged();
-  }
-  if (!row) {
-    throw new Error("Atomic queued launch persistence returned no row");
-  }
-  return {
-    kind: "queued",
-    run: runRecordFromLaunchIdentity(
-      context.rowsArgs.identity,
-      "queued",
-      row.createdAt,
-    ),
-    queueDepth: Number(row.queueDepth),
-    telemetryTimestamp: nowDate().toISOString(),
-    threadSessionBinding: atomicThreadSessionBinding({
-      context,
-      commit: args.commit,
-      validatedThreadSession: args.validatedThreadSession,
-      boundThreadId: row.boundThreadId,
-      runId: row.runId,
-    }),
-  };
-}
-
-// The status the caller passes as a literal selects the persisted kind, so
-// each entry point returns the matching member instead of the whole union.
-async function persistAtomicLaunchRows(
-  args: PersistAtomicLaunchRowsArgs & { readonly status: "pending" },
-): Promise<Extract<PersistedAtomicLaunchRows, { readonly kind: "pending" }>>;
-async function persistAtomicLaunchRows(
-  args: PersistAtomicLaunchRowsArgs & { readonly status: "queued" },
-): Promise<Extract<PersistedAtomicLaunchRows, { readonly kind: "queued" }>>;
 async function persistAtomicLaunchRows(
   args: PersistAtomicLaunchRowsArgs,
 ): Promise<PersistedAtomicLaunchRows> {
-  const capabilities =
-    args.status === "pending" && args.commit.enforceBuiltInCredits
-      ? await loadOrgPlanCapabilities(args.tx, args.commit.createArgs.orgId, {
-          forUpdate: true,
-        })
-      : null;
+  const capabilities = args.commit.enforceBuiltInCredits
+    ? await loadOrgPlanCapabilities(args.tx, args.commit.createArgs.orgId, {
+        forUpdate: true,
+      })
+    : null;
   const creditAdmitted =
-    args.status === "pending" &&
     args.commit.enforceBuiltInCredits &&
     isFreePlanForCreditAdmission(capabilities?.planKey);
   const context = buildAtomicLaunchCteContext(args, creditAdmitted);
@@ -8507,9 +8379,7 @@ async function persistAtomicLaunchRows(
     "api_dispatch_persist_atomic_launch",
     "nested",
     async () => {
-      return args.status === "pending"
-        ? await persistPendingAtomicLaunch(args, context)
-        : await persistQueuedAtomicLaunch(args, context);
+      return await persistPendingAtomicLaunch(args, context);
     },
   );
 
@@ -8957,43 +8827,6 @@ async function validateThreadSessionSnapshot(
   });
 }
 
-async function commitQueuedPreparedLaunch(
-  tx: DbTransaction,
-  args: PreparedCommitPreparedLaunchArgs,
-  payload: RunnerJobPayload,
-  queueFirstClaim: QueueFirstRunClaimed | undefined,
-  admission: ValidatedPreparedLaunchAdmission,
-): Promise<Extract<AtomicLaunchCommitResult, { readonly kind: "queued" }>> {
-  if (!args.encryptedQueuedParams) {
-    throw new Error("Missing encrypted queued runner job payload");
-  }
-
-  const persisted = await args.admissionTiming.measureLeaf(
-    "persistence",
-    () => {
-      return persistAtomicLaunchRows({
-        tx,
-        commit: args,
-        status: "queued",
-        payload,
-        ...admission,
-      });
-    },
-  );
-  await bindPreparedPiMemoryPhase2MaintenanceRun(tx, args, persisted.run.id);
-  await activatePreparedLaunchUsageAllowance({
-    tx,
-    commit: args,
-    run: persisted.run,
-  });
-  return {
-    ...persisted,
-    runnerJobPayload: payload,
-    runContextSnapshot: args.launch.runContextSnapshot,
-    queueFirstClaim,
-  };
-}
-
 async function commitPendingPreparedLaunch(
   tx: DbTransaction,
   args: PreparedCommitPreparedLaunchArgs,
@@ -9007,7 +8840,6 @@ async function commitPendingPreparedLaunch(
       return persistAtomicLaunchRows({
         tx,
         commit: args,
-        status: "pending",
         payload,
         ...admission,
       });
@@ -9210,43 +9042,7 @@ async function commitValidatedPreparedLaunch(
   );
 
   if (concurrency) {
-    if (!args.createArgs.queueOnConcurrencyLimit) {
-      return concurrency;
-    }
-    if (!args.encryptedQueuedParams) {
-      return { kind: "queue-payload-required" };
-    }
-    const queueFirstClaim = args.createArgs.queueFirstAssociation
-      ? await args.admissionTiming.measureLeaf("queue_first", async () => {
-          const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch(
-            {
-              tx,
-              createArgs: args.createArgs,
-              sessionSnapshotState: validatedThreadSession
-                ? "current"
-                : "unvalidated",
-              timing: args.timing,
-            },
-          );
-          return await claimQueueFirstAssociationForLaunch({
-            tx,
-            admission: queueFirstAdmission,
-            createArgs: args.createArgs,
-            identity: args.identity,
-            timing: args.timing,
-          });
-        })
-      : undefined;
-    if (queueFirstClaim?.kind === "lost") {
-      return { kind: "queue-first-claim-lost" };
-    }
-    return await commitQueuedPreparedLaunch(
-      tx,
-      args,
-      payload,
-      queueFirstClaim,
-      { validatedThreadSession, validatedAccountIdentity },
-    );
+    return concurrency;
   }
 
   const queueFirstClaim = args.createArgs.queueFirstAssociation
@@ -9387,7 +9183,6 @@ async function commitPreparedLaunch(
     runnerGroup: preparedArgs.launch.runnerJobPayload.runnerGroup,
     profile: preparedArgs.launch.runnerJobPayload.profile,
     dimensions: timingDimensionsForCreateArgs(preparedArgs.createArgs),
-    commitInvocation: preparedArgs.commitInvocation,
     ...(preparedArgs.context.body.triggerSource
       ? { triggerSource: preparedArgs.context.body.triggerSource }
       : {}),
@@ -9412,10 +9207,7 @@ async function commitPreparedLaunch(
           attemptArgs,
           payload,
         );
-        if (
-          "kind" in result &&
-          (result.kind === "pending" || result.kind === "queued")
-        ) {
+        if ("kind" in result && result.kind === "pending") {
           await finishAdmittedLaunch(tx, attemptArgs, result.run);
         }
         return result;
@@ -9449,17 +9241,14 @@ function admissionAttemptOutcome(
   result: AtomicLaunchCommitResult | CreateRunErrorResult,
 ): AdmissionAttemptOutcome {
   if ("kind" in result) {
-    if (result.kind === "pending" || result.kind === "queued") {
-      return result.kind;
+    if (result.kind === "pending") {
+      return "pending";
     }
     if (result.kind === "thread-session-snapshot-stale") {
       return "thread_session_snapshot_stale";
     }
     if (result.kind === "queue-first-claim-lost") {
       return "queue_first_claim_lost";
-    }
-    if (result.kind === "queue-payload-required") {
-      return "queue_payload_required";
     }
   }
   return "rejected";
@@ -11281,32 +11070,6 @@ function committedAtomicLaunchResponse(args: {
       runStatus: args.committed.kind,
     });
   }
-  if (args.committed.kind === "queued") {
-    recordQueuedRunEnqueueTelemetry({
-      runId: args.committed.run.id,
-      queueDepth: args.committed.queueDepth,
-      timestamp: args.committed.telemetryTimestamp,
-    });
-    args.phaseTiming.appendTo(args.timing);
-    ingestRunContextSnapshot(args.committed.runContextSnapshot);
-    args.timing.flush({
-      runId: args.committed.run.id,
-      runnerGroup: args.committed.runnerJobPayload.runnerGroup,
-      profile: args.committed.runnerJobPayload.profile,
-      dispatchPath: "direct",
-      dimensions: timingDimensionsForCreateArgs(args.createArgs),
-      ...(args.createArgs.body.triggerSource
-        ? { triggerSource: args.createArgs.body.triggerSource }
-        : {}),
-    });
-    const response = createdRunResponse(args.committed.run, {
-      status: "queued",
-    });
-    return args.committed.queueFirstClaim
-      ? { ...response, queueFirstClaim: args.committed.queueFirstClaim }
-      : response;
-  }
-
   args.phaseTiming.checkpoint(
     "api_dispatch_phase_queue_insert",
     args.committed.runnerJobCreatedAt.getTime(),
@@ -11431,17 +11194,6 @@ function bindStableAppendSystemPrompt(
     .join("\n\n");
 }
 
-function isQueuePayloadRequiredResult(
-  result: unknown,
-): result is QueuePayloadRequiredResult {
-  return (
-    typeof result === "object" &&
-    result !== null &&
-    "kind" in result &&
-    result.kind === "queue-payload-required"
-  );
-}
-
 function finalizeAtomicLaunchCommit(
   args: {
     readonly input: AtomicLaunchRunInput;
@@ -11450,7 +11202,7 @@ function finalizeAtomicLaunchCommit(
     readonly committed: AtomicLaunchCommitCompletion;
   },
   signal: AbortSignal,
-): QueueFirstAgentRunResult | QueuePayloadRequiredResult {
+): QueueFirstAgentRunResult {
   const committed = args.committed.result;
   if (isReturnableRouteError(committed, signal)) {
     return committed;
@@ -11468,9 +11220,6 @@ function finalizeAtomicLaunchCommit(
   if (committed.kind === "thread-session-snapshot-stale") {
     return committed;
   }
-  if (committed.kind === "queue-payload-required") {
-    return committed;
-  }
   return committedAtomicLaunchResponse({
     createArgs: { ...args.input.args, body: args.input.context.body },
     committed,
@@ -11478,69 +11227,6 @@ function finalizeAtomicLaunchCommit(
     timing: args.input.timing,
     phaseTiming: args.input.phaseTiming,
   });
-}
-
-async function completeQueuePayloadLaunch(
-  args: {
-    readonly input: AtomicLaunchRunInput;
-    readonly identity: LaunchRunIdentity;
-    readonly callbackRows: readonly AgentRunCallbackInsert[];
-    readonly launch: PreparedRunnerLaunch;
-    readonly commitLaunch: CommitAtomicLaunch;
-  },
-  signal: AbortSignal,
-): Promise<QueueFirstAgentRunResult> {
-  signal.throwIfAborted();
-  const encryptedQueuedParams = await settle(
-    encryptQueuedRunnerJobPayload(
-      args.launch.runnerJobPayload,
-      args.input.context.featureSwitchContext,
-    ),
-  );
-  signal.throwIfAborted();
-
-  if (!encryptedQueuedParams.ok) {
-    const retried = await args.commitLaunch(undefined);
-    const finalizedRetry = finalizeAtomicLaunchCommit(
-      {
-        input: args.input,
-        identity: args.identity,
-        launch: args.launch,
-        committed: retried,
-      },
-      signal,
-    );
-    if (!isQueuePayloadRequiredResult(finalizedRetry)) {
-      return finalizedRetry;
-    }
-    signal.throwIfAborted();
-    return await commitFailedLaunch({
-      db: args.input.db,
-      createArgs: args.input.args,
-      context: args.input.context,
-      identity: args.identity,
-      callbackRows: args.callbackRows,
-      launch: args.launch,
-      error: encryptedQueuedParams.error,
-      timing: args.input.timing,
-    });
-  }
-
-  const committed = await args.commitLaunch(encryptedQueuedParams.value);
-  const finalized = finalizeAtomicLaunchCommit(
-    {
-      input: args.input,
-      identity: args.identity,
-      launch: args.launch,
-      committed,
-    },
-    signal,
-  );
-  if (isQueuePayloadRequiredResult(finalized)) {
-    signal.throwIfAborted();
-    throw new Error("Queued launch still required encrypted payload");
-  }
-  return finalized;
 }
 
 const commitAndActivateAtomicLaunch$ = command(
@@ -11576,34 +11262,24 @@ const commitAndActivateAtomicLaunch$ = command(
         : undefined;
     let transferred = false;
     let discardReason: PiPreparationDiscardReason = "admission-failed";
-    let commitInvocation = 0;
     return await (async () => {
-      const commitLaunch: CommitAtomicLaunch = async (
-        encryptedQueuedParams: string | undefined,
-      ) => {
-        commitInvocation += 1;
-        return await input.timing.measure(
-          "api_dispatch_insert_run_with_concurrency",
-          "top_level",
-          async () => {
-            return await commitPreparedLaunch({
-              db: input.db,
-              createArgs: input.args,
-              enforceBuiltInCredits: input.enforceBuiltInCredits,
-              context: input.context,
-              identity,
-              callbackRows,
-              launch,
-              encryptedQueuedParams,
-              timing: input.timing,
-              commitInvocation,
-            });
-          },
-        );
-      };
-
-      const committed = await commitLaunch(undefined);
-      const finalized = finalizeAtomicLaunchCommit(
+      const committed = await input.timing.measure(
+        "api_dispatch_insert_run_with_concurrency",
+        "top_level",
+        async () => {
+          return await commitPreparedLaunch({
+            db: input.db,
+            createArgs: input.args,
+            enforceBuiltInCredits: input.enforceBuiltInCredits,
+            context: input.context,
+            identity,
+            callbackRows,
+            launch,
+            timing: input.timing,
+          });
+        },
+      );
+      const result = finalizeAtomicLaunchCommit(
         {
           input,
           identity,
@@ -11612,12 +11288,6 @@ const commitAndActivateAtomicLaunch$ = command(
         },
         signal,
       );
-      const result = isQueuePayloadRequiredResult(finalized)
-        ? await completeQueuePayloadLaunch(
-            { input, identity, callbackRows, launch, commitLaunch },
-            signal,
-          )
-        : finalized;
       if (
         "status" in result &&
         result.status === 201 &&
@@ -11642,14 +11312,12 @@ const commitAndActivateAtomicLaunch$ = command(
         if (result.kind === "thread-session-snapshot-stale") {
           discardReason = "stale";
         }
-      } else if (result.status === 201) {
-        discardReason = "queued";
       }
       return result;
     })().finally(() => {
       if (!transferred && preparation) {
         // Discard immediately; waitUntil joins late SDK initialization without
-        // delaying queued responses or making another attempt reuse this one.
+        // delaying the response or making another attempt reuse this one.
         waitUntil(preparation.dispose(discardReason));
       }
     });
@@ -11665,10 +11333,7 @@ const createAtomicLaunchRun$ = command(
     const identity = prepareLaunchRunIdentity({
       resolved: input.context.resolved,
     });
-    if (
-      !input.args.queueOnConcurrencyLimit &&
-      !input.args.ignoreConcurrencyLimit
-    ) {
+    if (!input.args.ignoreConcurrencyLimit) {
       const preflightConcurrency = await checkRunConcurrencyPreflight({
         db: input.db,
         orgId: input.args.orgId,
@@ -11994,5 +11659,5 @@ export const createAgentRun$ = command(
   },
 );
 
-/** Post-reservation materializer. This never inserts a Run, promotes the legacy
- * queue, or invokes the API first turn. Publication owns a fresh admission. */
+/** Post-reservation materializer. This never inserts a Run or invokes the API
+ * first turn. Publication owns a fresh admission. */

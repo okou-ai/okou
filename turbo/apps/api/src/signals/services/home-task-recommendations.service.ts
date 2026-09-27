@@ -15,7 +15,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/schema/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { homeTaskRecommendations } from "@okouai/db/schema/home-task-recommendation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -52,12 +51,12 @@ import {
 import {
   collectHomeTaskEvidence,
   isHomeTaskEvidenceEmpty,
+  threadIdsWithPendingInput,
   type HomeTaskEvidence,
 } from "./home-task-recommendation-evidence.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { homeTaskGmailCacheAuthorized } from "./home-task-recommendation-gmail.service";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
-import { pendingChatQueueEventCondition } from "./chat-event-queue.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
   buildHomeTaskCandidates,
@@ -316,23 +315,20 @@ async function visibleCachedRow(
                 ),
               ),
           ),
-          notExists(
-            db
-              .select({ id: chatEvents.id })
-              .from(chatEvents)
-              .where(
-                and(
-                  eq(chatEvents.chatThreadId, chatThreads.id),
-                  pendingChatQueueEventCondition(db),
-                ),
-              ),
-          ),
         ),
       );
     signal.throwIfAborted();
+    const availableThreadIds = available.map((thread) => {
+      return thread.id;
+    });
+    const pendingThreadIds = await threadIdsWithPendingInput(
+      db,
+      availableThreadIds,
+    );
+    signal.throwIfAborted();
     const availableIds = new Set(
-      available.map((thread) => {
-        return thread.id;
+      availableThreadIds.filter((id) => {
+        return !pendingThreadIds.has(id);
       }),
     );
     entries = entries.filter((entry) => {

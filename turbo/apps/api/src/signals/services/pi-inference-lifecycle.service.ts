@@ -14,9 +14,10 @@ import {
 } from "drizzle-orm";
 import type { Db } from "../external/db";
 
-/** Count occupied compute slots, not queued rows. A started terminal run keeps
- * its slot while its runner is still finishing; its active row is removed only
- * on completion or cleanup. */
+/** Count occupied compute slots. A pending run holds one only while its active
+ * row heartbeat is fresh. A started terminal run keeps its slot while its
+ * runner is still finishing; its active row is removed only on completion or
+ * cleanup. */
 export function sandboxCapacityPredicate(staleThreshold: Date): SQL {
   return or(
     eq(agentRuns.status, "running"),

@@ -15,15 +15,11 @@ export const testCronCleanupSandboxesStateActionBodySchema = z
       "delete-run-ownership",
       "delete-run-thread",
       "seed-runner-job",
-      "seed-queue-entry",
-      "seed-queue-marker",
       "seed-export-job",
       "delete-export-job",
       "get-run",
       "get-run-ownership",
       "get-runner-job",
-      "get-queue-entry",
-      "get-queue-marker-revoker",
       "get-export-job",
       "seed-connector-diagnostic-registration",
       "get-connector-diagnostic-registration",
@@ -47,7 +43,6 @@ export const testCronCleanupSandboxesStateErrorSchema = z.object({
 export const testCronCleanupSandboxesScopeSchema = z.object({
   chatThreadIds: z.array(z.string().uuid()),
   runIds: z.array(z.string().uuid()),
-  orgIds: z.array(z.string().min(1)),
   exportJobIds: z.array(z.string().uuid()),
 });
 

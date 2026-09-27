@@ -143,44 +143,6 @@ function orgConcurrencyStateTotals(
   return { paidSlotTotals, activeRunTotals };
 }
 
-export async function loadOrgConcurrencyState(
-  db: ReadDb,
-  args: {
-    readonly orgId: string;
-    readonly at: Date;
-    readonly activePendingAfter: Date;
-  },
-): Promise<OrgConcurrencyState> {
-  const { paidSlotTotals, activeRunTotals } = orgConcurrencyStateTotals(
-    db,
-    args,
-  );
-  const [row] = await db
-    .select({
-      entitlementOrgId: orgPlanEntitlements.orgId,
-      metadataOrgId: orgMetadata.orgId,
-      baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-      paidSlots: paidSlotTotals.slots,
-      activeRunCount: activeRunTotals.count,
-    })
-    .from(paidSlotTotals)
-    .crossJoin(activeRunTotals)
-    .leftJoin(orgPlanEntitlements, eq(orgPlanEntitlements.orgId, args.orgId))
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId));
-  if (!row) {
-    throw new Error("Concurrency state aggregate returned no row");
-  }
-  if (row.entitlementOrgId === null && row.metadataOrgId !== null) {
-    throw new Error(`Missing org plan entitlement for ${args.orgId}`);
-  }
-
-  return {
-    baseConcurrencyLimit: row.baseConcurrencyLimit ?? 0,
-    paidSlots: row.paidSlots,
-    activeRunCount: row.activeRunCount,
-  };
-}
-
 /** Fresh direct admission only, ordered at the caller's single captured `at`. */
 export async function loadOrgConcurrencyAdmissionState(
   db: ReadDb,

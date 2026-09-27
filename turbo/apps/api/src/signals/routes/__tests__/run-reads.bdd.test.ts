@@ -37,7 +37,7 @@ import {
 
 /*
  * RUN-03/RUN-04 read surfaces for agent runs (list/read/queue/cancel,
- * agent run detail reads, queue position, event logs, and log reads) plus the RUN-01/02
+ * agent run detail reads, event logs, and log reads) plus the RUN-01/02
  * direct-run create arms that
  * end in those reads (session continuation, memory root policies, volume
  * pinning, concurrency caps, and the production capture gate).
@@ -185,26 +185,6 @@ async function finishCancelledRun(
   );
 }
 
-async function completeRunAfter(
-  actor: ApiTestUser,
-  runId: string,
-  durationMs: number,
-): Promise<void> {
-  const detail = await api.requestReadRun(actor, runId, [200]);
-  mustOk(detail, "claimed run detail");
-  const startedAt = detail.body.startedAt;
-  if (typeof startedAt !== "string") {
-    throw new Error("Claimed run is missing its start time");
-  }
-  const startedAtMs = Date.parse(startedAt);
-  if (!Number.isFinite(startedAtMs)) {
-    throw new Error("Claimed run has an invalid start time");
-  }
-  await withMockNowForTest(startedAtMs + durationMs, async () => {
-    await completeRun(runId, api.sandboxTokenForRun(actor, runId));
-  });
-}
-
 describe("RUN-03/RUN-04: run read surface auth matrix", () => {
   it("rejects unauthenticated and org-less requests across the run read surfaces", async () => {
     const missingId = randomUUID();
@@ -216,7 +196,6 @@ describe("RUN-03/RUN-04: run read surface auth matrix", () => {
       (await api.requestReadRun(null, missingId, [401])).body,
       (await api.requestReadRunQueue(null, [401])).body,
       (await api.requestCancelRun(null, missingId, [401])).body,
-      (await reads.requestQueuePosition(null, missingId, [401])).body,
       (await reads.requestAgentRunAgentEvents(null, missingId, {}, [401])).body,
       (await reads.requestAgentRunNetworkLogs(null, missingId, {}, [401])).body,
       (await reads.requestListLogs(null, {}, [401])).body,
@@ -303,7 +282,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     );
   });
 
-  it("reads legacy and expanded unattended trigger sources from queue and logs", async () => {
+  it("reads legacy and expanded unattended trigger sources from logs", async () => {
     const actor = await entitledActor();
     const compose = await createClaudeAgent(actor, "bdd-trigger-sources");
     if (!actor.orgId) {
@@ -325,19 +304,12 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
           userId: actor.userId,
           composeId: compose.agentId,
           prompt: `${triggerSource} read compatibility`,
-          status: "queued",
+          status: "pending",
           triggerSource,
         },
         context.signal,
       );
       sourceRuns.push({ runId: run.runId, triggerSource });
-    }
-
-    const queue = await api.readRunQueue(actor);
-    for (const sourceRun of sourceRuns) {
-      expect(queue.body.queue).toContainEqual(
-        expect.objectContaining(sourceRun),
-      );
     }
 
     for (const run of sourceRuns) {
@@ -620,7 +592,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       userEmail: "unknown",
       isOwner: false,
     });
-    expect(agentQueue.body.estimatedTimePerRun).not.toBeNull();
 
     const rejected = await api.requestCreateRun(
       actor,
@@ -648,37 +619,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(drained.body.concurrency.active).toBe(0);
     expect(drained.body.queue).toStrictEqual([]);
   });
-
-  it.each([
-    { domain: "empty history", durations: [], expected: null },
-    { domain: "zero", durations: [0], expected: 0 },
-    { domain: "fractional average", durations: [0, 1], expected: 1 },
-    { domain: "ordinary average", durations: [0, 1, 2999], expected: 1000 },
-    {
-      domain: "large integer",
-      durations: [200_000_000_000_000],
-      expected: 200_000_000_000_000,
-    },
-  ])(
-    "returns a validated run duration estimate for $domain",
-    async ({ domain, durations, expected }) => {
-      const actor = await entitledActor();
-      const compose = await createClaudeAgent(
-        actor,
-        `bdd-duration-estimate-${domain.replaceAll(" ", "-")}`,
-      );
-      for (const [index, duration] of durations.entries()) {
-        const run = await api.createDirectRun(actor, {
-          agentId: compose.agentId,
-          prompt: `${domain} duration estimate ${index}`,
-        });
-        await api.claimRunnerJob(run.runId);
-        await completeRunAfter(actor, run.runId, duration);
-      }
-      const queue = await api.readRunQueue(actor);
-      expect(queue.body.estimatedTimePerRun).toBe(expected);
-    },
-  );
 });
 
 describe("RUN-03: cancel through the run cancel route", () => {
@@ -746,50 +686,6 @@ describe("RUN-03: cancel through the run cancel route", () => {
     );
     expectApiError(crossOrg.body);
     expect(crossOrg.body.error.code).toBe("NOT_FOUND");
-  });
-});
-
-describe("RUN-03: queue position", () => {
-  it("reports no queue position for admitted runs and hides unknown ones", async () => {
-    const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-position");
-    await api.ensureOrgModelProvider(actor);
-
-    const running = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "running run",
-    });
-    await api.claimRunnerJob(running.runId);
-
-    const unqueued = await reads.requestQueuePosition(
-      actor,
-      running.runId,
-      [200],
-    );
-    expect(unqueued.body).toStrictEqual({ position: 0, total: 0 });
-
-    const outsider = bdd.user();
-    const foreignOrg = await reads.requestQueuePosition(
-      outsider,
-      running.runId,
-      [404],
-    );
-    expectApiError(foreignOrg.body);
-    expect(foreignOrg.body.error.code).toBe("NOT_FOUND");
-
-    const unknown = await reads.requestQueuePosition(
-      actor,
-      randomUUID(),
-      [404],
-    );
-    expectApiError(unknown.body);
-    expect(unknown.body.error.code).toBe("NOT_FOUND");
-
-    const missingRunId = await reads.rawApiRequest(null, "/api/queue-position");
-    expect(missingRunId.status).toBe(400);
-    expect(JSON.stringify(missingRunId.body)).toContain("runId");
-
-    await api.requestCancelRun(actor, running.runId, [200]);
   });
 });
 

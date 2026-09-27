@@ -96,7 +96,6 @@ import {
 import { apiBillingHandlers, resetMockBilling } from "./api-billing.ts";
 import { apiMarketingEventsHandlers } from "./api-marketing-events.ts";
 import { resetMockWorkflowAutomations } from "./workflow-automations-store.ts";
-import { apiQueuePositionHandlers } from "./api-queue-position.ts";
 import {
   apiIntegrationsSlackConnectHandlers,
   resetMockSlackConnect,
@@ -150,7 +149,6 @@ export const handlers = [
   ...apiGetStartedHandlers,
   ...apiRealtimeHandlers,
   ...apiUserPermissionGrantsHandlers,
-  ...apiQueuePositionHandlers,
   ...apiVoiceIoHandlers,
   ...apiWebFilesHandlers,
 ];

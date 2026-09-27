@@ -43,9 +43,9 @@ export function chatEventTerminalPredicate(eventType: SQLWrapper): SQL {
  * are the immutable claims. Retained input.goal and goal.open/goal.close rows
  * describe historical work; they grant no queue or lifecycle authority.
  *
- * Assistant rows are appended after run output exists. Queue marker control
- * rows can also be appended for queued runs and later revoked when the run
- * leaves the queue. Event-backed rows are one row per assistant-visible agent
+ * Assistant rows are appended after run output exists. Retained queue marker
+ * rows describe historical queued runs; nothing appends them anymore.
+ * Event-backed rows are one row per assistant-visible agent
  * output event; result-only CLI output can be projected from a terminal
  * "result" event. Failed runs append an assistant row carrying the terminal
  * error message. `run_event_sequence_number` is the upstream run-event
@@ -113,8 +113,8 @@ export const chatEvents = pgTable(
     runEventSequenceNumber: integer("run_event_sequence_number"),
     /**
      * Upstream run-event ID or a deterministic seed for synthesized rows.
-     * `queue:queued` and `queue:dequeued` seed stable primary keys for
-     * non-agent rows. Historical `thinking:initial` rows remain readable.
+     * Historical `queue:queued` and `queue:dequeued` seeds keyed the retired
+     * queue marker rows. Historical `thinking:initial` rows remain readable.
      */
     runEventId: text("run_event_id"),
     /** Strictly increasing thread position; it may start above 1 and have gaps. */
@@ -137,11 +137,6 @@ export const chatEvents = pgTable(
       index("chat_events_input_automation_context_idx")
         .on(table.contextId)
         .where(sql`${table.eventType} = 'input.automation'`),
-      index("chat_events_pending_queue_idx")
-        .on(table.chatThreadId, table.createdAt, table.id)
-        .where(
-          sql`${table.runId} IS NULL AND ${table.eventType} IN ('input.prompt', 'input.automation', 'input.goal')`,
-        ),
       uniqueIndex("chat_events_run_event_seq_unique").on(
         table.runId,
         table.runEventSequenceNumber,

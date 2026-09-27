@@ -1,6 +1,5 @@
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
@@ -25,16 +24,9 @@ import {
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { settle, tapError } from "../utils";
-import {
-  dispatchFailedRunCallbacks,
-  failPendingInlineOnlyDeliveryCallbacksForDeletedThread,
-} from "./agent-run-callback.service";
-import {
-  dispatchCompleteSideEffects$,
-  drainOrgQueue$,
-} from "./agent-run-lifecycle.service";
-import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
+import { settle } from "../utils";
+import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread } from "./agent-run-callback.service";
+import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { cancelRun$, dispatchCancelSideEffects$ } from "./run-cancel.service";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 import {
@@ -57,7 +49,7 @@ import {
 
 const L = logger("ThreadlessRunCleanup");
 
-const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
+const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",
@@ -252,15 +244,6 @@ async function hasDeletionBlocker(
     return true;
   }
 
-  const [queuedRun] = await db
-    .select({ runId: agentRunQueue.runId })
-    .from(agentRunQueue)
-    .where(eq(agentRunQueue.runId, runId))
-    .limit(1);
-  if (queuedRun) {
-    return true;
-  }
-
   const [runnerJob] = await db
     .select({ runId: runnerJobQueue.runId })
     .from(runnerJobQueue)
@@ -399,31 +382,6 @@ const redriveTerminalLifecycle$ = command(
     await failPendingInlineOnlyDeliveryCallbacksForDeletedThread(
       db,
       candidate.runId,
-    );
-    signal.throwIfAborted();
-
-    // dispatchCompleteSideEffects$ treats queue publication as best effort for
-    // normal webhooks. Deletion requires a strict durable reconciliation pass.
-    await set(drainOrgQueue$, { orgId: candidate.orgId }, signal);
-    signal.throwIfAborted();
-    // A failed pick must not interrupt this run's terminal redrive.
-    await tapError(
-      set(
-        pickOrgQueuedChatThreads$,
-        {
-          orgId: candidate.orgId,
-          untilFull: false,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-        },
-        signal,
-      ),
-      (error) => {
-        L.error("Failed to pick queued chat thread after threadless cleanup", {
-          runId: candidate.runId,
-          orgId: candidate.orgId,
-          error,
-        });
-      },
     );
     signal.throwIfAborted();
   },

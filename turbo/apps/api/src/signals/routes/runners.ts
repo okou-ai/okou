@@ -99,7 +99,7 @@ import {
   transitionAgentRunsToTerminal,
 } from "../services/agent-run-terminal-transition.service";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
-import { historyGenerationRunIdForStoredExecutionContext } from "../services/agent-run-queue-payload.service";
+import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import { reportBuiltInModelProviderFailure } from "../services/built-in-model-provider-failure.service";
 import {

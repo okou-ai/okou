@@ -7,7 +7,6 @@ import {
   publishThreadListChanged,
 } from "../external/realtime";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { appendQueuedRunAssistantMarker } from "./chat-queue-marker.service";
 import {
   resolvePersistedChatThreadModel,
   type ResolvedPersistedChatThreadModel,
@@ -61,27 +60,14 @@ async function publishRunUserMessageSignals(
 
 /**
  * Finish the side effects for a user message inserted by a queue-first run
- * claim. The claim and run rows already committed atomically; only a queued
- * marker and realtime notifications remain.
+ * claim. The claim and run rows already committed atomically; only realtime
+ * notifications remain.
  */
 export async function finalizeClaimedRunUserMessage(params: {
-  readonly db: Db;
   readonly orgId: string;
   readonly threadId: string;
   readonly userId: string;
-  readonly runId: string;
-  readonly runStatus: string;
-  readonly createdAt: Date;
 }): Promise<void> {
-  if (params.runStatus === "queued") {
-    await params.db.transaction(async (tx): Promise<void> => {
-      await appendQueuedRunAssistantMarker(tx, {
-        chatThreadId: params.threadId,
-        runId: params.runId,
-        createdAfter: params.createdAt,
-      });
-    });
-  }
   await publishRunUserMessageSignals(
     params.orgId,
     params.userId,

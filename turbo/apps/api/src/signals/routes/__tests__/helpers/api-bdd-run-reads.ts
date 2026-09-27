@@ -4,7 +4,6 @@ import {
   logsByIdContract,
   logsListContract,
 } from "@okouai/api-contracts/contracts/logs";
-import { queuePositionContract } from "@okouai/api-contracts/contracts/queue-position";
 import {
   runAgentEventsContract,
   runNetworkLogsContract,
@@ -21,14 +20,9 @@ import {
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 import { logsRoutes } from "../../logs";
-import { queuePositionRoutes } from "../../queue-position";
 import { runDetailRoutes } from "../../run-detail";
 
-const TEST_APP_ROUTES = Object.freeze([
-  ...logsRoutes,
-  ...queuePositionRoutes,
-  ...runDetailRoutes,
-]);
+const TEST_APP_ROUTES = Object.freeze([...logsRoutes, ...runDetailRoutes]);
 
 type AuthHeaders = {
   readonly authorization?: string;
@@ -191,22 +185,6 @@ export function createRunReadsApi(context: TestContext) {
       );
     },
 
-    async requestQueuePosition<TStatus extends 200 | 400 | 401 | 404>(
-      actor: ApiTestUser | null,
-      runId: string,
-      statuses: readonly TStatus[],
-    ) {
-      return await accept(
-        setupApp({ context, routes: queuePositionRoutes })(
-          queuePositionContract,
-        ).getPosition({
-          headers: authenticate(context, actor),
-          query: { runId },
-        }),
-        statuses,
-      );
-    },
-
     async requestListLogs<TStatus extends 200 | 400 | 401>(
       actor: ApiTestUser | null,
       query: LogsListQuery,
@@ -278,8 +256,8 @@ export function createRunReadsApi(context: TestContext) {
       );
     },
 
-    // Raw GET for 400s the typed contracts cannot express (queue-position
-    // without runId and network queries rejected by zod before the handler).
+    // Raw GET for 400s the typed contracts cannot express (network queries
+    // rejected by zod before the handler).
     async rawApiRequest(
       actor: ApiTestUser | null,
       path: string,

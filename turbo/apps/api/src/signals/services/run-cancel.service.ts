@@ -24,7 +24,6 @@ import {
   pickOrgQueuedChatThreads$,
 } from "./chat-thread-queue-drain.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
-import { drainOrgQueue$ } from "./agent-run-lifecycle.service";
 import {
   abortPiApiFirstTurnAfterCanonicalCancellation,
   lockPiApiFirstTurnLifecycle,
@@ -69,7 +68,7 @@ async function abortAfterCanonicalCancellation<T>(
   return result;
 }
 
-const ACTIVE_STATUSES = ["queued", "pending", "running"] as const;
+const ACTIVE_STATUSES = ["pending", "running"] as const;
 type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
 
 function isActiveStatus(status: string): status is ActiveStatus {
@@ -88,7 +87,7 @@ function isActiveStatus(status: string): status is ActiveStatus {
  *
  * The transactional shape locks the run row first, classifies the
  * current status under that lock, then updates status and removes
- * derived queue/job rows. Side effects use the committed transition.
+ * derived runner job rows. Side effects use the committed transition.
  */
 export const cancelRun$ = command(
   async (
@@ -285,16 +284,12 @@ async function publishRunnerCancellation(
  * Post-cancel side effects:
  *  - Notify the runner group to halt the cancelled run (if it was
  *    running on a runner).
- *  - Drain the org queue: promote one queued run to pending. The
- *    runner picks up pending runs on its existing poll loop.
- *  - Reconcile credits via `processOrgUsageEvents$` when the cancelled
- *    run had been doing credit-relevant work (running/pending). The
- *    transactional invariant (events marked processed iff credit
- *    deduction succeeds) is preserved by `processOrgUsageEvents$`.
+ *  - Hand the freed org slot to the oldest queued chat thread.
+ *  - Reconcile credits via `processOrgUsageEvents$`. The transactional
+ *    invariant (events marked processed iff credit deduction succeeds) is
+ *    preserved by `processOrgUsageEvents$`.
  *
- * Deferrals (each tracked under #12290):
- *  - queued-run dispatch (drain dispatch path) — Stage 4
- *    run-creation migration.
+ * Deferrals (tracked under #12290):
  *  - `triggerAutoRecharge` (Stripe top-up) — sibling follow-up.
  *
  * Fire-and-forget caller: invoke from the route handler via `waitUntil(...)`
@@ -390,11 +385,6 @@ export const dispatchCancelSideEffects$ = command(
       return;
     }
 
-    // Promote one queued run to pending; the runner picks it up on its
-    // next poll cycle. Queue dispatch (compose loading + sandbox
-    // provisioning) lands in Stage 4.
-    await set(drainOrgQueue$, { orgId: result.orgId }, signal);
-    signal.throwIfAborted();
     await tapError(
       set(
         pickOrgQueuedChatThreads$,
@@ -415,17 +405,9 @@ export const dispatchCancelSideEffects$ = command(
     );
     signal.throwIfAborted();
 
-    // Reconcile credits when the cancelled run had been doing
-    // credit-relevant work. Web's invariant: only invoke when
-    // previousStatus ∈ {running, pending} — queued runs that never
-    // started accumulating usage_event rows skip this (no-op anyway
-    // since the pending-events query returns empty).
-    if (
-      result.previousStatus === "running" ||
-      result.previousStatus === "pending"
-    ) {
-      await set(processOrgUsageEvents$, result.orgId, signal);
-      signal.throwIfAborted();
-    }
+    // A fresh cancellation always came from pending or running, so the
+    // cancelled run may have accumulated usage events.
+    await set(processOrgUsageEvents$, result.orgId, signal);
+    signal.throwIfAborted();
   },
 );

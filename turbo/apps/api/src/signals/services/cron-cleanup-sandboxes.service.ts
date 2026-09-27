@@ -29,24 +29,13 @@ import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
 import {
   publishCancelToRunnerGroup,
-  publishChatThreadMessageCreatedSafely,
   publishRunQueueChangedForOrgSafely,
-  publishThreadListChanged,
 } from "../external/realtime";
 import { deleteS3Objects } from "../external/s3";
 import { settle, settleIncludingAbort, tapError } from "../utils";
-import {
-  dispatchCompleteSideEffects$,
-  drainStaleQueues$,
-} from "./agent-run-lifecycle.service";
-import {
-  cleanupExpiredQueueEntries$,
-  cleanupQueuedRunLaunchOrphans$,
-  type QueuedRunMaintenanceTimeout,
-} from "./run-queue.service";
+import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { drainStaleChatThreadQueues$ } from "./chat-thread-queue-drain.service";
-import type { QueueMarkerRevokeNotification } from "./chat-queue-marker.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
@@ -100,7 +89,6 @@ type CleanupSandboxesScope =
       readonly kind: "fixtures";
       readonly chatThreadIds: readonly string[];
       readonly runIds: readonly string[];
-      readonly orgIds: readonly string[];
       readonly exportJobIds: readonly string[];
     };
 
@@ -127,7 +115,6 @@ interface MaintenanceTerminalSideEffectsInput {
   readonly runId: string;
   readonly orgId: string;
   readonly error: string;
-  readonly queueMarkerNotification: QueueMarkerRevokeNotification | null;
   readonly deliveryNotification?: {
     readonly userId: string;
     readonly chatThreadId: string;
@@ -171,18 +158,6 @@ function staleRunCutoff(run: StaleRun, cutoffs: CleanupCutoffs): Date {
 
 function isExpiredRun(run: StaleRun, cutoffs: CleanupCutoffs): boolean {
   return run.lastHeartbeatAt < staleRunCutoff(run, cutoffs);
-}
-
-async function publishQueueMarkerNotificationSafely(
-  orgId: string,
-  notification: QueueMarkerRevokeNotification,
-): Promise<void> {
-  await publishChatThreadMessageCreatedSafely({
-    userId: notification.userId,
-    orgId,
-    threadId: notification.chatThreadId,
-  });
-  await publishThreadListChanged({ userId: notification.userId, orgId });
 }
 
 async function lockTimeoutRun(
@@ -310,13 +285,6 @@ const dispatchMaintenanceTerminalSideEffects$ = command(
     input: MaintenanceTerminalSideEffectsInput,
     signal: AbortSignal,
   ): Promise<void> => {
-    if (input.queueMarkerNotification) {
-      await publishQueueMarkerNotificationSafely(
-        input.orgId,
-        input.queueMarkerNotification,
-      );
-    }
-
     await set(
       dispatchCompleteSideEffects$,
       {
@@ -481,7 +449,6 @@ const cleanupSingleRun$ = command(
         runId: run.id,
         orgId: committed.orgId,
         error: timeoutReason,
-        queueMarkerNotification: null,
         ...(committed.chatThreadId !== null
           ? {
               deliveryNotification: {
@@ -512,57 +479,6 @@ const cleanupSingleRun$ = command(
       status: "cleaned",
       reason: timeoutReason,
     };
-  },
-);
-
-const cleanupQueuedTerminalRuns$ = command(
-  async (
-    { set },
-    runs: readonly QueuedRunMaintenanceTimeout[],
-    signal: AbortSignal,
-  ): Promise<CleanupResult[]> => {
-    const results: CleanupResult[] = [];
-    for (const run of runs) {
-      const cleanupResult = await settle(
-        set(
-          dispatchMaintenanceTerminalSideEffects$,
-          {
-            runId: run.runId,
-            orgId: run.orgId,
-            error: run.error,
-            queueMarkerNotification: run.queueMarkerNotification,
-          },
-          signal,
-        ),
-      );
-      signal.throwIfAborted();
-
-      if (cleanupResult.ok) {
-        results.push({
-          runId: run.runId,
-          sandboxId: null,
-          status: "cleaned",
-          reason: run.error,
-        });
-        continue;
-      }
-
-      const errorMessage =
-        cleanupResult.error instanceof Error
-          ? cleanupResult.error.message
-          : "Unknown error";
-      L.error("Failed to dispatch queued run timeout side effects", {
-        runId: run.runId,
-        error: errorMessage,
-      });
-      results.push({
-        runId: run.runId,
-        sandboxId: null,
-        status: "error",
-        error: errorMessage,
-      });
-    }
-    return results;
   },
 );
 
@@ -674,23 +590,6 @@ async function cleanupConnectorDiagnosticRegistrations(
   return deleted.length;
 }
 
-function logQueueMaintenance(args: {
-  readonly expired: number;
-  readonly expiredTimedOut: number;
-  readonly launchOrphansTimedOut: number;
-  readonly expiredRunnerJobs: number;
-  readonly drained: number;
-}): void {
-  if (
-    Object.values(args).every((count) => {
-      return count === 0;
-    })
-  ) {
-    return;
-  }
-  L.debug("Queue maintenance completed", args);
-}
-
 const cleanupGlobalMaintenance$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     // Release silent terminal runs first so the stale drain can admit the
@@ -755,7 +654,6 @@ export const cleanupSandboxes$ = command(
   ): Promise<CleanupSandboxesResult> => {
     const db = set(writeDb$);
     const runIds = scope.kind === "global" ? null : scope.runIds;
-    const orgIds = scope.kind === "global" ? null : scope.orgIds;
     const currentTime = now();
     const cutoffs = {
       running: new Date(currentTime - HEARTBEAT_TIMEOUT_MS),
@@ -798,34 +696,15 @@ export const cleanupSandboxes$ = command(
       return isExpiredRun(run, cutoffs);
     });
 
-    // Run before generic queue maintenance so an active threadless run always
+    // Run before expired-run timeouts so an active threadless run always
     // takes the hard-cancel path and can never become terminal and be deleted
     // within the same maintenance pass.
     const threadlessRuns = await set(cleanupThreadlessRuns$, runIds, signal);
     signal.throwIfAborted();
 
-    const expiredQueueResult = await set(
-      cleanupExpiredQueueEntries$,
-      runIds,
-      signal,
-    );
-    signal.throwIfAborted();
-    const queuedOrphanResult = await set(
-      cleanupQueuedRunLaunchOrphans$,
-      cutoffs.pending,
-      runIds,
-      signal,
-    );
-    signal.throwIfAborted();
-    const expiredRunnerJobCount = await cleanupExpiredRunnerJobs(
-      db,
-      runIds,
-      signal,
-    );
+    await cleanupExpiredRunnerJobs(db, runIds, signal);
     signal.throwIfAborted();
     await cleanupConnectorDiagnosticRegistrations(db, runIds, signal);
-    signal.throwIfAborted();
-    const drainedCount = await set(drainStaleQueues$, orgIds, signal);
     signal.throwIfAborted();
     if (scope.kind === "global") {
       await set(cleanupGlobalMaintenance$, signal);
@@ -833,27 +712,10 @@ export const cleanupSandboxes$ = command(
       await set(cleanupFixtureMaintenance$, scope, signal);
     }
     signal.throwIfAborted();
-    const queuedTerminalRuns = [
-      ...expiredQueueResult.timedOutRuns,
-      ...queuedOrphanResult.timedOutRuns,
-    ];
-    logQueueMaintenance({
-      expired: expiredQueueResult.deletedCount,
-      expiredTimedOut: expiredQueueResult.timedOutRuns.length,
-      launchOrphansTimedOut: queuedOrphanResult.timedOutRuns.length,
-      expiredRunnerJobs: expiredRunnerJobCount,
-      drained: drainedCount,
-    });
 
     L.debug("Run timeout candidates", { count: expiredRuns.length });
 
-    const queuedResults = await set(
-      cleanupQueuedTerminalRuns$,
-      queuedTerminalRuns,
-      signal,
-    );
-    signal.throwIfAborted();
-    const expiredRunResults = await set(
+    const results = await set(
       cleanupExpiredRuns$,
       db,
       expiredRuns,
@@ -861,7 +723,6 @@ export const cleanupSandboxes$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const results = [...queuedResults, ...expiredRunResults];
 
     const { exportJobsCleaned, exportJobsStuck } = await set(
       cleanupExportJobs$,

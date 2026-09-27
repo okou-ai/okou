@@ -14,11 +14,13 @@ import { agentRuns } from "./agent-run";
 
 /**
  * Narrow, per-run state that exists while a runner may still work on the run.
- * Launch inserts it; a never-started run loses it when it turns terminal, and a
- * started run keeps it until its runner reports completion or cleanup declares
- * the runner gone. Heartbeat and activity writes therefore never rewrite the
- * wide `agent_runs` row or its indexes. Only immutable identity columns are
- * indexed; mutable fields stay unindexed so single-row updates remain HOT.
+ * Launch inserts it together with the `pending` run, so every row belongs to a
+ * pending or running run until that run turns terminal. A never-started run
+ * loses it when it turns terminal, and a started run keeps it until its runner
+ * reports completion or cleanup declares the runner gone. Heartbeat and
+ * activity writes therefore never rewrite the wide `agent_runs` row or its
+ * indexes. Only immutable identity columns are indexed; mutable fields stay
+ * unindexed so single-row updates remain HOT.
  * The unique `chat_thread_id` index is the per-thread active-run lock.
  */
 export const activeAgentRuns = pgTable(
