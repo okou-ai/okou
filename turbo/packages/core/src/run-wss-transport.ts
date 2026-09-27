@@ -388,6 +388,12 @@ export class RunWssTransport {
       });
     });
     await auth;
+    // Admission can be followed by a close before the awaiting connect loop runs.
+    // In that case a fresh ticket must be admitted before connect resolves.
+    if (finished || socket.readyState !== WebSocket.OPEN) {
+      socket.close();
+      throw new Error("Run WSS socket closed before readiness");
+    }
     return { closed };
   }
 }

@@ -248,6 +248,32 @@ test("malformed admission, oversized frames and buffered backpressure fail close
   transport.close();
 });
 
+test("an acknowledgement followed by immediate socket closure does not report readiness", async () => {
+  const { transport, sockets } = makeTransport(() => {
+    return Promise.resolve(bootstrapResponse());
+  });
+  const pending = transport.connect(context.signal);
+  const first = await firstSocket(sockets);
+  first.open();
+  first.message(JSON.stringify({ type: "auth.ok" }));
+  first.close();
+
+  await waitFor(() => {
+    return expect(sockets).toHaveLength(2);
+  });
+  await expect(
+    Promise.race([pending, Promise.resolve("still-pending")]),
+  ).resolves.toBe("still-pending");
+  const replacement = sockets[1];
+  if (!replacement) {
+    throw new Error("Missing replacement socket");
+  }
+  replacement.open();
+  replacement.message(JSON.stringify({ type: "auth.ok" }));
+  await expect(pending).resolves.toBeUndefined();
+  transport.close();
+});
+
 test("an unsolicited auth acknowledgement before the first frame never opens the channel", async () => {
   const { transport, sockets } = makeTransport(() => {
     return Promise.resolve(bootstrapResponse());
