@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.973.3](https://github.com/okou-ai/okou/compare/app-v0.973.2...app-v0.973.3) (2026-09-27)
+
+
+### Refactoring
+
+* **api:** unify chat queue enqueue, pick and steer on chat events ([#37082](https://github.com/okou-ai/okou/issues/37082)) ([553fc56](https://github.com/okou-ai/okou/commit/553fc566b7e9be2cd4a8c1de314d55939b99490a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.518.1
+    * @okouai/core bumped to 8.712.7
+
 ## [0.973.2](https://github.com/okou-ai/okou/compare/app-v0.973.1...app-v0.973.2) (2026-09-27)
 
 
