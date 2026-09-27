@@ -149,18 +149,15 @@ async function createChatThreadRun(
   if (args.createdAt) {
     mockNow(args.createdAt);
   }
-  const sent = await chatApi.requestSendEvent(
-    fixture.actor,
-    { agentId: fixture.agentId, prompt: "record usage", threadId },
-    [201],
-  );
+  const { runId } = await chatApi.sendAndLaunch(fixture.actor, {
+    agentId: fixture.agentId,
+    prompt: "record usage",
+    threadId,
+  });
   if (args.createdAt) {
     clearMockNow();
   }
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected the entitled chat send to create a run");
-  }
-  return { runId: sent.body.runId, threadId };
+  return { runId, threadId };
 }
 
 /**

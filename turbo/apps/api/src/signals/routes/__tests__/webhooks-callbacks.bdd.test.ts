@@ -280,7 +280,17 @@ async function sendChatInputAtCapacity(
   if (sent.status !== 201) {
     throw new Error("Expected the chat send to be accepted");
   }
-  expect(sent.body.runId).toBeNull();
+  // The background pick finds the organization full and leaves it queued.
+  await flushWaitUntilForTest();
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    actor,
+    sent.body.threadId,
+  );
+  expect(
+    events.some((event) => {
+      return event.eventType === "input.prompt" && Boolean(event.runId);
+    }),
+  ).toBeFalsy();
   return sent.body.threadId;
 }
 
@@ -4411,18 +4421,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       prompt: "team upgrade run three",
       modelProvider: "anthropic-api-key",
     });
-    const rejected = await runs.requestCreateRun(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "team upgrade run over the pro limit",
-        modelProvider: "anthropic-api-key",
-      },
-      [429],
-    );
-    expect(rejected.body).toMatchObject({
-      error: { code: "CONCURRENT_RUN_LIMIT" },
-    });
     const queuedThreadId = await sendChatInputAtCapacity(
       actor,
       agent.agentId,
@@ -5072,18 +5070,11 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(after.body.concurrency.limit).toBe(5);
     expect(after.body.concurrency.active).toBe(5);
 
-    const full = await runs.requestCreateRun(
+    await sendChatInputAtCapacity(
       actor,
-      {
-        agentId: agent.agentId,
-        prompt: "concurrency add-on run over the new limit",
-        modelProvider: "anthropic-api-key",
-      },
-      [429],
+      agent.agentId,
+      "concurrency add-on input over the new limit",
     );
-    expect(full.body).toMatchObject({
-      error: { code: "CONCURRENT_RUN_LIMIT" },
-    });
 
     // Replaying the same invoice event must not grant additional slots.
     await api.postStripeEvent(

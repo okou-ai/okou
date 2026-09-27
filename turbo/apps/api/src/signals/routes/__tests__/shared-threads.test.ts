@@ -73,21 +73,10 @@ async function prepareShare(content = selectedContent) {
   // for the native Runner instead of starting unmocked Pi API-first turns.
   await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const agent = await bdd.createAgent(actor, { displayName: "Sharing test" });
-  const sent = await accept(
-    chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: content,
-      },
-      [201],
-    ),
-    [201],
-  );
-  const { threadId, runId } = sent.body;
-  if (!runId) {
-    throw new Error("Expected a new chat run");
-  }
+  const { threadId, runId } = await chat.sendAndLaunch(actor, {
+    agentId: agent.agentId,
+    prompt: content,
+  });
   await chat.renameThread(actor, threadId, privateTitle);
   await chat.requestSendEvent(
     actor,
