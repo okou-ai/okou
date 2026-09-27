@@ -394,11 +394,12 @@ async fn handshake_capacity_and_pre_auth_deadline_are_bounded() {
     admission.stop();
     let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
     let mut ws = client.unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(7), ws.next())
+        .await
+        .expect("missing first frame must close within pre-auth deadline");
     assert!(
-        tokio::time::timeout(Duration::from_secs(7), ws.next())
-            .await
-            .is_ok(),
-        "missing first frame must close within pre-auth deadline"
+        matches!(result, None | Some(Err(_)) | Some(Ok(Message::Close(_)))),
+        "never acknowledge an unauthenticated peer: {result:?}"
     );
     task.await.unwrap();
 }
