@@ -3,11 +3,14 @@ import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { admitWorkflowAutomationEvent } from "./workflow-chat-event-queue.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
 import {
-  ApiDispatchTimingCollector,
-  measureApiDispatchTiming,
-} from "./api-dispatch-timing.service";
+  censusWorkflowAdmission,
+  measureWorkflowAdmissionStep,
+  type WorkflowAdmissionOutcome,
+  type WorkflowAdmissionSchedulePath,
+} from "./workflow-queue-admission-timing.service";
+import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   persistedWorkflowAutomationEventPayload,
   workflowAutomationDisplayMessage,
@@ -39,32 +42,59 @@ export const runWorkflowAutomationNow$ = command(
       );
     }
 
-    const admission = await measureApiDispatchTiming(
-      timing,
-      "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
-      "nested",
-      async () => {
-        return await admitWorkflowAutomationEvent(db, {
-          automation,
-          queueEventId: args.queueEventId,
-          workflowName: args.automationContext.workflowName,
-          displayPrompt: workflowAutomationDisplayMessage(
-            args.automationContext,
-          ),
-          agentRunSource: args.agentRunSource,
-          workflowAutomationEventType: args.automationContext.eventType,
-          workflowAutomationEventPayload:
-            persistedWorkflowAutomationEventPayload(
-              args.automationContext.event,
+    const schedulePath: WorkflowAdmissionSchedulePath =
+      automation.kind !== "schedule"
+        ? "non_schedule"
+        : args.scheduleClaim
+          ? "journaled_schedule"
+          : "unjournaled_schedule";
+    let admissionOutcome: WorkflowAdmissionOutcome = "failed";
+    const admission = await censusWorkflowAdmission(
+      schedulePath,
+      measureWorkflowAdmissionStep(
+        timing,
+        "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
+        async () => {
+          const result = await admitWorkflowAutomationEvent(db, {
+            automation,
+            queueEventId: args.queueEventId,
+            workflowName: args.automationContext.workflowName,
+            displayPrompt: workflowAutomationDisplayMessage(
+              args.automationContext,
             ),
-          connectorSourceId: args.connectorSourceId,
-          chatThreadId,
-          triggerSource: args.triggerSource ?? "automation-schedule",
-          triggerBrief: args.triggerBrief,
-          coalescePendingScheduleRun: args.coalescePendingScheduleRun !== false,
-          persistSourceTransition: args.persistSourceTransition,
-          scheduleClaim: args.scheduleClaim,
-        });
+            agentRunSource: args.agentRunSource,
+            workflowAutomationEventType: args.automationContext.eventType,
+            workflowAutomationEventPayload:
+              persistedWorkflowAutomationEventPayload(
+                args.automationContext.event,
+              ),
+            connectorSourceId: args.connectorSourceId,
+            chatThreadId,
+            triggerSource: args.triggerSource ?? "automation-schedule",
+            triggerBrief: args.triggerBrief,
+            coalescePendingScheduleRun:
+              args.coalescePendingScheduleRun !== false,
+            persistSourceTransition: args.persistSourceTransition,
+            scheduleClaim: args.scheduleClaim,
+            timing,
+          });
+          admissionOutcome =
+            result.kind === "schedule_unavailable"
+              ? result.reason === "superseded"
+                ? "superseded"
+                : "untracked_pending"
+              : result.kind;
+          return result;
+        },
+        () => {
+          return {
+            schedule_path: schedulePath,
+            admission_outcome: admissionOutcome,
+          };
+        },
+      ),
+      () => {
+        return admissionOutcome;
       },
     );
     signal.throwIfAborted();

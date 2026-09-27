@@ -27,8 +27,8 @@ interface SandboxOperationAttrs extends OperationTimingAttrs {
   readonly runId: string;
 }
 
-interface BillingOperationAttrs extends OperationTimingAttrs {
-  readonly operationDomain: "billing";
+interface UnlinkedOperationAttrs extends OperationTimingAttrs {
+  readonly operationDomain: "billing" | "api";
 }
 
 const telemetryAxiomClient = singleton((): Axiom => {
@@ -64,8 +64,19 @@ export function recordBillingOperationTimings(
   );
 }
 
+/** Aggregate API operation observations without a Run or user identifier. */
+export function recordApiOperationTimings(
+  attrsList: readonly OperationTimingAttrs[],
+): void {
+  recordOperationTimings(
+    attrsList.map((attrs) => {
+      return { ...attrs, operationDomain: "api" as const };
+    }),
+  );
+}
+
 function recordOperationTimings(
-  attrsList: readonly (SandboxOperationAttrs | BillingOperationAttrs)[],
+  attrsList: readonly (SandboxOperationAttrs | UnlinkedOperationAttrs)[],
 ): void {
   if (attrsList.length === 0) {
     return;
