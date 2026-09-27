@@ -3045,7 +3045,7 @@ describe("workflow owner profiles", () => {
   });
 });
 
-describe("workflow owner profile cancellation and capacity", () => {
+describe("workflow owner profile cancellation", () => {
   it("retries after cancellation and ignores a late missing result", async () => {
     const { owner, workflow } = await ownerProfileFixture();
     mockNow(now() + 16 * 60 * 1000);
