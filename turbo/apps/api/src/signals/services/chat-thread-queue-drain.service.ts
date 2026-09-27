@@ -291,9 +291,9 @@ export const pickQueuedChatThread$ = command(
  * The per-thread scheduler entry for new input: ingress, web sends, workflow
  * events, cancel, resume and recovery converge here after appending input.
  * Every enqueue records the thread as queued first, so queued input always
- * has a row even when a running run takes it as steerable input or the
- * takeover at run end never happens. Then a running run is notified, or the
- * thread is picked once.
+ * has a row even when a running run takes it as steerable input or no slot
+ * hand-off reaches the thread. Then a running run is notified, or the thread
+ * is picked once.
  */
 export const drainChatThreadQueueForThread$ = command(
   async (

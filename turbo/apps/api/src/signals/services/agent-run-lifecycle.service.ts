@@ -43,11 +43,14 @@ export const drainOrgQueueToCapacity$ = command(
 /**
  * A run's active row was just deleted, so its organization slot is free. The
  * slot goes to the run's own thread first, then to the organization's oldest
- * waiting thread. Every transaction that deletes an active row calls this
- * after commit and after the run's terminal callbacks, whatever ended the run,
- * so no end path owns a wakeup of its own. Every enqueue records its thread
- * as queued, so both picks go through the queued-thread lease and its thread
- * and capacity checks, and the launch's final admission stays authoritative.
+ * waiting thread. Every run-end transaction that deletes an active row
+ * (Runner completion, cancel, claim failure, cron timeout) calls this after
+ * commit and after the run's terminal callbacks, so no end path owns a wakeup
+ * of its own. Membership cleanup, which frees slots without ending a thread's
+ * turn, and the stale-terminal sweep leave waiting threads to the cron
+ * drain. Every enqueue records its thread as queued, so both picks go through
+ * the queued-thread lease and its thread and capacity checks, and the
+ * launch's final admission stays authoritative.
  */
 export const handOffReleasedSlot$ = command(
   async (
