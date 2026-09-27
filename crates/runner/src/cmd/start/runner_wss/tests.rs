@@ -274,6 +274,7 @@ async fn absent_local_run_and_unavailable_guest_do_not_redeem_ticket() {
     assert!(canonical_origin("localhost").is_none());
     assert!(canonical_origin("example.test").is_none());
     assert!(canonical_origin("127.1").is_none());
+    assert!(canonical_origin("127.0.0.1").is_none());
 }
 
 #[tokio::test]
