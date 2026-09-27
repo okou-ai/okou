@@ -306,7 +306,8 @@ const dispatchClaim$ = command(
           allowedCustomConnectorIds: [],
         },
         validateEnvironmentReferences: false,
-        queueOnConcurrencyLimit: true,
+        // Maintenance never waits for chat capacity; it still holds a slot.
+        ignoreConcurrencyLimit: true,
         enforceBuiltInCredits: credential.pin.modelProvider === "built-in",
         piExecution: true,
         piMemoryPhase2Maintenance: maintenance,

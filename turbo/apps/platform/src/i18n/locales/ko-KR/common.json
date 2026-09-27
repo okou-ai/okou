@@ -2071,7 +2071,7 @@
       "aboutAutomationEvent": "이 자동화 이벤트에 대해",
       "aboutQueuedMessage": "이 대기 중인 메시지에 대해",
       "automationEvent": "자동화 이벤트",
-      "automationEventDescription": "대기 중인 메시지 뒤에서 대기하며 현재 실행이 끝나면 한 번 실행됩니다.",
+      "automationEventDescription": "대기열에서 대기하며 시작할 수 있을 때 자동으로 실행됩니다.",
       "cancellationRecoveryPending": "대기 중인 작업을 계속하기 전에 취소된 실행을 마무리하고 있습니다.",
       "event_one": "{{count}}개 이벤트",
       "event_other": "{{count}}개 이벤트",
@@ -2082,7 +2082,7 @@
       "message_other": "{{count}}개 메시지",
       "pendingAutomationEvent": "대기 중인 자동화 이벤트",
       "queuedMessage": "대기 중인 메시지",
-      "queuedMessageDescription": "대기열에서 대기하며 현재 실행이 끝나면 전송됩니다.",
+      "queuedMessageDescription": "대기열에서 대기하며 시작할 수 있을 때 자동으로 전송됩니다.",
       "removeQueuedMessage": "대기 중인 메시지 제거",
       "skipAutomationEvent": "자동화 이벤트 건너뛰기"
     },

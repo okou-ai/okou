@@ -1,18 +1,10 @@
-import {
-  setHistoricalGoalStatusFixture,
-  historicalGoalStatusFixture,
-  readGoalQueueStateFixture,
-  seedGoalForRunFixture,
-  setLegacyGoalRunOriginFixture,
-} from "../../../test-fixtures/goal-queue";
-
 import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
-import { removeSnapshottedRunEvents } from "../../../test-fixtures/goal-schema-contraction";
+import { removeSnapshottedRunEvents } from "../../../test-fixtures/chat-event-retention";
 import { installFakeChatEventR2 } from "./helpers/fake-chat-event-r2";
 
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -31,12 +23,10 @@ import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   readLatestWorkflowAutomationRunFixture,
   readWorkflowAutomationAutonomyFixture,
@@ -55,7 +45,6 @@ const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
-const misc = createMiscRoutesApi(context);
 const wf = createWorkflowsBddApi(context);
 const integrations = createBddIntegrationApi(context);
 const WATCHED_THREAD_TITLE = "Watched chat run";
@@ -214,39 +203,6 @@ async function startWatchedChatRun(
   return { runId: sent.body.runId, threadId: sent.body.threadId };
 }
 
-async function createGoalForRun(
-  actor: ApiTestUser,
-  runId: string,
-  objective: string,
-): Promise<string> {
-  if (!actor.orgId) {
-    throw new Error("Expected an org-scoped actor for goal workflows");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    {
-      userId: actor.userId,
-      orgId: actor.orgId,
-      orgRole: actor.orgRole,
-    },
-    {},
-  );
-  const goal = await seedGoalForRunFixture(runId, objective);
-  return goal.objectiveBrief;
-}
-
-async function expectGoalStatus(
-  actor: ApiTestUser,
-  runId: string,
-  status: "active" | "paused" | "blocked" | "complete",
-): Promise<void> {
-  await expect
-    .poll(async () => {
-      return await historicalGoalStatusFixture(runId);
-    })
-    .toBe(status);
-}
-
 async function claimChatRun(
   runnerGroup: string,
   runId: string,
@@ -358,11 +314,7 @@ async function expectAutomationSourceAnnotation(
   }
   expect(
     automationInput.userMessage.parts.filter((part) => {
-      return (
-        part.type === "source" ||
-        part.type === "automation" ||
-        part.type === "goal"
-      );
+      return part.type === "source" || part.type === "automation";
     }),
   ).toStrictEqual([
     {
@@ -983,173 +935,6 @@ describe("chat-run-finished workflow automations", () => {
         throw new Error("Expected a triggered automation run");
       }
       await claimChatRun(fixture.runnerGroup, automationRunId);
-    },
-  );
-
-  it("dispatches one real Goal completion automation without a successor", async () => {
-    const fixture = await setupChatAutomationFixture();
-    const run = await startWatchedChatRun(fixture, "finish existing Goal work");
-    const automationId = await createChatRunFinishedAutomation(fixture, {
-      chatThreadId: run.threadId,
-      runStatuses: ["completed"],
-    });
-    const goal = await seedGoalForRunFixture(
-      run.runId,
-      "remaining historical Goal",
-    );
-    const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-    await setLegacyGoalRunOriginFixture(run.runId, goal.id);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-    await expectAutomationFired(automationId);
-    await completeChatRunOk(run.runId, sandboxHeaders);
-    await flushWaitUntilForTest();
-    await expectAutomationSourceAnnotation(fixture, automationId, run);
-    const history = await readGoalQueueStateFixture(run.threadId);
-    expect(history.eventIds).toStrictEqual([]);
-    expect(history.runIds).toStrictEqual([run.runId]);
-  }, 60_000);
-
-  it(
-    "fires a completed-run automation when the goal is blocked",
-    { timeout: 30_000 },
-    async () => {
-      const fixture = await setupChatAutomationFixture();
-      const run = await startWatchedChatRun(
-        fixture,
-        "finish after blocking the goal",
-      );
-      const automationId = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: ["completed"],
-      });
-      await createGoalForRun(
-        fixture.actor,
-        run.runId,
-        "Block the watched thread goal",
-      );
-      const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-      await setHistoricalGoalStatusFixture(run.runId, "blocked");
-      await expect(historicalGoalStatusFixture(run.runId)).resolves.toBe(
-        "blocked",
-      );
-
-      await completeChatRunOk(run.runId, sandboxHeaders);
-
-      await expectAutomationFired(automationId);
-      await expectAutomationSourceAnnotation(fixture, automationId, run);
-    },
-  );
-
-  it.each(["failed", "cancelled"] as const)(
-    "fires a %s-run automation while the historical Goal remains active",
-    { timeout: 30_000 },
-    async (terminalStatus) => {
-      expect.hasAssertions();
-      const fixture = await setupChatAutomationFixture();
-      const run = await startWatchedChatRun(
-        fixture,
-        `${terminalStatus} run pauses the goal`,
-      );
-      const automationId = await createChatRunFinishedAutomation(fixture, {
-        chatThreadId: run.threadId,
-        runStatuses: [terminalStatus],
-      });
-      await createGoalForRun(
-        fixture.actor,
-        run.runId,
-        "Pause the watched thread goal",
-      );
-      const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-
-      if (terminalStatus === "failed") {
-        await webhooks.requestAgentComplete(
-          { runId: run.runId, exitCode: 1, error: "goal iteration failed" },
-          sandboxHeaders,
-          [200],
-        );
-      } else {
-        await api.requestCancelRun(fixture.actor, run.runId, [200]);
-      }
-
-      await expectGoalStatus(fixture.actor, run.runId, "active");
-      await expectAutomationFired(automationId);
-      await expectAutomationSourceAnnotation(fixture, automationId, run);
-    },
-  );
-
-  it(
-    "fires completion despite an unavailable historical Goal model",
-    { timeout: 60_000 },
-    async () => {
-      expect.hasAssertions();
-      const fixture = await setupChatAutomationFixture();
-      const firstRun = await startWatchedChatRun(
-        fixture,
-        "continue into a failed goal launch",
-      );
-      await createGoalForRun(
-        fixture.actor,
-        firstRun.runId,
-        "Pause after the continuation fails to launch",
-      );
-      const automationProvider = await misc.upsertOrgModelProvider(
-        fixture.actor,
-        {
-          type: "openai-api-key",
-          secret: "goal-stop-automation-openai-key",
-        },
-        [201],
-      );
-      if (automationProvider.status !== 201) {
-        throw new Error("Expected the automation model provider to be created");
-      }
-      await api.updateOrgModelPolicies(fixture.actor, [
-        {
-          model: "claude-sonnet-5",
-          isDefault: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: fixture.providerId,
-        },
-        {
-          model: "gpt-5.6-terra",
-          isDefault: false,
-          defaultProviderType: "openai-api-key",
-          credentialScope: "org",
-          modelProviderId: automationProvider.body.provider.id,
-        },
-      ]);
-      const automationThread = await chat.createThread(fixture.actor, {
-        agentId: fixture.agentId,
-        model: "gpt-5.6-terra",
-      });
-      const automationId = await createChatRunFinishedAutomation(
-        fixture,
-        {
-          chatThreadId: firstRun.threadId,
-          runStatuses: ["completed"],
-        },
-        { workflowChatThreadId: automationThread.id },
-      );
-      await misc.deleteOrgModelProvider(
-        fixture.actor,
-        "anthropic-api-key",
-        [204],
-      );
-
-      const sandboxHeaders = await claimChatRun(
-        fixture.runnerGroup,
-        firstRun.runId,
-      );
-      await completeChatRunOk(firstRun.runId, sandboxHeaders);
-      await flushWaitUntilForTest();
-
-      await expectGoalStatus(fixture.actor, firstRun.runId, "active");
-      await expectAutomationFired(automationId);
-      await expectAutomationSourceAnnotation(fixture, automationId, {
-        runId: firstRun.runId,
-        threadId: firstRun.threadId,
-      });
     },
   );
 

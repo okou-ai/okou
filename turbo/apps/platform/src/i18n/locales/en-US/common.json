@@ -2078,7 +2078,7 @@
       "aboutAutomationEvent": "About this automation event",
       "aboutQueuedMessage": "About this queued message",
       "automationEvent": "Automation event",
-      "automationEventDescription": "Waits behind queued messages and runs once the current run finishes.",
+      "automationEventDescription": "Waits in line and runs automatically when it can start.",
       "cancellationRecoveryPending": "Finalizing the cancelled run before queued work continues.",
       "event_one": "{{count}} event",
       "event_other": "{{count}} events",
@@ -2089,7 +2089,7 @@
       "message_other": "{{count}} messages",
       "pendingAutomationEvent": "Pending automation event",
       "queuedMessage": "Queued message",
-      "queuedMessageDescription": "Waits in line and sends once the current run finishes.",
+      "queuedMessageDescription": "Waits in line and sends automatically when it can start.",
       "removeQueuedMessage": "Remove queued message",
       "skipAutomationEvent": "Skip automation event"
     },

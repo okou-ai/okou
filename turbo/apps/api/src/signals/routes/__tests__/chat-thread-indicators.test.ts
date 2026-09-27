@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -327,6 +327,9 @@ describe("GET /api/indicators", () => {
 
   it("limits active threads after filtering out inaccessible Agents", async () => {
     prepareChatRuntime();
+    // Every send must start a Run (runs, not waiting inputs, feed the active
+    // indicator), so lift the organization concurrency limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
     const actor = bdd.user();
     const peer = bdd.user({ orgId: orgIdOf(actor) });
     const visibleAgentId = await createEntitledAgent(

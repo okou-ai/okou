@@ -622,10 +622,9 @@ describe("CHAT-02: model-first provider policies", () => {
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
 
     mockPiResourceArchiveDownloads();
-    // A real assistant can copy the entire immutable archive notice. Its run
-    // provenance must still keep citation transport private.
-    const copiedArchiveNotice =
-      "Okou Goal retired.\nGoal ID: 00000000-0000-4000-8000-000000000001\nOriginal recorded status: complete\nThe recorded status is preserved; retirement does not mark the objective complete.\n\nFull original objective:\nalpha";
+    // A complete multi-line assistant block stays verbatim while its run
+    // provenance keeps citation transport private.
+    const multilineBlock = "Status report\nFirst line\nSecond line\n\nalpha";
     const consumedAgentEvents: Record<string, unknown>[] = [];
     server.use(
       http.post(
@@ -659,7 +658,7 @@ describe("CHAT-02: model-first provider policies", () => {
             blocks: [
               {
                 type: "text",
-                text: `${copiedArchiveNotice}${hidden.slice(0, 17)}`,
+                text: `${multilineBlock}${hidden.slice(0, 17)}`,
               },
               { type: "text", text: `${hidden.slice(17)}beta` },
               { type: "text", text: "gamma" },
@@ -737,7 +736,7 @@ describe("CHAT-02: model-first provider policies", () => {
       }),
     ).toStrictEqual([
       {
-        content: copiedArchiveNotice,
+        content: multilineBlock,
         sequenceNumber: 0,
         runEventId: expect.stringMatching(/^api-first:[0-9a-f-]{36}:0$/u),
       },
@@ -790,17 +789,17 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "execute the original prompt once in Sandbox";
-    const { anchor, anchorClaim, run } = await queueCapabilityProvenPiRun({
+    const { launch } = await queueCapabilityProvenPiRun({
       actor,
       agentId,
       runnerGroup,
       prompt,
     });
 
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    const run = await launch();
     await resourceEntered.promise;
-    // Speculative queued preparation can read resources before promotion; the
-    // durable pending status is the Runner claim boundary.
+    // The picked launch prepares resources in the background; the durable
+    // pending status is the Runner claim boundary.
     await waitForRunStatus(actor, run.runId, "pending", 5000);
     const claimed = await claimChatRun(runnerGroup, run.runId);
     await waitForRunStatus(actor, run.runId, "running", 5000);
@@ -915,14 +914,14 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
     const originalPrompt = "settle this original API prompt once";
-    const { anchor, anchorClaim, run } = await queueCapabilityProvenPiRun({
+    const { launch } = await queueCapabilityProvenPiRun({
       actor,
       agentId,
       runnerGroup,
       prompt: originalPrompt,
     });
 
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    const run = await launch();
     await providerEntered.promise;
     const claimed = await claimChatRun(runnerGroup, run.runId);
     const activeInput = "continue H1 with exactly one new prompt";
@@ -1155,14 +1154,14 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
     const originalPrompt = "start one provider request with a pending tool";
-    const { anchor, anchorClaim, run } = await queueCapabilityProvenPiRun({
+    const { launch } = await queueCapabilityProvenPiRun({
       actor,
       agentId,
       runnerGroup,
       prompt: originalPrompt,
     });
 
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    const run = await launch();
     await providerEntered.promise;
     const claimed = await claimChatRun(runnerGroup, run.runId);
     const activeInput = "steer once after the pending tool boundary";

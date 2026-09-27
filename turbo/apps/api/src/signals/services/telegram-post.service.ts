@@ -2105,6 +2105,7 @@ const runAgentForTelegram$ = command(
       drainChatThreadQueueForThread$,
       {
         chatThreadId: persisted.chatThreadId,
+        orgId: args.source.orgId,
         dispatchFailedCallbacks: dispatchFailedRunCallbacks,
       },
       signal,

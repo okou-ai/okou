@@ -2071,7 +2071,7 @@
       "aboutAutomationEvent": "このオートメーションイベントについて",
       "aboutQueuedMessage": "このキューに入れられたメッセージについて",
       "automationEvent": "オートメーションイベント",
-      "automationEventDescription": "キューに入れられたメッセージの後ろで待機し、現在の実行が終了すると実行されます。",
+      "automationEventDescription": "列に並んで待機し、開始できるようになると自動的に実行されます。",
       "cancellationRecoveryPending": "キュー内の作業を続行する前に、キャンセルされた実行の終了処理を行っています。",
       "event_one": "{{count}} イベント",
       "event_other": "{{count}} イベント",
@@ -2082,7 +2082,7 @@
       "message_other": "{{count}} メッセージ",
       "pendingAutomationEvent": "保留中のオートメーションイベント",
       "queuedMessage": "キューに入れられたメッセージ",
-      "queuedMessageDescription": "列に並んで待機し、現在の実行が終了したら送信します。",
+      "queuedMessageDescription": "列に並んで待機し、開始できるようになると自動的に送信されます。",
       "removeQueuedMessage": "キューに入れられたメッセージを削除する",
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },

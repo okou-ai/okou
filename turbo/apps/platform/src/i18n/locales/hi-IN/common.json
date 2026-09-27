@@ -2078,7 +2078,7 @@
       "aboutAutomationEvent": "इस ऑटोमेशन इवेंट के बारे में",
       "aboutQueuedMessage": "इस पंक्तिबद्ध संदेश के बारे में",
       "automationEvent": "ऑटोमेशन घटना",
-      "automationEventDescription": "पंक्तिबद्ध संदेशों के पीछे प्रतीक्षा करता है और वर्तमान रन समाप्त होने पर चलता है।",
+      "automationEventDescription": "लाइन में प्रतीक्षा करता है और शुरू हो सकने पर अपने आप चलता है।",
       "cancellationRecoveryPending": "पंक्तिबद्ध कार्य जारी रखने से पहले रद्द किए गए रन को अंतिम रूप दिया जा रहा है।",
       "event_one": "{{count}} घटना",
       "event_other": "{{count}} घटनाएँ",
@@ -2089,7 +2089,7 @@
       "message_other": "{{count}} संदेश",
       "pendingAutomationEvent": "लंबित ऑटोमेशन कार्यक्रम",
       "queuedMessage": "पंक्तिबद्ध संदेश",
-      "queuedMessageDescription": "लाइन में प्रतीक्षा करता है और वर्तमान रन समाप्त होने पर भेजता है।",
+      "queuedMessageDescription": "लाइन में प्रतीक्षा करता है और शुरू हो सकने पर अपने आप भेजता है।",
       "removeQueuedMessage": "पंक्तिबद्ध संदेश हटाएँ",
       "skipAutomationEvent": "ऑटोमेशन ईवेंट छोड़ें"
     },

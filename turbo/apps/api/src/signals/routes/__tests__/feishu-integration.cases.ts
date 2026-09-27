@@ -6837,22 +6837,26 @@ export function registerSharedFeishuConversationTests(): void {
         `[View queue](${APP_ORIGIN}/?queue=1)`,
       );
 
-      const runs = await Promise.all(
-        prompts.map(async (prompt) => {
+      const [firstRun, secondRun] = await Promise.all(
+        prompts.slice(0, 2).map(async (prompt) => {
           return await findRun(actor, prompt);
         }),
       );
-      expect(runs[2]?.status).toBe("queued");
-      const queue = await runsApi.readRunQueue(actor);
-      expect(queue.body.queue).toContainEqual(
-        expect.objectContaining({
-          runId: runs[2]?.id,
-          triggerSource: platform,
-        }),
-      );
-      for (const run of [...runs].reverse()) {
-        await runsApi.requestCancelRun(actor, run.id, [200]);
+      if (!firstRun || !secondRun) {
+        throw new Error("Expected both concurrent Feishu runs");
       }
+      // At the org limit the third message waits as thread input, not a run.
+      await expect(findRun(actor, prompts[2])).rejects.toThrow(
+        `Expected Feishu run for prompt: ${prompts[2]}`,
+      );
+
+      // Freeing a slot picks the waiting thread and launches its message.
+      await runsApi.requestCancelRun(actor, firstRun.id, [200]);
+      await flushWaitUntilForTest();
+      const pickedRun = await findRun(actor, prompts[2]);
+      expect(pickedRun.status).toBe("pending");
+      await runsApi.requestCancelRun(actor, pickedRun.id, [200]);
+      await runsApi.requestCancelRun(actor, secondRun.id, [200]);
       await flushWaitUntilForTest();
       const client = setupApp({ context, routes: feishuConnectRoutes })(
         connectContract,

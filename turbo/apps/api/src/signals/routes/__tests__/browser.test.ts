@@ -5717,8 +5717,11 @@ describe("okou browser route", () => {
     );
 
     // Admission candidates only need a browser-capable run token, so they skip
-    // the runner claim that the org's run concurrency limit would throttle.
+    // the runner claim. A chat send at the org's run limit waits without a
+    // run, so the limit is lifted by one only while the candidate run starts;
+    // browser admission then meets the original limit.
     async function createCandidate(prompt: string) {
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
       const sentCandidate = await chat.requestSendEvent(
         actor,
         {
@@ -5728,6 +5731,7 @@ describe("okou browser route", () => {
         },
         [201],
       );
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
       if (sentCandidate.status !== 201 || sentCandidate.body.runId === null) {
         throw new Error("Expected a browser admission candidate run");
       }
@@ -5859,8 +5863,8 @@ describe("okou browser route", () => {
     });
     expect(providerStopAttempts).toStrictEqual([providerIds[0]]);
 
-    // Each deletion can promote a queued run and revoke its marker on another
-    // fixture thread. Settle that route-owned work before deleting the next one.
+    // Each deletion frees a run slot and can pick another fixture thread.
+    // Settle that route-owned work before deleting the next one.
     for (const threadId of [
       first.threadId,
       other.threadId,

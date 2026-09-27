@@ -97,7 +97,8 @@ function nonAssistantRunIndicatorState(
   context: RunIndicatorContext,
   event: ChatEvent,
 ): ActiveRunIndicatorState | undefined {
-  if (event.eventType === "input.prompt" && event.runId === undefined) {
+  // Unclaimed user messages and automation events both wait for a run.
+  if (isQueuedChatEvent(event) && event.runId === undefined) {
     return "pending";
   }
   const { runId } = event;

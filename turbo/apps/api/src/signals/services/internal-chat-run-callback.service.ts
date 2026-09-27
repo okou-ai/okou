@@ -3022,16 +3022,55 @@ function queuedMessageAdmissionFailure(
   launchMaterial: QueuedLaunchMaterial,
   error: QueuedMessageModelRouteError,
 ): QueuedMessageAdmissionFailure {
-  const common = {
-    orgId: args.agent.orgId,
-    userId: args.userId,
-    agentId: args.agent.id,
-    threadId: args.threadId,
-    queuedMessage: args.queuedMessage,
-    triggerSource: launchMaterial.triggerSource,
-    error,
-  };
-  const contextType = args.queuedMessage.contextType;
+  return channelQueuedMessageAdmissionFailure(
+    {
+      orgId: args.agent.orgId,
+      userId: args.userId,
+      agentId: args.agent.id,
+      threadId: args.threadId,
+      queuedMessage: args.queuedMessage,
+      triggerSource: launchMaterial.triggerSource,
+      error,
+    },
+    launchMaterial.delivery,
+  );
+}
+
+/** A queued message whose run creation was rejected for a reason other than capacity. */
+function rejectedQueuedRunAdmissionFailure(
+  input: CreateQueuedChatRunInput,
+  error: QueuedMessageModelRouteError,
+): QueuedMessageAdmissionFailure {
+  return channelQueuedMessageAdmissionFailure(
+    {
+      orgId: input.orgId,
+      userId: input.userId,
+      agentId: input.agentId,
+      threadId: input.threadId,
+      queuedMessage: input.queuedMessage,
+      triggerSource: input.triggerSource,
+      error,
+    },
+    input,
+  );
+}
+
+function channelQueuedMessageAdmissionFailure(
+  common: Omit<WebQueuedMessageAdmissionFailure, "kind"> & {
+    readonly agentId: string;
+  },
+  delivery: Pick<
+    CreateQueuedChatRunInput,
+    | "slackDelivery"
+    | "feishuDelivery"
+    | "teamsDelivery"
+    | "discordDelivery"
+    | "telegramDelivery"
+    | "agentphoneDelivery"
+    | "githubDelivery"
+  >,
+): QueuedMessageAdmissionFailure {
+  const contextType = common.queuedMessage.contextType;
   switch (contextType) {
     case "web":
     case "agent_run": {
@@ -3042,7 +3081,7 @@ function queuedMessageAdmissionFailure(
         kind: "slack_admission_failure",
         ...common,
         slackDelivery: requiredQueuedDelivery(
-          launchMaterial.delivery.slackDelivery,
+          delivery.slackDelivery,
           contextType,
         ),
       };
@@ -3052,7 +3091,7 @@ function queuedMessageAdmissionFailure(
         kind: "feishu_admission_failure",
         ...common,
         feishuDelivery: requiredQueuedDelivery(
-          launchMaterial.delivery.feishuDelivery,
+          delivery.feishuDelivery,
           contextType,
         ),
       };
@@ -3062,7 +3101,7 @@ function queuedMessageAdmissionFailure(
         kind: "teams_admission_failure",
         ...common,
         teamsDelivery: requiredQueuedDelivery(
-          launchMaterial.delivery.teamsDelivery,
+          delivery.teamsDelivery,
           contextType,
         ),
       };
@@ -3072,7 +3111,7 @@ function queuedMessageAdmissionFailure(
         kind: "discord_admission_failure",
         ...common,
         discordDelivery: requiredQueuedDelivery(
-          launchMaterial.delivery.discordDelivery,
+          delivery.discordDelivery,
           contextType,
         ),
       };
@@ -3082,7 +3121,7 @@ function queuedMessageAdmissionFailure(
         kind: "telegram_admission_failure",
         ...common,
         telegramDelivery: requiredQueuedDelivery(
-          launchMaterial.delivery.telegramDelivery,
+          delivery.telegramDelivery,
           contextType,
         ),
       };
@@ -3092,7 +3131,7 @@ function queuedMessageAdmissionFailure(
         kind: "agentphone_admission_failure",
         ...common,
         agentphoneDelivery: requiredQueuedDelivery(
-          launchMaterial.delivery.agentphoneDelivery,
+          delivery.agentphoneDelivery,
           contextType,
         ),
       };
@@ -3102,7 +3141,7 @@ function queuedMessageAdmissionFailure(
         kind: "github_admission_failure",
         ...common,
         githubDelivery: requiredQueuedDelivery(
-          launchMaterial.delivery.githubDelivery,
+          delivery.githubDelivery,
           contextType,
         ),
       };
@@ -3814,7 +3853,6 @@ interface AutoSendQueuedMessageArgs {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly agentId: string;
-  readonly queueItemCreatedBefore?: Date;
   readonly timing: ChatCallbackPreCreateTimingCollector;
   readonly formatIntegrationRunError: ChatCallbackDependencies["formatIntegrationRunError"];
   readonly deliverSlackAdmissionFailure: ChatCallbackDependencies["deliverSlackAdmissionFailure"];
@@ -3927,15 +3965,23 @@ function autoSendAdmissionFailureArgs(
 }
 
 /**
+ * How one attempt on the thread's queue head ended: a run launched, the head
+ * input was consumed without a run, the head stays queued, or the head is not
+ * a user message.
+ */
+export type QueuedUserMessageLaunchOutcome =
+  | { readonly kind: "launched"; readonly runId: string }
+  | { readonly kind: "consumed" | "stopped" | "none" };
+
+/**
  * User-message half of the per-thread scheduler: when the thread has no
- * in-flight run, dispatch the oldest queued user message — whoever sent it.
- * The shared thread scheduler calls this before attempting the automation-event
- * half, preserving user-message priority.
+ * in-flight run and a user message is the queue head, dispatch it — whoever
+ * sent it.
  */
 async function autoSendQueuedMessageForThread(
   args: AutoSendQueuedMessageArgs,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<QueuedUserMessageLaunchOutcome> {
   const { chatThreadId: threadId, userId } = args;
 
   const queuedMessage = await measureChatCallbackPreCreateTiming(
@@ -3943,15 +3989,11 @@ async function autoSendQueuedMessageForThread(
     "api_dispatch_pre_create_agent_chat_callback_auto_send_lookup_queued_message",
     "nested",
     () => {
-      return loadNextUnclaimedQueuedUserMessage(
-        args.db,
-        threadId,
-        args.queueItemCreatedBefore,
-      );
+      return loadNextUnclaimedQueuedUserMessage(args.db, threadId);
     },
   );
   if (!queuedMessage) {
-    return;
+    return { kind: "none" };
   }
 
   args.timing.recordElapsed({
@@ -3975,7 +4017,7 @@ async function autoSendQueuedMessageForThread(
       threadId,
       agentId: args.agentId,
     });
-    return;
+    return { kind: "stopped" };
   }
 
   const runInput = await prepareAutoSendQueuedMessageRunInput(
@@ -3983,21 +4025,22 @@ async function autoSendQueuedMessageForThread(
     signal,
   );
   if (!runInput) {
-    return;
+    return { kind: "consumed" };
   }
   const activeRunExists = await autoSendAdmissionBlocked(args, threadId);
   if (activeRunExists) {
-    return;
+    return { kind: "stopped" };
   }
   if ("kind" in runInput) {
     await handleQueuedMessageAdmissionFailure(
       autoSendAdmissionFailureArgs(args, runInput),
       signal,
     );
-    return;
+    return { kind: "consumed" };
   }
 
   let createdRunId: string | null = null;
+  let admissionFailed = false;
   const run = await onRejection(
     (async () => {
       const createdRun = await createAutoSentQueuedRun({
@@ -4009,6 +4052,7 @@ async function autoSendQueuedMessageForThread(
         return null;
       }
       if ("kind" in createdRun) {
+        admissionFailed = true;
         await handleQueuedMessageAdmissionFailure(
           autoSendAdmissionFailureArgs(args, createdRun),
           signal,
@@ -4042,31 +4086,42 @@ async function autoSendQueuedMessageForThread(
     }),
   );
   if (run) {
-    // The run exists, which is what makes this a use. Building the input does
-    // not: admission is re-checked after it and can leave the message queued
-    // for a later attempt that reports the same message again.
-    logTemplateUsage(
-      {
-        dispatchPath: "queued-claim",
-        orgId: runInput.orgId,
-        userId,
-        chatThreadId: threadId,
-      },
-      runInput.generationTemplateIdentities,
-    );
-    // Ingress channels never touch the web send route, so this is where their
-    // threads get an eager title instead of waiting for the run to finish.
-    scheduleChatThreadTitleGeneration({
-      db: args.db,
-      threadId,
-      userId,
-      orgId: runInput.orgId,
-      prompt: runInput.prompt,
-      includePriorRounds: true,
-    });
-    scheduleQueuedLaunchStatus(args.db, run.runId, runInput);
-    args.timing.flush(run.runId, runInput.triggerSource);
+    recordAutoSentQueuedRunLaunch(args, run, runInput);
+    return { kind: "launched", runId: run.runId };
   }
+  return { kind: admissionFailed ? "consumed" : "stopped" };
+}
+
+function recordAutoSentQueuedRunLaunch(
+  args: AutoSendQueuedMessageArgs,
+  run: CreatedQueuedRun,
+  runInput: CreateQueuedChatRunInput,
+): void {
+  const { chatThreadId: threadId, userId } = args;
+  // The run exists, which is what makes this a use. Building the input does
+  // not: admission is re-checked after it and can leave the message queued
+  // for a later attempt that reports the same message again.
+  logTemplateUsage(
+    {
+      dispatchPath: "queued-claim",
+      orgId: runInput.orgId,
+      userId,
+      chatThreadId: threadId,
+    },
+    runInput.generationTemplateIdentities,
+  );
+  // Ingress channels never touch the web send route, so this is where their
+  // threads get an eager title instead of waiting for the run to finish.
+  scheduleChatThreadTitleGeneration({
+    db: args.db,
+    threadId,
+    userId,
+    orgId: runInput.orgId,
+    prompt: runInput.prompt,
+    includePriorRounds: true,
+  });
+  scheduleQueuedLaunchStatus(args.db, run.runId, runInput);
+  args.timing.flush(run.runId, runInput.triggerSource);
 }
 
 /** A launched queued input shows processing status before its Runner starts. */
@@ -5106,11 +5161,15 @@ const createQueuedRunForChatCallback$ = command(
     }
     if (runResult.status !== 201) {
       signal.throwIfAborted();
-      log.warn("Auto-send failed to create run", {
-        threadId: input.runInput.threadId,
-        status: runResult.status,
-      });
-      return null;
+      // Only organization capacity keeps the message waiting for a later
+      // pick. Any other rejection consumes it, as a web send would.
+      if (runResult.body.error.code === "CONCURRENT_RUN_LIMIT") {
+        return null;
+      }
+      return rejectedQueuedRunAdmissionFailure(
+        input.runInput,
+        runResult.body.error,
+      );
     }
     if (!isCreatedQueuedRunStatus(runResult.body.status)) {
       log.warn("Auto-send created run with unexpected status", {
@@ -5486,11 +5545,10 @@ export const drainQueuedUserMessagesForThread$ = command(
     args: {
       readonly chatThreadId: string;
       readonly apiStartTime: number;
-      readonly queueItemCreatedBefore?: Date;
       readonly timing?: ChatCallbackPreCreateTimingCollector;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<QueuedUserMessageLaunchOutcome> => {
     const db = set(writeDb$);
     const [thread] = await measureChatCallbackPreCreateTiming(
       args.timing,
@@ -5510,22 +5568,21 @@ export const drainQueuedUserMessagesForThread$ = command(
     );
     signal.throwIfAborted();
     if (!thread) {
-      return;
+      return { kind: "none" };
     }
     const dependencies = set(buildChatCallbackDependencies$, { db });
     const createQueuedRun = dependencies.createQueuedRun;
     if (!createQueuedRun) {
-      return;
+      return { kind: "stopped" };
     }
     const admissionTime = args.apiStartTime;
-    await autoSendQueuedMessageForThread(
+    const outcome = await autoSendQueuedMessageForThread(
       {
         db,
         chatThreadId: args.chatThreadId,
         admissionTime,
         userId: thread.userId,
         agentId: thread.agentId,
-        queueItemCreatedBefore: args.queueItemCreatedBefore,
         timing: args.timing ?? new ChatCallbackPreCreateTimingCollector(),
         formatIntegrationRunError: dependencies.formatIntegrationRunError,
         deliverSlackAdmissionFailure: dependencies.deliverSlackAdmissionFailure,
@@ -5555,6 +5612,7 @@ export const drainQueuedUserMessagesForThread$ = command(
       signal,
     );
     signal.throwIfAborted();
+    return outcome;
   },
 );
 

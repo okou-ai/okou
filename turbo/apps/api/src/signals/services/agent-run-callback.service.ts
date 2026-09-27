@@ -10,7 +10,7 @@ import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { settle } from "../utils";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { takeOverChatThreadQueue$ } from "./chat-thread-queue-drain.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
@@ -157,7 +157,7 @@ const dispatchInternalCallback$ = command(
             callback: input.envelope,
             drainThreadQueue: async (chatThreadId, inputSignal, timing) => {
               await set(
-                drainChatThreadQueueForThread$,
+                takeOverChatThreadQueue$,
                 {
                   chatThreadId,
                   dispatchFailedCallbacks: dispatchFailedRunCallbacks,

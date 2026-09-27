@@ -180,13 +180,10 @@ records the evidence and its limits:
    [migration consistency](scripts/test-migration-consistency-schema.ts) retains
    both validated metadata checks, all 18 optional-field partial-write failures,
    discriminator requirements, autonomy bounds, valid nullable/current states,
-   schema equivalence, and complete trigger/function inventory. The
-   [current-schema API tests](../../apps/api/src/signals/routes/__tests__/goal-schema-contraction.test.ts)
-   retain real launches, callbacks, late billing and publication/retention races;
-   [literal history tests](../../apps/api/src/signals/routes/__tests__/goal-retirement-history.test.ts)
-   retain all four statuses, malformed provenance, hot/snapshot/search/export,
-   new and unchanged old shares, and ordinary continuation. Shared archive
-   contracts, Platform rendering and fail-closed security coverage remain.
+   schema equivalence, and complete trigger/function inventory. The Goal API
+   test suites and their fixtures were removed in #37034 after Goal went fully
+   offline. Shared archive contracts, Platform rendering and fail-closed
+   security coverage remain.
 
 The expired [1093/1094 validator](https://github.com/vm0-ai/vm0/blob/1cd69b0219c6fe67b7d2fd15bcb7e914ffd8f52e/turbo/packages/db/scripts/test-goal-retirement-migration.ts)
 and [1105/1106 validator](https://github.com/vm0-ai/vm0/blob/1cd69b0219c6fe67b7d2fd15bcb7e914ffd8f52e/turbo/packages/db/scripts/test-goal-schema-contraction.ts)

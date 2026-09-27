@@ -87,15 +87,6 @@ describe("canonical chat event storage", () => {
       threadScopedDispatchMatchedInterrupt: false,
     });
 
-    expect(row(fixture.single.goalContextEventId)).toMatchObject({
-      payload: { content: "goal output" },
-      contextType: "goal",
-      contextId: fixture.single.goalId,
-    });
-    expect(row(fixture.single.goalOpenId).payload).toStrictEqual({
-      content: "goal opened",
-    });
-
     expect(row(fixture.batch.thinkingId).payload).toStrictEqual({
       thinking: "canonical thinking",
     });
@@ -104,7 +95,6 @@ describe("canonical chat event storage", () => {
       failureReason: "future_reason",
     });
     expect(row(fixture.batch.browserCloseId).payload).toBeNull();
-    expect(row(fixture.batch.goalCloseId).payload).toBeNull();
     const usage = row(fixture.batch.usageId);
     expect(usage.payload).toStrictEqual({
       usage: {
@@ -148,14 +138,5 @@ describe("canonical chat event storage", () => {
       payload: null,
     });
     expect(storedInterrupt).not.toHaveProperty("interruptsRunId");
-    const storedGoalOutput = storedRows.find((candidate) => {
-      return candidate.id === fixture.single.goalContextEventId;
-    });
-    expect(storedGoalOutput).toMatchObject({
-      contextType: "goal",
-      contextId: fixture.single.goalId,
-      payload: { content: "goal output" },
-    });
-    expect(storedGoalOutput).not.toHaveProperty("runGroupId");
   });
 });

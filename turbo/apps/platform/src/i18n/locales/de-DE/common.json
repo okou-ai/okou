@@ -2078,7 +2078,7 @@
       "aboutAutomationEvent": "Über dieses Automatisierungsereignis",
       "aboutQueuedMessage": "Über diese Nachricht in der Warteschlange",
       "automationEvent": "Automatisierungsereignis",
-      "automationEventDescription": "Wartet hinter Nachrichten in der Warteschlange und wird ausgeführt, sobald die aktuelle Ausführung abgeschlossen ist.",
+      "automationEventDescription": "Wartet in der Warteschlange und wird automatisch ausgeführt, sobald sie starten kann.",
       "cancellationRecoveryPending": "Die abgebrochene Ausführung wird abgeschlossen, bevor die Arbeit in der Warteschlange fortgesetzt wird.",
       "event_one": "{{count}} Ereignis",
       "event_other": "{{count}} Ereignisse",
@@ -2089,7 +2089,7 @@
       "message_other": "{{count}} Nachrichten",
       "pendingAutomationEvent": "Ausstehendes Automatisierungsereignis",
       "queuedMessage": "Nachricht in der Warteschlange",
-      "queuedMessageDescription": "Wartet in der Warteschlange und wird gesendet, sobald die aktuelle Ausführung beendet ist.",
+      "queuedMessageDescription": "Wartet in der Warteschlange und wird automatisch gesendet, sobald sie starten kann.",
       "removeQueuedMessage": "Nachricht aus der Warteschlange entfernen",
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
     },

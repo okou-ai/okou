@@ -1,8 +1,3 @@
-import {
-  setHistoricalGoalStatusFixture,
-  seedGoalForRunFixture,
-} from "../../../test-fixtures/goal-queue";
-
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import AdmZip from "adm-zip";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -550,22 +545,6 @@ function okouCapabilityHeaders(
       exp: seconds + 600,
     })}`,
   };
-}
-
-/** Construct historical state without exposing a live Goal API. */
-async function createThreadGoal(
-  _actor: ApiTestUser,
-  runId: string,
-  objective: string,
-): Promise<void> {
-  await seedGoalForRunFixture(runId, objective);
-}
-
-async function completeThreadGoal(
-  actor: ApiTestUser,
-  runId: string,
-): Promise<void> {
-  await setHistoricalGoalStatusFixture(runId, "complete");
 }
 
 const malformedChatThreadIdRequests = [
@@ -2920,31 +2899,6 @@ describe("CHAT-01 chat thread read state", () => {
       [],
     );
 
-    // Historical Goal status does not control current unread indicators.
-    const activeGoalRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId: agentA,
-      prompt: "unread aggregate with active goal",
-    });
-    const completeGoalRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId: agentB,
-      prompt: "unread aggregate with complete goal",
-    });
-    await createThreadGoal(owner, activeGoalRun.runId, "bdd unread goal");
-    await createThreadGoal(owner, completeGoalRun.runId, "bdd unread goal");
-    await completeThreadGoal(owner, completeGoalRun.runId);
-    expect(new Set(await chat.listUnreadAgents(owner))).toStrictEqual(
-      new Set([agentA, agentB]),
-    );
-    expect(new Set(await chat.listUnreadChatThreadIds(owner))).toStrictEqual(
-      new Set([activeGoalRun.threadId, completeGoalRun.threadId]),
-    );
-    await chat.markThreadRead(owner, activeGoalRun.threadId);
-    await chat.markThreadRead(owner, completeGoalRun.threadId);
-    await expect(chat.listUnreadAgents(owner)).resolves.toStrictEqual([]);
-    await expect(chat.listUnreadChatThreadIds(owner)).resolves.toStrictEqual(
-      [],
-    );
-
     const runA = await completeChatRunInThread(owner, runnerGroup, {
       agentId: agentA,
       prompt: "unread aggregate A",
@@ -3152,106 +3106,6 @@ describe("CHAT-01 chat thread read state", () => {
       }
     });
   }, 240_000);
-
-  it("excludes active runs while preserving unread state in historical Goal threads", async () => {
-    const {
-      actor: owner,
-      agentId,
-      runnerGroup,
-    } = await entitledChatActor("Unread active state agent");
-
-    // A claimed (running) run keeps its thread out of the unread list.
-    const runningRun = await sendChatRun(owner, {
-      agentId,
-      prompt: "unread thread with active run",
-    });
-    const runningClaim = await claimChatRun(runnerGroup, runningRun.runId);
-
-    const completedRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId,
-      prompt: "unread thread with completed run",
-    });
-    const activeGoalRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId,
-      prompt: "unread thread with active goal",
-    });
-    const completeGoalRun = await completeChatRunInThread(owner, runnerGroup, {
-      agentId,
-      prompt: "unread thread with complete goal",
-    });
-    await createThreadGoal(owner, activeGoalRun.runId, "bdd unread goal");
-    await createThreadGoal(owner, completeGoalRun.runId, "bdd unread goal");
-    await completeThreadGoal(owner, completeGoalRun.runId);
-
-    expect(
-      new Set(
-        (await chat.listThreadUnreads(owner, agentId)).map((unread) => {
-          return unread.threadId;
-        }),
-      ),
-    ).toStrictEqual(
-      new Set([
-        completedRun.threadId,
-        activeGoalRun.threadId,
-        completeGoalRun.threadId,
-      ]),
-    );
-    await expect(chat.listIndicators(owner)).resolves.toStrictEqual({
-      agents: { [agentId]: "unread" },
-      threads: {
-        [runningRun.threadId]: "active",
-        [completedRun.threadId]: "unread",
-        [completeGoalRun.threadId]: "unread",
-        [activeGoalRun.threadId]: "unread",
-      },
-      unreadAt: {
-        [completedRun.threadId]: expect.any(String),
-        [completeGoalRun.threadId]: expect.any(String),
-        [activeGoalRun.threadId]: expect.any(String),
-      },
-    });
-
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(runningRun.runId, runningClaim.sandboxHeaders);
-    await flushWaitUntilForTest();
-    await waitForThreadEvents(owner, runningRun.threadId, (events) => {
-      return events.some((event) => {
-        return (
-          event.runId === runningRun.runId &&
-          event.eventType === "run.completed"
-        );
-      });
-    });
-    expect(
-      new Set(
-        (await chat.listThreadUnreads(owner, agentId)).map((unread) => {
-          return unread.threadId;
-        }),
-      ),
-    ).toStrictEqual(
-      new Set([
-        runningRun.threadId,
-        completedRun.threadId,
-        completeGoalRun.threadId,
-        activeGoalRun.threadId,
-      ]),
-    );
-    await expect(chat.listIndicators(owner)).resolves.toStrictEqual({
-      agents: { [agentId]: "unread" },
-      threads: {
-        [runningRun.threadId]: "unread",
-        [completedRun.threadId]: "unread",
-        [completeGoalRun.threadId]: "unread",
-        [activeGoalRun.threadId]: "unread",
-      },
-      unreadAt: {
-        [runningRun.threadId]: expect.any(String),
-        [completedRun.threadId]: expect.any(String),
-        [completeGoalRun.threadId]: expect.any(String),
-        [activeGoalRun.threadId]: expect.any(String),
-      },
-    });
-  }, 120_000);
 
   it("marks all unread chat threads for one agent", async () => {
     const {

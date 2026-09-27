@@ -216,26 +216,6 @@ async function createUnthreadedRun(
       },
     },
   });
-  if (args.triggerSource === "goal") {
-    if (!actor.orgId) {
-      throw new Error("Historical Goal usage requires an org-scoped actor");
-    }
-    // Goal history remains billable/readable after its runtime writer retires.
-    return await store.set(
-      seedRun$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        composeId: compose.agentId,
-        prompt: args.prompt,
-        triggerSource: "goal",
-        status: "completed",
-        completedAt: nowDate(),
-        createdAt: args.createdAt,
-      },
-      context.signal,
-    );
-  }
   if (args.createdAt) {
     mockNow(args.createdAt);
   }
@@ -776,7 +756,6 @@ describe("GET /api/usage/record", () => {
       ["automation-event", 3],
       ["automation-schedule", 4],
       ["automation-event", 5],
-      ["goal", 6],
     ] as const;
     for (const [triggerSource, quantity] of sources) {
       const run = await createUnthreadedRun(fixture.actor, {
@@ -803,11 +782,11 @@ describe("GET /api/usage/record", () => {
     );
 
     expect(response.body.rows).toHaveLength(1);
-    expect(response.body.totalCredits).toBe(200);
+    expect(response.body.totalCredits).toBe(140);
     expect(response.body.rows[0]).toMatchObject({
       threadId: null,
       title: "Unavailable thread",
-      credits: 200,
+      credits: 140,
       tokens: 0,
     });
   });

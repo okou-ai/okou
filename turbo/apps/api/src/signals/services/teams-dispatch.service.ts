@@ -1948,6 +1948,7 @@ const runAgentForTeams$ = command(
       drainChatThreadQueueForThread$,
       {
         chatThreadId: persisted.chatThreadId,
+        orgId: args.installation.orgId,
         dispatchFailedCallbacks: dispatchFailedRunCallbacks,
       },
       signal,

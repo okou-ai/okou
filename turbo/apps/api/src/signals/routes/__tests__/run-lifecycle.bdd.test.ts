@@ -99,15 +99,10 @@ import {
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
 import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
 import {
-  cleanupOwnedSkillsState,
-  seedCurrentSkillVersionsState,
-} from "./helpers/cron-sync-skills-state";
-import {
   readRunIdentityMismatchWriteCountsFixture,
   readRunModelRuntimeRouteFixture,
   readSessionHistoryBlobRefCountFixture,
   setRunModelProviderFixture,
-  setRunModelRuntimeRouteFixture,
 } from "../../../test-fixtures/agent-runs";
 import {
   holdAgentRunRowLockFixture,
@@ -123,7 +118,6 @@ import { seedUserSecret, seedUserVariable } from "./helpers/user-config-state";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
@@ -604,33 +598,6 @@ function customConnectorRuntimeAuthBody(
   };
 }
 
-async function waitForRunStatus(
-  api: ReturnType<typeof createRunsApi>,
-  actor: ApiTestUser,
-  runId: string,
-  status: string,
-) {
-  await expect
-    .poll(async () => {
-      return (await api.readRun(actor, runId)).status;
-    })
-    .toBe(status);
-  return await api.readRun(actor, runId);
-}
-
-async function waitForRunQueueLength(
-  api: ReturnType<typeof createRunsApi>,
-  actor: ApiTestUser,
-  length: number,
-) {
-  await expect
-    .poll(async () => {
-      return (await api.readRunQueue(actor)).body.queue.length;
-    })
-    .toBe(length);
-  return await api.readRunQueue(actor);
-}
-
 function base64UrlEncode(input: string): string {
   return Buffer.from(input, "utf8")
     .toString("base64")
@@ -1101,64 +1068,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(appendSystemPrompt).toContain(
       "do not pull or compare the registry copy",
     );
-  });
-
-  it("mounts shared skills without granting Goal authority to a fresh manual run", async () => {
-    const names = ["goal", "workflow-setup"];
-    const versions = names.map((name) => {
-      const fullPath = `okou-ai/okou-skills/tree/fixture-${randomUUID()}/${name}`;
-      return {
-        name,
-        url: `https://github.com/${fullPath}`,
-        full_path: fullPath,
-        storage_name: `agent-skills@${fullPath}`,
-        version_hash: createHash("sha256").update(randomUUID()).digest("hex"),
-        size: 1024,
-        archive_size: 1024,
-        file_count: 1,
-        frontmatter: { name, description: `Historical ${name} skill fixture` },
-      };
-    });
-    onTestFinished(async () => {
-      await cleanupOwnedSkillsState(context, {
-        skillUrls: versions.map((version) => {
-          return version.url;
-        }),
-        storageNames: versions.map((version) => {
-          return version.storage_name;
-        }),
-      });
-    });
-    await seedCurrentSkillVersionsState(context, {
-      staleCommitSha: "goal-retirement-fixture",
-      versions,
-    });
-    const api = createRunsApi(
-      context,
-      Object.fromEntries(
-        versions.map((version) => {
-          return [version.name, version.storage_name];
-        }),
-      ),
-    );
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "ordinary manual request",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.runId);
-    const mounts = expectCanonicalStorageManifest(
-      claim.storageManifest,
-    )?.storageMounts.map((mount) => {
-      return mount.mountPath;
-    });
-    expect(mounts).toContain("/home/user/.claude/skills/workflow-setup");
-    expect(mounts).not.toContain("/home/user/.claude/skills/goal");
-    expect(claim.appendSystemPrompt).toContain("# Agent Tools");
-    expect(claim.appendSystemPrompt).not.toContain("# Thread Goal");
-    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("prefers the installed CLI while retaining the legacy package URL in new run claims", async () => {
@@ -5305,55 +5214,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 });
 
 describe("RUN-01: admission boundaries beyond request validation", () => {
-  it.each([
-    "claude-fable-5",
-    "anthropic/claude-fable-5",
-    "claude-sonnet-4-6",
-    "anthropic/claude-opus-4.8",
-  ])(
-    "fails a pre-deployment queued %s selection when capacity becomes available",
-    async (selectedModel) => {
-      // Two admitted runs keep the next one queued, independent of the plan.
-      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-      const api = createRunsApi(context);
-      const { actor, agentId } = await entitledRunActor();
-      const first = await api.createRun(actor, {
-        agentId,
-        prompt: "hold first slot",
-        modelProvider: "anthropic-api-key",
-      });
-      const second = await api.createRun(actor, {
-        agentId,
-        prompt: "hold second slot",
-        modelProvider: "anthropic-api-key",
-      });
-      const queued = await api.createRun(actor, {
-        agentId,
-        prompt: "queued before model retirement",
-        modelProvider: "anthropic-api-key",
-      });
-      expect(queued.status).toBe("queued");
-      // The previous API could enqueue this snapshot. The current write APIs
-      // reject it, so simulate only the persisted pre-deployment selection.
-      await setRunModelRuntimeRouteFixture({
-        runId: queued.runId,
-        selectedModel,
-        modelRuntimeProvider: "anthropic-api-key",
-        modelRuntimeModel: selectedModel,
-      });
-      await api.requestCancelRun(actor, first.runId, [200]);
-      const failed = await waitForRunStatus(api, actor, queued.runId, "failed");
-      expect(failed.error).toBe(
-        "This model has been retired. Select another available model.",
-      );
-      expect(
-        (await waitForRunQueueLength(api, actor, 0)).body.queue,
-      ).toHaveLength(0);
-      expect((await api.readRun(actor, second.runId)).status).toBe("pending");
-      await api.requestCancelRun(actor, second.runId, [200]);
-    },
-  );
-
   it("rejects runs for onboarded organizations with suspended entitlements", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
@@ -5552,12 +5412,11 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
-  it("queues runs over the concurrency limit and promotes them after cancellation", async () => {
-    // Two admitted runs keep the next one queued, independent of the plan.
+  it("rejects runs over the concurrency limit until a slot frees", async () => {
+    // Two admitted runs fill the organization, independent of the plan.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const kms = useSecretKmsProbe();
+    const { actor, agentId } = await entitledRunActor();
 
     const first = await api.createRun(actor, {
       agentId,
@@ -5572,171 +5431,33 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     });
     expect(second.status).toBe("pending");
 
+    const rejected = await api.requestCreateRun(
+      actor,
+      {
+        agentId,
+        prompt: "run over the concurrency limit",
+        modelProvider: "anthropic-api-key",
+      },
+      [429],
+    );
+    expectApiError(rejected.body);
+    expect(rejected.body.error.code).toBe("CONCURRENT_RUN_LIMIT");
+
+    const atLimit = await api.readRunQueue(actor);
+    expect(atLimit.body.concurrency.active).toBe(2);
+    expect(atLimit.body.queue).toHaveLength(0);
+
+    // Cancelling an active run frees the slot for the next direct create.
+    await api.requestCancelRun(actor, first.runId, [200]);
     const third = await api.createRun(actor, {
       agentId,
-      prompt: "queued run three",
+      prompt: "run after a slot frees",
       modelProvider: "anthropic-api-key",
     });
-    expect(third.status).toBe("queued");
-
-    const queued = await api.readRunQueue(actor);
-    expect(queued.body.concurrency.active).toBe(2);
-    expect(queued.body.queue).toHaveLength(1);
-    expect(queued.body.queue[0]?.runId).toBe(third.runId);
-
-    const promotedAt = now() + 5000;
-    mockNow(promotedAt);
-    await api.requestCancelRun(actor, first.runId, [200]);
-
-    const promoted = await waitForRunStatus(api, actor, third.runId, "pending");
-    expect(promoted.status).toBe("pending");
-    const drained = await waitForRunQueueLength(api, actor, 0);
-    expect(drained.body.queue).toHaveLength(0);
-    const promotedStorageState = await readRunnerJobStorageState(
-      context,
-      third.runId,
-    );
-    expect(promotedStorageState.has_stored_storage_manifest).toBeFalsy();
-    expect(promotedStorageState.canonical_mount_count).toBeGreaterThan(0);
-    expect(promotedStorageState.has_run_context_storage).toBeFalsy();
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "job",
-      expect.objectContaining({
-        runId: third.runId,
-        runnerPreference: {
-          kind: "noPreference",
-          reason: "noReuseKey",
-        },
-      }),
-    );
-    const decryptCountBeforeClaim = kms.decryptCalls;
-    await api.heartbeatRunner(runnerGroup);
-    const thirdClaim = await api.claimRunnerJob(third.runId);
-    expect(thirdClaim.prompt).toBe("queued run three");
-    const okouToken = thirdClaim.platformEnvironment.OKOU_TOKEN;
-    if (!okouToken) {
-      throw new Error("Expected the promoted claim to expose the Okou token");
-    }
-    expect(thirdClaim.secretValues).toContain(okouToken);
-    expect(thirdClaim).not.toHaveProperty("secretValueEnvironmentKeys");
-    expect(thirdClaim).not.toHaveProperty("runContextStorage");
-    expect(kms.decryptCalls).toBe(decryptCountBeforeClaim);
+    expect(third.status).toBe("pending");
 
     await api.requestCancelRun(actor, second.runId, [200]);
     await api.requestCancelRun(actor, third.runId, [200]);
-    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
-    await finishCancelledRun(third.runId, thirdClaim.sandboxToken);
-    const emptied = await api.readRunQueue(actor);
-    expect(emptied.body.concurrency.active).toBe(0);
-  });
-
-  it("counts promoted queued runs by promotion heartbeat for admission", async () => {
-    // Two admitted runs keep the next one queued, independent of the plan.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const first = await api.createRun(actor, {
-      agentId,
-      prompt: "active run before old queue promotion one",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(first.status).toBe("pending");
-    const second = await api.createRun(actor, {
-      agentId,
-      prompt: "active run before old queue promotion two",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(second.status).toBe("pending");
-
-    const queued = await api.createRun(actor, {
-      agentId,
-      prompt: "queued run promoted after pending ttl",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(queued.status).toBe("queued");
-    const queuedRegistration = await readConnectorDiagnosticRegistration(
-      queued.runId,
-    );
-    expect(queuedRegistration).not.toBeNull();
-
-    mockNow(now() + 16 * 60_000);
-    await api.requestCancelRun(actor, first.runId, [200]);
-    const promoted = await waitForRunStatus(
-      api,
-      actor,
-      queued.runId,
-      "pending",
-    );
-    expect(promoted.status).toBe("pending");
-    await expect(
-      readConnectorDiagnosticRegistration(queued.runId),
-    ).resolves.toStrictEqual(queuedRegistration);
-
-    const fresh = await api.createRun(actor, {
-      agentId,
-      prompt: "fresh run beside promoted queue item",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(fresh.status).toBe("pending");
-
-    const overLimit = await api.createRun(actor, {
-      agentId,
-      prompt: "run should queue behind promoted active item",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(overLimit.status).toBe("queued");
-
-    const queue = await api.readRunQueue(actor);
-    expect(queue.body.concurrency.active).toBe(2);
-    expect(queue.body.queue).toContainEqual(
-      expect.objectContaining({ runId: overLimit.runId }),
-    );
-
-    await api.requestCancelRun(actor, overLimit.runId, [200]);
-    await api.requestCancelRun(actor, fresh.runId, [200]);
-    await api.requestCancelRun(actor, queued.runId, [200]);
-    await api.requestCancelRun(actor, second.runId, [200]);
-  });
-
-  it("keeps a queued launch visible when enqueue telemetry fails", async () => {
-    // Two admitted runs keep the next one queued, independent of the plan.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const first = await api.createRun(actor, {
-      agentId,
-      prompt: "active run before telemetry failure one",
-      modelProvider: "anthropic-api-key",
-    });
-    const second = await api.createRun(actor, {
-      agentId,
-      prompt: "active run before telemetry failure two",
-      modelProvider: "anthropic-api-key",
-    });
-    // Those two runs hold the concurrency limit, so the next launch is the
-    // first one whose enqueue telemetry is written after the failure starts.
-    mockAxiomSdkTelemetryFailure({
-      mode: "ingest",
-      datasets: [SANDBOX_OP_LOG_DATASET],
-    });
-
-    const queued = await api.createRun(actor, {
-      agentId,
-      prompt: "queued run should survive telemetry failure",
-      modelProvider: "anthropic-api-key",
-    });
-
-    expect(queued.status).toBe("queued");
-    const queue = await api.readRunQueue(actor);
-    expect(queue.body.queue).toContainEqual(
-      expect.objectContaining({ runId: queued.runId }),
-    );
-
-    await api.requestCancelRun(actor, queued.runId, [200]);
-    await api.requestCancelRun(actor, first.runId, [200]);
-    await api.requestCancelRun(actor, second.runId, [200]);
   });
 
   it("records a failed queued launch when queue payload encryption fails", async () => {
@@ -13436,9 +13157,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
   });
 
-  it("does not classify queued or pending runs as terminal", async () => {
-    // Two admitted runs keep the next one queued, independent of the plan.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
+  it("does not classify pending runs as terminal", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
     const runnerKey = await api.createCliToken(actor);
@@ -13452,12 +13171,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
     const firstPending = await createNonTerminalRun("pending refresh one");
     const secondPending = await createNonTerminalRun("pending refresh two");
-    const queued = await createNonTerminalRun("queued refresh");
     expect(firstPending.status).toBe("pending");
     expect(secondPending.status).toBe("pending");
-    expect(queued.status).toBe("queued");
 
-    for (const run of [firstPending, secondPending, queued]) {
+    for (const run of [firstPending, secondPending]) {
       const sync = await api.requestSyncConnectorRuntimeAs(
         `Bearer ${runnerKey.token}`,
         run.runId,
@@ -13467,7 +13184,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       expect(sync.body.error.code).toBe("NOT_FOUND");
     }
 
-    await api.requestCancelRun(actor, queued.runId, [200]);
     await api.requestCancelRun(actor, secondPending.runId, [200]);
     await api.requestCancelRun(actor, firstPending.runId, [200]);
   });
@@ -14457,13 +14173,13 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("keeps goal tools allowed with callback guidance", async () => {
+  it("keeps the standard disallowed tools with callback guidance", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
     const run = await api.createRun(actor, {
       agentId,
-      prompt: "continue the goal",
+      prompt: "continue the task",
       modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
@@ -14473,8 +14189,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       EXPECTED_AGENT_RUN_DISALLOWED_TOOLS,
     );
     expect(claim.disallowedTools).not.toContain("WebFetch");
-    expect(claim.disallowedTools).not.toContain("goal");
-    expect(claim.disallowedTools).not.toContain("update_goal");
     expect(claim.appendSystemPrompt ?? "").toContain("okou scrape --help");
     expect(claim.appendSystemPrompt ?? "").toContain("okou web-search --help");
     expect(claim.appendSystemPrompt ?? "").toContain("--callback-prompt");
@@ -14482,106 +14196,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
     const cancelled = await api.readRun(actor, run.runId);
     expect(cancelled.status).toBe("cancelled");
-  });
-
-  it("promotes queued runs with feature flags and a fresh api start time", async () => {
-    // Two admitted runs keep the next one queued, independent of the plan.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const api = createRunsApi(context);
-    const computerUse = createComputerUseBddApi(context);
-    const connectors = createConnectorBddApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.OkouDebug]: true,
-    });
-    onTestFinished(async () => {
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OkouDebug]: false,
-      });
-    });
-
-    const firstStartedAt = now();
-    mockNow(firstStartedAt);
-    const first = await api.createRun(actor, {
-      agentId,
-      prompt: "active run one",
-      modelProvider: "anthropic-api-key",
-    });
-    const second = await api.createRun(actor, {
-      agentId,
-      prompt: "active run two",
-      modelProvider: "anthropic-api-key",
-    });
-    const queued = await api.createRun(actor, {
-      agentId,
-      prompt: "queued run three",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(queued.status).toBe("queued");
-    const queuedLaunchSnapshot = await readRunLaunchSnapshotFixture(
-      context,
-      queued.runId,
-    );
-    expect(queuedLaunchSnapshot).toStrictEqual({
-      exists: true,
-      launch_snapshot: {
-        schemaVersion: 3,
-        framework: "claude-code",
-        runnerProfile: DEFAULT_PROFILE,
-      },
-    });
-    await expect(
-      readRunAutonomyBudgetFixture(context, queued.runId),
-    ).resolves.toBe(10);
-    await expect(readRunApiStart(context, queued.runId)).resolves.toBeNull();
-    const queueState = await api.readRunQueue(actor);
-    expect(queueState.body.queue[0]?.runId).toBe(queued.runId);
-
-    // The promoted run's api start time is the promotion time, not the
-    // original request time (both stay inside the pending-run TTL window).
-    const promotedAt = firstStartedAt + 120_000;
-    mockNow(promotedAt);
-    await api.requestCancelRun(actor, first.runId, [200]);
-    const promoted = await waitForRunStatus(
-      api,
-      actor,
-      queued.runId,
-      "pending",
-    );
-    expect(promoted.status).toBe("pending");
-    await expect(readRunApiStart(context, queued.runId)).resolves.toBe(
-      new Date(promotedAt).toISOString(),
-    );
-
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(queued.runId);
-    expect(claim.cliAgentType).toBe(
-      queuedLaunchSnapshot.launch_snapshot?.framework,
-    );
-    expect(claim.featureFlags).toMatchObject({
-      [FeatureSwitchKey.OkouDebug]: true,
-    });
-    expect(claim.apiStartTime).toBe(promotedAt);
-
-    // A run-scoped Okou token issued without a host binding cannot reach
-    // computer-use write routes.
-    const okouToken = claim.platformEnvironment.OKOU_TOKEN;
-    if (!okouToken) {
-      throw new Error("Expected the promoted claim to expose the Okou token");
-    }
-    const writeRejected =
-      await computerUse.requestCreateComputerUseWriteCommand(
-        { bearer: okouToken },
-        [403],
-      );
-    expectApiError(writeRejected.body);
-
-    await api.requestCancelRun(actor, second.runId, [200]);
-    await api.requestCancelRun(actor, queued.runId, [200]);
-    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
-    await finishCancelledRun(queued.runId, claim.sandboxToken);
-    const drained = await api.readRunQueue(actor);
-    expect(drained.body.concurrency.active).toBe(0);
   });
 
   it("mounts workflows for Claude Code agents", async () => {
@@ -16354,19 +15968,17 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     await api.requestCancelRun(actor, runId, [200]);
   });
 
-  it("uses the promoted api start for the runner claim", async () => {
-    // Two admitted runs keep the next one queued, independent of the plan.
+  it("uses the pick time as api start for a chat input picked after a slot frees", async () => {
+    // Two open runs fill the organization, independent of the plan.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const api = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor(
       {},
       NATIVE_RUNNER_ROUTE,
     );
     failIfChatCallbackRouteIsFetched();
     const requestedAt = Date.parse("2026-07-23T10:00:00.000Z");
-    const promotedAt = requestedAt + 120_000;
-    const acknowledgedAt = promotedAt + 3456;
+    const pickedAt = requestedAt + 120_000;
     mockNow(requestedAt);
     onTestFinished(() => {
       clearMockNow();
@@ -16380,45 +15992,22 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       agentId,
       prompt: "occupy the second concurrency slot",
     });
-    const queued = await sendChatRunMessage(actor, {
+    // At capacity the chat input waits in its thread without a run.
+    const waiting = await piClaimFixture.sendWaitingChatInput(actor, {
       agentId,
-      prompt: "promote this chat run",
+      prompt: "pick this chat input",
     });
-    expect((await api.readRun(actor, queued.runId)).status).toBe("queued");
-    await expect(readRunApiStart(context, queued.runId)).resolves.toBeNull();
 
-    mockNow(promotedAt);
+    mockNow(pickedAt);
     await api.requestCancelRun(actor, first.runId, [200]);
-    await waitForRunStatus(api, actor, queued.runId, "pending");
     await flushWaitUntilForTest();
+    const picked = await waiting.launchedRun();
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(queued.runId);
-    expect(claim.apiStartTime).toBe(promotedAt);
-
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    mockNow(acknowledgedAt);
-    await webhooks.requestAgentEvents(
-      {
-        runId: queued.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 0,
-            message: {
-              id: "msg_bdd_promoted_first_output",
-              content: [{ type: "text", text: "Promoted run real output" }],
-            },
-          },
-        ],
-      },
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      [200],
-    );
-    await flushWaitUntilForTest();
+    const claim = await api.claimRunnerJob(picked.runId);
+    expect(claim.apiStartTime).toBe(pickedAt);
 
     await api.requestCancelRun(actor, second.runId, [200]);
-    await api.requestCancelRun(actor, queued.runId, [200]);
+    await api.requestCancelRun(actor, picked.runId, [200]);
   });
 
   it("publishes assistant content for a mixed-version run", async () => {

@@ -2117,7 +2117,7 @@
       "aboutAutomationEvent": "Informazioni su questo evento di automazione",
       "aboutQueuedMessage": "Informazioni su questo messaggio in coda",
       "automationEvent": "Evento di automazione",
-      "automationEventDescription": "Attende dietro i messaggi in coda ed esegue una volta terminata l'esecuzione corrente.",
+      "automationEventDescription": "Attende in coda ed esegue automaticamente quando può iniziare.",
       "cancellationRecoveryPending": "Finalizzazione dell'esecuzione annullata prima di continuare il lavoro in coda.",
       "event_one": "{{count}} evento",
       "event_many": "{{count}} eventi",
@@ -2130,7 +2130,7 @@
       "message_other": "{{count}} messaggi",
       "pendingAutomationEvent": "Evento di automazione in sospeso",
       "queuedMessage": "Messaggio in coda",
-      "queuedMessageDescription": "Attende in coda e viene inviato al termine dell'esecuzione corrente.",
+      "queuedMessageDescription": "Attende in coda e viene inviato automaticamente quando può iniziare.",
       "removeQueuedMessage": "Rimuovi il messaggio in coda",
       "skipAutomationEvent": "Salta evento di automazione"
     },

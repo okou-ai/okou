@@ -161,10 +161,11 @@ export async function expiredCancellationRecoveryThreads(
     readonly limit: number;
     readonly chatThreadIds?: readonly string[];
   },
-): Promise<readonly { chatThreadId: string; userId: string }[]> {
+): Promise<readonly { chatThreadId: string; userId: string; orgId: string }[]> {
   const runs = await db
     .select({
       id: agentRuns.id,
+      orgId: agentRuns.orgId,
       chatThreadId: agentRuns.chatThreadId,
       cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
     })
@@ -212,19 +213,20 @@ export async function expiredCancellationRecoveryThreads(
           return event.runId;
         }),
   );
-  const unresolvedThreadIds = new Set<string>();
+  // Maps each unresolved thread to its organization, taken from the run.
+  const unresolvedThreadIds = new Map<string, string>();
   for (const run of runs) {
     if (
       run.chatThreadId !== null &&
       (run.cancellationRecoveryCompleted === false ||
         !cancelledEventRunIds.has(run.id))
     ) {
-      unresolvedThreadIds.add(run.chatThreadId);
+      unresolvedThreadIds.set(run.chatThreadId, run.orgId);
     }
   }
   // A revoked run-less input also matches; the drain skips it.
   const pendingThreadIds: string[] = [];
-  for (const chatThreadId of unresolvedThreadIds) {
+  for (const chatThreadId of unresolvedThreadIds.keys()) {
     const [pending] = await db
       .select({ id: chatEvents.id })
       .from(chatEvents)
@@ -243,8 +245,12 @@ export async function expiredCancellationRecoveryThreads(
   if (pendingThreadIds.length === 0) {
     return [];
   }
-  return await db
+  const threads = await db
     .select({ chatThreadId: chatThreads.id, userId: chatThreads.userId })
     .from(chatThreads)
     .where(inArray(chatThreads.id, pendingThreadIds));
+  return threads.flatMap((thread) => {
+    const orgId = unresolvedThreadIds.get(thread.chatThreadId);
+    return orgId === undefined ? [] : [{ ...thread, orgId }];
+  });
 }

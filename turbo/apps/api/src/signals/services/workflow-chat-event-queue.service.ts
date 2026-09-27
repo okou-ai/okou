@@ -7,12 +7,10 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import {
   and,
-  asc,
   eq,
   inArray,
   isNotNull,
   isNull,
-  lt,
   notExists,
   sql,
 } from "drizzle-orm";
@@ -20,9 +18,8 @@ import { alias } from "drizzle-orm/pg-core";
 
 import type { Db } from "../external/db";
 import {
+  loadChatQueueHead,
   loadPendingChatQueueEvent,
-  pendingChatQueueEventCondition,
-  staleChatEventQueueThreadIds,
 } from "./chat-event-queue.service";
 import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -299,20 +296,25 @@ export interface PendingWorkflowQueueEvent {
 }
 
 /**
- * Load the automation queue head. Pending user events always win and any
- * active run blocks the whole thread. Missing automation context is returned
- * with null launch fields so the drain can reject the persisted input and
- * continue instead of leaving the thread stuck. This read reserves nothing:
- * final launch atomically claims the event's revoke edge and active-run row.
+ * Load the thread's queue head when it is an automation event. The queue is
+ * strict FIFO across user messages and automation events, and any active run
+ * blocks the whole thread. Missing automation context is returned with null
+ * launch fields so the drain can reject the persisted input and continue
+ * instead of leaving the thread stuck.
  *
+ * The read takes no lock: the launch's claim appends a replacement on the
+ * event's unique revoke edge, so concurrent pickers cannot both consume it.
  * A concurrently deleted thread can remove the selected event before this
  * lookup; that canonical deletion race returns null rather than failing.
  */
 export async function loadNextWorkflowQueueEvent(
   db: Db,
   chatThreadId: string,
-  queueItemCreatedBefore?: Date,
 ): Promise<PendingWorkflowQueueEvent | null> {
+  const head = await loadChatQueueHead(db, chatThreadId);
+  if (head?.eventType !== "input.automation") {
+    return null;
+  }
   const [event] = await db
     .select({
       id: chatEvents.id,
@@ -343,24 +345,8 @@ export async function loadNextWorkflowQueueEvent(
     )
     .where(
       and(
+        eq(chatEvents.id, head.id),
         eq(chatEvents.chatThreadId, chatThreadId),
-        pendingChatQueueEventCondition(db),
-        chatEventTypeIn(["input.automation"]),
-        queueItemCreatedBefore
-          ? lt(chatEvents.createdAt, queueItemCreatedBefore)
-          : undefined,
-        notExists(
-          db
-            .select({ id: chatEvents.id })
-            .from(chatEvents)
-            .where(
-              and(
-                eq(chatEvents.chatThreadId, chatThreadId),
-                pendingChatQueueEventCondition(db),
-                chatEventTypeIn(["input.prompt"]),
-              ),
-            ),
-        ),
         notExists(
           db
             .select({ id: agentRuns.id })
@@ -375,7 +361,6 @@ export async function loadNextWorkflowQueueEvent(
         ),
       ),
     )
-    .orderBy(asc(chatEvents.createdAt), asc(chatEvents.id))
     .limit(1);
   if (!event) {
     return null;
@@ -484,17 +469,4 @@ export async function rejectWorkflowQueueEvent(
     triggerBrief: payload.triggerBrief,
   });
   return rejected !== null;
-}
-
-export async function staleChatThreadQueueThreadIds(
-  db: Db,
-  args: {
-    readonly createdAtOrAfter: Date;
-    readonly createdBefore: Date;
-    readonly limit: number;
-    readonly chatThreadIds?: readonly string[];
-  },
-  signal: AbortSignal,
-): Promise<readonly string[]> {
-  return await staleChatEventQueueThreadIds(db, args, signal);
 }

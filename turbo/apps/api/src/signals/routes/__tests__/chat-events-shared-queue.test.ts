@@ -63,6 +63,26 @@ async function entitledChatActor() {
   return result;
 }
 
+/** Resolves the run that launched a queued input once its thread is picked. */
+async function waitForPickedInputRun(
+  actor: Parameters<typeof chat.listThreadEvents>[0],
+  threadId: string,
+  eventId: string,
+): Promise<string> {
+  const page = await waitForThreadMessages(actor, threadId, (events) => {
+    return userMessages(events).some((event) => {
+      return event.revokesEventId === eventId && event.runId !== undefined;
+    });
+  });
+  const runId = userMessages(page.events).find((event) => {
+    return event.revokesEventId === eventId;
+  })?.runId;
+  if (!runId) {
+    throw new Error("Expected the queued input to launch a run");
+  }
+  return runId;
+}
+
 describe("CHAT-02: shared user message queue", () => {
   it("dispatches idle-thread sends by appending a run-associated replacement", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -487,14 +507,8 @@ describe("CHAT-02: shared user message queue", () => {
     if (secondSend.status !== 201) {
       throw new Error("Expected the second delegated prompt to be accepted");
     }
-    if (!secondSend.body.runId) {
-      throw new Error("Expected the second delegated prompt to queue a run");
-    }
-    const secondTargetRunId = secondSend.body.runId;
-    expect(secondSend.body.status).toBe("queued");
-    await expect(
-      readRunAutonomyBudgetFixture(context, secondTargetRunId),
-    ).resolves.toBe(9);
+    // At the org cap the delegated prompt stays queued as input; no run yet.
+    expect(secondSend.body.runId).toBeNull();
     const secondMessages = await waitForThreadMessages(
       actor,
       secondTargetThread.id,
@@ -535,10 +549,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (nowSend.status !== 201) {
       throw new Error("Expected the placeholder-title prompt to be accepted");
     }
-    if (!nowSend.body.runId) {
-      throw new Error("Expected the placeholder-title prompt to queue a run");
-    }
-    const nowTargetRunId = nowSend.body.runId;
+    expect(nowSend.body.runId).toBeNull();
     const nowMessages = await waitForThreadMessages(
       actor,
       nowTargetThread.id,
@@ -606,9 +617,26 @@ describe("CHAT-02: shared user message queue", () => {
       expect.objectContaining({ id: forgedEventId }),
     );
 
-    await cancelChatRun(actor, nowTargetRunId);
-    await cancelChatRun(actor, secondTargetRunId);
+    // Freeing a slot picks the oldest queued thread first; the launched run
+    // keeps the delegated autonomy budget carried by the queued input.
     await cancelChatRun(actor, firstTargetRunId);
+    await flushWaitUntilForTest();
+    const secondTargetRunId = await waitForPickedInputRun(
+      actor,
+      secondTargetThread.id,
+      secondEventId,
+    );
+    await expect(
+      readRunAutonomyBudgetFixture(context, secondTargetRunId),
+    ).resolves.toBe(9);
+    await cancelChatRun(actor, secondTargetRunId);
+    await flushWaitUntilForTest();
+    const nowTargetRunId = await waitForPickedInputRun(
+      actor,
+      nowTargetThread.id,
+      nowEventId,
+    );
+    await cancelChatRun(actor, nowTargetRunId);
     await cancelChatRun(actor, source.runId, sourceSandboxHeaders);
   }, 90_000);
 

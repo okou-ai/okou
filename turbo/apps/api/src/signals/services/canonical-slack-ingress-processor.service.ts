@@ -756,6 +756,7 @@ export const processCanonicalSlackIngress$ = command(
           drainChatThreadQueueForThread$,
           {
             chatThreadId: ingress.chatThreadId,
+            orgId: ingress.orgId,
             dispatchFailedCallbacks: dispatchFailedRunCallbacks,
           },
           signal,

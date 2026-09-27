@@ -1739,6 +1739,7 @@ const runAgentForAgentPhone$ = command(
       drainChatThreadQueueForThread$,
       {
         chatThreadId: persisted.chatThreadId,
+        orgId: args.userLink.orgId,
         dispatchFailedCallbacks: dispatchFailedRunCallbacks,
       },
       signal,

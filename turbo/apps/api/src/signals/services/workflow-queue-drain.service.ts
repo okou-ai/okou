@@ -145,9 +145,9 @@ async function resolveWorkflowRunAutonomyBudget(
 }
 
 /**
- * Advance the thread's workflow queue: as long as user queued messages always
- * win (enforced inside `loadNextWorkflowQueueEvent`), prepare the oldest event
- * and turn it into a run. The final run persistence transaction consumes the
+ * Advance the thread's workflow queue while an automation event is its FIFO
+ * head (enforced inside `loadNextWorkflowQueueEvent`): prepare that event and
+ * turn it into a run. The final run persistence transaction consumes the
  * event. Stale events and failed run creations reject only their own trigger.
  */
 export interface WorkflowQueueDrainResult {
@@ -165,7 +165,6 @@ interface DrainWorkflowQueueArgs {
   readonly apiStartTime: number;
   readonly chatThreadId: string;
   readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
-  readonly queueItemCreatedBefore?: Date;
   readonly automationEventLaunch?: AutomationEventLaunch;
 }
 
@@ -174,11 +173,7 @@ async function loadNextDrainEvent(
   args: DrainWorkflowQueueArgs,
   signal: AbortSignal,
 ) {
-  const event = await loadNextWorkflowQueueEvent(
-    db,
-    args.chatThreadId,
-    args.queueItemCreatedBefore,
-  );
+  const event = await loadNextWorkflowQueueEvent(db, args.chatThreadId);
   signal.throwIfAborted();
   return event;
 }
@@ -265,8 +260,10 @@ async function handleWorkflowLaunchResult(
     return { eventId: event.id, result };
   }
   if (result.kind === "enqueued") {
+    // Another picker claimed the event or the organization is at capacity;
+    // the event stays queued for a later pick.
     await publishQueueEventChanged(event, signal);
-    return CONTINUE_DRAIN;
+    return { eventId: event.id, result };
   }
   if (result.kind === "conflict") {
     log.debug("Consuming unfireable workflow queue event", {

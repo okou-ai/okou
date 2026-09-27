@@ -34,6 +34,7 @@ const {
   entitledChatActor,
   seedBuiltInModelKey,
   sendChatRun,
+  sendWaitingChatInput,
   expectThreadCreatedModelEvent,
   expectNoThreadModelUpdateEvent,
   claimChatRun,
@@ -312,8 +313,8 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, second.runId);
   }, 90_000);
 
-  it("retains the reused session through queued admission and promotion", async () => {
-    // Two blockers keep the next send queued, independent of the plan's own
+  it("resumes the thread's latest session when a waiting input is picked", async () => {
+    // Two blockers keep the next send waiting, independent of the plan's own
     // concurrency limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
@@ -335,22 +336,25 @@ describe("CHAT-02: run-level model overrides", () => {
       agentId,
       prompt: "occupy the second organization slot",
     });
-    const queued = await sendChatRun(actor, {
+    const waiting = await sendWaitingChatInput(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "continue the same session after capacity becomes available",
     });
-    await expect(api.readRun(actor, queued.runId)).resolves.toMatchObject({
-      status: "queued",
-    });
 
+    // The launch reads the thread session when the slot frees, not when the
+    // input was accepted.
     await cancelChatRun(actor, blockerOne.runId);
-    await waitForRunStatus(actor, queued.runId, "pending");
-    const resumed = await claimChatRun(runnerGroup, queued.runId);
+    await flushWaitUntilForTest();
+    const picked = await waiting.launchedRun();
+    await waitForRunStatus(actor, picked.runId, "pending");
+    const resumed = await claimChatRun(runnerGroup, picked.runId);
     expect(resumed.claim.resumeSession?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
-    await cancelChatRun(actor, queued.runId);
+    const binding = await readThreadSessionBinding(context, first.threadId);
+    expect(binding.agent_session_run_id).toBe(picked.runId);
+    await cancelChatRun(actor, picked.runId);
     await cancelChatRun(actor, blockerTwo.runId);
   }, 90_000);
 

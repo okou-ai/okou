@@ -52,9 +52,9 @@ const {
   entitledChatActor,
   configureBuiltInPiModel,
   sendChatRun,
+  sendWaitingChatInput,
   claimChatRun,
   waitForRunStatus,
-  completeChatRunOk,
   cancelChatRun,
   requestSendEventRaw,
   mockPiCheckpointObjectStore,
@@ -301,30 +301,11 @@ describe("CHAT-02: model-first provider policies", () => {
     ]);
   });
 
-  it.each(["pending", "cancelled", "queued"] as const)(
+  it.each(["pending", "cancelled"] as const)(
     "keeps %s admission responsive while API preparation is blocked",
     async (outcome) => {
-      const { actor, agentId, runnerGroup, providerId } =
-        await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       await api.heartbeatRunner(runnerGroup);
-      let anchor: Awaited<ReturnType<typeof sendChatRun>> | undefined;
-      if (outcome === "queued") {
-        mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-        await api.updateOrgModelPolicies(actor, [
-          {
-            model: "claude-fable-5-1",
-            isDefault: true,
-            defaultProviderType: "anthropic-api-key",
-            credentialScope: "org",
-            modelProviderId: providerId,
-          },
-        ]);
-        anchor = await sendChatRun(actor, {
-          agentId,
-          prompt: "hold admission capacity",
-          model: "claude-fable-5-1",
-        });
-      }
       await configureBuiltInPiModel(actor, "gpt-5.6-terra");
 
       const usagePricingResolution = await createGptUsagePricingResolution();
@@ -374,16 +355,14 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(requests).toHaveLength(0);
       expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: outcome === "queued" ? "queued" : "pending",
+        status: "pending",
       });
-      if (outcome !== "queued") {
-        // Ably is the real Runner notification transport boundary.
-        expect(context.mocks.ably.publish.mock.calls).toContainEqual([
-          "job",
-          expect.objectContaining({ runId: run.runId }),
-        ]);
-      }
-      if (outcome !== "pending") {
+      // Ably is the real Runner notification transport boundary.
+      expect(context.mocks.ably.publish.mock.calls).toContainEqual([
+        "job",
+        expect.objectContaining({ runId: run.runId }),
+      ]);
+      if (outcome === "cancelled") {
         await cancelChatRun(actor, run.runId);
       }
       release.resolve(undefined);
@@ -403,12 +382,79 @@ describe("CHAT-02: model-first provider policies", () => {
         expect(requests).toHaveLength(0);
         expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
       }
-      if (anchor) {
-        await cancelChatRun(actor, anchor.runId);
-      }
     },
     30_000,
   );
+
+  it("defers API preparation of an at-capacity send until a slot frees", async () => {
+    const { actor, agentId, runnerGroup, providerId } =
+      await entitledChatActor();
+    await api.heartbeatRunner(runnerGroup);
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    const anchor = await sendChatRun(actor, {
+      agentId,
+      prompt: "hold admission capacity",
+      model: "claude-fable-5-1",
+    });
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    mockPiCheckpointObjectStore();
+    const instructions = await publishPendingPiInstructions(actor, agentId);
+    let resourceReads = 0;
+    const requests: string[] = [];
+    server.use(
+      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, ({ request }) => {
+        resourceReads += 1;
+        const key = new URL(request.url).searchParams.get("object");
+        if (!key) {
+          throw new Error("Expected exact resource identity");
+        }
+        return new HttpResponse(piS3Object(key));
+      }),
+      http.post("https://api.openai.com/v1/responses", async ({ request }) => {
+        requests.push(await request.text());
+        return nativeCodexSseResponse(
+          piResponsesTextSse("prepared admission answer", requests.length),
+        );
+      }),
+    );
+    // At capacity the input waits in its thread without a run, so nothing
+    // prepares speculatively before the pick launches it.
+    const waiting = await sendWaitingChatInput(
+      actor,
+      {
+        agentId,
+        prompt: "keep the complete admission independent",
+        model: "gpt-5.6-terra",
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    expect(resourceReads).toBe(0);
+    expect(requests).toHaveLength(0);
+
+    await cancelChatRun(actor, anchor.runId);
+    const run = await waiting.launchedRun();
+    await waitForRunStatus(actor, run.runId, "completed", 10_000);
+    expect(requests).toHaveLength(1);
+    expect(piResponsesDeveloperPrompt(requests[0])).toContain(instructions);
+    const events = (await chat.listThreadEvents(actor, run.threadId)).events;
+    expect(eventBackedContents(events, run.runId)).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ content: "prepared admission answer" }),
+      ]),
+    );
+  }, 30_000);
 
   it("uses newly published Pi instruction indexes with resource archives unavailable", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -434,12 +480,8 @@ describe("CHAT-02: model-first provider policies", () => {
       runnerGroup,
       prompt: "warm exact resource versions",
     });
-    await completeChatRunOk(
-      queued.anchor.runId,
-      queued.anchorClaim.sandboxHeaders,
-      { usagePricingResolution: queued.usagePricingResolution },
-    );
-    await waitForRunStatus(actor, queued.run.runId, "completed", 10_000);
+    const run = await queued.launch();
+    await waitForRunStatus(actor, run.runId, "completed", 10_000);
     await flushWaitUntilForTest();
 
     // A new instruction version forces a new full-snapshot key. Its synchronous
@@ -525,12 +567,8 @@ describe("CHAT-02: model-first provider policies", () => {
         runnerGroup,
         prompt: "warm shared resource versions",
       });
-      await completeChatRunOk(
-        queued.anchor.runId,
-        queued.anchorClaim.sandboxHeaders,
-        { usagePricingResolution: queued.usagePricingResolution },
-      );
-      await waitForRunStatus(actor, queued.run.runId, "completed", 10_000);
+      const run = await queued.launch();
+      await waitForRunStatus(actor, run.runId, "completed", 10_000);
       await flushWaitUntilForTest();
 
       const sourceAgentId =
@@ -615,24 +653,21 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "replay the original pre-provider prompt in Sandbox";
-    const { anchor, anchorClaim, run, usagePricingResolution } =
-      await queueCapabilityProvenPiRun({
-        actor,
-        agentId,
-        runnerGroup,
-        prompt,
-      });
+    const { launch } = await queueCapabilityProvenPiRun({
+      actor,
+      agentId,
+      runnerGroup,
+      prompt,
+    });
     const apiStartedAt = now();
     mockNow(apiStartedAt);
     onTestFinished(() => {
       clearMockNow();
     });
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-      usagePricingResolution,
-    });
+    const run = await launch();
     await resourceEntered.promise;
-    // Speculative queued preparation can read resources before promotion; the
-    // durable pending status is the Runner claim boundary.
+    // The picked launch prepares resources in the background; the durable
+    // pending status is the Runner claim boundary.
     await waitForRunStatus(actor, run.runId, "pending", 5000);
     const claimed = await claimChatRun(runnerGroup, run.runId);
     const activeInputEventId = randomUUID();
@@ -731,21 +766,20 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "complete the timed-out prompt once in Sandbox";
-    const { anchor, anchorClaim, run, usagePricingResolution } =
-      await queueCapabilityProvenPiRun({
+    const { usagePricingResolution, launch } = await queueCapabilityProvenPiRun(
+      {
         actor,
         agentId,
         runnerGroup,
         prompt,
-      });
+      },
+    );
     const apiStartedAt = now();
     mockNow(apiStartedAt);
     onTestFinished(() => {
       clearMockNow();
     });
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-      usagePricingResolution,
-    });
+    const run = await launch();
     await providerEntered.promise;
 
     mockNow(apiStartedAt + API_FIRST_TURN_OWNERSHIP_BUDGET_MS - 2000);
@@ -841,7 +875,7 @@ describe("CHAT-02: model-first provider policies", () => {
         }),
       );
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const { anchor, anchorClaim, run, usagePricingResolution } =
+      const { usagePricingResolution, launch } =
         await queueCapabilityProvenPiRun({
           actor,
           agentId,
@@ -853,9 +887,7 @@ describe("CHAT-02: model-first provider policies", () => {
       onTestFinished(() => {
         clearMockNow();
       });
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-        usagePricingResolution,
-      });
+      const run = await launch();
       await providerEntered.promise;
       if (trigger === "deadline") {
         mockNow(apiStartedAt + API_FIRST_TURN_OWNERSHIP_BUDGET_MS - 2000);

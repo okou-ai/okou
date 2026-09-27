@@ -630,6 +630,7 @@ export const createMcpChatThread$ = command(
             drainChatThreadQueueForThread$,
             {
               chatThreadId: result.value.threadId,
+              orgId: args.principal.orgId,
               dispatchFailedCallbacks: dispatchFailedRunCallbacks,
             },
             operationSignal,
