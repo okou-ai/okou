@@ -5650,7 +5650,7 @@ describe("okou browser route", () => {
       "Browser user input priority:",
     );
     expect(claim.appendSystemPrompt ?? "").not.toContain(
-      "Browser native input is off for this run.",
+      "okou browser input-request",
     );
     const browserToken = runs.okouTokenForRunWithCapabilities(
       actor,
@@ -5670,7 +5670,7 @@ describe("okou browser route", () => {
     });
   });
 
-  it("advertises managed browser access without disabled native input", async () => {
+  it("omits native input guidance when the switch is disabled", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     const sent = await chat.requestSendEvent(
       actor,
@@ -5694,9 +5694,7 @@ describe("okou browser route", () => {
     expect(appendSystemPrompt).toContain(
       "Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes",
     );
-    expect(appendSystemPrompt).toContain(
-      "Browser native input is off for this run. Do not offer `okou browser input-request`",
-    );
+    expect(appendSystemPrompt).not.toContain("okou browser input-request");
     expect(appendSystemPrompt).toContain(
       "Direct Browser takeover is a last resort, not the default for login",
     );
@@ -5744,9 +5742,6 @@ describe("okou browser route", () => {
     );
     expect(appendSystemPrompt).toContain(
       "If the user explicitly asks to view the Browser, you may share its live view without treating that request as a takeover",
-    );
-    expect(appendSystemPrompt).not.toContain(
-      "Browser native input is off for this run.",
     );
   });
 

@@ -138,9 +138,7 @@ export function buildAgentToolsPrompt(args: {
                 "- Browser user input priority: keep control of the Browser. When the user must personally supply values to supported exact page controls, especially login username, password, or one-time code, inspect the live page and prefer `okou browser input-request` over direct Browser takeover. It opens a native form, not a general Browser interaction; never ask for secrets in chat or put values in CLI arguments, action URLs, or callback prompts. Fill ordinary values you can supply with `agent-browser` instead.",
                 "- Browser input completion: `input-request` fills the exact controls but does not submit the website form. After it succeeds, return its exact action URL and use no further Browser commands in this turn. On callback, inspect the current page, submit if needed, and verify the result. A supported one-time-code field can use another input request; needing credentials or a code alone is not a reason for direct takeover. If a target is stale, inspect and recapture it once where safe; never blindly replay an uncertain write.",
               ]
-            : [
-                "- Browser native input is off for this run. Do not offer `okou browser input-request` or request website secrets in chat. Use `agent-browser` for steps you can perform yourself; if a user-only step remains, use the last-resort Browser takeover below.",
-              ]),
+            : []),
           "- Direct Browser takeover is a last resort, not the default for login: when you need the user to operate the Browser, share `okou browser view` only if the required user-only interaction cannot be handled with available exact native input controls and `agent-browser` (for example, a passkey prompt or unsupported widget), or native input is unavailable. Explain the specific step and ask the user to reply when finished or blocked; stop using the Browser in this turn. If the user explicitly asks to view the Browser, you may share its live view without treating that request as a takeover.",
         ]
       : []),
