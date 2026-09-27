@@ -335,6 +335,107 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
   });
 });
 
+it("preserves a cleared optional native session name after a bounded cut", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-compact-cleared-name-"));
+  onTestFinished(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const timestamp = "2026-09-27T00:00:00Z";
+  const header = {
+    type: "session",
+    version: 3,
+    id: "pi-cleared-name",
+    cwd: root,
+    timestamp,
+  };
+  const title = {
+    type: "session_info",
+    id: "prior_title",
+    parentId: null,
+    timestamp,
+    name: "Former title",
+  };
+  const cleared = {
+    type: "session_info",
+    id: "cleared_title",
+    parentId: "prior_title",
+    timestamp,
+  };
+  const old = {
+    type: "message",
+    id: "old",
+    parentId: "cleared_title",
+    timestamp,
+    message: { role: "user", content: "X".repeat(2048) },
+  };
+  const kept = {
+    type: "message",
+    id: "kept",
+    parentId: "old",
+    timestamp,
+    message: { role: "user", content: "kept" },
+  };
+  const compact = {
+    type: "compaction",
+    id: "compact",
+    parentId: "kept",
+    timestamp,
+    summary: "summary",
+    firstKeptEntryId: "kept",
+    tokensBefore: 1000,
+  };
+  const done = {
+    type: "message",
+    id: "done",
+    parentId: "compact",
+    timestamp,
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: "done" }],
+      provider: "faux",
+      model: "faux-1",
+      stopReason: "stop",
+      timestamp: 1,
+    },
+  };
+  const originalJsonl = [header, title, cleared, old, kept, compact, done]
+    .map((entry) => {
+      return JSON.stringify(entry);
+    })
+    .join("\n");
+  const boundedJsonl = [
+    header,
+    { ...cleared, parentId: null },
+    { ...kept, parentId: "cleared_title" },
+    compact,
+    done,
+  ]
+    .map((entry) => {
+      return JSON.stringify(entry);
+    })
+    .join("\n");
+  const originalPath = join(root, "original.jsonl");
+  const candidatePath = join(root, "candidate.jsonl");
+  await writeFile(originalPath, originalJsonl);
+  await writeFile(candidatePath, boundedJsonl);
+  const original = SessionManager.open(originalPath, root, root);
+  const candidate = SessionManager.open(candidatePath, root, root);
+  expect(original.getSessionName()).toBeUndefined();
+  expect(candidate.getSessionName()).toBe(original.getSessionName());
+  expect(candidate.buildSessionContext()).toEqual(
+    original.buildSessionContext(),
+  );
+  expect(
+    candidate.getBranch().map((entry) => {
+      return entry.id;
+    }),
+  ).toEqual(["cleared_title", "kept", "compact", "done"]);
+  expect(inspectPiSessionJsonl(boundedJsonl)).toMatchObject({
+    sessionId: header.id,
+    isSettledCheckpoint: true,
+  });
+});
+
 it("reads a 0.86.1-written session identically on 0.85.1 and projects its new system entry", async () => {
   const source = await readFile(
     new URL("./test/fixtures/pi-0.86.1-session.jsonl", import.meta.url),

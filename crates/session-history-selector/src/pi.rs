@@ -267,7 +267,9 @@ fn select_with_limit(
         } else {
             None
         };
-        if kind == "session_info" && value.get("name").and_then(Value::as_str).is_none() {
+        // Pi's v3 session_info.name is optional: a missing name clears the
+        // title just like an empty one. Reject only a present non-string value.
+        if kind == "session_info" && value.get("name").is_some_and(|name| !name.is_string()) {
             return Ok(PiHistorySelection::Ineligible(Reason::InvalidRecord));
         }
         let target_id = if matches!(kind, "label" | "context_edit") {

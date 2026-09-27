@@ -129,6 +129,43 @@ fn preserves_native_session_name_before_the_compact_boundary() {
 }
 
 #[test]
+fn carries_the_latest_session_info_without_an_optional_name() {
+    let mut source = session();
+    source.push_str(&line(json!({"type":"session_info","id":"prior_title","parentId":null,"timestamp":"2026-09-27T00:00:00Z","name":"Former title"})));
+    source.push_str(&line(json!({"type":"session_info","id":"cleared_title","parentId":"prior_title","timestamp":"2026-09-27T00:00:00Z"})));
+    source.push_str(&line(json!({"type":"message","id":"old","parentId":"cleared_title","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));
+    source.push_str(&line(json!({"type":"message","id":"kept","parentId":"old","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"kept"}})));
+    source.push_str(&line(json!({"type":"compaction","id":"compact","parentId":"kept","timestamp":"2026-09-27T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":1000})));
+    let PiHistorySelection::Candidate(candidate) = select(&source, 1024).unwrap() else {
+        panic!("expected an optional-name native compact generation");
+    };
+    let entries: Vec<Value> = std::str::from_utf8(candidate.as_bytes())
+        .unwrap()
+        .lines()
+        .map(|row| serde_json::from_str(row).unwrap())
+        .collect();
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| entry["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [SESSION_ID, "cleared_title", "kept", "compact"]
+    );
+    assert!(entries[1].get("name").is_none());
+    assert!(entries[1]["parentId"].is_null());
+
+    let invalid = source.replace(
+        "\"id\":\"cleared_title\",",
+        "\"id\":\"cleared_title\",\"name\":42,",
+    );
+    assert_ne!(invalid, source);
+    assert_eq!(
+        select(&invalid, 1024).unwrap(),
+        PiHistorySelection::Ineligible(Reason::InvalidRecord)
+    );
+}
+
+#[test]
 fn rejects_unrestorable_prefix_custom_state_and_dangling_label() {
     let mut custom = session();
     custom.push_str(&line(json!({"type":"custom","id":"extension","parentId":null,"timestamp":"2026-09-27T00:00:00Z","customType":"state","data":{"counter":1}})));
