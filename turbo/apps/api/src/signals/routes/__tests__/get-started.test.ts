@@ -114,6 +114,21 @@ test("status never grants; concurrent check-ins and org switches preserve one aw
       }),
     ).size,
   ).toBe(1);
+  const balance = await accept(
+    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+      billingUsagePackCreditsContract,
+    ).get({ headers }),
+    [200],
+  );
+  expect(balance.body.bonusCredits).toBe(100);
+  expect(balance.body.creditGrants).toStrictEqual([
+    expect.objectContaining({
+      grantType: "bonus",
+      amount: 100,
+      remaining: 100,
+      expiresAt: "2026-09-22T23:59:59.123Z",
+    }),
+  ]);
   await enabledSession(userId, `org_${randomUUID()}`);
   expect(
     (await accept(client().checkin({ headers }), [200])).body,

@@ -301,7 +301,7 @@ describe("reusable SSH credential owner routes", () => {
     );
   });
 
-  it("serializes deletion against a new host reference", async () => {
+  it("preserves one valid outcome when creating a host races credential deletion", async () => {
     useSecretKmsProbe();
     owner();
     const created = await accept(
@@ -336,7 +336,92 @@ describe("reusable SSH credential owner routes", () => {
     expect([bound.status, deleted.status]).toStrictEqual(
       bound.status === 201 ? [201, 409] : [404, 204],
     );
+    if (bound.status === 404) {
+      expect(bound.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
+    }
+    if (deleted.status === 409) {
+      expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_IN_USE");
+    }
     const hosts = await accept(connections().list({ headers }), [200]);
     expect(hosts.body.connections).toHaveLength(bound.status === 201 ? 1 : 0);
+    const remaining = await accept(credentials().list({ headers }), [200]);
+    expect(remaining.body.credentials).toHaveLength(
+      bound.status === 201 ? 1 : 0,
+    );
+  });
+
+  it("preserves the host binding when changing credentials races deletion", async () => {
+    useSecretKmsProbe();
+    owner();
+    const original = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const replacement = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody, name: "Replacement" },
+      }),
+      [201],
+    );
+    const host = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Existing",
+          host: "ssh.example.com",
+          credential: { id: original.body.id },
+        },
+      }),
+      [201],
+    );
+    const [bound, deleted] = await Promise.all([
+      accept(
+        connections().update({
+          headers,
+          params: { connectionId: host.body.id },
+          body: {
+            expectedGeneration: host.body.generation,
+            displayName: "Rebound",
+            credential: { id: replacement.body.id },
+          },
+        }),
+        [200, 404],
+      ),
+      accept(
+        credentials().delete({
+          headers,
+          params: { credentialId: replacement.body.id },
+          body: { expectedRevision: replacement.body.revision },
+        }),
+        [204, 409],
+      ),
+    ]);
+    expect([bound.status, deleted.status]).toStrictEqual(
+      bound.status === 200 ? [200, 409] : [404, 204],
+    );
+    if (bound.status === 404) {
+      expect(bound.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
+    }
+    if (deleted.status === 409) {
+      expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_IN_USE");
+    }
+    const hosts = await accept(connections().list({ headers }), [200]);
+    expect(hosts.body.connections).toStrictEqual([
+      bound.status === 200 ? bound.body : host.body,
+    ]);
+    const remaining = await accept(credentials().list({ headers }), [200]);
+    const credentialIds = remaining.body.credentials.map(({ id }) => {
+      return id;
+    });
+    expect(credentialIds.sort()).toStrictEqual(
+      bound.status === 200
+        ? [original.body.id, replacement.body.id].sort()
+        : [original.body.id],
+    );
   });
 });

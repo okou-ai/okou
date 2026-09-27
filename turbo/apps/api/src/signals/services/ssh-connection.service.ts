@@ -14,6 +14,7 @@ import {
   findSshCredential,
   lockSshOwner,
   prepareSshCredentialSelection,
+  resolveSshCredentialBinding,
   selectSshCredential,
   sshCredentialFailure,
 } from "./ssh-credential.service";
@@ -57,6 +58,13 @@ type SshConnectionResult<T> =
 type SshConnectionMutationResult<T> =
   | { readonly ok: true; readonly value: T; readonly createdAccess: boolean }
   | ({ readonly ok: false } & SshConnectionFailure);
+type CreateSshConnectionArgs = {
+  readonly db: Db;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly body: CreateSshConnectionRequest;
+  readonly featureContext: FeatureSwitchContext;
+};
 type UpdateSshConnectionArgs = {
   readonly db: Db;
   readonly orgId: string;
@@ -471,13 +479,9 @@ async function lockVisibleAgentsForFirstHost(
     .for("update");
 }
 
-export async function createSshConnection(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly body: CreateSshConnectionRequest;
-  readonly featureContext: FeatureSwitchContext;
-}): Promise<SshConnectionResult<SshConnectionResponse | undefined>> {
+export async function createSshConnection(
+  args: CreateSshConnectionArgs,
+): Promise<SshConnectionResult<SshConnectionResponse | undefined>> {
   const canonicalHost = canonicalizeSshHost(args.body.host);
   if (!canonicalHost.ok) {
     return canonicalHost;
@@ -499,89 +503,91 @@ export async function createSshConnection(args: {
   );
 
   const transaction = await settle(
-    args.db.transaction(async (tx) => {
-      await lockSshOwner(tx, args);
-      const creation = await checkSshCreationId(
-        tx,
-        args,
-        sshConnections,
-        args.body.id,
-      );
-      if (!creation.ok) {
-        return creation;
-      }
-      if (!creation.value) {
+    resolveSshCredentialBinding(
+      args.db.transaction(async (tx) => {
+        await lockSshOwner(tx, args);
+        const creation = await checkSshCreationId(
+          tx,
+          args,
+          sshConnections,
+          args.body.id,
+        );
+        if (!creation.ok) {
+          return creation;
+        }
+        if (!creation.value) {
+          return {
+            ok: true as const,
+            value: undefined,
+            authorizedAgents: false,
+            createdAccess: false,
+          };
+        }
+        const bindingFailure = await validateAccessBinding(
+          tx,
+          args,
+          { configId: accessId, creating: preparedAccess !== undefined },
+          canonicalHost.value,
+          args.body.port,
+        );
+        if (bindingFailure) {
+          return bindingFailure;
+        }
+        const credential = await selectSshCredential(
+          tx,
+          args,
+          preparedCredential,
+        );
+        if (!credential.ok) {
+          return credential;
+        }
+        const selectedAccess = await insertAccessBinding(
+          tx,
+          args,
+          preparedAccess,
+          accessId,
+        );
+        // Match Connector's zero-to-one account transition, including re-adding
+        // after all hosts were deleted. The owner lock serializes concurrent adds.
+        const visibleAgents = await lockVisibleAgentsForFirstHost(tx, args);
+        const [connection] = await tx
+          .insert(sshConnections)
+          .values({
+            id: args.body.id,
+            orgId: args.orgId,
+            userId: args.userId,
+            displayName: args.body.displayName,
+            host: canonicalHost.value,
+            port: args.body.port,
+            credentialId: credential.value.id,
+            cloudflareAccessId: selectedAccess.id,
+          })
+          .returning();
+        if (!connection) {
+          throw new Error("SSH connection insert returned no row");
+        }
+        if (visibleAgents.length > 0) {
+          await tx
+            .insert(agentSshAccess)
+            .values(
+              visibleAgents.map((agent) => {
+                return {
+                  orgId: args.orgId,
+                  userId: args.userId,
+                  agentId: agent.id,
+                };
+              }),
+            )
+            .onConflictDoNothing();
+        }
         return {
           ok: true as const,
-          value: undefined,
-          authorizedAgents: false,
-          createdAccess: false,
+          value: toSshConnectionResponse(connection, credential.value),
+          authorizedAgents: visibleAgents.length > 0,
+          createdAccess: selectedAccess.created,
         };
-      }
-      const bindingFailure = await validateAccessBinding(
-        tx,
-        args,
-        { configId: accessId, creating: preparedAccess !== undefined },
-        canonicalHost.value,
-        args.body.port,
-      );
-      if (bindingFailure) {
-        return bindingFailure;
-      }
-      const credential = await selectSshCredential(
-        tx,
-        args,
-        preparedCredential,
-      );
-      if (!credential.ok) {
-        return credential;
-      }
-      const selectedAccess = await insertAccessBinding(
-        tx,
-        args,
-        preparedAccess,
-        accessId,
-      );
-      // Match Connector's zero-to-one account transition, including re-adding
-      // after all hosts were deleted. The owner lock serializes concurrent adds.
-      const visibleAgents = await lockVisibleAgentsForFirstHost(tx, args);
-      const [connection] = await tx
-        .insert(sshConnections)
-        .values({
-          id: args.body.id,
-          orgId: args.orgId,
-          userId: args.userId,
-          displayName: args.body.displayName,
-          host: canonicalHost.value,
-          port: args.body.port,
-          credentialId: credential.value.id,
-          cloudflareAccessId: selectedAccess.id,
-        })
-        .returning();
-      if (!connection) {
-        throw new Error("SSH connection insert returned no row");
-      }
-      if (visibleAgents.length > 0) {
-        await tx
-          .insert(agentSshAccess)
-          .values(
-            visibleAgents.map((agent) => {
-              return {
-                orgId: args.orgId,
-                userId: args.userId,
-                agentId: agent.id,
-              };
-            }),
-          )
-          .onConflictDoNothing();
-      }
-      return {
-        ok: true as const,
-        value: toSshConnectionResponse(connection, credential.value),
-        authorizedAgents: visibleAgents.length > 0,
-        createdAccess: selectedAccess.created,
-      };
-    }),
+      }),
+    ),
   );
   if (!transaction.ok) {
     return resolveSshCreationConflict(
@@ -633,94 +639,96 @@ export async function updateSshConnection(
           args.featureContext,
         );
 
-  const result = await args.db.transaction<
-    SshConnectionMutationResult<SshConnectionResponse>
-  >(async (tx) => {
-    const locked = await lockOwnerHostForUpdate(tx, args);
-    if (!locked.ok) {
-      return locked;
-    }
-    const current = locked.value;
-    const host = canonicalHost?.value ?? current.host;
-    const port = args.body.port ?? current.port;
-    const binding = await validateAccessTransition(
-      tx,
-      args,
-      current,
-      host,
-      port,
-    );
-    if (!binding.ok) {
-      return binding;
-    }
-    if (current.generation !== args.body.expectedGeneration) {
-      return failure("generationConflict");
-    }
-    if (current.needsRebind && args.body.transport === undefined) {
-      return {
-        ok: false,
-        kind: "bad_request",
-        code: SSH_ERROR_CODES.INVALID_INPUT,
-        message: "Choose a transport to recover this SSH host",
-      };
-    }
-    if (current.generation === 2_147_483_647) {
-      return sshCredentialFailure("exhausted");
-    }
-    const selected =
-      preparedCredential === undefined
-        ? undefined
-        : await selectSshCredential(tx, args, preparedCredential);
-    if (selected && !selected.ok) {
-      return selected;
-    }
-    const credential =
-      selected?.value ??
-      (await findSshCredential(tx, args, current.credentialId));
-    if (!credential) {
-      throw new Error("SSH connection credential is missing");
-    }
-    const selectedAccess = await insertAccessBinding(
-      tx,
-      args,
-      preparedAccess,
-      binding.value,
-    );
-    const endpointChanged = shouldClearLearnedHostKey(
-      current,
-      host,
-      port,
-      selectedAccess.id,
-    );
-    const [updated] = await tx
-      .update(sshConnections)
-      .set({
-        displayName: args.body.displayName,
-        host,
-        port,
-        credentialId: credential.id,
-        cloudflareAccessId: selectedAccess.id,
-        needsRebind: false,
-        learnedHostKeyAlgorithm: endpointChanged
-          ? null
-          : current.learnedHostKeyAlgorithm,
-        learnedHostKeyFingerprint: endpointChanged
-          ? null
-          : current.learnedHostKeyFingerprint,
-        generation: sql`${sshConnections.generation} + 1`,
-        updatedAt: nowDate(),
-      })
-      .where(eq(sshConnections.id, current.id))
-      .returning();
-    if (!updated) {
-      throw new Error("SSH connection update returned no row");
-    }
-    return {
-      ok: true,
-      value: toSshConnectionResponse(updated, credential),
-      createdAccess: selectedAccess.created,
-    };
-  });
+  const result = await resolveSshCredentialBinding(
+    args.db.transaction<SshConnectionMutationResult<SshConnectionResponse>>(
+      async (tx) => {
+        const locked = await lockOwnerHostForUpdate(tx, args);
+        if (!locked.ok) {
+          return locked;
+        }
+        const current = locked.value;
+        const host = canonicalHost?.value ?? current.host;
+        const port = args.body.port ?? current.port;
+        const binding = await validateAccessTransition(
+          tx,
+          args,
+          current,
+          host,
+          port,
+        );
+        if (!binding.ok) {
+          return binding;
+        }
+        if (current.generation !== args.body.expectedGeneration) {
+          return failure("generationConflict");
+        }
+        if (current.needsRebind && args.body.transport === undefined) {
+          return {
+            ok: false,
+            kind: "bad_request",
+            code: SSH_ERROR_CODES.INVALID_INPUT,
+            message: "Choose a transport to recover this SSH host",
+          };
+        }
+        if (current.generation === 2_147_483_647) {
+          return sshCredentialFailure("exhausted");
+        }
+        const selected =
+          preparedCredential === undefined
+            ? undefined
+            : await selectSshCredential(tx, args, preparedCredential);
+        if (selected && !selected.ok) {
+          return selected;
+        }
+        const credential =
+          selected?.value ??
+          (await findSshCredential(tx, args, current.credentialId));
+        if (!credential) {
+          throw new Error("SSH connection credential is missing");
+        }
+        const selectedAccess = await insertAccessBinding(
+          tx,
+          args,
+          preparedAccess,
+          binding.value,
+        );
+        const endpointChanged = shouldClearLearnedHostKey(
+          current,
+          host,
+          port,
+          selectedAccess.id,
+        );
+        const [updated] = await tx
+          .update(sshConnections)
+          .set({
+            displayName: args.body.displayName,
+            host,
+            port,
+            credentialId: credential.id,
+            cloudflareAccessId: selectedAccess.id,
+            needsRebind: false,
+            learnedHostKeyAlgorithm: endpointChanged
+              ? null
+              : current.learnedHostKeyAlgorithm,
+            learnedHostKeyFingerprint: endpointChanged
+              ? null
+              : current.learnedHostKeyFingerprint,
+            generation: sql`${sshConnections.generation} + 1`,
+            updatedAt: nowDate(),
+          })
+          .where(eq(sshConnections.id, current.id))
+          .returning();
+        if (!updated) {
+          throw new Error("SSH connection update returned no row");
+        }
+        return {
+          ok: true,
+          value: toSshConnectionResponse(updated, credential),
+          createdAccess: selectedAccess.created,
+        };
+      },
+    ),
+  );
   if (result.ok) {
     await publishSshConnectionMutationInvalidation(
       args.db,

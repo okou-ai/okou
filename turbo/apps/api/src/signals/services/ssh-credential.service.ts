@@ -13,6 +13,7 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { and, asc, eq, sql } from "drizzle-orm";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
@@ -61,6 +62,29 @@ const failures = {
 } as const;
 export function sshCredentialFailure(reason: keyof typeof failures) {
   return { ok: false as const, ...failures[reason] };
+}
+function isSshCredentialReferenceViolation(error: unknown): boolean {
+  return (
+    isForeignKeyViolation(error) &&
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint === "ssh_connections_credential_owner_fk"
+  );
+}
+// Await the complete transaction so an invalid credential binding rolls back
+// inline resources before exposing the credential-not-found response. Only the
+// credential-owner FK is handled; unrelated failures still propagate.
+export async function resolveSshCredentialBinding<T>(transaction: Promise<T>) {
+  const result = await settle(transaction);
+  if (result.ok) {
+    return result.value;
+  }
+  if (isSshCredentialReferenceViolation(result.error)) {
+    return sshCredentialFailure("notFound");
+  }
+  throw result.error;
 }
 export async function lockSshOwner(
   tx: Pick<Transaction, "execute">,

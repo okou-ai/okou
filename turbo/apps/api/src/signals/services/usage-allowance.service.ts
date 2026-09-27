@@ -706,16 +706,19 @@ export async function resolveUsageAllowanceAvailability(
 ): Promise<UsageAllowanceAvailability | null> {
   const startedAt = performance.now();
   let lockWaitMs = 0;
-  const availability = await db.transaction(async (tx) => {
-    const lockStartedAt = performance.now();
-    await lockOrgCredits(tx, orgId);
-    lockWaitMs = Math.round(performance.now() - lockStartedAt);
-    return await resolveUsageAllowanceAvailabilityForLockedOrg(tx, orgId);
-  });
-  // This measures the advisory read including COMMIT; it does not claim
-  // the later authoritative admission was accepted under the same lock.
-  // Advisory availability already committed; telemetry failure cannot deny
-  // admission. Cancellation still propagates via safeSync.
+  let availability = await readUsageAllowanceAvailabilitySnapshot(db, orgId);
+  if (availability === "allowance_refresh_required") {
+    availability = await db.transaction(async (tx) => {
+      const lockStartedAt = performance.now();
+      await lockOrgCredits(tx, orgId);
+      lockWaitMs = Math.round(performance.now() - lockStartedAt);
+      return await resolveUsageAllowanceAvailabilityForLockedOrg(tx, orgId);
+    });
+  }
+  // Availability is a snapshot, not a reservation. Include any refresh COMMIT
+  // in the timing; ordinary snapshots have no credit-lock wait.
+  // Telemetry failure cannot deny admission; cancellation still propagates
+  // via safeSync.
   safeSync(() => {
     recordBillingOperationTimings([
       {

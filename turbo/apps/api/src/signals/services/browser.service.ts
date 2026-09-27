@@ -759,25 +759,21 @@ async function suspendBrowserWithoutActiveInstance(
   reason: BrowserSuspensionReason,
   signal: AbortSignal,
 ): Promise<BrowserSessionRow | null> {
-  const suspended = await db.transaction(async (tx) => {
-    await lockBrowserThread(tx, browser.chatThreadId);
-    const [next] = await tx
-      .update(browserSessions)
-      .set({
-        status: "suspended",
-        suspendedAt: nowDate(),
-        suspensionReason: reason,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(browserSessions.chatThreadId, browser.chatThreadId),
-          eq(browserSessions.status, "active"),
-        ),
-      )
-      .returning(BROWSER_SESSION_SELECTION);
-    return next ?? null;
-  });
+  const [suspended] = await db
+    .update(browserSessions)
+    .set({
+      status: "suspended",
+      suspendedAt: nowDate(),
+      suspensionReason: reason,
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(browserSessions.chatThreadId, browser.chatThreadId),
+        eq(browserSessions.status, "active"),
+      ),
+    )
+    .returning(BROWSER_SESSION_SELECTION);
   signal.throwIfAborted();
   if (!suspended) {
     return null;
@@ -3095,24 +3091,21 @@ async function releaseExpiredInactiveBrowserClaim(
   target: ExpiredInactiveBrowserTarget,
   claimedAt: Date,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await lockBrowserThread(tx, target.chatThreadId);
-    await tx
-      .update(browserSessions)
-      .set({
-        status: target.status,
-        suspendedAt: target.suspendedAt,
-        suspensionReason: target.suspensionReason,
-        updatedAt: target.updatedAt,
-      })
-      .where(
-        and(
-          eq(browserSessions.chatThreadId, target.chatThreadId),
-          eq(browserSessions.status, "stopping"),
-          eq(browserSessions.updatedAt, claimedAt),
-        ),
-      );
-  });
+  await db
+    .update(browserSessions)
+    .set({
+      status: target.status,
+      suspendedAt: target.suspendedAt,
+      suspensionReason: target.suspensionReason,
+      updatedAt: target.updatedAt,
+    })
+    .where(
+      and(
+        eq(browserSessions.chatThreadId, target.chatThreadId),
+        eq(browserSessions.status, "stopping"),
+        eq(browserSessions.updatedAt, claimedAt),
+      ),
+    );
 }
 
 async function retireExpiredInactiveBrowser(

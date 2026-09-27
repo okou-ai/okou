@@ -255,3 +255,45 @@ requires its merge commit `c639e3397602b5c9b049315c7a99f5ed2e23e660`; the accept
 serving boundary and the separate copy/device/reconciliation preparation gates
 are recorded in
 [deployment compatibility](./deployment-compatibility.md#prepared-advisory-key-retirement-and-writer-preparation-2026-09-27).
+
+## Single-statement and read-only entrances (2026-09-27)
+
+Against main `da9c52cd2fccc1c278c96fc31a4f63dfeb577faf`, the literal inventory
+remains **37**: 35 production sites, one catalog fixture and one attribution
+operator site, plus six historical SQL migration sites counted separately.
+This batch removes or narrows callers of shared helpers; it removes no SQL
+acquisition definition.
+
+| Scope                                        | Literal sites removed | Caller change                                                                              |
+| -------------------------------------------- | --------------------: | ------------------------------------------------------------------------------------------ |
+| Browser suspension and expired-claim release |                     0 | Two calls removed; six multi-step calls remain.                                            |
+| Non-event-source connector selection clear   |                     0 | One call becomes conditional on the six automation source connectors.                      |
+| Connector and check-in rewards               |                     0 | One redemption-helper branch skips locking for these two exact claim identities.           |
+| Limited-free bootstrap finalization          |                     0 | One duplicate same-transaction call removed; three calls remain.                           |
+| Allowance availability precheck              |                     0 | One credit-lock call becomes refresh-only; four direct callers keep the same precheck API. |
+| SSH credential deletion                      |                     0 | No call removed; four owner-helper calls remain pending the ordering preparation below.    |
+
+Browser's two writes retain their existing status and claim-time predicates.
+Non-event-source selection clear retains exact selection deletion, parent KEY
+SHARE protection and atomic generation invalidation. Connector/check-in grants
+use the unique actor/quest/source claim, its existing row lock and transactional
+credit idempotency; other reward identities retain their redemption protocol.
+The bootstrap caller already holds the same key in the same transaction.
+Allowance availability uses the existing single-query snapshot and only enters
+the old refresh transaction for an expired entitlement. It does not reserve
+allowance; window creation, actual admission and settlement retain their locks.
+
+SSH create/update now prepare exact credential-FK error conversion after full
+transaction rollback. Deletion still needs its owner key: a host can appear
+after the no-reference check, and rotation locks hosts before the credential.
+A lock-free DELETE could lock the credential while its RESTRICT check waits for
+a rotating host, whose rotation then waits for that credential. Exact DELETE
+predicates and FK-error conversion alone do not resolve this ordering cycle.
+Keep the key until a consistent lifecycle ordering covers serving and supported
+rollback writers, including in-flight operations.
+
+Device authorization, Official copy and Official reconciliation keep their
+separate preparation gates. On 2026-09-27, public `/api/build-info` reads from
+both `api.okou.ai` and `api.vm0.ai` reported API `1.683.0` at
+`d97a36a06c664b149d2598d5e14a12e7cbd4ea5b`, before #37057. A successful main
+workflow or preview deployment does not prove those preparations have shipped.

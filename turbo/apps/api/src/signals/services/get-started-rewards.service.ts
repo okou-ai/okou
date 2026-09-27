@@ -198,7 +198,11 @@ export async function grantGetStartedClaim(
   rewardKey: string,
   evidenceText?: string,
 ): Promise<GetStartedClaimRow> {
-  await lockRedemption(tx, input, rewardKey);
+  // These reward identities select one claim through uq_get_started_claim_source;
+  // the claim row and its credit grant already commit together.
+  if (input.questKey !== "connector" && input.questKey !== "checkin") {
+    await lockRedemption(tx, input, rewardKey);
+  }
   const [claim] = await tx
     .select()
     .from(getStartedClaims)

@@ -153,8 +153,6 @@ async function finalizeBootstrap(
     readonly agentId: string;
   },
 ): Promise<EnsureOrgLimitedFreeBootstrapResult> {
-  await lockOrgBootstrap(tx, args.orgId);
-
   const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
   if (existingAgentId) {
     return { bootstrapped: false, agentId: existingAgentId };

@@ -28,6 +28,7 @@ import {
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
+import { isWorkflowAutomationAccountConnectorSlug } from "./workflow-automation-account-classification.service";
 import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
 
 interface OwnedChatThread {
@@ -566,7 +567,13 @@ export async function clearChatThreadConnectorSelection(
     if (!thread) {
       return { kind: "not_found" };
     }
-    await lockConnectorAccountTarget(tx, args);
+    // Only event sources also change the owner's automation projections.
+    if (
+      args.target.kind === "builtin" &&
+      isWorkflowAutomationAccountConnectorSlug(args.target.connectorSlug)
+    ) {
+      await lockConnectorAccountTarget(tx, args);
+    }
     await tx
       .delete(chatThreadConnectorSelections)
       .where(

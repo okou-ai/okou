@@ -672,6 +672,31 @@ describe("POST /api/chat-threads", () => {
       }),
       [404],
     );
+    const otherOrgToken = okouToken({
+      userId: fixture.userId,
+      orgId: `org_${randomUUID()}`,
+      capabilities: ["chat-thread:write"],
+    });
+    for (const deniedToken of [foreignToken, otherOrgToken]) {
+      await accept(
+        connectorSelectionsClient().clear({
+          headers: { authorization: `Bearer ${deniedToken}` },
+          params: { id: created.body.id },
+          body: { kind: "builtin", connectorSlug: "openai" },
+        }),
+        [404],
+      );
+    }
+    const afterDeniedClear = await accept(
+      connectorSelectionsClient().get({
+        headers: { authorization: `Bearer ${token}` },
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    expect(afterDeniedClear.body.selections).toStrictEqual(
+      selections.body.selections,
+    );
 
     context.mocks.ably.publish.mockClear();
     const updated = await accept(
@@ -746,35 +771,62 @@ describe("POST /api/chat-threads", () => {
       }),
       [400],
     );
-    await accept(
-      connectorSelectionsClient().update({
+    await Promise.all([
+      accept(
+        connectorSelectionsClient().update({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: created.body.id },
+          body: {
+            connectionId: connection.id,
+            target: { kind: "builtin", connectorSlug: "openai" },
+          },
+        }),
+        [200],
+      ),
+      accept(
+        connectorSelectionsClient().clear({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: created.body.id },
+          body: { kind: "builtin", connectorSlug: "openai" },
+        }),
+        [204],
+      ),
+    ]);
+    const afterConcurrentClear = await accept(
+      connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },
         params: { id: created.body.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
       }),
       [200],
     );
+    expect([[], selections.body.selections]).toContainEqual(
+      afterConcurrentClear.body.selections,
+    );
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    const [concurrentSelectionWrite, concurrentDisconnect] = await Promise.all([
-      connectorSelectionsClient().update({
-        headers: { authorization: `Bearer ${token}` },
-        params: { id: created.body.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      connectorAccountsClient().delete({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { connectionId: connection.id },
-        body: { target: { kind: "builtin", connectorSlug: "openai" } },
-      }),
-    ]);
+    const [concurrentSelectionWrite, concurrentDisconnect, concurrentClear] =
+      await Promise.all([
+        connectorSelectionsClient().update({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: created.body.id },
+          body: {
+            connectionId: connection.id,
+            target: { kind: "builtin", connectorSlug: "openai" },
+          },
+        }),
+        connectorAccountsClient().delete({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { connectionId: connection.id },
+          body: { target: { kind: "builtin", connectorSlug: "openai" } },
+        }),
+        connectorSelectionsClient().clear({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: created.body.id },
+          body: { kind: "builtin", connectorSlug: "openai" },
+        }),
+      ]);
     expect([200, 400]).toContain(concurrentSelectionWrite.status);
     expect(concurrentDisconnect.status).toBe(200);
+    expect(concurrentClear.status).toBe(204);
     const afterDisconnect = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },

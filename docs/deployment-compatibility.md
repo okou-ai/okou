@@ -241,6 +241,37 @@ and old requests drain: an outgoing completion can otherwise persist stale
 credentials in its separate transaction after a replacement start. No new lock
 key, lock table, schema migration, or persisted shape is introduced.
 
+## Advisory prechecks and exact-identity callers (2026-09-27)
+
+Browser's active-to-suspended and expired-claim release operations use their
+existing conditional UPDATE directly. Non-event-source connector selection
+clear keeps parent KEY SHARE protection, exact selection identity and atomic
+generation invalidation; the six automation event sources keep the target
+key for source reprojection. Connector/check-in rewards use the existing
+actor/quest/source unique claim, claim row lock and transactional credit
+idempotency instead of the exact reward key. Bootstrap finalization reuses the
+key already held by its caller in the same transaction. These narrower callers
+coordinate with outgoing writers through unchanged SQL predicates, constraints
+and existing row protection. No schema or API contract changes are required.
+
+Ordinary allowance availability now reads the existing single-query snapshot.
+Only `allowance_refresh_required` enters the existing credit-locked Stripe
+refresh transaction. Missing windows still report their entitlement limits;
+window initialization, authoritative admission, settlement and payment-failure
+grace rules are unchanged. Neither the previous committed precheck nor this
+snapshot reserves units for a later operation. Telemetry retains both timing
+series, with zero credit-lock wait for a snapshot.
+
+SSH host create/update translate only
+`ssh_connections_credential_owner_fk` violations to the existing credential
+404 after the whole write transaction rolls back. This is preparation, not
+permission to remove credential deletion's owner key: rotation currently locks
+host rows before the credential, while DELETE locks the credential before its
+RESTRICT check can lock a newly attached host. The existing owner key prevents
+that cycle. Future removal needs a compatible lifecycle lock order and the
+precise error handling in all serving/rollback writers; this batch leaves the
+key and rotation ordering in place.
+
 ## Workflow import source column (2026-09-25)
 
 Migration `1264_workflow_import_source` adds the nullable
