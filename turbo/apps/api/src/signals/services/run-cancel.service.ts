@@ -14,15 +14,10 @@ import { notFound, runNotCancellable } from "../../lib/error";
 import { now } from "../../lib/time";
 import { tapError } from "../utils";
 import {
-  chatCallbackIdForRun,
-  dispatchFailedRunCallbacks,
   dispatchRunCallbacks$,
   undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
-import {
-  drainChatThreadQueueForRun$,
-  pickOrgQueuedChatThreads$,
-} from "./chat-thread-queue-drain.service";
+import { handOffReleasedSlot$ } from "./agent-run-lifecycle.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 import {
   abortPiApiFirstTurnAfterCanonicalCancellation,
@@ -47,6 +42,8 @@ export interface CancelRunResult {
   readonly runnerCancellationMode: RunnerCancellationMode | null;
   readonly runnerCancellationChanged: boolean;
   readonly alreadyCancelled: boolean;
+  /** The cancel transaction deleted the run's active row. */
+  readonly slotReleased: boolean;
 }
 
 type NotFoundResponse = ReturnType<typeof notFound>;
@@ -165,6 +162,7 @@ export const cancelRun$ = command(
             : run.runnerCancellationMode,
           runnerCancellationChanged,
           alreadyCancelled: true,
+          slotReleased: false,
         };
       }
 
@@ -199,7 +197,8 @@ export const cancelRun$ = command(
         completedAt: new Date(apiStartTime),
         runnerCancellationMode,
       });
-      await releaseActiveAgentRuns(tx, releasableRunIds);
+      // A started run keeps its slot until the Runner reports its end.
+      const released = await releaseActiveAgentRuns(tx, releasableRunIds);
 
       return {
         apiStartTime,
@@ -214,6 +213,7 @@ export const cancelRun$ = command(
         runnerCancellationMode,
         runnerCancellationChanged: true,
         alreadyCancelled: false,
+        slotReleased: released.length > 0,
       };
     });
     const result = await abortAfterCanonicalCancellation(transition);
@@ -284,7 +284,9 @@ async function publishRunnerCancellation(
  * Post-cancel side effects:
  *  - Notify the runner group to halt the cancelled run (if it was
  *    running on a runner).
- *  - Hand the freed org slot to the oldest queued chat thread.
+ *  - Hand off the slot when the cancel released it (a never-started run).
+ *    A started run keeps its slot until the Runner reports its end, and
+ *    that completion hands it off.
  *  - Reconcile credits via `processOrgUsageEvents$`. The transactional
  *    invariant (events marked processed iff credit deduction succeeds) is
  *    preserved by `processOrgUsageEvents$`.
@@ -319,8 +321,6 @@ export const dispatchCancelSideEffects$ = command(
       return;
     }
 
-    const chatCallbackId = await chatCallbackIdForRun(db, result.runId);
-    signal.throwIfAborted();
     // An undelivered source callback still owns its post-marker work: delivery
     // registration and chat-run-finished automation admission commit after the
     // lifecycle marker, and its replay is idempotent. An acknowledged callback
@@ -329,50 +329,23 @@ export const dispatchCancelSideEffects$ = command(
       ? await undeliveredChatCallbackIdForRun(db, result.runId)
       : undefined;
     signal.throwIfAborted();
-    const callbackResults =
-      recoveryRedrive && redriveCallbackId === undefined
-        ? []
-        : await tapError(
-            set(
-              dispatchRunCallbacks$,
-              {
-                db,
-                runId: result.runId,
-                status: "failed",
-                error: "Run cancelled",
-                ...(redriveCallbackId !== undefined
-                  ? { redriveChatCallbackId: redriveCallbackId }
-                  : {}),
-              },
-              signal,
-            ),
-            (error) => {
-              L.error("Failed to dispatch cancel callbacks", {
-                runId: result.runId,
-                error,
-              });
-            },
-          );
-    signal.throwIfAborted();
-
-    const chatCallbackDrained = callbackResults?.some((callbackResult) => {
-      return (
-        callbackResult.callbackId === chatCallbackId && callbackResult.success
-      );
-    });
-    if (result.cancellationRecoveryCompleted !== null || !chatCallbackDrained) {
+    if (!recoveryRedrive || redriveCallbackId !== undefined) {
       await tapError(
         set(
-          drainChatThreadQueueForRun$,
+          dispatchRunCallbacks$,
           {
+            db,
             runId: result.runId,
-            dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-            apiStartTime: result.apiStartTime,
+            status: "failed",
+            error: "Run cancelled",
+            ...(redriveCallbackId !== undefined
+              ? { redriveChatCallbackId: redriveCallbackId }
+              : {}),
           },
           signal,
         ),
         (error) => {
-          L.error("Failed to drain chat thread queue after cancel", {
+          L.error("Failed to dispatch cancel callbacks", {
             runId: result.runId,
             error,
           });
@@ -385,25 +358,23 @@ export const dispatchCancelSideEffects$ = command(
       return;
     }
 
-    await tapError(
-      set(
-        pickOrgQueuedChatThreads$,
-        {
-          orgId: result.orgId,
-          untilFull: false,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+    if (result.slotReleased) {
+      await tapError(
+        set(
+          handOffReleasedSlot$,
+          { runId: result.runId, orgId: result.orgId },
+          signal,
+        ),
+        (error) => {
+          L.error("Failed to hand off cancelled run slot", {
+            runId: result.runId,
+            orgId: result.orgId,
+            error,
+          });
         },
-        signal,
-      ),
-      (error) => {
-        L.error("Failed to pick queued chat thread after cancel", {
-          runId: result.runId,
-          orgId: result.orgId,
-          error,
-        });
-      },
-    );
-    signal.throwIfAborted();
+      );
+      signal.throwIfAborted();
+    }
 
     // A fresh cancellation always came from pending or running, so the
     // cancelled run may have accumulated usage events.

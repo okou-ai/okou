@@ -36,6 +36,13 @@ Old and new instances during deploy:
 - This API with the #37034 API: both create only pending runs and admit queued
   input through `queued_chat_threads`. The #37034 API still runs the legacy
   promotion, which finds no queued run; this API ignores `agent_run_queue`.
+- Slot hand-off: this API wakes queued threads where an `active_agent_runs` row
+  is deleted (Runner completion of any kind, cancel of a never-started run,
+  claim failure, cron timeout) instead of from terminal chat callbacks. The
+  #37034 API still wakes from its callbacks and terminal side effects. Either
+  API picks with the same lease, idle-thread and capacity checks, so a run that
+  ends on the other API's instance is still handed off, and a duplicate wakeup
+  finds the thread busy or the organization full. No persisted shape changes.
 - Either API with the migrated database: neither depends on
   `chat_events_pending_queue_idx`, and neither expects an active row for a
   queued run.

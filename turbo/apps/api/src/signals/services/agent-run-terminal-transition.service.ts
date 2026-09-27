@@ -62,22 +62,28 @@ export function neverStartedRunIds(
     });
 }
 
-/** Deletes the active rows of the given runs. The row is the per-thread
- * active-run lock, so a concurrent launch may wait on this uncommitted DELETE
- * while holding other locks. This MUST be the last statement of the enclosing
- * transaction: issuing any further statement or lock afterwards risks a
- * deadlock with that launch.
+/** Deletes the active rows of the given runs and returns the runs whose row
+ * this call deleted. Each returned run freed its organization slot, and the
+ * caller hands it off with `handOffReleasedSlot$` after commit. The row is the
+ * per-thread active-run lock, so a concurrent launch may wait on this
+ * uncommitted DELETE while holding other locks. This MUST be the last
+ * statement of the enclosing transaction: issuing any further statement or
+ * lock afterwards risks a deadlock with that launch.
  */
 export async function releaseActiveAgentRuns(
   tx: Tx,
   runIds: readonly string[],
-): Promise<void> {
+): Promise<readonly string[]> {
   if (runIds.length === 0) {
-    return;
+    return [];
   }
-  await tx
+  const released = await tx
     .delete(activeAgentRuns)
-    .where(inArray(activeAgentRuns.runId, [...runIds]));
+    .where(inArray(activeAgentRuns.runId, [...runIds]))
+    .returning({ runId: activeAgentRuns.runId });
+  return released.map((row) => {
+    return row.runId;
+  });
 }
 
 export async function transitionAgentRunsToTerminal(

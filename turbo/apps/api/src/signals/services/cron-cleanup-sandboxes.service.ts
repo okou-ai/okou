@@ -115,6 +115,7 @@ interface MaintenanceTerminalSideEffectsInput {
   readonly runId: string;
   readonly orgId: string;
   readonly error: string;
+  readonly slotReleased: boolean;
   readonly deliveryNotification?: {
     readonly userId: string;
     readonly chatThreadId: string;
@@ -140,6 +141,7 @@ interface CommittedTimeout {
   readonly runnerGroup: string | null;
   readonly chatThreadId: string | null;
   readonly finalization: FinalizeActiveInputDeliveryResult;
+  readonly slotReleased: boolean;
 }
 
 type TimeoutTransactionResult =
@@ -293,6 +295,7 @@ const dispatchMaintenanceTerminalSideEffects$ = command(
         orgId: input.orgId,
         status: "failed",
         error: input.error,
+        ...(input.slotReleased ? { slotReleased: true as const } : {}),
         ...(input.deliveryNotification
           ? { deliveryNotification: input.deliveryNotification }
           : {}),
@@ -373,7 +376,7 @@ async function commitStaleRunTimeout(
 
         // The runner is considered dead and will not report completion, so
         // release the active row whether or not the run started.
-        await releaseActiveAgentRuns(tx, [run.id]);
+        const released = await releaseActiveAgentRuns(tx, [run.id]);
         signal.throwIfAborted();
 
         return {
@@ -386,6 +389,7 @@ async function commitStaleRunTimeout(
             runnerGroup: lockedRun.runnerGroup,
             chatThreadId: lockedRun.chatThreadId,
             finalization,
+            slotReleased: released.length > 0,
           },
         };
       },
@@ -449,6 +453,7 @@ const cleanupSingleRun$ = command(
         runId: run.id,
         orgId: committed.orgId,
         error: timeoutReason,
+        slotReleased: committed.slotReleased,
         ...(committed.chatThreadId !== null
           ? {
               deliveryNotification: {

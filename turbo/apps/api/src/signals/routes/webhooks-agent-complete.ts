@@ -42,18 +42,13 @@ const completeAgentRunRoute$ = command(
 
     if (result.status === 200 && result.sideEffects?.kind === "terminal") {
       const requiredResult = await settle(
-        set(
-          dispatchRequiredTerminalChatCallback$,
-          { ...result.sideEffects, apiStartTime: get(apiStartTime$) },
-          signal,
-        ),
+        set(dispatchRequiredTerminalChatCallback$, result.sideEffects, signal),
       );
       signal.throwIfAborted();
       const required: RequiredTerminalChatCallbackResult = requiredResult.ok
         ? requiredResult.value
         : {
             success: false,
-            chatThreadQueueHandled: false,
             error:
               requiredResult.error instanceof Error
                 ? requiredResult.error.message
@@ -75,9 +70,6 @@ const completeAgentRunRoute$ = command(
               ...result.sideEffects,
               apiStartTime: get(apiStartTime$),
               skipChatCallback: true,
-              ...(required.chatThreadQueueHandled
-                ? { chatThreadQueueHandled: true as const }
-                : {}),
             },
             backgroundSignal,
           ),

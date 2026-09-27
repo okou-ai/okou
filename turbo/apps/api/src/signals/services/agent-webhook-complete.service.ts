@@ -24,14 +24,13 @@ import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
-import { safeSync, settle, tapError } from "../utils";
+import { safeSync, tapError } from "../utils";
 import {
-  chatCallbackIdForRun,
   dispatchFailedRunCallbacks,
   dispatchRunCallbacks$,
   undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
-import { drainChatThreadQueueForRun$ } from "./chat-thread-queue-drain.service";
+import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
 import {
   finalizeActiveInputDelivery,
   type FinalizeActiveInputDeliveryResult,
@@ -99,16 +98,27 @@ export interface DeliveryFinalizationSideEffectsInput {
   readonly chatEventsAppended: boolean;
 }
 
+/** A completion that only released the run's slot. */
+interface SlotReleaseSideEffectsInput {
+  readonly kind: "slot-release";
+  readonly runId: string;
+  readonly orgId: string;
+}
+
 export type CompleteSideEffectsInput = (
   | TerminalSideEffectsInput
   | CancellationRecoverySideEffectsInput
   | DeliveryFinalizationSideEffectsInput
-) & { readonly cleanupPiApiFirstTurn?: true };
+  | SlotReleaseSideEffectsInput
+) & {
+  readonly cleanupPiApiFirstTurn?: true;
+  /** The committing transaction deleted the run's active row. */
+  readonly slotReleased?: true;
+};
 
 export type DispatchCompleteSideEffectsInput = CompleteSideEffectsInput & {
   readonly apiStartTime?: number;
   readonly skipChatCallback?: true;
-  readonly chatThreadQueueHandled?: true;
 };
 
 interface CompletionSuccessResponse {
@@ -164,6 +174,10 @@ type CompletionTransactionResult =
       readonly response: AgentCheckpointErrorResponse;
     }
   | { readonly kind: "committed"; readonly commit: CompletionCommit };
+
+type ReleasedCompletionCommit = CompletionCommit & {
+  readonly slotReleased: boolean;
+};
 
 const L = logger("webhook:complete");
 
@@ -610,7 +624,7 @@ async function completeAgentRunTransition(
 
 function completionResponse(
   runId: string,
-  commit: CompletionCommit,
+  commit: ReleasedCompletionCommit,
   redriveTerminalChatCallback: boolean,
 ): CompletionResponse {
   let sideEffects: CompleteSideEffectsInput | undefined;
@@ -665,6 +679,11 @@ function completionResponse(
       chatEventsAppended: commit.finalization.chatEventsAppended,
       ...piCleanup,
     };
+  } else if (commit.slotReleased) {
+    sideEffects = { kind: "slot-release", runId, orgId: commit.run.orgId };
+  }
+  if (sideEffects && commit.slotReleased) {
+    sideEffects = { ...sideEffects, slotReleased: true };
   }
   return {
     status: 200,
@@ -684,25 +703,19 @@ function settledRunCompletionResponse(run: RunRecord): CompletionResponse {
 }
 
 export type RequiredTerminalChatCallbackResult =
-  | { readonly success: true; readonly chatThreadQueueHandled: boolean }
-  | {
-      readonly success: false;
-      readonly chatThreadQueueHandled: boolean;
-      readonly error: string;
-    };
+  | { readonly success: true }
+  | { readonly success: false; readonly error: string };
 
 /**
  * Finish the canonical chat projection before the completion webhook is
  * acknowledged. Other callbacks and accounting remain background side
- * effects, but this durable callback owns the lifecycle marker and thread
- * queue wakeup.
+ * effects, but this durable callback owns the lifecycle marker. The released
+ * slot is handed off afterwards by the background side effects.
  */
 export const dispatchRequiredTerminalChatCallback$ = command(
   async (
     { set },
-    input: TerminalSideEffectsInput & {
-      readonly apiStartTime: number;
-    },
+    input: TerminalSideEffectsInput,
     signal: AbortSignal,
   ): Promise<RequiredTerminalChatCallbackResult> => {
     const db = set(writeDb$);
@@ -712,7 +725,7 @@ export const dispatchRequiredTerminalChatCallback$ = command(
     );
     signal.throwIfAborted();
     if (chatCallbackId === undefined) {
-      return { success: true, chatThreadQueueHandled: false };
+      return { success: true };
     }
 
     const [callbackResult] = await set(
@@ -728,37 +741,17 @@ export const dispatchRequiredTerminalChatCallback$ = command(
     );
     signal.throwIfAborted();
     if (callbackResult?.success) {
-      return { success: true, chatThreadQueueHandled: true };
+      return { success: true };
     }
     if (
       callbackResult === undefined &&
       (await undeliveredChatCallbackIdForRun(db, input.runId)) === undefined
     ) {
       signal.throwIfAborted();
-      return { success: true, chatThreadQueueHandled: false };
-    }
-
-    const drained = await settle(
-      set(
-        drainChatThreadQueueForRun$,
-        {
-          runId: input.runId,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-          apiStartTime: input.apiStartTime,
-        },
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    if (!drained.ok) {
-      L.error("Failed to drain chat thread queue after callback failure", {
-        runId: input.runId,
-        error: drained.error,
-      });
+      return { success: true };
     }
     return {
       success: false,
-      chatThreadQueueHandled: drained.ok,
       error: callbackResult?.error ?? "Canonical terminal chat callback failed",
     };
   },
@@ -768,9 +761,7 @@ const dispatchTerminalCompleteSideEffects$ = command(
   async (
     { set },
     input: TerminalSideEffectsInput & {
-      readonly apiStartTime: number;
       readonly skipChatCallback?: true;
-      readonly chatThreadQueueHandled?: true;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -785,11 +776,7 @@ const dispatchTerminalCompleteSideEffects$ = command(
     }
     const callbackStatus =
       input.status === "completed" ? "completed" : "failed";
-    const chatCallbackId = input.skipChatCallback
-      ? undefined
-      : await chatCallbackIdForRun(db, input.runId);
-    signal.throwIfAborted();
-    const callbackResults = await tapError(
+    await tapError(
       set(
         dispatchRunCallbacks$,
         {
@@ -809,32 +796,6 @@ const dispatchTerminalCompleteSideEffects$ = command(
       },
     );
     signal.throwIfAborted();
-
-    const chatCallbackDrained =
-      input.chatThreadQueueHandled === true ||
-      callbackResults?.some((result) => {
-        return result.callbackId === chatCallbackId && result.success;
-      });
-    if (!chatCallbackDrained) {
-      await tapError(
-        set(
-          drainChatThreadQueueForRun$,
-          {
-            runId: input.runId,
-            dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-            apiStartTime: input.apiStartTime,
-          },
-          signal,
-        ),
-        (error) => {
-          L.error("Failed to drain chat thread queue", {
-            runId: input.runId,
-            error,
-          });
-        },
-      );
-      signal.throwIfAborted();
-    }
 
     await set(processOrgUsageEvents$, input.orgId, signal);
     signal.throwIfAborted();
@@ -876,24 +837,9 @@ export const dispatchCompleteSideEffectsCore$ = command(
           signal.throwIfAborted();
         }
       }
-      await tapError(
-        set(
-          drainChatThreadQueueForRun$,
-          {
-            runId: input.runId,
-            dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-            apiStartTime,
-          },
-          signal,
-        ),
-        (error) => {
-          L.error("Failed to drain chat thread queue after recovery", {
-            runId: input.runId,
-            error,
-          });
-        },
-      );
-      signal.throwIfAborted();
+      return;
+    }
+    if (input.kind === "slot-release") {
       return;
     }
     if (input.kind === "delivery-finalization") {
@@ -905,11 +851,13 @@ export const dispatchCompleteSideEffectsCore$ = command(
         });
         signal.throwIfAborted();
       }
+      // Finalization returned undelivered input to the thread's queue.
       await tapError(
         set(
-          drainChatThreadQueueForRun$,
+          drainChatThreadQueueForThread$,
           {
-            runId: input.runId,
+            chatThreadId: input.chatThreadId,
+            orgId: input.orgId,
             dispatchFailedCallbacks: dispatchFailedRunCallbacks,
             apiStartTime,
           },
@@ -925,11 +873,7 @@ export const dispatchCompleteSideEffectsCore$ = command(
       signal.throwIfAborted();
       return;
     }
-    await set(
-      dispatchTerminalCompleteSideEffects$,
-      { ...input, apiStartTime },
-      signal,
-    );
+    await set(dispatchTerminalCompleteSideEffects$, input, signal);
   },
 );
 
@@ -963,7 +907,7 @@ export const completeAgentRun$ = command(
       checkpointPreparation = preparation.prepared;
     }
     let expectedChatThreadId = initialRun.chatThreadId;
-    let commit: CompletionCommit;
+    let commit: ReleasedCompletionCommit;
     while (true) {
       const result = await db.transaction(async (tx) => {
         const transition = await completeAgentRunTransition(
@@ -976,12 +920,16 @@ export const completeAgentRun$ = command(
           },
           signal,
         );
-        if (transition.kind === "committed") {
-          // The runner reported completion, so the active row is released
-          // whether or not the run ever started. Must stay last in the tx.
-          await releaseActiveAgentRuns(tx, [input.body.runId]);
+        if (transition.kind !== "committed") {
+          return transition;
         }
-        return transition;
+        // The runner reported completion, so the active row is released
+        // whether or not the run ever started. Must stay last in the tx.
+        const released = await releaseActiveAgentRuns(tx, [input.body.runId]);
+        return {
+          kind: transition.kind,
+          commit: { ...transition.commit, slotReleased: released.length > 0 },
+        };
       });
       signal.throwIfAborted();
       if (result.kind === "retry") {

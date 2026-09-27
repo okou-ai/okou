@@ -30,6 +30,7 @@ import {
  */
 const context = testContext({ connectorCatalog: true });
 const {
+  api,
   bdd,
   chat,
   routeMocks,
@@ -38,6 +39,7 @@ const {
   sendWaitingChatInput,
   claimChatRun,
   completeChatRunOk,
+  failChatRun,
   cancelChatRun,
   waitForRunStatus,
   chatCallbacks,
@@ -300,6 +302,40 @@ describe("CHAT-02: queued chat thread picks", () => {
     await finishRun(runnerGroup, takeover.runId);
     const older = await olderThread.launchedRun();
     await cancelChatRun(actor, older.runId);
+  }, 90_000);
+
+  it("gives the slot of a cancelled running run to a waiting thread", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const running = await sendChatRun(actor, {
+      agentId,
+      prompt: "thread A holds the only slot",
+    });
+    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    await waitForRunStatus(actor, running.runId, "running");
+
+    const waiting = await sendWaiting(actor, agentId, "thread B waits");
+
+    // Cancel side effects finish before the Runner stops: the started run
+    // still holds its slot, so they cannot launch the waiting thread yet.
+    await api.requestCancelRun(actor, running.runId, [200]);
+    await waitForRunStatus(actor, running.runId, "cancelled");
+    await flushWaitUntilForTest();
+    await expect(
+      runOfInput(actor, waiting.threadId, waiting.clientEventId),
+    ).resolves.toBeUndefined();
+
+    // The Runner's end report releases the slot to the waiting thread.
+    await failChatRun(
+      running.runId,
+      runningClaim.sandboxHeaders,
+      "Run cancelled",
+    );
+    await flushWaitUntilForTest();
+
+    const picked = await waiting.launchedRun();
+    await cancelChatRun(actor, picked.runId);
   }, 90_000);
 
   it("launches an automation event appended before a user message first (strict FIFO)", async () => {

@@ -10,7 +10,6 @@ import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { settle } from "../utils";
-import { takeOverChatThreadQueue$ } from "./chat-thread-queue-drain.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
@@ -87,23 +86,6 @@ interface DispatchSingleCallbackInput {
   readonly balanceContext: Parameters<typeof formatRunBalanceError>[0];
 }
 
-export async function chatCallbackIdForRun(
-  db: Db,
-  runId: string,
-): Promise<string | undefined> {
-  const [callback] = await db
-    .select({ id: agentRunCallbacks.id })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      ),
-    )
-    .limit(1);
-  return callback?.id;
-}
-
 export async function undeliveredChatCallbackIdForRun(
   db: Pick<Db, "select">,
   runId: string,
@@ -153,20 +135,7 @@ const dispatchInternalCallback$ = command(
       case "chat": {
         return await set(
           handleChatInternalCallback$,
-          {
-            callback: input.envelope,
-            drainThreadQueue: async (chatThreadId, inputSignal, timing) => {
-              await set(
-                takeOverChatThreadQueue$,
-                {
-                  chatThreadId,
-                  dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-                  timing,
-                },
-                inputSignal,
-              );
-            },
-          },
+          { callback: input.envelope },
           signal,
         );
       }

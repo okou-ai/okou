@@ -214,6 +214,7 @@ interface ClaimFailedSideEffectArgs {
   readonly runId: string;
   readonly orgId: string;
   readonly error: string;
+  readonly slotReleased: boolean;
 }
 
 class ResumeSessionHistoryLoadError extends Error {
@@ -1227,7 +1228,7 @@ async function transitionClaimedJobToRunning(
 }
 
 type PoisonJobResult =
-  | { readonly status: "failed" }
+  | { readonly status: "failed"; readonly slotReleased: boolean }
   | { readonly status: "job-not-found" }
   | { readonly status: "run-not-found" };
 type FailedPoisonJobResult = Exclude<
@@ -1282,8 +1283,11 @@ async function failPoisonQueuedJob(
 
     await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
     signal.throwIfAborted();
-    await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions));
-    return { status: "failed" as const };
+    const released = await releaseActiveAgentRuns(
+      tx,
+      neverStartedRunIds(transitions),
+    );
+    return { status: "failed" as const, slotReleased: released.length > 0 };
   });
 }
 
@@ -2388,6 +2392,7 @@ const scheduleClaimFailedSideEffects$ = command(
             orgId: args.orgId,
             status: "failed",
             error: args.error,
+            ...(args.slotReleased ? { slotReleased: true as const } : {}),
           },
           backgroundSignal,
         ),
@@ -2435,6 +2440,7 @@ async function failClaimForResumeSessionHistoryLoad(
     runId: args.runId,
     orgId: args.orgId,
     error: args.errorMessage,
+    slotReleased: poisonResult.slotReleased,
   });
   return badRequestMessage(args.errorMessage);
 }
@@ -2463,6 +2469,7 @@ async function failClaimForInvalidStoredExecutionContext(
     runId: args.runId,
     orgId: args.orgId,
     error: INVALID_EXECUTION_CONTEXT_ERROR,
+    slotReleased: poisonResult.slotReleased,
   });
   return badRequestMessage("Job missing execution context");
 }

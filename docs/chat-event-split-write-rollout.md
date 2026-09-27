@@ -70,7 +70,8 @@ After activation:
   on the existing source callback commits with each watched automation's queue
   event. This receipt survives hot-event archival, so a lost final callback
   acknowledgement cannot enqueue the automation again. Replay still attempts the
-  guarded source and automation queue wakeups.
+  guarded automation queue wakeups. The source thread's queue is woken when the
+  run's active slot is released, not by the callback.
 - Ordinary identity checks remain. Event/context/output writes no longer hold
   the broad erasure fence. Confirmed deletion can race a late write; the existing
   background-job cron collects those rows as described below.

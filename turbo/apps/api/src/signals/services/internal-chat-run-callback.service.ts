@@ -26,7 +26,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import {
-  chatEventTerminalPredicate,
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
@@ -653,11 +652,6 @@ interface ChatCallbackDependencies {
     signal: AbortSignal,
   ) => Promise<void>;
   readonly createQueuedRun?: CreateQueuedRun;
-  readonly drainThreadQueue?: (
-    chatThreadId: string,
-    signal: AbortSignal,
-    timing: ChatCallbackPreCreateTimingCollector | undefined,
-  ) => Promise<void>;
 }
 
 interface ChatThreadForRunRow {
@@ -888,10 +882,6 @@ interface TerminalChatCallbackWork {
   readonly retryableSideEffects?: (signal: AbortSignal) => Promise<void>;
   readonly deferredSideEffects?: (signal: AbortSignal) => Promise<void>;
 }
-
-type DrainOutcome =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly error: unknown };
 
 function isCreatedQueuedRunStatus(status: string): boolean {
   return status === "pending" || status === "running";
@@ -1591,23 +1581,6 @@ async function loadRunLifecycleMarker(
     )
     .limit(1);
   return marker;
-}
-
-async function runLifecycleMarkerExists(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<boolean> {
-  const [marker] = await db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.runId, runId),
-        chatEventTerminalPredicate(chatEvents.eventType),
-      ),
-    )
-    .limit(1);
-  return marker !== undefined;
 }
 
 async function loadCanonicalDeliveryEvent(
@@ -4362,26 +4335,6 @@ async function prepareFailedTerminalChatCallbackWork(
   };
 }
 
-async function maybeDrainThreadQueueForTerminalCallback(
-  args: {
-    readonly enabled: boolean;
-    readonly chatThreadId: string;
-    readonly dependencies: ChatCallbackDependencies;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
-  },
-  signal: AbortSignal,
-): Promise<DrainOutcome> {
-  if (!args.enabled || !args.dependencies.drainThreadQueue) {
-    return { ok: true };
-  }
-
-  const result = await settle(
-    args.dependencies.drainThreadQueue(args.chatThreadId, signal, args.timing),
-    signal,
-  );
-  return result.ok ? { ok: true } : { ok: false, error: result.error };
-}
-
 async function clearSlackThreadStatusAfterTerminalCallback(
   args: {
     readonly chatThreadId: string;
@@ -4437,88 +4390,32 @@ async function clearFeishuThinkingAfterTerminalCallback(
   signal.throwIfAborted();
 }
 
-async function recoverTerminalChatCallback(
-  args: {
-    readonly callback: TerminalChatCallbackArgs;
-    readonly persistedThreadId: string | undefined;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
-  },
-  signal: AbortSignal,
-): Promise<DrainOutcome> {
-  const { callback } = args;
-  const drained = await settle(
-    (async () => {
-      if (!callback.dependencies.drainThreadQueue) {
-        return;
-      }
-      // An already committed marker still owns its original wakeup. A failure
-      // while loading a duplicate must not start another scheduler pass.
-      const duplicate = await runLifecycleMarkerExists(
-        callback.db,
-        callback.callback.runId,
-      );
-      signal.throwIfAborted();
-      if (duplicate) {
-        return;
-      }
-      const current = await readTerminalChatCallbackRun(
-        callback.db,
-        callback.callback.runId,
-      );
-      signal.throwIfAborted();
-      // A surviving run's current mapping wins, including an explicit unmap.
-      // If the run disappeared after capture of the locator, its surviving
-      // thread still needs the ACK-owned wakeup. Neither locator is admission.
-      const threadId = current
-        ? current.triggerSource === null
-          ? null
-          : current.threadId
-        : args.persistedThreadId;
-      if (!threadId) {
-        return;
-      }
-      const exists = await chatThreadExists(callback.db, threadId);
-      signal.throwIfAborted();
-      if (exists) {
-        await callback.dependencies.drainThreadQueue(
-          threadId,
-          signal,
-          args.timing,
-        );
-      }
-    })(),
-    signal,
-  );
-  await clearTerminalIntegrationStatus(
-    callback,
-    args.persistedThreadId ?? callback.payload.threadId,
-    signal,
-  );
-  return drained.ok ? { ok: true } : { ok: false, error: drained.error };
-}
-
 async function handleTerminalChatCallbackPreparationFailure(
   args: {
     readonly callback: TerminalChatCallbackArgs;
     readonly error: unknown;
     readonly persistedThreadId: string | undefined;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
   },
   signal: AbortSignal,
 ): Promise<never> {
-  // Join recovery within the existing owner, including its abort. A secondary
-  // drain/cleanup failure must never replace the original load/capture error.
-  const recovered = await settleIncludingAbort(
-    recoverTerminalChatCallback(args, signal),
+  // Join the cleanup within the existing owner, including its abort. A
+  // secondary cleanup failure must never replace the original load/capture
+  // error.
+  const cleared = await settleIncludingAbort(
+    clearTerminalIntegrationStatus(
+      args.callback,
+      args.persistedThreadId ?? args.callback.payload.threadId,
+      signal,
+    ),
   );
-  const recovery = recovered.ok
-    ? recovered.value
-    : { ok: false, error: recovered.error };
-  if (!recovery.ok) {
-    log.error("Failed to recover thread after terminal callback error", {
-      runId: args.callback.callback.runId,
-      error: recovery.error,
-    });
+  if (!cleared.ok) {
+    log.error(
+      "Failed to clear integration status after terminal callback error",
+      {
+        runId: args.callback.callback.runId,
+        error: cleared.error,
+      },
+    );
   }
   throw args.error;
 }
@@ -4707,57 +4604,6 @@ async function clearTerminalIntegrationStatus(
   );
 }
 
-async function drainAndClearTerminalChatThread(
-  args: {
-    readonly callback: TerminalChatCallbackArgs;
-    readonly chatThreadId: string;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
-    readonly work: TerminalChatCallbackWork;
-  },
-  signal: AbortSignal,
-): Promise<DrainOutcome> {
-  const result = await settle(
-    (async () => {
-      return await maybeDrainThreadQueueForTerminalCallback(
-        {
-          enabled:
-            args.work.outcome === "written" || args.work.outcome === "replayed",
-          chatThreadId: args.chatThreadId,
-          dependencies: args.callback.dependencies,
-          timing: args.timing,
-        },
-        signal,
-      );
-    })(),
-    signal,
-  );
-  await clearTerminalIntegrationStatus(
-    args.callback,
-    args.chatThreadId,
-    signal,
-  );
-  return result.ok ? result.value : { ok: false, error: result.error };
-}
-
-async function drainTerminalChatThreadInBackground(args: {
-  readonly callback: TerminalChatCallbackArgs;
-  readonly chatThreadId: string;
-  readonly timing: ChatCallbackPreCreateTimingCollector;
-  readonly work: TerminalChatCallbackWork;
-}): Promise<void> {
-  const drainResult = await drainAndClearTerminalChatThread(
-    args,
-    new AbortController().signal,
-  );
-  if (!drainResult.ok) {
-    log.error("Failed to drain chat thread queue after terminal callback", {
-      runId: args.callback.callback.runId,
-      chatThreadId: args.chatThreadId,
-      error: drainResult.error,
-    });
-  }
-}
-
 async function finishTerminalChatCallbackAfterProjection(
   args: {
     readonly callback: TerminalChatCallbackArgs;
@@ -4765,7 +4611,6 @@ async function finishTerminalChatCallbackAfterProjection(
     readonly callbackStatus: "completed" | "failed";
     readonly work: TerminalChatCallbackWork;
     readonly chatThread: ChatThreadForRunRow;
-    readonly timing: ChatCallbackPreCreateTimingCollector;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -4785,16 +4630,15 @@ async function finishTerminalChatCallbackAfterProjection(
     signal,
   );
 
-  // Queue wakeups and integration status clears keep their established
-  // detached owner: the stale queue sweep recovers a lost wakeup. They must
-  // neither hold the completion ACK nor be cancelled with its request.
+  // Integration status clears keep their established detached owner: they
+  // must neither hold the completion ACK nor be cancelled with its request.
+  // The thread's queue is woken by whoever releases the run's active slot.
   waitUntil(
-    drainTerminalChatThreadInBackground({
-      chatThreadId: args.chatThread.chatThreadId,
-      callback: args.callback,
-      timing: args.timing,
-      work: args.work,
-    }),
+    clearTerminalIntegrationStatus(
+      args.callback,
+      args.chatThread.chatThreadId,
+      new AbortController().signal,
+    ),
   );
 
   // A committed marker must not acknowledge an unfinished automation. Throw
@@ -4912,31 +4756,23 @@ async function processTerminalChatCallback(
   );
   if (!prepared.ok) {
     return await handleTerminalChatCallbackPreparationFailure(
-      { callback: args, error: prepared.error, persistedThreadId, timing },
+      { callback: args, error: prepared.error, persistedThreadId },
       signal,
     );
   }
   if (!prepared.value) {
-    const recovery = await recoverTerminalChatCallback(
-      { callback: args, persistedThreadId, timing },
+    await clearTerminalIntegrationStatus(
+      args,
+      persistedThreadId ?? args.payload.threadId,
       signal,
     );
-    if (!recovery.ok) {
-      throw recovery.error;
-    }
     return;
   }
   const { work, chatThread } = prepared.value;
-  const postProjectionInput = {
-    callback: args,
-    runId,
-    callbackStatus,
-    work,
-    chatThread,
-    timing,
-  };
-
-  await finishTerminalChatCallbackAfterProjection(postProjectionInput, signal);
+  await finishTerminalChatCallbackAfterProjection(
+    { callback: args, runId, callbackStatus, work, chatThread },
+    signal,
+  );
 }
 
 function withoutQueuedRunDependency(
@@ -4968,7 +4804,6 @@ function withoutQueuedRunDependency(
     deliverGitHubAdmissionFailure: dependencies.deliverGitHubAdmissionFailure,
     dispatchGitHubDelivery: dependencies.dispatchGitHubDelivery,
     clearFeishuThinkingReaction: dependencies.clearFeishuThinkingReaction,
-    drainThreadQueue: dependencies.drainThreadQueue,
   };
 }
 
@@ -5386,13 +5221,7 @@ export async function handleChatInternalCallbackWithoutCcstate(
 }
 
 const buildChatCallbackDependencies$ = command(
-  (
-    { set },
-    input: {
-      readonly db: Db;
-      readonly drainThreadQueue?: ChatCallbackDependencies["drainThreadQueue"];
-    },
-  ): ChatCallbackDependencies => {
+  ({ set }, input: { readonly db: Db }): ChatCallbackDependencies => {
     const { db } = input;
     const baseDependencies: ChatCallbackDependencies = {
       releaseBrowsersForRun: (args, inputSignal) => {
@@ -5445,7 +5274,6 @@ const buildChatCallbackDependencies$ = command(
       ...telegramChatDeliveryDependencies(db),
       ...agentPhoneChatDeliveryDependencies(db),
       ...githubChatDeliveryDependencies(db),
-      drainThreadQueue: input.drainThreadQueue,
     };
     const dependencies: ChatCallbackDependencies = {
       ...baseDependencies,
@@ -5547,20 +5375,14 @@ export const drainQueuedUserMessagesForThread$ = command(
 export const handleChatInternalCallback$ = command(
   async (
     { set },
-    input: {
-      readonly callback: InternalRunCallbackEnvelope;
-      readonly drainThreadQueue?: ChatCallbackDependencies["drainThreadQueue"];
-    },
+    input: { readonly callback: InternalRunCallbackEnvelope },
     signal: AbortSignal,
   ): Promise<
     | { readonly success: true }
     | { readonly success: false; readonly error: string }
   > => {
     const db = set(writeDb$);
-    const dependencies = set(buildChatCallbackDependencies$, {
-      db,
-      drainThreadQueue: input.drainThreadQueue,
-    });
+    const dependencies = set(buildChatCallbackDependencies$, { db });
     return await handleChatInternalCallback(
       {
         db,

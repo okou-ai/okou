@@ -4,12 +4,17 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { deleteS3Objects } from "../external/s3";
 import { tapError } from "../utils";
+import { writeDb$ } from "../external/db";
 import {
   dispatchCompleteSideEffectsCore$,
   type DispatchCompleteSideEffectsInput,
 } from "./agent-webhook-complete.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
+import {
+  pickOrgQueuedChatThreads$,
+  pickQueuedChatThread$,
+  queueThreadIdForRun,
+} from "./chat-thread-queue-drain.service";
 import { piApiFirstTurnObjectKey } from "./pi-api-first-turn-config";
 
 const L = logger("RunLifecycle");
@@ -35,7 +40,47 @@ export const drainOrgQueueToCapacity$ = command(
   },
 );
 
-/** Dispatch terminal effects, clean staging data, and release the org slot. */
+/**
+ * A run's active row was just deleted, so its organization slot is free. The
+ * slot goes to the run's own thread first, then to the organization's oldest
+ * waiting thread. Every transaction that deletes an active row calls this
+ * after commit and after the run's terminal callbacks, whatever ended the run,
+ * so no end path owns a wakeup of its own. Both picks check thread and
+ * organization capacity, and the launch's final admission stays authoritative.
+ */
+export const handOffReleasedSlot$ = command(
+  async (
+    { set },
+    args: { readonly runId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const chatThreadId = await queueThreadIdForRun(set(writeDb$), args.runId);
+    signal.throwIfAborted();
+    if (chatThreadId) {
+      const own = await set(
+        pickQueuedChatThread$,
+        { chatThreadId, dispatchFailedCallbacks: dispatchFailedRunCallbacks },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (own.outcome.kind === "launched") {
+        return;
+      }
+    }
+    await set(
+      pickOrgQueuedChatThreads$,
+      {
+        orgId: args.orgId,
+        untilFull: false,
+        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+  },
+);
+
+/** Dispatch terminal effects, clean staging data, and hand off a released slot. */
 export const dispatchCompleteSideEffects$ = command(
   async (
     { get, set },
@@ -61,23 +106,17 @@ export const dispatchCompleteSideEffects$ = command(
       );
       signal.throwIfAborted();
     }
-    if (input.kind !== "terminal") {
+    if (!input.slotReleased) {
       return;
     }
-    // The run's own thread took its slot over during terminal callbacks; a
-    // slot still free goes to the organization's oldest queued thread.
     await tapError(
       set(
-        pickOrgQueuedChatThreads$,
-        {
-          orgId: input.orgId,
-          untilFull: false,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-        },
+        handOffReleasedSlot$,
+        { runId: input.runId, orgId: input.orgId },
         signal,
       ),
       (error) => {
-        L.error("Failed to pick queued chat thread", {
+        L.error("Failed to hand off released run slot", {
           runId: input.runId,
           orgId: input.orgId,
           error,
