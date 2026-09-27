@@ -7,43 +7,15 @@ use tokio::{
 
 /// A one-shot-per-connection server: unlike static mocks, this can prove
 /// which retry attempt received which response. The URL never leaves localhost.
-async fn scripted_server(responses: Vec<&'static str>) -> (Url, tokio::task::JoinHandle<usize>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
-    let handle = tokio::spawn(async move {
-        let mut attempts = 0;
-        for response in responses {
-            let (mut connection, _) =
-                tokio::time::timeout(Duration::from_secs(5), listener.accept())
-                    .await
-                    .expect("retry attempt did not arrive")
-                    .unwrap();
-            let mut received = Vec::new();
-            loop {
-                let mut buf = [0u8; 4096];
-                let n = connection.read(&mut buf).await.unwrap();
-                assert!(n > 0, "request closed before headers");
-                received.extend_from_slice(&buf[..n]);
-                if received.windows(4).any(|w| w == b"\r\n\r\n") {
-                    break;
-                }
-            }
-            let request = String::from_utf8_lossy(&received);
-            assert!(request.to_ascii_lowercase().contains("authorization:"));
-            connection.write_all(response.as_bytes()).await.unwrap();
-            connection.shutdown().await.unwrap();
-            attempts += 1;
-        }
-        attempts
-    });
-    (url, handle)
-}
-
-async fn scripted_server_capture(
-    responses: Vec<String>,
+async fn scripted_server(
+    responses: Vec<impl Into<String>>,
 ) -> (Url, tokio::task::JoinHandle<Vec<String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+    let responses = responses
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<String>>();
     let handle = tokio::spawn(async move {
         let mut requests = Vec::new();
         for response in responses {
@@ -296,7 +268,7 @@ async fn transient_failure_retries_signed_head_and_upload_part() {
     .await;
     let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
     assert!(c.head("runner-templates/h.tar.zst").await.unwrap());
-    assert_eq!(server.await.unwrap(), 2);
+    assert_eq!(server.await.unwrap().len(), 2);
 
     let (url, server) = scripted_server(vec![
         "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
@@ -314,12 +286,12 @@ async fn transient_failure_retries_signed_head_and_upload_part() {
         .await
         .unwrap();
     assert_eq!(part.etag, "\"part\"");
-    assert_eq!(server.await.unwrap(), 2);
+    assert_eq!(server.await.unwrap().len(), 2);
 }
 
 #[tokio::test]
 async fn retryable_status_does_not_depend_on_bounded_error_body() {
-    let (url, server) = scripted_server_capture(vec![
+    let (url, server) = scripted_server(vec![
         mock_reply(
             "503 Service Unavailable",
             &"x".repeat(MAX_ERROR_BYTES + 616),
@@ -342,7 +314,7 @@ async fn retryable_status_does_not_depend_on_bounded_error_body() {
 async fn sdk_style_clock_skew_retry_requires_trustworthy_date_and_persists() {
     let future = chrono::Utc::now() + chrono::Duration::minutes(10);
     let date = future.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-    let (url, server) = scripted_server_capture(vec![
+    let (url, server) = scripted_server(vec![
         mock_reply(
             "403 Forbidden",
             "<Error><Code>RequestTimeTooSkewed</Code></Error>",
@@ -428,7 +400,7 @@ async fn sdk_style_retry_quota_blocks_extra_attempts_and_recovers_on_success() {
     assert!(c.get("runner-templates/h.tar.zst").await.is_err());
     unavailable.assert_calls_async(1).await;
 
-    let (url, attempts) = scripted_server_capture(vec![
+    let (url, attempts) = scripted_server(vec![
         mock_reply("503 Service Unavailable", "", "x-amz-retry-after: 0\r\n"),
         mock_reply("200 OK", "", ""),
         mock_reply("503 Service Unavailable", "", "x-amz-retry-after: 0\r\n"),
@@ -491,7 +463,7 @@ async fn complete_retries_embedded_internal_error_but_not_invalid_part() {
     c.complete_multipart("runner-templates/h.tar.zst", "upload", &[])
         .await
         .unwrap();
-    assert_eq!(server.await.unwrap(), 2);
+    assert_eq!(server.await.unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -507,7 +479,7 @@ async fn xml_body_read_failures_retry_within_the_same_attempt_budget() {
             .unwrap(),
         "id"
     );
-    assert_eq!(server.await.unwrap(), 2);
+    assert_eq!(server.await.unwrap().len(), 2);
 
     let (url, server) = scripted_server(vec![
         "HTTP/1.1 404 Not Found\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
@@ -521,7 +493,7 @@ async fn xml_body_read_failures_retry_within_the_same_attempt_budget() {
             .unwrap()
             .is_none()
     );
-    assert_eq!(server.await.unwrap(), 2);
+    assert_eq!(server.await.unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -536,7 +508,7 @@ async fn lost_complete_response_retries_but_does_not_infer_success_from_nosuchup
         .await
         .unwrap_err();
     assert!(error.to_string().contains("NoSuchUpload"), "{error}");
-    assert_eq!(server.await.unwrap(), 2);
+    assert_eq!(server.await.unwrap().len(), 2);
 }
 
 #[tokio::test]

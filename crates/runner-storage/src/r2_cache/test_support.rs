@@ -1,5 +1,5 @@
 //! A small operation-level test double for callers of the R2 cache.
-//! Wire protocol tests remain in `http_transport_tests` and `http_integration`.
+//! Wire protocol tests remain in `http_transport::wire_tests` and `tests::http_integration`.
 use std::{
     io,
     pin::Pin,
