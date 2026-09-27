@@ -19,6 +19,11 @@ receive `426` after the Web client floor is raised. Raising that floor to the
 first App build containing this change is therefore a required follow-up release
 step. CLI artifacts live at most about two hours and need no separate floor.
 
+Older APIs require the schema header and answer header-free Chat Event reads
+with `400`. The marker `.github/rollback-floors/chat-event-schema-header-retired`
+therefore sets the API rollback floor: `resolve-production-rollback-target.sh`
+rejects any target that predates the main commit adding it.
+
 ## Browser native-input handoff guidance (#37087)
 
 The agent tool prompt now prefers native input over direct Browser takeover only

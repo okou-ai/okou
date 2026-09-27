@@ -50,6 +50,8 @@ case "${1:-}" in
       [ "${MOCK_SNAPSHOT_JSONB_DROP_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6666666666666666666666666666666666666666" ]; then
       [ "${MOCK_STRIPE_PORTAL_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7777777777777777777777777777777777777777" ]; then
+      [ "${MOCK_CHAT_EVENT_SCHEMA_HEADER_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -65,6 +67,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SNAPSHOT_JSONB_DROP_COMMIT-5555555555555555555555555555555555555555}"
     elif [[ "$*" == *stripe-portal-purpose-only* ]]; then
       printf '%s\n' "${MOCK_STRIPE_PORTAL_COMMIT-6666666666666666666666666666666666666666}"
+    elif [[ "$*" == *chat-event-schema-header-retired* ]]; then
+      printf '%s\n' "${MOCK_CHAT_EVENT_SCHEMA_HEADER_COMMIT-7777777777777777777777777777777777777777}"
     else
       exit 2
     fi
@@ -237,6 +241,20 @@ assert_failure "Rollback target predates the Stripe Portal purpose-only cutover"
 [ ! -s "${tmp_dir}/stripe-portal-floor.output" ] || fail "pre-cutover API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Stripe Portal cutover floor must fail before artifact or host access"
+fi
+
+for retirement_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Chat Event schema header retirement" \
+    run_resolver "${tmp_dir}/chat-event-schema-header-history.output" "MOCK_CHAT_EVENT_SCHEMA_HEADER_COMMIT=${retirement_commit}"
+  [ ! -s "${tmp_dir}/chat-event-schema-header-history.output" ] || fail "invalid Chat Event schema header history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Chat Event schema header retirement" \
+  run_resolver "${tmp_dir}/chat-event-schema-header-floor.output" MOCK_CHAT_EVENT_SCHEMA_HEADER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/chat-event-schema-header-floor.output" ] || fail "pre-retirement API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Chat Event schema header floor must fail before artifact or host access"
 fi
 
 for retirement_commit in "" invalid; do
