@@ -204,6 +204,8 @@ pub struct ExecutorConfig {
     pub mitm_jsonl_flush: Option<MitmJsonlFlushHandle>,
     pub connector_runtime_sync: Option<runner_provider::ConnectorRuntimeSyncHandle>,
     pub guest_rpc: Option<crate::guest_rpc::Runtime>,
+    /// Live executor-held Guest assignments, shared with the owning Runner listener.
+    pub guest_duplex: runner_remote::guest_duplex::RunGuestChannels,
     pub session_history_cpu: SessionHistoryCpuPool,
     pub session_history_probe: SessionHistoryProbe,
     pub fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission,

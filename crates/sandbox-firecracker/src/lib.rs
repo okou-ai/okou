@@ -38,6 +38,7 @@ mod firecracker_process;
 mod guest_dns_failure_diagnostics;
 mod guest_dns_probe;
 mod guest_dns_readiness;
+mod guest_duplex;
 mod guest_operations;
 mod guest_rpc;
 mod host_cpu_cgroup;

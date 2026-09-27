@@ -960,6 +960,7 @@ async fn run_start_with_home(
         mitm_jsonl_flush: Some(mitm.jsonl_flush_handle()),
         connector_runtime_sync,
         guest_rpc,
+        guest_duplex: runner_remote::guest_duplex::RunGuestChannels::default(),
         session_history_cpu: SessionHistoryCpuPool::for_host_cpus(host_cpus),
         session_history_probe: SessionHistoryProbe::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),

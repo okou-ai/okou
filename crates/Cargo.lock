@@ -3706,6 +3706,7 @@ dependencies = [
  "bytes",
  "chrono",
  "futures-util",
+ "guest-contracts",
  "guest-control-client",
  "guest-control-proto",
  "hex",

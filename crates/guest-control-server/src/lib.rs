@@ -22,6 +22,7 @@ mod handlers;
 mod log;
 mod memory_snapshot;
 mod oom_evidence;
+mod private_duplex;
 mod process;
 mod process_containment;
 mod quiesce;
