@@ -4,7 +4,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
 import { and, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 
-import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { resolveRunnerWssTarget } from "./runner-wss-target.service";
@@ -24,15 +23,10 @@ interface RunOwner {
   readonly userId: string;
 }
 
-/** This switch is an operator gate, not evidence of listener or ingress health. */
 export async function issueRunnerWssTicket(
   db: Db,
   args: { readonly runId: string; readonly owner: RunOwner },
 ): Promise<{ wssUrl: string; ticket: string; expiresAt: string } | null> {
-  if (env("OKOU_WSS_TICKET_ISSUANCE_ENABLED") !== "true") {
-    return null;
-  }
-
   return await db.transaction(async (tx) => {
     // Serialize issue, consume and revoke with the run's terminal transition.
     const [run] = await tx

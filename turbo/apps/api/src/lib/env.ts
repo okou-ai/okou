@@ -82,9 +82,6 @@ const SCHEMA = {
   CRON_SECRET: z.string().min(1),
   // Activate only after the entire API fleet understands expiry receipts.
   WORKFLOW_SCHEDULE_EXPIRY_ENABLED: z.enum(["true", "false"]).default("false"),
-  // Remains off until mandatory Runner listener fleet, host ingress and E2E
-  // verification pass; never infer WSS support from a resolved candidate.
-  OKOU_WSS_TICKET_ISSUANCE_ENABLED: z.enum(["true", "false"]).default("false"),
   MORNING_BRIEF_WORKER_CONCURRENCY: z.coerce
     .number()
     .int()

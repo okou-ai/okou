@@ -21,7 +21,6 @@ describe("WSS ticket authorization-store outage", () => {
     // Isolated test module: its first DB access is deliberately unavailable.
     mockEnv("DATABASE_URL", "postgresql://postgres@127.0.0.1:1/unavailable");
     mockEnv("DB_POOL_CONNECT_TIMEOUT_MS", 200);
-    mockEnv("OKOU_WSS_TICKET_ISSUANCE_ENABLED", "true");
     const runId = randomUUID();
     const runnerId = randomUUID();
     mocks.clerk.session("user_wss_outage", "org_wss_outage");

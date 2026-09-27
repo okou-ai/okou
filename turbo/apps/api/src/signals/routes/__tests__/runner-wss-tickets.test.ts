@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { runnerWssTicketRoutes } from "../runner-wss-tickets";
 import { testRuntimeStateRoutes } from "../test-runtime-state";
@@ -113,17 +112,16 @@ describe("direct Runner WSS ticket boundary", () => {
     });
   }
 
-  it("defaults off even when an official runner candidate exists", async () => {
+  it("issues for an eligible active run without a separate issuance flag", async () => {
     const f = await setup();
-    const res = await accept(bootstrap(f), [404]);
-    expect(res.body.error.code).toBe("NOT_FOUND");
+    const res = await accept(bootstrap(f), [200]);
+    expect(res.body.wssUrl).toBe(`${origin}/ws/${f.runnerId}`);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
   it("requires a Web session for issuance and official Runner auth for redemption", async () => {
     const f = await setup();
-    mockEnv("OKOU_WSS_TICKET_ISSUANCE_ENABLED", "true");
     const missingSession = await accept(
       client().bootstrap({
         params: { runId: f.runId },
@@ -154,7 +152,6 @@ describe("direct Runner WSS ticket boundary", () => {
 
   it("issues owner-only without credential in the URL; consumes once on exact official audience", async () => {
     const f = await setup();
-    mockEnv("OKOU_WSS_TICKET_ISSUANCE_ENABLED", "true");
     await accept(bootstrap(f, f.bdd.user({ orgId: f.actor.orgId })), [404]);
     const issued = await accept(bootstrap(f), [200]);
     expect(issued.headers.get("Cache-Control")).toBe("no-store");
@@ -203,7 +200,6 @@ describe("direct Runner WSS ticket boundary", () => {
 
   it("does not infer listener capability from heartbeat alone, and requires a hostname and fresh snapshot", async () => {
     const f = await setup();
-    mockEnv("OKOU_WSS_TICKET_ISSUANCE_ENABLED", "true");
     // The claim has no version: a version floor is intentionally not used.
     await accept(bootstrap(f), [200]);
     await f.api.requestHeartbeatRunner(true, [200], {
@@ -242,7 +238,6 @@ describe("direct Runner WSS ticket boundary", () => {
 
   it("allows exactly one of two concurrent redemptions", async () => {
     const f = await setup();
-    mockEnv("OKOU_WSS_TICKET_ISSUANCE_ENABLED", "true");
     const issued = await accept(bootstrap(f), [200]);
     const pair = await Promise.all([
       consume(f, issued.body.ticket),
@@ -260,7 +255,6 @@ describe("direct Runner WSS ticket boundary", () => {
 
   it("rejects expired and revoked tickets and a terminal run", async () => {
     const f = await setup();
-    mockEnv("OKOU_WSS_TICKET_ISSUANCE_ENABLED", "true");
     const expired = await accept(bootstrap(f), [200]);
     await accept(
       testState().action({
