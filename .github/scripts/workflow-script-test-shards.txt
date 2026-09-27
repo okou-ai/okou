@@ -50,6 +50,7 @@
 2 runner-host-architecture-groups-test.sh
 2 runner-image-workflow-test.sh
 2 runner-token-env-alias-test.sh
+2 runner-wss-caddy-test.sh
 2 smoke-okou-cli-artifact-test.sh
 2 staging-workflow-test.sh
 2 verify-okou-cli-artifact-test.sh
