@@ -59,6 +59,9 @@ pub fn measure_phase<T, E>(
 
 /// Record exactly one payload-size class per decoded-input attempt. `None`
 /// means that no trustworthy payload slice was available, not zero bytes.
+/// This zero-duration row's `success: true` means the classification was
+/// recorded, even when an earlier input phase failed; use `download_total`
+/// and the individual phase flags to determine application success.
 pub fn record_payload_size(bytes: Option<usize>) {
     record_sandbox_op(payload_size_action(bytes), Duration::ZERO, true, None);
 }

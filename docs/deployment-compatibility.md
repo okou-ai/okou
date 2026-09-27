@@ -1863,6 +1863,29 @@ production comparisons must report field coverage and Runner version mix;
 missing timing is never a zero duration. The Guest protocol and storage apply
 behavior are unchanged.
 
+## Guest decoded-storage input attribution (2026-09-27)
+
+A Guest helper with input-phase attribution emits fixed `guest_storage_apply_input_*`
+operation rows only for `--storage-files-stdin`: stale-manifest cleanup, bounded
+stdin read, frame split, manifest parse, combined file decode/validation, and
+mount-binding validation. Each attempted decoded input also emits one zero-time
+`guest_storage_apply_input_payload_bytes_*` row, classified from the framed
+**binary payload**, not the manifest JSON or whole envelope; failed cleanup,
+read or framing yields `unavailable_or_inconsistent`, not zero. A size row has
+`success: true` for the observation even if the input failed; use phase results
+and `download_total` to determine apply success. Later phases are absent after
+an earlier failure. Ordinary manifest modes emit no decoded-input rows.
+
+The actions are additive to the sandbox operation log: older Guest helpers emit
+no input rows, and a failed best-effort log write can also omit a row. Never
+interpret missing data as a zero duration, a zero-byte payload or a successful
+phase. Times are whole milliseconds; the decode phase combines copies and
+validation, not isolated copy time. Row emission itself is not included in the
+preceding phase timer. Pair versions and per-run ordered batches before
+comparing distributions; do not add independently aggregated phase percentiles
+or treat the remaining helper residual as removable decode time. No storage
+protocol, authorization, limit, cleanup or batch-order change is introduced.
+
 ## Chat event split-write contraction (2026-09-25)
 
 Release 2 of [the two-release chat event rollout](chat-event-split-write-rollout.md)
