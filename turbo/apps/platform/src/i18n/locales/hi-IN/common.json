@@ -5948,7 +5948,7 @@
   "queue": {
     "concurrentRuns_one": "{{count}} समवर्ती रन",
     "concurrentRuns_other": "{{count}} समवर्ती रन",
-    "description": "कतार में अपनी स्थिति देखें और प्रतीक्षा को छोड़ने के लिए अपग्रेड करें।",
+    "description": "देखें कि कितने समवर्ती रन उपयोग में हैं और प्रतीक्षा छोड़ने के लिए अपग्रेड करें।",
     "perMonth": "/महीना",
     "pricePerMonth": "{{price}}/महीना",
     "purchase": {

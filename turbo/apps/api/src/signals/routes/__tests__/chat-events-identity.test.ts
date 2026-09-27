@@ -1,19 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import { setChatCallbackGitHubDeliveryFixture } from "../../../test-fixtures/chat-events";
 import { verifyOkouToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { readAgentRunState$ } from "./helpers/agent-run-callback";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
-import { createGithubBddApi } from "./helpers/api-bdd-github";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readRunAutonomyBudgetFixture } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
@@ -21,7 +15,6 @@ import {
   type RunnerClaim,
   okouTokenFromClaim,
   userMessages,
-  assistantEvent,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -42,8 +35,6 @@ const {
   readThreadProjection,
   requestSendEventWithBearer,
 } = createChatEventsFixture(context);
-
-const github = createGithubBddApi(context);
 
 const cu = createComputerUseBddApi(context);
 
@@ -197,67 +188,6 @@ describe("CHAT-02: default assistant identity", () => {
     });
 
     await cancelChatRun(actor, customRun.runId);
-  }, 90_000);
-
-  it("posts GitHub responses with the model footer when debug is enabled", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    bdd.acceptAgentStorageWrites();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped chat actor");
-    }
-    const orgId = actor.orgId;
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.OkouDebug]: true,
-      },
-    );
-    const installation = await github.installGithubApp(actor, agentId);
-    const postedComments: string[] = [];
-    server.use(
-      http.post(
-        "https://api.github.com/repos/:owner/:repo/issues/:issueNumber/comments",
-        async ({ request, params }) => {
-          expect(params.owner).toBe("okou-ai");
-          expect(params.repo).toBe("okou");
-          const body = (await request.json()) as Record<string, unknown>;
-          if (typeof body.body !== "string") {
-            return HttpResponse.json(
-              { message: "Expected a comment body" },
-              { status: 400 },
-            );
-          }
-          postedComments.push(body.body);
-          return HttpResponse.json({ id: postedComments.length });
-        },
-      ),
-    );
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "deliver an Okou GitHub response",
-    });
-    const claim = await claimChatRun(runnerGroup, run.runId);
-    await setChatCallbackGitHubDeliveryFixture({
-      runId: run.runId,
-      remoteInstallationId: installation.remoteInstallationId,
-      repo: "okou-ai/okou",
-      subjectNumber: 1,
-      subjectKind: "issue",
-      agentId,
-    });
-
-    chatCallbacks.mockChatOutputEvents([
-      assistantEvent(0, "GitHub callback brand response"),
-    ]);
-    await completeChatRunOk(run.runId, claim.sandboxHeaders);
-    await flushWaitUntilForTest();
-
-    expect(postedComments).toStrictEqual([
-      "GitHub callback brand response\n\n<sub>Claude Fable 5.1</sub>",
-    ]);
   }, 90_000);
 });
 

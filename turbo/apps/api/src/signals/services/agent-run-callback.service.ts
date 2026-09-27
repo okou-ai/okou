@@ -38,6 +38,8 @@ import { handlePiMemoryPhase2MaintenanceCallback } from "./pi-memory-phase2-main
 
 const L = logger("AgentRunCallback");
 
+// Retired kinds (`github:chat`, `slack:org`) stay here so historical rows are
+// never mistaken for HTTP callbacks by the terminal dispatch queries.
 const INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS = [
   "slack:chat",
   "feishu:chat",
@@ -138,12 +140,6 @@ const dispatchInternalCallback$ = command(
           { callback: input.envelope },
           signal,
         );
-      }
-      case "github:chat": {
-        return {
-          success: false,
-          error: "GitHub chat delivery callbacks are inline-only",
-        };
       }
       case "feishu:org": {
         return await set(
@@ -550,12 +546,6 @@ async function dispatchInternalCallbackWithoutCcstate(
         input.db,
         callbackEnvelope(input),
       );
-    }
-    case "github:chat": {
-      return {
-        success: false,
-        error: "GitHub chat delivery callbacks are inline-only",
-      };
     }
     case "feishu:org": {
       return await handleFeishuOrgInternalCallbackWithoutCcstate(

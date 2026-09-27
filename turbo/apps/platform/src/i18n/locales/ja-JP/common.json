@@ -5931,7 +5931,7 @@
   "queue": {
     "concurrentRuns_one": "{{count}} 同時実行",
     "concurrentRuns_other": "{{count}} 同時実行数",
-    "description": "キュー内の自分の位置を確認し、アップグレードして待ち時間をスキップします。",
+    "description": "使用中の同時実行数を確認し、アップグレードして待ち時間をスキップします。",
     "perMonth": "/月",
     "pricePerMonth": "{{price}}/月",
     "purchase": {

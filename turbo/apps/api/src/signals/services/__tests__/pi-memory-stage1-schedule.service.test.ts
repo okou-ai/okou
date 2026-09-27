@@ -234,7 +234,7 @@ describe("durable Pi Stage 1 daily scheduling", () => {
   it("commits one cross-org day, rolls back failures, and survives trigger deletion and zero selection", async () => {
     const h = await harness();
     const a = await h.source(0, { status: "pending", checkpoint: false });
-    const b = await h.source(0, { status: "queued", checkpoint: false });
+    const b = await h.source(0, { status: "pending", checkpoint: false });
     await expect(
       h.db.transaction(async (tx) => {
         await requestPiMemoryStage1Day(tx, a.run);
@@ -273,7 +273,10 @@ describe("durable Pi Stage 1 daily scheduling", () => {
         orgId: otherOrg,
       });
     });
-    const switched = await h.source(0, { status: "queued", checkpoint: false });
+    const switched = await h.source(0, {
+      status: "pending",
+      checkpoint: false,
+    });
     await h.db
       .update(agents)
       .set({ orgId: otherOrg })
@@ -353,7 +356,7 @@ describe("durable Pi Stage 1 daily scheduling", () => {
     },
   );
 
-  it.each(["queued", "pending", "running", "failed"])(
+  it.each(["pending", "running", "failed"])(
     "rejects a newer %s continuation without a conversation",
     async (status) => {
       const h = await harness();
@@ -376,7 +379,7 @@ describe("durable Pi Stage 1 daily scheduling", () => {
     expect(selected).toHaveLength(1);
     await h.source(0, {
       threadId: original.threadId,
-      status: "queued",
+      status: "pending",
       checkpoint: false,
     });
     expect((await h.claim()).claimed).toHaveLength(0);

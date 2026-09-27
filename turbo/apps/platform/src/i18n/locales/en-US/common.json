@@ -5940,7 +5940,7 @@
   "queue": {
     "concurrentRuns_one": "{{count}} concurrent run",
     "concurrentRuns_other": "{{count}} concurrent runs",
-    "description": "View your position in the queue and upgrade to skip the wait.",
+    "description": "See how many concurrent runs are in use and upgrade to skip the wait.",
     "perMonth": "/month",
     "pricePerMonth": "{{price}}/month",
     "purchase": {

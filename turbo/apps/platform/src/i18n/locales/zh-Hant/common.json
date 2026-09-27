@@ -5931,7 +5931,7 @@
   "queue": {
     "concurrentRuns_one": "{{count}}個併發執行",
     "concurrentRuns_other": "{{count}}個併發執行",
-    "description": "檢視你在佇列中的位置，升級即可免去等待。",
+    "description": "檢視正在使用的並行執行數，升級即可免去等待。",
     "perMonth": "/月",
     "pricePerMonth": "{{price}}/月",
     "purchase": {

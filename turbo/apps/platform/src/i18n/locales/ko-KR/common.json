@@ -5931,7 +5931,7 @@
   "queue": {
     "concurrentRuns_one": "{{count}}개의 동시 실행",
     "concurrentRuns_other": "{{count}}개의 동시 실행",
-    "description": "대기열 내 위치를 확인하고 대기 없이 건너뛰려면 업그레이드하세요.",
+    "description": "사용 중인 동시 실행 수를 확인하고 대기 없이 진행하려면 업그레이드하세요.",
     "perMonth": "/월",
     "pricePerMonth": "{{price}}/월",
     "purchase": {

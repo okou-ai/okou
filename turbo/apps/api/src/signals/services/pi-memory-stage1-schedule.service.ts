@@ -81,7 +81,7 @@ function sourceArgs(run: Run) {
   };
 }
 
-// Called only inside the common successful pending/queued admission transaction.
+// Called only inside the common successful pending admission transaction.
 // No history scan, Storage creation, blob read, or external call under its locks.
 export async function requestPiMemoryStage1Day(
   tx: Tx,
@@ -92,11 +92,7 @@ export async function requestPiMemoryStage1Day(
     ...args,
     status: "completed",
   });
-  if (
-    reason ||
-    !run.chatThreadId ||
-    !["pending", "queued"].includes(run.status)
-  ) {
+  if (reason || !run.chatThreadId || run.status !== "pending") {
     return;
   }
   const context = await loadUserFeatureSwitchContext(tx, run.orgId, run.userId);
@@ -191,7 +187,7 @@ async function readThreadSource(
     .where(
       and(
         eq(agentRuns.chatThreadId, threadId),
-        inArray(agentRuns.status, ["queued", "pending", "running"]),
+        inArray(agentRuns.status, ["pending", "running"]),
       ),
     )
     .limit(1);

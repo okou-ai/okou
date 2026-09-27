@@ -1,8 +1,4 @@
-import { logger } from "../../lib/log";
-import { tapError } from "../utils";
-
 const GITHUB_API_BASE = "https://api.github.com";
-const L = logger("GithubIssuesApi");
 
 const GITHUB_HEADERS = {
   Accept: "application/vnd.github+json",
@@ -44,42 +40,4 @@ export async function postGithubIssueComment(
 
   const data = (await response.json()) as { readonly id: number };
   return String(data.id);
-}
-
-export async function removeGithubCommentReaction(
-  args: {
-    readonly token: string;
-    readonly repo: string;
-    readonly commentId: string;
-    readonly reactionId: string;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  await tapError(
-    (async (): Promise<void> => {
-      const response = await fetch(
-        `${GITHUB_API_BASE}/repos/${args.repo}/issues/comments/${args.commentId}/reactions/${args.reactionId}`,
-        {
-          method: "DELETE",
-          headers: authHeaders(args.token),
-          signal,
-        },
-      );
-
-      if (!response.ok) {
-        L.warn("Failed to remove comment reaction", {
-          commentId: args.commentId,
-          reactionId: args.reactionId,
-          status: response.status,
-        });
-      }
-    })(),
-    (error) => {
-      L.warn("Failed to remove comment reaction", {
-        commentId: args.commentId,
-        reactionId: args.reactionId,
-        error,
-      });
-    },
-  );
 }

@@ -438,9 +438,7 @@ function useSecretKmsClientForTests(args: {
         args.failAfterGenerateDataKeys !== undefined &&
         generateDataKeyCalls > args.failAfterGenerateDataKeys
       ) {
-        return Promise.reject(
-          new Error("unexpected queued payload encryption"),
-        );
+        return Promise.reject(new Error("unexpected data key generation"));
       }
       return Promise.resolve({
         keyId: request.keyId,
@@ -460,10 +458,6 @@ function useSecretKmsClientForTests(args: {
     },
   };
   setSecretKmsClientForTests(client);
-}
-
-function failKmsAfterGenerateDataKeys(limit: number): void {
-  useSecretKmsClientForTests({ failAfterGenerateDataKeys: limit });
 }
 
 function advanceNowOnFirstGenerateDataKey(timestamp: number): void {
@@ -5282,22 +5276,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     const queue = await api.readRunQueue(actor);
     expect(queue.body.queue).toHaveLength(0);
     expect(queue.body.concurrency.active).toBe(0);
-  });
-
-  it("does not require queued payload encryption while capacity is available", async () => {
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    failKmsAfterGenerateDataKeys(1);
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "capacity available run should not encrypt queued payload",
-      modelProvider: "anthropic-api-key",
-    });
-
-    expect(run.status).toBe("pending");
-
-    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("timestamps pending launches when the durable row is inserted", async () => {

@@ -5931,7 +5931,7 @@
   "queue": {
     "concurrentRuns_one": "{{count}} eksekusi bersamaan",
     "concurrentRuns_other": "{{count}} eksekusi bersamaan",
-    "description": "Lihat posisi Anda di antrean dan upgrade untuk melewati waktu tunggu.",
+    "description": "Lihat berapa banyak eksekusi bersamaan yang sedang digunakan dan upgrade untuk melewati waktu tunggu.",
     "perMonth": "/bulan",
     "pricePerMonth": "{{price}}/bulan",
     "purchase": {

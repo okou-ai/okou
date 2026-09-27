@@ -16,7 +16,6 @@ import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
@@ -62,7 +61,6 @@ type ChatEventDisplayContext =
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -85,7 +83,6 @@ type ChatEventDisplayContext =
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -107,7 +104,6 @@ type ChatEventDisplayContext =
       };
       readonly teamsContext?: never;
       readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -135,7 +131,6 @@ type ChatEventDisplayContext =
         readonly connectionId: string;
       };
       readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -159,7 +154,6 @@ type ChatEventDisplayContext =
         readonly senderUsername: string | null;
         readonly senderLanguage: string | null;
       };
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -168,25 +162,6 @@ type ChatEventDisplayContext =
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
-      readonly githubContext: {
-        readonly repo: string;
-        readonly subjectNumber: number;
-        readonly subjectKind: "issue" | "pull_request";
-        readonly triggerCommentId: string | null;
-        readonly issueContext: string;
-        readonly messageText: string;
-        readonly triggerReactionId: string | null;
-        readonly triggerCommentBody: string | null;
-      };
-      readonly agentphoneContext?: never;
-    }
-  | {
-      readonly discordContext?: never;
-      readonly slackContext?: never;
-      readonly feishuContext?: never;
-      readonly teamsContext?: never;
-      readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext: {
         readonly messageText: string;
         readonly threadContext: string;
@@ -209,7 +184,6 @@ type ChatEventDisplayContext =
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     };
 
@@ -491,19 +465,6 @@ type NewDisplayContext =
       readonly senderLanguage: string | null;
     }
   | {
-      readonly type: "github";
-      readonly id: string;
-      readonly chatThreadId: string;
-      readonly repo: string;
-      readonly subjectNumber: number;
-      readonly subjectKind: "issue" | "pull_request";
-      readonly triggerCommentId: string | null;
-      readonly issueContext: string;
-      readonly messageText: string;
-      readonly triggerReactionId: string | null;
-      readonly triggerCommentBody: string | null;
-    }
-  | {
       readonly type: "agentphone";
       readonly id: string;
       readonly chatThreadId: string;
@@ -643,17 +604,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...telegramContext,
-    };
-  }
-
-  const githubContext =
-    "githubContext" in values ? values.githubContext : undefined;
-  if (githubContext !== undefined) {
-    return {
-      type: "github",
-      id: eventId,
-      chatThreadId: values.chatThreadId,
-      ...githubContext,
     };
   }
 
@@ -931,25 +881,6 @@ async function insertDisplayContext(
   }
   if (context.type === "telegram") {
     await insertTelegramDisplayContext(tx, context, createdAt);
-    return;
-  }
-  if (context.type === "github") {
-    await tx
-      .insert(chatGithubContext)
-      .values({
-        id: context.id,
-        chatThreadId: context.chatThreadId,
-        repo: context.repo,
-        subjectNumber: context.subjectNumber,
-        subjectKind: context.subjectKind,
-        triggerCommentId: context.triggerCommentId,
-        issueContext: context.issueContext,
-        messageText: context.messageText,
-        triggerReactionId: context.triggerReactionId,
-        triggerCommentBody: context.triggerCommentBody,
-        createdAt,
-      })
-      .onConflictDoNothing();
     return;
   }
   if (context.type === "agentphone") {

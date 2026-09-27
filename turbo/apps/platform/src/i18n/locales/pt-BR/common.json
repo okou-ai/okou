@@ -6008,7 +6008,7 @@
     "concurrentRuns_one": "{{count}} execução simultânea",
     "concurrentRuns_many": "{{count}} execuções simultâneas",
     "concurrentRuns_other": "{{count}} execuções simultâneas",
-    "description": "Gerencie a simultaneidade e a fila de execução do workspace.",
+    "description": "Veja quantas execuções simultâneas estão em uso e faça upgrade para evitar a espera.",
     "perMonth": "/ mês",
     "pricePerMonth": "{{price}} / mês",
     "purchase": {

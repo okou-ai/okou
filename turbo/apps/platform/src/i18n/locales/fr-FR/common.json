@@ -6008,7 +6008,7 @@
     "concurrentRuns_one": "{{count}} exécution(s) simultanée(s)",
     "concurrentRuns_many": "{{count}} exécutions simultanées",
     "concurrentRuns_other": "{{count}} exécutions simultanées",
-    "description": "Voir votre position dans la file d'attente et passez à une version supérieure pour éviter l'attente.",
+    "description": "Voyez combien d'exécutions simultanées sont utilisées et passez à une version supérieure pour éviter l'attente.",
     "perMonth": "/mois",
     "pricePerMonth": "{{price}}/mois",
     "purchase": {

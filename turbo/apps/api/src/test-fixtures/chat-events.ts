@@ -12,7 +12,6 @@ import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
@@ -20,14 +19,11 @@ import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSearchMessageWatermarks } from "@okouai/db/schema/chat-event-search";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
-import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
-import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -173,14 +169,6 @@ interface ChatEventContextFixture {
   readonly telegramSenderDisplayName: string | null;
   readonly telegramSenderUsername: string | null;
   readonly telegramSenderLanguage: string | null;
-  readonly githubRepo: string | null;
-  readonly githubSubjectNumber: number | null;
-  readonly githubSubjectKind: "issue" | "pull_request" | null;
-  readonly githubTriggerCommentId: string | null;
-  readonly githubIssueContext: string | null;
-  readonly githubMessageText: string | null;
-  readonly githubTriggerReactionId: string | null;
-  readonly githubTriggerCommentBody: string | null;
 }
 
 export async function readChatEventContextFixture(
@@ -269,14 +257,6 @@ export async function readChatEventContextFixture(
       telegramSenderDisplayName: chatTelegramContext.senderDisplayName,
       telegramSenderUsername: chatTelegramContext.senderUsername,
       telegramSenderLanguage: chatTelegramContext.senderLanguage,
-      githubRepo: chatGithubContext.repo,
-      githubSubjectNumber: chatGithubContext.subjectNumber,
-      githubSubjectKind: chatGithubContext.subjectKind,
-      githubTriggerCommentId: chatGithubContext.triggerCommentId,
-      githubIssueContext: chatGithubContext.issueContext,
-      githubMessageText: chatGithubContext.messageText,
-      githubTriggerReactionId: chatGithubContext.triggerReactionId,
-      githubTriggerCommentBody: chatGithubContext.triggerCommentBody,
     })
     .from(chatEvents)
     .leftJoin(chatAutomationContext, eq(chatAutomationContext.id, contextId))
@@ -285,7 +265,6 @@ export async function readChatEventContextFixture(
     .leftJoin(chatTeamsContext, eq(chatTeamsContext.id, contextId))
     .leftJoin(chatAgentphoneContext, eq(chatAgentphoneContext.id, contextId))
     .leftJoin(chatTelegramContext, eq(chatTelegramContext.id, contextId))
-    .leftJoin(chatGithubContext, eq(chatGithubContext.id, contextId))
     .where(eq(chatEvents.id, eventId))
     .limit(1);
   return event ?? null;
@@ -445,35 +424,27 @@ const annotationProjectionInputs = [
       },
     },
   },
+  // GitHub direct chat was retired in #24941 and no longer writes context rows;
+  // historical GitHub source parts still render from stored user messages.
   {
     text: "github issue comment linked",
-    context: {
-      githubContext: {
-        repo: "okou-ai/okou",
-        subjectNumber: 24_218,
-        subjectKind: "issue",
-        triggerCommentId: "123456",
-        issueContext: "",
-        messageText: "github issue comment linked",
-        triggerReactionId: null,
-        triggerCommentBody: null,
-      },
+    githubSource: {
+      repo: "okou-ai/okou",
+      subjectNumber: 24_218,
+      subjectKind: "issue",
+      triggerCommentId: "123456",
     },
+    context: { contextType: "web" },
   },
   {
     text: "github pull request linked",
-    context: {
-      githubContext: {
-        repo: "okou-ai/okou",
-        subjectNumber: 24_219,
-        subjectKind: "pull_request",
-        triggerCommentId: null,
-        issueContext: "",
-        messageText: "github pull request linked",
-        triggerReactionId: null,
-        triggerCommentBody: null,
-      },
+    githubSource: {
+      repo: "okou-ai/okou",
+      subjectNumber: 24_219,
+      subjectKind: "pull_request",
+      triggerCommentId: null,
     },
+    context: { contextType: "web" },
   },
 ] as const;
 
@@ -485,6 +456,9 @@ function annotationProjectionSourcePart(
       kind: "slack",
       messagePermalink: input.messagePermalink,
     });
+  }
+  if ("githubSource" in input) {
+    return createChatEventSourcePart({ kind: "github", ...input.githubSource });
   }
   if ("feishuContext" in input.context) {
     return createChatEventSourcePart({
@@ -512,13 +486,7 @@ function annotationProjectionSourcePart(
       botUsername: null,
     });
   }
-  return createChatEventSourcePart({
-    kind: "github",
-    repo: input.context.githubContext.repo,
-    subjectNumber: input.context.githubContext.subjectNumber,
-    subjectKind: input.context.githubContext.subjectKind,
-    triggerCommentId: input.context.githubContext.triggerCommentId,
-  });
+  throw new Error(`Unexpected annotation fixture: ${input.text}`);
 }
 
 export async function seedChatEventAnnotationProjectionFixture(
@@ -558,16 +526,7 @@ export async function seedChatEventAnnotationProjectionFixture(
         }),
       }),
       runId: null,
-      githubContext: {
-        repo: "okou-ai/okou",
-        subjectNumber: 24_218,
-        subjectKind: "issue",
-        triggerCommentId: "654321",
-        issueContext: "",
-        messageText: "claimed annotation",
-        triggerReactionId: null,
-        triggerCommentBody: null,
-      },
+      contextType: "web",
     });
     await replaceChatEvent(tx, claimedPendingId, {
       chatThreadId,
@@ -1080,102 +1039,6 @@ export async function withChatEventDeletedAfterReadFixture<T>(args: {
     throw closed.reason;
   }
   return result.value;
-}
-
-/** Attach GitHub delivery metadata that is normally persisted by GitHub ingress. */
-export async function setChatCallbackGitHubDeliveryFixture(args: {
-  readonly runId: string;
-  readonly remoteInstallationId: string;
-  readonly repo: string;
-  readonly subjectNumber: number;
-  readonly subjectKind: "issue" | "pull_request";
-  readonly agentId: string;
-}): Promise<void> {
-  await db().transaction(async (tx) => {
-    const [run] = await tx
-      .select({
-        chatThreadId: agentRuns.chatThreadId,
-        orgId: agentRuns.orgId,
-        userId: agentRuns.userId,
-      })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, args.runId))
-      .limit(1);
-    if (!run?.chatThreadId) {
-      throw new Error("Expected one thread-bound chat run");
-    }
-    const [installation] = await tx
-      .select({ id: githubInstallations.id })
-      .from(githubInstallations)
-      .where(
-        and(
-          eq(githubInstallations.installationId, args.remoteInstallationId),
-          eq(githubInstallations.orgId, run.orgId),
-          eq(githubInstallations.status, "active"),
-        ),
-      )
-      .limit(1);
-    if (!installation) {
-      throw new Error("Expected one active GitHub installation");
-    }
-    const [callback] = await tx
-      .select({
-        id: agentRunCallbacks.id,
-        payload: agentRunCallbacks.payload,
-      })
-      .from(agentRunCallbacks)
-      .where(
-        and(
-          eq(agentRunCallbacks.runId, args.runId),
-          eq(agentRunCallbacks.internalKind, "chat"),
-          eq(agentRunCallbacks.status, "pending"),
-        ),
-      )
-      .limit(1);
-    if (
-      !callback ||
-      typeof callback.payload !== "object" ||
-      callback.payload === null ||
-      Array.isArray(callback.payload)
-    ) {
-      throw new Error("Expected one pending canonical chat callback");
-    }
-
-    await tx.insert(githubChatThreadRoutes).values({
-      installationId: installation.id,
-      repo: args.repo,
-      subjectNumber: args.subjectNumber,
-      userId: run.userId,
-      chatThreadId: run.chatThreadId,
-    });
-    const [updatedRun] = await tx
-      .update(agentRuns)
-      .set({ triggerSource: "github" })
-      .where(eq(agentRuns.id, args.runId))
-      .returning({ id: agentRuns.id });
-    if (!updatedRun) {
-      throw new Error("Expected one GitHub-triggered chat run");
-    }
-    const callbacks = await tx
-      .update(agentRunCallbacks)
-      .set({
-        payload: {
-          ...callback.payload,
-          githubDelivery: {
-            installationId: installation.id,
-            repo: args.repo,
-            subjectNumber: args.subjectNumber,
-            subjectKind: args.subjectKind,
-            agentId: args.agentId,
-          },
-        },
-      })
-      .where(eq(agentRunCallbacks.id, callback.id))
-      .returning({ id: agentRunCallbacks.id });
-    if (callbacks.length !== 1) {
-      throw new Error("Expected one pending canonical chat callback");
-    }
-  });
 }
 
 async function transitiveBlockedWaiterCount(

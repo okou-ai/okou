@@ -6008,7 +6008,7 @@
     "concurrentRuns_one": "{{count}} ejecución simultánea",
     "concurrentRuns_many": "{{count}} ejecuciones simultáneas",
     "concurrentRuns_other": "{{count}} ejecuciones simultáneas",
-    "description": "Consulta tu posición en la cola y mejora para evitar la espera.",
+    "description": "Consulta cuántas ejecuciones simultáneas están en uso y mejora para evitar la espera.",
     "perMonth": "/mes",
     "pricePerMonth": "{{price}}/mes",
     "purchase": {

@@ -6008,7 +6008,7 @@
     "concurrentRuns_one": "{{count}} esecuzione simultanea",
     "concurrentRuns_many": "{{count}} esecuzioni simultanee",
     "concurrentRuns_other": "{{count}} esecuzioni simultanee",
-    "description": "Visualizza la tua posizione in coda e aggiorna per saltare l'attesa.",
+    "description": "Visualizza quante esecuzioni simultanee sono in uso e aggiorna per saltare l'attesa.",
     "perMonth": "/mese",
     "pricePerMonth": "{{price}}/mese",
     "purchase": {

@@ -5948,7 +5948,7 @@
   "queue": {
     "concurrentRuns_one": "{{count}} gleichzeitige Ausführung",
     "concurrentRuns_other": "{{count}} gleichzeitige Ausführungen",
-    "description": "Sehen Sie sich Ihre Position in der Warteschlange an und aktualisieren Sie, um das Warten zu vermeiden.",
+    "description": "Sehen Sie, wie viele gleichzeitige Ausführungen belegt sind, und aktualisieren Sie, um das Warten zu vermeiden.",
     "perMonth": "/Monat",
     "pricePerMonth": "{{price}}/Monat",
     "purchase": {
