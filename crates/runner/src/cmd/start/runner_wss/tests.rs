@@ -245,7 +245,7 @@ async fn rejects_wrong_path_malformed_handshake_and_bad_frames() {
 }
 
 #[tokio::test]
-async fn absent_local_run_and_unavailable_guest_do_not_redeem_ticket() {
+async fn absent_local_run_does_not_redeem_ticket() {
     let fixture = Fixture::new().await;
     fixture
         .ctx
@@ -275,6 +275,32 @@ async fn absent_local_run_and_unavailable_guest_do_not_redeem_ticket() {
     assert!(canonical_origin("example.test").is_none());
     assert!(canonical_origin("127.1").is_none());
     assert!(canonical_origin("127.0.0.1").is_none());
+}
+
+#[tokio::test]
+async fn unavailable_production_guest_rejects_before_consuming_ticket() {
+    let mut fixture = Fixture::new().await;
+    fixture.ctx.guest = Arc::new(UnavailableGuest);
+    let ticket = "A".repeat(43);
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &ticket)).await.unwrap();
+    denied(&mut ws).await;
+    task.await.unwrap();
+
+    // The currently inert production adapter must not spend a one-use ticket.
+    assert!(
+        fixture
+            .ctx
+            .consumer
+            .consume(
+                fixture.run,
+                fixture.runner,
+                "wss://runner.okou.ai:443",
+                &ticket
+            )
+            .await
+    );
 }
 
 #[tokio::test]
