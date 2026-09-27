@@ -119,6 +119,15 @@ describe("CHAT-02: run-level model overrides", () => {
 
     it("overlaps account capture with thread observation and keeps captured identity", async () => {
       const f = await prepareSubscriptionThread();
+      mockPiResourceArchiveDownloads();
+      mockPiCheckpointObjectStore();
+      server.use(
+        http.post("https://chatgpt.com/backend-api/codex/responses", () => {
+          return nativeCodexSseResponse(
+            piResponsesTextSse("subscription capture answer", 1),
+          );
+        }),
+      );
       const send = sendChatRun(f.actor, {
         agentId: f.agentId,
         threadId: f.thread.id,
@@ -152,7 +161,7 @@ describe("CHAT-02: run-level model overrides", () => {
           account: { id: f.captured.accountSourceId },
         },
       });
-      await cancelChatRun(f.actor, run.runId);
+      await waitForRunStatus(f.actor, run.runId, "completed");
     });
 
     it("rejects an account disconnected after capture before environment preparation", async () => {
