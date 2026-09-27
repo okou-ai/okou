@@ -159,6 +159,20 @@ fn rejects_unrestorable_prefix_custom_state_and_dangling_label() {
 }
 
 #[test]
+fn rejects_off_branch_label_for_a_retained_entry() {
+    let mut source = session();
+    source.push_str(&line(json!({"type":"message","id":"old","parentId":null,"timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));
+    source.push_str(&line(json!({"type":"message","id":"kept","parentId":"old","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"kept"}})));
+    source.push_str(&line(json!({"type":"label","id":"off_branch_label","parentId":"kept","targetId":"kept","timestamp":"2026-09-27T00:00:00Z","label":"bookmark"})));
+    source.push_str(&line(json!({"type":"compaction","id":"compact","parentId":"kept","timestamp":"2026-09-27T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":1000})));
+    // Pi's getLabel("kept") reads all native entries, not just the active path.
+    assert!(matches!(
+        select(&source, 1024).unwrap(),
+        PiHistorySelection::Ineligible(Reason::UnsafeNativeState)
+    ));
+}
+
+#[test]
 fn rejects_session_title_on_an_abandoned_branch() {
     let mut source = session();
     source.push_str(&line(json!({"type":"message","id":"old","parentId":null,"timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));

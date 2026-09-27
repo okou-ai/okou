@@ -3816,9 +3816,9 @@ and validation work can exceed the raw file size. A Guest with Pi compact-genera
 selection can turn an over-limit append-only native JSONL into a bounded native
 H2 blob, preserving the session ID, active context and latest native session
 name; it replaces its live file only after the API accepts the checkpoint.
-Without a usable latest compact boundary, or when opaque pre-compact state or
-retained references cannot be preserved safely, the new Guest fails explicitly
-rather than sending a missing H2 hash.
+Without a usable latest compact boundary, or when opaque extension state,
+globally visible labels or retained references cannot be preserved safely, the
+new Guest fails explicitly rather than sending a missing H2 hash.
 An older Guest can still fail the existing H2 hash check on oversized Pi files
 until its running jobs drain. New and old APIs read the selected native v3 H2
 through the existing blob/hash contract; no wire change, migration, or fallback

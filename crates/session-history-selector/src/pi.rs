@@ -408,6 +408,14 @@ fn select_with_limit(
         }))
         .map(String::as_str)
         .collect();
+    // Pi labels are global to the file even when their entries are not on the
+    // active path. Extensions can likewise inspect custom entries directly.
+    if metas.iter().any(|(id, meta)| {
+        matches!(meta.kind.as_str(), "label" | "custom" | "custom_message")
+            && !included_ids.contains(id.as_str())
+    }) {
+        return Ok(PiHistorySelection::Ineligible(Reason::UnsafeNativeState));
+    }
     if retained_path.iter().any(|id| {
         metas.get(id).is_none_or(|meta| {
             meta.target_id
