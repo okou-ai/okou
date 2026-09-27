@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import {
   onboardingCompleteContract,
   onboardingStatusContract,
@@ -13,6 +15,9 @@ import {
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { readOnboardingIndustryFixture } from "../../../test-fixtures/org-metadata";
+import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingStatusRoutes } from "../onboarding-status";
@@ -20,6 +25,8 @@ import { modelPoliciesRoutes } from "../model-policies";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
+const bdd = createBddApi(context);
+const chat = createChatFilesBddApi(context);
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
@@ -66,6 +73,67 @@ function orgActor(role: "org:admin" | "org:member" = "org:admin") {
   } as const;
 }
 
+interface OrgActor {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly role: "org:admin" | "org:member";
+}
+
+/** A second person in `admin`'s organization, without admin rights. */
+function memberOf(admin: OrgActor) {
+  return {
+    userId: `user_${randomUUID()}`,
+    orgId: admin.orgId,
+    role: "org:member",
+  } as const;
+}
+
+async function enableSourcesFirst(actor: OrgActor): Promise<void> {
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: actor.userId, orgId: actor.orgId },
+    { [FeatureSwitchKey.OnboardingSourcesFirst]: true },
+  );
+}
+
+function mockDefaultAgentStorage(): void {
+  context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
+  context.mocks.s3.getSignedUrl.mockResolvedValue(
+    "https://r2.example.test/default-agent.tar.gz?signature=test",
+  );
+}
+
+async function statusAs(actor: OrgActor) {
+  mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+  const response = await accept(
+    onboardingStatusClient().getStatus({ headers: authHeaders() }),
+    [200],
+  );
+  return response.body;
+}
+
+async function completeAs(
+  actor: OrgActor,
+  request: {
+    readonly query?: { readonly modelProvider: "codex" | "claudeCode" };
+    readonly body?: {
+      readonly timezone?: string;
+      readonly industry?: "marketing";
+    };
+  } = {},
+) {
+  mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+  const response = await accept(
+    onboardingCompleteClient().complete({
+      headers: authHeaders(),
+      ...(request.query ? { query: request.query } : {}),
+      body: request.body ?? {},
+    }),
+    [200],
+  );
+  return response.body;
+}
+
 describe("GET /api/onboarding/status", () => {
   it("returns 401 when the request is unauthenticated", async () => {
     const response = await accept(
@@ -78,7 +146,7 @@ describe("GET /api/onboarding/status", () => {
     });
   });
 
-  it("does not start onboarding for an organization member", async () => {
+  it("does not start onboarding for a member while the source-first switch is off", async () => {
     const actor = orgActor("org:member");
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
 
@@ -99,24 +167,122 @@ describe("GET /api/onboarding/status", () => {
   });
 });
 
-describe("POST /api/onboarding/complete", () => {
-  it("returns 403 when an organization member tries to complete onboarding", async () => {
-    const actor = orgActor("org:member");
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+describe("member source-first onboarding", () => {
+  it("starts onboarding for a new member once the switch is on for them", async () => {
+    const admin = orgActor();
+    const member = memberOf(admin);
+    await enableSourcesFirst(member);
 
-    const response = await accept(
-      onboardingCompleteClient().complete({
-        headers: authHeaders(),
-        body: {},
-      }),
-      [403],
+    await expect(statusAs(member)).resolves.toStrictEqual({
+      needsOnboarding: true,
+      onboardingComplete: false,
+      isAdmin: false,
+      hasOrg: true,
+      hasDefaultAgent: false,
+      defaultAgentId: null,
+      defaultAgentMetadata: null,
+    });
+  });
+
+  it("keeps the organization's completion as the org-wide answer for a member", async () => {
+    mockDefaultAgentStorage();
+    const admin = orgActor();
+    const member = memberOf(admin);
+    await statusAs(admin);
+    await completeAs(admin);
+    await enableSourcesFirst(member);
+
+    // The owner finishing setup does not finish it for the member.
+    await expect(statusAs(member)).resolves.toMatchObject({
+      needsOnboarding: true,
+      onboardingComplete: true,
+      isAdmin: false,
+    });
+  });
+
+  it("records a member's completion without changing the organization's onboarding", async () => {
+    mockDefaultAgentStorage();
+    const admin = orgActor();
+    const member = memberOf(admin);
+    const adminBefore = await statusAs(admin);
+    expect(adminBefore).toMatchObject({
+      needsOnboarding: true,
+      onboardingComplete: false,
+    });
+    await enableSourcesFirst(member);
+
+    const completed = await completeAs(member, {
+      query: { modelProvider: "codex" },
+      body: { timezone: "Asia/Shanghai", industry: "marketing" },
+    });
+
+    expect(completed).toStrictEqual({
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+    await expect(statusAs(member)).resolves.toMatchObject({
+      needsOnboarding: false,
+      onboardingComplete: false,
+      isAdmin: false,
+    });
+    // The admin still has the workspace to set up, and none of the member's
+    // answers were taken as the organization's.
+    await expect(statusAs(admin)).resolves.toMatchObject({
+      needsOnboarding: true,
+      onboardingComplete: false,
+      isAdmin: true,
+    });
+    await expect(
+      readOnboardingIndustryFixture(admin.orgId),
+    ).resolves.toBeNull();
+    mocks.clerk.session(admin.userId, admin.orgId, admin.role);
+    const policies = await accept(
+      modelPoliciesClient().list({ headers: authHeaders() }),
+      [200],
     );
+    expect(
+      policies.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).toStrictEqual(DEFAULT_ORG_MODEL_POLICY_MODELS);
+    expect(policies.body.workspaceDefaultModel).toBe(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    );
+  });
 
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Only org admins can complete onboarding",
-        code: "FORBIDDEN",
-      },
+  it("does not pull a member who already chats in the workspace into onboarding", async () => {
+    const admin = bdd.user();
+    if (!admin.orgId) {
+      throw new Error("Expected the seeded admin to belong to an org");
+    }
+    const existing = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(existing, {
+      displayName: "Existing member agent",
+      visibility: "private",
+    });
+    await chat.createThread(existing, { agentId: agent.agentId });
+    const member = {
+      userId: existing.userId,
+      orgId: admin.orgId,
+      role: "org:member",
+    } as const;
+    await enableSourcesFirst(member);
+
+    await expect(statusAs(member)).resolves.toMatchObject({
+      needsOnboarding: false,
+      isAdmin: false,
+    });
+  });
+});
+
+describe("POST /api/onboarding/complete", () => {
+  it("lets a member complete onboarding instead of refusing them", async () => {
+    const member = orgActor("org:member");
+
+    await expect(completeAs(member)).resolves.toStrictEqual({
+      onboardingComplete: true,
+      needsOnboarding: false,
     });
   });
 

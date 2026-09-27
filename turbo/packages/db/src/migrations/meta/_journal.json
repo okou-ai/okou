@@ -1338,6 +1338,13 @@
       "when": 1790470814088,
       "tag": "1268_retire_legacy_run_queue_promotion",
       "breakpoints": true
+    },
+    {
+      "idx": 1269,
+      "version": "7",
+      "when": 1790498751259,
+      "tag": "1269_org_member_onboarding_completed_at",
+      "breakpoints": true
     }
   ]
 }

@@ -37,11 +37,14 @@ export const apiOnboardingHandlers = [
   }),
 
   // POST /api/onboarding/complete
+  // An admin completes the organization's onboarding; a member completes only
+  // their own, which leaves the organization's `onboardingComplete` as it was.
   mockApi(onboardingCompleteContract.complete, ({ respond }) => {
     mockOnboardingStatus = {
       ...mockOnboardingStatus,
       needsOnboarding: false,
-      onboardingComplete: true,
+      onboardingComplete:
+        mockOnboardingStatus.isAdmin || mockOnboardingStatus.onboardingComplete,
     };
     return respond(200, {
       onboardingComplete: true,

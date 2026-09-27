@@ -150,7 +150,7 @@ function createSourcesFirstPageSetup(
     }
 
     // A member invited into an existing org runs the flow without the invite
-    // and Slack steps.
+    // step.
     const flow = status.isAdmin ? "owner" : "member";
     set(setSourcesFirstFlow$, flow);
 

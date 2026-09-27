@@ -784,7 +784,7 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
           headers: authenticate(actor),
           body: {},
         }),
-        [200, 403],
+        [200],
       );
     },
 

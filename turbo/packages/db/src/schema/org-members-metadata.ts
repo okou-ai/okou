@@ -60,6 +60,15 @@ export const orgMembersMetadata = pgTable(
     voiceInputModel: varchar("voice_input_model", { length: 255 }),
     onboardingDone: boolean("onboarding_done").notNull().default(false),
     /**
+     * When this member finished the source-first onboarding in this org.
+     *
+     * Only a non-admin member's own completion writes it; an admin's completion
+     * stays organization-wide in `org_metadata.onboarding_complete`. Null means
+     * this member has not finished it, not that they must: members who already
+     * use the workspace are never sent through onboarding.
+     */
+    onboardingCompletedAt: timestamp("onboarding_completed_at"),
+    /**
      * When Morning Brief collection ownership was revoked for this member.
      *
      * The first transaction every membership, user and organization cleanup

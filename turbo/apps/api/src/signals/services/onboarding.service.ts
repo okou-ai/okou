@@ -6,18 +6,22 @@ import type {
 } from "@okouai/api-contracts/contracts/onboarding";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 
 import type { AuthContext } from "../../types/auth";
 import { logger } from "../../lib/log";
 import { db$, writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
+import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import {
   ensureMorningBriefDefaultEnabled$,
   type EnsureMorningBriefDefaultEnabledResult,
@@ -95,6 +99,35 @@ async function markOnboardingComplete(
   });
 }
 
+/**
+ * A member's completion is theirs alone: it stamps their own membership row and
+ * never touches the organization's onboarding state, model policies or
+ * provisioning, which stay with the admin who set the workspace up.
+ */
+async function markMemberOnboardingComplete(
+  db: Db,
+  orgId: string,
+  userId: string,
+): Promise<boolean> {
+  const completedAt = nowDate();
+  const rows = await db
+    .insert(orgMembersMetadata)
+    .values({
+      orgId,
+      userId,
+      onboardingCompletedAt: completedAt,
+      createdAt: completedAt,
+      updatedAt: completedAt,
+    })
+    .onConflictDoUpdate({
+      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+      set: { onboardingCompletedAt: completedAt, updatedAt: completedAt },
+      setWhere: isNull(orgMembersMetadata.onboardingCompletedAt),
+    })
+    .returning({ userId: orgMembersMetadata.userId });
+  return rows.length > 0;
+}
+
 type TimezoneFallbackOutcome = "missing" | "invalid" | "stored" | "preserved";
 
 async function preserveOrStoreTimezoneFallback(
@@ -134,6 +167,7 @@ async function preserveOrStoreTimezoneFallback(
 interface CompleteOnboardingArgs {
   readonly orgId: string;
   readonly member: WorkflowMember;
+  readonly isAdmin: boolean;
   readonly timezone?: string;
   readonly industry?: OnboardingIndustry;
   readonly modelProvider?: OnboardingSubscriptionProvider;
@@ -170,6 +204,65 @@ function onboardingComplete(orgId: string): Computed<Promise<boolean>> {
       .limit(1);
 
     return row?.onboardingComplete ?? false;
+  });
+}
+
+/**
+ * Whether a non-admin member still has the source-first onboarding ahead of
+ * them. It is personal, and only offered where the switch is on for them.
+ *
+ * Nobody who already uses the workspace is pulled into it: a member who has
+ * started an ordinary chat in this org is treated as onboarded, just like one
+ * who finished the flow. Morning Brief threads are delivered to a member
+ * rather than started by them, so they do not count as use.
+ */
+function memberNeedsOnboarding(
+  orgId: string,
+  userId: string,
+): Computed<Promise<boolean>> {
+  return computed(async (get): Promise<boolean> => {
+    const overrides = await get(userFeatureSwitchOverrides(orgId, userId));
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.OnboardingSourcesFirst, {
+        orgId,
+        userId,
+        overrides,
+      })
+    ) {
+      return false;
+    }
+
+    const db = get(db$);
+    const [completion] = await db
+      .select({ completedAt: orgMembersMetadata.onboardingCompletedAt })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, orgId),
+          eq(orgMembersMetadata.userId, userId),
+        ),
+      )
+      .limit(1);
+    if (completion?.completedAt) {
+      return false;
+    }
+
+    const [usage] = await db
+      .select({ threadId: chatThreads.id })
+      .from(chatThreads)
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(chatThreads.userId, userId),
+          eq(agents.orgId, orgId),
+          or(
+            isNull(chatThreads.provenance),
+            ne(chatThreads.provenance, "morning_brief"),
+          ),
+        ),
+      )
+      .limit(1);
+    return usage === undefined;
   });
 }
 
@@ -249,9 +342,14 @@ export function onboardingStatus(
     const defaultAgent = agentId
       ? await get(defaultAgentInfo(auth.orgId, agentId))
       : null;
+    // `onboardingComplete` stays the organization's answer for everyone; only
+    // `needsOnboarding` is personal for a member.
+    const needsOnboarding = isAdmin
+      ? !complete
+      : await get(memberNeedsOnboarding(auth.orgId, auth.userId));
 
     return {
-      needsOnboarding: isAdmin && !complete,
+      needsOnboarding,
       onboardingComplete: complete,
       isAdmin,
       hasOrg: true,
@@ -262,6 +360,52 @@ export function onboardingStatus(
   });
 }
 
+async function completeMemberOnboarding(
+  db: Db,
+  args: CompleteOnboardingArgs,
+  signal: AbortSignal,
+): Promise<CompleteOnboardingResponse> {
+  const firstCompletion = await markMemberOnboardingComplete(
+    db,
+    args.orgId,
+    args.member.userId,
+  );
+  signal.throwIfAborted();
+  // The timezone is the member's own preference, so it is kept like an
+  // admin's. The industry and subscription answers are not: they only seed
+  // organization defaults, which a member does not own.
+  const timezone = await settle(
+    preserveOrStoreTimezoneFallback(db, {
+      orgId: args.orgId,
+      userId: args.member.userId,
+      timezone: args.timezone,
+    }),
+    signal,
+  );
+  if (timezone.ok) {
+    L.debug("Member onboarding completed", {
+      orgId: args.orgId,
+      userId: args.member.userId,
+      firstCompletion,
+      timezone: timezone.value,
+    });
+  } else {
+    L.warn("Member onboarding timezone fallback failed", {
+      orgId: args.orgId,
+      userId: args.member.userId,
+      firstCompletion,
+      error: timezone.error,
+    });
+  }
+  return {
+    status: 200,
+    body: {
+      onboardingComplete: true,
+      needsOnboarding: false,
+    },
+  };
+}
+
 export const completeOnboarding$ = command(
   async (
     { set },
@@ -269,6 +413,9 @@ export const completeOnboarding$ = command(
     signal: AbortSignal,
   ): Promise<CompleteOnboardingResponse> => {
     const writeDb = set(writeDb$);
+    if (!args.isAdmin) {
+      return await completeMemberOnboarding(writeDb, args, signal);
+    }
     const firstCompletion = await markOnboardingComplete(
       writeDb,
       args.orgId,

@@ -16,7 +16,6 @@ import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
 import {
-  clearSourcesFirstDraft$,
   updateSourcesFirstDraft$,
   type SourcesFirstDraft,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
@@ -161,7 +160,6 @@ export function OnboardingReadyPage() {
   const { t } = useTranslation();
   const flow = useSourcesFirstFlow("ready");
   const updateDraft = useSet(updateSourcesFirstDraft$);
-  const clearDraft = useSet(clearSourcesFirstDraft$);
   const capturePromptEdited = useSet(captureSourceOnboardingPromptEdited$);
   const captureStartClicked = useSet(captureSourceOnboardingStartClicked$);
   const catalogLoadable = useLastLoadable(onboardingSourceConnectors$);
@@ -209,20 +207,13 @@ export function OnboardingReadyPage() {
   /**
    * Finishing the flow is what marks onboarding complete, so the request goes
    * out before the first prompt: otherwise `needsOnboarding` stays true and the
-   * bootstrap guard returns the user here on the next load. A member has no
-   * completion of their own to record — the route is admin-only by design — so
-   * their run goes straight to the prompt. When completion fails the rejected
-   * command keeps the user on this step, with the button ready to try again.
+   * bootstrap guard returns the user here on the next load. An owner completes
+   * the workspace's onboarding; a member completes only their own. When
+   * completion fails the rejected command keeps the user on this step, with
+   * the button ready to try again.
    */
   const completeAndRun = async (request: string): Promise<void> => {
-    if (flow.flow === "owner") {
-      await complete(
-        searchParams.get("redeemCode")?.trim() || null,
-        pageSignal,
-      );
-    } else {
-      clearDraft();
-    }
+    await complete(searchParams.get("redeemCode")?.trim() || null, pageSignal);
     runPrompt(request);
   };
 

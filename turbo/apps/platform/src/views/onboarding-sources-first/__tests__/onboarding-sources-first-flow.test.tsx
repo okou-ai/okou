@@ -1,4 +1,5 @@
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import {
   onboardingCompleteContract,
   onboardingRecommendationContract,
@@ -56,12 +57,37 @@ function mockOnboardingNeeded(): void {
   });
 }
 
+/**
+ * What the API answers an invited member with the switch on who has neither
+ * finished their own run nor started using the workspace: onboarding is
+ * theirs to do, while `onboardingComplete` stays the organization's answer —
+ * here the owner has already set the workspace up.
+ */
 function mockMemberOnboardingNeeded(): void {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
-    onboardingComplete: false,
+    onboardingComplete: true,
     isAdmin: false,
   });
+  // Slack is not in the workspace yet, and a member cannot add it.
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isInstalled: false,
+      isAdmin: false,
+      installUrl: null,
+      connectUrl: null,
+    });
+  });
+}
+
+/** A member cannot add Slack, so the step names who can and lets them go on. */
+async function leaveSlackStepWithNotNow(): Promise<void> {
+  await expect(
+    screen.findByText("Ask a workspace admin to add Okou to Slack."),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingSlack);
+  click(getButtonByName("Not now"));
 }
 
 /** One catalog entry, so the source step has a grid to render. */
@@ -324,6 +350,7 @@ test("Connected account context replaces the static starting prompt", async () =
   ).resolves.toBeInTheDocument();
   click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
+  await leaveSlackStepWithNotNow();
 
   await expect(
     screen.findByText("Clear the replies that matter"),
@@ -384,6 +411,7 @@ test("The ready step shows the generated request once the shared context result 
   });
   click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
+  await leaveSlackStepWithNotNow();
 
   await screen.findByRole("heading", { name: READY_TITLE });
   expect(screen.queryByDisplayValue(generatedPrompt)).not.toBeInTheDocument();
@@ -424,6 +452,7 @@ test("A failed recommendation leaves the preset request on the ready step", asyn
   });
   click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
+  await leaveSlackStepWithNotNow();
 
   await screen.findByRole("heading", { name: READY_TITLE });
   await expect(
@@ -544,7 +573,7 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
   expect(sentProvider).toBe("claudeCode");
 });
 
-test("A member's run reaches the first request without the admin-only completion", async () => {
+test("A member runs every step but the invite, then completes their own onboarding and enters chat", async () => {
   mockMemberOnboardingNeeded();
   mockCatalog({ connected: true });
   let runPrompt: string | undefined;
@@ -553,9 +582,11 @@ test("A member's run reaches the first request without the admin-only completion
       runPrompt = body.prompt;
     },
   });
-  let completions = 0;
+  const completedFrom: string[] = [];
   context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    completions += 1;
+    completedFrom.push(pathname());
+    // The member is done; the organization's answer is the owner's, unchanged.
+    context.mocks.data.onboardingStatus({ needsOnboarding: false });
     return respond(200, {
       onboardingComplete: true,
       needsOnboarding: false,
@@ -565,14 +596,32 @@ test("A member's run reaches the first request without the admin-only completion
   await setupPage({
     context,
     locale: "en-US",
-    path: ROUTES.onboardingReady,
+    path: ROUTES.onboarding,
     featureSwitches: SOURCES_FIRST_ON,
   });
 
-  await expect(
-    screen.findByRole("heading", { name: READY_TITLE }),
-  ).resolves.toBeInTheDocument();
+  click(fieldRadio(MARKETING_FIELD));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+  click(getButtonByName("Continue"));
+  await screen.findByRole("heading", { name: SOURCES_QUESTION });
+  click(getButtonByName("Continue"));
 
+  // Straight from the sources to the AI question: no invite step.
+  await screen.findByRole("heading", {
+    name: "How would you like to start with Okou?",
+  });
+  expect(pathname()).toBe(ROUTES.onboardingExperience);
+  expect(
+    screen.queryByLabelText("Team member’s email"),
+  ).not.toBeInTheDocument();
+  click(fieldRadio("I'm new to AI agents"));
+  click(getButtonByName("Continue"));
+
+  await leaveSlackStepWithNotNow();
+
+  await screen.findByRole("heading", { name: READY_TITLE });
   await fill(
     screen.getByLabelText("Your starting prompt"),
     "Draft my meeting agenda",
@@ -582,9 +631,9 @@ test("A member's run reaches the first request without the admin-only completion
   await waitFor(() => {
     expect(runPrompt).toBe("Draft my meeting agenda");
   });
-  // `POST /api/onboarding/complete` is admin-only, so a member run would only
-  // ever collect a 403 from it.
-  expect(completions).toBe(0);
+  // Completion went out from the last step, before the first request.
+  expect(completedFrom).toStrictEqual([ROUTES.onboardingReady]);
+  expect(pathname()).not.toMatch(/^\/onboarding/);
 });
 
 test("A step keeps the prompt handoff and redeem code it arrived with", async () => {

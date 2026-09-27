@@ -287,9 +287,9 @@ export const onboardingCompleteContract = c.router({
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,
-      403: apiErrorSchema,
     },
-    summary: "Mark onboarding complete for the current org",
+    summary:
+      "Mark onboarding complete: for the org when an admin finishes it, for the member alone otherwise",
   },
 });
 

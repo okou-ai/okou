@@ -1,5 +1,38 @@
 # Deployment Compatibility
 
+## Member source-first onboarding completion column (2026-09-27)
+
+Migration `1269_org_member_onboarding_completed_at` adds the nullable
+`org_members_metadata.onboarding_completed_at` column. It is a metadata-only
+`ADD COLUMN` without a default, so it takes a brief `ACCESS EXCLUSIVE` lock
+under the default 1s lock timeout and rewrites no rows.
+
+The column records one non-admin member's own completion of the source-first
+onboarding. `GET /api/onboarding/status` reads it only for a non-admin whose
+`OnboardingSourcesFirst` switch is on, and `POST /api/onboarding/complete`
+writes it only for a non-admin caller. Admin status and completion are
+unchanged and never touch the column.
+
+Old and new versions during deploy:
+
+- Old API with the migrated database: it neither reads nor writes the column,
+  keeps every member at `needsOnboarding: false` and still refuses member
+  completion with `403`. A rollback therefore only stops offering the flow to
+  members; members who already completed keep their stamp for a later
+  roll-forward.
+- New API with an old app: an old app already routes a non-admin with
+  `needsOnboarding: true` through the member branch (no invite, no Slack) and
+  would reach the old ready step, which skips completion for members and
+  starts their first chat. The new API counts that chat as use, so the member
+  is not sent back into onboarding. This is reachable only for members with
+  the non-GA switch on, so no compatibility code is added
+  (`docs/fallback.md` section 2).
+- New app with an old API: the old API never reports `needsOnboarding: true`
+  for a member, so the new member branch, including its completion request,
+  is unreachable.
+
+No API rollback floor is needed.
+
 ## Legacy queued-run promotion retired (release 2)
 
 #37034 stopped creating `agent_runs` rows with `status = 'queued'`: input that

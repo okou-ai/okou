@@ -269,7 +269,7 @@ export function createBddApi(context: TestContext) {
           headers: authenticate(nextUser),
           body,
         }),
-        [200, 403],
+        [200],
       );
     },
 
@@ -338,18 +338,13 @@ export function createBddApi(context: TestContext) {
         );
       }
 
-      const completed = await accept(
+      await accept(
         onboardingCompleteClient().complete({
           headers,
           body: {},
         }),
-        [200, 403],
+        [200],
       );
-      if (completed.status !== 200) {
-        throw new Error(
-          `Expected onboarding completion to succeed, got ${completed.status}`,
-        );
-      }
 
       return status.defaultAgentId;
     },

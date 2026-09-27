@@ -250,9 +250,8 @@ export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
 });
 
 /**
- * Owner runs the full flow; a member invited into an existing org skips the
- * invite and Slack steps, matching the admin-only rule the Get started quests
- * already use.
+ * Owner runs the full flow; a member invited into an existing org runs the
+ * same steps except the invite, which only an admin can send.
  */
 const internalFlow$ = state<SourcesFirstFlow>("owner");
 
@@ -351,8 +350,10 @@ const MEMBER_BASE_STEPS = [
 ] as const satisfies readonly SourcesFirstStep[];
 
 /**
- * Step order for one run. Members skip invite and Slack; answering the AI
+ * Step order for one run. Members skip the invite; answering the AI
  * experience question with a selected plan adds the skills step after it.
+ * Everyone reaches Slack: a member who cannot add it is told to ask an admin
+ * and can leave the step with Not now.
  */
 export function sourcesFirstSteps(
   flow: SourcesFirstFlow,
@@ -361,9 +362,7 @@ export function sourcesFirstSteps(
   const base = flow === "owner" ? OWNER_BASE_STEPS : MEMBER_BASE_STEPS;
   const skillSteps: readonly SourcesFirstStep[] =
     provider === null ? [] : ["skills"];
-  const slackStep: readonly SourcesFirstStep[] =
-    flow === "owner" ? ["slack"] : [];
-  return [...base, ...skillSteps, ...slackStep, "ready"];
+  return [...base, ...skillSteps, "slack", "ready"];
 }
 
 /** Progress markers: one per step of this run. */

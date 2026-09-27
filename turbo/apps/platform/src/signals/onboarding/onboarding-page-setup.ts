@@ -141,7 +141,9 @@ function createOnboardingPageSetup(
 
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
-    if (!status.needsOnboarding) {
+    // The make-something flow sets up a workspace, which only an admin does. A
+    // member only has onboarding ahead of them in the source-first flow.
+    if (!status.needsOnboarding || !status.isAdmin) {
       const prompt = searchParams.get("prompt")?.trim();
       set(detachedNavigateTo$, prompt ? ROUTES.prompt : ROUTES.home, {
         searchParams: prompt

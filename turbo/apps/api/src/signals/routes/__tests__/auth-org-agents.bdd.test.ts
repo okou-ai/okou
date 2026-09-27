@@ -712,10 +712,15 @@ describe("ORG-03 onboarding status mapping", () => {
       onboardingPaymentPending: false,
     });
 
+    // A member's completion is their own and leaves the workspace's setup to
+    // the admin.
     const memberComplete = await api.completeOnboarding(member);
-    expect(memberComplete.status).toBe(403);
-    expectApiError(memberComplete.body);
-    expect(memberComplete.body.error.code).toBe("FORBIDDEN");
+    expect(memberComplete.status).toBe(200);
+    await expect(api.readOnboardingStatus(admin)).resolves.toMatchObject({
+      needsOnboarding: true,
+      onboardingComplete: false,
+      isAdmin: true,
+    });
 
     const completed = await api.completeOnboarding(admin);
     expect(completed.status).toBe(200);
