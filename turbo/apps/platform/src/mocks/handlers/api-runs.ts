@@ -49,9 +49,7 @@ export const apiRunsHandlers = [
         available: 2,
         memberUsage: [],
       },
-      queue: [],
       runningTasks: [],
-      estimatedTimePerRun: null,
     }),
   ),
 

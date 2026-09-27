@@ -559,10 +559,6 @@ describe("CHAT-02: dispatch failure", () => {
       status: "failed",
     });
     await flushWaitUntilForTest();
-    const queue = await api.readRunQueue(actor);
-    expect(queue.body.queue).not.toContainEqual(
-      expect.objectContaining({ runId: sent.body.runId }),
-    );
     await api.requestClaimRunnerJob(true, sent.body.runId, [404]);
     expect(routeRequests()).toBe(0);
   }, 60_000);
@@ -673,7 +669,6 @@ describe("CHAT-02: admission without spendable credits", () => {
     ]);
 
     const queue = await api.readRunQueue(actor);
-    expect(queue.body.queue).toHaveLength(0);
     expect(queue.body.concurrency.active).toBe(0);
 
     const retry = await chat.requestSendEvent(

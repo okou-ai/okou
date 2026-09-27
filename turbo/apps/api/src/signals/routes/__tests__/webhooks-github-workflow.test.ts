@@ -814,9 +814,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     }
     await runsApi.claimRunnerJob(admittedRunId);
 
-    const queueState = await runsApi.readRunQueue(actor);
-    expect(queueState.body.queue).toHaveLength(0);
-
     if (!created.body.chatThreadId) {
       throw new Error("Expected the automation to have a chat thread");
     }

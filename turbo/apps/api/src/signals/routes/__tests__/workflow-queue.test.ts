@@ -794,7 +794,6 @@ describe("workflow queue", () => {
         active: 1,
         available: 0,
       });
-      expect(queue.body.queue).toStrictEqual([]);
 
       // Freeing the slot picks the queued thread.
       await runsApi.requestCancelRun(scenario.actor, blockerRunId, [200]);

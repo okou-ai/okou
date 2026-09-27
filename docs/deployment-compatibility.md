@@ -80,15 +80,19 @@ Old and new instances during deploy:
   `chat_events_pending_queue_idx`, and neither expects an active row for a
   queued run.
 
-## Queue response fields made optional (2026-09-27)
+## Queue response fields removed (2026-09-27)
 
 No run waits in a queue since queued runs were retired, so `GET /api/runs/queue`
-always returns `queue: []` and `estimatedTimePerRun: null`. The App never
-rendered either field. The contract now marks both optional, and the API keeps
-sending them because older App builds still require them when they parse the
-response. A later change removes them from the API once this App is live and
-the client-version floor excludes those builds; the App built from this change
-already tolerates their absence. `runningTasks` and `concurrency` are unchanged.
+returned `queue: []` and `estimatedTimePerRun: null`, which the App never
+rendered. #37079 made both optional in the contract; App builds from `0.973.0`
+tolerate their absence, and #37093 raised the client-version floor to
+`0.973.0`. This change removes both fields and `queueEntrySchema` from the
+contract and the API response. The floor and this removal ship in the same or
+consecutive API releases, so every App build that can still reach this API
+parses the response without them; older builds receive `426` first.
+`runningTasks` and `concurrency` are unchanged. Rolling the API back below
+#37093 is unaffected: older APIs still send the fields and the current App
+ignores them.
 
 ## GitHub direct-chat readers retired (2026-09-27)
 

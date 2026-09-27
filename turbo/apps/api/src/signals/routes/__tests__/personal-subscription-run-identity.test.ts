@@ -721,7 +721,6 @@ describe("personal subscription run identity", () => {
     expect((await runs.readRun(f.actor, claimedRunId)).status).toBe(
       "completed",
     );
-    expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
   });
 
   it.each([false, true])(

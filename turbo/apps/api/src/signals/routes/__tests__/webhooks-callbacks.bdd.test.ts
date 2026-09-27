@@ -4430,7 +4430,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     );
     const queuedBefore = await runs.readRunQueue(actor);
     expect(queuedBefore.body.concurrency.active).toBe(3);
-    expect(queuedBefore.body.queue).toHaveLength(0);
 
     const suffix = randomUUID().slice(0, 8);
     const teamSubscriptionId = `sub_bdd_team_${suffix}`;
@@ -4528,7 +4527,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect((await runs.readRun(actor, pickedRunId)).status).toBe("pending");
     const drained = await runs.readRunQueue(actor);
     expect(drained.body.concurrency.tier).toBe("team");
-    expect(drained.body.queue).toHaveLength(0);
     expect(drained.body.concurrency.active).toBe(4);
 
     // Redelivering the processed team invoice re-runs lingering-pro cleanup.
@@ -4984,7 +4982,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const before = await runs.readRunQueue(actor);
     expect(before.body.concurrency.limit).toBe(3);
     expect(before.body.concurrency.active).toBe(3);
-    expect(before.body.queue).toHaveLength(0);
 
     const suffix = randomUUID().slice(0, 8);
     const lineId = `il_bdd_concurrency_${suffix}`;
@@ -5074,7 +5071,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     const after = await runs.readRunQueue(actor);
     expect(after.body.concurrency.limit).toBe(5);
     expect(after.body.concurrency.active).toBe(5);
-    expect(after.body.queue).toHaveLength(0);
 
     const full = await runs.requestCreateRun(
       actor,
@@ -7304,6 +7300,5 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
     const queue = await runs.readRunQueue(banned);
     expect(queue.body.concurrency.active).toBe(0);
-    expect(queue.body.queue).toStrictEqual([]);
   });
 });

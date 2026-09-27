@@ -693,23 +693,6 @@ const networkLogsResponseSchema = z.object({
 });
 
 /**
- * Queue entry schema — own entries have real data, others have null for private fields
- * Ownership is detected via runId: non-null = own entry, null = other user's entry
- */
-const queueEntrySchema = z.object({
-  position: z.number(),
-  agentName: z.string().nullable(),
-  agentDisplayName: z.string().nullable(),
-  userEmail: z.string().nullable(),
-  createdAt: z.string(),
-  isOwner: z.boolean(),
-  runId: z.string().nullable(),
-  prompt: z.string().nullable(),
-  triggerSource: triggerSourceSchema.nullable(),
-  sessionLink: z.string().nullable(),
-});
-
-/**
  * Running task schema — shows currently executing runs
  */
 const runningTaskSchema = z.object({
@@ -739,16 +722,11 @@ const concurrencyInfoSchema = z.object({
 });
 
 /**
- * Queue response schema. No run waits in a queue since queued runs were
- * retired, so `queue` and `estimatedTimePerRun` are optional: the API still
- * sends them (always empty and null) for older App builds that require them,
- * until this App is live and the client-version floor excludes those builds.
+ * Queue response schema
  */
 const queueResponseSchema = z.object({
   concurrency: concurrencyInfoSchema,
-  queue: z.array(queueEntrySchema).optional(),
   runningTasks: z.array(runningTaskSchema),
-  estimatedTimePerRun: z.number().nullable().optional(),
 });
 
 // Export schemas for reuse
@@ -774,7 +752,6 @@ export {
   modelCatalogCacheEvictionCountSchema,
   networkLogEntrySchema,
   networkLogsResponseSchema,
-  queueEntrySchema,
   runningTaskSchema,
   concurrencyMemberUsageSchema,
   concurrencyInfoSchema,
@@ -805,7 +782,6 @@ export type AxiomNetworkEvent = Omit<NetworkLogEntry, "timestamp"> & {
   runId: string;
   userId: string;
 };
-export type QueueEntry = z.infer<typeof queueEntrySchema>;
 export type RunningTask = z.infer<typeof runningTaskSchema>;
 export type ConcurrencyMemberUsage = z.infer<
   typeof concurrencyMemberUsageSchema

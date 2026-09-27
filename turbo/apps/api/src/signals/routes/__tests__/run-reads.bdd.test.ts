@@ -605,9 +605,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(rejected.body).toMatchObject({
       error: { code: "CONCURRENT_RUN_LIMIT" },
     });
-    const atLimit = await api.readRunQueue(actor);
-    expect(atLimit.body.queue).toStrictEqual([]);
-
     await api.requestCancelRun(actor, runA.runId, [200]);
     await api.requestCancelRun(member, runM.runId, [200]);
     // Started runs still occupy capacity until the runner reports completion.
@@ -617,7 +614,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
 
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
-    expect(drained.body.queue).toStrictEqual([]);
   });
 });
 

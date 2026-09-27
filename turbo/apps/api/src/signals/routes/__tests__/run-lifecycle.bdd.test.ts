@@ -1977,10 +1977,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const stored = await api.readRun(actor, failed.runId);
     expect(stored.status).toBe("failed");
     expect(stored.error).toBe(storageError.message);
-    const queue = await api.readRunQueue(actor);
-    expect(queue.body.queue).not.toContainEqual(
-      expect.objectContaining({ runId: failed.runId }),
-    );
     await api.requestClaimRunnerJob(true, failed.runId, [404]);
   });
 
@@ -5274,7 +5270,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       }),
     ).toHaveLength(0);
     const queue = await api.readRunQueue(actor);
-    expect(queue.body.queue).toHaveLength(0);
     expect(queue.body.concurrency.active).toBe(0);
   });
 
@@ -5423,7 +5418,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
 
     const atLimit = await api.readRunQueue(actor);
     expect(atLimit.body.concurrency.active).toBe(2);
-    expect(atLimit.body.queue).toHaveLength(0);
 
     // Cancelling an active run frees the slot for the next direct create.
     await api.requestCancelRun(actor, first.runId, [200]);
@@ -5471,10 +5465,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     ).resolves.toBe(10);
     await expect(readRunApiStart(context, failed.runId)).resolves.toStrictEqual(
       expect.any(String),
-    );
-    const queue = await api.readRunQueue(actor);
-    expect(queue.body.queue).not.toContainEqual(
-      expect.objectContaining({ runId: failed.runId }),
     );
     await expect(
       readConnectorDiagnosticRegistration(failed.runId),
@@ -5739,7 +5729,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       }),
     ).toHaveLength(0);
     const queue = await api.readRunQueue(actor);
-    expect(queue.body.queue).toHaveLength(0);
     expect(queue.body.concurrency.active).toBe(0);
   });
 
@@ -5832,7 +5821,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     });
     await chat.requestReadThread(actor, unconfiguredThreadId, [404]);
     const queue = await api.readRunQueue(actor);
-    expect(queue.body.queue).toHaveLength(0);
     expect(queue.body.concurrency.active).toBe(0);
   });
 

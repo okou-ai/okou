@@ -154,7 +154,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
 
     const queue = await api.readRunQueue(actor);
     expect(queue.body.concurrency.active).toBe(0);
-    expect(queue.body.queue).toHaveLength(0);
 
     const runnerGroup = api.configureRunnerGroup();
     const heartbeat = await api.heartbeatRunner(runnerGroup);

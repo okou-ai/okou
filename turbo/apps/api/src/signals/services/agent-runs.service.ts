@@ -524,13 +524,9 @@ export function agentRunQueueStatus(args: {
         available: limit === 0 ? -1 : Math.max(0, limit - active),
         memberUsage,
       },
-      // Runs no longer wait in a run queue; the field stays for clients that
-      // still parse it.
-      queue: [],
       runningTasks: runningRuns.map((run) => {
         return runningTaskItem(run, args.userId, emails);
       }),
-      estimatedTimePerRun: null,
     };
   });
 }
