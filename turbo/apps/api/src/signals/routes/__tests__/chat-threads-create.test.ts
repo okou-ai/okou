@@ -672,9 +672,15 @@ describe("POST /api/chat-threads", () => {
       }),
       [404],
     );
+    const otherOrgId = `org_${randomUUID()}`;
+    await store.set(
+      seedOrgMembership$,
+      { orgId: otherOrgId, userId: fixture.userId },
+      context.signal,
+    );
     const otherOrgToken = okouToken({
       userId: fixture.userId,
-      orgId: `org_${randomUUID()}`,
+      orgId: otherOrgId,
       capabilities: ["chat-thread:write"],
     });
     for (const deniedToken of [foreignToken, otherOrgToken]) {
