@@ -34,7 +34,8 @@ async fn scripted_server(
                     break;
                 }
             }
-            let request = String::from_utf8(received).unwrap();
+            let header_end = received.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+            let request = String::from_utf8(received[..header_end].to_vec()).unwrap();
             assert!(request.to_ascii_lowercase().contains("authorization:"));
             requests.push(request);
             connection.write_all(response.as_bytes()).await.unwrap();
@@ -281,7 +282,7 @@ async fn transient_failure_retries_signed_head_and_upload_part() {
             "runner-templates/h.tar.zst",
             "upload",
             1,
-            Bytes::from_static(b"payload"),
+            Bytes::from_static(b"\xff\x00payload"),
         )
         .await
         .unwrap();
