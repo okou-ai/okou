@@ -154,19 +154,16 @@ describe("shared SDK ingestion", () => {
     const api = setupApp({ context, routes: testUsageSettlementRoutes })(
       testUsageSettlementContract,
     );
-    let setupComplete = false;
     onTestFinished(async () => {
-      if (setupComplete) {
-        // Build a fresh request context after the test-owned signal resets.
-        const cleanupApi = setupApp({
-          context,
-          routes: testUsageSettlementRoutes,
-        })(testUsageSettlementContract);
-        await accept(
-          cleanupApi.cleanup({ body: { org_id: fixture.orgId } }),
-          [200],
-        );
-      }
+      // Build a fresh request context after the test-owned signal resets.
+      const cleanupApi = setupApp({
+        context,
+        routes: testUsageSettlementRoutes,
+      })(testUsageSettlementContract);
+      await accept(
+        cleanupApi.cleanup({ body: { org_id: fixture.orgId } }),
+        [200],
+      );
       await store.set(
         deleteUsageData$,
         { scope: "organization", id: fixture.orgId },
@@ -178,7 +175,6 @@ describe("shared SDK ingestion", () => {
       api.setup({ body: { org_id: fixture.orgId, credits: 100 } }),
       [200],
     );
-    setupComplete = true;
     const provider = `timing-${randomUUID()}`;
     await seedUsagePricingRows([
       {
