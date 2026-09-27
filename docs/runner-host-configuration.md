@@ -6,7 +6,7 @@
 runner in claims, sandbox telemetry, and Runner Axiom warning/error events.
 Production automation writes the exact Ansible `inventory_hostname`; it does
 not derive the value from DNS or the operating system at runtime. For the
-separately gated, not-yet-active [direct WSS target resolver](./runner-wss-target-resolution.md),
+internal-only [direct WSS target resolver](./runner-wss-target-resolution.md),
 an eligible official Run's claimed hostname also supplies the browser-facing
 DNS authority after syntax validation. It is not a credential or proof that
 DNS, TLS, Caddy, or the listener is reachable.
