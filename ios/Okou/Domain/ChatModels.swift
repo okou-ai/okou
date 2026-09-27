@@ -70,7 +70,6 @@ struct ChatHistory: Equatable, Sendable {
 
 struct SendReceipt: Sendable {
   let threadID: String
-  let runID: String?
   let clientEventID: String
 }
 

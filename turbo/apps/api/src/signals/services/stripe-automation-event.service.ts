@@ -28,7 +28,6 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
@@ -1489,7 +1488,6 @@ async function processClaimedDelivery(
             signal,
           );
         },
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
       },
       signal,
     ),

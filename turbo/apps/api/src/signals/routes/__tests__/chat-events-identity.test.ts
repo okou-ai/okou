@@ -217,33 +217,52 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       }),
       [201],
     );
-    const immediate = await requestSendEventWithBearer(
+    const immediateEventId = randomUUID();
+    const immediateSend = await requestSendEventWithBearer(
       okouToken,
       {
         agentId,
+        clientEventId: immediateEventId,
         threadId: createdThread.body.id,
         prompt: "immediate run-scoped handoff",
       },
       [201],
     );
-    if (immediate.status !== 201) {
+    if (immediateSend.status !== 201) {
       throw new Error("Expected the run-scoped handoff request to succeed");
     }
-    if (!immediate.body.runId) {
-      throw new Error("Expected the run-scoped handoff to launch immediately");
+    expect(immediateSend.body.runId).toBeNull();
+    // The idle thread's background pick launches the handoff.
+    const launchedMessages = await waitForThreadMessages(
+      actor,
+      createdThread.body.id,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === immediateEventId &&
+            message.runId !== undefined
+          );
+        });
+      },
+    );
+    const immediateRunId = userMessages(launchedMessages.events).find(
+      (message) => {
+        return message.revokesEventId === immediateEventId;
+      },
+    )?.runId;
+    if (immediateRunId === undefined) {
+      throw new Error("Expected the run-scoped handoff to launch");
     }
 
-    await expect(
-      api.readRun(actor, immediate.body.runId),
-    ).resolves.toMatchObject({
-      runId: immediate.body.runId,
+    await expect(api.readRun(actor, immediateRunId)).resolves.toMatchObject({
+      runId: immediateRunId,
       prompt: "immediate run-scoped handoff",
     });
     await expect(
       readRunAutonomyBudgetFixture(context, caller.runId),
     ).resolves.toBe(10);
     await expect(
-      readRunAutonomyBudgetFixture(context, immediate.body.runId),
+      readRunAutonomyBudgetFixture(context, immediateRunId),
     ).resolves.toBe(9);
     // Neither callback internals nor retired provenance are public API fields.
     // The test-only state route is the only boundary that can prove their
@@ -253,7 +272,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       {
         orgId: actor.orgId,
         userId: actor.userId,
-        runId: immediate.body.runId,
+        runId: immediateRunId,
       },
       context.signal,
     );
@@ -282,7 +301,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
     }
     expect(queued.body.runId).toBeNull();
 
-    await cancelChatRun(actor, immediate.body.runId);
+    await cancelChatRun(actor, immediateRunId);
     const promotedMessages = await waitForThreadMessages(
       actor,
       createdThread.body.id,

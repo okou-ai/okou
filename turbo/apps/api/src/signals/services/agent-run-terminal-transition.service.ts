@@ -62,54 +62,46 @@ export function neverStartedRunIds(
     });
 }
 
-/** Deletes the active rows of the given runs and returns the runs whose row
- * this call deleted. Each returned run freed its organization slot, and the
- * caller hands it off with `handOffReleasedSlot$` after commit. The row is the
- * per-thread active-run lock, so a concurrent launch may wait on this
- * uncommitted DELETE while holding other locks. This MUST be the last
- * statement of the enclosing transaction: issuing any further statement or
- * lock afterwards risks a deadlock with that launch.
- */
-export async function releaseActiveAgentRuns(
-  tx: Tx,
-  runIds: readonly string[],
-): Promise<readonly string[]> {
-  if (runIds.length === 0) {
-    return [];
-  }
-  const released = await tx
-    .delete(activeAgentRuns)
-    .where(inArray(activeAgentRuns.runId, [...runIds]))
-    .returning({ runId: activeAgentRuns.runId });
-  return released.map((row) => {
-    return row.runId;
-  });
-}
-
 export interface ReleasedRunSlot {
   readonly runId: string;
   readonly orgId: string;
 }
 
-/** Releases the active rows of the never-started runs among `transitions` and
- * returns the slots this call freed, for the caller to hand off with
- * `handOffReleasedSlots$` after commit. Same last-statement rule as
- * `releaseActiveAgentRuns`.
+/**
+ * The single release of run slots: deletes the active rows of the given runs
+ * and returns the slots this call freed. Every path that ends a run's slot
+ * calls it inside the transaction that commits the path's other writes, then
+ * schedules `scheduleReleasedSlotPicks$` after commit, before any other side
+ * effect. The row is the per-thread active-run lock, so a concurrent launch
+ * may wait on this uncommitted DELETE while holding other locks. This MUST be
+ * the last statement of the enclosing transaction. `condition` narrows the
+ * release to rows that still match it at delete time.
+ */
+export async function releaseRunSlots(
+  tx: Tx,
+  runIds: readonly string[],
+  condition?: SQL,
+): Promise<readonly ReleasedRunSlot[]> {
+  if (runIds.length === 0) {
+    return [];
+  }
+  return await tx
+    .delete(activeAgentRuns)
+    .where(and(inArray(activeAgentRuns.runId, [...runIds]), condition))
+    .returning({
+      runId: activeAgentRuns.runId,
+      orgId: activeAgentRuns.orgId,
+    });
+}
+
+/** Release the slots of the never-started runs among `transitions`. Same
+ * last-statement rule as `releaseRunSlots`.
  */
 export async function releaseNeverStartedRunSlots(
   tx: Tx,
   transitions: readonly TerminalRunTransition[],
 ): Promise<readonly ReleasedRunSlot[]> {
-  const released = new Set(
-    await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions)),
-  );
-  return transitions
-    .filter((transition) => {
-      return released.has(transition.runId);
-    })
-    .map((transition) => {
-      return { runId: transition.runId, orgId: transition.orgId };
-    });
+  return await releaseRunSlots(tx, neverStartedRunIds(transitions));
 }
 
 export async function transitionAgentRunsToTerminal(

@@ -34,7 +34,6 @@ import { logger } from "../../lib/log";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
@@ -2499,17 +2498,6 @@ function buildNotionPageContentUpdatedWorkflowAutomationBrief(args: {
   return `Notion page content updated${pageTitle ? ` "${pageTitle}"` : ""} in ${scopeTitle}`;
 }
 
-function notionRunFailureMessage(
-  result: Exclude<
-    RunWorkflowAutomationResult,
-    { readonly kind: "ok" } | { readonly kind: "enqueued" }
-  >,
-): string {
-  return result.kind === "conflict"
-    ? result.message
-    : result.response.body.error.message;
-}
-
 async function resolveCurrentParentReference(
   args: {
     readonly accessToken: string;
@@ -2646,7 +2634,6 @@ async function startNotionWorkflowRun(
           );
           sourceTransitionPersisted = true;
         },
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
       },
       signal,
     ),
@@ -2684,26 +2671,12 @@ async function persistNotionWorkflowRunOutcome(
     );
     return "skipped";
   }
-  if (args.result.sourceTransitionPersisted) {
-    return "executed";
-  }
-  if (
-    args.result.result.kind === "ok" ||
-    args.result.result.kind === "enqueued"
-  ) {
+  if (!args.result.sourceTransitionPersisted) {
     throw new Error(
-      "Notion workflow run succeeded without persisting its source transition",
+      "Notion workflow run was enqueued without persisting its source transition",
     );
   }
-  await retryPendingEvent(
-    {
-      db: args.db,
-      pending: args.pending,
-      message: notionRunFailureMessage(args.result.result),
-    },
-    signal,
-  );
-  return "skipped";
+  return "executed";
 }
 
 function notionAutomationIsActive(

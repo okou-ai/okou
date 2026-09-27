@@ -28,8 +28,8 @@ import { deleteDiscordOrgMemberData } from "./discord-owner-cleanup.service";
 
 import type { Db } from "../external/db";
 
-/** Returns the slots the revoked runs released; the calling command hands
- * them off after this cleanup completes. */
+/** `onSlotsReleased` receives the slots the revoked runs released as soon as
+ * the revocation commits, before any other effect of this cleanup. */
 export async function cleanupOrgMemberResources(
   db: Db,
   args: {
@@ -37,9 +37,10 @@ export async function cleanupOrgMemberResources(
     readonly userId: string;
     readonly membershipId?: string;
   },
+  onSlotsReleased: (slots: readonly ReleasedRunSlot[]) => void,
   signal: AbortSignal,
-): Promise<readonly ReleasedRunSlot[]> {
-  const releasedSlots = await revokeOrgMemberRunAuthority(db, args, signal);
+): Promise<void> {
+  await revokeOrgMemberRunAuthority(db, args, onSlotsReleased, signal);
   signal.throwIfAborted();
   await deleteDiscordOrgMemberData(db, args);
   signal.throwIfAborted();
@@ -171,14 +172,14 @@ export async function cleanupOrgMemberResources(
       ),
     );
   signal.throwIfAborted();
-  return releasedSlots;
 }
 
 async function revokeOrgMemberRunAuthority(
   db: Db,
   args: { readonly orgId: string; readonly userId: string },
+  onSlotsReleased: (slots: readonly ReleasedRunSlot[]) => void,
   signal: AbortSignal,
-): Promise<readonly ReleasedRunSlot[]> {
+): Promise<void> {
   // Membership revocation is a hard authority boundary, including credentials
   // retained by ordinary personal-settings disconnect. Commit revocation before
   // best-effort runner notification or the remaining member resource cleanup.
@@ -266,6 +267,7 @@ async function revokeOrgMemberRunAuthority(
     const released = await releaseNeverStartedRunSlots(tx, rows);
     return { cancelled: rows, releasedSlots: released };
   });
+  onSlotsReleased(releasedSlots);
   signal.throwIfAborted();
   await Promise.all(
     cancelled.map(async (run) => {
@@ -284,5 +286,4 @@ async function revokeOrgMemberRunAuthority(
     }),
   );
   signal.throwIfAborted();
-  return releasedSlots;
 }

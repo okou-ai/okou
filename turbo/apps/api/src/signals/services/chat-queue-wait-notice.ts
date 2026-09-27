@@ -5,9 +5,8 @@ export const CHAT_QUEUE_ORG_FULL_NOTICE =
 
 /**
  * The one wait notice integrations send after enqueueing a chat input.
- * Only an org at its concurrent run limit is worth telling: steering keeps the
- * channel's typing indicator or reaction, a busy thread runs the input after
- * the current work, and a rejection is delivered by the admission failure path.
+ * Only an org at its concurrent run limit is worth telling: a busy thread
+ * runs or steers the input after the current work, and a rejection is delivered by the admission failure path.
  */
 export function chatQueueWaitNotice(
   reason: ChatQueueWaitReason,

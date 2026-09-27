@@ -26,7 +26,6 @@ import { testOverride } from "../../lib/singleton";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeJsonParse, settle, tapError } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
@@ -2784,7 +2783,6 @@ const startGmailWorkflowRun$ = command(
               signal,
             );
           },
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
           timing: args.timing.collectorForRunStart(),
         },
         signal,
@@ -2797,9 +2795,7 @@ const startGmailWorkflowRun$ = command(
       }
       throw started.error;
     }
-    return started.value.kind === "ok" || started.value.kind === "enqueued"
-      ? "ok"
-      : "error";
+    return "ok";
   },
 );
 

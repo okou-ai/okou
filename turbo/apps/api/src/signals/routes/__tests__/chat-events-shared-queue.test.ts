@@ -115,10 +115,17 @@ describe("CHAT-02: shared user message queue", () => {
         [201],
       );
     });
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected an idle-thread queue-first send to dispatch");
+    if (sent.status !== 201) {
+      throw new Error(
+        "Expected an idle-thread queue-first send to be accepted",
+      );
     }
-    const runId = sent.body.runId;
+    expect(sent.body.runId).toBeNull();
+    const runId = await waitForPickedInputRun(
+      actor,
+      sent.body.threadId,
+      messageId,
+    );
 
     // The queued row stays immutable. Claiming appends the run-associated
     // replacement and links it back to the queued row.
@@ -255,10 +262,11 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected the later Web send to dispatch itself");
+    if (sent.status !== 201) {
+      throw new Error("Expected the later Web send to be accepted");
     }
-    const runId = sent.body.runId;
+    expect(sent.body.runId).toBeNull();
+    const runId = await waitForPickedInputRun(actor, anchor.threadId, nextId);
     const claimed = await waitForThreadMessages(
       actor,
       anchor.threadId,
@@ -302,10 +310,15 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    if (forwarded.status !== 201 || !forwarded.body.runId) {
-      throw new Error("Expected the forwarded prompt to launch a run");
+    if (forwarded.status !== 201) {
+      throw new Error("Expected the forwarded prompt to be accepted");
     }
-    const forwardedRunId = forwarded.body.runId;
+    expect(forwarded.body.runId).toBeNull();
+    const forwardedRunId = await waitForPickedInputRun(
+      actor,
+      targetThread.id,
+      forwardedEventId,
+    );
 
     const targetMessages = await waitForThreadMessages(
       actor,
@@ -417,10 +430,12 @@ describe("CHAT-02: shared user message queue", () => {
     if (firstSend.status !== 201) {
       throw new Error("Expected the first delegated prompt to be accepted");
     }
-    if (!firstSend.body.runId) {
-      throw new Error("Expected the first delegated prompt to launch a run");
-    }
-    const firstTargetRunId = firstSend.body.runId;
+    expect(firstSend.body.runId).toBeNull();
+    const firstTargetRunId = await waitForPickedInputRun(
+      actor,
+      firstTargetThread.id,
+      firstEventId,
+    );
     await expect(
       readRunAutonomyBudgetFixture(context, source.runId),
     ).resolves.toBe(10);
@@ -870,29 +885,32 @@ describe("CHAT-02: shared user message queue", () => {
     const rootClaim = await claimChatRun(runnerGroup, root.runId);
     await setRunAutonomyBudgetFixture(context, root.runId, 1);
 
+    const delegatedEventId = randomUUID();
     const delegated = await requestSendEventWithBearer(
       okouTokenFromClaim(rootClaim.claim),
       {
         agentId,
-        clientEventId: randomUUID(),
+        clientEventId: delegatedEventId,
         threadId: target.id,
         prompt: "last allowed delegation",
       },
       [201],
     );
-    if (delegated.status !== 201 || delegated.body.runId === null) {
-      throw new Error("Expected the last allowed delegation to create a run");
+    if (delegated.status !== 201) {
+      throw new Error("Expected the last allowed delegation to be accepted");
     }
+    const delegatedRunId = await waitForPickedInputRun(
+      actor,
+      target.id,
+      delegatedEventId,
+    );
     await expect(
-      readRunAutonomyBudgetFixture(context, delegated.body.runId),
+      readRunAutonomyBudgetFixture(context, delegatedRunId),
     ).resolves.toBe(0);
 
     await completeChatRunOk(root.runId, rootClaim.sandboxHeaders);
     await flushWaitUntilForTest();
-    const delegatedClaim = await claimChatRun(
-      runnerGroup,
-      delegated.body.runId,
-    );
+    const delegatedClaim = await claimChatRun(runnerGroup, delegatedRunId);
 
     const blockedEventId = randomUUID();
     const blocked = await requestSendEventWithBearer(
@@ -903,23 +921,49 @@ describe("CHAT-02: shared user message queue", () => {
         threadId: blockedTarget.id,
         prompt: "delegation beyond the limit",
       },
-      [409],
+      [201],
     );
     expect(blocked).toMatchObject({
-      status: 409,
-      body: {
-        error: { code: "AUTONOMY_BUDGET_EXHAUSTED" },
-      },
+      status: 201,
+      body: { runId: null, threadId: blockedTarget.id },
     });
-    const targetMessages = await chat.listThreadEvents(actor, blockedTarget.id);
-    expect(targetMessages.events).not.toContainEqual(
-      expect.objectContaining({ id: blockedEventId }),
+    // The pick rejects the exhausted budget in the thread instead of the send.
+    const targetMessages = await waitForThreadMessages(
+      actor,
+      blockedTarget.id,
+      (events) => {
+        return (
+          userMessages(events).some((event) => {
+            return (
+              event.eventType === "input.rejected" &&
+              event.revokesEventId === blockedEventId
+            );
+          }) &&
+          events.some((event) => {
+            return event.eventType === "output.error";
+          })
+        );
+      },
     );
+    expect(
+      userMessages(targetMessages.events).filter((event) => {
+        return event.revokesEventId === blockedEventId;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        eventType: "input.rejected",
+        error: "autonomy_budget_exhausted",
+      }),
+    ]);
+    expect(
+      targetMessages.events.filter((event) => {
+        return event.eventType === "output.error";
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({ error: "autonomy_budget_exhausted" }),
+    ]);
 
-    await completeChatRunOk(
-      delegated.body.runId,
-      delegatedClaim.sandboxHeaders,
-    );
+    await completeChatRunOk(delegatedRunId, delegatedClaim.sandboxHeaders);
     await flushWaitUntilForTest();
   }, 90_000);
 
@@ -1264,12 +1308,13 @@ describe("CHAT-02: shared user message queue", () => {
     });
 
     const prompt = "dispatch while thread list publication is pending";
+    const clientEventId = randomUUID();
     const send = chat.requestSendEvent(
       actor,
       {
         agentId,
         prompt,
-        clientEventId: randomUUID(),
+        clientEventId,
       },
       [201],
     );
@@ -1303,15 +1348,15 @@ describe("CHAT-02: shared user message queue", () => {
       throw outcome.error;
     }
     const sent = outcome.value;
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected the pending publication not to gate dispatch");
+    if (sent.status !== 201) {
+      throw new Error("Expected the pending publication not to gate the send");
     }
-    await waitForRunUserMessage(
+    const runId = await waitForPickedInputRun(
       actor,
       sent.body.threadId,
-      sent.body.runId,
-      prompt,
+      clientEventId,
     );
+    await waitForRunUserMessage(actor, sent.body.threadId, runId, prompt);
 
     await expect
       .poll(async () => {
@@ -1332,7 +1377,7 @@ describe("CHAT-02: shared user message queue", () => {
     );
     expect(threadListPublishes).toHaveLength(1);
     releasePublication.resolve(undefined);
-    await cancelChatRun(actor, sent.body.runId);
+    await cancelChatRun(actor, runId);
   }, 90_000);
 
   it("keeps a queued send drainable when thread-list publication fails", async () => {
@@ -1373,6 +1418,8 @@ describe("CHAT-02: shared user message queue", () => {
       runId: null,
       threadId: anchor.threadId,
     });
+    // The send publishes the thread list in the background after its pick.
+    await flushWaitUntilForTest();
     expect(failedThreadListPublish).toBeTruthy();
 
     const retried = await chat.requestSendEvent(actor, queuedBody, [201]);

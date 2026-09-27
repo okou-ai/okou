@@ -1267,6 +1267,21 @@ async function reconcileStaleQueuedMessages(threadId: string): Promise<void> {
   );
 }
 
+/**
+ * Run now only enqueues; the background pick launches the run. Flush the pick
+ * and read the newest launched run from the automation thread.
+ */
+async function launchedAutomationRunId(
+  actor: ApiTestUser,
+  chatThreadId: string,
+): Promise<string | undefined> {
+  await flushWaitUntilForTest();
+  const { events } = await chat.listThreadEvents(actor, chatThreadId);
+  return [...events].reverse().find((event) => {
+    return event.eventType === "input.prompt" && event.runId;
+  })?.runId;
+}
+
 async function readAcceptedDefinitionFixture(definitionName: string) {
   const response = await accept(
     stateClient().action({ body: { action: "read", definitionName } }),
@@ -3604,8 +3619,12 @@ describe("Official Workflow installations", () => {
     await expect(
       chat.readThreadMetadata(actor, started.body.chatThreadId),
     ).resolves.toMatchObject({ title: "Okou Morning Brief" });
-    if (started.body.runId) {
-      await runs.requestCancelRun(actor, started.body.runId, [200, 400]);
+    const startedRunId = await launchedAutomationRunId(
+      actor,
+      started.body.chatThreadId,
+    );
+    if (startedRunId) {
+      await runs.requestCancelRun(actor, startedRunId, [200, 400]);
     }
   });
 
@@ -6375,10 +6394,14 @@ describe("Official Workflow installations", () => {
         }),
         [201],
       );
-      if (!historical.body.runId) {
+      const historicalRunId = await launchedAutomationRunId(
+        actor,
+        historical.body.chatThreadId,
+      );
+      if (!historicalRunId) {
         throw new Error("Expected historical Official Automation Run");
       }
-      await runs.requestCancelRun(actor, historical.body.runId, [200, 400]);
+      await runs.requestCancelRun(actor, historicalRunId, [200, 400]);
 
       await syncCatalog(catalog([activeDefinition(definitionName, [])]));
       await runOfficialWorkflowReconciliationWorker();
@@ -6400,7 +6423,7 @@ describe("Official Workflow installations", () => {
         }),
       ]);
       await expect(
-        readOfficialWorkflowRunStateFixture(context, historical.body.runId),
+        readOfficialWorkflowRunStateFixture(context, historicalRunId),
       ).resolves.toMatchObject({
         provenance: {
           definitions: [expect.objectContaining({ name: definitionName })],
@@ -6429,7 +6452,7 @@ describe("Official Workflow installations", () => {
         },
       });
       await expect(
-        readOfficialWorkflowRunStateFixture(context, historical.body.runId),
+        readOfficialWorkflowRunStateFixture(context, historicalRunId),
       ).resolves.toMatchObject({
         provenance: {
           definitions: [expect.objectContaining({ name: definitionName })],
@@ -6614,10 +6637,14 @@ describe("Official Workflow installations", () => {
           }),
           [201],
         );
-        if (!historical.body.runId) {
+        const historicalRunId = await launchedAutomationRunId(
+          actor,
+          historical.body.chatThreadId,
+        );
+        if (!historicalRunId) {
           throw new Error("Expected historical Official Automation Run");
         }
-        await runs.requestCancelRun(actor, historical.body.runId, [200, 400]);
+        await runs.requestCancelRun(actor, historicalRunId, [200, 400]);
 
         await syncCatalog(catalog([activeDefinition(definitionName, [])]));
         await runOfficialWorkflowReconciliationWorker();
@@ -6749,7 +6776,7 @@ describe("Official Workflow installations", () => {
             readAgentRunFamilyCountsFixture(context, agentId),
           ).resolves.toStrictEqual(historyCounts);
           await expect(
-            readOfficialWorkflowRunStateFixture(context, historical.body.runId),
+            readOfficialWorkflowRunStateFixture(context, historicalRunId),
           ).resolves.toMatchObject({
             provenance: {
               definitions: [expect.objectContaining({ name: definitionName })],
@@ -7321,10 +7348,13 @@ describe("Official Workflow installations", () => {
       automationClient().run({ headers, params: { id: automationId } }),
       [201],
     );
-    if (!historical.body.runId) {
+    const historicalRunId = await launchedAutomationRunId(
+      actor,
+      historical.body.chatThreadId,
+    );
+    if (!historicalRunId) {
       throw new Error("Expected historical Official Automation Run");
     }
-    const historicalRunId = historical.body.runId;
     await runs.requestCancelRun(actor, historicalRunId, [200, 400]);
     const historyCounts = await readAgentRunFamilyCountsFixture(
       context,
@@ -8290,6 +8320,7 @@ describe("Official Workflow Run admission", () => {
       it("preserves result email and immutable admission provenance", async () => {
         const {
           definitionName,
+          actor,
           headers,
           runnerGroup,
           loopAutomation,
@@ -8309,28 +8340,35 @@ describe("Official Workflow Run admission", () => {
             }),
             [201],
           );
-          if (!explicit.body.runId) {
+          const explicitRunId = await launchedAutomationRunId(
+            actor,
+            explicit.body.chatThreadId,
+          );
+          if (!explicitRunId) {
             throw new Error("Expected explicit Official Automation Run");
           }
           producerRuns.push({
-            runId: explicit.body.runId,
+            runId: explicitRunId,
             automationId: loopAutomation.id,
           });
           await completeSuccessfulRun(
             runnerGroup,
-            explicit.body.runId,
+            explicitRunId,
             "Explicit Official result",
           );
 
           const scheduled = await withMockNowForTest(
             now() + 120_000,
             async () => {
-              return await accept(
+              const tick = await accept(
                 automationExecutionClient().execute({
                   body: { automation_id: loopAutomation.id },
                 }),
                 [200],
               );
+              // The tick only enqueues; its background pick launches the run.
+              await flushWaitUntilForTest();
+              return tick;
             },
           );
           expect(scheduled.body.executed).toBe(1);
@@ -8338,7 +8376,7 @@ describe("Official Workflow Run admission", () => {
             context,
             loopAutomation.id,
           );
-          if (!scheduledRun || scheduledRun.runId === explicit.body.runId) {
+          if (!scheduledRun || scheduledRun.runId === explicitRunId) {
             throw new Error(
               "Expected a distinct scheduled Official Automation Run",
             );
@@ -8356,12 +8394,14 @@ describe("Official Workflow Run admission", () => {
 
         if (producerKind === "once") {
           const once = await withMockNowForTest(now() + 120_000, async () => {
-            return await accept(
+            const tick = await accept(
               automationExecutionClient().execute({
                 body: { automation_id: onceAutomation.id },
               }),
               [200],
             );
+            await flushWaitUntilForTest();
+            return tick;
           });
           expect(once.body.executed).toBe(1);
           const onceRun = await readLatestWorkflowAutomationRunFixture(
@@ -8491,27 +8531,31 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    if (!sessionRun.body.runId) {
+    const sessionRunId = await launchedAutomationRunId(
+      scenario.actor,
+      sessionRun.body.chatThreadId,
+    );
+    if (!sessionRunId) {
       throw new Error("Expected session Official Automation Run");
     }
     await completeSuccessfulRun(
       scenario.runnerGroup,
-      sessionRun.body.runId,
+      sessionRunId,
       "Session-brand result",
     );
     await expect(
       outbox.findSourceState({
-        sourceRunId: sessionRun.body.runId,
+        sourceRunId: sessionRunId,
         sourceWorkflowAutomationId: scenario.automation.id,
       }),
     ).resolves.toMatchObject({
-      items: [{ source_run_id: sessionRun.body.runId }],
-      claim: { source_run_id: sessionRun.body.runId },
+      items: [{ source_run_id: sessionRunId }],
+      claim: { source_run_id: sessionRunId },
     });
 
     const agentToken = runs.okouTokenForRunWithCapabilities(
       scenario.actor,
-      sessionRun.body.runId,
+      sessionRunId,
       ["agent:write"],
     );
     const agentRun = await accept(
@@ -8522,22 +8566,26 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    if (!agentRun.body.runId) {
+    const agentRunId = await launchedAutomationRunId(
+      scenario.actor,
+      agentRun.body.chatThreadId,
+    );
+    if (!agentRunId) {
       throw new Error("Expected agent-token Official Automation Run");
     }
 
     mockEnv("RESEND_FROM_DOMAIN", undefined);
     await completeSuccessfulRun(
       scenario.runnerGroup,
-      agentRun.body.runId,
+      agentRunId,
       "Agent-token retry result",
     );
-    expect(
-      (await runs.readRun(scenario.actor, agentRun.body.runId)).status,
-    ).toBe("completed");
+    expect((await runs.readRun(scenario.actor, agentRunId)).status).toBe(
+      "completed",
+    );
     await expect(
       outbox.findSourceState({
-        sourceRunId: agentRun.body.runId,
+        sourceRunId: agentRunId,
         sourceWorkflowAutomationId: scenario.automation.id,
       }),
     ).resolves.toStrictEqual({ items: [], claim: null });
@@ -8546,7 +8594,7 @@ describe("Official Workflow Run admission", () => {
     const redrive = await accept(
       automationExecutionClient().dispatchCallbacks({
         body: {
-          run_id: agentRun.body.runId,
+          run_id: agentRunId,
           status: "completed",
           dispatch_count: 8,
         },
@@ -8555,13 +8603,13 @@ describe("Official Workflow Run admission", () => {
     );
     expect(redrive.body.successful_callbacks).toBeGreaterThan(0);
     const source = await outbox.findSourceState({
-      sourceRunId: agentRun.body.runId,
+      sourceRunId: agentRunId,
       sourceWorkflowAutomationId: scenario.automation.id,
     });
     expect(source.claim).not.toBeNull();
     expect(source.items).toStrictEqual([
       expect.objectContaining({
-        source_run_id: agentRun.body.runId,
+        source_run_id: agentRunId,
         source_workflow_automation_id: scenario.automation.id,
       }),
     ]);
@@ -8580,7 +8628,11 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    if (!enabledRun.body.runId) {
+    const enabledRunId = await launchedAutomationRunId(
+      scenario.actor,
+      enabledRun.body.chatThreadId,
+    );
+    if (!enabledRunId) {
       throw new Error("Expected enabled-at-launch Official Automation Run");
     }
 
@@ -8604,11 +8656,11 @@ describe("Official Workflow Run admission", () => {
     ).resolves.toMatchObject({ officialResultEmailEnabled: false });
     await completeSuccessfulRun(
       scenario.runnerGroup,
-      enabledRun.body.runId,
+      enabledRunId,
       "Enabled launch survives disablement",
     );
     const enabledSource = await outbox.findSourceState({
-      sourceRunId: enabledRun.body.runId,
+      sourceRunId: enabledRunId,
       sourceWorkflowAutomationId: scenario.automation.id,
     });
     expect(enabledSource.claim).not.toBeNull();
@@ -8625,7 +8677,11 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    if (!disabledRun.body.runId) {
+    const disabledRunId = await launchedAutomationRunId(
+      scenario.actor,
+      disabledRun.body.chatThreadId,
+    );
+    if (!disabledRunId) {
       throw new Error("Expected disabled-at-launch Official Automation Run");
     }
     await syncCatalog(
@@ -8648,12 +8704,12 @@ describe("Official Workflow Run admission", () => {
     ).resolves.toMatchObject({ officialResultEmailEnabled: true });
     await completeSuccessfulRun(
       scenario.runnerGroup,
-      disabledRun.body.runId,
+      disabledRunId,
       "Disabled launch stays ineligible",
     );
     await expect(
       outbox.findSourceState({
-        sourceRunId: disabledRun.body.runId,
+        sourceRunId: disabledRunId,
         sourceWorkflowAutomationId: scenario.automation.id,
       }),
     ).resolves.toStrictEqual({ items: [], claim: null });
@@ -8671,10 +8727,13 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    if (!launched.body.runId) {
+    const launchedRunId = await launchedAutomationRunId(
+      scenario.actor,
+      launched.body.chatThreadId,
+    );
+    if (!launchedRunId) {
       throw new Error("Expected pre-uninstall Official Automation Run");
     }
-    const launchedRunId = launched.body.runId;
     const beforeUninstall = await readOfficialWorkflowRunStateFixture(
       context,
       launchedRunId,
@@ -8748,7 +8807,7 @@ describe("Official Workflow Run admission", () => {
   it.each(["reconciling", "failed"] as const)(
     "repairs stale %s admission state",
     async (status) => {
-      const { agentId, automation, headers } =
+      const { actor, agentId, automation, headers } =
         await installStaleAdmissionScenario();
       const runnerGroup = runs.configureRunnerGroup();
       runs.acceptStorageDownloads();
@@ -8770,12 +8829,16 @@ describe("Official Workflow Run admission", () => {
         }),
         [201],
       );
-      if (!admitted.body.runId) {
+      const admittedRunId = await launchedAutomationRunId(
+        actor,
+        admitted.body.chatThreadId,
+      );
+      if (!admittedRunId) {
         throw new Error(`Expected repaired ${status} Official Automation Run`);
       }
       await completeSuccessfulRun(
         runnerGroup,
-        admitted.body.runId,
+        admittedRunId,
         `Repaired ${status} admission`,
       );
       await expect(
@@ -8790,6 +8853,7 @@ describe("Official Workflow Run admission", () => {
 
   it("repairs a stale applied fingerprint and reconciles a changed release at admission", async () => {
     const {
+      actor,
       agentId,
       automation,
       definitionName,
@@ -8817,12 +8881,16 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    if (!repairedFingerprint.body.runId) {
+    const repairedFingerprintRunId = await launchedAutomationRunId(
+      actor,
+      repairedFingerprint.body.chatThreadId,
+    );
+    if (!repairedFingerprintRunId) {
       throw new Error("Expected repaired fingerprint Official Automation Run");
     }
     await completeSuccessfulRun(
       runnerGroup,
-      repairedFingerprint.body.runId,
+      repairedFingerprintRunId,
       "Repaired fingerprint admission",
     );
     await setOfficialWorkflowAutomationAdmissionStateFixture(
@@ -8849,7 +8917,11 @@ describe("Official Workflow Run admission", () => {
       }),
       [201],
     );
-    if (!reconciledRelease.body.runId) {
+    const reconciledReleaseRunId = await launchedAutomationRunId(
+      actor,
+      reconciledRelease.body.chatThreadId,
+    );
+    if (!reconciledReleaseRunId) {
       throw new Error("Expected admission-time Blueprint reconciliation Run");
     }
     await expect(
@@ -8857,7 +8929,7 @@ describe("Official Workflow Run admission", () => {
     ).resolves.toMatchObject({ autonomyBudget: 5, enabled: true });
     await completeSuccessfulRun(
       runnerGroup,
-      reconciledRelease.body.runId,
+      reconciledReleaseRunId,
       "Reconciled release admission",
     );
     await expect(
@@ -8973,10 +9045,25 @@ describe("Official Workflow Run admission", () => {
     await setOfficialWorkflowsEnabled(actor, false);
     const before = await readAgentRunFamilyCountsFixture(context, agentId);
 
-    await accept(
+    // Run now is accepted; the background pick rejects the unresolved
+    // admission in the thread instead of launching a run.
+    const explicit = await accept(
       automationClient().run({ headers, params: { id: pulse.id } }),
-      [409],
+      [201],
     );
+    expect(explicit.body.runId).toBeNull();
+    await expect(
+      launchedAutomationRunId(actor, explicit.body.chatThreadId),
+    ).resolves.toBeUndefined();
+    const { events: explicitEvents } = await chat.listThreadEvents(
+      actor,
+      explicit.body.chatThreadId,
+    );
+    expect(
+      explicitEvents.filter((event) => {
+        return event.eventType === "input.rejected";
+      }),
+    ).toStrictEqual([expect.objectContaining({ error: "conflict" })]);
     await expect(
       readAgentRunFamilyCountsFixture(context, agentId),
     ).resolves.toStrictEqual(before);
@@ -8988,6 +9075,7 @@ describe("Official Workflow Run admission", () => {
         }),
         [200],
       );
+      await flushWaitUntilForTest();
     });
     await expect(
       readAgentRunFamilyCountsFixture(context, agentId),
@@ -9000,6 +9088,7 @@ describe("Official Workflow Run admission", () => {
         }),
         [200],
       );
+      await flushWaitUntilForTest();
     });
     await expect(
       readAgentRunFamilyCountsFixture(context, agentId),
@@ -9010,9 +9099,10 @@ describe("Official Workflow Run admission", () => {
       secret: webhookCredentials.body.webhookSecret,
       body: JSON.stringify({ event: "unresolved-official-admission" }),
     });
+    // The delivery is accepted; its launch rejection stays in the thread.
     expect(webhook).toMatchObject({
-      status: 500,
-      body: { error: "Failed to start webhook workflow run" },
+      status: 200,
+      body: { success: true, duplicate: false },
     });
     await flushWaitUntilForTest();
     await expect(

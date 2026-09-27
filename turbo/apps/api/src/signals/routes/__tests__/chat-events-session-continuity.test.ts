@@ -9,7 +9,7 @@ import {
   replaceThreadSessionBindingFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { expectApiError } from "./helpers/api-bdd";
+import { type ApiTestUser, expectApiError } from "./helpers/api-bdd";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { readThreadSessionBinding } from "./helpers/runtime-state";
@@ -19,6 +19,8 @@ import {
   eventBackedContents,
   assistantEvent,
   modelProviderSecretPlaceholder,
+  userMessages,
+  assistantMessages,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext({ connectorCatalog: true });
@@ -43,8 +45,29 @@ const {
   completeChatRunOk,
   cancelChatRun,
   upsertOrgModelProvider,
-  requestSendEventRaw,
 } = createChatEventsFixture(context);
+
+/** The run the background pick launched for a stored input. */
+async function pickedRun(
+  actor: ApiTestUser,
+  threadId: string,
+  clientEventId: string,
+): Promise<{ readonly runId: string; readonly threadId: string }> {
+  const messages = await waitForThreadMessages(actor, threadId, (items) => {
+    return userMessages(items).some((message) => {
+      return (
+        message.revokesEventId === clientEventId && message.runId !== undefined
+      );
+    });
+  });
+  const runId = userMessages(messages.events).find((message) => {
+    return message.revokesEventId === clientEventId;
+  })?.runId;
+  if (runId === undefined) {
+    throw new Error("Expected the picked input to launch a run");
+  }
+  return { runId, threadId };
+}
 
 // Session continuity is observed through the native Runner claim protocol.
 // The fixture's default Sonnet policy is Pi-eligible, so select the Fable
@@ -675,11 +698,18 @@ describe("CHAT-02: run-level model overrides", () => {
       conversationClear.release();
       await conversationClear.done;
     });
-    const secondPromise = sendChatRun(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "retry after the checkpoint changes",
-    });
+    // The send only enqueues; the background pick prepares the session.
+    const secondEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        prompt: "retry after the checkpoint changes",
+        clientEventId: secondEventId,
+      },
+      [201],
+    );
     // The staged clear is still uncommitted, so the run resolves the pre-clear
     // snapshot and only blocks once its commit re-reads the session row.
     await expect
@@ -688,7 +718,7 @@ describe("CHAT-02: run-level model overrides", () => {
 
     conversationClear.release();
     await conversationClear.done;
-    const second = await secondPromise;
+    const second = await pickedRun(actor, first.threadId, secondEventId);
 
     const secondBinding = await readThreadSessionBinding(
       context,
@@ -738,17 +768,25 @@ describe("CHAT-02: run-level model overrides", () => {
       conversationChanges.releaseAll();
       await conversationChanges.done;
     });
-    const retryPrompt = "exhaust every session preparation attempt";
-    const failedPromise = requestSendEventRaw(actor, {
-      agentId,
-      threadId: first.threadId,
-      clientEventId: randomUUID(),
-      prompt: retryPrompt,
-      userMessage: {
-        version: 1,
-        parts: [{ type: "text", text: retryPrompt }],
+    // The send is accepted at once; the background pick owns preparation.
+    const retryEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        clientEventId: retryEventId,
+        prompt: "exhaust every session preparation attempt",
       },
-      hasTextContent: true,
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the retry send to be accepted");
+    }
+    expect(sent.body).toStrictEqual({
+      runId: null,
+      threadId: first.threadId,
+      createdAt: expect.any(String),
     });
 
     const intermediateAttempts = preparationAttempts - 1;
@@ -768,12 +806,28 @@ describe("CHAT-02: run-level model overrides", () => {
       .toBeGreaterThanOrEqual(1);
     conversationChanges.release();
     await conversationChanges.done;
-    const failed = await failedPromise;
-    expect(failed).toStrictEqual({
-      status: 500,
-      body: { error: "Internal server error" },
-    });
+    await flushWaitUntilForTest();
 
+    // The failed preparation launched no run: the input still waits
+    // unconsumed in the thread.
+    const events = await chat.listThreadEvents(actor, first.threadId);
+    expect(
+      userMessages(events.events).filter((message) => {
+        return (
+          message.id === retryEventId || message.revokesEventId === retryEventId
+        );
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        id: retryEventId,
+        eventType: "input.prompt",
+      }),
+    ]);
+    expect(
+      userMessages(events.events).find((message) => {
+        return message.id === retryEventId;
+      })?.runId,
+    ).toBeUndefined();
     await expect(
       readThreadSessionBinding(context, first.threadId),
     ).resolves.toStrictEqual(firstBinding);
@@ -961,23 +1015,6 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(invalidModel.body.error.message).toBe("Invalid input");
     await chat.requestReadThread(actor, invalidModelThreadId, [404]);
 
-    const unavailableThreadId = randomUUID();
-    const unavailable = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "use a supported model outside workspace policy",
-        clientThreadId: unavailableThreadId,
-        model: "gpt-5.6-terra",
-      },
-      [400],
-    );
-    expectApiError(unavailable.body);
-    expect(unavailable.body.error.message).toBe(
-      "The selected model is not available in this workspace",
-    );
-    await chat.requestReadThread(actor, unavailableThreadId, [404]);
-
     // Removed sentinel models fail contract validation.
     for (const selectedModel of [
       "claude-haiku-4-5",
@@ -1008,5 +1045,62 @@ describe("CHAT-02: run-level model overrides", () => {
       throw new Error("Expected chat thread events to load");
     }
     expect(events.body.events).toStrictEqual([]);
+  }, 60_000);
+
+  it("rejects a model outside workspace policy when the input is picked", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    await api.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Unavailable model selection agent",
+    });
+
+    // The send stores the selection as sent; the pick resolves its route.
+    const threadId = randomUUID();
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: agent.agentId,
+        prompt: "use a supported model outside workspace policy",
+        clientThreadId: threadId,
+        clientEventId,
+        model: "gpt-5.6-terra",
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the unavailable model send to be accepted");
+    }
+    expect(sent.body).toStrictEqual({
+      runId: null,
+      threadId,
+      createdAt: expect.any(String),
+    });
+    await expectThreadCreatedModelEvent(actor, threadId, "gpt-5.6-terra");
+
+    const messages = await waitForThreadMessages(actor, threadId, (items) => {
+      return assistantMessages(items).some((message) => {
+        return message.eventType === "output.error";
+      });
+    });
+    expect(
+      userMessages(messages.events).find((message) => {
+        return message.revokesEventId === clientEventId;
+      }),
+    ).toMatchObject({
+      eventType: "input.rejected",
+      error: "bad_request",
+    });
+    expect(
+      userMessages(messages.events).some((message) => {
+        return message.runId !== undefined;
+      }),
+    ).toBeFalsy();
+    expect(
+      assistantMessages(messages.events).find((message) => {
+        return message.eventType === "output.error";
+      }),
+    ).toMatchObject({ error: "bad_request" });
   }, 60_000);
 });

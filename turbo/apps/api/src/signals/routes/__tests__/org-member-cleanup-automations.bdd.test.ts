@@ -229,7 +229,7 @@ describe("Org member cleanup disarms the departing member's automations", () => 
       "elsewhere",
     );
 
-    // Armed before the departure: the delivery dispatches and starts a run.
+    // Armed before the departure: the delivery is accepted and queues a run.
     await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(200);
 
     org.mockClerkOrg(peerAdmin, {

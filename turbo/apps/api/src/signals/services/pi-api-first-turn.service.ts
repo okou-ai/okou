@@ -2567,12 +2567,7 @@ const runPiApiFirstTurnCore$ = command(
         : executionResult;
     if (executed.ok) {
       const outcome = executed.value;
-      return outcome.outcome === "completed" && outcome.sideEffects
-        ? {
-            ...outcome.sideEffects,
-            apiStartTime: activation.executionContext.apiStartTime,
-          }
-        : undefined;
+      return outcome.outcome === "completed" ? outcome.sideEffects : undefined;
     }
     // Classify the original error before aborting the private attempt. Closing
     // it first would turn raw model failures into deadlines and permit H0 replay.

@@ -1884,8 +1884,15 @@ export const chatEventsContract = c.router({
     ]),
     responses: {
       201: z.object({
+        /**
+         * Always null: a send enqueues its input and returns without waiting
+         * for a run. The key stays because older clients require it. The run,
+         * or an `input.rejected` event explaining why none started, appears
+         * in the thread's event stream.
+         */
         runId: z.string().nullable(),
         threadId: z.string(),
+        /** Only returned by API versions that created the run synchronously. */
         status: runStatusSchema.optional(),
         createdAt: z.string().optional(),
       }),
@@ -1899,7 +1906,8 @@ export const chatEventsContract = c.router({
       429: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Append a chat event and dispatch input when applicable",
+    summary:
+      "Append a chat event; user input is enqueued and picked into a run asynchronously",
   },
 });
 

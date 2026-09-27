@@ -87,6 +87,33 @@ function automationsClient() {
   );
 }
 
+/**
+ * Manual Run now. The route only enqueues; once its background pick finished,
+ * `runId` is the newest run in the automation's thread, if any.
+ */
+async function runAutomationNow(
+  automationId: string,
+  headers: Readonly<Record<string, string>> = authHeaders(),
+): Promise<{ readonly chatThreadId: string; readonly runId: string | null }> {
+  const response = await accept(
+    automationsClient().run({ headers, params: { id: automationId } }),
+    [201],
+  );
+  expect(response.body.runId).toBeNull();
+  await flushWaitUntilForTest();
+  const runIds = (
+    await wf.readThreadEvents(response.body.chatThreadId)
+  ).flatMap((event) => {
+    return event.eventType === "input.prompt" && event.runId
+      ? [event.runId]
+      : [];
+  });
+  return {
+    chatThreadId: response.body.chatThreadId,
+    runId: runIds.at(-1) ?? null,
+  };
+}
+
 function detailClient() {
   return setupApp({ context, routes: workflowsRoutes })(
     workflowsDetailContract,
@@ -2907,13 +2934,7 @@ describe("okou workflow automations", () => {
         4,
       );
       if (index === 0) {
-        await accept(
-          automationsClient().run({
-            headers: authHeaders(),
-            params: { id: created.body.id },
-          }),
-          [201],
-        );
+        await runAutomationNow(created.body.id);
       }
       const before = await wf.readAutomation(created.body.id);
 
@@ -5510,13 +5531,7 @@ describe("okou workflow automations", () => {
 
     // A real manual run through the public run route stamps lastRunAt.
     mockNow(Date.parse("2026-06-28T06:05:00.000Z"));
-    await accept(
-      automationsClient().run({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [201],
-    );
+    await runAutomationNow(created.body.id);
 
     mockNow(Date.parse("2026-06-28T06:10:00.000Z"));
     const updated = await accept(
@@ -5598,13 +5613,7 @@ describe("okou workflow automations", () => {
     // Stamp lastRunAt through a real manual run, then disable so enable has
     // to recompute the next run from the last run interval.
     mockNow(Date.parse("2026-06-28T06:05:00.000Z"));
-    await accept(
-      automationsClient().run({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [201],
-    );
+    await runAutomationNow(created.body.id);
     await accept(
       automationsClient().disable({
         headers: authHeaders(),
@@ -5779,21 +5788,15 @@ describe("okou workflow automations", () => {
     );
     expect(created.body.chatThreadId).toBeNull();
 
-    const run = await accept(
-      automationsClient().run({
-        headers: authHeaders(),
-        params: { id: created.body.id },
-      }),
-      [201],
-    );
+    const run = await runAutomationNow(created.body.id);
 
-    const threadId = run.body.chatThreadId;
-    if (!run.body.runId) {
+    const threadId = run.chatThreadId;
+    if (!run.runId) {
       throw new Error("Expected an idle manual automation run to start");
     }
 
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.body.runId);
+    const claim = await runs.claimRunnerJob(run.runId);
     const requestedAtIso = new Date(requestedAt).toISOString();
     expect(claim.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: manual\nSummary: manual run requested at ${requestedAtIso}.`,
@@ -5827,7 +5830,7 @@ describe("okou workflow automations", () => {
       );
     });
     expect(workflowMessage).toBeDefined();
-    expect(workflowMessage?.runId).toBe(run.body.runId);
+    expect(workflowMessage?.runId).toBe(run.runId);
     expect(chatEventDisplayText(workflowMessage!)).toBe(
       "A manual run of this workflow was requested.",
     );
@@ -5850,22 +5853,16 @@ describe("okou workflow automations", () => {
       readWorkflowAutomationAutonomyFixture(context, rootAutomation.body.id),
     ).resolves.toMatchObject({ autonomyBudget: 10 });
 
-    const rootRun = await accept(
-      automationsClient().run({
-        headers: authHeaders(),
-        params: { id: rootAutomation.body.id },
-      }),
-      [201],
-    );
-    if (!rootRun.body.runId) {
+    const rootRun = await runAutomationNow(rootAutomation.body.id);
+    if (!rootRun.runId) {
       throw new Error("Expected the root automation to start a run");
     }
     await expect(
-      readRunAutonomyBudgetFixture(context, rootRun.body.runId),
+      readRunAutonomyBudgetFixture(context, rootRun.runId),
     ).resolves.toBe(10);
     const rootToken = runs.okouTokenForRunWithCapabilities(
       actor,
-      rootRun.body.runId,
+      rootRun.runId,
       ["agent:write"],
     );
 
@@ -5883,7 +5880,7 @@ describe("okou workflow automations", () => {
       readWorkflowAutomationAutonomyFixture(context, derivedAutomation.body.id),
     ).resolves.toMatchObject({ autonomyBudget: 9 });
 
-    await setRunAutonomyBudgetFixture(context, rootRun.body.runId, 1);
+    await setRunAutonomyBudgetFixture(context, rootRun.runId, 1);
     const zeroBudgetAutomation = await accept(
       automationsClient().create({
         headers: { authorization: `Bearer ${rootToken}` },
@@ -5900,25 +5897,19 @@ describe("okou workflow automations", () => {
         zeroBudgetAutomation.body.id,
       ),
     ).resolves.toMatchObject({ autonomyBudget: 0 });
-    await runs.requestCancelRun(actor, rootRun.body.runId, [200]);
+    await runs.requestCancelRun(actor, rootRun.runId, [200]);
     await flushWaitUntilForTest();
 
-    const exhaustedRun = await accept(
-      automationsClient().run({
-        headers: authHeaders(),
-        params: { id: zeroBudgetAutomation.body.id },
-      }),
-      [201],
-    );
-    if (!exhaustedRun.body.runId) {
+    const exhaustedRun = await runAutomationNow(zeroBudgetAutomation.body.id);
+    if (!exhaustedRun.runId) {
       throw new Error("Expected the zero-budget automation to start its run");
     }
     await expect(
-      readRunAutonomyBudgetFixture(context, exhaustedRun.body.runId),
+      readRunAutonomyBudgetFixture(context, exhaustedRun.runId),
     ).resolves.toBe(0);
     const exhaustedToken = runs.okouTokenForRunWithCapabilities(
       actor,
-      exhaustedRun.body.runId,
+      exhaustedRun.runId,
       ["agent:write"],
     );
     await accept(
@@ -5940,7 +5931,7 @@ describe("okou workflow automations", () => {
       readWorkflowAutomationAutonomyFixture(context, derivedAutomation.body.id),
     ).resolves.toMatchObject({ autonomyBudget: 9, enabled: false });
 
-    await setRunAutonomyBudgetFixture(context, exhaustedRun.body.runId, 2);
+    await setRunAutonomyBudgetFixture(context, exhaustedRun.runId, 2);
     await accept(
       automationsClient().enable({
         headers: { authorization: `Bearer ${exhaustedToken}` },
@@ -5959,7 +5950,7 @@ describe("okou workflow automations", () => {
       }),
       [200],
     );
-    await setRunAutonomyBudgetFixture(context, exhaustedRun.body.runId, 5);
+    await setRunAutonomyBudgetFixture(context, exhaustedRun.runId, 5);
     await accept(
       automationsClient().enable({
         headers: { authorization: `Bearer ${exhaustedToken}` },
@@ -5970,7 +5961,7 @@ describe("okou workflow automations", () => {
     await expect(
       readWorkflowAutomationAutonomyFixture(context, derivedAutomation.body.id),
     ).resolves.toMatchObject({ autonomyBudget: 4, enabled: true });
-    await setRunAutonomyBudgetFixture(context, exhaustedRun.body.runId, 0);
+    await setRunAutonomyBudgetFixture(context, exhaustedRun.runId, 0);
 
     const blocked = await accept(
       automationsClient().create({
@@ -5983,7 +5974,7 @@ describe("okou workflow automations", () => {
       [409],
     );
     expect(blocked.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
-    await runs.requestCancelRun(actor, exhaustedRun.body.runId, [200]);
+    await runs.requestCancelRun(actor, exhaustedRun.runId, [200]);
   });
 
   it("derives manual run budgets from the source and rejects exhausted agent callers", async () => {
@@ -6004,52 +5995,46 @@ describe("okou workflow automations", () => {
       automation.body.id,
       0,
     );
-    const sourceRun = await accept(
-      automationsClient().run({
-        headers: authHeaders(),
-        params: { id: automation.body.id },
-      }),
-      [201],
-    );
-    if (!sourceRun.body.runId) {
+    const sourceRun = await runAutomationNow(automation.body.id);
+    if (!sourceRun.runId) {
       throw new Error("Expected the source automation run to start");
     }
     const sourceToken = runs.okouTokenForRunWithCapabilities(
       actor,
-      sourceRun.body.runId,
+      sourceRun.runId,
       ["agent:write"],
     );
-    await runs.requestCancelRun(actor, sourceRun.body.runId, [200]);
+    await runs.requestCancelRun(actor, sourceRun.runId, [200]);
     await flushWaitUntilForTest();
 
-    await setRunAutonomyBudgetFixture(context, sourceRun.body.runId, 2);
-    const childRun = await accept(
-      automationsClient().run({
-        headers: { authorization: `Bearer ${sourceToken}` },
-        params: { id: automation.body.id },
-      }),
-      [201],
-    );
-    if (!childRun.body.runId) {
+    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 2);
+    const childRun = await runAutomationNow(automation.body.id, {
+      authorization: `Bearer ${sourceToken}`,
+    });
+    if (!childRun.runId) {
       throw new Error("Expected a budget-two caller to start a child run");
     }
     await expect(
-      readRunAutonomyBudgetFixture(context, childRun.body.runId),
+      readRunAutonomyBudgetFixture(context, childRun.runId),
     ).resolves.toBe(1);
     await expect(
       readWorkflowAutomationAutonomyFixture(context, automation.body.id),
     ).resolves.toMatchObject({ autonomyBudget: 0 });
-    await runs.requestCancelRun(actor, childRun.body.runId, [200]);
+    await runs.requestCancelRun(actor, childRun.runId, [200]);
     await flushWaitUntilForTest();
 
-    await setRunAutonomyBudgetFixture(context, sourceRun.body.runId, 0);
-    const blocked = await accept(
-      automationsClient().run({
-        headers: { authorization: `Bearer ${sourceToken}` },
-        params: { id: automation.body.id },
+    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 0);
+    // The exhausted request is accepted; its rejection appears in the thread.
+    const blocked = await runAutomationNow(automation.body.id, {
+      authorization: `Bearer ${sourceToken}`,
+    });
+    await expect(
+      wf.readThreadEvents(blocked.chatThreadId),
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        error: "autonomy_budget_exhausted",
       }),
-      [409],
     );
-    expect(blocked.body.error.code).toBe("AUTONOMY_BUDGET_EXHAUSTED");
   });
 });

@@ -49,7 +49,6 @@ const {
   seedBuiltInModelKey,
   sendChatRun,
   expectThreadCreatedModelEvent,
-  expectNoThreadModelUpdateEvent,
   claimChatRun,
   waitForThreadMessages,
   waitForRunStatus,
@@ -163,7 +162,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   }, 60_000);
 
-  it("uses send model overrides without mutating the thread model while preserving same-family sessions", async () => {
+  it("persists a send model selection on the thread while preserving same-family sessions", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     // Claude subscription credentials stay on the native Claude Code harness
@@ -218,9 +217,9 @@ describe("CHAT-02: run-level model overrides", () => {
       (await api.readRun(actor, first.runId)).result?.agentSessionId,
     ).toMatch(/[0-9a-f-]{36}/);
 
-    // A run-level override of another model in the same family resumes the CLI
-    // session, which already carries the prior web round, so the prompt does
-    // not replay it.
+    // Selecting another model in the same family resumes the CLI session,
+    // which already carries the prior web round, so the prompt does not
+    // replay it.
     const second = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
@@ -241,18 +240,29 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(claimEnvironment(secondClaim.claim).ANTHROPIC_MODEL).toBe(
       "claude-sonnet-5",
     );
-    await expectNoThreadModelUpdateEvent(
-      actor,
-      first.threadId,
-      "claude-sonnet-5",
-    );
+    // The send persists its model selection on the thread.
+    await expect(
+      chat.requestThreadEvents(actor, {}, [200]),
+    ).resolves.toMatchObject({
+      body: {
+        events: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "model_selection_updated",
+            chatThreadId: first.threadId,
+            selectedModel: "claude-sonnet-5",
+          }),
+        ]),
+      },
+    });
+    await expect(
+      chat.readThreadMetadata(actor, first.threadId),
+    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5" });
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
     await flushWaitUntilForTest();
 
-    // Follow-ups without a send model override go back to the thread's stored
-    // model. Both models remain in the Claude family, so session continuity is
-    // preserved.
+    // Follow-ups without a model selection run on the thread's stored model,
+    // which is now the last selection. The session continues in the family.
     const third = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
@@ -263,7 +273,7 @@ describe("CHAT-02: run-level model overrides", () => {
       `bdd-cli-${second.runId}`,
     );
     expect(claimEnvironment(thirdClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-opus-5",
+      "claude-sonnet-5",
     );
     await cancelChatRun(actor, third.runId);
   }, 90_000);
@@ -290,7 +300,8 @@ describe("CHAT-02: run-level model overrides", () => {
       accountId: "personal-default-fallback-account",
     });
     // Astra keeps the fallback run on the native Codex harness, so the receipt
-    // observes only send admission rather than a concurrent Pi API-first turn.
+    // observes only the pick's admission rather than a concurrent Pi API-first
+    // turn.
     await seedBuiltInModelKey("gpt-6-astra");
     await api.updateOrgModelPolicies(actor, [
       {
@@ -318,8 +329,9 @@ describe("CHAT-02: run-level model overrides", () => {
       });
     });
     const followUp = captured.result;
-    // The optimistic read and transactional revalidation each load metadata
-    // once; selected-route failure and default fallback share it within both.
+    // The send only enqueues; the pick that launches the run resolves the
+    // route. Selected-route failure and default fallback share one metadata
+    // load within each of its route reads.
     expect(captured.receipt.personalMetadataReads).toBe(2);
     await expect(
       readRunModelSourceFixture(followUp.runId),

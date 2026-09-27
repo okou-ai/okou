@@ -195,6 +195,19 @@ export async function bindMorningBriefScheduleClaimQueueEvent(
   }
 }
 
+/** The journaled occurrence a queue event was admitted for, if any. */
+export async function morningBriefScheduleClaimIdForQueueEvent(
+  db: Pick<Db, "select">,
+  queueEventId: string,
+): Promise<string | null> {
+  const [claim] = await db
+    .select({ id: morningBriefScheduleClaims.id })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.queueEventId, queueEventId))
+    .limit(1);
+  return claim?.id ?? null;
+}
+
 /**
  * Bind the Run to the occurrence its queue event was admitted for. The
  * automation runs this inside the launch transaction that claimed that exact

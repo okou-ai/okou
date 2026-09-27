@@ -356,12 +356,16 @@ async function postStripeAutomationEvent(
 }
 
 async function executeAutomation(scenario: Scenario) {
-  return await accept(
+  const execution = await accept(
     workflowAutomationExecutionClient().execute({
       body: { automation_id: scenario.automationId },
     }),
     [200],
   );
+  // Delivery only enqueues the workflow input; the run launches in background
+  // work scheduled by the enqueue.
+  await flushWaitUntilForTest();
+  return execution;
 }
 
 async function applyDeliveryFixture(

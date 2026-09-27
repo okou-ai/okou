@@ -828,6 +828,9 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
     await get(hasEvents$);
     return false;
   });
+  // Queue order is FIFO by seqId: chatEvents$ lists persisted events by seqId,
+  // then still-sending optimistic events in their local order. Prompts and
+  // automation inputs share one order and must not be regrouped by kind.
   const pendingEvents$ = computed(
     (get): Promise<readonly ComposerPendingEvent[]> => {
       return Promise.resolve(

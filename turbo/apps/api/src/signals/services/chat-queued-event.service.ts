@@ -27,19 +27,12 @@ import {
   parseCanonicalChatEventRequiredOfficialWorkflowIds,
 } from "./canonical-chat-event-read.service";
 import { chatThreadAdmissionBlockerCondition } from "./chat-active-run.service";
-import {
-  loadChatQueueHead,
-  loadPendingChatQueueEvent,
-} from "./chat-event-queue.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import { loadChatQueueHead } from "./chat-event-queue.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
-  insertChatEvent,
   type LoadedChatEventReplacementTarget,
   type NewChatEvent,
-  replaceChatEvent,
   replaceLoadedChatEvent,
-  revokeChatEvent,
 } from "./chat-event.service";
 import {
   agentRunSourceAnnotation,
@@ -330,34 +323,6 @@ async function materializeQueuedUserMessage(
   };
 }
 
-/** A post-commit hint only; the launch transaction still owns the final claim. */
-export async function resolveWebChatQueueFirstDispatchPreflight(
-  db: Db,
-  threadId: string,
-  queuedEventId: string,
-): Promise<
-  | { readonly kind: "wait" }
-  | { readonly kind: "drain" }
-  | { readonly kind: "self"; readonly queuedMessage: QueuedUserMessage }
-> {
-  const [admission] = await db
-    .select({
-      blocked: sql`${chatThreadAdmissionBlockerCondition(db, {
-        threadId,
-      })}`.mapWith(pgBooleanDecoder),
-    })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, threadId))
-    .limit(1);
-  if (admission?.blocked) {
-    return { kind: "wait" };
-  }
-  const queuedMessage = await loadNextUnclaimedQueuedUserMessage(db, threadId);
-  return queuedMessage?.id === queuedEventId
-    ? { kind: "self", queuedMessage }
-    : { kind: "drain" };
-}
-
 export async function loadNextUnclaimedQueuedUserMessage(
   db: Db,
   threadId: string,
@@ -399,14 +364,6 @@ export async function loadNextUnclaimedQueuedUserMessage(
     )
     .limit(1);
   return event ? await materializeQueuedUserMessage(db, event) : null;
-}
-
-async function loadNextUnclaimedQueuedUserMessageId(
-  db: Db,
-  threadId: string,
-): Promise<string | null> {
-  const head = await loadChatQueueHead(db, threadId);
-  return head?.eventType === "input.prompt" ? head.id : null;
 }
 
 type QueueFirstClaimArgs = QueueFirstRunAssociation & {
@@ -654,135 +611,4 @@ export async function claimQueueFirstRunAssociation(
       return { queue_first_claim_result: outcome };
     },
   );
-}
-
-/**
- * Discard a queue-first user message that never dispatched by appending a
- * tombstone. The revoke edge removes it from both queue and visible history.
- */
-async function discardUnclaimedUserMessageInTransaction(
-  db: DbTransaction,
-  args: {
-    readonly threadId: string;
-    readonly eventId: string;
-  },
-): Promise<boolean> {
-  if (
-    (await loadNextUnclaimedQueuedUserMessageId(db, args.threadId)) !==
-    args.eventId
-  ) {
-    return false;
-  }
-  const pending = await loadPendingChatQueueEvent(db, {
-    chatThreadId: args.threadId,
-    eventId: args.eventId,
-  });
-  if (pending?.eventType !== "input.prompt") {
-    return false;
-  }
-  // The tombstone conflicts on the revoke edge with a concurrent claim, recall
-  // or rejection, so losing that race leaves the message to its winner.
-  const tombstone = await revokeChatEvent(db, args.eventId, {
-    chatThreadId: args.threadId,
-    eventType: "control.revoke",
-    runId: null,
-  });
-  return tombstone !== null;
-}
-
-export async function discardUnclaimedUserMessage(
-  db: Db,
-  args: {
-    readonly threadId: string;
-    readonly eventId: string;
-  },
-): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    return await discardUnclaimedUserMessageInTransaction(tx, args);
-  });
-}
-
-/**
- * Consume the current queue head without a run and append canonical user and
- * assistant replacements that explain a permanent integration admission
- * failure.
- */
-interface FailQueuedUserMessageArgs {
-  readonly threadId: string;
-  readonly eventId: string;
-  readonly assistantContent: string;
-  readonly errorMarker: string;
-  readonly currentTime: Date;
-}
-
-async function failQueuedUserMessageInTransaction(
-  tx: DbTransaction,
-  args: FailQueuedUserMessageArgs,
-): Promise<{ readonly assistantEventId: string } | null> {
-  if (
-    (await loadNextUnclaimedQueuedUserMessageId(tx, args.threadId)) !==
-    args.eventId
-  ) {
-    return null;
-  }
-
-  const [queued] = await tx
-    .select({
-      userMessage: canonicalChatEventUserMessage(),
-      createdAt: chatEvents.createdAt,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.threadId),
-        chatEventTypeIn(["input.prompt"]),
-        isNull(chatEvents.runId),
-      ),
-    )
-    .limit(1);
-  if (!queued) {
-    return null;
-  }
-  if (!queued.userMessage) {
-    throw new Error("Queued input event is missing userMessage");
-  }
-  const terminalAt = new Date(
-    Math.max(args.currentTime.getTime(), queued.createdAt.getTime() + 1),
-  );
-
-  const replacement = await replaceChatEvent(tx, args.eventId, {
-    chatThreadId: args.threadId,
-    eventType: "input.rejected",
-    userMessage: queued.userMessage,
-    runId: null,
-    error: args.errorMarker,
-    createdAt: terminalAt,
-  });
-  if (!replacement) {
-    return null;
-  }
-
-  const assistant = await insertChatEvent(tx, {
-    chatThreadId: args.threadId,
-    eventType: "output.error",
-    content: args.assistantContent,
-    runId: null,
-    error: args.errorMarker,
-    createdAt: new Date(terminalAt.getTime() + 1),
-  });
-  if (!assistant) {
-    throw new Error("Failed to append integration admission error");
-  }
-  await touchChatThreadLastMessageAt(tx, args.threadId, assistant.createdAt);
-  return { assistantEventId: assistant.id };
-}
-
-export async function failQueuedUserMessage(
-  db: Db,
-  args: FailQueuedUserMessageArgs,
-): Promise<{ readonly assistantEventId: string } | null> {
-  return await db.transaction(async (tx) => {
-    return await failQueuedUserMessageInTransaction(tx, args);
-  });
 }

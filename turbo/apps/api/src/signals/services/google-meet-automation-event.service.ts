@@ -23,7 +23,6 @@ import {
   settleIncludingAbort,
   tapError,
 } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
@@ -2097,7 +2096,6 @@ export const dispatchGoogleWorkspaceEventsPubSubPush$ = command(
                     signal,
                   );
                 },
-                dispatchFailedCallbacks: dispatchFailedRunCallbacks,
                 timing: timing.collectorForRunStart(),
               },
               signal,
@@ -2113,10 +2111,7 @@ export const dispatchGoogleWorkspaceEventsPubSubPush$ = command(
             }
             throw started.error;
           }
-          return started.value.kind === "ok" ||
-            started.value.kind === "enqueued"
-            ? "ok"
-            : "error";
+          return "ok";
         },
       },
       signal,

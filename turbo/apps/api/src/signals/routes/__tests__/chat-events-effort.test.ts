@@ -96,12 +96,12 @@ describe("CHAT effort: thread configuration", () => {
     expect(overrideClaim.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
       "max",
     );
-    // A run-level model override uses Astra's default without rewriting the
-    // thread's persisted Fable selection or its saved effort.
+    // A send's model selection is persisted on the thread and runs with
+    // Astra's default effort, keeping Fable's saved effort.
     await expect(
       chat.readThreadMetadata(actor, thread.id),
     ).resolves.toMatchObject({
-      selectedModel: "claude-fable-5-1",
+      selectedModel: "gpt-6-astra",
       modelSettings: { "claude-fable-5-1": { effort: "high" } },
     });
     await cancelChatRun(actor, override.runId, overrideClaim.sandboxHeaders);
@@ -180,12 +180,10 @@ describe("CHAT effort: thread configuration", () => {
       },
     });
     for (const response of responses) {
-      if (response.status !== 201) {
-        throw new Error("Expected both effort updates to be accepted");
-      }
-      if (response.body.runId) {
-        await cancelChatRun(actor, response.body.runId);
-      }
+      expect(response.body).toMatchObject({
+        runId: null,
+        threadId: thread.id,
+      });
     }
   }, 90_000);
 

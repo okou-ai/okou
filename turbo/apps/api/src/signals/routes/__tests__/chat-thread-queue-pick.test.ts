@@ -24,9 +24,9 @@ import {
 
 /**
  * CHAT-02: at organization capacity, chat input waits in its thread without a
- * run. A pick launches the thread's FIFO head when a slot frees (the ending
- * run's thread first, then the organization's oldest waiting thread) or when
- * the cron sweep finds capacity.
+ * run. A pick launches the thread's FIFO head when a slot frees (the
+ * organization's waiting threads oldest first, with no priority for the ending
+ * run's thread) or when the cron sweep finds capacity.
  */
 const context = testContext({ connectorCatalog: true });
 const {
@@ -265,7 +265,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     await cancelChatRun(actor, next.runId);
   }, 90_000);
 
-  it("gives the freed slot to the same thread before an older waiting thread", async () => {
+  it("gives the freed slot to another thread that waited longer than the ending run's thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -292,16 +292,19 @@ describe("CHAT-02: queued chat thread picks", () => {
     await completeChatRunOk(running.runId, runningClaim.sandboxHeaders);
     await flushWaitUntilForTest();
 
-    const takeover = await sameThread.launchedRun();
+    // The organization pick goes oldest first: the other thread's input
+    // launches and fills the organization, so the ending run's own thread
+    // keeps waiting.
+    const older = await olderThread.launchedRun();
     await expect(
-      runOfInput(actor, olderThread.threadId, olderThread.clientEventId),
+      runOfInput(actor, running.threadId, sameThread.clientEventId),
     ).resolves.toBeUndefined();
 
-    // Once the same thread's run ends with nothing left, the older thread
-    // gets the slot.
-    await finishRun(runnerGroup, takeover.runId);
-    const older = await olderThread.launchedRun();
-    await cancelChatRun(actor, older.runId);
+    // The other thread's run end frees the slot for the ending run's thread.
+    await finishRun(runnerGroup, older.runId);
+    const takeover = await sameThread.launchedRun();
+    expect(takeover.runId).not.toBe(running.runId);
+    await cancelChatRun(actor, takeover.runId);
   }, 90_000);
 
   it("gives the slot of a cancelled running run to a waiting thread", async () => {

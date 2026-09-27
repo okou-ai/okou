@@ -21,6 +21,8 @@ import { activityRevision, mergeActivity } from "../../lib/run-activity";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
+import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
+import { releaseRunSlots } from "./agent-run-terminal-transition.service";
 
 const log = logger("api:run-activity");
 
@@ -93,7 +95,8 @@ export const captureRunActivity$ = command(
  * A run that reached `running` keeps its active row after it turns terminal
  * until the runner reports completion. When the runner never does, release the
  * row once the run has been terminal and its sandbox silent for the
- * cancellation-recovery grace. Two bounded statements, no transaction.
+ * cancellation-recovery grace. A bounded read, then the release in its own
+ * transaction; the freed organizations are picked after it commits.
  */
 export const releaseStaleTerminalActiveAgentRuns$ = command(
   async (
@@ -147,25 +150,24 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
           .limit(STALE_RELEASE_LIMIT);
         signal.throwIfAborted();
         if (silent.length === 0) {
-          return;
+          return [];
         }
         // Recheck the silence: a sandbox that resumed heartbeating since the
         // candidate read still has a runner and keeps its row.
-        await db.delete(activeAgentRuns).where(
-          and(
-            inArray(
-              activeAgentRuns.runId,
-              silent.map((row) => {
-                return row.runId;
-              }),
-            ),
+        return await db.transaction(async (tx) => {
+          return await releaseRunSlots(
+            tx,
+            silent.map((row) => {
+              return row.runId;
+            }),
             lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
-          ),
-        );
+          );
+        });
       })(),
     );
     signal.throwIfAborted();
     if (outcome.ok) {
+      set(scheduleReleasedSlotPicks$, outcome.value);
       return;
     }
     const errorCode = safeSqlStateCode(outcome.error);

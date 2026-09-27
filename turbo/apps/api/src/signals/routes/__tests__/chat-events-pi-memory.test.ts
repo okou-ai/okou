@@ -530,15 +530,24 @@ describe("CHAT-02: model-first provider policies", () => {
           return apiTestS3PresignedUrl(command);
         },
       );
-      const sending = sendChatRun(
+      // The send only enqueues; the background pick prepares the launch.
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
         actor,
         {
           agentId,
           prompt: "prepare a complete Pi launch",
           model: "gpt-5.6-terra",
+          clientEventId,
         },
-        usagePricingResolution,
+        [201],
+        { usagePricingResolution },
       );
+      if (sent.status !== 201) {
+        throw new Error("Expected the Pi launch send to be accepted");
+      }
+      expect(sent.body.runId).toBeNull();
+      const threadId = sent.body.threadId;
       const [runId] = await Promise.all([
         manifestEntered.promise,
         archiveEntered.promise,
@@ -559,8 +568,14 @@ describe("CHAT-02: model-first provider policies", () => {
         );
       }
       release.resolve(undefined);
-      const run = await sending;
-      expect(run.runId).toBe(runId);
+      // The picked input is bound to the prepared run.
+      await waitForThreadMessages(actor, threadId, (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === clientEventId && message.runId === runId
+          );
+        });
+      });
       const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${runId}/manifest.json`;
       await expect
         .poll(() => {
@@ -602,7 +617,7 @@ describe("CHAT-02: model-first provider policies", () => {
           manifestUrl: expect.any(String),
           sessionUrl: expect.any(String),
           resourceSnapshotDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
-          baseSession: { sessionId: run.threadId, sha256: null },
+          baseSession: { sessionId: threadId, sha256: null },
         },
         memoryRecall: { status: "no-content" },
       });
@@ -611,7 +626,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(["error", "context", "storage", "abort"] as const)(
+  it.each(["error", "context", "storage"] as const)(
     "joins archive signing after an early Pi signing %s without publishing a launch",
     async (outcome) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -631,12 +646,10 @@ describe("CHAT-02: model-first provider policies", () => {
           throw new Error("Context encryption failed");
         });
       }
-      const controller = new AbortController();
       onTestFinished(() => {
         if (!release.settled()) {
           release.resolve(undefined);
         }
-        controller.abort();
       });
       context.mocks.s3.getSignedUrl.mockImplementation(
         async (_client, command) => {
@@ -655,63 +668,45 @@ describe("CHAT-02: model-first provider policies", () => {
               /^pi-api-first-turn\/([^/]+)\/manifest.json$/u.exec(key);
             if (manifest?.[1]) {
               piFailed.resolve(manifest[1]);
-              if (outcome === "abort") {
-                controller.abort();
-              }
               throw new Error("Pi manifest signing failed");
             }
           }
           return apiTestS3PresignedUrl(command);
         },
       );
-      let returned = false;
-      const sending = chat
-        .requestSendEvent(
-          actor,
-          {
-            agentId,
-            prompt: "fail an owned launch preparation",
-            model: "gpt-5.6-terra",
-            clientEventId: randomUUID(),
-          },
-          [201],
-          {},
-          controller.signal,
-        )
-        .finally(() => {
-          returned = true;
-        });
-      const completion = Promise.allSettled([sending]);
+      // The send only enqueues; the background pick owns launch preparation.
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          prompt: "fail an owned launch preparation",
+          model: "gpt-5.6-terra",
+          clientEventId: randomUUID(),
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the failing Pi launch send to be accepted");
+      }
+      expect(sent.body.runId).toBeNull();
       const [runId] = await Promise.all([
         piFailed.promise,
         archiveEntered.promise,
       ]);
       await api.requestReadRun(actor, runId, [404]);
       expect((await api.pollRunner(runnerGroup)).body.job).toBeNull();
-      expect(returned).toBeFalsy();
       release.resolve(undefined);
-      const [result] = await completion;
-      if (outcome === "abort") {
-        expect(result).toMatchObject({
-          status: "rejected",
-          reason: new Error(
-            "Unknown response status 500 for POST /api/chat/events",
-          ),
-        });
-        await api.requestReadRun(actor, runId, [404]);
-      } else {
-        expect(result.status).toBe("fulfilled");
-        await expect(api.readRun(actor, runId)).resolves.toMatchObject({
-          status: "failed",
-          error:
-            outcome === "storage"
-              ? "Archive signing failed"
-              : outcome === "context"
-                ? "Context encryption failed"
-                : "Pi manifest signing failed",
-        });
-        await api.requestClaimRunnerJob(true, runId, [404]);
-      }
+      await waitForRunStatus(actor, runId, "failed");
+      await expect(api.readRun(actor, runId)).resolves.toMatchObject({
+        status: "failed",
+        error:
+          outcome === "storage"
+            ? "Archive signing failed"
+            : outcome === "context"
+              ? "Context encryption failed"
+              : "Pi manifest signing failed",
+      });
+      await api.requestClaimRunnerJob(true, runId, [404]);
       expect((await api.pollRunner(runnerGroup)).body.job).toBeNull();
     },
     90_000,
@@ -931,15 +926,19 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     );
     const callsBeforeResume = providerCalls;
-    const sending = sendChatRun(
+    // The send only enqueues; the background pick prepares the launch.
+    const resumeEventId = randomUUID();
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
         threadId: first.threadId,
         prompt: "resume the frozen canonical memory",
         model: "gpt-5.6-terra",
+        clientEventId: resumeEventId,
       },
-      pricing,
+      [201],
+      { usagePricingResolution: pricing },
     );
     const [runId] = await Promise.all([
       piEntered.promise,
@@ -956,8 +955,14 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     expect(newerVersion).not.toBe(version);
     release.resolve(undefined);
-    const resumed = await sending;
-    expect(resumed.runId).toBe(runId);
+    // The picked input is bound to the prepared run.
+    await waitForThreadMessages(actor, first.threadId, (items) => {
+      return userMessages(items).some((message) => {
+        return (
+          message.revokesEventId === resumeEventId && message.runId === runId
+        );
+      });
+    });
     await expect
       .poll(() => {
         return objects.has(
@@ -1622,10 +1627,35 @@ describe("CHAT-02: model-first provider policies", () => {
       usagePricingResolution,
     );
     expect(delegated.status).toBe(201);
-    if (delegated.status !== 201 || delegated.body.runId === null) {
+    if (delegated.status !== 201) {
+      throw new Error("Expected the delegated Pi prompt to be accepted");
+    }
+    expect(delegated.body).toStrictEqual({
+      runId: null,
+      threadId: targetThread.id,
+      createdAt: expect.any(String),
+    });
+    // The background pick launches the delegated input on its thread.
+    const delegatedMessages = await waitForThreadMessages(
+      actor,
+      targetThread.id,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === delegatedEventId &&
+            message.runId !== undefined
+          );
+        });
+      },
+    );
+    const delegatedRunId = userMessages(delegatedMessages.events).find(
+      (message) => {
+        return message.revokesEventId === delegatedEventId;
+      },
+    )?.runId;
+    if (delegatedRunId === undefined) {
       throw new Error("Expected the delegated Pi prompt to launch a run");
     }
-    const delegatedRunId = delegated.body.runId;
     await waitForRunStatus(actor, delegatedRunId, "completed", 10_000);
     await flushWaitUntilForTest();
     await expectAgentChatProvenance({

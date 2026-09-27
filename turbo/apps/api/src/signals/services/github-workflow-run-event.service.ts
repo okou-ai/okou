@@ -17,7 +17,6 @@ import { logger } from "../../lib/log";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
@@ -353,9 +352,9 @@ const startGithubWorkflowRunAutomation$ = command(
       readonly timing: AutomationEventRunTiming;
     },
     signal: AbortSignal,
-  ): Promise<"ok" | "error"> => {
+  ): Promise<void> => {
     const context = githubWorkflowRunTriggerContext(args);
-    const result = await set(
+    await set(
       runWorkflowAutomationNow$,
       {
         due: {
@@ -366,13 +365,11 @@ const startGithubWorkflowRunAutomation$ = command(
         automationContext: context,
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
         timing: args.timing.collectorForRunStart(),
       },
       signal,
     );
     signal.throwIfAborted();
-    return result.kind === "ok" || result.kind === "enqueued" ? "ok" : "error";
   },
 );
 
@@ -477,7 +474,7 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
         continue;
       }
 
-      const result = await set(
+      await set(
         startGithubWorkflowRunAutomation$,
         {
           automation,
@@ -489,19 +486,7 @@ export const dispatchGithubWorkflowRunAutomations$ = command(
         signal,
       );
       signal.throwIfAborted();
-      if (result === "ok") {
-        dispatched += 1;
-        continue;
-      }
-      await db
-        .delete(workflowGithubProcessedEvents)
-        .where(eq(workflowGithubProcessedEvents.id, processedId));
-      signal.throwIfAborted();
-      log.warn("Failed to start GitHub workflow run automation", {
-        automationId: automation.automation.id,
-        deliveryId: args.deliveryId,
-        workflowRunId: args.payload.workflow_run.id,
-      });
+      dispatched += 1;
     }
 
     return { kind: "ok", dispatched, duplicates };

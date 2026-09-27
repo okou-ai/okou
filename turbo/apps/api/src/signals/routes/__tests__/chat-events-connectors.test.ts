@@ -33,6 +33,7 @@ import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
   createChatEventsFixture,
   type EntitledChatActor,
+  userMessages,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext({ connectorCatalog: true });
@@ -43,6 +44,7 @@ const {
   entitledChatActor: createEntitledChatActor,
   sendChatRun,
   claimChatRun,
+  waitForThreadMessages,
   completeChatRunOk,
   cancelChatRun,
   modelProviderConnectionsClient,
@@ -388,41 +390,7 @@ describe("CHAT-02: thread connector account selection", () => {
     await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
   });
 
-  it("keeps abort priority over a concurrent thread-selection failure", async () => {
-    const fixture = await selectedThreadConnectorFixture(
-      "Runtime context abort priority thread",
-    );
-    onTestFinished(() => {
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    const abortError = new Error("runtime context priority abort");
-    abortError.name = "AbortError";
-    const abortThreadError = new Error("thread selection below abort");
-    const abortController = new AbortController();
-    setThreadConnectorCatalogReadHook(() => {
-      abortController.abort(abortError);
-      return Promise.reject(abortThreadError);
-    });
-    context.mocks.sentry.captureException.mockClear();
-    await expect(
-      chat.requestSendEvent(
-        fixture.actor,
-        {
-          agentId: fixture.agentId,
-          threadId: fixture.threadId,
-          prompt: "Prefer abort over a thread-selection failure",
-          clientEventId: randomUUID(),
-        },
-        [201],
-        {},
-        abortController.signal,
-      ),
-    ).rejects.toThrow("Unknown response status 500");
-    expect(abortController.signal.reason).toBe(abortError);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-  });
-
-  it("keeps thread-selection failure priority over a concurrent provider failure", async () => {
+  it("keeps the input queued when thread selection and provider resolution fail at pick", async () => {
     const fixture = await selectedThreadConnectorFixture(
       "Runtime context thread priority thread",
     );
@@ -448,24 +416,35 @@ describe("CHAT-02: thread connector account selection", () => {
       }
       return Promise.reject(providerError);
     });
-    context.mocks.sentry.captureException.mockClear();
-    await expect(
-      chat.requestSendEvent(
-        fixture.actor,
-        {
-          agentId: fixture.agentId,
-          threadId: fixture.threadId,
-          prompt: "Prefer thread selection over provider failure",
-          clientEventId: randomUUID(),
-        },
-        [201],
-      ),
-    ).rejects.toThrow("Unknown response status 500");
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      fixture.actor,
+      {
+        agentId: fixture.agentId,
+        threadId: fixture.threadId,
+        prompt: "Prefer thread selection over provider failure",
+        clientEventId,
+      },
+      [201],
+    );
+    expect(sent.body).toMatchObject({
+      runId: null,
+      threadId: fixture.threadId,
+    });
+    // The send only enqueues; the background pick meets both failures and
+    // leaves the input queued instead of launching or rejecting it.
+    await flushWaitUntilForTest();
     expect(providerFailureStarted.settled()).toBeTruthy();
     expect(kms.decryptCalls).toBeGreaterThan(0);
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
-      threadError,
+    const messages = await chat.listThreadEvents(
+      fixture.actor,
+      fixture.threadId,
     );
+    const inputs = userMessages(messages.events);
+    expect(inputs).toStrictEqual([
+      expect.objectContaining({ id: clientEventId, eventType: "input.prompt" }),
+    ]);
+    expect(inputs[0]?.runId).toBeUndefined();
   });
 
   it.each(["revocation", "reauthorization"] as const)(
@@ -523,25 +502,11 @@ describe("CHAT-02: thread connector account selection", () => {
       }
 
       await api.enableAgentConnectors(actor, agentId, []);
-      const unauthorizedResponse = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId,
-          prompt: "Continue while OpenAI is unauthorized",
-        },
-        [201],
-      );
-      if (unauthorizedResponse.status !== 201) {
-        throw new Error("Expected the unauthorized-connector send to succeed");
-      }
-      if (!unauthorizedResponse.body.runId) {
-        throw new Error("Expected the unauthorized-connector run to start");
-      }
-      const unauthorized = {
-        runId: unauthorizedResponse.body.runId,
-        threadId: unauthorizedResponse.body.threadId,
-      };
+      const unauthorized = await sendChatRun(actor, {
+        agentId,
+        threadId,
+        prompt: "Continue while OpenAI is unauthorized",
+      });
       const unauthorizedClaim = await claimChatRun(
         runnerGroup,
         unauthorized.runId,
@@ -620,26 +585,32 @@ describe("CHAT-02: thread connector account selection", () => {
     await threadLock.done;
 
     const responses = await Promise.all(sends);
-    const responseBodies = responses.map((response) => {
-      if (response.status !== 201) {
-        throw new Error("Expected both concurrent sends to be accepted");
-      }
-      return response.body;
+    for (const response of responses) {
+      expect(response.body).toMatchObject({ runId: null, threadId: thread.id });
+    }
+    // The pick launches the thread head; the other send stays queued.
+    const replacesSend = (revokesEventId: string | undefined): boolean => {
+      return clientEventIds.some((clientEventId) => {
+        return clientEventId === revokesEventId;
+      });
+    };
+    const messages = await waitForThreadMessages(actor, thread.id, (items) => {
+      return userMessages(items).some((message) => {
+        return (
+          replacesSend(message.revokesEventId) && message.runId !== undefined
+        );
+      });
     });
-    const activeIndexes = responseBodies.flatMap((body, index) => {
-      return body.runId === null ? [] : [index];
+    const replacements = userMessages(messages.events).filter((message) => {
+      return replacesSend(message.revokesEventId);
     });
-    expect(activeIndexes).toHaveLength(1);
-    const activeIndex = activeIndexes[0];
-    if (activeIndex === undefined) {
+    expect(replacements).toHaveLength(1);
+    const activeRunId = replacements[0]?.runId;
+    if (!activeRunId) {
       throw new Error("Expected one concurrent send to start a run");
     }
-    const activeRunId = responseBodies[activeIndex]?.runId;
-    if (!activeRunId) {
-      throw new Error("Expected the active concurrent send to have a run id");
-    }
-    const queuedEventId = clientEventIds.find((_, index) => {
-      return index !== activeIndex;
+    const queuedEventId = clientEventIds.find((clientEventId) => {
+      return clientEventId !== replacements[0]?.revokesEventId;
     });
     if (!queuedEventId) {
       throw new Error("Expected one concurrent send to remain queued");

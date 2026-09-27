@@ -12,12 +12,10 @@ import {
 } from "@okouai/db/schema/workflow";
 import { verifyCallbackRequest } from "../../lib/event-consumer/verify-signature";
 import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";
-import { testOverride } from "../../lib/singleton";
 import { webUrl } from "../../lib/web-url";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { safeJsonParse, settle } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   decryptPersistentSecretValue,
@@ -202,26 +200,6 @@ interface AcceptedWebhookDelivery {
   readonly deliveryKey: string;
   readonly bodySha256: string;
 }
-
-interface WorkflowWebhookRunStartTestInput {
-  readonly automationId: string;
-  readonly workflowName: string;
-  readonly deliveryKey: string;
-  readonly bodySha256: string;
-  readonly contentType: string | null;
-}
-
-type WorkflowWebhookRunStarterTestOverride = (
-  args: WorkflowWebhookRunStartTestInput,
-) => Promise<
-  Extract<RunWorkflowAutomationResult, { readonly kind: "ok" }> | "error"
->;
-
-const workflowWebhookRunStarterOverride = testOverride<
-  WorkflowWebhookRunStarterTestOverride | undefined
->(() => {
-  return undefined;
-});
 
 function headerValue(
   headers: Readonly<Record<string, string>>,
@@ -497,42 +475,24 @@ async function insertWebhookDelivery(
   );
 }
 
-async function deleteWebhookDelivery(
-  db: Db,
-  deliveryId: string,
-): Promise<void> {
-  await db
-    .delete(workflowWebhookDeliveries)
-    .where(eq(workflowWebhookDeliveries.id, deliveryId));
-}
-
 async function recordWebhookDeliveryDispatched(
   db: Db,
   args: {
     readonly deliveryId: string;
     readonly automationId: string;
-    // Null when the event was accepted into the workflow queue; the run id is
-    // not known until the event is dequeued.
-    readonly runId: string | null;
     readonly currentTime: Date;
   },
 ): Promise<void> {
+  // The event is enqueued; its run id is not known until the pick launches it.
   await db
     .update(workflowWebhookDeliveries)
-    .set({ status: "dispatched", runId: args.runId })
+    .set({ status: "dispatched", runId: null })
     .where(eq(workflowWebhookDeliveries.id, args.deliveryId));
 
   await db
     .update(workflowWebhookAutomations)
     .set({ lastReceivedAt: args.currentTime, updatedAt: args.currentTime })
     .where(eq(workflowWebhookAutomations.automationId, args.automationId));
-}
-
-function workflowWebhookRunError(): DispatchWorkflowWebhookResult {
-  return {
-    kind: "run_error",
-    message: "Failed to start webhook workflow run",
-  };
 }
 
 function webhookSignatureValid(args: {
@@ -666,18 +626,7 @@ const startWorkflowWebhookRun$ = command(
       readonly timing: AutomationEventRunTiming;
     },
     signal: AbortSignal,
-  ): Promise<RunWorkflowAutomationResult | "error"> => {
-    const runStarterOverride = workflowWebhookRunStarterOverride.get();
-    if (runStarterOverride) {
-      return await runStarterOverride({
-        automationId: args.row.automation.id,
-        workflowName: args.row.workflowName,
-        deliveryKey: args.delivery.deliveryKey,
-        bodySha256: args.delivery.bodySha256,
-        contentType: headerValue(args.headers, "content-type"),
-      });
-    }
-
+  ): Promise<RunWorkflowAutomationResult> => {
     const runInput = await args.timing.measure(
       "api_dispatch_pre_create_agent_automation_event_build_run_input",
       () => {
@@ -706,7 +655,6 @@ const startWorkflowWebhookRun$ = command(
         automationContext: runInput.context,
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
         timing: args.timing.collectorForRunStart(),
       },
       signal,
@@ -778,7 +726,7 @@ export const dispatchWorkflowWebhook$ = command(
       return { kind: "ok", duplicate: true };
     }
 
-    const startResult = await set(
+    await set(
       startWorkflowWebhookRun$,
       {
         row: prepared.row,
@@ -793,26 +741,13 @@ export const dispatchWorkflowWebhook$ = command(
     );
     signal.throwIfAborted();
 
-    if (startResult === "error") {
-      await deleteWebhookDelivery(db, delivery.id);
-      signal.throwIfAborted();
-      return workflowWebhookRunError();
-    }
-    if (startResult.kind !== "ok" && startResult.kind !== "enqueued") {
-      await deleteWebhookDelivery(db, delivery.id);
-      signal.throwIfAborted();
-      return workflowWebhookRunError();
-    }
-
-    const runId = startResult.kind === "ok" ? startResult.runId : null;
     await recordWebhookDeliveryDispatched(db, {
       deliveryId: delivery.id,
       automationId: prepared.row.automation.id,
-      runId,
       currentTime: prepared.currentTime,
     });
     signal.throwIfAborted();
 
-    return { kind: "ok", duplicate: false, runId };
+    return { kind: "ok", duplicate: false, runId: null };
   },
 );

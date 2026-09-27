@@ -39,6 +39,7 @@ import {
   createPiApiFirstTurnUsagePricingResolution,
   claimEnvironment,
   expectExactPrivatePiMemoryAdmission,
+  userMessages,
 } from "./helpers/chat-events-fixture";
 import { piResponsesTextSse } from "./helpers/pi-responses";
 
@@ -57,6 +58,7 @@ const {
   claimChatRun,
   waitForRunStatus,
   cancelChatRun,
+  waitForThreadMessages,
   modelProviderConnectionsClient,
   sessionHeaders,
   upsertOrgModelProvider,
@@ -1098,20 +1100,42 @@ describe("shared native Pi route activation", () => {
           return nativeBedrockResponse();
         }),
       );
+      const clientEventId = randomUUID();
       const response = await chat.requestSendEvent(
         actor,
         {
           agentId,
           model,
           prompt: "reject the invalid native route",
-          clientEventId: randomUUID(),
+          clientEventId,
         },
-        [201, 400, 422, 503],
+        [201],
       );
+      if (response.status !== 201) {
+        throw new Error("Expected the send to be accepted");
+      }
+      expect(response.body.runId).toBeNull();
+      // The pick rejects the route in the thread instead of launching a run.
+      const messages = await waitForThreadMessages(
+        actor,
+        response.body.threadId,
+        (events) => {
+          return events.some((event) => {
+            return event.eventType === "output.error";
+          });
+        },
+      );
+      expect(
+        userMessages(messages.events).filter((event) => {
+          return event.revokesEventId === clientEventId;
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({
+          eventType: "input.rejected",
+          error: expect.any(String),
+        }),
+      ]);
       await flushWaitUntilForTest();
-      expect({ status: response.status, body: response.body }).toMatchObject({
-        status: 400,
-      });
       expect(calls).toBe(0);
     },
     90_000,

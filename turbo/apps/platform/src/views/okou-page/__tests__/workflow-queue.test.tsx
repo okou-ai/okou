@@ -28,6 +28,7 @@ const AGENT_ID = "c0000000-0000-4000-a000-000000000081";
 const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000081";
 const ACTIVE_PROMPT_THREAD_ID = "b0000000-0000-4000-a000-000000000091";
 const SKIP_EVENT_THREAD_ID = "b0000000-0000-4000-a000-000000000092";
+const FIFO_ORDER_THREAD_ID = "b0000000-0000-4000-a000-000000000093";
 
 function textDocument(text: string): UserMessageDocument {
   return { version: 1, parts: [{ type: "text", text }] };
@@ -282,6 +283,51 @@ test("Queued prompts and automation events wait together in the queue", async ()
   expect(screen.getAllByText("Prepare the follow-up summary")).toHaveLength(1);
   expect(screen.getAllByText("Check rollout health")).toHaveLength(1);
   expect(screen.getAllByText("Summarize new incidents")).toHaveLength(1);
+});
+
+test("Queued inputs are listed in submission order regardless of kind", async () => {
+  installWorkflowQueueFixture(context, FIFO_ORDER_THREAD_ID, [
+    activeRunRow(FIFO_ORDER_THREAD_ID),
+    eventRow(FIFO_ORDER_THREAD_ID, 2, {
+      eventType: "input.automation",
+      runId: null,
+      payload: {
+        userMessage: automationDocument("Release watcher", "Check rollout"),
+      },
+    }),
+    eventRow(FIFO_ORDER_THREAD_ID, 3, {
+      eventType: "input.prompt",
+      runId: null,
+      payload: { userMessage: textDocument("Draft the customer update") },
+    }),
+    eventRow(FIFO_ORDER_THREAD_ID, 4, {
+      eventType: "input.automation",
+      runId: null,
+      payload: {
+        userMessage: automationDocument("Incident watcher", "Triage alerts"),
+      },
+    }),
+  ]);
+
+  await setupPage({
+    context,
+    path: `/chats/${FIFO_ORDER_THREAD_ID}`,
+    auth: workflowAuth("fifo-order"),
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("1 message and 2 events waiting")).toBeVisible();
+  });
+  const rows = Array.from(
+    queueListForText("Check rollout").querySelectorAll('[role="listitem"]'),
+  );
+  expect(rows).toHaveLength(3);
+  expect(rows[0]).toHaveAccessibleName("Pending automation event");
+  expect(rows[0]).toHaveTextContent("Check rollout");
+  expect(rows[1]).toHaveAccessibleName("Queued message");
+  expect(rows[1]).toHaveTextContent("Draft the customer update");
+  expect(rows[2]).toHaveAccessibleName("Pending automation event");
+  expect(rows[2]).toHaveTextContent("Triage alerts");
 });
 
 test("Skip one pending automation event without removing the others", async () => {

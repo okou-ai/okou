@@ -1,4 +1,4 @@
-import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
+import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -44,6 +44,7 @@ import {
   fetchTeamsFile,
   fetchTeamsUsers,
   fetchTeamsPersonalChatMessages,
+  sendTeamsMessageReply,
   sendTeamsReaction,
   sendTeamsTypingActivity,
   type TeamsAdaptiveCard,
@@ -52,10 +53,12 @@ import {
   type TeamsGraphUserInfo,
 } from "../external/teams-bot-client";
 import { bestEffort, safeJsonParse } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
-import { markChatThreadQueued } from "./queued-chat-thread.service";
+import {
+  enqueueChatInput,
+  scheduleEnqueuedChatThreadPick$,
+} from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
   resolveIntegrationModelRouteForUser$,
   type IntegrationModelRoutePin,
@@ -84,7 +87,7 @@ import {
   disconnectTeamsConnection$,
   publishTeamsChanged$,
 } from "./teams-connect.service";
-import { insertChatEvent } from "./chat-event.service";
+import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 
@@ -203,10 +206,7 @@ type TeamsMessageDispatchResult =
       readonly connectUrl?: string;
       readonly card?: TeamsAdaptiveCard;
     }
-  | {
-      readonly kind: "accepted";
-      readonly runId?: string;
-    };
+  | { readonly kind: "accepted" };
 
 function isTeamsBotCommand(value: string): value is TeamsBotCommand {
   return (
@@ -1778,69 +1778,89 @@ const persistTeamsChatMessage$ = command(
       ),
     });
     const chatEventId = teamsChatMessageId(args.activity, args.connection.id);
-    // Queue row before the input event, so input is never left unqueued.
-    await markChatThreadQueued(args.db, {
+    const values = {
+      id: chatEventId,
+      chatThreadId: route.chatThreadId,
+      eventType: "input.prompt",
+      userMessage: createUserMessageDocument({
+        text: [
+          args.activity.text,
+          ...args.promptFiles
+            .filter((file) => {
+              return !readyIntegrationInputAsset(assets, file.fileId);
+            })
+            .map(formatTeamsFileForContext),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        files: integrationInputMessageFiles(assets),
+        nonContentPart: createChatEventSourcePart({
+          kind: "teams",
+          tenantId: launchContext.tenantId,
+          channelId: launchContext.channelId,
+          activityId: launchContext.activityId,
+          conversationId: launchContext.conversationId,
+          conversationType: launchContext.conversationType,
+          botId: args.installation.botId,
+        }),
+      }),
+      runId: null,
+      teamsContext: launchContext,
+      createdAt: currentTime,
+    } as const;
+    await insertChatEventContext(args.db, values);
+    signal.throwIfAborted();
+    const eventId = await enqueueChatInput(args.db, {
       chatThreadId: route.chatThreadId,
       orgId: args.installation.orgId,
+      appendInput: async (tx) => {
+        return (await insertChatEvent(tx, values, "id"))?.id ?? null;
+      },
     });
     signal.throwIfAborted();
-    const persist = async (tx: Db, touchThread: () => Promise<void>) => {
-      const event = await insertChatEvent(
-        tx,
-        {
-          id: chatEventId,
-          chatThreadId: route.chatThreadId,
-          eventType: "input.prompt",
-          userMessage: createUserMessageDocument({
-            text: [
-              args.activity.text,
-              ...args.promptFiles
-                .filter((file) => {
-                  return !readyIntegrationInputAsset(assets, file.fileId);
-                })
-                .map(formatTeamsFileForContext),
-            ]
-              .filter(Boolean)
-              .join("\n\n"),
-            files: integrationInputMessageFiles(assets),
-            nonContentPart: createChatEventSourcePart({
-              kind: "teams",
-              tenantId: launchContext.tenantId,
-              channelId: launchContext.channelId,
-              activityId: launchContext.activityId,
-              conversationId: launchContext.conversationId,
-              conversationType: launchContext.conversationType,
-              botId: args.installation.botId,
-            }),
-          }),
-          runId: null,
-          teamsContext: launchContext,
-          createdAt: currentTime,
-        },
-        "id",
-      );
-      signal.throwIfAborted();
-      if (!event) {
-        return false;
-      }
-      await touchThread();
-      return true;
-    };
-    const inserted = await withNativeChatEventThreadTouch(
-      args.db,
-      {
-        chatThreadId: route.chatThreadId,
-        createdAt: currentTime,
-        eventId: chatEventId,
-      },
-      persist,
-    );
+    if (eventId === null) {
+      return { inserted: false };
+    }
+    await touchNativeChatThread(args.db, {
+      chatThreadId: route.chatThreadId,
+      createdAt: currentTime,
+      eventId: chatEventId,
+    });
     signal.throwIfAborted();
-    return inserted
-      ? { inserted: true, chatThreadId: route.chatThreadId, chatEventId }
-      : { inserted: false };
+    return { inserted: true, chatThreadId: route.chatThreadId, chatEventId };
   },
 );
+
+/** Reply with the wait notice when the input waits for an org run slot. */
+async function replyTeamsChatQueueWait(
+  activity: TeamsMessageActivity,
+  reason: ChatQueueWaitReason,
+  signal: AbortSignal,
+): Promise<void> {
+  const notice = chatQueueWaitNotice(reason);
+  if (!notice) {
+    return;
+  }
+  const reply = await sendTeamsMessageReply(
+    {
+      serviceUrl: activity.serviceUrl,
+      conversationId: activity.conversationId,
+      activityId: activity.activityId ?? undefined,
+      tenantId: activity.tenantId,
+      text: notice,
+    },
+    signal,
+  );
+  if (reply.kind === "teams-error") {
+    L.warn("Teams wait notice failed", {
+      tenantId: activity.tenantId,
+      conversationId: activity.conversationId,
+      activityId: activity.activityId,
+      status: reply.status,
+      error: reply.error,
+    });
+  }
+}
 
 const runAgentForTeams$ = command(
   async (
@@ -1889,34 +1909,20 @@ const runAgentForTeams$ = command(
       orgId: args.installation.orgId,
     });
     signal.throwIfAborted();
-    const picked = await set(
-      pickEnqueuedChatThread$,
-      {
-        chatThreadId: persisted.chatThreadId,
-        orgId: args.installation.orgId,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+    set(scheduleEnqueuedChatThreadPick$, {
+      chatThreadId: persisted.chatThreadId,
+      afterPick: async (pick, pickSignal) => {
+        await replyTeamsChatQueueWait(args.activity, pick.reason, pickSignal);
       },
-      signal,
-    );
-    signal.throwIfAborted();
-    // A launch publishes this input together with its run. Publishing
-    // it before the pick would show it as queued until the launch lands.
-    if (picked.reason !== "launched") {
-      await publishChatThreadMessageCreatedSafely({
-        userId: args.connection.userId,
-        orgId: args.installation.orgId,
-        threadId: persisted.chatThreadId,
-      });
-      signal.throwIfAborted();
-    }
-    const notice = chatQueueWaitNotice(picked.reason);
-    if (notice) {
-      return { kind: "notice", replyText: notice };
-    }
-    return {
-      kind: "accepted",
-      ...(picked.runId ? { runId: picked.runId } : {}),
-    };
+      publish: async () => {
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.connection.userId,
+          orgId: args.installation.orgId,
+          threadId: persisted.chatThreadId,
+        });
+      },
+    });
+    return { kind: "accepted" };
   },
 );
 

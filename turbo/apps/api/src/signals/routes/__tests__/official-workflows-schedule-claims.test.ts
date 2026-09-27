@@ -15,6 +15,7 @@ import {
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { officialWorkflowInstallationsContract } from "@okouai/api-contracts/contracts/official-workflows";
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
+import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
@@ -55,6 +56,7 @@ import {
 } from "../cron-official-workflow-catalog";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { officialWorkflowRoutes } from "../official-workflows";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
@@ -669,7 +671,8 @@ describe("Morning Brief legacy schedule claim journal", () => {
 
   /**
    * Fire the cron at a chosen instant and keep the clock there, so the runner
-   * claim and completion that follow observe the same time as the tick.
+   * claim and completion that follow observe the same time as the tick. The
+   * tick only enqueues; its background pick finishes before this returns.
    */
   async function pollAt(automationId: string, at: number): Promise<void> {
     mockNow(at);
@@ -679,6 +682,20 @@ describe("Morning Brief legacy schedule claim journal", () => {
       }),
       [200],
     );
+    await flushWaitUntilForTest();
+  }
+
+  /** Run the real cron pick sweep scoped to one thread. */
+  async function sweepQueuedThread(threadId: string): Promise<void> {
+    await accept(
+      setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
+        testCronCleanupSandboxesStateContract,
+      ).cleanup({
+        body: { chatThreadIds: [threadId], runIds: [], exportJobIds: [] },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
   }
 
   async function briefThreadId(
@@ -924,6 +941,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     });
     gate.release();
     await tick;
+    await flushWaitUntilForTest();
 
     const threadId = await briefThreadId(brief.actor, brief.workflowId);
     const [runId] = await briefRunIds(threadId);
@@ -1231,10 +1249,11 @@ describe("Morning Brief legacy schedule claim journal", () => {
 
   it("rolls back the journal binding when a real Run persistence fails", async () => {
     const brief = await installJournaledBrief();
+    const firedAt = brief.anchor + 60_000;
     const fault = await withWorkflowAutomationRunPersistenceFailureFixture({
       automationId: brief.automationId,
       work: async () => {
-        await pollAt(brief.automationId, brief.anchor + 60_000);
+        await pollAt(brief.automationId, firedAt);
       },
     });
     expect(fault.attempts).toBe(1);
@@ -1246,17 +1265,26 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(claims[0]).toMatchObject({
       runId: null,
       queueDisposition: "queued",
-      settlement: "pre_run_failure",
+      settlement: "unsettled",
     });
     const threadId = await briefThreadId(brief.actor, brief.workflowId);
     // The scoped fault raises after the real atomic persistence statement, so
     // this empty public projection proves that the Run and its earlier journal
     // binding rolled back with the launch transaction.
     await expect(briefRunIds(threadId)).resolves.toHaveLength(0);
-    await expect(readBriefState(brief)).resolves.toMatchObject({
-      enabled: true,
-      nextRunAt: expect.any(String),
-    });
+
+    // A failed launch is not a rejection: the occurrence stays queued, and
+    // once the failed pick's lease lapses the cron sweep launches it and binds
+    // the occurrence to its Run.
+    mockNow(firedAt + 61_000);
+    await sweepQueuedThread(threadId);
+    const [runId] = await briefRunIds(threadId);
+    expect(runId).toStrictEqual(expect.any(String));
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toMatchObject([
+      { runId, queueDisposition: "claimed", settlement: "unsettled" },
+    ]);
   });
 
   it("settles an occurrence whose Run fails in the same launch that created it", async () => {

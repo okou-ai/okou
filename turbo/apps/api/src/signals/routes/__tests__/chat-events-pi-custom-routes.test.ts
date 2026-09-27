@@ -40,6 +40,7 @@ import {
   createPiApiFirstTurnUsagePricingResolution,
   claimEnvironment,
   userMessages,
+  assistantMessages,
   PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
   occurrences,
 } from "./helpers/chat-events-fixture";
@@ -1101,19 +1102,24 @@ describe("CHAT-02: model-first provider policies", () => {
           });
         }),
       );
-      const sent = chat.requestSendEvent(
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
         actor,
         {
           agentId,
-          clientEventId: randomUUID(),
+          clientEventId,
           model: selectedModel,
           prompt: "fail the unavailable custom route before any model call",
           ...(selectedModel === "deepseek-v4.1-flash"
             ? {}
             : { runOptions: { codexServiceTier: "fast" as const } }),
         },
-        [503],
+        [201],
       );
+      if (sent.status !== 201) {
+        throw new Error("Expected the custom route send to be accepted");
+      }
+      expect(sent.body.runId).toBeNull();
       await expect(gate.arrival).resolves.toMatchObject({ piExecution: true });
       const connection = setupApp({
         context,
@@ -1146,11 +1152,41 @@ describe("CHAT-02: model-first provider policies", () => {
         );
       }
       gate.release();
-      const rejected = await sent;
       await flushWaitUntilForTest();
-      expect(rejected.body).toMatchObject({
-        error: { code: "PROVIDER_UNAVAILABLE" },
-      });
+      const rejected = await waitForThreadMessages(
+        actor,
+        sent.body.threadId,
+        (items) => {
+          return (
+            userMessages(items).some((message) => {
+              return (
+                message.eventType === "input.rejected" &&
+                message.revokesEventId === clientEventId
+              );
+            }) &&
+            assistantMessages(items).some((message) => {
+              return message.eventType === "output.error";
+            })
+          );
+        },
+      );
+      expect(
+        userMessages(rejected.events).filter((message) => {
+          return message.revokesEventId === clientEventId;
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({
+          eventType: "input.rejected",
+          error: "provider_unavailable",
+        }),
+      ]);
+      expect(
+        assistantMessages(rejected.events).filter((message) => {
+          return message.eventType === "output.error";
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({ error: "provider_unavailable" }),
+      ]);
       expect(requests).toStrictEqual([]);
     },
     90_000,

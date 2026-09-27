@@ -703,8 +703,8 @@ function PendingItemsStrip({ signals }: { signals: ComposerSignals }) {
         cancellationRecoveryPending={cancellationRecoveryPending}
       />
       <div className="max-h-[200px] overflow-y-auto px-2 pb-7 pt-1" role="list">
-        {queued.map((item) => {
-          return (
+        {pendingEvents.map((item) => {
+          return item.kind === "message" ? (
             <ComposerStripRow
               key={item.id}
               kind="queued"
@@ -720,22 +720,19 @@ function PendingItemsStrip({ signals }: { signals: ComposerSignals }) {
               })}
               cancellationRecoveryPending={cancellationRecoveryPending}
             />
-          );
-        })}
-        {events.map((event) => {
-          return (
+          ) : (
             <ComposerStripRow
-              key={event.id}
+              key={item.id}
               kind="automation-event"
               text={
-                event.text ||
+                item.text ||
                 t(($) => {
                   return $.chat.queue.automationEvent;
                 })
               }
               onRemove={() => {
                 detach(
-                  removeAutomationEvent(event.id, pageSignal),
+                  removeAutomationEvent(item.id, pageSignal),
                   Reason.DomCallback,
                 );
               }}

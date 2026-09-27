@@ -987,16 +987,20 @@ function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
   };
 }
 
-/** Context is required event data, written before the append so a failure rejects the input. */
-async function persistPreparedChatEventContext(
+/**
+ * Write an input's context row. Entries own their context: each writes it
+ * before appending the event that points at it, with the event id it then
+ * appends, so a failure rejects the input. Appending never writes context.
+ */
+export async function insertChatEventContext(
   db: ChatEventWriteTransaction,
-  prepared: PreparedChatEvent,
+  values: AppendChatEvent & { readonly id: string },
 ): Promise<void> {
-  const context = prepared.displayContext;
+  const context = newDisplayContext(values.id, values);
   if (!context) {
     return;
   }
-  await insertDisplayContext(db, context, prepared.row.createdAt);
+  await insertDisplayContext(db, context, values.createdAt ?? nowDate());
 }
 
 /** Slow-path telemetry for the single append statement. */
@@ -1035,9 +1039,7 @@ export async function insertChatEvent(
   values: AppendChatEvent,
   conflict: InsertChatEventConflict = "none",
 ): Promise<ChatEventCommandResult | null> {
-  const prepared = prepareChatEvent(values);
-  await persistPreparedChatEventContext(db, prepared);
-  return await appendPreparedChatEvent(db, prepared, conflict);
+  return await appendPreparedChatEvent(db, prepareChatEvent(values), conflict);
 }
 
 /** Reserve N and insert atomically, preserving every existing idempotency index. */
@@ -1049,9 +1051,6 @@ export async function insertChatEvents(
     return [];
   }
   const prepared = values.map(prepareChatEvent);
-  for (const event of prepared) {
-    await persistPreparedChatEventContext(db, event);
-  }
   const startedAt = performance.now();
   const rows = await appendCanonicalChatEvents(
     db,
@@ -1139,7 +1138,9 @@ export async function replaceLoadedChatEvent(
     },
     displayContext,
   };
-  await persistPreparedChatEventContext(tx, prepared);
+  if (displayContext) {
+    await insertDisplayContext(tx, displayContext, createdAt);
+  }
   return await appendPreparedChatEvent(tx, prepared, "any");
 }
 

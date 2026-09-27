@@ -19,7 +19,6 @@ import {
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import {
   acquireBddBuiltInModelKey,
-  holdChatThreadRowLockFixture,
   releaseBddBuiltInModelKey,
 } from "../../../test-fixtures/chat-events";
 import {
@@ -43,6 +42,7 @@ import {
   createChatEventsFixture,
   configureNativeCliArtifact,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
+  type ChatRunSendBody,
   type PromptMessage,
   requireOrgId,
   expectPiApiUsage,
@@ -74,7 +74,6 @@ const {
   cancelChatRun,
   upsertOrgModelProvider,
   readThreadProjection,
-  requestSendEventRaw,
   mockPiCheckpointObjectStore,
   publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
@@ -123,6 +122,54 @@ async function preparePiResourceHandoff(
   await publishPendingPiInstructions(actor, agentId);
   mockPiResourceArchiveDownloads(true);
   mockPiCheckpointObjectStore();
+}
+
+/**
+ * Wait for the background pick to consume a sent input: its replacement is
+ * the launched `input.prompt` carrying the run, or its `input.rejected`.
+ */
+async function waitForPickedInput(
+  actor: ApiTestUser,
+  threadId: string,
+  clientEventId: string,
+) {
+  const messages = await waitForThreadMessages(actor, threadId, (items) => {
+    return userMessages(items).some((message) => {
+      return (
+        message.revokesEventId === clientEventId &&
+        (message.eventType === "input.rejected" || message.runId !== undefined)
+      );
+    });
+  });
+  const picked = userMessages(messages.events).find((message) => {
+    return message.revokesEventId === clientEventId;
+  });
+  if (!picked) {
+    throw new Error("Expected the picked input replacement");
+  }
+  return { picked, events: messages.events };
+}
+
+/** A send is accepted without a run; wait for its pick's outcome. */
+async function sendUntilPicked(
+  actor: ApiTestUser,
+  body: Omit<ChatRunSendBody, "template" | "clientEventId">,
+) {
+  const clientEventId = randomUUID();
+  const sent = await chat.requestSendEvent(
+    actor,
+    { ...body, clientEventId },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected the send to be accepted");
+  }
+  expect(sent.body.runId).toBeNull();
+  const threadId = sent.body.threadId;
+  return {
+    threadId,
+    ...(await waitForPickedInput(actor, threadId, clientEventId)),
+  };
 }
 
 describe("CHAT-02: model-first provider policies", () => {
@@ -306,114 +353,47 @@ describe("CHAT-02: model-first provider policies", () => {
         modelProviderId: null,
       },
     ]);
-    const insufficientBuiltIn = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "reject built-in admission without spendable credits",
-        model: "claude-sonnet-5",
-      },
-      [201],
-    );
-    if (insufficientBuiltIn.status !== 201) {
-      throw new Error("Expected insufficient-credit send to return 201");
-    }
-    expect(insufficientBuiltIn.body.runId).toBeNull();
+    const insufficientBuiltIn = await sendUntilPicked(actor, {
+      agentId,
+      prompt: "reject built-in admission without spendable credits",
+      model: "claude-sonnet-5",
+    });
+    expect(insufficientBuiltIn.picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "insufficient_credits",
+    });
 
     // Restore spendable credits before exercising the built-in branch.
     await seedOrgMetadata({ orgId, tier: "pro", credits: 1_000_000 });
 
     // A built-in provider pin in an entitled org passes the spendable-credits
-    // admission. The outcome past admission is race-dependent on the shared
-    // database: 503 when no built-in model key exists (no public provisioning
-    // surface), 201 when another suite's alive legacy test has seeded a
-    // global built-in model key. Both prove the credits-ok admission arm.
+    // admission. The pick's outcome past admission is race-dependent on the
+    // shared database: a model-provider-unavailable rejection when no
+    // built-in model key exists (no public provisioning surface), a run when
+    // another suite's alive legacy test has seeded a global built-in model
+    // key. Both prove the credits-ok admission arm.
     await setOrgModelPolicyProviderTypeFixture({
       orgId,
       model: "claude-sonnet-5",
       defaultProviderType: "built-in",
     });
-    const builtInPrompt = "built-in admission with spendable credits";
-    const builtInSend = await requestSendEventRaw(actor, {
+    const builtIn = await sendUntilPicked(actor, {
       agentId,
-      prompt: builtInPrompt,
-      userMessage: {
-        version: 1,
-        parts: [{ type: "text", text: builtInPrompt }],
-      },
+      prompt: "built-in admission with spendable credits",
       model: "claude-sonnet-5",
-      hasTextContent: true,
     });
-    expect([201, 503]).toContain(builtInSend.status);
-    type BuiltInAdmissionObservation =
-      | {
-          readonly outcome: "route-unavailable";
-          readonly response: {
-            readonly status: 503;
-            readonly errorMessage: string;
-          };
-          readonly cleanup: null;
-        }
-      | {
-          readonly outcome: "run-created";
-          readonly response: {
-            readonly status: 201;
-            readonly runId: string | null;
-          };
-          readonly cleanup: { readonly status: number } | null;
-        };
-    let builtInObservation: BuiltInAdmissionObservation;
-    let expectedBuiltInObservation: BuiltInAdmissionObservation;
-    if (builtInSend.status === 503) {
-      expectApiError(builtInSend.body);
-      builtInObservation = {
-        outcome: "route-unavailable",
-        response: {
-          status: 503,
-          errorMessage: builtInSend.body.error.message,
-        },
-        cleanup: null,
-      };
-      expectedBuiltInObservation = {
-        outcome: "route-unavailable",
-        response: {
-          status: 503,
-          errorMessage:
-            "Every built-in model route for this model is temporarily unavailable",
-        },
-        cleanup: null,
-      };
+    if (builtIn.picked.eventType === "input.rejected") {
+      expect(builtIn.picked.error).toBe("model_provider_unavailable");
     } else {
-      if (builtInSend.status !== 201) {
-        throw new Error("Expected a legal built-in admission outcome");
+      const runId = builtIn.picked.runId;
+      if (runId === undefined) {
+        throw new Error("Expected the picked built-in input to carry its run");
       }
-      if (
-        typeof builtInSend.body !== "object" ||
-        builtInSend.body === null ||
-        !("runId" in builtInSend.body) ||
-        (builtInSend.body.runId !== null &&
-          typeof builtInSend.body.runId !== "string")
-      ) {
-        throw new Error("Expected a built-in admission response body");
-      }
-      const runId = builtInSend.body.runId;
-      const cancellation =
-        runId === null ? null : await api.requestCancelRun(actor, runId, [200]);
-      builtInObservation = {
-        outcome: "run-created",
-        response: { status: 201, runId },
-        cleanup: cancellation === null ? null : { status: cancellation.status },
-      };
-      expectedBuiltInObservation = {
-        outcome: "run-created",
-        response: { status: 201, runId },
-        cleanup: runId === null ? null : { status: 200 },
-      };
+      await api.requestCancelRun(actor, runId, [200]);
     }
-    expect(builtInObservation).toStrictEqual(expectedBuiltInObservation);
   }, 90_000);
 
-  it("reuses request-scoped routing reads on an existing-thread send", async () => {
+  it("reads no routing state on an existing-thread send", async () => {
     const { actor, agentId, providerId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await api.updateOrgModelPolicies(actor, [
@@ -430,25 +410,46 @@ describe("CHAT-02: model-first provider policies", () => {
       agentId,
       model: "claude-fable-5-1",
     });
+    // Keep the thread busy so the follow-up's pick ends without routing.
+    const active = await sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "keep the thread busy",
+    });
 
+    const clientEventId = randomUUID();
     const captured = await withModelRoutingQueryReceipt(() => {
-      return sendChatRun(actor, {
-        agentId,
-        threadId: thread.id,
-        prompt: "reuse the routing receipt facts",
-      });
+      return chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: thread.id,
+          prompt: "enqueue without routing reads",
+          clientEventId,
+        },
+        [201],
+      );
     });
-    // The second plan read is final admission. The existing thread reuses
-    // its request-scoped policy and feature-switch reads; member routing
-    // loads personal metadata and accounts once to check for a preferred route.
-    expect(captured.receipt).toStrictEqual({
-      planReads: 2,
-      policyReads: 1,
-      featureSwitchReads: 1,
-      personalMetadataReads: 1,
-      personalAccountReads: 1,
+    expect(captured.result.status).toBe(201);
+    // The send only enqueues; model routing and plan admission belong to the
+    // pick that later launches the input.
+    expect(captured.receipt).toMatchObject({
+      planReads: 0,
+      policyReads: 0,
+      personalMetadataReads: 0,
+      personalAccountReads: 0,
     });
-    await cancelChatRun(actor, captured.result.runId);
+
+    await cancelChatRun(actor, active.runId);
+    const { picked } = await waitForPickedInput(
+      actor,
+      thread.id,
+      clientEventId,
+    );
+    if (picked.runId === undefined) {
+      throw new Error("Expected the follow-up to launch after the cancel");
+    }
+    await cancelChatRun(actor, picked.runId);
   }, 90_000);
 
   it("routes from the authoritative policies seeded by the same send", async () => {
@@ -519,47 +520,49 @@ describe("CHAT-02: model-first provider policies", () => {
       supportByok: true,
       restrictedBuiltInModels: false,
     });
-    const suspendedEventId = randomUUID();
-    const suspended = await chat.requestSendEvent(
+    const suspended = await sendUntilPicked(actor, {
+      agentId,
+      threadId: initial.threadId,
+      prompt: "reject suspended persisted admission",
+    });
+    expect(suspended.picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "insufficient_credits",
+    });
+
+    // A missing plan authority fails the pick itself: the input is neither
+    // launched nor rejected. It waits on its own thread so it cannot hold the
+    // FIFO head of the thread the next sends use.
+    const missingThread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+    });
+    await deleteOrgPlanEntitlementFixture(orgId);
+    const missingEventId = randomUUID();
+    const missing = await chat.requestSendEvent(
       actor,
       {
         agentId,
-        threadId: initial.threadId,
-        prompt: "reject suspended persisted admission",
-        clientEventId: suspendedEventId,
+        threadId: missingThread.id,
+        prompt: "reject missing persisted plan authority",
+        clientEventId: missingEventId,
       },
       [201],
     );
-    if (suspended.status !== 201) {
-      throw new Error("Expected suspended-plan send to return 201");
+    if (missing.status !== 201) {
+      throw new Error("Expected missing-plan send to return 201");
     }
-    expect(suspended.body.runId).toBeNull();
-    const suspendedMessages = await chat.listThreadEvents(
+    expect(missing.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    const missingMessages = await chat.listThreadEvents(
       actor,
-      initial.threadId,
+      missingThread.id,
     );
-    expect(userMessages(suspendedMessages.events)).toContainEqual(
-      expect.objectContaining({
-        eventType: "input.rejected",
-        revokesEventId: suspendedEventId,
-        error: "insufficient_credits",
+    expect(
+      userMessages(missingMessages.events).filter((message) => {
+        return message.revokesEventId === missingEventId;
       }),
-    );
-
-    await deleteOrgPlanEntitlementFixture(orgId);
-    const missing = await requestSendEventRaw(actor, {
-      agentId,
-      threadId: initial.threadId,
-      prompt: "reject missing persisted plan authority",
-      userMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "reject missing persisted plan authority" },
-        ],
-      },
-      hasTextContent: true,
-    });
-    expect(missing.status).toBe(500);
+    ).toStrictEqual([]);
 
     await upsertOrgPlanEntitlementFixture({
       orgId,
@@ -569,19 +572,13 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await seedBuiltInModelKey(LIMITED_FREE1_DEFAULT_RUN_MODEL);
     await preparePiResourceHandoff(actor, agentId);
-    const byokDisabled = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: initial.threadId,
-        prompt: "fall back from a BYOK-disabled persisted route",
-      },
-      [201],
-    );
-    if (byokDisabled.status !== 201) {
-      throw new Error("Expected BYOK-disabled send to return 201");
-    }
-    if (!byokDisabled.body.runId) {
+    const byokDisabled = await sendUntilPicked(actor, {
+      agentId,
+      threadId: initial.threadId,
+      prompt: "fall back from a BYOK-disabled persisted route",
+    });
+    const byokDisabledRunId = byokDisabled.picked.runId;
+    if (byokDisabledRunId === undefined) {
       throw new Error("Expected BYOK-disabled policy fallback to create a run");
     }
     const byokDisabledPolicies = await misc.listModelPolicies(actor);
@@ -595,7 +592,7 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const byokDisabledClaim = await claimChatRun(
       runnerGroup,
-      byokDisabled.body.runId,
+      byokDisabledRunId,
     );
     expect(byokDisabledClaim.claim.cliAgentType).toBe("pi");
     expect(byokDisabledClaim.claim.piModelConfig).toMatchObject({
@@ -603,7 +600,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await cancelChatRun(
       actor,
-      byokDisabled.body.runId,
+      byokDisabledRunId,
       byokDisabledClaim.sandboxHeaders,
     );
 
@@ -628,19 +625,13 @@ describe("CHAT-02: model-first provider policies", () => {
       supportByok: true,
       restrictedBuiltInModels: true,
     });
-    const restrictedByok = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: initial.threadId,
-        prompt: "keep BYOK when built-in models are restricted",
-      },
-      [201],
-    );
-    if (restrictedByok.status !== 201) {
-      throw new Error("Expected restricted-plan BYOK send to return 201");
-    }
-    if (!restrictedByok.body.runId) {
+    const restrictedByok = await sendUntilPicked(actor, {
+      agentId,
+      threadId: initial.threadId,
+      prompt: "keep BYOK when built-in models are restricted",
+    });
+    const restrictedByokRunId = restrictedByok.picked.runId;
+    if (restrictedByokRunId === undefined) {
       throw new Error("Expected restricted-plan BYOK policy to create a run");
     }
     const restrictedPolicies = await misc.listModelPolicies(actor);
@@ -652,75 +643,7 @@ describe("CHAT-02: model-first provider policies", () => {
         modelProviderId: providerId,
       }),
     );
-    await cancelChatRun(actor, restrictedByok.body.runId);
-  }, 90_000);
-
-  it("reloads external plan capabilities at final admission", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const orgId = requireOrgId(actor);
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-
-    const initial = await sendChatRun(actor, {
-      agentId,
-      prompt: "establish final plan admission freshness",
-      model: "claude-fable-5-1",
-    });
-    const initialClaim = await claimChatRun(runnerGroup, initial.runId);
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(initial.runId, initialClaim.sandboxHeaders);
-    await flushWaitUntilForTest();
-
-    const threadLock = await holdChatThreadRowLockFixture({
-      threadId: initial.threadId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      threadLock.release();
-      await threadLock.done;
-    });
-    const prompt = "reject plan changed after persisted preflight";
-    const followUp = chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: initial.threadId,
-        prompt,
-      },
-      [402],
-    );
-    await expect.poll(threadLock.blockedWaiterCount).toBe(1);
-
-    await upsertOrgPlanEntitlementFixture({
-      orgId,
-      status: "suspended",
-      supportByok: true,
-      restrictedBuiltInModels: false,
-    });
-    threadLock.release();
-    const rejected = await followUp;
-    await threadLock.done;
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
-
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(
-      runs.runs.filter((run) => {
-        return run.prompt === prompt;
-      }),
-    ).toHaveLength(0);
+    await cancelChatRun(actor, restrictedByokRunId);
   }, 90_000);
 
   it.each(["deleted", "wrong-provider-key"] as const)(
@@ -766,24 +689,35 @@ describe("CHAT-02: model-first provider policies", () => {
           },
         ),
       );
-      const sent = chat.requestSendEvent(
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
         actor,
         {
           agentId,
           model: "deepseek-v4.1-flash",
-          clientEventId: randomUUID(),
+          clientEventId,
           prompt: "Reject unavailable selected credentials",
         },
-        boundary === "deleted" ? [503] : [400],
+        [201],
       );
+      if (sent.status !== 201) {
+        throw new Error("Expected the V4.1 send to be accepted");
+      }
       await expect(gate.arrival).resolves.toMatchObject({ piExecution: true });
       if (boundary === "deleted") {
         await misc.deleteOrgModelProvider(actor, "openrouter-codex", [204]);
       }
       gate.release();
-      const response = await sent;
+      const { picked } = await waitForPickedInput(
+        actor,
+        sent.body.threadId,
+        clientEventId,
+      );
       await flushWaitUntilForTest();
-      expect(response.status).toBe(boundary === "deleted" ? 503 : 400);
+      expect(picked).toMatchObject({
+        eventType: "input.rejected",
+        error: boundary === "deleted" ? "provider_unavailable" : "bad_request",
+      });
       expect(calls).toBe(0);
     },
     90_000,
@@ -816,21 +750,33 @@ describe("CHAT-02: model-first provider policies", () => {
           },
         ),
       );
-      const response = await chat.requestSendEvent(
-        actor,
-        {
+      if (boundary === "effort") {
+        // An unsupported effort is still refused by the send itself.
+        const response = await chat.requestSendEvent(
+          actor,
+          {
+            agentId,
+            model: "deepseek-v4.1-flash",
+            prompt: "Reject incompatible admission",
+            clientEventId: randomUUID(),
+            runOptions: { reasoningEffort: "high" },
+          },
+          [400],
+        );
+        expect(response.status).toBe(400);
+      } else {
+        // The CLI artifact is checked when the pick creates the run.
+        const { picked } = await sendUntilPicked(actor, {
           agentId,
           model: "deepseek-v4.1-flash",
           prompt: "Reject incompatible admission",
-          clientEventId: randomUUID(),
-          ...(boundary === "effort"
-            ? { runOptions: { reasoningEffort: "high" as const } }
-            : {}),
-        },
-        [400],
-      );
+        });
+        expect(picked).toMatchObject({
+          eventType: "input.rejected",
+          error: "bad_request",
+        });
+      }
       await flushWaitUntilForTest();
-      expect(response.status).toBe(400);
       expect(calls).toBe(0);
     },
     90_000,
@@ -1152,28 +1098,12 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     ]);
 
-    const threadLock = await holdChatThreadRowLockFixture({
+    // The pick resolves the removed thread model through the current route.
+    const recovered = await sendChatRun(actor, {
+      agentId,
       threadId: first.threadId,
-      signal: context.signal,
+      prompt: "continue through the current workspace default",
     });
-    onTestFinished(async () => {
-      threadLock.release();
-      await threadLock.done;
-    });
-    const [recovered] = await Promise.all([
-      sendChatRun(actor, {
-        agentId,
-        threadId: first.threadId,
-        prompt: "continue through the current workspace default",
-      }),
-      (async () => {
-        await expect
-          .poll(threadLock.firstBlockedStatementKind)
-          .toBe("select_for_update");
-        threadLock.release();
-        await threadLock.done;
-      })(),
-    ]);
     const recoveredClaim = await claimChatRun(runnerGroup, recovered.runId);
     expect(recoveredClaim.claim.cliAgentType).toBe("codex");
     expect(recoveredClaim.claim.resumeSession).toBeNull();
@@ -1356,6 +1286,7 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     ]);
 
+    const racedEventId = randomUUID();
     const [sent, updated] = await Promise.all([
       chat.requestSendEvent(
         actor,
@@ -1363,6 +1294,7 @@ describe("CHAT-02: model-first provider policies", () => {
           agentId,
           threadId: thread.id,
           prompt: "send while choosing a new sticky model",
+          clientEventId: racedEventId,
         },
         [201],
       ),
@@ -1374,15 +1306,22 @@ describe("CHAT-02: model-first provider policies", () => {
       ),
     ]);
     expect(updated.status).toBe(204);
-    if (sent.status !== 201 || sent.body.runId === null) {
+    expect(sent.status).toBe(201);
+    const { picked: racedInput } = await waitForPickedInput(
+      actor,
+      thread.id,
+      racedEventId,
+    );
+    const racedRunId = racedInput.runId;
+    if (racedRunId === undefined) {
       throw new Error("Expected the concurrent send to create a run");
     }
-    const racedClaim = await claimChatRun(runnerGroup, sent.body.runId);
+    const racedClaim = await claimChatRun(runnerGroup, racedRunId);
     const racedEnvironment = claimEnvironment(racedClaim.claim);
     expect(["gpt-6-astra", "claude-fable-5-1"]).toContain(
       racedEnvironment.OPENAI_MODEL ?? racedEnvironment.ANTHROPIC_MODEL,
     );
-    await cancelChatRun(actor, sent.body.runId, racedClaim.sandboxHeaders);
+    await cancelChatRun(actor, racedRunId, racedClaim.sandboxHeaders);
 
     const followUp = await sendChatRun(actor, {
       agentId,
@@ -1911,8 +1850,7 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.OpenRouterUsRouting]: false,
       });
 
-      const prompt = "require the managed OpenRouter DeepSeek route";
-      const response =
+      const { picked } =
         await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
           {
             selectedModel: model,
@@ -1920,23 +1858,17 @@ describe("CHAT-02: model-first provider policies", () => {
             upstreamModel: `deepseek/${model}`,
           },
           async () => {
-            return await requestSendEventRaw(actor, {
+            return await sendUntilPicked(actor, {
               agentId,
-              prompt,
-              userMessage: {
-                version: 1,
-                parts: [{ type: "text", text: prompt }],
-              },
+              prompt: "require the managed OpenRouter DeepSeek route",
               model,
-              hasTextContent: true,
             });
           },
         );
-      expect(response.status).toBe(503);
-      expectApiError(response.body);
-      expect(response.body.error.message).toBe(
-        "Every built-in model route for this model is temporarily unavailable",
-      );
+      expect(picked).toMatchObject({
+        eventType: "input.rejected",
+        error: "model_provider_unavailable",
+      });
     },
   );
 
@@ -2341,21 +2273,16 @@ describe("CHAT-02: model-first provider policies", () => {
       secret: "   ",
     });
 
-    // A blank legacy credential is no longer claimable: the external send
-    // boundary fails closed before a Sandbox can receive its secret bundle.
-    const prompt = "run with a legacy blank openrouter provider";
-    const rejected = await requestSendEventRaw(actor, {
+    // A blank legacy credential is no longer claimable: the pick rejects the
+    // input before a Sandbox can receive its secret bundle.
+    const { picked } = await sendUntilPicked(actor, {
       agentId,
-      prompt,
-      userMessage: {
-        version: 1,
-        parts: [{ type: "text", text: prompt }],
-      },
+      prompt: "run with a legacy blank openrouter provider",
       model: "claude-opus-5",
-      hasTextContent: true,
     });
-    expect(rejected.status).toBe(503);
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+    expect(picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "provider_unavailable",
+    });
   }, 60_000);
 });

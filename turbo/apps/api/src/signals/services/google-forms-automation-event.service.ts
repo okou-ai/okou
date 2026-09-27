@@ -27,7 +27,6 @@ import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { safeJsonParse, safeUrlParse, settle, tapError } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
@@ -1799,7 +1798,6 @@ const startGoogleFormsWorkflowRun$ = command(
               signal,
             );
           },
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
           timing: args.timing.collectorForRunStart(),
         },
         signal,
@@ -1812,9 +1810,7 @@ const startGoogleFormsWorkflowRun$ = command(
       }
       throw started.error;
     }
-    return started.value.kind === "ok" || started.value.kind === "enqueued"
-      ? "ok"
-      : "error";
+    return "ok";
   },
 );
 
