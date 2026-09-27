@@ -2,17 +2,23 @@
 
 ## Diagnostic Host Attribution
 
-`runner.yaml` may contain an optional `hostname` used only to identify the
-physical runner in claims, sandbox telemetry, Runner Axiom warning/error
-events. Production automation writes the exact Ansible `inventory_hostname`;
-it does not derive the value from DNS or the operating system at runtime.
+`runner.yaml` may contain an optional `hostname` used to identify the physical
+runner in claims, sandbox telemetry, and Runner Axiom warning/error events.
+Production automation writes the exact Ansible `inventory_hostname`; it does
+not derive the value from DNS or the operating system at runtime. For the
+separately gated, not-yet-active [direct WSS target resolver](./runner-wss-target-resolution.md),
+an eligible official Run's claimed hostname also supplies the browser-facing
+DNS authority after syntax validation. It is not a credential or proof that
+DNS, TLS, Caddy, or the listener is reachable.
 
 The value must be non-empty and no longer than 255 JavaScript string units
 (UTF-16 code units). `runner config --hostname <value>` validates and preserves
 the raw value. Existing configuration files without `hostname` continue to
 load and omit the canonical hostname fields.
 
-Hostname does not select a service, directory, release, or rollback target.
+Hostname does not select a Runner process, local service, directory, release,
+or rollback target. The WSS resolver's browser-facing origin is a distinct,
+default-off use of the claimed hostname.
 Systemd service suffixes are opaque local instance names. Production currently
 passes its explicit `runner_release` value as the service name and Runner
 directory name, but version logic uses `runner_release` directly and does not
