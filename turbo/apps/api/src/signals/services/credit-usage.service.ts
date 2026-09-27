@@ -41,8 +41,8 @@ async function deductOrgCredits(
   tx: WriteTx,
   orgId: string,
   amount: number,
-): Promise<void> {
-  await writeOrgMetadataWithDefaultPlanEntitlement(
+): Promise<number | undefined> {
+  const [debit] = await writeOrgMetadataWithDefaultPlanEntitlement(
     tx,
     orgId,
     async (writeTx) => {
@@ -61,9 +61,14 @@ async function deductOrgCredits(
             updatedAt: sql`now()`,
           },
         })
-        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+        .returning({
+          orgId: orgMetadata.orgId,
+          tier: orgMetadata.tier,
+          credits: orgMetadata.credits,
+        });
     },
   );
+  return debit?.credits;
 }
 
 async function getOrgCredits(tx: WriteTx, orgId: string): Promise<number> {
@@ -627,8 +632,13 @@ export async function processOrgUsageEventsInLockedTransaction(
     const expired = await expireCredits(tx, orgId, settlementTime);
     work.expiredRows = expired.rows;
     const effectiveBeforeCredits = Math.max(beforeCredits - expired.credits, 0);
-    await deductOrgCredits(tx, orgId, sharedCreditsCharged);
-    const afterCredits = await getOrgCredits(tx, orgId);
+    const debitedCredits = await deductOrgCredits(
+      tx,
+      orgId,
+      sharedCreditsCharged,
+    );
+    // Preserve the old post-write read if the UPSERT unexpectedly returns no row.
+    const afterCredits = debitedCredits ?? (await getOrgCredits(tx, orgId));
     work.expiryRows = await deductFromExpiresRecords(
       tx,
       orgId,

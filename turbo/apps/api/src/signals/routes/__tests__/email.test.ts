@@ -335,6 +335,8 @@ describe("low-credit email delivery", () => {
       template: {
         template: "credit-low-balance",
         props: {
+          remainingCredits: 4999,
+          thresholdCredits: 5000,
           billingUrl:
             "https://app.okou.ai/?settings=billing&billingView=credits",
           unsubscribeUrl: expect.stringContaining(
