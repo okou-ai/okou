@@ -329,30 +329,44 @@ export function OnboardingTeamPage() {
               return $.onboarding.sourcesFirst.team.label;
             })}
           </label>
-          <div className="mt-2 flex gap-2 max-sm:flex-col">
-            <Input
-              id="onboarding-invite-email"
-              className="max-sm:h-12 max-sm:text-base max-sm:placeholder:text-base"
-              type="email"
-              autoComplete="off"
-              value={ui.inviteEmail}
-              placeholder={t(($) => {
-                return $.onboarding.sourcesFirst.team.placeholder;
-              })}
-              aria-invalid={malformed}
-              aria-describedby={
-                malformed ? "onboarding-invite-email-error" : undefined
-              }
-              onChange={(event) => {
-                updateUi({
-                  inviteEmail: event.target.value,
-                  inviteEmailLeft: false,
-                });
-              }}
-              onBlur={() => {
-                updateUi({ inviteEmailLeft: true });
-              }}
-            />
+          {/* The hint belongs to the address, so it sits under the field
+              even where the send action stacks below it. */}
+          <div className="mt-2 flex items-start gap-2 max-sm:flex-col max-sm:items-stretch">
+            <div className="min-w-0 flex-1">
+              <Input
+                id="onboarding-invite-email"
+                className="max-sm:h-12 max-sm:text-base max-sm:placeholder:text-base"
+                type="email"
+                autoComplete="off"
+                value={ui.inviteEmail}
+                placeholder={t(($) => {
+                  return $.onboarding.sourcesFirst.team.placeholder;
+                })}
+                aria-invalid={malformed}
+                aria-describedby={
+                  malformed ? "onboarding-invite-email-error" : undefined
+                }
+                onChange={(event) => {
+                  updateUi({
+                    inviteEmail: event.target.value,
+                    inviteEmailLeft: false,
+                  });
+                }}
+                onBlur={() => {
+                  updateUi({ inviteEmailLeft: true });
+                }}
+              />
+              {malformed ? (
+                <p
+                  id="onboarding-invite-email-error"
+                  className="mt-1.5 text-xs leading-5 text-destructive"
+                >
+                  {t(($) => {
+                    return $.onboarding.sourcesFirst.team.invalidEmail;
+                  })}
+                </p>
+              ) : null}
+            </div>
             <Button
               type="button"
               onClick={invite}
@@ -364,16 +378,6 @@ export function OnboardingTeamPage() {
               })}
             </Button>
           </div>
-          {malformed ? (
-            <p
-              id="onboarding-invite-email-error"
-              className="mt-1.5 text-xs leading-5 text-destructive"
-            >
-              {t(($) => {
-                return $.onboarding.sourcesFirst.team.invalidEmail;
-              })}
-            </p>
-          ) : null}
         </div>
         {flow.draft.invites.length > 0 ? (
           <InviteList invites={flow.draft.invites} />

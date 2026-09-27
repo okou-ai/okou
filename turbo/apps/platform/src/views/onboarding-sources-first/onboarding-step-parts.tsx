@@ -112,7 +112,12 @@ export function OnboardingPosterCard({
         selected && "border-primary",
       )}
     >
-      <Radio value={value} className="sr-only" />
+      {/* Hidden by a wrapper: the radio's own position and size utilities
+          outrank `sr-only` on the control itself, which left a 16px box in
+          the row. */}
+      <span className="sr-only">
+        <Radio value={value} />
+      </span>
       {selected ? (
         <span
           className="absolute right-4 top-4 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground max-sm:static max-sm:order-last max-sm:shrink-0"
