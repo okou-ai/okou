@@ -1,6 +1,9 @@
-// A bounded, process-local cache for confirmed misses. Callers own
-// authorization and supply the time at lookup/record boundaries.
-export function createBoundedNegativeCache(capacity: number, ttlMs: number) {
+// This is a process-local, display-only cache. The caller checks authorization
+// before consulting it; only an authoritative missing owner is recorded.
+export const WORKFLOW_OWNER_PROFILE_CACHE_LIMIT = 512;
+const NEGATIVE_TTL_MS = 60 * 1000;
+
+export function createWorkflowOwnerProfileNegativeCache() {
   const missing = new Map<string, number>();
 
   return {
@@ -13,13 +16,13 @@ export function createBoundedNegativeCache(capacity: number, ttlMs: number) {
       return missing.has(key);
     },
     record(key: string, at: number): void {
-      if (missing.size >= capacity) {
+      if (missing.size >= WORKFLOW_OWNER_PROFILE_CACHE_LIMIT) {
         const oldest = missing.keys().next().value;
         if (oldest !== undefined) {
           missing.delete(oldest);
         }
       }
-      missing.set(key, at + ttlMs);
+      missing.set(key, at + NEGATIVE_TTL_MS);
     },
   };
 }

@@ -2,7 +2,10 @@ import type { WorkflowOwnerProfile } from "@okouai/api-contracts/contracts/workf
 import { userCache } from "@okouai/db/schema/user-cache";
 import { eq } from "drizzle-orm";
 
-import { createBoundedNegativeCache } from "../../lib/bounded-negative-cache";
+import {
+  createWorkflowOwnerProfileNegativeCache,
+  WORKFLOW_OWNER_PROFILE_CACHE_LIMIT,
+} from "../../lib/workflow-owner-profile-negative-cache";
 import { singleton } from "../../lib/singleton";
 import { now, nowDate } from "../../lib/time";
 import { isClerkResourceNotFound, type ClerkClient } from "../external/clerk";
@@ -10,8 +13,6 @@ import type { Db } from "../external/db";
 import { awaitWithSignal, settle } from "../utils";
 
 const POSITIVE_TTL_MS = 15 * 60 * 1000;
-const NEGATIVE_TTL_MS = 60 * 1000;
-const MAX_OWNERS = 512;
 
 interface Refresh {
   readonly controller: AbortController;
@@ -25,7 +26,7 @@ interface Refresh {
 // or when their final request consumer aborts. Cold instances start empty.
 const ownerProfiles = singleton(() => {
   return {
-    missing: createBoundedNegativeCache(MAX_OWNERS, NEGATIVE_TTL_MS),
+    missing: createWorkflowOwnerProfileNegativeCache(),
     refreshing: new Map<string, Refresh>(),
   };
 });
@@ -110,7 +111,7 @@ export async function loadWorkflowOwnerProfile(
   if (!refresh) {
     // Bound retained refreshes as well as negative results. Reject excess work
     // transiently; never evict another caller's active refresh or cache an error.
-    if (cache.refreshing.size >= MAX_OWNERS) {
+    if (cache.refreshing.size >= WORKFLOW_OWNER_PROFILE_CACHE_LIMIT) {
       return undefined;
     }
     const controller = new AbortController();
