@@ -186,9 +186,7 @@ export function VncEndpointFields({
         </p>
       )}
       <p id="vnc-destination-help" className="text-sm text-muted-foreground">
-        {apple
-          ? t(($) => $.vnc.transport.sshHelp)
-          : t(($) => $.vnc.transport.destinationHelp)}
+        {t(($) => $.vnc.transport.destinationHelp)}
       </p>
     </div>
   );
