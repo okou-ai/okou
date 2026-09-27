@@ -688,6 +688,46 @@ describe("workflow queue", () => {
     }
   });
 
+  it("records an automation's queue admission without waiting for a run", async () => {
+    const scenario = await setup();
+    const automation = await createWebhookAutomation(scenario);
+    const runningRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(automation, "running"),
+      automation.threadId,
+    );
+    context.mocks.axiom.sdkIngest.mockClear();
+
+    // The thread is busy, so this event only enqueues; its admission timing
+    // is still recorded, and without a run.
+    expectAccepted(await postWorkflowWebhook(automation, "queued"));
+    const admissions = context.mocks.axiom.sdkIngest.mock.calls.flatMap(
+      ([dataset, events]) => {
+        if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
+          return [];
+        }
+        return events.filter((event: unknown) => {
+          return (
+            typeof event === "object" &&
+            event !== null &&
+            "op_type" in event &&
+            event.op_type ===
+              "api_dispatch_pre_create_agent_workflow_automation_queue_admission"
+          );
+        });
+      },
+    );
+    expect(admissions).toStrictEqual([
+      expect.objectContaining({
+        operation_domain: "api",
+        admission_outcome: "inserted",
+      }),
+    ]);
+    expect(admissions[0]).not.toHaveProperty("run_id");
+    await expect(workflowRunIds(automation.threadId)).resolves.toStrictEqual([
+      runningRunId,
+    ]);
+  });
+
   it("starts a promoted webhook run's API clock at dequeue time", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);

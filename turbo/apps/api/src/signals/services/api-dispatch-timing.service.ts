@@ -6,7 +6,10 @@ import { env } from "../../lib/env";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
-import { recordSandboxOperations } from "../external/sandbox-op-log";
+import {
+  recordApiOperationTimings,
+  recordSandboxOperations,
+} from "../external/sandbox-op-log";
 import { safeSync } from "../utils";
 
 type ApiDispatchTimingSpanKind = "top_level" | "nested";
@@ -420,6 +423,31 @@ export class ApiDispatchTimingCollector {
       throw result.error;
     }
     return result.ok;
+  }
+
+  /**
+   * Emit the records of work that ends before any run exists, such as an
+   * enqueue whose pick runs in the background.
+   */
+  flushWithoutRun(dimensions?: ApiDispatchTimingDimensions): void {
+    const records = this.records.splice(0);
+    const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
+    recordApiOperationTimings(
+      records.map((record) => {
+        return {
+          actionType: record.actionType,
+          durationMs: record.durationMs,
+          success: true,
+          timestamp: record.timestamp,
+          dimensions: {
+            ...dimensions,
+            ...record.dimensions,
+            span_kind: record.spanKind,
+            ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
+          },
+        };
+      }),
+    );
   }
 
   flush(args: {

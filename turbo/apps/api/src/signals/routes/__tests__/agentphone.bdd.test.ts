@@ -18,6 +18,7 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   findAgentphoneChatEventByPromptFixture,
+  findPendingChatEventByPromptFixture,
   readChatEventContextFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -1996,6 +1997,65 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await runs.heartbeatRunner(runnerGroup);
     const idle = await runs.pollRunner(runnerGroup);
     expect(idle.body.job).toBeNull();
+  });
+
+  it("tells a group when the org is at its concurrent run limit and starts it once a slot frees up", async () => {
+    // One active run fills the org, independent of the plan's own limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const runs = createRunsApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const orgFullNotice =
+      "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.";
+
+    // With capacity, the direct message starts a run without a wait notice.
+    const beforeActive = sends.messages.length;
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "occupy the only org run slot",
+    });
+    const activeRun = await claimDispatchedRun(runnerGroup);
+    expect(sends.messages.slice(beforeActive)).toHaveLength(0);
+
+    // The group mention is a separate thread, so only the org limit holds it.
+    const conversationId = uniqueConversationId();
+    const waitingPrompt = "Okou wait for an org run slot";
+    const waitingMessageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: waitingPrompt,
+      conversationId,
+      isGroup: true,
+    });
+    await flushWaitUntilForTest();
+
+    expect(sends.messages.slice(beforeActive)).toStrictEqual([
+      expect.objectContaining({
+        toNumber: bddGroupId(conversationId),
+        replyToMessageId: waitingMessageId,
+        body: orgFullNotice,
+      }),
+    ]);
+    await expect(
+      findPendingChatEventByPromptFixture({
+        userId: actor.userId,
+        prompt: waitingPrompt,
+      }),
+    ).resolves.not.toBeNull();
+    await runs.heartbeatRunner(runnerGroup);
+    expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+
+    // Completing the active run frees the slot and launches the waiting input.
+    await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
+    const waitingRun = await claimDispatchedRun(runnerGroup);
+    expect(waitingRun.prompt).toBe(waitingPrompt);
+    await completeSandboxRun(waitingRun.sandboxToken, waitingRun.runId, 0);
+    expect(
+      sends.messages.filter((send) => {
+        return send.body === orgFullNotice;
+      }),
+    ).toHaveLength(1);
   });
 
   it("skips completion delivery for runs whose phone link was disconnected mid-flight", async () => {

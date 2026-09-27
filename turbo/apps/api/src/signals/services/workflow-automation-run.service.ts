@@ -174,6 +174,11 @@ export const runWorkflowAutomationNow$ = command(
       },
     );
     signal.throwIfAborted();
+    // The entry's timing ends at the enqueue commit; the background pick and
+    // the launch are measured by the pick itself.
+    timing.flushWithoutRun(
+      args.triggerSource ? { trigger_source: args.triggerSource } : undefined,
+    );
 
     // A superseded occurrence adds no queue item; the claim plan's owner
     // records why.
