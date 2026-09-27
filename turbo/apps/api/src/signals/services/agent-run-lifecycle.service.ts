@@ -10,9 +10,10 @@ import {
   type DispatchCompleteSideEffectsInput,
 } from "./agent-webhook-complete.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
+import { loadChatQueueHead } from "./chat-event-queue.service";
 import {
+  drainChatThreadQueueForThread$,
   pickOrgQueuedChatThreads$,
-  pickQueuedChatThread$,
   queueThreadIdForRun,
 } from "./chat-thread-queue-drain.service";
 import { piApiFirstTurnObjectKey } from "./pi-api-first-turn-config";
@@ -45,8 +46,10 @@ export const drainOrgQueueToCapacity$ = command(
  * slot goes to the run's own thread first, then to the organization's oldest
  * waiting thread. Every transaction that deletes an active row calls this
  * after commit and after the run's terminal callbacks, whatever ended the run,
- * so no end path owns a wakeup of its own. Both picks check thread and
- * organization capacity, and the launch's final admission stays authoritative.
+ * so no end path owns a wakeup of its own. The own thread's head is read from
+ * `chat_events` and enters the normal thread scheduler, so input without a
+ * queued-thread row still starts; every launch goes through the pick's thread
+ * and capacity checks, and the launch's final admission stays authoritative.
  */
 export const handOffReleasedSlot$ = command(
   async (
@@ -54,18 +57,21 @@ export const handOffReleasedSlot$ = command(
     args: { readonly runId: string; readonly orgId: string },
     signal: AbortSignal,
   ): Promise<void> => {
-    const chatThreadId = await queueThreadIdForRun(set(writeDb$), args.runId);
+    const db = set(writeDb$);
+    const chatThreadId = await queueThreadIdForRun(db, args.runId);
     signal.throwIfAborted();
-    if (chatThreadId) {
-      const own = await set(
-        pickQueuedChatThread$,
-        { chatThreadId, dispatchFailedCallbacks: dispatchFailedRunCallbacks },
+    if (chatThreadId && (await loadChatQueueHead(db, chatThreadId))) {
+      signal.throwIfAborted();
+      await set(
+        drainChatThreadQueueForThread$,
+        {
+          chatThreadId,
+          orgId: args.orgId,
+          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+        },
         signal,
       );
       signal.throwIfAborted();
-      if (own.outcome.kind === "launched") {
-        return;
-      }
     }
     await set(
       pickOrgQueuedChatThreads$,
