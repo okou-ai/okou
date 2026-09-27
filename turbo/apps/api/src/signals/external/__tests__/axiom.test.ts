@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
+import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
@@ -9,10 +10,21 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { getApiTestMocks } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import {
+  deleteUsagePricingRows,
+  seedUsagePricingRows,
+} from "../../../test-fixtures/system-config-seeds";
 import { server } from "../../../mocks/server";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
+import {
+  deleteUsageData$,
+  deleteUsageStateFixture$,
+  insertUsageEvent$,
+  seedUsageStateFixture$,
+} from "../../routes/__tests__/helpers/usage-state";
+import { testUsageSettlementRoutes } from "../../routes/test-usage-settlement";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -79,7 +91,17 @@ describe("shared SDK ingestion", () => {
         actionType: "api_billing_settlement_work",
         durationMs: 39,
         success: true,
-        dimensions: { timing_scope: "standalone", pending_events: 3 },
+        dimensions: {
+          timing_scope: "standalone",
+          pending_events: 3,
+          pending_read_ms: 4.2,
+          pricing_read_ms: 1.1,
+          pricing_calculation_ms: 0.08,
+          allowance_ms: 7.4,
+          event_write_ms: 5.3,
+          grant_deduction_ms: 10.5,
+          org_credit_ms: 0,
+        },
       },
       {
         actionType: "api_billing_settlement_org_lock_wait",
@@ -99,6 +121,13 @@ describe("shared SDK ingestion", () => {
           success: true,
           timing_scope: "standalone",
           pending_events: 3,
+          pending_read_ms: 4.2,
+          pricing_read_ms: 1.1,
+          pricing_calculation_ms: 0.08,
+          allowance_ms: 7.4,
+          event_write_ms: 5.3,
+          grant_deduction_ms: 10.5,
+          org_credit_ms: 0,
         },
         {
           _time: expect.any(String),
@@ -110,6 +139,146 @@ describe("shared SDK ingestion", () => {
         },
       ],
     );
+  });
+
+  it("emits settlement phases only for committed nonempty work", async () => {
+    // Telemetry-client suite exception: observe the committed route and SDK
+    // boundary together; do not inspect financial tables or service internals.
+    mockEnv("ENV", "development");
+    const store = createStore();
+    const fixture = await store.set(
+      seedUsageStateFixture$,
+      undefined,
+      context.signal,
+    );
+    const api = setupApp({ context, routes: testUsageSettlementRoutes })(
+      testUsageSettlementContract,
+    );
+    let setupComplete = false;
+    onTestFinished(async () => {
+      if (setupComplete) {
+        // Build a fresh request context after the test-owned signal resets.
+        const cleanupApi = setupApp({
+          context,
+          routes: testUsageSettlementRoutes,
+        })(testUsageSettlementContract);
+        await accept(
+          cleanupApi.cleanup({ body: { org_id: fixture.orgId } }),
+          [200],
+        );
+      }
+      await store.set(
+        deleteUsageData$,
+        { scope: "organization", id: fixture.orgId },
+        context.signal,
+      );
+      await store.set(deleteUsageStateFixture$, fixture, context.signal);
+    });
+    await accept(
+      api.setup({ body: { org_id: fixture.orgId, credits: 100 } }),
+      [200],
+    );
+    setupComplete = true;
+    const provider = `timing-${randomUUID()}`;
+    await seedUsagePricingRows([
+      {
+        kind: "model",
+        provider,
+        category: "tokens.input",
+        unitPrice: 1,
+        unitSize: 1,
+      },
+    ]);
+    onTestFinished(async () => {
+      await deleteUsagePricingRows({
+        kind: "model",
+        provider,
+        categories: ["tokens.input"],
+      });
+    });
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...fixture,
+        kind: "model",
+        provider,
+        category: "tokens.input",
+        quantity: 3,
+        idempotencyKey: randomUUID(),
+      },
+      context.signal,
+    );
+
+    const settlementTimings = () => {
+      return context.mocks.axiom.sdkIngest.mock.calls.flatMap(([, events]) => {
+        if (!Array.isArray(events)) {
+          return [];
+        }
+        return events.flatMap((event: unknown) => {
+          if (
+            typeof event !== "object" ||
+            event === null ||
+            !("op_type" in event)
+          ) {
+            return [];
+          }
+          return event.op_type === "api_billing_settlement_work" ? [event] : [];
+        });
+      });
+    };
+    await accept(api.rollback({ body: { org_id: fixture.orgId } }), [200]);
+    expect(settlementTimings()).toStrictEqual([]);
+
+    await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
+    expect(settlementTimings()).toStrictEqual([
+      expect.objectContaining({
+        timing_scope: "standalone",
+        pending_events: 1,
+        pending_read_ms: expect.any(Number),
+        pricing_read_ms: expect.any(Number),
+        pricing_calculation_ms: expect.any(Number),
+        allowance_ms: expect.any(Number),
+        event_write_ms: expect.any(Number),
+        grant_deduction_ms: expect.any(Number),
+        org_credit_ms: expect.any(Number),
+      }),
+    ]);
+    expect(settlementTimings()[0]).not.toHaveProperty("org_id");
+    expect(settlementTimings()[0]).not.toHaveProperty("user_id");
+    expect(settlementTimings()[0]).not.toHaveProperty("run_id");
+
+    await accept(
+      api.createGrant({
+        body: {
+          org_id: fixture.orgId,
+          user_id: fixture.userId,
+          grant_type: "purchased",
+          idempotency_key: randomUUID(),
+          amount: 10,
+          expires_at: "2099-01-01T00:00:00.000Z",
+        },
+      }),
+      [200],
+    );
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...fixture,
+        kind: "model",
+        provider,
+        category: "tokens.input",
+        quantity: 2,
+        idempotencyKey: randomUUID(),
+      },
+      context.signal,
+    );
+    await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
+    expect(settlementTimings()).toHaveLength(2);
+    expect(settlementTimings()[1]).toStrictEqual(
+      expect.objectContaining({ org_credit_ms: 0, grant_rows: 1 }),
+    );
+    await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
+    expect(settlementTimings()).toHaveLength(2);
   });
 
   it("does not throw when billing timing ingestion fails synchronously", () => {

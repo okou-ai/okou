@@ -217,6 +217,13 @@ interface SettlementWorkObservation {
   readonly lockWaitMs: number;
   readonly orgLockWaitMs: number;
   readonly settlementWorkMs: number;
+  readonly pendingReadMs: number;
+  readonly pricingReadMs: number;
+  readonly pricingCalculationMs: number;
+  readonly allowanceMs: number;
+  readonly eventWriteMs: number;
+  readonly grantDeductionMs: number;
+  readonly orgCreditMs: number;
   // Standalone settlement only; inline managed callers own a larger transaction.
   readonly transactionDurationMs?: number;
   readonly pendingEvents: number;
@@ -391,6 +398,11 @@ async function markUsageEventsProcessed(
     .where(eq(usageEvent.id, sql`settlement.usage_event_id`));
 }
 
+// These are awaited application wall times, not exclusive database durations.
+function elapsedSettlementPhaseMs(startedAt: number): number {
+  return Math.round((performance.now() - startedAt) * 1000) / 1000;
+}
+
 function completedSettlementWork(
   work: SettlementWorkObservation,
   startedAt: number,
@@ -442,6 +454,13 @@ async function acquireSettlementLocksWithObservation(
       lockWaitMs: Math.round(compactionLockAcquiredAt - startedAt),
       orgLockWaitMs: Math.round(orgLockAcquiredAt - compactionLockAcquiredAt),
       settlementWorkMs: 0,
+      pendingReadMs: 0,
+      pricingReadMs: 0,
+      pricingCalculationMs: 0,
+      allowanceMs: 0,
+      eventWriteMs: 0,
+      grantDeductionMs: 0,
+      orgCreditMs: 0,
       pendingEvents: 0,
       pricingRows: 0,
       affectedUsers: 0,
@@ -452,17 +471,8 @@ async function acquireSettlementLocksWithObservation(
   };
 }
 
-export async function processOrgUsageEventsInTransaction(
-  tx: WriteTx,
-  orgId: string,
-  pricingResolution: UsagePricingResolution,
-  signal: AbortSignal,
-): Promise<ProcessOrgUsageEventsResult> {
-  const { startedAt, work } = await acquireSettlementLocksWithObservation(
-    tx,
-    orgId,
-  );
-
+async function readPendingUsageEventsWithTiming(tx: WriteTx, orgId: string) {
+  const startedAt = performance.now();
   const pendingRecords = await tx
     .select({
       id: usageEvent.id,
@@ -481,6 +491,23 @@ export async function processOrgUsageEventsInTransaction(
     })
     .from(usageEvent)
     .where(and(eq(usageEvent.orgId, orgId), eq(usageEvent.status, "pending")));
+  return { pendingRecords, pendingReadMs: elapsedSettlementPhaseMs(startedAt) };
+}
+
+export async function processOrgUsageEventsInTransaction(
+  tx: WriteTx,
+  orgId: string,
+  pricingResolution: UsagePricingResolution,
+  signal: AbortSignal,
+): Promise<ProcessOrgUsageEventsResult> {
+  const { startedAt, work } = await acquireSettlementLocksWithObservation(
+    tx,
+    orgId,
+  );
+
+  const { pendingRecords, pendingReadMs } =
+    await readPendingUsageEventsWithTiming(tx, orgId);
+  work.pendingReadMs = pendingReadMs;
 
   work.pendingEvents = pendingRecords.length;
   if (pendingRecords.length === 0) {
@@ -499,15 +526,22 @@ export async function processOrgUsageEventsInTransaction(
     ),
   ];
 
+  const pricingReadStartedAt = performance.now();
   const pricingRecords = await tx.select().from(usagePricing);
+  work.pricingReadMs = elapsedSettlementPhaseMs(pricingReadStartedAt);
   work.pricingRows = pricingRecords.length;
+  const pricingCalculationStartedAt = performance.now();
   const pricedEvents = priceUsageEvents(
     pendingRecords,
     pricingRecords,
     orgId,
     pricingResolution,
   );
+  work.pricingCalculationMs = elapsedSettlementPhaseMs(
+    pricingCalculationStartedAt,
+  );
 
+  const allowanceStartedAt = performance.now();
   const allowanceByUsageEvent =
     await applyUsageAllowanceToUsageEventsInLockedTransaction(tx, {
       orgId,
@@ -521,6 +555,7 @@ export async function processOrgUsageEventsInTransaction(
         };
       }),
     });
+  work.allowanceMs = elapsedSettlementPhaseMs(allowanceStartedAt);
   const billableCreditsByUser = new Map<string, number>();
   const settlementOutcomes = pricedEvents.map((event) => {
     const allowanceUnits = allowanceByUsageEvent.get(event.record.id) ?? 0;
@@ -535,23 +570,28 @@ export async function processOrgUsageEventsInTransaction(
       billingError: event.billingError,
     };
   });
+  const eventWriteStartedAt = performance.now();
   await markUsageEventsProcessed(tx, settlementOutcomes);
+  work.eventWriteMs = elapsedSettlementPhaseMs(eventWriteStartedAt);
   signal.throwIfAborted();
 
   const settlementTime = nowDate();
   work.affectedUsers = billableCreditsByUser.size;
+  const grantDeductionStartedAt = performance.now();
   const grantDeduction = await settleMemberGrants(
     tx,
     orgId,
     billableCreditsByUser,
     settlementTime,
   );
+  work.grantDeductionMs = elapsedSettlementPhaseMs(grantDeductionStartedAt);
   const sharedCreditsCharged = grantDeduction.sharedCredits;
   work.grantRows = grantDeduction.grantRows;
   signal.throwIfAborted();
 
   let lowBalanceAlert: CreditLowBalanceAlertArgs | null = null;
   if (sharedCreditsCharged > 0) {
+    const orgCreditStartedAt = performance.now();
     // Order matters: settle expired credits BEFORE the new deduction.
     const beforeCredits = await getOrgCredits(tx, orgId);
     const expired = await expireCredits(tx, orgId, settlementTime);
@@ -575,6 +615,7 @@ export async function processOrgUsageEventsInTransaction(
         thresholdCredits: LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS,
       };
     }
+    work.orgCreditMs = elapsedSettlementPhaseMs(orgCreditStartedAt);
   }
   signal.throwIfAborted();
   return {
@@ -615,6 +656,13 @@ export const completeProcessedOrgUsage$ = command(
               timing_scope: timingScope,
               pending_events: work.pendingEvents,
               pricing_rows: work.pricingRows,
+              pending_read_ms: work.pendingReadMs,
+              pricing_read_ms: work.pricingReadMs,
+              pricing_calculation_ms: work.pricingCalculationMs,
+              allowance_ms: work.allowanceMs,
+              event_write_ms: work.eventWriteMs,
+              grant_deduction_ms: work.grantDeductionMs,
+              org_credit_ms: work.orgCreditMs,
               affected_users: work.affectedUsers,
               grant_rows: work.grantRows,
               expired_rows: work.expiredRows,
