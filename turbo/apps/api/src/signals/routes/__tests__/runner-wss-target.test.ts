@@ -209,14 +209,14 @@ describe("internal WSS target via guarded test API route", () => {
     }
   });
 
-  it("rejects a malformed hostname in an otherwise eligible official claim", async () => {
+  it("rejects a browser-normalized IP hostname in an otherwise eligible official claim", async () => {
     provision();
     const f = await setup();
     const run = await createRun(f);
     const runnerId = randomUUID();
     await claimRun(f, run.runId, {
       runnerId,
-      hostname: "runner-a.example.com/other",
+      hostname: "127.1",
       version: "0.214.9",
     });
     await heartbeat(f, runnerId, "running", 1);

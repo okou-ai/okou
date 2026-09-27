@@ -31,7 +31,14 @@ export function wssOriginFromRunnerHostname(hostname: string): string | null {
   if (!publicRunnerHostnameSchema.safeParse(hostname).success) {
     return null;
   }
-  return `wss://${hostname}:443`;
+  const origin = `wss://${hostname}:443`;
+  // Browsers canonicalize abbreviated, hex and octal IPv4 hosts (for
+  // example, 127.1 becomes 127.0.0.1). Never return a different authority
+  // than the validated hostname supplied by the official Runner.
+  if (!URL.canParse(origin) || new URL(origin).hostname !== hostname) {
+    return null;
+  }
+  return origin;
 }
 
 function releaseParts(value: string): readonly [number, number, number] | null {
