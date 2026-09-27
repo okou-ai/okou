@@ -322,7 +322,7 @@ fn canonical_origin(hostname: &str) -> Option<String> {
     }
     let origin = format!("wss://{hostname}:443");
     let url = url::Url::parse(&origin).ok()?;
-    (url.host_str() == Some(hostname)).then_some(origin)
+    matches!(url.host(), Some(url::Host::Domain(domain)) if domain == hostname).then_some(origin)
 }
 
 async fn handle(
