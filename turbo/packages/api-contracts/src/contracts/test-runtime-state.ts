@@ -65,14 +65,24 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     action: z.literal("read-run-failure-reason"),
     run_id: z.uuid(),
   }),
-  // Test-only read boundary for the internal WSS resolver, before #37025
-  // exposes an authenticated bootstrap route to clients.
+  // Test-only read boundary for the internal WSS target resolver. The public
+  // bootstrap route never exposes a candidate without issuing a ticket.
   z.object({
     action: z.literal("resolve-runner-wss-target"),
     run_id: z.uuid(),
     user_id: z.string(),
     org_id: z.string(),
     now: z.iso.datetime().optional(),
+  }),
+  // Test-only boundary: verify digest-only persistence and DB-clock expiry
+  // without giving API tests direct access to database internals.
+  z.object({
+    action: z.literal("read-runner-wss-ticket-digests"),
+    run_id: z.uuid(),
+  }),
+  z.object({
+    action: z.literal("expire-runner-wss-tickets"),
+    run_id: z.uuid(),
   }),
   z.object({
     action: z.literal("set-run-model-provider"),
@@ -259,6 +269,7 @@ export const testRuntimeStateActionResponseSchema = z.object({
   built_in_model_route: builtInModelRuntimeRouteSchema.nullable().optional(),
   autonomy_budget: z.int().min(0).max(10).nullable().optional(),
   failure_reason: runFailureReasonTokenSchema.nullable().optional(),
+  wss_ticket_digests: z.array(z.string()).optional(),
   wss_target: z
     .object({
       runId: z.uuid(),

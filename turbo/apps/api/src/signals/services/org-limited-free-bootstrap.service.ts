@@ -3,22 +3,24 @@ import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { LIMITED_FREE1_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
+import {
+  getInstructionsStorageName,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { storages } from "@okouai/db/schema/storage";
 import { and, eq, sql } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import { nowDate } from "../../lib/time";
-import {
-  ensureAgentInstructionsStorage$,
-  writeAgentInstructionsStorageInTransaction$,
-} from "./agent-instructions-storage.service";
-import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
+import { writeAgentInstructionsStorageInTransaction$ } from "./agent-instructions-storage.service";
+import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import {
   grantOnboardingCredits,
   LIMITED_FREE_ONBOARDING_CREDITS,
@@ -62,6 +64,38 @@ type BootstrapReservation =
 interface EnsureOrgLimitedFreeBootstrapResult {
   readonly bootstrapped: boolean;
   readonly agentId: string | null;
+}
+
+interface BootstrapInstructionsStorage {
+  readonly id: string;
+  readonly s3Prefix: string;
+}
+
+async function ensureBootstrapInstructionsStorage(
+  tx: DbTransaction,
+  orgId: string,
+): Promise<BootstrapInstructionsStorage> {
+  const { storageId, s3Prefix } = newStorageS3Location(orgId);
+  const [storage] = await tx
+    .insert(storages)
+    .values({
+      id: storageId,
+      orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: getInstructionsStorageName(DEFAULT_AGENT_NAME),
+      s3Prefix,
+    })
+    .onConflictDoUpdate({
+      target: [storages.orgId, storages.userId, storages.name],
+      // Own the real parent before deciding whether seed publication is still
+      // needed. Preserve the canonical identity, HEAD and timestamps on reuse.
+      set: { name: sql`${storages.name}` },
+    })
+    .returning({ id: storages.id, s3Prefix: storages.s3Prefix });
+  if (!storage) {
+    throw new Error("Expected bootstrap instructions Storage after upsert");
+  }
+  return storage;
 }
 
 async function lockOrgBootstrap(
@@ -279,24 +313,49 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
     );
     signal.throwIfAborted();
 
-    await set(
-      ensureAgentInstructionsStorage$,
-      { orgId: args.orgId, agentName: DEFAULT_AGENT_NAME },
-      signal,
-    );
-    signal.throwIfAborted();
-
+    // Retain the actual generation outside the transaction: a newly inserted
+    // parent can roll back after uploading bytes, leaving no row to find later.
+    let instructionsStorage: BootstrapInstructionsStorage | undefined;
     const cleanupUnclaimedInstructions = async (): Promise<void> => {
-      const s3Prefix = await writeDb.transaction(async (tx) => {
-        await lockOrgBootstrap(tx, args.orgId);
-        if (await existingDefaultAgentId(tx, args.orgId)) {
-          return null;
-        }
-        return await removeAgentInstructionsStorageInTransaction(tx, {
-          orgId: args.orgId,
-          agentName: DEFAULT_AGENT_NAME,
-        });
-      });
+      const attemptedStorage = instructionsStorage;
+      if (!attemptedStorage) {
+        return;
+      }
+      const s3Prefix = await writeDb.transaction(
+        async (tx) => {
+          await lockOrgBootstrap(tx, args.orgId);
+          const identity = and(
+            eq(storages.id, attemptedStorage.id),
+            eq(storages.orgId, args.orgId),
+            eq(storages.userId, VOLUME_ORG_USER_ID),
+            eq(storages.name, getInstructionsStorageName(DEFAULT_AGENT_NAME)),
+          );
+          const [storage] = await tx
+            .select({ s3Prefix: storages.s3Prefix })
+            .from(storages)
+            .where(identity)
+            .for("update");
+          if (!storage) {
+            // This generation was rolled back or already deleted. A replacement
+            // has its own UUID/prefix and must never be adopted by compensation.
+            return attemptedStorage.s3Prefix;
+          }
+          if (await existingDefaultAgentId(tx, args.orgId)) {
+            return null;
+          }
+          const [deleted] = await tx
+            .delete(storages)
+            .where(identity)
+            .returning({ s3Prefix: storages.s3Prefix });
+          if (!deleted) {
+            throw new Error(
+              "Locked bootstrap instructions Storage disappeared",
+            );
+          }
+          return deleted.s3Prefix;
+        },
+        { isolationLevel: "read committed" },
+      );
 
       if (!s3Prefix) {
         return;
@@ -313,34 +372,41 @@ export const ensureOrgLimitedFreeBootstrap$ = command(
       );
     };
 
-    const bootstrap = writeDb.transaction(async (tx) => {
-      // Keep the fixed-name storage write and canonical publication under the
-      // same org lock. A failed attempt's compensation then runs either before
-      // the next writer starts or after that writer has published its Agent.
-      await lockOrgBootstrap(tx, args.orgId);
-      const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
-      if (existingAgentId) {
-        return { bootstrapped: false, agentId: existingAgentId };
-      }
-
-      await set(
-        writeAgentInstructionsStorageInTransaction$,
-        {
+    const bootstrap = writeDb.transaction(
+      async (tx) => {
+        // Keep the advisory key until every serving/rollback writer owns the
+        // Storage parent before its fresh default-Agent decision.
+        await lockOrgBootstrap(tx, args.orgId);
+        instructionsStorage = await ensureBootstrapInstructionsStorage(
           tx,
-          orgId: args.orgId,
-          agentName: DEFAULT_AGENT_NAME,
-          instructions: SEED_INSTRUCTIONS,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
+          args.orgId,
+        );
+        signal.throwIfAborted();
+        const existingAgentId = await existingDefaultAgentId(tx, args.orgId);
+        if (existingAgentId) {
+          return { bootstrapped: false, agentId: existingAgentId };
+        }
 
-      return await finalizeBootstrap(tx, {
-        orgId: args.orgId,
-        ownerUserId: args.ownerUserId,
-        agentId: reservation.agentId,
-      });
-    });
+        await set(
+          writeAgentInstructionsStorageInTransaction$,
+          {
+            tx,
+            orgId: args.orgId,
+            agentName: DEFAULT_AGENT_NAME,
+            instructions: SEED_INSTRUCTIONS,
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+
+        return await finalizeBootstrap(tx, {
+          orgId: args.orgId,
+          ownerUserId: args.ownerUserId,
+          agentId: reservation.agentId,
+        });
+      },
+      { isolationLevel: "read committed" },
+    );
     const result = await onRejection(bootstrap, cleanupUnclaimedInstructions);
     signal.throwIfAborted();
 

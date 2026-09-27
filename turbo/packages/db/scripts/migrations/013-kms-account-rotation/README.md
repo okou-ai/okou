@@ -205,7 +205,7 @@ verification before retirement.
   inspect `__api_runner_job_payload__` → `executionContext.encryptedSecrets`.
   Rewrap the inner envelope too, then encrypt the changed outer payload using a
   **fresh data key and IV**. A target outer key does not prove the inner key moved.
-  Migration `1271_drop_agent_run_queue` drops this table; the recovery manifest
+  Migration `1272_drop_agent_run_queue` drops this table; the recovery manifest
   treats it as optional so snapshots on either side of the drop verify.
 
 All KMS calls use encryption context `purpose=vm0-stored-secret`. Key ARNs are

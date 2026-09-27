@@ -545,17 +545,6 @@ export const prepareVolumeServerSideWithDb$ = command(
   },
 );
 
-export const ensureVolumeStorage$ = command(
-  async (
-    { set },
-    args: Pick<PrepareVolumeServerSideInput, "orgId" | "storageName">,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const writeDb = set(writeDb$);
-    await resolveCanonicalVolumeStorage(writeDb, args, signal);
-  },
-);
-
 export const prepareVolumeServerSide$ = command(
   async (
     { set },

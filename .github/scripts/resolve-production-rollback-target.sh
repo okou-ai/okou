@@ -28,7 +28,7 @@ readonly ADVISORY_LOCK_PREPARATION_COMMIT=ee863a302a6c547f94e50ec4069f70910d68be
 # #36945 made every non-empty chat thread snapshot response R2-only. API targets
 # before it may still return inline data to an old header-less client.
 readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40da0ad4
-# #37063 removed the last reader of agent_run_queue, which migration 1271
+# #37063 removed the last reader of agent_run_queue, which migration 1272
 # drops. Earlier APIs still read it while promoting queued runs.
 readonly QUEUED_RUN_PROMOTION_REMOVAL_COMMIT=84ac71914345b8360f3df43cc2cd47f0a8af7a23
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql

@@ -40,6 +40,7 @@ import {
 import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
+import { isUniqueViolation } from "../../lib/pg-errors";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
 import {
@@ -712,7 +713,14 @@ async function stopActiveBrowserInstance(
         suspensionReason: reason,
         updatedAt: nowDate(),
       })
-      .where(eq(browserSessions.chatThreadId, target.chatThreadId));
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, target.chatThreadId),
+          eq(browserSessions.orgId, target.orgId),
+          eq(browserSessions.userId, target.userId),
+          eq(browserSessions.status, "active"),
+        ),
+      );
     if (options.emitCloseEvent === false) {
       return { eventSeqId: null };
     }
@@ -1584,6 +1592,8 @@ async function persistStartedProviderInstance(
   return { instance, screen };
 }
 
+class BrowserPublicationLostError extends Error {}
+
 async function claimStartedProviderInstance(
   db: Db,
   args: {
@@ -1593,70 +1603,92 @@ async function claimStartedProviderInstance(
     readonly screenHeight: number;
   },
 ) {
-  const claimed = await db.transaction(async (tx) => {
-    await lockBrowserThread(tx, args.context.chatThreadId);
-    const [current] = await tx
-      .select(BROWSER_SESSION_SELECTION)
-      .from(browserSessions)
-      .where(eq(browserSessions.chatThreadId, args.browser.chatThreadId))
-      .limit(1);
-    if (!current || current.runId !== args.context.runId) {
-      return { kind: "rejected" as const };
-    }
-    const cleanupAfterStart = current.status === "stopping";
+  const result = await settle(
+    db.transaction(async (tx) => {
+      await lockBrowserThread(tx, args.context.chatThreadId);
+      const [current] = await tx
+        .select(BROWSER_SESSION_SELECTION)
+        .from(browserSessions)
+        .where(
+          and(
+            eq(browserSessions.id, args.browser.id),
+            eq(browserSessions.chatThreadId, args.context.chatThreadId),
+            eq(browserSessions.orgId, args.context.orgId),
+            eq(browserSessions.userId, args.context.userId),
+          ),
+        )
+        .limit(1);
+      if (!current || current.runId !== args.context.runId) {
+        return { kind: "rejected" as const };
+      }
+      const cleanupAfterStart = current.status === "stopping";
+      if (
+        !cleanupAfterStart &&
+        (!["creating", "resuming"].includes(current.status) ||
+          current.status !== args.browser.status ||
+          current.updatedAt.getTime() !== args.browser.updatedAt.getTime())
+      ) {
+        return { kind: "rejected" as const };
+      }
+      // Keep instance -> logical order, shared with stop and stranded cleanup.
+      // Losing the logical claim must also roll back the instance and screen.
+      const { instance, screen } = await persistStartedProviderInstance(tx, {
+        current,
+        provider: args.provider,
+        runId: args.context.runId,
+        cleanupAfterStart,
+        screenHeight: args.screenHeight,
+      });
+      const [browser] = await tx
+        .update(browserSessions)
+        .set(
+          cleanupAfterStart
+            ? {
+                status: "suspended",
+                suspendedAt: nowDate(),
+                suspensionReason: current.suspensionReason ?? "reconcile",
+                updatedAt: nowDate(),
+              }
+            : {
+                status: "active",
+                suspendedAt: null,
+                suspensionReason: null,
+                updatedAt: nowDate(),
+              },
+        )
+        .where(
+          and(
+            eq(browserSessions.id, current.id),
+            eq(browserSessions.chatThreadId, args.context.chatThreadId),
+            eq(browserSessions.orgId, args.context.orgId),
+            eq(browserSessions.userId, args.context.userId),
+            eq(browserSessions.runId, current.runId),
+            eq(browserSessions.status, current.status),
+            eq(browserSessions.updatedAt, current.updatedAt),
+          ),
+        )
+        .returning(BROWSER_SESSION_SELECTION);
+      if (!browser) {
+        throw new BrowserPublicationLostError("Managed browser claim changed");
+      }
+      return cleanupAfterStart
+        ? { kind: "cleanup" as const, browser, instance }
+        : { kind: "active" as const, browser, instance, screen };
+    }),
+  );
+  if (!result.ok) {
     if (
-      !cleanupAfterStart &&
-      !["creating", "resuming"].includes(current.status)
+      result.error instanceof BrowserPublicationLostError ||
+      isUniqueViolation(
+        result.error,
+        "uq_browser_session_instances_thread_owned",
+      )
     ) {
       return { kind: "rejected" as const };
     }
-    const { instance, screen } = await persistStartedProviderInstance(tx, {
-      current,
-      provider: args.provider,
-      runId: args.context.runId,
-      cleanupAfterStart,
-      screenHeight: args.screenHeight,
-    });
-    if (cleanupAfterStart) {
-      const [browser] = await tx
-        .update(browserSessions)
-        .set({
-          status: "suspended",
-          suspendedAt: nowDate(),
-          suspensionReason: current.suspensionReason ?? "reconcile",
-          updatedAt: nowDate(),
-        })
-        .where(eq(browserSessions.chatThreadId, current.chatThreadId))
-        .returning(BROWSER_SESSION_SELECTION);
-      if (!browser) {
-        throw new Error("Failed to suspend managed browser");
-      }
-      return {
-        kind: "cleanup" as const,
-        browser,
-        instance,
-      };
-    }
-    const [browser] = await tx
-      .update(browserSessions)
-      .set({
-        status: "active",
-        suspendedAt: null,
-        suspensionReason: null,
-        updatedAt: nowDate(),
-      })
-      .where(eq(browserSessions.chatThreadId, current.chatThreadId))
-      .returning(BROWSER_SESSION_SELECTION);
-    if (!browser) {
-      throw new Error("Failed to activate managed browser");
-    }
-    return {
-      kind: "active" as const,
-      browser,
-      instance,
-      screen,
-    };
-  });
+    throw result.error;
+  }
+  const claimed = result.value;
   if (claimed.kind === "cleanup" || claimed.kind === "active") {
     await publishBrowserSessionChangedSafely(args.browser.userId, {
       threadId: args.browser.chatThreadId,
@@ -1727,6 +1759,11 @@ async function createAndClaimProviderInstance(
     throw claimResult.error;
   }
   const claimed = claimResult.value;
+  if (claimed.kind === "cleanup" || claimed.kind === "rejected") {
+    // Reclaim an unpublished provider before the lifecycle signal can abort
+    // the caller, including a conditional-write loser after database rollback.
+    stopProviderSessionLater(provider.value.id);
+  }
   return {
     kind: "claimed" as const,
     provider: provider.value,
@@ -1736,6 +1773,10 @@ async function createAndClaimProviderInstance(
   };
 }
 
+type BrowserStartResult =
+  | BrowserServiceResult<BrowserConnection>
+  | { readonly kind: "superseded"; readonly error: BrowserServiceError };
+
 const startProviderInstance$ = command(
   async (
     { set },
@@ -1744,7 +1785,7 @@ const startProviderInstance$ = command(
       readonly context: BrowserRunContext;
     },
     signal: AbortSignal,
-  ): Promise<BrowserServiceResult<BrowserConnection>> => {
+  ): Promise<BrowserStartResult> => {
     const db = set(writeDb$);
     const capacityError = await ensureBrowserCapacity(
       db,
@@ -1775,22 +1816,14 @@ const startProviderInstance$ = command(
     }
     const { claimed } = started;
 
-    if (claimed.kind === "cleanup") {
-      stopProviderSessionLater(claimed.instance.providerSessionId);
-      signal.throwIfAborted();
-      return conflict(
-        "The chat run ended while the managed browser was starting",
-        "BROWSER_RUN_ENDED",
-      );
-    }
-
-    if (claimed.kind === "rejected") {
-      stopProviderSessionLater(started.provider.id);
-      signal.throwIfAborted();
-      return conflict(
-        "The chat run ended while the managed browser was starting",
-        "BROWSER_RUN_ENDED",
-      );
+    if (claimed.kind === "cleanup" || claimed.kind === "rejected") {
+      return {
+        kind: "superseded",
+        error: conflict(
+          "The chat run ended while the managed browser was starting",
+          "BROWSER_RUN_ENDED",
+        ),
+      };
     }
 
     await restoreBrowserTabSnapshot(
@@ -1871,10 +1904,18 @@ async function claimFreshBrowser(
         status: "creating",
         proxyCountryCode: args.proxyCountryCode,
         timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
+        updatedAt: nowDate(),
+      })
+      .onConflictDoNothing({
+        target: browserSessions.chatThreadId,
+        where: sql`${browserSessions.status} IN ('creating', 'active', 'resuming', 'stopping')`,
       })
       .returning(BROWSER_SESSION_SELECTION);
     if (!browser) {
-      throw new Error("Failed to create managed browser");
+      return conflict(
+        "This chat thread already has an active managed browser",
+        "BROWSER_THREAD_ACTIVE",
+      );
     }
     return {
       kind: "ok",
@@ -1917,14 +1958,22 @@ const createBrowserForContext$ = command(
       AbortSignal.timeout(PROVIDER_START_LIFECYCLE_TIMEOUT_MS),
     );
     signal.throwIfAborted();
+    if (connection.kind === "superseded") {
+      return connection.error;
+    }
     if (connection.kind === "error") {
       await db
         .update(browserSessions)
         .set({ status: "error", updatedAt: nowDate() })
         .where(
           and(
+            eq(browserSessions.id, claimed.value.id),
             eq(browserSessions.chatThreadId, claimed.value.chatThreadId),
-            inArray(browserSessions.status, ["creating", "resuming"]),
+            eq(browserSessions.orgId, claimed.value.orgId),
+            eq(browserSessions.userId, claimed.value.userId),
+            eq(browserSessions.runId, args.context.runId),
+            eq(browserSessions.status, claimed.value.status),
+            eq(browserSessions.updatedAt, claimed.value.updatedAt),
           ),
         );
       signal.throwIfAborted();
@@ -2087,56 +2136,71 @@ async function claimBrowserForResume(
   context: BrowserRunContext,
   signal: AbortSignal,
 ): Promise<ResumeClaim> {
-  return await db.transaction(async (tx) => {
-    await lockBrowserThread(tx, context.chatThreadId);
-    signal.throwIfAborted();
-    const [run] = await tx
-      .select({ status: agentRuns.status })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, context.runId))
-      .limit(1);
-    if (context.requireLiveRun && (!run || isTerminalRunStatus(run.status))) {
-      return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
-    }
-    const owned = await loadOwnedThreadBrowser(tx, context.chatThreadId);
-    if (owned) {
-      // A live instance is shared across the thread's runs, so ownership no
-      // longer decides who may attach to it.
-      if (owned.status === "active") {
-        return { kind: "active", browser: owned };
+  const result = await settle(
+    db.transaction(async (tx): Promise<ResumeClaim> => {
+      await lockBrowserThread(tx, context.chatThreadId);
+      signal.throwIfAborted();
+      const [run] = await tx
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, context.runId))
+        .limit(1);
+      if (context.requireLiveRun && (!run || isTerminalRunStatus(run.status))) {
+        return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
       }
-      if (["creating", "resuming"].includes(owned.status)) {
-        return conflict(
-          "The managed browser is already starting",
-          "BROWSER_STARTING",
-        );
+      const owned = await loadOwnedThreadBrowser(tx, context.chatThreadId);
+      if (owned) {
+        // A live instance is shared across the thread's runs, so ownership no
+        // longer decides who may attach to it.
+        if (owned.status === "active") {
+          return { kind: "active", browser: owned };
+        }
+        if (["creating", "resuming"].includes(owned.status)) {
+          return conflict(
+            "The managed browser is already starting",
+            "BROWSER_STARTING",
+          );
+        }
+        return browserReclaiming();
       }
-      return browserReclaiming();
+      const current = await loadCurrentBrowser(tx, context);
+      if (!current) {
+        return { kind: "missing" };
+      }
+      const [claimed] = await tx
+        .update(browserSessions)
+        .set({
+          runId: context.runId,
+          status: "resuming",
+          suspendedAt: null,
+          suspensionReason: null,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(browserSessions.id, current.id),
+            eq(browserSessions.chatThreadId, current.chatThreadId),
+            eq(browserSessions.orgId, context.orgId),
+            eq(browserSessions.userId, context.userId),
+            eq(browserSessions.status, current.status),
+            inArray(browserSessions.status, ["suspended", "error"]),
+            eq(browserSessions.updatedAt, current.updatedAt),
+          ),
+        )
+        .returning(BROWSER_SESSION_SELECTION);
+      return claimed
+        ? { kind: "claimed", browser: claimed }
+        : conflict("The managed browser is busy", "BROWSER_BUSY");
+    }),
+  );
+  if (!result.ok) {
+    if (isUniqueViolation(result.error, "uq_browser_sessions_thread_owned")) {
+      return conflict("The managed browser is busy", "BROWSER_BUSY");
     }
-    const current = await loadCurrentBrowser(tx, context);
-    if (!current) {
-      return { kind: "missing" };
-    }
-    const [claimed] = await tx
-      .update(browserSessions)
-      .set({
-        runId: context.runId,
-        status: "resuming",
-        suspendedAt: null,
-        suspensionReason: null,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(browserSessions.chatThreadId, current.chatThreadId),
-          inArray(browserSessions.status, ["suspended", "error"]),
-        ),
-      )
-      .returning(BROWSER_SESSION_SELECTION);
-    return claimed
-      ? { kind: "claimed", browser: claimed }
-      : conflict("The managed browser is busy", "BROWSER_BUSY");
-  });
+    throw result.error;
+  }
+  signal.throwIfAborted();
+  return result.value;
 }
 
 type ReuseLiveBrowser =
@@ -2232,14 +2296,22 @@ const resumeSuspendedBrowser$ = command(
       AbortSignal.timeout(PROVIDER_START_LIFECYCLE_TIMEOUT_MS),
     );
     signal.throwIfAborted();
+    if (connection.kind === "superseded") {
+      return connection.error;
+    }
     if (connection.kind === "error") {
       await db
         .update(browserSessions)
         .set({ status: "error", updatedAt: nowDate() })
         .where(
           and(
+            eq(browserSessions.id, claim.browser.id),
             eq(browserSessions.chatThreadId, claim.browser.chatThreadId),
-            inArray(browserSessions.status, ["creating", "resuming"]),
+            eq(browserSessions.orgId, claim.browser.orgId),
+            eq(browserSessions.userId, claim.browser.userId),
+            eq(browserSessions.runId, context.runId),
+            eq(browserSessions.status, claim.browser.status),
+            eq(browserSessions.updatedAt, claim.browser.updatedAt),
           ),
         );
       signal.throwIfAborted();
@@ -2974,6 +3046,7 @@ async function releaseStrandedBrowserStarts(
 }
 
 interface ExpiredInactiveBrowserTarget {
+  readonly browserId: string;
   readonly chatThreadId: string;
   readonly userId: string;
   readonly status: InactiveBrowserStatus;
@@ -3002,6 +3075,7 @@ async function claimExpiredInactiveBrowser(
       })
       .where(
         and(
+          eq(browserSessions.id, target.browserId),
           eq(browserSessions.chatThreadId, target.chatThreadId),
           eq(browserSessions.status, target.status),
           eq(browserSessions.updatedAt, target.updatedAt),
@@ -3101,6 +3175,7 @@ async function releaseExpiredInactiveBrowserClaim(
     })
     .where(
       and(
+        eq(browserSessions.id, target.browserId),
         eq(browserSessions.chatThreadId, target.chatThreadId),
         eq(browserSessions.status, "stopping"),
         eq(browserSessions.updatedAt, claimedAt),
@@ -3123,7 +3198,12 @@ async function retireExpiredInactiveBrowser(
           updatedAt: browserSessions.updatedAt,
         })
         .from(browserSessions)
-        .where(eq(browserSessions.chatThreadId, target.chatThreadId))
+        .where(
+          and(
+            eq(browserSessions.id, target.browserId),
+            eq(browserSessions.chatThreadId, target.chatThreadId),
+          ),
+        )
         .limit(1),
       tx
         .select({
@@ -3148,6 +3228,7 @@ async function retireExpiredInactiveBrowser(
         .delete(browserSessions)
         .where(
           and(
+            eq(browserSessions.id, target.browserId),
             eq(browserSessions.chatThreadId, target.chatThreadId),
             eq(browserSessions.status, "stopping"),
             eq(browserSessions.updatedAt, claimedAt),
@@ -3243,6 +3324,7 @@ async function reconcileExpiredInactiveBrowsers(
   const cutoff = new Date(nowDate().getTime() - INACTIVE_BROWSER_RETENTION_MS);
   const rows = await db
     .select({
+      browserId: browserSessions.id,
       chatThreadId: browserSessions.chatThreadId,
       userId: browserSessions.userId,
       status: browserSessions.status,

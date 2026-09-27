@@ -3056,43 +3056,54 @@ export const deleteCustomConnectorAccount$ = command(
   ) => {
     const writeDb = set(writeDb$);
     let postCommitAbort: CapturedConnectorClientInvalidationAbort | undefined;
-    const deletion = writeDb.transaction(async (tx) => {
-      const [connector] = await tx
-        .select({
-          oauthProviderAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-        })
-        .from(orgCustomConnectors)
-        .leftJoin(
-          orgCustomConnectorOauthConfigs,
-          and(
-            eq(
-              orgCustomConnectorOauthConfigs.connectorId,
-              orgCustomConnectors.id,
+    const deletion = writeDb.transaction(
+      async (tx) => {
+        const [connector] = await tx
+          .select({
+            oauthProviderAdapter:
+              orgCustomConnectorOauthConfigs.providerAdapter,
+          })
+          .from(orgCustomConnectors)
+          .leftJoin(
+            orgCustomConnectorOauthConfigs,
+            and(
+              eq(
+                orgCustomConnectorOauthConfigs.connectorId,
+                orgCustomConnectors.id,
+              ),
+              eq(
+                orgCustomConnectorOauthConfigs.orgId,
+                orgCustomConnectors.orgId,
+              ),
             ),
-            eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(orgCustomConnectors.id, args.connectorId),
-            eq(orgCustomConnectors.orgId, args.orgId),
-          ),
-        )
-        .for("update", { of: orgCustomConnectors })
-        .limit(1);
-      signal.throwIfAborted();
-      if (!connector) {
-        return { kind: "missing" as const };
-      }
-      if (
-        isIntegrationManagedCustomConnectorProviderAdapter(
-          connector.oauthProviderAdapter,
-        )
-      ) {
-        return { kind: "managed" as const };
-      }
-      return await deleteCustomConnectorMemberConnectionExact(tx, args, signal);
-    });
+          )
+          .where(
+            and(
+              eq(orgCustomConnectors.id, args.connectorId),
+              eq(orgCustomConnectors.orgId, args.orgId),
+            ),
+          )
+          .for("update", { of: orgCustomConnectors })
+          .limit(1);
+        signal.throwIfAborted();
+        if (!connector) {
+          return { kind: "missing" as const };
+        }
+        if (
+          isIntegrationManagedCustomConnectorProviderAdapter(
+            connector.oauthProviderAdapter,
+          )
+        ) {
+          return { kind: "managed" as const };
+        }
+        return await deleteCustomConnectorMemberConnectionExact(
+          tx,
+          args,
+          signal,
+        );
+      },
+      { isolationLevel: "read committed" },
+    );
     const result = await commitConnectorRuntimeMutation(deletion, (value) => {
       return value.kind === "deleted"
         ? {

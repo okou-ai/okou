@@ -25,7 +25,6 @@ import {
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
 } from "./helpers/api-bdd-connectors";
-import { readCustomConnectorCredentialStorageParent } from "./helpers/connector-credential-storage-state";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { seedRun$ } from "./helpers/usage-state";
@@ -879,36 +878,23 @@ describe("POST /api/chat-threads", () => {
         authMode: "manual",
       },
     );
-    await connectorApi.setCustomConnectorSecret(
+    const httpConnection = await connectorApi.setCustomConnectorValues(
       fixture.actor,
       httpConnector.id,
-      "thread-http-secret",
+      [{ key: "secret", kind: "secret", value: "thread-http-secret" }],
     );
-    await connectorApi.setCustomConnectorSecret(
+    const mcpConnection = await connectorApi.setCustomConnectorValues(
       fixture.actor,
       mcpConnector.id,
-      "thread-mcp-secret",
+      [{ key: "secret", kind: "secret", value: "thread-mcp-secret" }],
     );
     await connectorApi.updateAgentCustomConnectors(
       fixture.actor,
       fixture.agentId,
       [httpConnector.id, mcpConnector.id],
     );
-    const httpState = await readCustomConnectorCredentialStorageParent(
-      context,
-      {
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        customConnectorId: httpConnector.id,
-      },
-    );
-    const mcpState = await readCustomConnectorCredentialStorageParent(context, {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      customConnectorId: mcpConnector.id,
-    });
-    const httpConnectionId = httpState.connector?.id;
-    const mcpConnectionId = mcpState.connector?.id;
+    const httpConnectionId = httpConnection.connectedAccountId;
+    const mcpConnectionId = mcpConnection.connectedAccountId;
     if (!httpConnectionId || !mcpConnectionId) {
       throw new Error("Expected custom connector account fixtures");
     }
@@ -962,21 +948,75 @@ describe("POST /api/chat-threads", () => {
     );
 
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
-    for (const [customConnectorId, connectionId] of [
-      [httpConnector.id, httpConnectionId],
-      [mcpConnector.id, mcpConnectionId],
-    ] as const) {
-      await accept(
+    await accept(
+      connectorAccountsClient().delete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { connectionId: httpConnectionId },
+        body: {
+          target: { kind: "custom", customConnectorId: httpConnector.id },
+        },
+      }),
+      [200],
+    );
+    const withMissingSelection = await accept(
+      threadsClient().create({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          agentId: fixture.agentId,
+          model: WORKSPACE_DEFAULT_MODEL,
+          connectorSelections: selections.body.selections,
+        },
+      }),
+      [201],
+    );
+    const survivingSelection = await accept(
+      connectorSelectionsClient().get({
+        headers: { authorization: `Bearer ${token}` },
+        params: { id: withMissingSelection.body.id },
+      }),
+      [200],
+    );
+    expect(survivingSelection.body.selections).toStrictEqual([
+      {
+        connectionId: mcpConnectionId,
+        target: { kind: "custom", customConnectorId: mcpConnector.id },
+      },
+    ]);
+
+    const [, concurrentThread] = await Promise.all([
+      accept(
         connectorAccountsClient().delete({
           headers: { authorization: "Bearer clerk-session" },
-          params: { connectionId },
+          params: { connectionId: mcpConnectionId },
           body: {
-            target: { kind: "custom", customConnectorId },
+            target: { kind: "custom", customConnectorId: mcpConnector.id },
           },
         }),
         [200],
-      );
-    }
+      ),
+      accept(
+        threadsClient().create({
+          headers: { authorization: `Bearer ${token}` },
+          body: {
+            agentId: fixture.agentId,
+            model: WORKSPACE_DEFAULT_MODEL,
+            connectorSelections: selections.body.selections,
+          },
+        }),
+        [201],
+      ),
+    ]);
+    const afterConcurrentDelete = await accept(
+      connectorSelectionsClient().get({
+        headers: { authorization: `Bearer ${token}` },
+        params: { id: concurrentThread.body.id },
+      }),
+      [200],
+    );
+    expect(afterConcurrentDelete.body.selections).toStrictEqual([]);
+    await expect(
+      readCreatedThreadEvents(concurrentThread.body.id, token),
+    ).resolves.toHaveLength(1);
     const afterDisconnect = await accept(
       connectorSelectionsClient().get({
         headers: { authorization: `Bearer ${token}` },
@@ -986,6 +1026,129 @@ describe("POST /api/chat-threads", () => {
     );
     expect(afterDisconnect.body.selections).toStrictEqual([]);
   });
+
+  it.each([
+    { initial: "deleted", selected: "surviving" },
+    { initial: "surviving", selected: "deleted" },
+    { initial: "deleted", selected: "deleted" },
+  ] as const)(
+    "resolves custom selection $initial to $selected while deleting the default",
+    async ({ initial, selected }) => {
+      const fixture = await seedAgent();
+      const definition = await connectorApi.createCustomConnector(
+        fixture.actor,
+        manualHttpCustomConnectorCreateBody({
+          slug: `_selection-delete-${randomUUID()}`,
+          displayName: "Concurrent custom selection",
+          prefixTemplates: ["https://selection-delete.example.test/"],
+        }),
+      );
+      const survivor = await connectorApi.setCustomConnectorValues(
+        fixture.actor,
+        definition.id,
+        [{ key: "secret", kind: "secret", value: "surviving-secret" }],
+        { intent: "add", displayName: "Surviving" },
+      );
+      const removed = await connectorApi.setCustomConnectorValues(
+        fixture.actor,
+        definition.id,
+        [{ key: "secret", kind: "secret", value: "deleted-secret" }],
+        { intent: "add", displayName: "Deleted" },
+      );
+      if (!survivor.connectedAccountId || !removed.connectedAccountId) {
+        throw new Error("Expected both custom connector accounts");
+      }
+      const accounts = {
+        surviving: survivor.connectedAccountId,
+        deleted: removed.connectedAccountId,
+      };
+      const target = {
+        kind: "custom" as const,
+        customConnectorId: definition.id,
+      };
+      await connectorApi.updateAgentCustomConnectors(
+        fixture.actor,
+        fixture.agentId,
+        [definition.id],
+      );
+      createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+      await accept(
+        connectorAccountsClient().setDefault({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { connectionId: accounts.deleted },
+          body: { target },
+        }),
+        [200],
+      );
+      const token = okouToken({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        capabilities: ["chat-thread:read", "chat-thread:write"],
+      });
+      const thread = await accept(
+        threadsClient().create({
+          headers: { authorization: `Bearer ${token}` },
+          body: {
+            agentId: fixture.agentId,
+            model: WORKSPACE_DEFAULT_MODEL,
+            connectorSelections: [{ connectionId: accounts[initial], target }],
+          },
+        }),
+        [201],
+      );
+      const [selectionResult, deletion] = await Promise.all([
+        accept(
+          connectorSelectionsClient().update({
+            headers: { authorization: `Bearer ${token}` },
+            params: { id: thread.body.id },
+            body: { connectionId: accounts[selected], target },
+          }),
+          selected === "surviving" ? [200] : [200, 400],
+        ),
+        accept(
+          connectorAccountsClient().delete({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { connectionId: accounts.deleted },
+            body: { target },
+          }),
+          [200],
+        ),
+      ]);
+      expect(deletion.body.promotedDefaultConnectionId).toBe(
+        accounts.surviving,
+      );
+      if (selected === "deleted") {
+        expect(deletion.body.resolvedSelectionCount).toBe(
+          initial === "deleted" || selectionResult.status === 200 ? 1 : 0,
+        );
+      } else {
+        expect([0, 1]).toContain(deletion.body.resolvedSelectionCount);
+      }
+      const remainsSelected =
+        selected === "surviving" ||
+        (initial === "surviving" && selectionResult.status === 400);
+      const selections = await accept(
+        connectorSelectionsClient().get({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: thread.body.id },
+        }),
+        [200],
+      );
+      expect(selections.body.selections).toStrictEqual(
+        remainsSelected ? [{ connectionId: accounts.surviving, target }] : [],
+      );
+      const remainingAccounts = await accept(
+        connectorAccountsClient().connections({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { ...target, limit: 100 },
+        }),
+        [200],
+      );
+      expect(remainingAccounts.body.connections).toMatchObject([
+        { id: accounts.surviving, isDefault: true },
+      ]);
+    },
+  );
 
   it("routes thread-list invalidations only to the user-org channel", async () => {
     const fixture = await seedAgent();

@@ -1169,7 +1169,7 @@ try {
   const invalid = await cli("malformed", [], false, true);
   assert.equal(object(invalid.totals).invalid, 1);
   assert.equal(invalid.databaseVerifiedOnTarget, false);
-  // Migration 1271 dropped agent_run_queue; recovery still verifies the rest.
+  // Migration 1272 dropped agent_run_queue; recovery still verifies the rest.
   await db.query("DELETE FROM secrets WHERE id = 'bad'");
   await db.query("DROP TABLE agent_run_queue");
   const droppedQueueRecovery = await cli("recovery-dropped-agent-run-queue", [

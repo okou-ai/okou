@@ -139,7 +139,7 @@ export const fields: readonly Field[] = [
 
 // Recovery covers retained snapshots from before the SSH credential migration,
 // the Cloudflare Access/VNC rollouts and the builtin MCP DCR table (#35241),
-// and databases after them, including after migration 1271 dropped
+// and databases after them, including after migration 1272 dropped
 // agent_run_queue. Keep the original migration manifest above unchanged; every
 // table added after #32264 belongs here instead. Both SSH tables must be
 // inspected when present; the recovery entry point requires at least one.

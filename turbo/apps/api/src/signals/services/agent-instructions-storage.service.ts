@@ -11,7 +11,6 @@ import { writeDb$ } from "../external/db";
 import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
 import {
   commitPreparedVolumeServerSide,
-  ensureVolumeStorage$,
   prepareVolumeServerSideWithDb$,
 } from "./storage-volume-publication.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
@@ -63,24 +62,6 @@ function instructionVolumeInput(args: WriteAgentInstructionsStorageArgs) {
     }),
   };
 }
-
-export const ensureAgentInstructionsStorage$ = command(
-  async (
-    { set },
-    args: Pick<WriteAgentInstructionsStorageArgs, "orgId" | "agentName">,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await set(
-      ensureVolumeStorage$,
-      {
-        orgId: args.orgId,
-        storageName: getInstructionsStorageName(args.agentName.toLowerCase()),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-  },
-);
 
 /** Persist application-owned Agent instructions without composing a version. */
 export const writeAgentInstructionsStorage$ = command(
