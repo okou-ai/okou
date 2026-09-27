@@ -1013,9 +1013,9 @@ async function hashBrowserFile(file: File): Promise<string> {
     throw new Error("File changed while reading");
   }
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  return Array.from(digest, (byte) => {
+    return byte.toString(16).padStart(2, "0");
+  }).join("");
 }
 
 async function browserFileSubmissionValue(
