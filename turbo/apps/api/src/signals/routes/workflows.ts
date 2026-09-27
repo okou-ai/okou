@@ -1295,10 +1295,14 @@ async function lockWorkflowCopyInputs(
 ): Promise<boolean> {
   if (args.sourceWorkflow.officialDefinitionName !== null) {
     await lockAcceptedOfficialWorkflowCatalog(tx);
-    await tx.execute(
-      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-      sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
-    );
+    // Only publication needs the organization key. The read-only snapshot is
+    // protected by the same source rows and is revalidated before publication.
+    if (prepared) {
+      await tx.execute(
+        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
+        sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
+      );
+    }
   }
   // Agent deletion locks its parent before cascading to Workflows. Keep that
   // order, including when source and target are the same Agent.

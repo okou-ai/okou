@@ -134,7 +134,6 @@ async function reserveBootstrapAgent(
   tx: DbTransaction,
   args: BootstrapOwnerMembershipArgs & { readonly agentId: string },
 ): Promise<BootstrapReservation> {
-  await lockOrgBootstrap(tx, args.orgId);
   await upsertBootstrapOwnerMembership(tx, args);
 
   const existingAgentId = await existingDefaultAgentId(tx, args.orgId);

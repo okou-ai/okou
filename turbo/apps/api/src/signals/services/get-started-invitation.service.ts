@@ -189,7 +189,7 @@ export async function acceptGetStartedInvitation(
         .where(eq(getStartedClaims.id, claim.id));
       return;
     }
-    // The shared grant service serializes inviter slots and invited-account uniqueness.
+    // The grant service reserves a global inviter slot and deduplicates the invitee.
     const granted = await grantGetStartedClaim(
       tx,
       claim,

@@ -2366,22 +2366,10 @@ function piApiFirstTurnHandoffSignal(
   ]);
 }
 
-async function canonicalApiFirstTurnCancellationWon(
-  args: ApiFirstTurnContext,
-): Promise<boolean> {
-  return await withApiFirstTurnLifecycle(args, async (tx) => {
-    const state = await readApiFirstTurnLifecycleState(
-      tx,
-      args.activation.runId,
-    );
-    return state?.status === "cancelled";
-  });
-}
-
 function logCanonicalApiFirstTurnCancellation(
   args: ApiFirstTurnContext,
   ownership: PiApiFirstTurnOwnership,
-  failure?: unknown,
+  failure: unknown,
 ): void {
   if (
     failure instanceof PiApiFirstTurnCanonicalCancellationError &&
@@ -2507,6 +2495,7 @@ const failApiFirstTurn$ = command(async function failApiFirstTurn(
   args: ApiFirstTurnContext,
   failure: PiApiFirstTurnError,
   ownership: PiApiFirstTurnOwnership,
+  executionFailure: unknown,
 ): Promise<DispatchCompleteSideEffectsInput | undefined> {
   const failureSignal = AbortSignal.timeout(FAILURE_COMMIT_TIMEOUT_MS);
   return await withApiFirstTurnLifecycle(args, async (tx) => {
@@ -2516,7 +2505,7 @@ const failApiFirstTurn$ = command(async function failApiFirstTurn(
     );
     const transition = decideApiFirstTurnTerminal(state?.status);
     if (transition === "cancelled") {
-      logCanonicalApiFirstTurnCancellation(args, ownership);
+      logCanonicalApiFirstTurnCancellation(args, ownership, executionFailure);
       return undefined;
     }
     if (transition === "already-terminal") {
@@ -2672,11 +2661,7 @@ const runPiApiFirstTurnCore$ = command(
         handoffSignal.aborted,
       );
     }
-    if (await canonicalApiFirstTurnCancellationWon(context)) {
-      logCanonicalApiFirstTurnCancellation(context, ownership, executed.error);
-      return undefined;
-    }
-    return set(failApiFirstTurn$, context, failure, ownership);
+    return set(failApiFirstTurn$, context, failure, ownership, executed.error);
   },
 );
 

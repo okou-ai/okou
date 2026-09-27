@@ -1064,7 +1064,8 @@ type PreparedConnectorAccountDeletion =
       readonly promotedDefaultConnectionId: string | null;
     };
 
-export async function prepareConnectorAccountDeletion(
+/** The caller must hold this account target's lock in db until commit. */
+export async function prepareConnectorAccountDeletionWithTargetLocked(
   db: Tx,
   args: {
     readonly orgId: string;
@@ -1074,7 +1075,6 @@ export async function prepareConnectorAccountDeletion(
   },
   signal: AbortSignal,
 ): Promise<PreparedConnectorAccountDeletion> {
-  await lockConnectorAccountTarget(db, args);
   const [account] = await db
     .select({ id: connectors.id, isDefault: connectors.isDefault })
     .from(connectors)

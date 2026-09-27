@@ -437,12 +437,16 @@ async function settleMemberGrants(
   return { sharedCredits, grantRows };
 }
 
+interface SettlementLockObservation {
+  readonly startedAt: number;
+  readonly lockWaitMs: number;
+  readonly orgLockWaitMs: number;
+}
+
 async function acquireSettlementLocksWithObservation(
   tx: WriteTx,
   orgId: string,
-) {
-  // Count already-read rows, not additional queries under the financial lock.
-  // Inline managed callers may have taken these locks before this function.
+): Promise<SettlementLockObservation> {
   const startedAt = performance.now();
   await lockUsageEventCompaction(tx, "shared");
   const compactionLockAcquiredAt = performance.now();
@@ -450,24 +454,8 @@ async function acquireSettlementLocksWithObservation(
   const orgLockAcquiredAt = performance.now();
   return {
     startedAt,
-    work: {
-      lockWaitMs: Math.round(compactionLockAcquiredAt - startedAt),
-      orgLockWaitMs: Math.round(orgLockAcquiredAt - compactionLockAcquiredAt),
-      settlementWorkMs: 0,
-      pendingReadMs: 0,
-      pricingReadMs: 0,
-      pricingCalculationMs: 0,
-      allowanceMs: 0,
-      eventWriteMs: 0,
-      grantDeductionMs: 0,
-      orgCreditMs: 0,
-      pendingEvents: 0,
-      pricingRows: 0,
-      affectedUsers: 0,
-      grantRows: 0,
-      expiredRows: 0,
-      expiryRows: 0,
-    },
+    lockWaitMs: Math.round(compactionLockAcquiredAt - startedAt),
+    orgLockWaitMs: Math.round(orgLockAcquiredAt - compactionLockAcquiredAt),
   };
 }
 
@@ -500,10 +488,52 @@ export async function processOrgUsageEventsInTransaction(
   pricingResolution: UsagePricingResolution,
   signal: AbortSignal,
 ): Promise<ProcessOrgUsageEventsResult> {
-  const { startedAt, work } = await acquireSettlementLocksWithObservation(
+  const observation = await acquireSettlementLocksWithObservation(tx, orgId);
+  signal.throwIfAborted();
+  return await processOrgUsageEventsInLockedTransaction(
     tx,
     orgId,
+    pricingResolution,
+    observation,
+    signal,
   );
+}
+
+function initialSettlementWork(observation: SettlementLockObservation) {
+  const { lockWaitMs, orgLockWaitMs } = observation;
+  // Count already-read rows, not additional queries under the financial lock.
+  return {
+    lockWaitMs,
+    orgLockWaitMs,
+    settlementWorkMs: 0,
+    pendingReadMs: 0,
+    pricingReadMs: 0,
+    pricingCalculationMs: 0,
+    allowanceMs: 0,
+    eventWriteMs: 0,
+    grantDeductionMs: 0,
+    orgCreditMs: 0,
+    pendingEvents: 0,
+    pricingRows: 0,
+    affectedUsers: 0,
+    grantRows: 0,
+    expiredRows: 0,
+    expiryRows: 0,
+  };
+}
+
+// The caller must already hold shared compaction and organization credit locks
+// in this transaction. Observations cover this settlement call, not any earlier
+// waits in the caller's larger transaction.
+export async function processOrgUsageEventsInLockedTransaction(
+  tx: WriteTx,
+  orgId: string,
+  pricingResolution: UsagePricingResolution,
+  observation: SettlementLockObservation,
+  signal: AbortSignal,
+): Promise<ProcessOrgUsageEventsResult> {
+  const { startedAt } = observation;
+  const work = initialSettlementWork(observation);
 
   const { pendingRecords, pendingReadMs } =
     await readPendingUsageEventsWithTiming(tx, orgId);

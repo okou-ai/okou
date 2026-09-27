@@ -297,3 +297,42 @@ separate preparation gates. On 2026-09-27, public `/api/build-info` reads from
 both `api.okou.ai` and `api.vm0.ai` reported API `1.683.0` at
 `d97a36a06c664b149d2598d5e14a12e7cbd4ea5b`, before #37057. A successful main
 workflow or preview deployment does not prove those preparations have shipped.
+
+## Constraint arbitration and redundant entrances (2026-09-27)
+
+Against main `9e28a95b6b831aeccaa399bfd6e6d8c36725c230`, the next batch removes
+the Get Started redemption SQL definition. The literal inventory changes from
+**37 to 36**: 34 production sites, one catalog fixture and one attribution
+operator site. The six historical SQL migration sites remain separate. No
+migration is required; these counts describe source, not production deployment.
+
+| Scope                              | Literal sites removed | Caller or branch change                                                                                                                                                                                                                                                           |
+| ---------------------------------- | --------------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Get Started redemption             |                     1 | Remove the redemption helper and its one caller; the five remaining capped quest types no longer acquire reward/owner keys. Connector/check-in already skipped them.                                                                                                              |
+| Calendar previous-channel cleanup  |                     0 | Remove one lifecycle call and its single-statement transaction; retain watch/current/previous channel CAS.                                                                                                                                                                        |
+| Connector account cleanup          |                     0 | Remove two nested account-target calls and move custom deletion's first acquisition to its caller: net one fewer expression. Builtin deletion goes from two acquisitions to one, Calendar deletion from three to one, principal replacement from two to one; custom stays at one. |
+| Bootstrap reservation precheck     |                     0 | Remove one call; final publication and compensation retain the other two.                                                                                                                                                                                                         |
+| VNC standalone credential creation |                     0 | One entrance uses the existing three shared cleanup scopes without the exclusive owner acquisition. The owner SQL definition remains.                                                                                                                                             |
+| Pi first-turn cancellation         |                     0 | Remove one preliminary lifecycle-wrapper call; four wrapper calls remain, including the final failure/cancellation arbiter.                                                                                                                                                       |
+| Inline Social settlement           |                     0 | Remove one static compaction call and route the already-locked settlement through its body. Paid settlement goes from three shared compaction plus two credit acquisitions to one of each, in the same order.                                                                     |
+| Official copy source snapshot      |                     0 | The existing organization-key expression becomes publication-only: two transaction entrances become one. The final publication key remains.                                                                                                                                       |
+| SSH credential deletion            |                     0 | Prepare parent-row protection and revision DELETE RETURNING; keep deletion's owner call pending rollout, alongside the other three callers.                                                                                                                                       |
+
+Get Started retains its own claim row lock and atomically commits credits with
+the granted claim. Existing reward-key, beneficiary/quest/slot, and Slack-org
+unique constraints arbitrate competing claims. A savepoint covers the entire
+grant, including credits; only those exact unique conflicts are interpreted
+after rollback. Reward identity takes precedence over quota exhaustion.
+Invitations try each available slot in the existing 1..15 domain at most once,
+across all organizations for that beneficiary. This is bounded allocation of
+business slots, not retrying lock failures. Other database errors propagate.
+
+The narrower callers retain their existing state predicates, cleanup scopes,
+final arbiters and first-acquisition order. Social still takes shared compaction
+protection before its job row, then organization credit protection. Standalone
+settlement retains its lock-taking entry and committed telemetry. Official copy
+retains catalog/source row protection and exact source revalidation before any
+publication. Its full-key retirement, Device auth and Official reconciliation
+still have the separate rollout gates above. SSH preparation and the supported
+mixed-writer boundaries are described in
+[deployment compatibility](./deployment-compatibility.md#constraint-arbitration-and-narrower-advisory-entrances-2026-09-27).

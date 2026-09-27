@@ -272,6 +272,53 @@ that cycle. Future removal needs a compatible lifecycle lock order and the
 precise error handling in all serving/rollback writers; this batch leaves the
 key and rotation ordering in place.
 
+## Constraint arbitration and narrower advisory entrances (2026-09-27)
+
+Get Started redemption now uses its existing reward-key, beneficiary/quest/slot
+and Slack-org unique constraints instead of the reward/owner advisory keys.
+The claim row lock still owns completion. A savepoint rolls back the entire
+credit grant and claim update before interpreting an exact unique conflict;
+invite allocation is bounded to the existing 15 global beneficiary slots.
+Connector/check-in keep their exact actor/quest/source claim protocol. No schema
+or persisted API shape changes. Get Started remains a pre-GA feature: outgoing
+old capped-grant writers still encounter the same constraints and may roll back
+a conflicting request, but cannot commit duplicate rewards or exceed the cap.
+
+Calendar previous-channel cleanup uses the unchanged watch/current/previous
+channel predicates in one UPDATE. Connector deletion/replacement reuses the
+first account-target acquisition in its existing transaction; custom deletion
+still takes it before reading the account. Bootstrap reservation keeps its
+membership upserts while finalization and compensation retain their key.
+Standalone VNC credential creation retains all shared cleanup scopes, unique
+creation identity and owner checks. Pi failure commits still decide
+cancellation under the final lifecycle arbiter. Social settlement retains its
+original first-acquisition order and committed ledger transaction. These scoped
+removals introduce no unsupported old/new writer combination.
+
+Official copy skips the organization key only when reading its initial source
+snapshot. It still holds catalog and existing source rows, releases that
+transaction before external preparation, then takes the organization key and
+revalidates the complete source for final publication. This does not retire the
+final publication key or relax its separate serving/rollback gate.
+
+SSH deletion prepares a short explicit READ COMMITTED transaction: lock the exact
+credential FOR UPDATE, validate its revision, read references in a separate fresh
+statement without locking hosts, then DELETE by owner/id/revision RETURNING.
+The credential lock blocks new FK attachments while the fresh reference check
+sees attachments committed before it acquired the lock. An existing host returns
+the same in-use response before DELETE's RESTRICT check can wait on a rotating
+host. Missing/stale-revision responses and rotation/pin ordering are unchanged.
+The deletion caller retains the owner advisory key until both this preparation
+and #37071's exact host-FK-to-404 handling cover serving and supported rollback
+versions and old transactions drain. The other owner callers remain necessary.
+No new key or migration is introduced.
+
+At this batch's 2026-09-27 verification, `api.okou.ai/api/build-info` still
+reported API `1.683.0`, commit
+`d97a36a06c664b149d2598d5e14a12e7cbd4ea5b`. The newer main release version alone
+does not establish serving coverage for SSH or the earlier Device auth,
+Official copy publication and Official reconciliation preparations.
+
 ## Workflow import source column (2026-09-25)
 
 Migration `1264_workflow_import_source` adds the nullable

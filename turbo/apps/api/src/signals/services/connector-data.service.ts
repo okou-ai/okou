@@ -92,7 +92,7 @@ import {
   type PendingGmailWatchStop,
 } from "./gmail-automation-event.service";
 import {
-  prepareGoogleCalendarWatchStopForConnector,
+  prepareGoogleCalendarWatchStopWithAccountTargetLocked,
   reconcileGoogleCalendarWatchesForUser,
   stopPreparedGoogleCalendarWatches,
   type PendingGoogleCalendarWatchStop,
@@ -110,7 +110,7 @@ import {
   type PendingGoogleMeetSubscriptionDelete,
 } from "./google-meet-automation-event.service";
 import { reconcileConnectorAccountState } from "./connector-account-state.service";
-import { prepareConnectorAccountDeletion } from "./connector-account-lifecycle.service";
+import { prepareConnectorAccountDeletionWithTargetLocked } from "./connector-account-lifecycle.service";
 import { resolveConnectorAccount } from "./connector-account-resolution.service";
 import {
   replaceConnectorConnection,
@@ -1029,7 +1029,7 @@ async function prepareBuiltinConnectorAccountDeletion(
   },
   signal: AbortSignal,
 ) {
-  return await prepareConnectorAccountDeletion(
+  return await prepareConnectorAccountDeletionWithTargetLocked(
     db,
     {
       orgId: args.orgId,
@@ -1082,7 +1082,10 @@ async function prepareConnectorAutomationCleanup(
       : null;
   const pendingGoogleCalendarWatchStop =
     args.connectorSlug === "google-calendar"
-      ? await prepareGoogleCalendarWatchStopForConnector(cleanupArgs, signal)
+      ? await prepareGoogleCalendarWatchStopWithAccountTargetLocked(
+          cleanupArgs,
+          signal,
+        )
       : null;
   const pendingGoogleFormsWatchStop =
     args.connectorSlug === "google-forms"
@@ -2368,7 +2371,7 @@ async function prepareGoogleCalendarPrincipalReplacementWatchStop(
   ) {
     return null;
   }
-  return await prepareGoogleCalendarWatchStopForConnector(
+  return await prepareGoogleCalendarWatchStopWithAccountTargetLocked(
     {
       db,
       orgId: args.orgId,

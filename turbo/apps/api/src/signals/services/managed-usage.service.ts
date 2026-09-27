@@ -21,10 +21,9 @@ import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import {
   processOrgUsageEvents$,
-  processOrgUsageEventsInTransaction,
+  processOrgUsageEventsInLockedTransaction,
   type ProcessOrgUsageEventsResult,
 } from "./credit-usage.service";
-import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { resolveActiveRunCreditAdmission } from "./run-admission.service";
 import {
@@ -435,21 +434,27 @@ async function readManagedUsageReceipt(
   return processed;
 }
 
-export async function recordManagedUsageInTransaction(
+// The caller holds shared compaction protection before locking its job row.
+export async function recordManagedUsageInCompactionLockedTransaction(
   tx: Tx,
   args: ManagedUsageRecordArgs,
   pricingResolution: UsagePricingResolution,
   signal: AbortSignal,
 ): Promise<ManagedUsageRecordResult> {
-  await lockUsageEventCompaction(tx, "shared");
   await lockOrgCredits(tx, args.actor.orgId);
   signal.throwIfAborted();
   const identity = await insertManagedUsageEvent(tx, args, signal);
   signal.throwIfAborted();
-  const effects = await processOrgUsageEventsInTransaction(
+  const effects = await processOrgUsageEventsInLockedTransaction(
     tx,
     args.actor.orgId,
     pricingResolution,
+    {
+      startedAt: performance.now(),
+      // Settlement timing excludes earlier waits in this larger transaction.
+      lockWaitMs: 0,
+      orgLockWaitMs: 0,
+    },
     signal,
   );
   signal.throwIfAborted();

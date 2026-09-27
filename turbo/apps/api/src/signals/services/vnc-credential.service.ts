@@ -23,7 +23,11 @@ import {
   inspectVncCreationId,
   resolveVncCreationConflict,
 } from "./vnc-creation.service";
-import { enterVncWrite, type VncOwner } from "./vnc-owner-lifecycle.service";
+import {
+  enterVncWrite,
+  shareVncCleanupScopes,
+  type VncOwner,
+} from "./vnc-owner-lifecycle.service";
 
 const metadata = Object.freeze({
   id: vncCredentials.id,
@@ -218,7 +222,7 @@ export async function createVncCredential(args: {
   const prepared = await prepareCredential(args.body, args.featureContext);
   const transaction = await settle(
     args.db.transaction(async (tx) => {
-      await enterVncWrite(tx, args.owner);
+      await shareVncCleanupScopes(tx, args.owner);
       const owner = args.owner;
       const creation = await inspectVncCreationId(
         tx,

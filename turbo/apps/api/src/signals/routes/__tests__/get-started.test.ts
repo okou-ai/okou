@@ -40,6 +40,16 @@ const review = (claimIds: string[]) => {
 const status = async () => {
   return (await accept(client().status({ headers }), [200])).body;
 };
+const personalCredits = async () => {
+  return (
+    await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers }),
+      [200],
+    )
+  ).body;
+};
 const postId = () => {
   return BigInt(
     `0x${randomUUID().replaceAll("-", "").slice(0, 15)}`,
@@ -61,30 +71,34 @@ beforeEach(async () => {
   await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
 });
 
+function postResponse(id: string, text: string) {
+  return HttpResponse.json({
+    success: true,
+    data: {
+      tweet: {
+        id,
+        text,
+        likes: 0,
+        retweets: 0,
+        replies: 0,
+        views: 0,
+        createdAt: "2026-09-15T00:00:00Z",
+        author: {
+          name: "Example",
+          headline: "",
+          profileUrl: "https://x.com/example",
+        },
+        hashtags: [],
+        urls: [],
+      },
+    },
+  });
+}
+
 function provider(id: string, text: string) {
   server.use(
     http.get("https://api.socialkit.dev/twitter/tweet", () => {
-      return HttpResponse.json({
-        success: true,
-        data: {
-          tweet: {
-            id,
-            text,
-            likes: 0,
-            retweets: 0,
-            replies: 0,
-            views: 0,
-            createdAt: "2026-09-15T00:00:00Z",
-            author: {
-              name: "Example",
-              headline: "",
-              profileUrl: "https://x.com/example",
-            },
-            hashtags: [],
-            urls: [],
-          },
-        },
-      });
+      return postResponse(id, text);
     }),
   );
 }
@@ -392,16 +406,26 @@ test("a realtime delivery failure leaves the reviewed reward committed and spend
   expect(balance.body.bonusCredits).toBe(2000);
 });
 
-test("only a successful award reserves a post globally, including after the bonus expires", async () => {
+test("concurrent claims reserve a post once globally, including after the bonus expires", async () => {
   const id = postId();
-  const first = await accept(
-    client().submitShare({
-      headers,
-      body: { url: `https://x.com/example/status/${id}` },
+  const firstActor = await enabledSession();
+  const submissions = await Promise.all(
+    Array.from({ length: 2 }, () => {
+      return accept(
+        client().submitShare({
+          headers,
+          body: { url: `https://x.com/example/status/${id}` },
+        }),
+        [202],
+      );
     }),
-    [202],
   );
-  await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  const first = submissions[0];
+  if (!first) {
+    throw new Error("Missing submitted claim");
+  }
+  expect(submissions[1]?.body.id).toBe(first.body.id);
+  const secondActor = await enabledSession();
   const second = await accept(
     client().submitShare({
       headers,
@@ -410,9 +434,33 @@ test("only a successful award reserves a post globally, including after the bonu
     [202],
   );
   provider(id, "Okou is useful");
-  await review([second.body.id]);
-  await review([first.body.id]);
-  expect((await status()).shareClaim?.status).toBe("granted");
+  await Promise.all([
+    review([first.body.id]),
+    review([second.body.id]),
+    review([first.body.id]),
+  ]);
+  const outcomes = [];
+  for (const actor of [firstActor, secondActor]) {
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const share = (await status()).shareClaim;
+    if (!share) {
+      throw new Error("Missing share claim");
+    }
+    outcomes.push(share.status);
+    const balance = await personalCredits();
+    if (share.status === "granted") {
+      expect(balance.bonusCredits).toBe(2000);
+      expect(balance.creditGrants).toHaveLength(1);
+    } else {
+      expect(share).toMatchObject({
+        status: "ineligible",
+        reason: "already_redeemed",
+      });
+      expect(balance.bonusCredits).toBe(0);
+      expect(balance.creditGrants).toStrictEqual([]);
+    }
+  }
+  expect(outcomes.sort()).toStrictEqual(["granted", "ineligible"]);
   mockNow(new Date("2027-01-01T00:00:00Z"));
   await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
   expect(
@@ -426,6 +474,67 @@ test("only a successful award reserves a post globally, including after the bonu
       )
     ).body,
   ).toMatchObject({ status: "ineligible", reason: "already_redeemed" });
+});
+
+test("different posts reviewed concurrently share one personal reward across organizations", async () => {
+  const firstActor = await enabledSession();
+  const firstId = postId();
+  const first = await accept(
+    client().submitShare({
+      headers,
+      body: { url: `https://x.com/example/status/${firstId}` },
+    }),
+    [202],
+  );
+  const secondActor = await enabledSession(firstActor.userId);
+  const secondId = postId();
+  const second = await accept(
+    client().submitShare({
+      headers,
+      body: { url: `https://x.com/example/status/${secondId}` },
+    }),
+    [202],
+  );
+  expect(second.body.id).not.toBe(first.body.id);
+  server.use(
+    http.get("https://api.socialkit.dev/twitter/tweet", ({ request }) => {
+      const url = new URL(request.url).searchParams.get("url");
+      const id = [firstId, secondId].find((candidate) => {
+        return url === `https://x.com/i/status/${candidate}`;
+      });
+      if (!id) {
+        throw new Error("Unexpected post verification URL");
+      }
+      return postResponse(id, "Okou helps my team");
+    }),
+  );
+
+  await Promise.all([review([first.body.id]), review([second.body.id])]);
+
+  const balances = [];
+  for (const actor of [firstActor, secondActor]) {
+    mocks.clerk.session(actor.userId, actor.orgId);
+    expect((await status()).quests).toContainEqual(
+      expect.objectContaining({
+        key: "share",
+        claimedCount: 1,
+        earnedCredits: 2000,
+        pendingCount: 0,
+        canEarnMore: false,
+      }),
+    );
+    balances.push(await personalCredits());
+  }
+  expect(
+    balances.reduce((total, balance) => {
+      return total + balance.bonusCredits;
+    }, 0),
+  ).toBe(2000);
+  expect(
+    balances.flatMap((balance) => {
+      return balance.creditGrants;
+    }),
+  ).toHaveLength(1);
 });
 
 test("invalid URLs and missing cron authorization are rejected", async () => {

@@ -410,28 +410,50 @@ export async function deleteSshCredential(args: {
   readonly credentialId: string;
   readonly expectedRevision: number;
 }): Promise<SshResult<undefined>> {
-  const result = await args.db.transaction(async (tx) => {
-    await lockSshOwner(tx, args.owner);
-    const current = await findSshCredential(tx, args.owner, args.credentialId);
-    if (!current) {
-      return sshCredentialFailure("notFound");
-    }
-    if (current.revision !== args.expectedRevision) {
-      return sshCredentialFailure("conflict");
-    }
-    const [host] = await tx
-      .select({ id: sshConnections.id })
-      .from(sshConnections)
-      .where(eq(sshConnections.credentialId, current.id))
-      .limit(1);
-    if (host) {
-      return sshCredentialFailure("inUse");
-    }
-    await tx
-      .delete(sshCredentials)
-      .where(ownedCredential(args.owner, current.id));
-    return { ok: true as const, value: undefined };
-  });
+  const result = await args.db.transaction(
+    async (tx) => {
+      await lockSshOwner(tx, args.owner);
+      // The FK takes KEY SHARE on the credential. Wait here before checking
+      // references in a fresh READ COMMITTED statement; a single DELETE's
+      // absence check can retain the snapshot from before an attachment commits.
+      const [current] = await tx
+        .select({ id: sshCredentials.id, revision: sshCredentials.revision })
+        .from(sshCredentials)
+        .where(ownedCredential(args.owner, args.credentialId))
+        .for("update");
+      if (!current) {
+        return sshCredentialFailure("notFound");
+      }
+      if (current.revision !== args.expectedRevision) {
+        return sshCredentialFailure("conflict");
+      }
+      // Do not lock hosts here: pin and rotation take the host before its
+      // credential. Existing references must return inUse before DELETE's
+      // RESTRICT check could wait on one of those host rows.
+      const [host] = await tx
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(eq(sshConnections.credentialId, current.id))
+        .limit(1);
+      if (host) {
+        return sshCredentialFailure("inUse");
+      }
+      const [deleted] = await tx
+        .delete(sshCredentials)
+        .where(
+          and(
+            ownedCredential(args.owner, current.id),
+            eq(sshCredentials.revision, args.expectedRevision),
+          ),
+        )
+        .returning({ id: sshCredentials.id });
+      if (!deleted) {
+        throw new Error("SSH credential delete returned no row");
+      }
+      return { ok: true as const, value: undefined };
+    },
+    { isolationLevel: "read committed" },
+  );
   if (result.ok) {
     await publishSshClientInvalidation(args.owner);
   }

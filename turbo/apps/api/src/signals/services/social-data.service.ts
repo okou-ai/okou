@@ -32,7 +32,7 @@ import { completeProcessedOrgUsage$ } from "./credit-usage.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   checkManagedCreditsSnapshotInDb,
-  recordManagedUsageInTransaction,
+  recordManagedUsageInCompactionLockedTransaction,
 } from "./managed-usage.service";
 import {
   inspectSocialDataProviderPlan,
@@ -658,7 +658,7 @@ const settleSocialDataJob$ = command(
       const receipt =
         job.actualCostUsdMicros === 0 || job.maxCredits === 0
           ? null
-          : await recordManagedUsageInTransaction(
+          : await recordManagedUsageInCompactionLockedTransaction(
               tx,
               {
                 actor: {

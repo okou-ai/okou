@@ -1791,37 +1791,25 @@ async function cleanupRegisteredCalendarWatch(args: {
 
 async function clearPreviousCalendarChannel(args: {
   readonly db: Db;
-  readonly access: GoogleCalendarAccess;
-  readonly calendarId: string;
   readonly stateId: string;
   readonly currentChannelId: string;
   readonly previousChannelId: string;
 }): Promise<void> {
-  await args.db.transaction(async (tx) => {
-    await lockGoogleCalendarLifecycle(
-      tx,
-      args.access.connectorId,
-      args.calendarId,
+  await args.db
+    .update(googleCalendarWatchStates)
+    .set({
+      previousChannelId: null,
+      previousChannelToken: null,
+      previousResourceId: null,
+      updatedAt: nowDate(),
+    })
+    .where(
+      and(
+        eq(googleCalendarWatchStates.id, args.stateId),
+        eq(googleCalendarWatchStates.channelId, args.currentChannelId),
+        eq(googleCalendarWatchStates.previousChannelId, args.previousChannelId),
+      ),
     );
-    await tx
-      .update(googleCalendarWatchStates)
-      .set({
-        previousChannelId: null,
-        previousChannelToken: null,
-        previousResourceId: null,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(googleCalendarWatchStates.id, args.stateId),
-          eq(googleCalendarWatchStates.channelId, args.currentChannelId),
-          eq(
-            googleCalendarWatchStates.previousChannelId,
-            args.previousChannelId,
-          ),
-        ),
-      );
-  });
 }
 
 async function finalizePreparedCalendarWatch(args: {
@@ -2007,8 +1995,6 @@ async function activatePreparedCalendarWatch(args: {
     if (stopped) {
       await clearPreviousCalendarChannel({
         db: args.db,
-        access: args.access,
-        calendarId: args.calendarId,
         stateId: state.id,
         currentChannelId: state.channelId,
         previousChannelId: previous.channelId,
@@ -2367,8 +2353,6 @@ async function migrateLegacyPrimaryCalendarWatch(
     if (stopped) {
       await clearPreviousCalendarChannel({
         db: args.db,
-        access: args.access,
-        calendarId: GOOGLE_CALENDAR_PRIMARY_ID,
         stateId: migratedState.id,
         currentChannelId: migratedState.channelId,
         previousChannelId: previous.channelId,
@@ -3194,7 +3178,7 @@ async function loadMissingGoogleCalendarWatchTargets(db: Db): Promise<
   return [...missing.values()];
 }
 
-export async function prepareGoogleCalendarWatchStopForConnector(
+export async function prepareGoogleCalendarWatchStopWithAccountTargetLocked(
   args: {
     readonly db: Tx;
     readonly orgId: string;
@@ -3203,13 +3187,9 @@ export async function prepareGoogleCalendarWatchStopForConnector(
   },
   signal: AbortSignal,
 ): Promise<PendingGoogleCalendarWatchStop | null> {
-  // Hold both ownership levels until the caller's deletion/replacement
-  // transaction commits, then stop the exact captured channels post-commit.
-  await lockConnectorAccountTarget(args.db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: { kind: "builtin", connectorSlug: "google-calendar" },
-  });
+  // The caller already holds the Google Calendar account target lock in args.db.
+  // Hold lifecycle ownership until its deletion/replacement transaction commits,
+  // then stop the exact captured channels post-commit.
   const targets = await args.db
     .select({ calendarId: googleCalendarWatchStates.calendarId })
     .from(googleCalendarWatchStates)

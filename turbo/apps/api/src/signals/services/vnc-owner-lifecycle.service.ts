@@ -126,12 +126,20 @@ async function deleteVncRows(
   await tx.delete(agentVncAccess).where(grantCondition);
 }
 
-/** Shared cleanup scopes -> exclusive owner -> business rows. */
-export async function enterVncWrite(tx: Tx, owner: VncOwner): Promise<void> {
+/** Protect writes against user, organization, and membership cleanup. */
+export async function shareVncCleanupScopes(
+  tx: Tx,
+  owner: VncOwner,
+): Promise<void> {
   const keys = ownerScopeKeys(owner);
   for (const key of keys) {
     await lockScope(tx, key, "shared");
   }
+}
+
+/** Shared cleanup scopes -> exclusive owner -> business rows. */
+export async function enterVncWrite(tx: Tx, owner: VncOwner): Promise<void> {
+  await shareVncCleanupScopes(tx, owner);
   const ownerLock = `vnc-owner:${scopeKey({ kind: "owner", ...owner })}`;
   await tx.execute(
     // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock

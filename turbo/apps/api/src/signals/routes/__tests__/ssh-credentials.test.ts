@@ -291,14 +291,105 @@ describe("reusable SSH credential owner routes", () => {
       (await accept(credentials().list({ headers }), [200])).body.credentials,
     ).toStrictEqual([renamed.body]);
     expect(renamed.body).toMatchObject({ revision: 2, authMethod: "password" });
-    await accept(
+    const staleDeletion = await accept(
       credentials().delete({ headers, params, body: { expectedRevision: 1 } }),
       [409],
+    );
+    expect(staleDeletion.body.error.code).toBe(
+      "SSH_CREDENTIAL_REVISION_CONFLICT",
     );
     await accept(
       credentials().delete({ headers, params, body: { expectedRevision: 2 } }),
       [204],
     );
+  });
+
+  it("preserves the winning revision when an edit races credential deletion", async () => {
+    useSecretKmsProbe();
+    owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const params = { credentialId: created.body.id };
+    const [updated, deleted] = await Promise.all([
+      accept(
+        credentials().update({
+          headers,
+          params,
+          body: { expectedRevision: 1, name: "Concurrent edit" },
+        }),
+        [200, 404],
+      ),
+      accept(
+        credentials().delete({
+          headers,
+          params,
+          body: { expectedRevision: 1 },
+        }),
+        [204, 409],
+      ),
+    ]);
+    expect([updated.status, deleted.status]).toStrictEqual(
+      updated.status === 200 ? [200, 409] : [404, 204],
+    );
+    if (updated.status === 200) {
+      expect(updated.body).toMatchObject({
+        name: "Concurrent edit",
+        revision: 2,
+      });
+    } else {
+      expect(updated.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
+    }
+    if (deleted.status === 409) {
+      expect(deleted.body.error.code).toBe("SSH_CREDENTIAL_REVISION_CONFLICT");
+    }
+    const remaining = await accept(credentials().list({ headers }), [200]);
+    expect(remaining.body.credentials).toStrictEqual(
+      updated.status === 200 ? [updated.body] : [],
+    );
+  });
+
+  it("reports a missing credential to the losing concurrent deletion", async () => {
+    useSecretKmsProbe();
+    owner();
+    const created = await accept(
+      credentials().create({
+        headers,
+        body: { id: randomUUID(), ...passwordBody },
+      }),
+      [201],
+    );
+    const params = { credentialId: created.body.id };
+    const results = await Promise.all(
+      [1, 2].map(() => {
+        return accept(
+          credentials().delete({
+            headers,
+            params,
+            body: { expectedRevision: 1 },
+          }),
+          [204, 404],
+        );
+      }),
+    );
+    expect(
+      results
+        .map(({ status }) => {
+          return status;
+        })
+        .sort(),
+    ).toStrictEqual([204, 404]);
+    for (const result of results) {
+      if (result.status === 404) {
+        expect(result.body.error.code).toBe("SSH_CREDENTIAL_NOT_FOUND");
+      }
+    }
+    const remaining = await accept(credentials().list({ headers }), [200]);
+    expect(remaining.body.credentials).toStrictEqual([]);
   });
 
   it("preserves one valid outcome when creating a host races credential deletion", async () => {
