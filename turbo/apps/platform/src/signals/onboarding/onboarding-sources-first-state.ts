@@ -275,10 +275,13 @@ export const claimSourcesFirstStartEvent$ = command(({ get, set }): boolean => {
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
   readonly inviteEmail: string;
+  /** The field was left since it last changed, so its address is final. */
+  readonly inviteEmailLeft: boolean;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
   inviteEmail: "",
+  inviteEmailLeft: false,
 });
 
 export const sourcesFirstUi$ = computed((get) => {

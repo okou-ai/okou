@@ -1,6 +1,7 @@
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -138,4 +139,47 @@ test("The step can be left without inviting anyone", async () => {
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingExperience);
+});
+
+test("A malformed address cannot be sent, and the step says why in the reader's language", async () => {
+  const requested: string[] = [];
+  context.mocks.api(orgInviteContract.invite, ({ body, respond }) => {
+    requested.push(body.email);
+    return respond(200, { message: `Invitation sent to ${body.email}` });
+  });
+  await openTeamStep();
+
+  const field = screen.getByLabelText("Team member’s email");
+  await typeInvite("not-an-email");
+
+  expect(getButtonByName("Send invite")).toBeDisabled();
+  // Still typing: the address is not judged yet.
+  expect(
+    screen.queryByText("Enter a valid email address"),
+  ).not.toBeInTheDocument();
+
+  await userEvent.click(field);
+  field.blur();
+
+  await expect(
+    screen.findByText("Enter a valid email address"),
+  ).resolves.toBeInTheDocument();
+  expect(field).toHaveAccessibleDescription("Enter a valid email address");
+  expect(field).toBeInvalid();
+  expect(getButtonByName("Send invite")).toBeDisabled();
+
+  // Correcting it lifts the hint and lets the address go.
+  await typeInvite(TEAMMATE);
+
+  expect(
+    screen.queryByText("Enter a valid email address"),
+  ).not.toBeInTheDocument();
+  expect(field).toBeValid();
+  click(getButtonByName("Send invite"));
+
+  await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
+  // The malformed address never reached the API, so no raw refusal is shown.
+  expect(requested).toStrictEqual([TEAMMATE]);
+  expect(screen.queryByText("Not sent")).not.toBeInTheDocument();
+  expect(screen.queryByText(/Invalid email address/)).not.toBeInTheDocument();
 });

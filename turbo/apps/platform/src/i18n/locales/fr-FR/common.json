@@ -4808,6 +4808,7 @@
       },
       "team": {
         "copy": "Invitez un membre de l’équipe à partager vos workflows, chacun connectant ses propres outils.",
+        "invalidEmail": "Saisissez une adresse e-mail valide",
         "invite": "Envoyer l'invitation",
         "invited": "Invité",
         "label": "E-mail du membre de l’équipe",

@@ -4749,6 +4749,7 @@
       },
       "team": {
         "copy": "Lade ein Teammitglied ein, deine Workflows zu teilen – jede Person verbindet dabei ihre eigenen Tools.",
+        "invalidEmail": "Bitte gib eine gültige E-Mail-Adresse ein",
         "invite": "Einladung senden",
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",

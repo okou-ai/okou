@@ -4808,6 +4808,7 @@
       },
       "team": {
         "copy": "Convide um membro da equipe para compartilhar seus fluxos de trabalho, enquanto cada um conecta as próprias ferramentas.",
+        "invalidEmail": "Insira um endereço de e-mail válido",
         "invite": "Enviar convite",
         "invited": "Convidado",
         "label": "E-mail do membro da equipe",

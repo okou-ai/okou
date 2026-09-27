@@ -186,9 +186,21 @@ export function OnboardingStepLayout({
               {children}
             </div>
           </div>
-          <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 px-6 py-4 lg:px-8">
+          {/* A phone's sheet is narrower than three full-size actions, so they
+              tighten there, and a label too long even then wraps onto its own
+              row rather than being cut. */}
+          <div
+            data-testid="onboarding-step-actions"
+            className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-6 py-4 max-sm:gap-2 max-sm:px-4 lg:px-8"
+          >
             {onBack ? (
-              <Button type="button" size="lg" variant="ghost" onClick={onBack}>
+              <Button
+                type="button"
+                size="lg"
+                variant="ghost"
+                onClick={onBack}
+                className="max-sm:px-3"
+              >
                 {t(($) => {
                   return $.onboarding.sourcesFirst.common.back;
                 })}
@@ -196,13 +208,14 @@ export function OnboardingStepLayout({
             ) : (
               <span />
             )}
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
               {secondaryLabel && onSecondary ? (
                 <Button
                   type="button"
                   size="lg"
                   variant="ghost"
                   onClick={onSecondary}
+                  className="max-sm:px-3"
                 >
                   {secondaryLabel}
                 </Button>
@@ -213,7 +226,7 @@ export function OnboardingStepLayout({
                 onClick={onPrimary}
                 disabled={primaryDisabled || primaryBusy}
                 aria-busy={primaryBusy}
-                className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
+                className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))] max-sm:w-auto max-sm:px-4"
               >
                 {primaryBusy ? (
                   <Loader2

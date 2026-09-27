@@ -4741,6 +4741,7 @@
       },
       "team": {
         "copy": "Invite a team member to share your workflows, while each of you connects your own tools.",
+        "invalidEmail": "Enter a valid email address",
         "invite": "Send invite",
         "invited": "Invited",
         "label": "Team member’s email",

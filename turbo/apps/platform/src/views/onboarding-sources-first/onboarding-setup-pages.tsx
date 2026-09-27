@@ -8,6 +8,7 @@ import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
 import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import {
   sendSourcesFirstInvite$,
+  sourcesFirstInviteEmailValid,
   sourcesFirstInviteSendable,
 } from "../../signals/onboarding/onboarding-sources-first-invite.ts";
 import {
@@ -260,6 +261,12 @@ export function OnboardingTeamPage() {
   const pageSignal = useGet(pageSignal$);
   const address = ui.inviteEmail.trim();
   const sendable = sourcesFirstInviteSendable(flow.draft.invites, address);
+  // Named only once the field is left, so the hint never argues with an
+  // address that is still being typed.
+  const malformed =
+    ui.inviteEmailLeft &&
+    address !== "" &&
+    !sourcesFirstInviteEmailValid(address);
   const invited = flow.draft.invites.some((entry) => {
     return entry.status === "invited";
   });
@@ -275,7 +282,7 @@ export function OnboardingTeamPage() {
     });
     // The address moves into the list, so the field is free for the next one
     // while the API is still answering for this one.
-    updateUi({ inviteEmail: "" });
+    updateUi({ inviteEmail: "", inviteEmailLeft: false });
     detach(sendInvite(address, pageSignal), Reason.DomCallback);
     // The funnel counts invitees; the addresses themselves stay in the draft.
     captureInviteAdded(
@@ -331,8 +338,18 @@ export function OnboardingTeamPage() {
               placeholder={t(($) => {
                 return $.onboarding.sourcesFirst.team.placeholder;
               })}
+              aria-invalid={malformed}
+              aria-describedby={
+                malformed ? "onboarding-invite-email-error" : undefined
+              }
               onChange={(event) => {
-                updateUi({ inviteEmail: event.target.value });
+                updateUi({
+                  inviteEmail: event.target.value,
+                  inviteEmailLeft: false,
+                });
+              }}
+              onBlur={() => {
+                updateUi({ inviteEmailLeft: true });
               }}
             />
             <Button type="button" onClick={invite} disabled={!sendable}>
@@ -341,6 +358,16 @@ export function OnboardingTeamPage() {
               })}
             </Button>
           </div>
+          {malformed ? (
+            <p
+              id="onboarding-invite-email-error"
+              className="mt-1.5 text-xs leading-5 text-destructive"
+            >
+              {t(($) => {
+                return $.onboarding.sourcesFirst.team.invalidEmail;
+              })}
+            </p>
+          ) : null}
         </div>
         {flow.draft.invites.length > 0 ? (
           <InviteList invites={flow.draft.invites} />
@@ -479,7 +506,8 @@ function SubscriptionConnect({
   const connecting = status === "connecting";
 
   return (
-    <div className="mx-auto flex w-full max-w-[600px] flex-col gap-2">
+    // Spans the answer grid above it, so the action shares the cards' edges.
+    <div className="flex w-full flex-col gap-2">
       <Button
         type="button"
         variant={connected ? "outline" : "neutral"}

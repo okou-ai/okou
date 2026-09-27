@@ -4732,6 +4732,7 @@
       },
       "team": {
         "copy": "Undang anggota tim untuk berbagi alur kerja Anda, sementara setiap orang menghubungkan alatnya sendiri.",
+        "invalidEmail": "Masukkan alamat email yang valid",
         "invite": "Kirim undangan",
         "invited": "Diundang",
         "label": "Email anggota tim",
