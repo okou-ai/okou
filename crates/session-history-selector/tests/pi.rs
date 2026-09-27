@@ -107,6 +107,71 @@ fn carries_the_prior_assistant_model_when_compact_is_the_leaf() {
 }
 
 #[test]
+fn preserves_native_session_name_before_the_compact_boundary() {
+    let mut source = session();
+    source.push_str(&line(json!({"type":"session_info","id":"name","parentId":null,"timestamp":"2026-09-27T00:00:00Z","name":"Retained title"})));
+    source.push_str(&line(json!({"type":"message","id":"old","parentId":"name","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));
+    source.push_str(&line(json!({"type":"message","id":"kept","parentId":"old","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"kept"}})));
+    source.push_str(&line(json!({"type":"compaction","id":"compact","parentId":"kept","timestamp":"2026-09-27T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":1000})));
+    source.push_str(&line(json!({"type":"message","id":"done","parentId":"compact","timestamp":"2026-09-27T00:00:00Z","message":{"role":"assistant","content":[],"provider":"faux","model":"faux-1","stopReason":"stop","timestamp":1}})));
+    let PiHistorySelection::Candidate(candidate) = select(&source, 1024).unwrap() else {
+        panic!("expected the session name to survive compaction");
+    };
+    let entries: Vec<Value> = std::str::from_utf8(candidate.as_bytes())
+        .unwrap()
+        .lines()
+        .map(|row| serde_json::from_str(row).unwrap())
+        .collect();
+    assert_eq!(entries[1]["type"], "session_info");
+    assert_eq!(entries[1]["name"], "Retained title");
+    assert!(entries[1]["parentId"].is_null());
+    assert_eq!(entries[2]["parentId"], "name");
+}
+
+#[test]
+fn rejects_unrestorable_prefix_custom_state_and_dangling_label() {
+    let mut custom = session();
+    custom.push_str(&line(json!({"type":"custom","id":"extension","parentId":null,"timestamp":"2026-09-27T00:00:00Z","customType":"state","data":{"counter":1}})));
+    custom.push_str(&line(json!({"type":"message","id":"old","parentId":"extension","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));
+    custom.push_str(&line(json!({"type":"message","id":"kept","parentId":"old","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"kept"}})));
+    custom.push_str(&line(json!({"type":"compaction","id":"compact","parentId":"kept","timestamp":"2026-09-27T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":1000})));
+    assert!(matches!(
+        select(&custom, 1024).unwrap(),
+        PiHistorySelection::Ineligible(Reason::UnsafeNativeState)
+    ));
+
+    let mut labeled = session();
+    labeled.push_str(&line(json!({"type":"message","id":"old","parentId":null,"timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));
+    labeled.push_str(&line(json!({"type":"message","id":"kept","parentId":"old","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"kept"}})));
+    labeled.push_str(&line(json!({"type":"label","id":"label","parentId":"kept","targetId":"old","timestamp":"2026-09-27T00:00:00Z","label":"bookmark"})));
+    labeled.push_str(&line(json!({"type":"compaction","id":"compact","parentId":"label","timestamp":"2026-09-27T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":1000})));
+    assert!(matches!(
+        select(&labeled, 1024).unwrap(),
+        PiHistorySelection::Ineligible(Reason::UnsafeNativeState)
+    ));
+    // A label whose target survives remains a valid native reference.
+    let valid_label = labeled.replace("\"targetId\":\"old\"", "\"targetId\":\"kept\"");
+    assert_ne!(valid_label, labeled);
+    assert!(matches!(
+        select(&valid_label, 1024).unwrap(),
+        PiHistorySelection::Candidate(_)
+    ));
+}
+
+#[test]
+fn rejects_session_title_on_an_abandoned_branch() {
+    let mut source = session();
+    source.push_str(&line(json!({"type":"message","id":"old","parentId":null,"timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));
+    source.push_str(&line(json!({"type":"session_info","id":"title","parentId":"old","timestamp":"2026-09-27T00:00:00Z","name":"Global title"})));
+    source.push_str(&line(json!({"type":"message","id":"kept","parentId":"old","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"kept"}})));
+    source.push_str(&line(json!({"type":"compaction","id":"compact","parentId":"kept","timestamp":"2026-09-27T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":1000})));
+    assert!(matches!(
+        select(&source, 1024).unwrap(),
+        PiHistorySelection::Ineligible(Reason::UnsafeNativeState)
+    ));
+}
+
+#[test]
 fn rejects_ineligible_or_oversized_generation_without_falling_back() {
     assert_eq!(
         select(&history("kept", false), 1024).unwrap(),

@@ -243,10 +243,17 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
     timestamp: "2026-09-27T00:00:00Z",
     thinkingLevel: "high",
   };
+  const title = {
+    type: "session_info",
+    id: "title",
+    parentId: "think",
+    timestamp: "2026-09-27T00:00:00Z",
+    name: "Retained title",
+  };
   const large = {
     type: "message",
     id: "large",
-    parentId: "think",
+    parentId: "title",
     timestamp: "2026-09-27T00:00:00Z",
     message: { role: "user", content: "X".repeat(2048) },
   };
@@ -266,7 +273,7 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
     firstKeptEntryId: "kept",
     tokensBefore: 1000,
   };
-  const source = [header, model, thinking, large, kept, compact]
+  const source = [header, model, thinking, title, large, kept, compact]
     .map((entry) => {
       return JSON.stringify(entry);
     })
@@ -275,7 +282,8 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
     header,
     model,
     thinking,
-    { ...kept, parentId: "think" },
+    title,
+    { ...kept, parentId: "title" },
     compact,
   ]
     .map((entry) => {
@@ -295,11 +303,14 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
   expect(candidate.buildSessionContext()).toEqual(
     original.buildSessionContext(),
   );
+  // Session info is not in the model context; check Pi's separate native reader.
+  expect(original.getSessionName()).toBe("Retained title");
+  expect(candidate.getSessionName()).toBe(original.getSessionName());
   expect(
     candidate.getBranch().map((entry) => {
       return entry.id;
     }),
-  ).toEqual(["model", "think", "kept", "compact"]);
+  ).toEqual(["model", "think", "title", "kept", "compact"]);
   const settledCandidate = [
     bounded,
     JSON.stringify({

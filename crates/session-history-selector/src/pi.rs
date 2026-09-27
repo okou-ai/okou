@@ -72,6 +72,7 @@ pub enum PiHistoryIneligibleReason {
     BrokenBranch,
     NoCompactBoundary,
     InvalidCompactBoundary,
+    UnsafeNativeState,
     CandidateTooLarge,
     SourceChanged,
 }
@@ -91,6 +92,7 @@ impl PiHistoryIneligibleReason {
             Self::BrokenBranch => "broken_branch",
             Self::NoCompactBoundary => "no_compact_boundary",
             Self::InvalidCompactBoundary => "invalid_compact_boundary",
+            Self::UnsafeNativeState => "unsafe_native_state",
             Self::CandidateTooLarge => "candidate_too_large",
             Self::SourceChanged => "source_changed",
         }
@@ -101,6 +103,7 @@ struct EntryMeta {
     parent: Option<String>,
     kind: String,
     first_kept: Option<String>,
+    target_id: Option<String>,
     offset: u64,
     record_len: usize,
     sets_thinking: bool,
@@ -184,6 +187,7 @@ fn select_with_limit(
     let mut tail: VecDeque<RetainedRecord> = VecDeque::new();
     let mut tail_bytes = 0_u64;
     let mut last_id: Option<String> = None;
+    let mut last_session_info_id: Option<String> = None;
     let mut next_offset = header.len() as u64;
     loop {
         let record_offset = next_offset;
@@ -244,6 +248,19 @@ fn select_with_limit(
         } else {
             None
         };
+        if kind == "session_info" && value.get("name").and_then(Value::as_str).is_none() {
+            return Ok(PiHistorySelection::Ineligible(Reason::InvalidRecord));
+        }
+        let target_id = if matches!(kind, "label" | "context_edit") {
+            match value.get("targetId").and_then(Value::as_str) {
+                Some(target) if !target.is_empty() && target.len() <= MAX_ENTRY_ID_BYTES => {
+                    Some(target.to_owned())
+                }
+                _ => return Ok(PiHistorySelection::Ineligible(Reason::InvalidRecord)),
+            }
+        } else {
+            None
+        };
         let sets_thinking = kind == "thinking_level_change";
         if sets_thinking && value.get("thinkingLevel").and_then(Value::as_str).is_none() {
             return Ok(PiHistorySelection::Ineligible(Reason::InvalidRecord));
@@ -258,6 +275,7 @@ fn select_with_limit(
                     parent,
                     kind: kind.to_owned(),
                     first_kept,
+                    target_id,
                     offset: record_offset,
                     record_len: record.len(),
                     sets_thinking,
@@ -269,6 +287,9 @@ fn select_with_limit(
             return Ok(PiHistorySelection::Ineligible(Reason::DuplicateId));
         }
         last_id = Some(id.to_owned());
+        if kind == "session_info" {
+            last_session_info_id = Some(id.to_owned());
+        }
         tail_bytes = tail_bytes.saturating_add(record.len() as u64);
         tail.push_back(RetainedRecord {
             id: id.to_owned(),
@@ -340,6 +361,33 @@ fn select_with_limit(
     let Some(prefix) = branch.get(..first_index) else {
         return Ok(PiHistorySelection::Ineligible(Reason::BrokenBranch));
     };
+    // Pi reads the most recent session_info across the entire native file,
+    // not just the active branch. A title on an abandoned branch cannot be
+    // silently discarded or rebased into a different branch.
+    if last_session_info_id
+        .as_ref()
+        .is_some_and(|id| !branch.contains(id))
+    {
+        return Ok(PiHistorySelection::Ineligible(Reason::UnsafeNativeState));
+    }
+    // Summarized model messages may be discarded, but opaque extension data,
+    // labels and future record types cannot be proven equivalent after a cut.
+    if prefix.iter().any(|id| {
+        metas.get(id).is_none_or(|meta| {
+            !matches!(
+                meta.kind.as_str(),
+                "message"
+                    | "model_change"
+                    | "thinking_level_change"
+                    | "branch_summary"
+                    | "compaction"
+                    | "context_edit"
+                    | "session_info"
+            )
+        })
+    }) {
+        return Ok(PiHistorySelection::Ineligible(Reason::UnsafeNativeState));
+    }
     let last_thinking_id = prefix
         .iter()
         .rev()
@@ -348,6 +396,27 @@ fn select_with_limit(
         .iter()
         .rev()
         .find(|id| metas.get(*id).is_some_and(|meta| meta.sets_model));
+    let Some(retained_path) = branch.get(first_index..) else {
+        return Ok(PiHistorySelection::Ineligible(Reason::BrokenBranch));
+    };
+    let included_ids: HashSet<&str> = retained_path
+        .iter()
+        .chain(prefix.iter().filter(|id| {
+            last_thinking_id == Some(*id)
+                || last_model_id == Some(*id)
+                || last_session_info_id.as_ref() == Some(*id)
+        }))
+        .map(String::as_str)
+        .collect();
+    if retained_path.iter().any(|id| {
+        metas.get(id).is_none_or(|meta| {
+            meta.target_id
+                .as_deref()
+                .is_some_and(|target| !included_ids.contains(target))
+        })
+    }) {
+        return Ok(PiHistorySelection::Ineligible(Reason::UnsafeNativeState));
+    }
     let mut record_by_id: HashMap<String, Vec<u8>> = tail
         .into_iter()
         .map(|record| (record.id, record.bytes))
@@ -362,10 +431,11 @@ fn select_with_limit(
         candidate.push(b'\n');
     }
     let mut root_parent = None;
-    for id in prefix
-        .iter()
-        .filter(|id| last_thinking_id == Some(id) || last_model_id == Some(id))
-    {
+    for id in prefix.iter().filter(|id| {
+        last_thinking_id == Some(id)
+            || last_model_id == Some(id)
+            || last_session_info_id.as_ref() == Some(id)
+    }) {
         let Some(meta) = metas.get(id) else {
             return Ok(PiHistorySelection::Ineligible(Reason::BrokenBranch));
         };
@@ -389,9 +459,6 @@ fn select_with_limit(
         }
         root_parent = Some(id.as_str());
     }
-    let Some(retained_path) = branch.get(first_index..) else {
-        return Ok(PiHistorySelection::Ineligible(Reason::BrokenBranch));
-    };
     for (index, id) in retained_path.iter().enumerate() {
         let Some(raw) = record_by_id.remove(id) else {
             return Ok(PiHistorySelection::Ineligible(Reason::CandidateTooLarge));
