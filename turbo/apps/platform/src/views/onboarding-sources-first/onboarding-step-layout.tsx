@@ -105,9 +105,9 @@ function OnboardingStepExplanation({
 }
 
 /**
- * The step's way on. A phone's sheet is narrower than three full-size
- * actions, so they tighten there, and a label too long even then wraps onto
- * its own row rather than being cut.
+ * The step's way on. A phone's sheet is too narrow for three actions in a
+ * row, so there the primary takes a full-width row of its own, first, and
+ * Back and the secondary share the row beneath it.
  */
 function OnboardingStepActions({
   primaryLabel,
@@ -129,14 +129,14 @@ function OnboardingStepActions({
   const { t } = useTranslation();
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 px-6 py-4 max-sm:gap-2 max-sm:px-4 lg:px-8">
+    <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 px-6 py-4 max-sm:grid max-sm:grid-cols-2 max-sm:gap-2 max-sm:px-4 lg:px-8">
       {onBack ? (
         <Button
           type="button"
           size="lg"
           variant="ghost"
           onClick={onBack}
-          className="max-sm:px-3"
+          className="max-sm:justify-self-start"
         >
           {t(($) => {
             return $.onboarding.sourcesFirst.common.back;
@@ -145,14 +145,14 @@ function OnboardingStepActions({
       ) : (
         <span />
       )}
-      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+      <div className="flex items-center gap-2 max-sm:contents">
         {secondaryLabel && onSecondary ? (
           <Button
             type="button"
             size="lg"
             variant="ghost"
             onClick={onSecondary}
-            className="max-sm:px-3"
+            className="max-sm:col-start-2 max-sm:justify-self-end"
           >
             {secondaryLabel}
           </Button>
@@ -163,7 +163,7 @@ function OnboardingStepActions({
           onClick={onPrimary}
           disabled={primaryDisabled || primaryBusy}
           aria-busy={primaryBusy}
-          className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))] max-sm:w-auto max-sm:px-4"
+          className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))] max-sm:order-first max-sm:col-span-2 max-sm:w-full"
         >
           {primaryBusy ? (
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
@@ -221,8 +221,9 @@ export function OnboardingStepLayout({
     <div className="relative box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-sidebar pb-safe text-foreground">
       <SettingsDialogMount />
       {/* The app's own rail: the workspace at the top, the account at the
-          bottom, both as the marks the sidebar nav already uses. */}
-      <div className="flex w-14 shrink-0 flex-col items-center justify-between py-3">
+          bottom, both as the marks the sidebar nav already uses. A phone
+          gives the step the whole width instead. */}
+      <div className="flex w-14 shrink-0 flex-col items-center justify-between py-3 max-sm:hidden">
         <OrgSwitcherCompact />
         <OnboardingAccount />
       </div>
