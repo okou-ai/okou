@@ -117,7 +117,11 @@ export class RunWssTransport {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
-    void this.run();
+    this.run().catch(() => {
+      if (!this.lifetime.signal.aborted) {
+        this.fail();
+      }
+    });
     return this.firstReady;
   }
 
@@ -379,7 +383,9 @@ export class RunWssTransport {
           // Expected cancellation on admission or close.
         }
       };
-      void watchAuthTimeout();
+      watchAuthTimeout().catch(() => {
+        fail();
+      });
     });
     await auth;
     return { closed };
