@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "@okouai/ui";
 import { useSet } from "ccstate-react";
-import { Loader2 } from "lucide-react";
+import { ChevronLeft, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
@@ -87,10 +87,10 @@ function OnboardingStepExplanation({
 }) {
   return (
     <>
-      <h1 className="mt-12 text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
+      <h1 className="mt-12 text-[30px] max-sm:mt-2 max-sm:text-[28px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
         {title}
       </h1>
-      <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
+      <p className="mt-5 text-base leading-[1.7] text-muted-foreground max-sm:mt-3">
         {description}
       </p>
       <OnboardingTrustPoints points={trustPoints} />
@@ -105,9 +105,68 @@ function OnboardingStepExplanation({
 }
 
 /**
- * The step's way on. A phone's sheet is too narrow for three actions in a
- * row, so there the primary takes a full-width row of its own, first, and
- * Back and the secondary share the row beneath it.
+ * A phone's navigation bar: the way back, how far along the flow is, and the
+ * way past the step, where a native app keeps them. It stays pinned while the
+ * step scrolls beneath it.
+ */
+function OnboardingStepTopBar({
+  current,
+  total,
+  secondaryLabel,
+  onSecondary,
+  onBack,
+}: {
+  readonly current: number;
+  readonly total: number;
+  readonly secondaryLabel?: string;
+  readonly onSecondary?: () => void;
+  readonly onBack?: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 bg-background px-2 sm:hidden">
+      {onBack ? (
+        <Button
+          type="button"
+          size="icon-lg"
+          variant="ghost"
+          className="text-foreground"
+          iconSize="lg"
+          aria-label={t(($) => {
+            return $.onboarding.sourcesFirst.common.back;
+          })}
+          onClick={onBack}
+        >
+          <ChevronLeft aria-hidden="true" />
+        </Button>
+      ) : (
+        <span className="size-10 shrink-0" />
+      )}
+      <div className="min-w-0 flex-1 px-1">
+        <OnboardingStepProgress current={current} total={total} />
+      </div>
+      {secondaryLabel && onSecondary ? (
+        <Button
+          type="button"
+          size="lg"
+          variant="ghost"
+          className="px-3"
+          onClick={onSecondary}
+        >
+          {secondaryLabel}
+        </Button>
+      ) : (
+        <span className="size-10 shrink-0" />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The step's way on. On a phone, Back and the secondary live in the top bar,
+ * so the bar keeps only the primary: full width, pinned above the home
+ * indicator while the step scrolls.
  */
 function OnboardingStepActions({
   primaryLabel,
@@ -129,30 +188,30 @@ function OnboardingStepActions({
   const { t } = useTranslation();
 
   return (
-    <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 px-6 py-4 max-sm:grid max-sm:grid-cols-2 max-sm:gap-2 max-sm:px-4 lg:px-8">
+    <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 px-6 py-4 max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:bg-background max-sm:px-4 max-sm:py-3 lg:px-8">
       {onBack ? (
         <Button
           type="button"
           size="lg"
           variant="ghost"
           onClick={onBack}
-          className="max-sm:justify-self-start"
+          className="max-sm:hidden"
         >
           {t(($) => {
             return $.onboarding.sourcesFirst.common.back;
           })}
         </Button>
       ) : (
-        <span />
+        <span className="max-sm:hidden" />
       )}
-      <div className="flex items-center gap-2 max-sm:contents">
+      <div className="flex items-center gap-2 max-sm:flex-1">
         {secondaryLabel && onSecondary ? (
           <Button
             type="button"
             size="lg"
             variant="ghost"
             onClick={onSecondary}
-            className="max-sm:col-start-2 max-sm:justify-self-end"
+            className="max-sm:hidden"
           >
             {secondaryLabel}
           </Button>
@@ -163,7 +222,7 @@ function OnboardingStepActions({
           onClick={onPrimary}
           disabled={primaryDisabled || primaryBusy}
           aria-busy={primaryBusy}
-          className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))] max-sm:order-first max-sm:col-span-2 max-sm:w-full"
+          className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))] max-sm:h-12 max-sm:w-full max-sm:text-base"
         >
           {primaryBusy ? (
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
@@ -218,7 +277,7 @@ export function OnboardingStepLayout({
   readonly children: ReactNode;
 }) {
   return (
-    <div className="relative box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-sidebar pb-safe text-foreground">
+    <div className="relative box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-sidebar pb-safe text-foreground max-sm:bg-background">
       <SettingsDialogMount />
       {/* The app's own rail: the workspace at the top, the account at the
           bottom, both as the marks the sidebar nav already uses. A phone
@@ -231,11 +290,23 @@ export function OnboardingStepLayout({
         key={`${String(currentStep)}-${title}`}
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:grid lg:grid-cols-[minmax(0,calc(50%_-_1.75rem))_minmax(0,calc(50%_+_1.75rem))] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden"
       >
+        <OnboardingStepTopBar
+          current={currentStep}
+          total={totalSteps}
+          secondaryLabel={secondaryLabel}
+          onSecondary={onSecondary}
+          onBack={onBack}
+        />
         {/* The rail is 3.5rem wide, so account for half of it in each track:
             the sheet begins at the viewport's actual midpoint. */}
-        <div className="w-full min-w-0 px-6 pt-8 pb-6 lg:overflow-y-auto lg:px-10 lg:pt-28 lg:pb-10">
+        <div className="w-full min-w-0 px-6 pt-8 pb-6 max-sm:px-5 max-sm:pt-2 max-sm:pb-0 lg:overflow-y-auto lg:px-10 lg:pt-28 lg:pb-10">
           <div className="lg:mx-auto lg:w-full lg:max-w-[480px]">
-            <OnboardingStepProgress current={currentStep} total={totalSteps} />
+            <div className="max-sm:hidden">
+              <OnboardingStepProgress
+                current={currentStep}
+                total={totalSteps}
+              />
+            </div>
             <OnboardingStepExplanation
               title={title}
               description={description}
@@ -245,13 +316,15 @@ export function OnboardingStepLayout({
             />
           </div>
         </div>
-        {/* The answers sit on the app's own sheet, taking the other half. */}
-        <div className="m-2 mt-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:ml-0 lg:mt-2">
-          <div className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8">
+        {/* The answers sit on the app's own sheet, taking the other half. A
+            phone drops the sheet: the step runs full-bleed and scrolls as one
+            page, so the answers are never squeezed under the question. */}
+        <div className="m-2 mt-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background max-sm:m-0 max-sm:flex-[1_0_auto] max-sm:overflow-visible max-sm:rounded-none max-sm:border-0 lg:ml-0 lg:mt-2">
+          <div className="min-h-0 flex-1 overflow-y-auto p-6 max-sm:flex-[1_0_auto] max-sm:overflow-visible max-sm:px-5 max-sm:pt-6 lg:p-8">
             {/* Centred while it fits, scrolled from the top when it does
                 not. */}
             <div
-              className={`flex min-h-full flex-col ${contentAlign === "start" ? "justify-start" : "justify-center"}`}
+              className={`flex min-h-full flex-col max-sm:justify-start ${contentAlign === "start" ? "justify-start" : "justify-center"}`}
             >
               {children}
             </div>

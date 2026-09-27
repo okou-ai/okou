@@ -329,9 +329,10 @@ export function OnboardingTeamPage() {
               return $.onboarding.sourcesFirst.team.label;
             })}
           </label>
-          <div className="mt-2 flex gap-2">
+          <div className="mt-2 flex gap-2 max-sm:flex-col">
             <Input
               id="onboarding-invite-email"
+              className="max-sm:h-12 max-sm:text-base max-sm:placeholder:text-base"
               type="email"
               autoComplete="off"
               value={ui.inviteEmail}
@@ -352,7 +353,12 @@ export function OnboardingTeamPage() {
                 updateUi({ inviteEmailLeft: true });
               }}
             />
-            <Button type="button" onClick={invite} disabled={!sendable}>
+            <Button
+              type="button"
+              onClick={invite}
+              disabled={!sendable}
+              className="max-sm:h-12 max-sm:text-base"
+            >
               {t(($) => {
                 return $.onboarding.sourcesFirst.team.invite;
               })}
@@ -511,7 +517,7 @@ function SubscriptionConnect({
       <Button
         type="button"
         variant={connected ? "outline" : "neutral"}
-        className="w-full gap-2"
+        className="w-full gap-2 max-sm:h-12 max-sm:text-base"
         disabled={connected || connecting}
         aria-busy={connecting}
         onClick={() => {
@@ -582,7 +588,7 @@ export function OnboardingExperiencePage() {
         primaryDisabled={experienced === null}
         onBack={flow.goBack}
       >
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 max-sm:gap-3">
           <RadioGroup
             value={experienced === false ? "no" : (provider ?? "")}
             onValueChange={(value) => {
@@ -599,7 +605,7 @@ export function OnboardingExperiencePage() {
               updateDraft(answer);
               captureExperienceAnswered(answer.experienced, answer.provider);
             }}
-            className="grid gap-4 sm:grid-cols-3"
+            className="grid gap-3 sm:grid-cols-3 sm:gap-4"
           >
             <OnboardingPosterCard
               value="no"
