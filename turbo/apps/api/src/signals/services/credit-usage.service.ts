@@ -686,6 +686,8 @@ export const completeProcessedOrgUsage$ = command(
               timing_scope: timingScope,
               pending_events: work.pendingEvents,
               pricing_rows: work.pricingRows,
+              compaction_lock_wait_ms: work.lockWaitMs,
+              org_lock_wait_ms: work.orgLockWaitMs,
               pending_read_ms: work.pendingReadMs,
               pricing_read_ms: work.pricingReadMs,
               pricing_calculation_ms: work.pricingCalculationMs,
