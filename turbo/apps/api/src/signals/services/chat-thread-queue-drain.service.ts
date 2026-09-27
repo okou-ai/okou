@@ -343,13 +343,15 @@ export const takeOverChatThreadQueue$ = command(
   },
 );
 
-/** Batch bound for one organization's pass over its queued threads. */
-const ORG_PICK_BATCH_LIMIT = 20;
+/** Keyset page size for passes over queued threads. */
+const PICK_PAGE_SIZE = 100;
 
 /**
- * Pick the organization's oldest pickable threads, stopping at its capacity.
- * A run release starts at most one run; a capacity increase keeps picking.
- * A failed pick is logged and never stops the pass.
+ * Pick the organization's oldest pickable threads by a (queued_at,
+ * chat_thread_id) keyset, paging past busy threads, until the organization
+ * is full or its rows are exhausted. A run release starts at most one run; a
+ * capacity increase keeps picking. A failed pick is logged and never stops
+ * the pass.
  */
 export const pickOrgQueuedChatThreads$ = command(
   async (
@@ -362,43 +364,51 @@ export const pickOrgQueuedChatThreads$ = command(
     signal: AbortSignal,
   ): Promise<number> => {
     const db = set(writeDb$);
-    const rows = await listPickableQueuedChatThreads(db, {
-      orgId: input.orgId,
-      limit: ORG_PICK_BATCH_LIMIT,
-    });
-    signal.throwIfAborted();
     let launched = 0;
-    for (const { chatThreadId } of rows) {
-      const picked = await settle(
-        set(
-          pickQueuedChatThread$,
-          {
-            chatThreadId,
-            dispatchFailedCallbacks: input.dispatchFailedCallbacks,
-          },
+    let after: QueuedChatThreadCursor | undefined;
+    while (true) {
+      const rows = await listPickableQueuedChatThreads(db, {
+        orgId: input.orgId,
+        limit: PICK_PAGE_SIZE,
+        ...(after === undefined ? {} : { after }),
+      });
+      signal.throwIfAborted();
+      for (const { chatThreadId } of rows) {
+        const picked = await settle(
+          set(
+            pickQueuedChatThread$,
+            {
+              chatThreadId,
+              dispatchFailedCallbacks: input.dispatchFailedCallbacks,
+            },
+            signal,
+          ),
           signal,
-        ),
-        signal,
-      );
-      if (!picked.ok) {
-        L.error("Failed to pick queued chat thread", {
-          chatThreadId,
-          orgId: input.orgId,
-          error: picked.error,
-        });
-        continue;
-      }
-      if (picked.value.outcome.kind === "org-full") {
-        return launched;
-      }
-      if (picked.value.outcome.kind === "launched") {
-        launched += 1;
-        if (!input.untilFull) {
+        );
+        if (!picked.ok) {
+          L.error("Failed to pick queued chat thread", {
+            chatThreadId,
+            orgId: input.orgId,
+            error: picked.error,
+          });
+          continue;
+        }
+        if (picked.value.outcome.kind === "org-full") {
           return launched;
         }
+        if (picked.value.outcome.kind === "launched") {
+          launched += 1;
+          if (!input.untilFull) {
+            return launched;
+          }
+        }
       }
+      const last = rows.at(-1);
+      if (rows.length < PICK_PAGE_SIZE || last === undefined) {
+        return launched;
+      }
+      after = last;
     }
-    return launched;
   },
 );
 
@@ -436,9 +446,6 @@ export const drainChatThreadQueueForRun$ = command(
     );
   },
 );
-
-/** Keyset page size for the cron pass over queued threads. */
-const CRON_PICK_PAGE_SIZE = 100;
 
 /**
  * Pick one thread in the cron pass. Reaching the cron at all means an upstream
@@ -550,7 +557,7 @@ export const drainStaleChatThreadQueues$ = command(
     let after: QueuedChatThreadCursor | undefined;
     while (true) {
       const rows = await listPickableQueuedChatThreads(db, {
-        limit: CRON_PICK_PAGE_SIZE,
+        limit: PICK_PAGE_SIZE,
         ...(after === undefined ? {} : { after }),
       });
       signal.throwIfAborted();
@@ -567,7 +574,7 @@ export const drainStaleChatThreadQueues$ = command(
         picked += 1;
       }
       const last = rows.at(-1);
-      if (rows.length < CRON_PICK_PAGE_SIZE || last === undefined) {
+      if (rows.length < PICK_PAGE_SIZE || last === undefined) {
         return recoveryThreads.length + picked;
       }
       after = last;

@@ -4093,6 +4093,37 @@ export const sendNormalEvent$ = command(
 );
 
 /**
+ * A retried send whose message is still waiting re-drives the queue, so an
+ * earlier attempt that stopped after appending the message cannot leave it
+ * without a queue row.
+ */
+const redriveWaitingRetriedSend$ = command(
+  async (
+    { set },
+    input: {
+      readonly threadId: string;
+      readonly orgId: string;
+      readonly waiting: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!input.waiting) {
+      return;
+    }
+    await set(
+      drainChatThreadQueueForThread$,
+      {
+        chatThreadId: input.threadId,
+        orgId: input.orgId,
+        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+  },
+);
+
+/**
  * Queue-first send: persist the message and its queue item, then inline-drain
  * — create the run and append a replacement message when the thread is idle
  * and this message is the oldest unclaimed one. Response shapes match the
@@ -4136,8 +4167,10 @@ const sendQueueFirstNormalEvent$ = command(
     );
     signal.throwIfAborted();
     if (!queuedEventId) {
-      // Duplicate clientEventId or an already-existing resolution — the
-      // enqueue inserted nothing, so there is nothing to dispatch.
+      // Duplicate clientEventId or an already-existing resolution.
+      const waiting = response.status === 201 && response.body.runId === null;
+      const retried = { threadId, orgId: args.orgId, waiting };
+      await set(redriveWaitingRetriedSend$, retried, signal);
       return response;
     }
 
