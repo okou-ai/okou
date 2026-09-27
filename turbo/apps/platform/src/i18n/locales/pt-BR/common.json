@@ -1781,7 +1781,7 @@
       "expired": "Solicitação expirada",
       "expiredDescription": "O navegador foi fechado ou esta solicitação não está mais ativa.",
       "fileLeave": "Manter os arquivos do site inalterados",
-      "fileLimit": "Escolha até 3 arquivos (1 em sites de arquivo único), 1 MB no total.",
+      "fileLimit": "Escolha até 3 arquivos (1 em sites de arquivo único), 10 MiB no total.",
       "fileNotice": "Adicionar ao navegador transfere o arquivo para este site. O site pode enviá-lo ou enviar o formulário quando a seleção mudar:",
       "loadFailed": "Não foi possível carregar esta solicitação",
       "loadFailedDescription": "Tente novamente em instantes.",

@@ -13,6 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import {
@@ -708,6 +709,37 @@ test("A changed native color submits its observed website snapshot", async () =>
 test("A standalone native file input transfers chosen bytes only on confirmed submission", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   let uploaded = false;
+  let directPut = false;
+  const digest =
+    "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+  const uploadUrl = "https://uploads.example.test/browser-input-test";
+  context.mocks.api(
+    browserUserActionsContract.prepareFileUpload,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual({
+        key: "document",
+        index: 0,
+        size: 4,
+        sha256: digest,
+      });
+      return respond(200, {
+        uploadUrl,
+        uploadHeaders: {
+          "x-amz-checksum-sha256":
+            "n4bQgYhMfWWaL+qgxVrQFaO/Txs7C4Is0V1sFbDwCgg=",
+        },
+      });
+    },
+  );
+  context.mocks.http.put(uploadUrl, ({ request }) => {
+    expect(request.credentials).toBe("omit");
+    expect(request.headers.get("content-type")).toBe(
+      "application/octet-stream",
+    );
+    expect(request.headers.get("x-amz-checksum-sha256")).not.toBeNull();
+    directPut = true;
+    return new HttpResponse(null, { status: 200 });
+  });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(
       200,
@@ -734,11 +766,12 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
             name: "note.txt",
             type: "text/plain",
             size: 4,
-            contentBase64: "dGVzdA==",
+            sha256: digest,
           },
         ],
       },
     ]);
+    expect(directPut).toBeTruthy();
     uploaded = true;
     state = "succeeded";
     return respond(200, {

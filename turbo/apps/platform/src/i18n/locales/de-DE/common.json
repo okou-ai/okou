@@ -1752,7 +1752,7 @@
       "expired": "Anfrage abgelaufen",
       "expiredDescription": "Der Browser wurde geschlossen oder diese Anfrage ist nicht mehr aktiv.",
       "fileLeave": "Dateien auf der Website unverändert lassen",
-      "fileLimit": "Bis zu 3 Dateien auswählen (1 bei Einzelauswahl), insgesamt 1 MB.",
+      "fileLimit": "Bis zu 3 Dateien auswählen (1 bei Einzelauswahl), insgesamt 10 MiB.",
       "fileNotice": "Mit „Zum Browser hinzufügen“ wird die Datei an diese Website übertragen. Die Website kann sie beim Ändern der Dateiauswahl selbst hochladen oder das Formular absenden:",
       "loadFailed": "Diese Anfrage konnte nicht geladen werden",
       "loadFailedDescription": "Versuchen Sie es gleich noch einmal.",

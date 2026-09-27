@@ -1749,7 +1749,7 @@
       "expired": "Permintaan kedaluwarsa",
       "expiredDescription": "Browser ditutup atau permintaan ini sudah tidak aktif.",
       "fileLeave": "Biarkan berkas situs web tetap sama",
-      "fileLimit": "Pilih hingga 3 berkas (1 untuk situs dengan satu berkas), total 1 MB.",
+      "fileLimit": "Pilih hingga 3 berkas (1 untuk situs dengan satu berkas), total 10 MiB.",
       "fileNotice": "Menambahkan ke browser akan mengirim berkas ke situs ini. Situs dapat mengunggahnya atau mengirim formulir saat pilihan berkas berubah:",
       "loadFailed": "Permintaan ini tidak dapat dimuat",
       "loadFailedDescription": "Coba lagi sebentar lagi.",

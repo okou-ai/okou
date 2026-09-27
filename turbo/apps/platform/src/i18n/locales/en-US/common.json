@@ -1752,7 +1752,7 @@
       "expired": "Request expired",
       "expiredDescription": "The browser closed or this request is no longer active.",
       "fileLeave": "Leave website files unchanged",
-      "fileLimit": "Choose up to 3 files (1 on single-file sites), 1 MB total.",
+      "fileLimit": "Choose up to 3 files (1 on single-file sites), 10 MiB total.",
       "fileNotice": "Choosing Add to browser transfers your selected file to this website. The site may upload or submit it when its file input changes:",
       "loadFailed": "Couldn't load this request",
       "loadFailedDescription": "Try again in a moment.",

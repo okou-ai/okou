@@ -49,7 +49,7 @@ import {
 } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
-import { putImmutableS3Object } from "../external/s3";
+import { deleteS3Objects, putImmutableS3Object } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { settle, settleIncludingAbort } from "../utils";
 import {
@@ -84,7 +84,10 @@ import {
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { insertChatEvent } from "./chat-event.service";
 import type { Tx } from "../../lib/db-types";
-import { reconcileBrowserUserActions } from "./browser-user-actions.service";
+import {
+  reconcileBrowserUserActions,
+  temporaryBrowserFileKeys,
+} from "./browser-user-actions.service";
 
 const RECONCILE_BATCH_SIZE = 20;
 const PROVIDER_CLEANUP_TIMEOUT_MS = 30_000;
@@ -3693,7 +3696,7 @@ const reconcileBrowserInstance$ = command(
 
 const reconcileBrowsersWithScope$ = command(
   async (
-    { set },
+    { get, set },
     chatThreadIds: readonly string[] | null,
     signal: AbortSignal,
   ): Promise<BrowserReconcileResult> => {
@@ -3749,6 +3752,15 @@ const reconcileBrowsersWithScope$ = command(
       RECONCILE_BATCH_SIZE,
       chatThreadIds,
       signal,
+      async (requestTokenHash) => {
+        await get(
+          deleteS3Objects(
+            env("R2_USER_STORAGES_BUCKET_NAME"),
+            temporaryBrowserFileKeys(requestTokenHash),
+            signal,
+          ),
+        );
+      },
     );
     const expiredBrowserCleanup = await reconcileExpiredInactiveBrowsers(
       db,

@@ -2,6 +2,8 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
 import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import { DeleteObjectsCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { runInNewContext } from "node:vm";
 
 import { testBrowserReconcileContract } from "@okouai/api-contracts/contracts/test-browser-reconcile";
@@ -987,6 +989,29 @@ describe("Browser user-action route", () => {
     });
     const providerId = randomUUID();
     acceptBrowserUseCdpSessions([providerId]);
+    const temporaryObjects = new Map<string, Buffer>();
+    const deletedKeys: string[] = [];
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof GetObjectCommand) {
+        const bytes = temporaryObjects.get(String(command.input.Key));
+        if (!bytes) {
+          throw new Error("Synthetic temporary object missing");
+        }
+        return Promise.resolve({
+          ContentLength: bytes.length,
+          Body: Readable.from([bytes]),
+        });
+      }
+      if (command instanceof DeleteObjectsCommand) {
+        deletedKeys.push(
+          ...(command.input.Delete?.Objects ?? []).map((entry) =>
+            String(entry.Key),
+          ),
+        );
+        return Promise.resolve({});
+      }
+      return Promise.resolve({});
+    });
     let files: readonly { name: string; size: number; type: string }[] = [];
     let siteAccept = ".txt";
     const multiple = true;
@@ -1109,17 +1134,42 @@ describe("Browser user-action route", () => {
           name: "note.txt",
           size: 4,
           type: "text/plain",
-          contentBase64: "dGVzdA==",
+          sha256: createHash("sha256").update("test").digest("hex"),
         },
       ],
     };
+    const stageSyntheticFile = async (
+      requestToken: string,
+      bytes = Buffer.from("test"),
+    ) => {
+      const prepared = await accept(
+        userActionClient().prepareFileUpload({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken },
+          body: {
+            key: "document",
+            index: 0,
+            size: bytes.length,
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+          },
+        }),
+        [200],
+      );
+      expect(prepared.body.uploadUrl).toMatch(/^https?:\/\//u);
+      expect(prepared.body.uploadHeaders["x-amz-checksum-sha256"]).toBe(
+        createHash("sha256").update(bytes).digest("base64"),
+      );
+      expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
+      const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/0`;
+      temporaryObjects.set(key, bytes);
+      return key;
+    };
+    const firstKey = await stageSyntheticFile(token);
     const invalid = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
       params: { requestToken: token },
       body: {
-        values: [
-          { ...value, files: [{ ...value.files[0]!, contentBase64: "bad=" }] },
-        ],
+        values: [{ ...value, files: [{ ...value.files[0]!, sha256: "bad=" }] }],
       },
     });
     expect(invalid.status).toBe(400);
@@ -1149,6 +1199,7 @@ describe("Browser user-action route", () => {
     files = [];
     const next = await create();
     const nextToken = next.body.action.requestToken;
+    const nextKey = await stageSyntheticFile(nextToken);
     const applied = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -1158,6 +1209,8 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(applied.body.state).toBe("succeeded");
+    expect(deletedKeys).toContain(firstKey);
+    expect(deletedKeys).toContain(nextKey);
     expect(files).toStrictEqual([
       { name: "note.txt", size: 4, type: "text/plain" },
     ]);
@@ -1248,6 +1301,7 @@ describe("Browser user-action route", () => {
         )
       ).body.fields[0]?.control.fileSetFingerprint ?? "";
     readback = false;
+    await stageSyntheticFile(noReadback.body.action.requestToken);
     const uncertain = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
@@ -1259,6 +1313,59 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(uncertain.body.state).toBe("uncertain");
+
+    files = [];
+    readback = true;
+    const tampered = await create();
+    const tamperedKey = await stageSyntheticFile(
+      tampered.body.action.requestToken,
+    );
+    temporaryObjects.set(tamperedKey, Buffer.from("bad!"));
+    const writesBeforeTamper = browserInputWrites().length;
+    const rejected = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: tampered.body.action.requestToken },
+      body: { values: [value] },
+    });
+    expect(rejected.status).toBe(409);
+    expect(browserInputWrites()).toHaveLength(writesBeforeTamper);
+    const pendingAfterReject = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: tampered.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(pendingAfterReject.body.state).toBe("pending");
+
+    const maxBytes = Buffer.alloc(10 * 1024 * 1024, 0x61);
+    const maxAction = await create();
+    await stageSyntheticFile(maxAction.body.action.requestToken, maxBytes);
+    const maxApplied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: maxAction.body.action.requestToken },
+        body: {
+          values: [
+            {
+              ...value,
+              files: [
+                {
+                  ...value.files[0]!,
+                  size: maxBytes.length,
+                  sha256: createHash("sha256").update(maxBytes).digest("hex"),
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(maxApplied.body.state).toBe("succeeded");
+    expect(files).toStrictEqual([
+      { name: "note.txt", size: maxBytes.length, type: "text/plain" },
+    ]);
   });
 
   it("lets apply finish while the preflight provider read is still pending", async () => {

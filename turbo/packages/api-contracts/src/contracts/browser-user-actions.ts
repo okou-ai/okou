@@ -17,7 +17,7 @@ export const BROWSER_USER_ACTION_MAX_OPTION_LABEL_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH = 256;
 export const BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH = 128;
 export const BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH = 200;
-export const BROWSER_USER_ACTION_MAX_FILE_BYTES = 1024 * 1024;
+export const BROWSER_USER_ACTION_MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const BROWSER_USER_ACTION_MAX_OBSERVED_FILE_BYTES = 1024 * 1024 * 1024;
 export const BROWSER_USER_ACTION_MAX_FILES = 3;
 export const BROWSER_USER_ACTION_MAX_FILE_NAME_LENGTH = 128;
@@ -207,10 +207,7 @@ const browserUserActionFileValueSchema = z
               .int()
               .min(0)
               .max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
-            contentBase64: z
-              .string()
-              .regex(/^[A-Za-z0-9+/]*={0,2}$/u)
-              .max(4 * Math.ceil(BROWSER_USER_ACTION_MAX_FILE_BYTES / 3)),
+            sha256: z.string().regex(/^[0-9a-f]{64}$/u),
           })
           .strict(),
       )
@@ -461,6 +458,18 @@ export const browserUserActionCreateResponseSchema = z
 const requestTokenParamsSchema = z
   .object({ requestToken: z.string().min(1).max(512) })
   .strict();
+const browserFileUploadPrepareSchema = z
+  .object({
+    key: boundedNonblank(BROWSER_USER_ACTION_MAX_KEY_LENGTH),
+    index: z
+      .number()
+      .int()
+      .min(0)
+      .max(BROWSER_USER_ACTION_MAX_FILES - 1),
+    size: z.number().int().min(0).max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/u),
+  })
+  .strict();
 const emptyBodySchema = z.object({}).strict();
 const commonErrors = {
   400: apiErrorSchema,
@@ -499,6 +508,25 @@ export const browserUserActionsContract = c.router({
     responses: { 200: browserUserActionResponseSchema, ...commonErrors },
     summary: "Check an exact Browser input target before form entry",
   },
+  prepareFileUpload: {
+    method: "POST",
+    path: "/api/browser/user-actions/:requestToken/files/prepare",
+    headers: authHeadersSchema,
+    pathParams: requestTokenParamsSchema,
+    body: browserFileUploadPrepareSchema,
+    responses: {
+      200: z
+        .object({
+          uploadUrl: z.url(),
+          uploadHeaders: z
+            .object({ "x-amz-checksum-sha256": z.string() })
+            .strict(),
+        })
+        .strict(),
+      ...commonErrors,
+    },
+    summary: "Prepare a temporary direct upload for a Browser file input",
+  },
   apply: {
     method: "POST",
     path: "/api/browser/user-actions/:requestToken/apply",
@@ -530,6 +558,9 @@ export type BrowserUserActionCreateRequest = z.infer<
 >;
 export type BrowserUserActionApplyRequest = z.infer<
   typeof browserUserActionApplyRequestSchema
+>;
+export type BrowserUserActionPrepareFileUploadRequest = z.infer<
+  typeof browserFileUploadPrepareSchema
 >;
 export type BrowserUserActionResponse = z.infer<
   typeof browserUserActionResponseSchema
