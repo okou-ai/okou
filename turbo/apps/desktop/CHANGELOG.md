@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.49.24](https://github.com/okou-ai/okou/compare/desktop-v0.49.23...desktop-v0.49.24) (2026-09-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.516.1
+
 ## [0.49.23](https://github.com/okou-ai/okou/compare/desktop-v0.49.22...desktop-v0.49.23) (2026-09-27)
 
 

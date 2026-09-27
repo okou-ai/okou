@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.712.4](https://github.com/okou-ai/okou/compare/core-v8.712.3...core-v8.712.4) (2026-09-27)
+
+
+### Refactoring
+
+* **api:** remove legacy queued run promotion ([#37063](https://github.com/okou-ai/okou/issues/37063)) ([84ac719](https://github.com/okou-ai/okou/commit/84ac71914345b8360f3df43cc2cd47f0a8af7a23))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.516.1
+
 ## [8.712.3](https://github.com/okou-ai/okou/compare/core-v8.712.2...core-v8.712.3) (2026-09-27)
 
 

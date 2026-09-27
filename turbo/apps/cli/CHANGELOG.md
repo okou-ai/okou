@@ -1,5 +1,16 @@
 # Changelog
 
+## [9.367.1](https://github.com/okou-ai/okou/compare/cli-v9.367.0...cli-v9.367.1) (2026-09-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.516.1
+    * @okouai/core bumped to 8.712.4
+    * @okouai/pi-agent-runtime bumped to 1.40.32
+
 ## [9.367.0](https://github.com/okou-ai/okou/compare/cli-v9.366.2...cli-v9.367.0) (2026-09-27)
 
 
