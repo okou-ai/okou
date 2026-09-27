@@ -5,8 +5,6 @@
  */
 export const CURRENT_CHAT_EVENT_SCHEMA_VERSION = 7 as const;
 
-export const CHAT_EVENT_SCHEMA_VERSION_HEADER = "X-Chat-Event-Schema-Version";
-
 export type ChatEventCursor =
   | { readonly lastEventId: null; readonly lastSeqId: 0 }
   | {

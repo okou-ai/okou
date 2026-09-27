@@ -1,10 +1,6 @@
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-  type ChatEventCursor,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import {
   chatEventSchema,
   chatThreadEventsContract,
@@ -62,11 +58,7 @@ export async function readProjectedChatEvents(
   while (true) {
     const response = await accept(
       client.rows({
-        headers: {
-          ...args.headers,
-          [CHAT_EVENT_SCHEMA_VERSION_HEADER]:
-            CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-        },
+        headers: args.headers,
         ...(args.extraHeaders === undefined
           ? {}
           : { extraHeaders: args.extraHeaders }),

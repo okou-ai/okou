@@ -38,11 +38,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import type { VideoModelId } from "@okouai/api-contracts/contracts/video-models";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-  type ChatEventCursor,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   artifactCatalogContract,
@@ -204,17 +200,6 @@ function authenticate(
     actor.orgRole,
   );
   return authHeaders(actor);
-}
-
-function authenticateChatEvent(
-  context: TestContext,
-  actor: ApiTestUser | null,
-) {
-  return {
-    ...authenticate(context, actor),
-    [CHAT_EVENT_SCHEMA_VERSION_HEADER]:
-      CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-  };
 }
 
 function commandName(command: unknown): string {
@@ -1404,7 +1389,7 @@ export function createChatFilesBddApi(context: TestContext) {
     ) {
       const response = await accept(
         threadEventsClient().rows({
-          headers: authenticateChatEvent(context, actor),
+          headers: authenticate(context, actor),
           params: { threadId },
           query:
             query.sinceEventId === undefined
@@ -1436,7 +1421,7 @@ export function createChatFilesBddApi(context: TestContext) {
     ) {
       const response = await accept(
         threadEventsClient().rows({
-          headers: authenticateChatEvent(context, actor),
+          headers: authenticate(context, actor),
           params: { threadId },
           query:
             cursor.lastEventId === null
@@ -1639,16 +1624,7 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       body: BddSendEventBody,
       statuses: readonly (
-        | 201
-        | 400
-        | 401
-        | 402
-        | 403
-        | 404
-        | 409
-        | 422
-        | 429
-        | 503
+        201 | 400 | 401 | 402 | 403 | 404 | 409 | 422 | 429 | 503
       )[],
       options: RequestSendEventOptions = {},
       signal?: AbortSignal,

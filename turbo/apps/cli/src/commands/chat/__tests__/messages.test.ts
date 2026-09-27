@@ -8,10 +8,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { HttpResponse, http } from "msw";
 import {
@@ -32,10 +29,6 @@ const SNAPSHOT_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/event-
 const ROWS_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/event-rows`;
 const SNAPSHOT_DOWNLOAD_URL =
   "https://r2.example.test/chat-events/snapshot.ndjson.gz";
-const CHAT_EVENT_SCHEMA_HEADERS = {
-  [CHAT_EVENT_SCHEMA_VERSION_HEADER]:
-    CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-};
 const CACHE_SCHEMA_VERSION_FILE = ".okou-chat-event-schema-version";
 const CACHE_SCHEMA_VERSION_BODY = `${CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString()}\n`;
 
@@ -150,41 +143,29 @@ describe("okou chat messages command", () => {
     server.use(
       http.get(SNAPSHOT_URL, ({ request }) => {
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
-        expect(request.headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER)).toBe(
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-        );
-        return HttpResponse.json(
-          {
-            url: SNAPSHOT_DOWNLOAD_URL,
-            expiresInSeconds: 900,
-            lastEventId: snapshotLastRow.id,
-            lastSeqId: 2,
-          },
-          { headers: CHAT_EVENT_SCHEMA_HEADERS },
-        );
+        return HttpResponse.json({
+          url: SNAPSHOT_DOWNLOAD_URL,
+          expiresInSeconds: 900,
+          lastEventId: snapshotLastRow.id,
+          lastSeqId: 2,
+        });
       }),
       http.get(SNAPSHOT_DOWNLOAD_URL, () => {
         return new HttpResponse(snapshotNdjson(snapshotRows));
       }),
       http.get(ROWS_URL, ({ request }) => {
         const url = new URL(request.url);
-        expect(request.headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER)).toBe(
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-        );
         expect(url.searchParams.get("sinceSeqId")).toBe("2");
         expect(url.searchParams.get("sinceEventId")).toBe(snapshotLastRow.id);
         expect(url.searchParams.get("limit")).toBe("50");
-        return HttpResponse.json(
-          {
-            rows: [hotRow],
-            cursor: {
-              lastEventId: hotRow.id,
-              lastSeqId: hotRow.seqId,
-            },
-            hasMore: false,
+        return HttpResponse.json({
+          rows: [hotRow],
+          cursor: {
+            lastEventId: hotRow.id,
+            lastSeqId: hotRow.seqId,
           },
-          { headers: CHAT_EVENT_SCHEMA_HEADERS },
-        );
+          hasMore: false,
+        });
       }),
     );
 
@@ -222,15 +203,12 @@ describe("okou chat messages command", () => {
     }[] = [];
     server.use(
       http.get(SNAPSHOT_URL, () => {
-        return HttpResponse.json(
-          {
-            url: SNAPSHOT_DOWNLOAD_URL,
-            expiresInSeconds: 900,
-            lastEventId: null,
-            lastSeqId: 0,
-          },
-          { headers: CHAT_EVENT_SCHEMA_HEADERS },
-        );
+        return HttpResponse.json({
+          url: SNAPSHOT_DOWNLOAD_URL,
+          expiresInSeconds: 900,
+          lastEventId: null,
+          lastSeqId: 0,
+        });
       }),
       http.get(SNAPSHOT_DOWNLOAD_URL, () => {
         return new HttpResponse("");
@@ -241,17 +219,14 @@ describe("okou chat messages command", () => {
           eventId: url.searchParams.get("sinceEventId"),
           seqId: url.searchParams.get("sinceSeqId"),
         });
-        return HttpResponse.json(
-          {
-            rows: [visibleRow],
-            cursor: {
-              lastEventId: visibleRow.id,
-              lastSeqId: visibleRow.seqId,
-            },
-            hasMore: false,
+        return HttpResponse.json({
+          rows: [visibleRow],
+          cursor: {
+            lastEventId: visibleRow.id,
+            lastSeqId: visibleRow.seqId,
           },
-          { headers: CHAT_EVENT_SCHEMA_HEADERS },
-        );
+          hasMore: false,
+        });
       }),
     );
 
@@ -310,17 +285,14 @@ describe("okou chat messages command", () => {
           eventId: url.searchParams.get("sinceEventId"),
           seqId,
         });
-        return HttpResponse.json(
-          {
-            rows: [rawEventRow(4)],
-            cursor: {
-              lastEventId: rawEventRow(4).id,
-              lastSeqId: 4,
-            },
-            hasMore: false,
+        return HttpResponse.json({
+          rows: [rawEventRow(4)],
+          cursor: {
+            lastEventId: rawEventRow(4).id,
+            lastSeqId: 4,
           },
-          { headers: CHAT_EVENT_SCHEMA_HEADERS },
-        );
+          hasMore: false,
+        });
       }),
     );
 
@@ -381,17 +353,14 @@ describe("okou chat messages command", () => {
         }
         cursors.push(cursor);
         expect(cursor).toBe("4");
-        return HttpResponse.json(
-          {
-            rows: [rawEventRow(7), rawEventRow(10)],
-            cursor: {
-              lastEventId: rawEventRow(10).id,
-              lastSeqId: 10,
-            },
-            hasMore: false,
+        return HttpResponse.json({
+          rows: [rawEventRow(7), rawEventRow(10)],
+          cursor: {
+            lastEventId: rawEventRow(10).id,
+            lastSeqId: 10,
           },
-          { headers: CHAT_EVENT_SCHEMA_HEADERS },
-        );
+          hasMore: false,
+        });
       }),
     );
 
@@ -429,17 +398,14 @@ describe("okou chat messages command", () => {
         throw new Error("Snapshot endpoint must not be called");
       }),
       http.get(ROWS_URL, () => {
-        return HttpResponse.json(
-          {
-            rows: [rawEventRow(7), rawEventRow(6)],
-            cursor: {
-              lastEventId: rawEventRow(6).id,
-              lastSeqId: 6,
-            },
-            hasMore: false,
+        return HttpResponse.json({
+          rows: [rawEventRow(7), rawEventRow(6)],
+          cursor: {
+            lastEventId: rawEventRow(6).id,
+            lastSeqId: 6,
           },
-          { headers: CHAT_EVENT_SCHEMA_HEADERS },
-        );
+          hasMore: false,
+        });
       }),
     );
 
@@ -524,15 +490,12 @@ describe("okou chat messages command", () => {
     const cursors: { eventId: string | null; seqId: string | null }[] = [];
     server.use(
       http.get(SNAPSHOT_URL, () => {
-        return HttpResponse.json(
-          {
-            url: SNAPSHOT_DOWNLOAD_URL,
-            expiresInSeconds: 900,
-            lastEventId: freshSnapshotRow.id,
-            lastSeqId: 10,
-          },
-          { headers: CHAT_EVENT_SCHEMA_HEADERS },
-        );
+        return HttpResponse.json({
+          url: SNAPSHOT_DOWNLOAD_URL,
+          expiresInSeconds: 900,
+          lastEventId: freshSnapshotRow.id,
+          lastSeqId: 10,
+        });
       }),
       http.get(SNAPSHOT_DOWNLOAD_URL, () => {
         return new HttpResponse(freshSnapshot);
@@ -555,22 +518,19 @@ describe("okou chat messages command", () => {
                 message: "Chat events cursor has expired",
               },
             },
-            { status: 410, headers: CHAT_EVENT_SCHEMA_HEADERS },
+            { status: 410 },
           );
         }
         expect(seqId).toBe("10");
         const row = rawEventRow(11);
-        return HttpResponse.json(
-          {
-            rows: [row],
-            cursor: {
-              lastEventId: row.id,
-              lastSeqId: row.seqId,
-            },
-            hasMore: false,
+        return HttpResponse.json({
+          rows: [row],
+          cursor: {
+            lastEventId: row.id,
+            lastSeqId: row.seqId,
           },
-          { headers: CHAT_EVENT_SCHEMA_HEADERS },
-        );
+          hasMore: false,
+        });
       }),
     );
 

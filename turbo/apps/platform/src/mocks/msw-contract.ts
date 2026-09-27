@@ -12,7 +12,6 @@
  * pilot (path + method + response). Ably event orchestration and multipart
  * bodies are still out of scope.
  */
-import { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import type {
   AppRoute,
   AppRouteMutation,
@@ -216,30 +215,11 @@ function createBoundMockApi(context?: SignalContextLike) {
         signal,
       );
       if (result.body === null || result.body === undefined) {
-        return new HttpResponse(null, {
-          status: result.status,
-          headers: negotiatedResponseHeaders(request),
-        });
+        return new HttpResponse(null, { status: result.status });
       }
-      return HttpResponse.json(result.body, {
-        status: result.status,
-        headers: negotiatedResponseHeaders(request),
-      });
+      return HttpResponse.json(result.body, { status: result.status });
     });
   };
-}
-
-function negotiatedResponseHeaders(request: Request): Headers {
-  const headers = new Headers();
-  // Route contracts do not model response headers. Mirror the canonical
-  // ChatEvent API's negotiated-version echo for typed contract mocks.
-  const chatEventSchemaVersion = request.headers.get(
-    CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  );
-  if (chatEventSchemaVersion !== null) {
-    headers.set(CHAT_EVENT_SCHEMA_VERSION_HEADER, chatEventSchemaVersion);
-  }
-  return headers;
 }
 
 export function mockApi<R extends AppRoute>(

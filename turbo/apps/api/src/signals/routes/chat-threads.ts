@@ -1,5 +1,4 @@
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
-import { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command, computed } from "ccstate";
 import {
   chatSearchContract,
@@ -13,7 +12,6 @@ import { z } from "zod";
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { request$, setResHeader$ } from "../context/hono";
 import { db$ } from "../external/db";
 import { generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
@@ -35,7 +33,6 @@ import {
   chatThreadEventRows,
   chatThreadEventSnapshot,
 } from "../services/chat-event-snapshot.service";
-import { resolveChatEventSchemaVersion } from "../services/chat-event-schema-version.service";
 import {
   getChatThreadEventsSince,
   getChatThreadSnapshot,
@@ -180,19 +177,8 @@ const listChatIndicatorsInner$ = computed(async (get) => {
 });
 
 const catchUpChatEventsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const version = resolveChatEventSchemaVersion(
-      get(request$).header(CHAT_EVENT_SCHEMA_VERSION_HEADER),
-    );
-    if (version.kind === "error") {
-      return version.response;
-    }
-    set(
-      setResHeader$,
-      CHAT_EVENT_SCHEMA_VERSION_HEADER,
-      version.version.toString(),
-    );
     const body = await get(catchUpChatEventsBody$);
     signal.throwIfAborted();
     if (!body.ok) {
@@ -224,17 +210,6 @@ const getChatEventSnapshotInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
     const params = get(pathParamsOf(chatThreadEventsContract.snapshot));
-    const version = resolveChatEventSchemaVersion(
-      get(request$).header(CHAT_EVENT_SCHEMA_VERSION_HEADER),
-    );
-    if (version.kind === "error") {
-      return version.response;
-    }
-    set(
-      setResHeader$,
-      CHAT_EVENT_SCHEMA_VERSION_HEADER,
-      version.version.toString(),
-    );
     const snapshot = await set(
       chatThreadEventSnapshot({
         threadId: params.threadId,
@@ -270,21 +245,10 @@ const getChatEventSnapshotInner$ = command(
 );
 
 const listChatEventRowsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get }, signal: AbortSignal) => {
     const auth = get(authContext$);
     const params = get(pathParamsOf(chatThreadEventsContract.rows));
     const query = get(queryOf(chatThreadEventsContract.rows));
-    const version = resolveChatEventSchemaVersion(
-      get(request$).header(CHAT_EVENT_SCHEMA_VERSION_HEADER),
-    );
-    if (version.kind === "error") {
-      return version.response;
-    }
-    set(
-      setResHeader$,
-      CHAT_EVENT_SCHEMA_VERSION_HEADER,
-      version.version.toString(),
-    );
     const page = await get(
       chatThreadEventRows({
         threadId: params.threadId,

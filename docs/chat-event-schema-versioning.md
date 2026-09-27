@@ -1,22 +1,23 @@
 # Chat Event schema versioning
 
 Snapshot NDJSON rows and Raw Chat Event API rows are two representations of
-the same Chat Event schema. Clients select that schema with
-`X-Chat-Event-Schema-Version` on both read endpoints, and successful responses
-echo the selected version in the same header.
+the same Chat Event schema. The current and only served version is V7.
 
-Platform and CLI readers require that echoed header and require Snapshot
-responses to include the paired `lastEventId`; they do not reconstruct missing
-response metadata from the immutable NDJSON body.
+## Client compatibility
 
-## Version negotiation
+Chat Event read endpoints carry no schema-version request or response header.
+The API always serves the current version, and client compatibility follows the
+general client rules instead of a per-endpoint negotiation:
 
-- The current and only supported version is V7. The request header is required.
-- A malformed version returns `400 CHAT_EVENT_SCHEMA_VERSION_INVALID`.
-- A version below the current version returns
-  `426 CHAT_EVENT_SCHEMA_VERSION_RETIRED` so the client can force an upgrade.
-- A version newer than the API returns
-  `409 CHAT_EVENT_SCHEMA_VERSION_AHEAD`.
+- The Web App is gated by the enforced Web client floor (`X-Client-Version`
+  with `426 Upgrade Required`). A schema bump that old App builds cannot read
+  raises that floor.
+- CLI artifacts are commit-addressed and live at most about two hours, so they
+  track the current API without a separate version floor.
+
+Platform and CLI readers still require Snapshot responses to include the
+paired `lastEventId`; they do not reconstruct missing response metadata from
+the immutable NDJSON body.
 
 Raw Events are read from the current database schema and returned in V7. The
 API does not downgrade rows or Snapshot objects to retired versions.
@@ -93,7 +94,7 @@ relying on it must first converge to a migratable version.
 ## Browser cache
 
 The IndexedDB database version combines a cache-layout base version with the
-requested Chat Event schema version. Any IndexedDB version change deletes and
+current Chat Event schema version. Any IndexedDB version change deletes and
 recreates all Chat Event cache stores. The cache cursor stores the schema
 version and paired event/sequence boundary, and row-plus-cursor writes are
 atomic.

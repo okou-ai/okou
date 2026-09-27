@@ -6,10 +6,7 @@ import {
   PI_MEMORY_CITATION_CLOSE,
 } from "../pi-memory-citations";
 import { chatEventRowSchema, type ChatEventRow } from "../chat-event-rows";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-} from "../chat-event-schema-version";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../chat-event-schema-version";
 import { chatEventSchema, chatThreadEventsContract } from "../chat-threads";
 
 const CREATED_AT = "2026-08-08T10:00:00.000Z";
@@ -153,20 +150,8 @@ describe("Chat Event Raw Event cursor contract", () => {
 });
 
 describe("Chat Event versioned read contract", () => {
-  it("requires the request version header and Snapshot terminal event ID", () => {
+  it("requires the Snapshot terminal event ID", () => {
     expect(CURRENT_CHAT_EVENT_SCHEMA_VERSION).toBe(7);
-    const headersSchema = chatThreadEventsContract.snapshot.headers;
-    expect(
-      headersSchema.safeParse({ authorization: "Bearer test" }).success,
-    ).toBe(false);
-    expect(
-      headersSchema.safeParse({
-        authorization: "Bearer test",
-        [CHAT_EVENT_SCHEMA_VERSION_HEADER]:
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-      }).success,
-    ).toBe(true);
-
     const snapshotResponse = {
       url: "https://example.com/snapshot.ndjson.gz",
       expiresInSeconds: 900,

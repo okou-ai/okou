@@ -2,10 +2,7 @@
 // CORS owner and wraps hono's cors helper into a single middleware.
 import { cors } from "hono/cors";
 import type { MiddlewareHandler } from "hono";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CLIENT_HEADER_NAMES,
-} from "@okouai/api-contracts/contracts/client-headers";
+import { CLIENT_HEADER_NAMES } from "@okouai/api-contracts/contracts/client-headers";
 
 import { safeUrlParse } from "../signals/utils";
 import { env } from "./env";
@@ -95,7 +92,6 @@ const firstPartyCors: MiddlewareHandler = cors({
     "X-Vercel-Protection-Bypass",
     ...CLIENT_HEADER_NAMES,
   ],
-  exposeHeaders: [CHAT_EVENT_SCHEMA_VERSION_HEADER],
   maxAge: 86_400,
 });
 

@@ -3,10 +3,7 @@ import { gunzipSync, gzipSync } from "node:zlib";
 
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import {
   chatThreadEventsContract,
   type UserMessageDocument,
@@ -16,7 +13,7 @@ import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/t
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
@@ -76,8 +73,6 @@ function authenticate(actor: ApiTestUser) {
   );
   return {
     authorization: "Bearer clerk-session",
-    [CHAT_EVENT_SCHEMA_VERSION_HEADER]:
-      CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
   };
 }
 
@@ -188,9 +183,6 @@ describe("chat event snapshot read endpoints", () => {
         params: { threadId },
       }),
       [200],
-    );
-    expect(download.headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER)).toBe(
-      CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
     );
     expect(download.body).toStrictEqual({
       url: FAKE_CHAT_EVENT_SNAPSHOT_URL,
@@ -311,9 +303,6 @@ describe("chat event snapshot read endpoints", () => {
         ],
       }),
       [200],
-    );
-    expect(response.headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER)).toBe(
-      CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
     );
     expect(response.body).toStrictEqual({
       events: {
@@ -623,85 +612,6 @@ describe("chat event snapshot read endpoints", () => {
     }
   }, 90_000);
 
-  it("applies the same schema-version errors to Snapshot and Raw Event reads", async () => {
-    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
-    const agent = await bdd.createAgent(owner, {
-      displayName: "Schema negotiation agent",
-    });
-    const threadId = await sendNoCreditMessage(owner, {
-      agentId: agent.agentId,
-      prompt: `schema-negotiation-${randomUUID()}`,
-    });
-    const { authorization } = authenticate(owner);
-    const rawRequest = setupRawAppRequest({
-      context,
-      routes: chatThreadRoutes,
-    });
-    const missingVersionPaths = [
-      `/api/chat-threads/${threadId}/event-snapshot`,
-      `/api/chat-threads/${threadId}/event-rows?sinceSeqId=0`,
-    ];
-    for (const path of missingVersionPaths) {
-      const response = await rawRequest(path, {
-        method: "GET",
-        headers: { authorization },
-      });
-      expect(response).toStrictEqual({
-        status: 400,
-        body: {
-          error: {
-            message: "Invalid Chat Event schema version",
-            code: "CHAT_EVENT_SCHEMA_VERSION_INVALID",
-          },
-        },
-      });
-    }
-    const request = async (endpoint: "snapshot" | "rows", version: string) => {
-      const headers = {
-        ...authenticate(owner),
-        [CHAT_EVENT_SCHEMA_VERSION_HEADER]: version,
-      };
-      return endpoint === "snapshot"
-        ? await eventsClient().snapshot({ headers, params: { threadId } })
-        : await eventsClient().rows({
-            headers,
-            params: { threadId },
-            query: { sinceSeqId: 0 },
-          });
-    };
-    const cases = [
-      {
-        version: "invalid",
-        status: 400,
-        message: "Invalid Chat Event schema version",
-        code: "CHAT_EVENT_SCHEMA_VERSION_INVALID",
-      },
-      {
-        version: (CURRENT_CHAT_EVENT_SCHEMA_VERSION - 1).toString(),
-        status: 426,
-        message: "The requested Chat Event schema version is retired",
-        code: "CHAT_EVENT_SCHEMA_VERSION_RETIRED",
-      },
-      {
-        version: (CURRENT_CHAT_EVENT_SCHEMA_VERSION + 1).toString(),
-        status: 409,
-        message:
-          "The requested Chat Event schema version is newer than this API",
-        code: "CHAT_EVENT_SCHEMA_VERSION_AHEAD",
-      },
-    ] as const;
-
-    for (const endpoint of ["snapshot", "rows"] as const) {
-      for (const testCase of cases) {
-        const response = await request(endpoint, testCase.version);
-        expect(response.status).toBe(testCase.status);
-        expect(response.body).toStrictEqual({
-          error: { message: testCase.message, code: testCase.code },
-        });
-      }
-    }
-  }, 60_000);
-
   it("serves current Raw Event rows from cold-start and paired cursors", async () => {
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     const agent = await bdd.createAgent(owner, {
@@ -739,9 +649,6 @@ describe("chat event snapshot read endpoints", () => {
       }),
       [200],
     );
-    expect(fromStart.headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER)).toBe(
-      CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-    );
     const firstRow = fromStart.body.rows[0];
     if (firstRow === undefined) {
       throw new Error("Expected seeded chat events");
@@ -778,9 +685,6 @@ describe("chat event snapshot read endpoints", () => {
         },
       }),
       [200],
-    );
-    expect(rows.headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER)).toBe(
-      CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
     );
     expect(rows.body.cursor).toStrictEqual({
       lastEventId: rows.body.rows.at(-1)?.id,
