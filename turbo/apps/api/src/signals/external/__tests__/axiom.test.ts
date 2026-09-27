@@ -92,8 +92,10 @@ describe("shared SDK ingestion", () => {
         durationMs: 39,
         success: true,
         dimensions: {
-          timing_scope: "standalone",
+          timing_scope: "inline",
           pending_events: 3,
+          compaction_lock_wait_ms: 0,
+          org_lock_wait_ms: 0,
           pending_read_ms: 4.2,
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
@@ -104,8 +106,13 @@ describe("shared SDK ingestion", () => {
         },
       },
       {
+        actionType: "api_billing_settlement_compaction_lock_wait",
+        durationMs: 0,
+        success: true,
+      },
+      {
         actionType: "api_billing_settlement_org_lock_wait",
-        durationMs: 7,
+        durationMs: 0,
         success: true,
       },
     ]);
@@ -119,8 +126,10 @@ describe("shared SDK ingestion", () => {
           operation_domain: "billing",
           duration_ms: 39,
           success: true,
-          timing_scope: "standalone",
+          timing_scope: "inline",
           pending_events: 3,
+          compaction_lock_wait_ms: 0,
+          org_lock_wait_ms: 0,
           pending_read_ms: 4.2,
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
@@ -132,9 +141,17 @@ describe("shared SDK ingestion", () => {
         {
           _time: expect.any(String),
           source: "api",
+          op_type: "api_billing_settlement_compaction_lock_wait",
+          operation_domain: "billing",
+          duration_ms: 0,
+          success: true,
+        },
+        {
+          _time: expect.any(String),
+          source: "api",
           op_type: "api_billing_settlement_org_lock_wait",
           operation_domain: "billing",
-          duration_ms: 7,
+          duration_ms: 0,
           success: true,
         },
       ],
@@ -230,6 +247,8 @@ describe("shared SDK ingestion", () => {
       expect.objectContaining({
         timing_scope: "standalone",
         pending_events: 1,
+        compaction_lock_wait_ms: expect.any(Number),
+        org_lock_wait_ms: expect.any(Number),
         pending_read_ms: expect.any(Number),
         pricing_read_ms: expect.any(Number),
         pricing_calculation_ms: expect.any(Number),
@@ -242,6 +261,56 @@ describe("shared SDK ingestion", () => {
     expect(settlementTimings()[0]).not.toHaveProperty("org_id");
     expect(settlementTimings()[0]).not.toHaveProperty("user_id");
     expect(settlementTimings()[0]).not.toHaveProperty("run_id");
+
+    const committedBatch: unknown = context.mocks.axiom.sdkIngest.mock.calls
+      .map(([, events]) => {
+        return events;
+      })
+      .find((events) => {
+        return (
+          Array.isArray(events) &&
+          events.some((event: unknown) => {
+            return (
+              typeof event === "object" &&
+              event !== null &&
+              "op_type" in event &&
+              event.op_type === "api_billing_settlement_work"
+            );
+          })
+        );
+      });
+    if (!Array.isArray(committedBatch)) {
+      throw new Error("Expected a committed settlement timing batch");
+    }
+    expect(committedBatch).toHaveLength(4);
+    for (const [dimension, opType] of [
+      [
+        "compaction_lock_wait_ms",
+        "api_billing_settlement_compaction_lock_wait",
+      ],
+      ["org_lock_wait_ms", "api_billing_settlement_org_lock_wait"],
+    ] as const) {
+      const lockEvent: unknown = committedBatch.find((event: unknown) => {
+        return (
+          typeof event === "object" &&
+          event !== null &&
+          "op_type" in event &&
+          event.op_type === opType
+        );
+      });
+      if (
+        typeof lockEvent !== "object" ||
+        lockEvent === null ||
+        !("duration_ms" in lockEvent) ||
+        typeof lockEvent.duration_ms !== "number"
+      ) {
+        throw new Error(`Expected ${opType} in the same timing batch`);
+      }
+      expect(settlementTimings()[0]).toHaveProperty(
+        dimension,
+        lockEvent.duration_ms,
+      );
+    }
 
     await accept(
       api.createGrant({

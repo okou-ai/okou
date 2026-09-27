@@ -48,10 +48,6 @@ import type {
   IndexedDbSnapshotMeasurement,
 } from "./computed-key.ts";
 import { CHAT_THREAD_EVENT_LOG_SNAPSHOT_REBASE_THRESHOLD } from "./event-log-policy.ts";
-import {
-  assertChatEventSchemaVersion,
-  CHAT_EVENT_SCHEMA_VERSION_HEADERS,
-} from "./chat-event-schema-version.ts";
 import type { SharedDatabaseWorkerMessage } from "./protocol.ts";
 import { SharedDatabaseHttpError } from "./http-error.ts";
 type SharedDatabaseContractClient<TContract extends AppRouter> =
@@ -369,7 +365,6 @@ export class SharedDatabaseWorkerRuntime {
 
     const client = this.createContractClient(chatThreadEventsContract);
     const response = await client.catchUp({
-      headers: CHAT_EVENT_SCHEMA_VERSION_HEADERS,
       body: threadIds.map((threadId) => {
         return [threadId, requireChatEventCursor(cursors, threadId).lastSeqId];
       }),
@@ -382,7 +377,6 @@ export class SharedDatabaseWorkerRuntime {
     ) {
       throw new SharedDatabaseHttpError(response.status);
     }
-    assertChatEventSchemaVersion(response.headers);
     if (response.status !== 200) {
       throw new SharedDatabaseHttpError(response.status);
     }
@@ -746,7 +740,6 @@ export class SharedDatabaseWorkerRuntime {
     let loadNextPage = true;
     while (loadNextPage) {
       const page = await client.rows({
-        headers: CHAT_EVENT_SCHEMA_VERSION_HEADERS,
         params: { threadId: dataKey.threadId },
         query: chatEventRowsQuery(cursor),
         fetchOptions: { signal },
@@ -755,7 +748,6 @@ export class SharedDatabaseWorkerRuntime {
       if (page.status === 401 || page.status === CLIENT_FORCE_UPGRADE_STATUS) {
         throw new SharedDatabaseHttpError(page.status);
       }
-      assertChatEventSchemaVersion(page.headers);
       if (page.status === 410) {
         if (cursorFromServer) {
           throw new Error(
@@ -801,7 +793,6 @@ export class SharedDatabaseWorkerRuntime {
     readonly cursor: ChatEventCursor;
   }> {
     const snapshot = await client.snapshot({
-      headers: CHAT_EVENT_SCHEMA_VERSION_HEADERS,
       params: { threadId: dataKey.threadId },
       fetchOptions: { signal },
     });
@@ -812,7 +803,6 @@ export class SharedDatabaseWorkerRuntime {
     ) {
       throw new SharedDatabaseHttpError(snapshot.status);
     }
-    assertChatEventSchemaVersion(snapshot.headers);
     if (snapshot.status === 404) {
       if (snapshot.body.error.code !== "CHAT_EVENT_SNAPSHOT_NOT_FOUND") {
         throw new ChatThreadNotFoundError();

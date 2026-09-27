@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  CLIENT_PRODUCT_HEADER,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_DESKTOP,
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
-  DESKTOP_PRODUCT_OKOU,
 } from "@okouai/api-contracts/contracts/client-headers";
 
 export type DesktopClientHeaderInjector = (headers: Headers) => void;
@@ -21,7 +19,6 @@ export function createDesktopClientHeaderInjector(options: {
   return (headers) => {
     headers.set(CLIENT_VERSION_HEADER, options.clientVersion);
     headers.set(CLIENT_TYPE_HEADER, CLIENT_TYPE_DESKTOP);
-    headers.set(CLIENT_PRODUCT_HEADER, DESKTOP_PRODUCT_OKOU);
     headers.set(CLIENT_SESSION_ID_HEADER, clientSessionId);
     headers.set(CLIENT_REQUEST_ID_HEADER, createUuid());
   };

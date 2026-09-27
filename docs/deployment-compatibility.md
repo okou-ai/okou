@@ -1,5 +1,29 @@
 # Deployment Compatibility
 
+## Custom API request headers retired (2026-09-27)
+
+The API no longer reads, echoes, or allows these request headers in first-party
+CORS preflight: `X-Chat-Event-Schema-Version`, `X-Client-Product`,
+`X-CSRF-Token`, `X-Requested-With`, `Accept-Version`, and `X-Api-Version`. The
+response header `X-Chat-Event-Schema-Version` is no longer exposed. The last
+four had no first-party sender. Desktop sent `X-Client-Product` from its
+Electron main process, which does not use CORS; the API now ignores it.
+
+Chat Event schema negotiation is replaced by the general client rules in
+[Chat Event schema versioning](./chat-event-schema-versioning.md). Web App
+builds before this change send the schema header on Chat Event reads and reject
+responses that do not echo it. Once the new API serves, a still-open old tab
+fails Chat Event preflight and cannot receive `426 Upgrade Required` for those
+reads until it is reloaded. Its other API requests still pass preflight and can
+receive `426` after the Web client floor is raised. Raising that floor to the
+first App build containing this change is therefore a required follow-up release
+step. CLI artifacts live at most about two hours and need no separate floor.
+
+Older APIs require the schema header and answer header-free Chat Event reads
+with `400`. The marker `.github/rollback-floors/chat-event-schema-header-retired`
+therefore sets the API rollback floor: `resolve-production-rollback-target.sh`
+rejects any target that predates the main commit adding it.
+
 ## Browser native-input handoff guidance (#37087)
 
 The agent tool prompt now prefers native input over direct Browser takeover only

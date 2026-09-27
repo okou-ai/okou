@@ -829,12 +829,16 @@ async function lockIssuedWindowsForTimes(
   tx: UsageAllowanceStore,
   args: {
     readonly orgId: string;
-    readonly kind: UsageAllowanceWindowKind;
     readonly times: readonly Date[];
   },
-): Promise<UsageAllowanceWindowState[]> {
+): Promise<{
+  readonly shortWindows: UsageAllowanceWindowState[];
+  readonly weeklyWindows: UsageAllowanceWindowState[];
+}> {
+  const shortWindows: UsageAllowanceWindowState[] = [];
+  const weeklyWindows: UsageAllowanceWindowState[] = [];
   if (args.times.length === 0) {
-    return [];
+    return { shortWindows, weeklyWindows };
   }
 
   const earliestAt = new Date(
@@ -865,20 +869,27 @@ async function lockIssuedWindowsForTimes(
     .where(
       and(
         eq(orgUsageAllowanceWindows.orgId, args.orgId),
-        eq(orgUsageAllowanceWindows.kind, args.kind),
+        inArray(orgUsageAllowanceWindows.kind, ["short", "weekly"]),
         lte(orgUsageAllowanceWindows.startsAt, latestAt),
         gt(orgUsageAllowanceWindows.expiresAt, earliestAt),
       ),
     )
-    .orderBy(asc(orgUsageAllowanceWindows.id))
+    // LockRows receives short rows first, then weekly, in ID order per kind.
+    .orderBy(
+      sql`CASE WHEN ${orgUsageAllowanceWindows.kind} = 'short' THEN 0 ELSE 1 END`,
+      asc(orgUsageAllowanceWindows.id),
+    )
     .for("update");
 
-  return windows.map((window) => {
-    return {
-      ...window,
-      initialConsumedUnits: window.consumedUnits,
-    };
-  });
+  for (const window of windows) {
+    const state = { ...window, initialConsumedUnits: window.consumedUnits };
+    if (window.kind === "short") {
+      shortWindows.push(state);
+    } else {
+      weeklyWindows.push(state);
+    }
+  }
+  return { shortWindows, weeklyWindows };
 }
 
 function latestIssuedWindowAt(
@@ -1175,15 +1186,8 @@ export async function applyUsageAllowanceToUsageEventsInLockedTransaction(
     return candidate.allowanceAt;
   });
 
-  // Preserve the existing short-before-weekly row-lock order.
-  const shortWindows = await lockIssuedWindowsForTimes(tx, {
+  const { shortWindows, weeklyWindows } = await lockIssuedWindowsForTimes(tx, {
     orgId: args.orgId,
-    kind: "short",
-    times: allowanceTimes,
-  });
-  const weeklyWindows = await lockIssuedWindowsForTimes(tx, {
-    orgId: args.orgId,
-    kind: "weekly",
     times: allowanceTimes,
   });
 

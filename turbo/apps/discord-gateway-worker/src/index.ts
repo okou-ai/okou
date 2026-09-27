@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  deadlineAfterHeartbeat,
+  heartbeatAckExpired,
+} from "./heartbeat-deadline";
+import {
   discordGatewayEnvelopeSchema,
   discordGatewayReceiptSchema,
   DISCORD_GATEWAY_SIGNATURE_HEADER,
@@ -433,7 +437,11 @@ export class DiscordGateway {
       this.socket.send(
         JSON.stringify({ op: 1, d: this.state.session?.sequence ?? null }),
       );
-      this.heartbeatDeadline ??= Date.now() + this.heartbeatInterval;
+      this.heartbeatDeadline = deadlineAfterHeartbeat(
+        this.heartbeatDeadline,
+        Date.now(),
+        this.heartbeatInterval,
+      );
     } catch {
       this.ctx.waitUntil(
         this.ordered(async () => {
@@ -445,10 +453,7 @@ export class DiscordGateway {
 
   private heartbeat(generation: number, interval: number): void {
     if (!this.active(generation)) return;
-    if (
-      this.heartbeatDeadline !== null &&
-      Date.now() >= this.heartbeatDeadline
-    ) {
+    if (heartbeatAckExpired(this.heartbeatDeadline, Date.now())) {
       this.ctx.waitUntil(
         this.ordered(async () => {
           if (this.active(generation)) await this.retry();

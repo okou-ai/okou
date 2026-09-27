@@ -364,6 +364,78 @@ describe("Usage Allowance", () => {
     ).toStrictEqual({ short: 90, weekly: 90 });
   });
 
+  it("settles reverse-inserted run anchors across distinct short windows and a shared weekly window", async () => {
+    onTestFinished(clearMockNow);
+    const startedAt = nowDate();
+    mockNow(startedAt);
+    const { actor, agentId } = await builtInAllowanceActor({
+      credits: 100,
+      allowance: { shortWindowUnits: 100, weeklyWindowUnits: 200 },
+    });
+    const earlier = await createBuiltInRun(actor, agentId, "earlier anchor");
+    mockNow(addHours(startedAt, 6));
+    const later = await createBuiltInRun(actor, agentId, "later anchor");
+    const provider = usageProvider();
+    const laterKey = await recordPendingUsage({
+      actor,
+      runId: later.runId,
+      provider,
+      quantity: 40,
+    });
+    const earlierKey = await recordPendingUsage({
+      actor,
+      runId: earlier.runId,
+      provider,
+      quantity: 30,
+    });
+
+    await processOrgUsageEvents(actor);
+
+    const store = createStore();
+    const earlierEvent = await store.set(
+      readUsageEventState$,
+      earlierKey,
+      context.signal,
+    );
+    const laterEvent = await store.set(
+      readUsageEventState$,
+      laterKey,
+      context.signal,
+    );
+    expect(earlierEvent).toMatchObject({
+      status: "processed",
+      creditsCharged: 0,
+      allowance: { unitsApplied: 30 },
+    });
+    expect(laterEvent).toMatchObject({
+      status: "processed",
+      creditsCharged: 0,
+      allowance: { unitsApplied: 40 },
+    });
+    if (!earlierEvent.allowance || !laterEvent.allowance) {
+      throw new Error("Expected both runs to retain their issued windows");
+    }
+    expect(earlierEvent.allowance.shortWindowId).not.toBe(
+      laterEvent.allowance.shortWindowId,
+    );
+    expect(earlierEvent.allowance.weeklyWindowId).toBe(
+      laterEvent.allowance.weeklyWindowId,
+    );
+    const status = await createRunsApi(context).readBillingStatus(actor);
+    if (!status.usageAllowance) {
+      throw new Error("Expected allowance balances after settlement");
+    }
+    expect(
+      Object.fromEntries(
+        status.usageAllowance.windows.map((window) => {
+          return [window.kind, window.consumedUnits];
+        }),
+      ),
+    ).toStrictEqual({ short: 40, weekly: 70 });
+    await expect(readOrgCredits(actor)).resolves.toBe(100);
+    await expect(readVisibleUsageCredits(actor)).resolves.toBe(70);
+  });
+
   it("falls back to org credits after the binding window cap is exhausted", async () => {
     const { actor, agentId } = await builtInAllowanceActor({
       credits: 100,

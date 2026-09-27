@@ -6,7 +6,6 @@ import {
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { chatEventRowSchema } from "./chat-event-rows";
-import { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "./chat-event-schema-version";
 import { CHAT_EVENT_TYPES } from "./chat-events";
 import {
   connectorAccountConnectionSchema,
@@ -33,9 +32,6 @@ import {
 } from "./avatar-video";
 
 const c = initContract();
-const chatEventReadHeadersSchema = authHeadersSchema.extend({
-  [CHAT_EVENT_SCHEMA_VERSION_HEADER]: z.string(),
-});
 const chatEventCursorSchema = z.union([
   z
     .object({
@@ -1978,14 +1974,13 @@ export const chatThreadEventsContract = c.router({
   catchUp: {
     method: "POST",
     path: "/api/chat/events/catch-up",
-    headers: chatEventReadHeadersSchema,
+    headers: authHeadersSchema,
     body: chatEventCatchUpBodySchema,
     responses: {
       200: chatEventCatchUpResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
-      409: apiErrorSchema,
       426: apiErrorSchema,
     },
     summary: "Catch up raw chat events for multiple threads",
@@ -1994,12 +1989,12 @@ export const chatThreadEventsContract = c.router({
    * Snapshot-read cold start: a presigned download for the thread's head
    * archive object. The object is gzip NDJSON of chatEventRowSchema lines
    * stored with `Content-Encoding: gzip`, so a browser fetch decompresses it
-   * transparently. The request header selects the Chat Event schema version.
+   * transparently.
    */
   snapshot: {
     method: "GET",
     path: "/api/chat-threads/:threadId/event-snapshot",
-    headers: chatEventReadHeadersSchema,
+    headers: authHeadersSchema,
     pathParams: chatThreadThreadIdPathParamsSchema,
     responses: {
       200: chatEventSnapshotResponseSchema,
@@ -2007,7 +2002,6 @@ export const chatThreadEventsContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
-      409: apiErrorSchema,
       426: apiErrorSchema,
     },
     summary: "Get a presigned download for the thread's chat event snapshot",
@@ -2021,7 +2015,7 @@ export const chatThreadEventsContract = c.router({
   rows: {
     method: "GET",
     path: "/api/chat-threads/:threadId/event-rows",
-    headers: chatEventReadHeadersSchema,
+    headers: authHeadersSchema,
     pathParams: chatThreadThreadIdPathParamsSchema,
     query: z.union([
       z.object({
@@ -2045,7 +2039,6 @@ export const chatThreadEventsContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
-      409: apiErrorSchema,
       410: apiErrorSchema,
       426: apiErrorSchema,
     },

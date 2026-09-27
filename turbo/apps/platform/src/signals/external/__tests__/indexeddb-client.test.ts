@@ -5,7 +5,6 @@ import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { beforeEach, expect, test, vi } from "vitest";
 
-import { CHAT_EVENT_SCHEMA_VERSION_HEADERS } from "../../../shared-database/chat-event-schema-version.ts";
 import {
   chatEventRowsResponse,
   testContext,
@@ -340,7 +339,6 @@ test("Reports typed API requests with route templates and no parameters", async 
 
   await expect(
     client.rows({
-      headers: CHAT_EVENT_SCHEMA_VERSION_HEADERS,
       params: { threadId: sensitiveThreadId },
       query: { limit: 50, sinceSeqId: 0 },
     }),

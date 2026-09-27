@@ -8,6 +8,24 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.686.2](https://github.com/okou-ai/okou/compare/api-v1.686.1...api-v1.686.2) (2026-09-27)
+
+
+### Refactoring
+
+* **api:** retire legacy snapshot CORS allowance ([#37011](https://github.com/okou-ai/okou/issues/37011)) ([c68376d](https://github.com/okou-ai/okou/commit/c68376d28ac64957cc18ab92ed660c0eb673485a))
+* **api:** unify chat queue enqueue, pick and steer on chat events ([#37082](https://github.com/okou-ai/okou/issues/37082)) ([553fc56](https://github.com/okou-ai/okou/commit/553fc566b7e9be2cd4a8c1de314d55939b99490a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.518.1
+    * @okouai/core bumped to 8.712.7
+    * @okouai/db bumped to 1.308.2
+    * @okouai/pi-agent-runtime bumped to 1.40.35
+
 ## [1.686.1](https://github.com/okou-ai/okou/compare/api-v1.686.0...api-v1.686.1) (2026-09-27)
 
 

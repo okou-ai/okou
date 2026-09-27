@@ -20,11 +20,7 @@ import {
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-  type ChatEventCursor,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { getClientConfig, handleError } from "../core/client-factory";
 
 export interface ChatThreadSnapshot {
@@ -52,23 +48,6 @@ type ChatEventRowsPage =
       readonly hasMore: boolean;
     }
   | { readonly kind: "expired" };
-
-type ChatEventSchemaVersionHeaders = Readonly<{
-  [CHAT_EVENT_SCHEMA_VERSION_HEADER]: string;
-}>;
-
-const CHAT_EVENT_SCHEMA_VERSION_HEADERS: ChatEventSchemaVersionHeaders =
-  Object.freeze({
-    [CHAT_EVENT_SCHEMA_VERSION_HEADER]:
-      CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString(),
-  });
-
-function assertChatEventSchemaVersion(headers: Headers): void {
-  const version = headers.get(CHAT_EVENT_SCHEMA_VERSION_HEADER);
-  if (version !== CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString()) {
-    throw new Error(`Unexpected Chat Event schema version ${version}`);
-  }
-}
 
 function requireSupportedModel(model: string) {
   if (!isSupportedRunModel(model)) {
@@ -288,10 +267,8 @@ export async function getChatEventSnapshot(options: {
   const config = await getClientConfig();
   const client = initClient(chatThreadEventsContract, config);
   const result = await client.snapshot({
-    headers: CHAT_EVENT_SCHEMA_VERSION_HEADERS,
     params: { threadId: options.threadId },
   });
-  assertChatEventSchemaVersion(result.headers);
   if (result.status === 200) {
     return {
       kind: "snapshot",
@@ -321,7 +298,6 @@ export async function listChatEventRows(
   const config = await getClientConfig();
   const client = initClient(chatThreadEventsContract, config);
   const result = await client.rows({
-    headers: CHAT_EVENT_SCHEMA_VERSION_HEADERS,
     params: { threadId: options.threadId },
     query:
       options.sinceEventId === null
@@ -332,7 +308,6 @@ export async function listChatEventRows(
             limit: options.limit,
           },
   });
-  assertChatEventSchemaVersion(result.headers);
   if (result.status === 200) {
     return {
       kind: "rows",

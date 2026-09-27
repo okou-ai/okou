@@ -40,6 +40,7 @@ readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_dro
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
 readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1261_drop_chat_thread_snapshot_jsonb.sql
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
+readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 
 fail() {
   echo "::error::$*" >&2
@@ -165,6 +166,18 @@ if [[ ! "$stripe_portal_purpose_only_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$stripe_portal_purpose_only_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Stripe Portal purpose-only cutover: ${stripe_portal_purpose_only_commit}."
+fi
+
+# Header-free Chat Event clients stop sending X-Chat-Event-Schema-Version.
+# Earlier APIs require it and answer every Chat Event read with 400, so an API
+# rollback below the canonical main commit that retired it breaks chat sync.
+chat_event_schema_header_retired_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH" | sed -n '1p')
+if [[ ! "$chat_event_schema_header_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Chat Event schema header retirement on main."
+fi
+if ! git merge-base --is-ancestor "$chat_event_schema_header_retired_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Chat Event schema header retirement: ${chat_event_schema_header_retired_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
