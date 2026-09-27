@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { runnerWssTicketRoutes } from "../runner-wss-tickets";
 import { testRuntimeStateRoutes } from "../test-runtime-state";
 import { createBddApi } from "./helpers/api-bdd";
@@ -68,7 +68,15 @@ describe("direct Runner WSS ticket boundary", () => {
       mode: "running",
       snapshotSequence: 1,
     });
-    return { bdd, api, actor, runId: run.runId, runnerId };
+    return {
+      bdd,
+      api,
+      actor,
+      runId: run.runId,
+      runnerId,
+      agentId: agent.agentId,
+      group,
+    };
   }
 
   type Fixture = Awaited<ReturnType<typeof setup>>;
@@ -190,6 +198,45 @@ describe("direct Runner WSS ticket boundary", () => {
       userId: f.actor.userId,
     });
     await accept(consume(f, issued.body.ticket), [404]);
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("does not infer listener capability from heartbeat alone, and requires a hostname and fresh snapshot", async () => {
+    const f = await setup();
+    mockEnv("OKOU_WSS_TICKET_ISSUANCE_ENABLED", "true");
+    // The claim has no version: a version floor is intentionally not used.
+    await accept(bootstrap(f), [200]);
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      mode: "stopping",
+      snapshotSequence: 2,
+    });
+    const stopped = await accept(bootstrap(f), [404]);
+    expect(stopped.body.error.code).toBe("NOT_FOUND");
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      mode: "running",
+      snapshotSequence: 3,
+    });
+    mockNow(now() + 31_000);
+    await accept(bootstrap(f), [404]);
+    clearMockNow();
+
+    const withoutHost = await f.api.createDirectRun(f.actor, {
+      agentId: f.agentId,
+      prompt: "No official hostname",
+      modelProviderType: "anthropic-api-key",
+      vars: { OKOU_AGENT_ID: f.agentId },
+      secrets: { OKOU_TOKEN: "bdd-wss-ticket-no-host" },
+    });
+    await f.api.heartbeatRunner(f.group);
+    await f.api.claimRunnerJob(withoutHost.runId, {
+      runnerIdentity: { runnerId: f.runnerId, heartbeatGeneration: 1 },
+    });
+    await accept(bootstrap({ ...f, runId: withoutHost.runId }), [404]);
+    await f.api.requestCancelRun(f.actor, withoutHost.runId, [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 

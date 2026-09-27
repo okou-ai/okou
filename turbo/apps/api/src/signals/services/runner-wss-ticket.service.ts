@@ -82,7 +82,10 @@ export async function issueRunnerWssTicket(
           .from(runnerWssTickets)
           .where(lt(runnerWssTickets.expiresAt, sql`now() - interval '1 day'`))
           .orderBy(runnerWssTickets.expiresAt)
-          .limit(100),
+          .limit(100)
+          // Issuers hold different Run rows: do not wait on another issuer's
+          // cleanup row while holding a Run lock (cross-run deadlock risk).
+          .for("update", { skipLocked: true }),
       ),
     );
 
