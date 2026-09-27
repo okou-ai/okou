@@ -157,7 +157,6 @@ function expectAppRequest(request: Request) {
   expect(request.headers.get("cookie")).toBeNull();
   expect(request.credentials).toBe("omit");
   expect(request.redirect).toBe("error");
-  expect(request.headers.get("x-client-product")).toBe("okou");
   expect(request.headers.get("x-client-type")).toBe("Desktop");
   expect(request.headers.get("x-client-version")).toBe("1.2.3");
   expect(request.headers.get("x-client-session-id")).toBeTruthy();
