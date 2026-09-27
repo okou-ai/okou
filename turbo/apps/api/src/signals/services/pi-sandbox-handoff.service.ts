@@ -212,30 +212,29 @@ export const publishPiSandboxHandoff$ = command(
     ) {
       throw new Error("Pi launch session is empty or exceeds its size limit");
     }
-    // Nothing can claim the run before its commit, so the session and its
-    // manifest are written together.
-    await Promise.all([
-      get(
-        putS3Object(
-          bucket,
-          piSandboxHandoffObjectKey(args.runId, "session"),
-          bytes,
-          "application/x-ndjson",
-          signal,
-        ),
-      ),
-      writeManifest(
-        {
-          ...shared,
-          schemaVersion: 3,
-          session: {
-            sessionId: piSessionId,
-            sha256: createHash("sha256").update(bytes).digest("hex"),
-            rawSize: bytes.length,
-          },
-        },
+    // Nothing can claim the run before its commit. The manifest names the
+    // session, so it is written only after the session exists.
+    await get(
+      putS3Object(
+        bucket,
+        piSandboxHandoffObjectKey(args.runId, "session"),
+        bytes,
+        "application/x-ndjson",
         signal,
       ),
-    ]);
+    );
+    signal.throwIfAborted();
+    await writeManifest(
+      {
+        ...shared,
+        schemaVersion: 3,
+        session: {
+          sessionId: piSessionId,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          rawSize: bytes.length,
+        },
+      },
+      signal,
+    );
   },
 );

@@ -54,6 +54,7 @@ const {
   failChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
+  mockPiResourceArchiveDownloads,
   expectPiSandboxHandoff,
   publishPendingPiInstructions,
   completeSandboxFirstPiRun,
@@ -885,4 +886,40 @@ describe("CHAT-02: model-first provider policies", () => {
     },
     90_000,
   );
+
+  it("fails the run without a runner job when its launch handoff cannot be published", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    mockPiResourceArchiveDownloads();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const store = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      const candidate = command as PiCheckpointS3Command;
+      const objectKey = piS3ObjectKey(candidate) ?? "";
+      if (
+        candidate.constructor?.name === "PutObjectCommand" &&
+        objectKey.includes("/pi-api-first-turn/") &&
+        objectKey.endsWith("/session.jsonl")
+      ) {
+        return Promise.reject(new Error("object store unavailable"));
+      }
+      return store?.(command) ?? Promise.resolve({});
+    });
+
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "start a Pi thread whose handoff cannot be stored",
+      model: "gpt-5.6-terra",
+    });
+    await flushWaitUntilForTest();
+
+    await waitForRunStatus(actor, run.runId, "failed");
+    const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
+    expect(claim.status).toBe(404);
+    expect(
+      [...checkpointObjects.keys()].filter((key) => {
+        return key.includes(`/pi-api-first-turn/${run.runId}/`);
+      }),
+    ).toStrictEqual([]);
+  });
 });
