@@ -32,6 +32,7 @@ import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { conversations } from "@okouai/db/schema/conversation";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 
 import { workflowAutomations } from "@okouai/db/schema/workflow";
@@ -1760,6 +1761,30 @@ const specializedRuntimeFixtureAction$ = command(
             : null,
         },
       };
+    }
+    if (body.action === "read-runner-wss-ticket-digests") {
+      const rows = await db
+        .select({ digest: runnerWssTickets.digest })
+        .from(runnerWssTickets)
+        .where(eq(runnerWssTickets.runId, body.run_id));
+      signal.throwIfAborted();
+      return {
+        status: 200 as const,
+        body: {
+          ok: true as const,
+          wss_ticket_digests: rows.map((r) => {
+            return r.digest;
+          }),
+        },
+      };
+    }
+    if (body.action === "expire-runner-wss-tickets") {
+      await db
+        .update(runnerWssTickets)
+        .set({ expiresAt: sql`now() - interval '1 second'` })
+        .where(eq(runnerWssTickets.runId, body.run_id));
+      signal.throwIfAborted();
+      return { status: 200 as const, body: { ok: true as const } };
     }
     if (body.action === "read-run-failure-reason") {
       const [run] = await db
