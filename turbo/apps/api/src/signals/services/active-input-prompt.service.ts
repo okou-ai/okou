@@ -79,16 +79,11 @@ function activeInputControlPayloadFits(payload: object): boolean {
   );
 }
 
-interface PendingActiveInputRowFilter {
-  readonly eventIds: readonly string[] | undefined;
-  readonly eventType: "input.prompt" | "input.budget" | undefined;
-}
-
-function selectPendingActiveInputRows(
+export function pendingActiveInputRows(
   db: Pick<Db, "select">,
   chatThreadId: string,
   runId: string,
-  filter: PendingActiveInputRowFilter,
+  eventIds?: readonly string[],
 ) {
   return db
     .select({
@@ -106,36 +101,10 @@ function selectPendingActiveInputRows(
       and(
         eq(chatEvents.chatThreadId, chatThreadId),
         pendingActiveInputCondition(db, runId),
-        filter.eventIds ? inArray(chatEvents.id, filter.eventIds) : undefined,
-        filter.eventType
-          ? eq(chatEvents.eventType, filter.eventType)
-          : undefined,
+        eventIds ? inArray(chatEvents.id, eventIds) : undefined,
       ),
     )
     .orderBy(asc(chatEvents.seqId));
-}
-
-export function pendingActiveInputRows(
-  db: Pick<Db, "select">,
-  chatThreadId: string,
-  runId: string,
-  eventIds?: readonly string[],
-) {
-  return selectPendingActiveInputRows(db, chatThreadId, runId, {
-    eventIds,
-    eventType: undefined,
-  });
-}
-
-export function pendingActiveInputBudgetRows(
-  db: Pick<Db, "select">,
-  chatThreadId: string,
-  runId: string,
-) {
-  return selectPendingActiveInputRows(db, chatThreadId, runId, {
-    eventIds: undefined,
-    eventType: "input.budget",
-  });
 }
 
 export function activeInputRowsByIds(

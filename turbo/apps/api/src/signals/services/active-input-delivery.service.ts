@@ -21,6 +21,7 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
+import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -34,15 +35,17 @@ import {
   activeInputDeliveryPromptFitsControlPayload,
   activeInputRowsByIds,
   materializePendingActiveInputPrompts,
-  pendingActiveInputBudgetRows,
   pendingActiveInputRows,
   type MaterializedActiveInputPrompt,
   type PendingActiveInputRow,
 } from "./active-input-prompt.service";
 import { logTemplateUsage } from "../../lib/template-usage-log";
 import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
+import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
 import { insertChatEvent, replaceLoadedChatEvent } from "./chat-event.service";
 import { lockPiApiFirstTurnLifecycle } from "./pi-api-first-turn-lifecycle.service";
+
+const L = logger("active-input-delivery");
 
 interface ActiveInputDeliveryScope {
   readonly runId: string;
@@ -965,37 +968,6 @@ async function rejectUnavailableDiscordActiveInput(
   }
 }
 
-async function expirePendingActiveInputBudgetEvents(
-  tx: ActiveInputDeliveryTransaction,
-  scope: ActiveInputDeliveryIdentity,
-): Promise<boolean> {
-  const sources = await pendingActiveInputBudgetRows(
-    tx,
-    scope.chatThreadId,
-    scope.runId,
-  ).for("update");
-  let chatEventsAppended = false;
-  for (const source of sources) {
-    if (source.eventType !== "input.budget") {
-      throw new Error("Pending active input has an invalid source type");
-    }
-    const revoked = await replaceLoadedChatEvent(
-      tx,
-      activeInputReplacementTarget(source),
-      {
-        chatThreadId: scope.chatThreadId,
-        eventType: "control.revoke",
-        runId: scope.runId,
-      },
-    );
-    if (!revoked) {
-      throw new Error("Pending active input budget expiry was not appended");
-    }
-    chatEventsAppended = true;
-  }
-  return chatEventsAppended;
-}
-
 async function recordActiveInputDeliveryReceiptTransition(
   tx: ActiveInputDeliveryTransaction,
   scope: ActiveInputDeliveryScope,
@@ -1063,28 +1035,16 @@ export async function finalizeActiveInputDelivery(
   },
 ): Promise<FinalizeActiveInputDeliveryResult> {
   const delivery = await lockOpenDelivery(tx, args);
-  const pendingBudgetExpired = await expirePendingActiveInputBudgetEvents(
-    tx,
-    args,
-  );
   if (!delivery) {
-    return {
-      finalized: pendingBudgetExpired,
-      chatEventsAppended: pendingBudgetExpired,
-    };
+    return { finalized: false, chatEventsAppended: false };
   }
   if (!args.deliveredDeliveryIds.has(delivery.deliveryId)) {
-    const finalization = await settleOpenActiveInputDeliveryAsUndelivered(
+    return await settleOpenActiveInputDeliveryAsUndelivered(
       tx,
       args,
       delivery.deliveryId,
       delivery.items,
     );
-    return {
-      ...finalization,
-      chatEventsAppended:
-        finalization.chatEventsAppended || pendingBudgetExpired,
-    };
   }
   const settlement = await settleOpenActiveInputDeliveryAsDelivered(
     tx,
@@ -1093,21 +1053,66 @@ export async function finalizeActiveInputDelivery(
     delivery.items,
   );
   if (!settlement) {
-    const released = await settleOpenActiveInputDeliveryAsUndelivered(
+    return await settleOpenActiveInputDeliveryAsUndelivered(
       tx,
       args,
       delivery.deliveryId,
       delivery.items,
     );
-    return {
-      ...released,
-      chatEventsAppended: released.chatEventsAppended || pendingBudgetExpired,
-    };
   }
   return {
     finalized: true,
-    chatEventsAppended: settlement.replacementsAppended || pendingBudgetExpired,
+    chatEventsAppended: settlement.replacementsAppended,
   };
+}
+
+/**
+ * Revoke the run's time budget steer when no delivery consumed it.
+ *
+ * Call only after the terminal transition commits. Steering appends while the
+ * run is running, so no budget input can appear afterwards, and an open
+ * delivery was settled by the same commit. The budget event ID is derived from
+ * the run, so this is one primary-key read and one append; the unique revoke
+ * edge lets exactly one of receipt, settlement or this expiry consume the
+ * source. Best effort: losing that race or failing leaves an inert pending row.
+ */
+export async function expireRunTimeBudgetInput(
+  db: Db,
+  args: ActiveInputDeliveryIdentity,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const expired = await settle(revokePendingRunTimeBudgetInput(db, args));
+  signal.throwIfAborted();
+  if (!expired.ok) {
+    L.error("Failed to expire run time budget input", {
+      runId: args.runId,
+      error: expired.error,
+    });
+    return false;
+  }
+  return expired.value;
+}
+
+async function revokePendingRunTimeBudgetInput(
+  db: Db,
+  args: ActiveInputDeliveryIdentity,
+): Promise<boolean> {
+  const [source] = await activeInputRowsByIds(db, args.chatThreadId, [
+    runTimeBudgetEventIdForRun(args.runId),
+  ]);
+  if (!source || !sourceIsPendingForRun(source, args.runId)) {
+    return false;
+  }
+  const revoked = await replaceLoadedChatEvent(
+    db,
+    activeInputReplacementTarget(source),
+    {
+      chatThreadId: args.chatThreadId,
+      eventType: "control.revoke",
+      runId: args.runId,
+    },
+  );
+  return revoked !== null;
 }
 
 export async function recordActiveInputDeliveryReceipt(

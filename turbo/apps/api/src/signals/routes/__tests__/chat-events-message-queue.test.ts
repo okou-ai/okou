@@ -918,6 +918,44 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await cancelChatRun(actor, successor, successorClaim.sandboxHeaders);
   }, 90_000);
 
+  it("expires an unreserved time budget input after a heartbeat timeout", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    if (!actor.orgId) {
+      throw new Error("Expected an org-scoped chat actor");
+    }
+
+    const active = await sendChatRun(actor, {
+      agentId,
+      prompt: "time out before the budget warning is reserved",
+    });
+    await claimChatRun(runnerGroup, active.runId);
+    await expect(
+      steerOwnedRunAtElapsedTime(active.runId, RUN_TIME_BUDGET_STEER_AT_MS),
+    ).resolves.toStrictEqual({ scanned: 1, steered: 1 });
+
+    mockNow(now() + 3 * 60 * 1000);
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const cleanup = await cleanupTimedOutRun(context, {
+      runId: active.runId,
+      chatThreadId: active.threadId,
+      orgId: actor.orgId,
+    });
+    expect(cleanup.body).toMatchObject({ cleaned: 1, errors: 0 });
+    await waitForRunStatus(actor, active.runId, "timeout");
+
+    const events = await chat.listThreadEvents(actor, active.threadId);
+    expect(
+      events.events.filter((event) => {
+        return (
+          event.eventType === "control.revoke" && event.runId === active.runId
+        );
+      }),
+    ).toHaveLength(1);
+  }, 90_000);
+
   it("cascades delivery state when its thread is deleted", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
