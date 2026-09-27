@@ -92,8 +92,9 @@ class SocketRunner:
                         continue
                     reply = self.label.encode()
                     conn.sendall(bytes((0x81, len(reply))) + reply)
-                except (OSError, UnicodeDecodeError):
-                    pass
+                except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, socket.timeout, UnicodeDecodeError):
+                    # A test client may close a rejected handshake; the caller checks the HTTP outcome.
+                    continue
 
     def close(self):
         self.stop_event.set()
@@ -219,8 +220,10 @@ def main():
                     status, result = request(ctx, port, "/ws/" + RUNNER_B, True)
                     if b"101" in status and result == b"new":
                         break
-                except OSError:
-                    pass
+                except (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError):
+                    # Only retry a transient connection failure while the restarted Caddy binds.
+                    time.sleep(0.05)
+                    continue
                 time.sleep(0.05)
             else:
                 raise AssertionError("Caddy restart did not restore old-release socket routing")
