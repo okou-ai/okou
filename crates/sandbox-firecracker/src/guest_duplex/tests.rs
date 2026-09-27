@@ -145,6 +145,12 @@ async fn bind_collision_preserves_original_and_runtime_exit_unlinks() {
         .is_err()
     );
     assert!(fixture.path.exists());
+    let mut guest = UnixStream::connect(&fixture.path).await.unwrap();
+    let mut accepted = fixture.acceptor("run-a").accept().await.unwrap();
+    guest.read_exact(&mut [0]).await.unwrap();
+    let mut byte = [0];
+    let mut pending_read = Box::pin(accepted.stream.read(&mut byte));
+    assert!(futures_util::poll!(pending_read.as_mut()).is_pending());
     fixture.runtime_cancel.cancel();
     tokio::time::timeout(Duration::from_secs(1), async {
         while fixture.path.exists() {
@@ -154,6 +160,13 @@ async fn bind_collision_preserves_original_and_runtime_exit_unlinks() {
     .await
     .unwrap();
     assert!(fixture.acceptor("run-a").accept().await.is_err());
+    assert!(accepted.cancelled.is_cancelled());
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), pending_read)
+            .await
+            .unwrap()
+            .is_err()
+    );
 }
 
 #[tokio::test]

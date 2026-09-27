@@ -44,6 +44,9 @@ impl Shared {
             return;
         }
         self.closed.cancel();
+        // Runtime exit must revoke in-flight streams even when park/terminate
+        // has not yet changed the coordinator's assignment state.
+        self.context.coordinator.cancel_guest_rpc_operations();
         if let Err(error) = std::fs::remove_file(&self.path)
             && error.kind() != io::ErrorKind::NotFound
         {
