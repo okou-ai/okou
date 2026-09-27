@@ -59,7 +59,7 @@ async function sweepQueuedThreads(chatThreadIds: string[]): Promise<void> {
     setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
       testCronCleanupSandboxesStateContract,
     ).cleanup({
-      body: { chatThreadIds, runIds: [], orgIds: [], exportJobIds: [] },
+      body: { chatThreadIds, runIds: [], exportJobIds: [] },
     }),
     [200],
   );

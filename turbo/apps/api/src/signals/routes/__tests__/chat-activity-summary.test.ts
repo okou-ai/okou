@@ -1066,7 +1066,6 @@ describe("thread activity summary", () => {
           body: {
             runIds: [f.run.runId],
             chatThreadIds: [],
-            orgIds: [],
             exportJobIds: [],
           },
         }),

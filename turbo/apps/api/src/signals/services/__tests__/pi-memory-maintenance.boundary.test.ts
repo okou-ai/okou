@@ -219,7 +219,6 @@ async function cleanupMaintenanceRun(runId: string, scope: BoundaryScope) {
       body: {
         chatThreadIds: [],
         runIds: [runId],
-        orgIds: [scope.orgId],
         exportJobIds: [],
       },
     }),

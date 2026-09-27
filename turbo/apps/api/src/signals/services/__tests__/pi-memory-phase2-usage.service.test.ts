@@ -276,7 +276,6 @@ async function launchMaintenance(
           body: {
             chatThreadIds: [],
             runIds: [runId],
-            orgIds: [scope.orgId],
             exportJobIds: [],
           },
         }),

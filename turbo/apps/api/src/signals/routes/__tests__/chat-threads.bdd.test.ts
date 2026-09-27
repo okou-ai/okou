@@ -2719,7 +2719,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         body: {
           chatThreadIds: [],
           runIds: [main.runId, sibling.runId],
-          orgIds: [],
           exportJobIds: [],
         },
       }),

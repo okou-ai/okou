@@ -133,7 +133,6 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
           body: {
             chatThreadIds: [],
             runIds: [run.runId],
-            orgIds: [],
             exportJobIds: [],
           },
         }),

@@ -450,7 +450,6 @@ async function reconcileCancellationRecoveryFixtures(
       body: {
         chatThreadIds: [chatThreadId, ...additionalChatThreadIds],
         runIds: [],
-        orgIds: [],
         exportJobIds: [],
       },
     }),

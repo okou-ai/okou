@@ -1260,7 +1260,6 @@ async function reconcileStaleQueuedMessages(threadId: string): Promise<void> {
       body: {
         chatThreadIds: [threadId],
         runIds: [],
-        orgIds: [],
         exportJobIds: [],
       },
     }),

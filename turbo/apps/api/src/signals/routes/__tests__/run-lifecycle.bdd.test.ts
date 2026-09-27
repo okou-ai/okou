@@ -17491,7 +17491,6 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     const cleanup = cleanupTimedOutRun(context, {
       runId: run.runId,
       chatThreadId: randomUUID(),
-      orgId: actor.orgId,
     });
     ownedRequests.push(Promise.allSettled([cleanup]));
     await expect.poll(lifecycleGate.waiterCount).toBe(2);

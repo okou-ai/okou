@@ -278,16 +278,11 @@ async function finish(
   if (status === "cancelled") {
     await runs.requestCancelRun(actor, runId, [200]);
   } else if (status === "timeout") {
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const orgId = actor.orgId;
     // Infrastructure exception: runtime timeout has no caller endpoint. The
     // scheduler observes elapsed time; its scoped fixture keeps other runs live.
     await withMockNowForTest(now() + 25 * 60 * 60 * 1000, async () => {
       await cleanupTimedOutRun(context, {
         runId,
-        orgId,
         chatThreadId: randomUUID(),
       });
     });

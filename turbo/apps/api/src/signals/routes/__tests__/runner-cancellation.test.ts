@@ -133,7 +133,6 @@ describe("Run cancellation reconciliation", () => {
           ).cleanup({
             body: {
               runIds: [f.runId],
-              orgIds: [],
               chatThreadIds: [],
               exportJobIds: [],
             },

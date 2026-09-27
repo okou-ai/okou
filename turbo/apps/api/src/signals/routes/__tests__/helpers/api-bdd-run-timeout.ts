@@ -37,7 +37,6 @@ export async function cleanupTimedOutRun(
   args: {
     readonly runId: string;
     readonly chatThreadId: string;
-    readonly orgId: string;
   },
 ) {
   return await accept(
@@ -47,7 +46,6 @@ export async function cleanupTimedOutRun(
       body: {
         chatThreadIds: [args.chatThreadId],
         runIds: [args.runId],
-        orgIds: [args.orgId],
         exportJobIds: [],
       },
     }),
