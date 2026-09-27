@@ -540,7 +540,7 @@ describe("workflow queue", () => {
     });
 
     it("recovers a stale automation event after its terminal callback is missed", async () => {
-      const { scenario, automation, firstRunId } = prepared;
+      const { automation, firstRunId } = prepared;
 
       await cleanupWorkflowQueueFixtures({
         threadId: automation.threadId,

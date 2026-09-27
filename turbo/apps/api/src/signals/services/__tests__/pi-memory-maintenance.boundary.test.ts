@@ -211,7 +211,7 @@ interface ActiveMaintenanceFence {
   readonly selectedUtf8Bytes: number;
 }
 
-async function cleanupMaintenanceRun(runId: string, scope: BoundaryScope) {
+async function cleanupMaintenanceRun(runId: string) {
   const response = await accept(
     setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
       testCronCleanupSandboxesStateContract,
@@ -254,7 +254,7 @@ async function crossActiveCleanupBoundary(
   cleanupMode: CleanupMode | undefined,
 ): Promise<void> {
   if (cleanupMode === "active") {
-    const cleanupResult = await cleanupMaintenanceRun(runId, scope);
+    const cleanupResult = await cleanupMaintenanceRun(runId);
     expect(cleanupResult.threadlessRuns).toStrictEqual({
       discovered: 0,
       cancelled: 0,
@@ -277,7 +277,7 @@ async function crossActiveCleanupBoundary(
       runLock.release();
       await runLock.done;
     });
-    const cleanupRequest = cleanupMaintenanceRun(runId, scope);
+    const cleanupRequest = cleanupMaintenanceRun(runId);
     await expect.poll(runLock.waiterCount).toBeGreaterThan(0);
     await db()
       .update(piMemoryPhase2Jobs)
@@ -298,7 +298,7 @@ async function crossActiveCleanupBoundary(
       failed: 0,
       errors: [],
     });
-    const continuousResult = await cleanupMaintenanceRun(runId, scope);
+    const continuousResult = await cleanupMaintenanceRun(runId);
     expect(continuousResult.threadlessRuns).toStrictEqual({
       discovered: 0,
       cancelled: 0,
@@ -1241,7 +1241,7 @@ describe("private maintenance across CLI, Guest, generic checkpoint and real Pos
             eq(piMemoryPhase2Jobs.memoryStorageId, run.scope.memoryStorageId),
           );
         mockNow(completedAt.getTime() + PI_MEMORY_PHASE2_USAGE_DRAIN_MS);
-        const cleanupResult = await cleanupMaintenanceRun(run.runId, run.scope);
+        const cleanupResult = await cleanupMaintenanceRun(run.runId);
         expect(cleanupResult.threadlessRuns).toStrictEqual({
           discovered: 1,
           cancelled: 0,
@@ -1324,7 +1324,7 @@ describe("private maintenance across CLI, Guest, generic checkpoint and real Pos
           throw new Error("Cleanup no-diff run did not complete");
         }
         mockNow(completedAt.getTime() + PI_MEMORY_PHASE2_USAGE_DRAIN_MS);
-        const cleanupResult = await cleanupMaintenanceRun(run.runId, run.scope);
+        const cleanupResult = await cleanupMaintenanceRun(run.runId);
         expect(cleanupResult.threadlessRuns).toStrictEqual({
           discovered: 1,
           cancelled: 0,
