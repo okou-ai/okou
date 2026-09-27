@@ -39,6 +39,19 @@ const PART_TIMEOUT: Duration = Duration::from_secs(300);
 // Retain the bounded attempt count; every attempt is signed afresh.
 const MAX_ATTEMPTS: usize = 3;
 
+#[derive(Clone, Copy)]
+enum ExpectedBody {
+    Raw,
+    GetMissingXml,
+    CreateXml,
+    CompleteXml,
+}
+
+struct TransportReply {
+    response: Response,
+    xml: Option<Bytes>,
+}
+
 pub(super) struct DownloadResponse {
     pub(super) content_length: Option<i64>,
     pub(super) body: Pin<Box<dyn AsyncRead + Send>>,
@@ -261,8 +274,8 @@ impl R2HttpClient {
         query: &[(&str, &str)],
         body: Bytes,
         content_type: Option<&str>,
-        complete: bool,
-    ) -> Result<Response, R2Error> {
+        expected: ExpectedBody,
+    ) -> Result<TransportReply, R2Error> {
         let url = self.url(key, query)?;
         let client = if method == Method::PUT {
             &self.part_client
@@ -297,14 +310,34 @@ impl R2HttpClient {
                 .and_then(|value| value.to_str().ok())
                 .and_then(|value| value.parse::<u64>().ok())
                 .map(|ms| Duration::from_millis(ms).min(Duration::from_secs(20)));
-            // HEAD 404 is a cache miss; GET 404 needs its unconsumed XML body
-            // to distinguish NoSuchKey from NoSuchBucket.
+            // HEAD 404 is a cache miss; GET 404 needs its XML body to
+            // distinguish NoSuchKey from NoSuchBucket. Read and retry inside
+            // the same attempt budget as the signed request.
             if status == StatusCode::NOT_FOUND {
-                return Ok(response);
+                let xml = if matches!(expected, ExpectedBody::GetMissingXml) {
+                    match bounded_bytes(&mut response, MAX_ERROR_BYTES).await {
+                        Ok(body) => Some(body),
+                        Err(BodyReadError::Transport(e))
+                            if attempt < MAX_ATTEMPTS && retryable_transport(&e) =>
+                        {
+                            retry_delay(attempt, retry_after).await;
+                            continue;
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                } else {
+                    None
+                };
+                return Ok(TransportReply { response, xml });
             }
-            if complete && status.is_success() {
-                // Complete may carry an Error in a 200 response. The SDK
-                // retries retryable embedded codes; never mark one as success.
+            if status.is_success()
+                && matches!(
+                    expected,
+                    ExpectedBody::CreateXml | ExpectedBody::CompleteXml
+                )
+            {
+                // The SDK also retries transient failures while reading XML
+                // responses. Complete may carry an Error inside HTTP 200.
                 let body = match bounded_bytes(&mut response, MAX_XML_BYTES).await {
                     Ok(body) => body,
                     Err(BodyReadError::Transport(e))
@@ -315,20 +348,25 @@ impl R2HttpClient {
                     }
                     Err(error) => return Err(error.into()),
                 };
-                let document = parse_xml(&body)?;
-                if document.root_element().tag_name().name() == "CompleteMultipartUploadResult" {
-                    // The caller needs only success, not the consumed XML body.
-                    return Ok(response);
+                if matches!(expected, ExpectedBody::CompleteXml) {
+                    let document = parse_xml(&body)?;
+                    if document.root_element().tag_name().name() != "CompleteMultipartUploadResult"
+                    {
+                        let code = xml_code(&body);
+                        if attempt < MAX_ATTEMPTS && is_retryable(status, code.as_deref()) {
+                            retry_delay(attempt, retry_after).await;
+                            continue;
+                        }
+                        return Err(R2Error::S3(format!(
+                            "complete_multipart_upload: unexpected response {}",
+                            code.as_deref().unwrap_or("unknown")
+                        )));
+                    }
                 }
-                let code = xml_code(&body);
-                if attempt < MAX_ATTEMPTS && is_retryable(status, code.as_deref()) {
-                    retry_delay(attempt, retry_after).await;
-                    continue;
-                }
-                return Err(R2Error::S3(format!(
-                    "complete_multipart_upload: unexpected response {}",
-                    code.as_deref().unwrap_or("unknown")
-                )));
+                return Ok(TransportReply {
+                    response,
+                    xml: Some(body),
+                });
             }
             if !status.is_success() {
                 let body = match bounded_bytes(&mut response, MAX_ERROR_BYTES).await {
@@ -351,7 +389,10 @@ impl R2HttpClient {
                     code.as_deref().unwrap_or("unknown")
                 )));
             }
-            return Ok(response);
+            return Ok(TransportReply {
+                response,
+                xml: None,
+            });
         }
         Err(R2Error::S3(
             "R2 retry loop exhausted without a response".into(),
@@ -360,8 +401,16 @@ impl R2HttpClient {
 
     pub(super) async fn head(&self, key: &str) -> Result<bool, R2Error> {
         let response = self
-            .execute(Method::HEAD, key, &[], Bytes::new(), None, false)
-            .await?;
+            .execute(
+                Method::HEAD,
+                key,
+                &[],
+                Bytes::new(),
+                None,
+                ExpectedBody::Raw,
+            )
+            .await?
+            .response;
         match response.status() {
             StatusCode::OK => Ok(true),
             StatusCode::NOT_FOUND => Ok(false),
@@ -370,13 +419,19 @@ impl R2HttpClient {
     }
 
     pub(super) async fn get(&self, key: &str) -> Result<Option<DownloadResponse>, R2Error> {
-        let mut response = self
-            .execute(Method::GET, key, &[], Bytes::new(), None, false)
+        let TransportReply { response, xml } = self
+            .execute(
+                Method::GET,
+                key,
+                &[],
+                Bytes::new(),
+                None,
+                ExpectedBody::GetMissingXml,
+            )
             .await?;
         if response.status() == StatusCode::NOT_FOUND {
             // Unlike HEAD, a 404 may be a missing bucket. Require NoSuchKey.
-            let body = bounded_bytes(&mut response, MAX_ERROR_BYTES).await?;
-            if xml_code(&body).as_deref() == Some("NoSuchKey") {
+            if xml.as_deref().and_then(xml_code).as_deref() == Some("NoSuchKey") {
                 return Ok(None);
             }
             return Err(R2Error::S3(
@@ -399,20 +454,20 @@ impl R2HttpClient {
     }
 
     pub(super) async fn create_multipart(&self, key: &str) -> Result<String, R2Error> {
-        let mut response = self
+        let TransportReply { response, xml } = self
             .execute(
                 Method::POST,
                 key,
                 &[("uploads", "")],
                 Bytes::new(),
                 None,
-                false,
+                ExpectedBody::CreateXml,
             )
             .await?;
         if !response.status().is_success() {
             return Err(status_error("create_multipart_upload", response).await);
         }
-        let body = bounded_bytes(&mut response, MAX_XML_BYTES).await?;
+        let body = xml.ok_or_else(|| R2Error::S3("missing CreateMultipartUpload XML".into()))?;
         let document = parse_xml(&body)?;
         if document.root_element().tag_name().name() != "InitiateMultipartUploadResult" {
             return Err(R2Error::S3(
@@ -444,9 +499,10 @@ impl R2HttpClient {
                 &[("partNumber", &pn), ("uploadId", upload_id)],
                 chunk,
                 None,
-                false,
+                ExpectedBody::Raw,
             )
-            .await?;
+            .await?
+            .response;
         if !response.status().is_success() {
             return Err(status_error("upload_part", response).await);
         }
@@ -490,9 +546,10 @@ impl R2HttpClient {
                 &[("uploadId", upload_id)],
                 Bytes::from(xml),
                 Some("application/xml"),
-                true,
+                ExpectedBody::CompleteXml,
             )
-            .await?;
+            .await?
+            .response;
         if !response.status().is_success() {
             return Err(status_error("complete_multipart_upload", response).await);
         }
@@ -508,9 +565,10 @@ impl R2HttpClient {
                 &[("uploadId", upload_id)],
                 Bytes::new(),
                 None,
-                false,
+                ExpectedBody::Raw,
             )
-            .await?;
+            .await?
+            .response;
         if !response.status().is_success() {
             return Err(status_error("abort_multipart_upload", response).await);
         }

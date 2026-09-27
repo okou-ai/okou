@@ -280,6 +280,36 @@ async fn complete_retries_embedded_internal_error_but_not_invalid_part() {
 }
 
 #[tokio::test]
+async fn xml_body_read_failures_retry_within_the_same_attempt_budget() {
+    let (url, server) = scripted_server(vec![
+        "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n<InitiateMultipartUploadResult><UploadId>id</UploadId></InitiateMultipartUploadResult>",
+    ]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert_eq!(
+        c.create_multipart("runner-templates/h.tar.zst")
+            .await
+            .unwrap(),
+        "id"
+    );
+    assert_eq!(server.await.unwrap(), 2);
+
+    let (url, server) = scripted_server(vec![
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n<Error><Code>NoSuchKey</Code></Error>",
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert!(
+        c.get("runner-templates/missing.tar.zst")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(server.await.unwrap(), 2);
+}
+
+#[tokio::test]
 async fn lost_complete_response_retries_but_does_not_infer_success_from_nosuchupload() {
     let (url, server) = scripted_server(vec![
         "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
