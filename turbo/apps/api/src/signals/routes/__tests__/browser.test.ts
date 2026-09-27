@@ -1008,9 +1008,9 @@ describe("Browser user-action route", () => {
       }
       if (command instanceof DeleteObjectsCommand) {
         deletedKeys.push(
-          ...(command.input.Delete?.Objects ?? []).map((entry) =>
-            String(entry.Key),
-          ),
+          ...(command.input.Delete?.Objects ?? []).map((entry) => {
+            return String(entry.Key);
+          }),
         );
         return Promise.resolve({});
       }

@@ -1790,6 +1790,7 @@ export const applyBrowserUserAction$ = command(
           ),
         ),
       );
+      signal.throwIfAborted();
       if (!cleanup.ok) {
         L.warn("Temporary Browser file cleanup failed");
       }
@@ -1888,6 +1889,7 @@ export const cancelBrowserUserAction$ = command(
           ),
         ),
       );
+      signal.throwIfAborted();
       if (!cleanup.ok) {
         L.warn("Temporary Browser file cleanup failed");
       }
