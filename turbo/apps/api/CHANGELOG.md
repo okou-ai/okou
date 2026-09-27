@@ -8,6 +8,13 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.684.1](https://github.com/okou-ai/okou/compare/api-v1.684.0...api-v1.684.1) (2026-09-27)
+
+
+### Performance Improvements
+
+* **api:** expire run time budget input after the completion commit ([#37073](https://github.com/okou-ai/okou/issues/37073)) ([9e28a95](https://github.com/okou-ai/okou/commit/9e28a95b6b831aeccaa399bfd6e6d8c36725c230))
+
 ## [1.684.0](https://github.com/okou-ai/okou/compare/api-v1.683.0...api-v1.684.0) (2026-09-27)
 
 
