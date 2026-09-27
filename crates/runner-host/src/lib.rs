@@ -20,6 +20,7 @@ pub mod private_fs;
 pub mod process;
 pub mod runner_dirname;
 pub mod runner_process_identity;
+pub mod runner_wss_socket;
 pub mod service;
 pub mod state_file;
 pub mod wss_ingress_service_status;
