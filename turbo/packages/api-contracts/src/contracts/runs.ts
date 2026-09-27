@@ -741,8 +741,8 @@ const concurrencyInfoSchema = z.object({
 /**
  * Queue response schema. No run waits in a queue since queued runs were
  * retired, so `queue` and `estimatedTimePerRun` are optional: the API still
- * sends them (always empty and null) for already-open App bundles that require
- * them, and will stop once those bundles age out.
+ * sends them (always empty and null) for older App builds that require them,
+ * until this App is live and the client-version floor excludes those builds.
  */
 const queueResponseSchema = z.object({
   concurrency: concurrencyInfoSchema,

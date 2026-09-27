@@ -52,10 +52,10 @@ Old and new instances during deploy:
 No run waits in a queue since queued runs were retired, so `GET /api/runs/queue`
 always returns `queue: []` and `estimatedTimePerRun: null`. The App never
 rendered either field. The contract now marks both optional, and the API keeps
-sending them because already-open older App bundles still require them when
-they parse the response. A later change removes them from the API once those
-bundles have aged out; the App built from this change already tolerates their
-absence. `runningTasks` and `concurrency` are unchanged.
+sending them because older App builds still require them when they parse the
+response. A later change removes them from the API once this App is live and
+the client-version floor excludes those builds; the App built from this change
+already tolerates their absence. `runningTasks` and `concurrency` are unchanged.
 
 ## GitHub direct-chat readers retired (2026-09-27)
 
@@ -68,10 +68,11 @@ passthrough, so a payload an older API wrote with `githubDelivery` still parses
 and is ignored; an older API reading a new payload sees the optional field as
 absent. No producer has existed since #24941, so no such payload or pending
 `github:chat` callback is in flight (production has one delivered row).
-`github:chat` stays in the inline-only exclusion lists so historical rows are
-never dispatched as HTTP callbacks. Persisted `context_type = 'github'` events
-and GitHub source annotations still parse and render; like `automation` and
-`goal`, a `github` context can no longer route a queued user message. The `chat_github_context` and
+`github:chat` stays in the SQL inline-only exclusion lists of the callback
+dispatch queries, so historical rows are never dispatched as HTTP callbacks.
+Persisted `context_type = 'github'` events and GitHub source annotations still
+parse and render; like `automation` and `goal`, a `github` context can no
+longer route a queued user message. The `chat_github_context` and
 `github_chat_thread_routes` tables remain until a later migration drops them.
 No DB, App, CLI or public contract changes.
 
