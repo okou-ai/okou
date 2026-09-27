@@ -1169,8 +1169,23 @@ try {
   const invalid = await cli("malformed", [], false, true);
   assert.equal(object(invalid.totals).invalid, 1);
   assert.equal(invalid.databaseVerifiedOnTarget, false);
+  // Migration 1271 dropped agent_run_queue; recovery still verifies the rest.
+  await db.query("DELETE FROM secrets WHERE id = 'bad'");
+  await db.query("DROP TABLE agent_run_queue");
+  const droppedQueueRecovery = await cli("recovery-dropped-agent-run-queue", [
+    "--verify",
+    "--recovery-schema",
+  ]);
+  assert.equal(object(droppedQueueRecovery.totals).invalid, 0);
+  assert.ok(
+    Array.isArray(droppedQueueRecovery.missingOptionalFields) &&
+      droppedQueueRecovery.missingOptionalFields.includes(
+        "agent_run_queue.encrypted_params",
+      ),
+    "Recovery must accept databases after the agent_run_queue drop",
+  );
   process.stdout.write(
-    "KMS rotation CLI integration passed: protected workflow entry, runtime and operator canaries, failure-before-write guards, secret-safe artifacts, read-only inventory, concurrent verification and failure checkpoints, nested verification, bounded resume, concurrent writes, KMS failure recovery, rewrap preservation, reverse migration, and malformed ciphertext.\n",
+    "KMS rotation CLI integration passed: protected workflow entry, runtime and operator canaries, failure-before-write guards, secret-safe artifacts, read-only inventory, concurrent verification and failure checkpoints, nested verification, bounded resume, concurrent writes, KMS failure recovery, rewrap preservation, reverse migration, malformed ciphertext, and recovery after the agent_run_queue drop.\n",
   );
 } finally {
   kms.destroy();
