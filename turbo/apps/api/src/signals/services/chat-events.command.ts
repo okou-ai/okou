@@ -69,7 +69,7 @@ import {
 import { isQueueFirstRunClaimLost } from "./agent-run-create.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { childAutonomyBudget } from "./autonomy-budget.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
 import { markChatThreadQueued } from "./queued-chat-thread.service";
 import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
 import {
@@ -591,8 +591,8 @@ interface ExistingClientEventIdRow {
   readonly runStatus: string | null;
   readonly runCreatedAt: Date | null;
   readonly replacementEventId: string | null;
+  readonly replacementEventType: ChatEventType | null;
   readonly replacementRunId: string | null;
-  readonly replacementError: string | null;
   readonly replacementRunStatus: string | null;
   readonly replacementRunCreatedAt: Date | null;
 }
@@ -668,7 +668,9 @@ function resolveExistingClientEventIdRow(
       createdAt: row.replacementRunCreatedAt,
     };
   }
-  if (row.replacementError === INSUFFICIENT_CREDITS_MARKER) {
+  // Any rejection, whichever consumer wrote it, settles the send: the
+  // rejection and its explanation are already in the thread.
+  if (row.replacementEventType === "input.rejected") {
     return {
       kind: "queued",
       createdAt: row.eventCreatedAt,
@@ -701,8 +703,8 @@ async function resolveClientEventId(
       runStatus: agentRuns.status,
       runCreatedAt: agentRuns.createdAt,
       replacementEventId: replacementChatEvent.id,
+      replacementEventType: replacementChatEvent.eventType,
       replacementRunId: replacementChatEvent.runId,
-      replacementError: canonicalChatEventError(replacementChatEvent.payload),
       replacementRunStatus: replacementAgentRun.status,
       replacementRunCreatedAt: replacementAgentRun.createdAt,
     })
@@ -1978,8 +1980,8 @@ async function resolveExistingUnassociatedClientEventId(
       runStatus: agentRuns.status,
       runCreatedAt: agentRuns.createdAt,
       replacementEventId: replacementChatEvent.id,
+      replacementEventType: replacementChatEvent.eventType,
       replacementRunId: replacementChatEvent.runId,
-      replacementError: canonicalChatEventError(replacementChatEvent.payload),
       replacementRunStatus: replacementAgentRun.status,
       replacementRunCreatedAt: replacementAgentRun.createdAt,
     })
@@ -2529,7 +2531,7 @@ async function appendInterruptUserMessage(params: {
       and(
         eq(agentRuns.id, params.interruptsRunId),
         eq(agentRuns.chatThreadId, params.threadId),
-        inArray(agentRuns.status, ["queued", "pending", "running"]),
+        inArray(agentRuns.status, ["pending", "running"]),
         isNotNull(agentRuns.triggerSource),
       ),
     )
@@ -3417,13 +3419,17 @@ async function buildInsufficientCreditsAssistantMessage(params: {
   ].join("\n");
 }
 
+type QueueFirstRejectionResponse =
+  | CreatedChatEventResponse
+  | Awaited<ReturnType<typeof resolveQueueFirstEventAfterLostClaim>>;
+
 async function appendQueueFirstInsufficientCreditsEvents(params: {
   readonly prepared: PreparedNormalSend;
   readonly userId: string;
   readonly orgId: string;
   readonly eventId: string;
   readonly assistantContent: string;
-}): Promise<CreatedChatEventResponse> {
+}): Promise<QueueFirstRejectionResponse> {
   // The queue-first send already persisted the pending input. Its rejected
   // replacement is the atomic claim that makes it non-runnable.
   const userCreatedAt = nowDate();
@@ -3433,7 +3439,7 @@ async function appendQueueFirstInsufficientCreditsEvents(params: {
       eventId: params.eventId,
     });
     if (pending?.eventType !== "input.prompt") {
-      throw new Error("Queue-first message is no longer available");
+      return null;
     }
     const [queuedMessage] = await tx
       .select({
@@ -3451,7 +3457,7 @@ async function appendQueueFirstInsufficientCreditsEvents(params: {
       )
       .limit(1);
     if (!queuedMessage) {
-      throw new Error("Queue-first message is no longer available");
+      return null;
     }
     if (!queuedMessage.userMessage) {
       throw new Error("Queue-first message is missing userMessage");
@@ -3470,21 +3476,31 @@ async function appendQueueFirstInsufficientCreditsEvents(params: {
       runEventSequenceNumber: 0,
       createdAt: rejectedCreatedAt,
     });
-    if (replacement) {
-      await insertChatEvent(tx, {
-        chatThreadId: params.prepared.thread.threadId,
-        eventType: "output.error",
-        content: params.assistantContent,
-        error: INSUFFICIENT_CREDITS_MARKER,
-        runEventSequenceNumber: 1,
-        createdAt: assistantCreatedAt,
-        runId: null,
-      });
-    } else {
-      throw new Error("Failed to append insufficient-credits replacement");
+    if (!replacement) {
+      return null;
     }
+    await insertChatEvent(tx, {
+      chatThreadId: params.prepared.thread.threadId,
+      eventType: "output.error",
+      content: params.assistantContent,
+      error: INSUFFICIENT_CREDITS_MARKER,
+      runEventSequenceNumber: 1,
+      createdAt: assistantCreatedAt,
+      runId: null,
+    });
     return queuedMessage.createdAt;
   });
+  if (!createdAt) {
+    // Another consumer (e.g. a slot hand-off pick) already won the revoke
+    // edge. Its outcome, a run or a rejection, is this send's result.
+    return await resolveQueueFirstEventAfterLostClaim({
+      db: params.prepared.db,
+      orgId: params.orgId,
+      threadId: params.prepared.thread.threadId,
+      userId: params.userId,
+      eventId: params.eventId,
+    });
+  }
   await publishChatEventCreated({
     userId: params.userId,
     orgId: params.orgId,
@@ -3505,7 +3521,7 @@ async function appendInsufficientCreditsEvents(params: {
   readonly userId: string;
   readonly orgId: string;
   readonly queueFirstEventId: string;
-}): Promise<CreatedChatEventResponse> {
+}): Promise<QueueFirstRejectionResponse> {
   const assistantContent = await buildInsufficientCreditsAssistantMessage({
     db: params.prepared.db,
     orgId: params.orgId,
@@ -3915,10 +3931,8 @@ const createNormalChatRun$ = command(
           autonomyBudget: queuedMessage.autonomyBudget.autonomyBudget,
         },
         queueFirstAssociation: {
-          kind: "user_message",
           threadId: prepared.thread.threadId,
           eventId: queueFirstEventId,
-          admissionTime: args.apiStartTime,
         },
       },
       signal,
@@ -4074,7 +4088,7 @@ const redriveWaitingRetriedSend$ = command(
       return;
     }
     await set(
-      drainChatThreadQueueForThread$,
+      pickEnqueuedChatThread$,
       {
         chatThreadId: input.threadId,
         orgId: input.orgId,
@@ -4103,6 +4117,13 @@ const sendQueueFirstNormalEvent$ = command(
   ) => {
     const { args, prepared } = params;
     const threadId = prepared.thread.threadId;
+    // Table before event: a crash after this upsert leaves only an empty
+    // row that the next pick deletes, never input without a row.
+    await markChatThreadQueued(prepared.db, {
+      chatThreadId: threadId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
     const { response, queuedEventId } = await measureApiDispatchTiming(
       args.timing,
       "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue",
@@ -4158,7 +4179,7 @@ const sendQueueFirstNormalEvent$ = command(
       });
       signal.throwIfAborted();
       await set(
-        drainChatThreadQueueForThread$,
+        pickEnqueuedChatThread$,
         {
           chatThreadId: threadId,
           orgId: args.orgId,
@@ -4180,7 +4201,7 @@ const sendQueueFirstNormalEvent$ = command(
       });
       signal.throwIfAborted();
       await set(
-        drainChatThreadQueueForThread$,
+        pickEnqueuedChatThread$,
         {
           chatThreadId: threadId,
           orgId: args.orgId,
@@ -4192,13 +4213,8 @@ const sendQueueFirstNormalEvent$ = command(
       return response;
     }
 
-    // Queued input always has a row, including input this send launches
-    // itself; a later pick deletes the row once it finds the queue empty.
-    await markChatThreadQueued(prepared.db, {
-      chatThreadId: threadId,
-      orgId: args.orgId,
-    });
-    signal.throwIfAborted();
+    // The row written above stays for input this send launches itself; a
+    // later pick deletes it once it finds the queue empty.
     const result = await set(
       createNormalChatRun$,
       {

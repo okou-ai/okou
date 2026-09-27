@@ -260,7 +260,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
+const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
 const INDICATOR_AGENT_LIMIT = 128;
 const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;

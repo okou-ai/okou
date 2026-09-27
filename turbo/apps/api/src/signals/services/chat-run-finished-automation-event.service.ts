@@ -25,7 +25,7 @@ import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import { insertChatEvent } from "./chat-event.service";
@@ -292,7 +292,7 @@ const admitChatRunFinishedAutomation$ = command(
         throw admission.error;
       }
       await set(
-        drainChatThreadQueueForThread$,
+        pickEnqueuedChatThread$,
         {
           chatThreadId,
           orgId: automation.orgId,
@@ -374,7 +374,7 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         // also retries the target wakeup, including after hot-event retention.
         if (row.chatThreadId !== null) {
           await set(
-            drainChatThreadQueueForThread$,
+            pickEnqueuedChatThread$,
             {
               chatThreadId: row.chatThreadId,
               orgId: row.automation.orgId,

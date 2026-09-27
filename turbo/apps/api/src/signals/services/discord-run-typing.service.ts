@@ -32,7 +32,7 @@ const discordTypingPayloadSchema = z.object({
  */
 export const DISCORD_TYPING_REFRESH_INTERVAL_SECONDS = 8;
 
-const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
+const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
 /** Admission, launch and the first heartbeat all land within a few seconds. */
 const TYPING_REPEAT_HOLD_MS = 5000;
 /**

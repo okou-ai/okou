@@ -557,7 +557,7 @@ async function loadRunDiagnosticRegistration(
         eq(agentRuns.id, args.runId),
         eq(agentRuns.userId, args.userId),
         eq(agentRuns.orgId, args.orgId),
-        inArray(agentRuns.status, ["queued", "pending", "running"]),
+        inArray(agentRuns.status, ["pending", "running"]),
       ),
     )
     .limit(1);

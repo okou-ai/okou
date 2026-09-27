@@ -1,6 +1,5 @@
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { isUnsupportedRunAdmission } from "./run-admission-input";
 import { AGENT_EXECUTION_TIMEOUT_SECONDS } from "@okouai/api-contracts/contracts/runners";
 import { runCreateBodySchema } from "@okouai/api-contracts/contracts/run-routes";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
@@ -17,7 +16,6 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import type { PiStableContextPromptProjection } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import { command } from "ccstate";
 
-import type { Tx } from "../../lib/db-types";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -37,6 +35,7 @@ import {
   recordThreadSessionBindingRetryTelemetry,
   type CreateAgentRunArgs,
   type DispatchFailedRunCallbacks,
+  type PersistProducerRunBinding,
   type QueueFirstRunClaimLost,
   type RunConnectorCatalogSelection,
   type AgentRunModelPin,
@@ -202,6 +201,7 @@ interface CreateAgentRunCommandArgs {
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
+  readonly persistProducerRunBinding?: PersistProducerRunBinding;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
@@ -217,8 +217,6 @@ interface CreateQueueFirstAgentRunCommandArgs extends Omit<
 > {
   readonly chatThreadId: string;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
-  /** Binds a caller-journaled occurrence inside the launch transaction. */
-  readonly bindClaimedQueueFirstRun?: (tx: Tx, runId: string) => Promise<void>;
   readonly agentRunModelPin: AgentRunModelPin;
 }
 
@@ -533,9 +531,7 @@ function agentRunTimingDimensions(args: {
   readonly source?: AgentRunPreCreateSource;
 }): ApiDispatchTimingDimensions {
   const apiStartSource =
-    "queueFirstAssociation" in args.command
-      ? args.command.queueFirstAssociation.kind
-      : "request";
+    "queueFirstAssociation" in args.command ? "queue_event" : "request";
   return {
     agent_run_origin: args.origin,
     api_start_source: apiStartSource,
@@ -1098,16 +1094,13 @@ function buildCreateAgentRunArgs(
       reasoningEffort: command.reasoningEffort,
     },
     dispatchFailedCallbacks: command.dispatchFailedCallbacks,
+    persistProducerRunBinding: command.persistProducerRunBinding,
     ...(command.agentRunModelPin
       ? { agentRunModelPin: command.agentRunModelPin }
       : {}),
     piExecution: command.piExecution,
     ...("queueFirstAssociation" in command
       ? { queueFirstAssociation: command.queueFirstAssociation }
-      : {}),
-    ...("bindClaimedQueueFirstRun" in command &&
-    command.bindClaimedQueueFirstRun
-      ? { bindClaimedQueueFirstRun: command.bindClaimedQueueFirstRun }
       : {}),
     timing: args.timing,
     timingDimensions: agentRunTimingDimensions({
@@ -1583,9 +1576,6 @@ export const createQueueFirstAgentRun$ = command(
     args: CreateQueueFirstAgentRunCommandArgs,
     signal: AbortSignal,
   ) => {
-    if (isUnsupportedRunAdmission(args.queueFirstAssociation)) {
-      return conflict("Unsupported run input");
-    }
     const result = await set(createAgentRunInternal$, args, signal);
     if (isQueueFirstRunClaimLost(result)) {
       const lostResult: QueueFirstRunClaimLost = result;

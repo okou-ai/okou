@@ -1,9 +1,5 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
-  activeInputDeliveries,
-  activeInputDeliveryItems,
-} from "@okouai/db/schema/active-input-delivery";
-import {
   and,
   asc,
   eq,
@@ -161,53 +157,11 @@ function unrevokedQueueEventCondition(
   db: ChatQueueReadDb,
   event: QueueEventIdentityColumns = chatEvents,
 ) {
-  return and(
-    notExists(
-      db
-        .select({ id: queueEventRevoker.id })
-        .from(queueEventRevoker)
-        .where(eq(queueEventRevoker.revokesEventId, event.id)),
-    ),
-    notExists(
-      db
-        .select({ deliveryId: activeInputDeliveryItems.deliveryId })
-        .from(activeInputDeliveryItems)
-        .innerJoin(
-          activeInputDeliveries,
-          eq(activeInputDeliveries.id, activeInputDeliveryItems.deliveryId),
-        )
-        .where(
-          and(
-            eq(activeInputDeliveryItems.sourceEventId, event.id),
-            isNull(activeInputDeliveryItems.disposition),
-            eq(activeInputDeliveries.status, "open"),
-          ),
-        ),
-    ),
-  );
-}
-
-function pendingActiveInputPromptCondition(db: ChatQueueReadDb) {
-  return and(
-    chatEventTypeIn(["input.prompt"]),
-    isNull(chatEvents.runId),
-    unrevokedQueueEventCondition(db),
-  );
-}
-
-export function pendingActiveInputCondition(
-  db: ChatQueueReadDb,
-  runId: string,
-) {
-  return or(
-    pendingActiveInputPromptCondition(db),
-    and(
-      chatEventTypeIn(["input.budget"]),
-      isNull(chatEvents.runId),
-      eq(chatEvents.contextType, "agent_run"),
-      eq(chatEvents.contextId, runId),
-      unrevokedQueueEventCondition(db),
-    ),
+  return notExists(
+    db
+      .select({ id: queueEventRevoker.id })
+      .from(queueEventRevoker)
+      .where(eq(queueEventRevoker.revokesEventId, event.id)),
   );
 }
 

@@ -93,11 +93,6 @@ interface SendNewThreadMessageRequest {
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
 }
 
-interface SendNewThreadMessageResult {
-  threadId: string;
-  runId: string | null;
-}
-
 interface PreparedNewThreadPayload {
   prompt: string;
   attachments: ResolvedAttachFile[] | undefined;
@@ -524,7 +519,7 @@ const sendNewThreadMessage$ = command(
     signal: AbortSignal,
   ): Promise<{
     readonly threadId: string;
-    readonly sendResult: Promise<SendNewThreadMessageResult>;
+    readonly sendResult: Promise<void>;
   } | null> => {
     const { agentId, prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
@@ -628,16 +623,12 @@ const sendNewThreadMessage$ = command(
       videoRunOptions: request.videoRunOptions,
       sourceRunId: request.forward?.runId,
     });
-    const sendResult = (async (): Promise<SendNewThreadMessageResult> => {
+    const sendResult = (async (): Promise<void> => {
       await Promise.all([clearDraftResult, createResult]);
       signal.throwIfAborted();
-      const result = await sendChatEvent(createClient, sendBody, signal);
+      await sendChatEvent(createClient, sendBody, signal);
       signal.throwIfAborted();
-      L.debug("sendNewThreadMessage$ POST chat/events 201", {
-        threadId: result.threadId,
-        runId: result.runId,
-      });
-      return { threadId: result.threadId, runId: result.runId };
+      L.debug("sendNewThreadMessage$ POST chat/events 201", { threadId });
     })();
     return { threadId, sendResult };
   },

@@ -3,10 +3,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { and, desc, eq, inArray, lte, max } from "drizzle-orm";
-import {
-  activeInputDeliveries,
-  activeInputDeliveryItems,
-} from "@okouai/db/schema/active-input-delivery";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -253,66 +249,6 @@ export const seedRetentionRun$ = command(
       throw new Error("Expected retention run insertion");
     }
     return run.id;
-  },
-);
-
-export const openRetentionActiveInput$ = command(
-  async (
-    { set },
-    args: {
-      readonly chatThreadId: string;
-      readonly runId: string;
-      readonly sourceEventId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const database = set(writeDb$);
-    const [delivery] = await database
-      .insert(activeInputDeliveries)
-      .values({
-        chatThreadId: args.chatThreadId,
-        runId: args.runId,
-        status: "open",
-      })
-      .returning({ id: activeInputDeliveries.id });
-    signal.throwIfAborted();
-    if (delivery === undefined) {
-      throw new Error("Expected retention active-input delivery insertion");
-    }
-    await database.insert(activeInputDeliveryItems).values({
-      deliveryId: delivery.id,
-      sourceEventId: args.sourceEventId,
-      position: 0,
-      disposition: null,
-    });
-    signal.throwIfAborted();
-  },
-);
-
-export const settleRetentionActiveInput$ = command(
-  async (
-    { set },
-    sourceEventId: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const database = set(writeDb$);
-    const items = await database
-      .update(activeInputDeliveryItems)
-      .set({ disposition: "delivered" })
-      .where(eq(activeInputDeliveryItems.sourceEventId, sourceEventId))
-      .returning({ deliveryId: activeInputDeliveryItems.deliveryId });
-    signal.throwIfAborted();
-    const deliveryIds = items.map((item) => {
-      return item.deliveryId;
-    });
-    if (deliveryIds.length === 0) {
-      throw new Error("Expected retention active-input item");
-    }
-    await database
-      .update(activeInputDeliveries)
-      .set({ status: "settled" })
-      .where(inArray(activeInputDeliveries.id, deliveryIds));
-    signal.throwIfAborted();
   },
 );
 

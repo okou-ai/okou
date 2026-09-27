@@ -30,11 +30,10 @@ import {
   dispatchRunCallbacks$,
   undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
 import {
+  consumeCompletedActiveInputDeliveries,
   expireRunTimeBudgetInput,
-  finalizeActiveInputDelivery,
-  type FinalizeActiveInputDeliveryResult,
 } from "./active-input-delivery.service";
 import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
@@ -157,6 +156,12 @@ interface PreparedCompletion {
   readonly failureKind?: "missing-checkpoint" | "reported";
 }
 
+/** Whether completion appended active-input events the thread must hear of. */
+interface ActiveInputFinalization {
+  readonly finalized: boolean;
+  readonly chatEventsAppended: boolean;
+}
+
 interface CompletionCommit {
   readonly run: RunRecord;
   readonly transitioned: boolean;
@@ -164,7 +169,7 @@ interface CompletionCommit {
   readonly transitionError?: string;
   readonly transitionFailureKind?: PreparedCompletion["failureKind"];
   readonly transitionFailureReason?: RunFailureReasonToken;
-  readonly finalization: FinalizeActiveInputDeliveryResult;
+  readonly finalization: ActiveInputFinalization;
 }
 
 type CompletionTransactionResult =
@@ -472,7 +477,7 @@ async function applyTerminalCompletion(
   }
 }
 
-function noActiveInputFinalization(): FinalizeActiveInputDeliveryResult {
+function noActiveInputFinalization(): ActiveInputFinalization {
   return {
     finalized: false,
     chatEventsAppended: false,
@@ -483,6 +488,7 @@ interface CompletionTransitionContext {
   readonly checkpointInput: AgentCheckpointInput | null;
   readonly checkpointPreparation: PreparedAgentCheckpoint | null;
   readonly expectedChatThreadId: string | null;
+  readonly finalization: ActiveInputFinalization;
 }
 
 async function completeActiveAgentRunTransition(
@@ -490,7 +496,7 @@ async function completeActiveAgentRunTransition(
   input: CompleteAgentRunInput,
   run: RunRecord,
   prepared: PreparedCompletion,
-  finalization: FinalizeActiveInputDeliveryResult,
+  finalization: ActiveInputFinalization,
 ): Promise<CompletionTransactionResult> {
   const completedAt = nowDate();
   await applyTerminalCompletion(tx, input, run, prepared, completedAt);
@@ -534,8 +540,12 @@ async function completeAgentRunTransition(
   context: CompletionTransitionContext,
   signal: AbortSignal,
 ): Promise<CompletionTransactionResult> {
-  const { checkpointInput, checkpointPreparation, expectedChatThreadId } =
-    context;
+  const {
+    checkpointInput,
+    checkpointPreparation,
+    expectedChatThreadId,
+    finalization,
+  } = context;
   // Thread admission is the active run row, which the terminal transition
   // releases; the run row lock serializes completion against other writers.
   const run = await lockCompletionRun(tx, input);
@@ -586,16 +596,6 @@ async function completeAgentRunTransition(
       input.body.lastEventSequence,
     );
   }
-  const finalization =
-    run.chatThreadId === null
-      ? noActiveInputFinalization()
-      : await finalizeActiveInputDelivery(tx, {
-          runId: input.body.runId,
-          chatThreadId: run.chatThreadId,
-          deliveredDeliveryIds: new Set(
-            input.body.activeInputDeliveryIds ?? [],
-          ),
-        });
   if (canTransition) {
     if (!prepared) {
       throw new Error("Active agent run completion was not prepared");
@@ -855,7 +855,7 @@ export const dispatchCompleteSideEffectsCore$ = command(
       // Finalization returned undelivered input to the thread's queue.
       await tapError(
         set(
-          drainChatThreadQueueForThread$,
+          pickEnqueuedChatThread$,
           {
             chatThreadId: input.chatThreadId,
             orgId: input.orgId,
@@ -901,6 +901,54 @@ async function expireCommittedRunTimeBudget<T extends CompletionCommit>(
     : commit;
 }
 
+/**
+ * Record telemetry for the committed completion: terminal-transition metrics
+ * for the first commit, a debug trace for a duplicate terminal completion.
+ */
+function recordCompletionCommitOutcome(
+  input: CompleteAgentRunInput,
+  commit: ReleasedCompletionCommit,
+): void {
+  if (commit.transitioned) {
+    const terminalCommittedAt = now();
+    const terminalCommittedAtIso = new Date(terminalCommittedAt).toISOString();
+    if (
+      commit.run.launchSnapshot?.framework === "pi" &&
+      commit.run.langfuseTraceEnabled
+    ) {
+      safeSync(() => {
+        recordPiLangfuseRunEndToEnd({
+          enabled: true,
+          runId: input.body.runId,
+          sessionId: commit.run.sessionId,
+          userId: piLangfuseDebugUserId(commit.run.userId),
+          apiStartedAt: commit.run.apiStartedAt?.getTime(),
+          terminalCommittedAt,
+          terminalStatus: commit.responseStatus,
+        });
+      });
+    }
+    recordSandboxOperation({
+      sandboxType: "runner",
+      actionType: "run_terminal_transition_committed",
+      durationMs: 0,
+      success: true,
+      runId: input.body.runId,
+      timestamp: terminalCommittedAtIso,
+    });
+    logAgentRunCompletionOutcome(input, commit);
+  } else if (
+    commit.run.status === "completed" ||
+    commit.run.status === "failed"
+  ) {
+    L.debug("Processed duplicate completion for terminal run", {
+      runId: input.body.runId,
+      status: commit.run.status,
+      activeInputFinalized: commit.finalization.finalized,
+    });
+  }
+}
+
 export const completeAgentRun$ = command(
   async (
     { set },
@@ -930,6 +978,25 @@ export const completeAgentRun$ = command(
       }
       checkpointPreparation = preparation.prepared;
     }
+    // Consume the steered sources before the terminal transition releases the
+    // slot, so the pick that release triggers cannot launch them again.
+    const deliveryIds = input.body.activeInputDeliveryIds ?? [];
+    const activeInputAppended =
+      initialRun.chatThreadId !== null && deliveryIds.length > 0
+        ? await consumeCompletedActiveInputDeliveries(
+            db,
+            {
+              runId: input.body.runId,
+              chatThreadId: initialRun.chatThreadId,
+              deliveryIds,
+            },
+            signal,
+          )
+        : false;
+    const finalization: ActiveInputFinalization = {
+      finalized: activeInputAppended,
+      chatEventsAppended: activeInputAppended,
+    };
     let expectedChatThreadId = initialRun.chatThreadId;
     let commit: ReleasedCompletionCommit;
     while (true) {
@@ -941,6 +1008,7 @@ export const completeAgentRun$ = command(
             checkpointInput,
             checkpointPreparation,
             expectedChatThreadId,
+            finalization,
           },
           signal,
         );
@@ -977,46 +1045,7 @@ export const completeAgentRun$ = command(
       signal,
     );
 
-    if (commit.transitioned) {
-      const terminalCommittedAt = now();
-      const terminalCommittedAtIso = new Date(
-        terminalCommittedAt,
-      ).toISOString();
-      if (
-        commit.run.launchSnapshot?.framework === "pi" &&
-        commit.run.langfuseTraceEnabled
-      ) {
-        safeSync(() => {
-          recordPiLangfuseRunEndToEnd({
-            enabled: true,
-            runId: input.body.runId,
-            sessionId: commit.run.sessionId,
-            userId: piLangfuseDebugUserId(commit.run.userId),
-            apiStartedAt: commit.run.apiStartedAt?.getTime(),
-            terminalCommittedAt,
-            terminalStatus: commit.responseStatus,
-          });
-        });
-      }
-      recordSandboxOperation({
-        sandboxType: "runner",
-        actionType: "run_terminal_transition_committed",
-        durationMs: 0,
-        success: true,
-        runId: input.body.runId,
-        timestamp: terminalCommittedAtIso,
-      });
-      logAgentRunCompletionOutcome(input, commit);
-    } else if (
-      commit.run.status === "completed" ||
-      commit.run.status === "failed"
-    ) {
-      L.debug("Processed duplicate completion for terminal run", {
-        runId: input.body.runId,
-        status: commit.run.status,
-        activeInputFinalized: commit.finalization.finalized,
-      });
-    }
+    recordCompletionCommitOutcome(input, commit);
     const redriveTerminalChatCallback =
       !commit.transitioned &&
       (commit.run.status === "completed" || commit.run.status === "failed") &&

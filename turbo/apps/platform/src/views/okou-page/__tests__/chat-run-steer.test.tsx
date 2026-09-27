@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
+import { click } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
@@ -8,6 +9,7 @@ import {
   assistantEvent,
   context,
   expectTextOrder,
+  findEnabledButton,
   installRunChat,
   promptEvent,
   publishRunUpdate,
@@ -133,9 +135,13 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
   const events = [...resultEvents(), pendingSteer()];
   const chat = installRunChat({ chatEvents: events, activeRunIds: [RUN_A] });
   await openChat(12);
-  expect(screen.getByText(STEER)).toBeVisible();
-  expectWaitingAfter(STEER);
-  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
+  // Until delivery carries the run, the steer waits in the queue bar.
+  const queued = await screen.findByRole("listitem", {
+    name: "Queued message",
+  });
+  expect(queued).toHaveTextContent(STEER);
+  expectWaitingAfter(RESULT);
+  expect(workSummary()).toHaveTextContent("Working for");
 
   mockNow(new Date(createdAt(20)), context.signal);
   events.push(
@@ -152,6 +158,9 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
 
   await expect(screen.findByText(NEXT_RESULT)).resolves.toBeVisible();
   expect(screen.getAllByText(STEER)).toHaveLength(1);
+  expect(
+    screen.queryByRole("listitem", { name: "Queued message" }),
+  ).not.toBeInTheDocument();
   await expectRetainedResult();
   expect(queryButton("Copy message", mainResult(NEXT_RESULT))).toBeVisible();
   expectTextOrder(RESULT, STEER, NEXT_RESULT);
@@ -256,4 +265,34 @@ test("Keep separate histories, artifacts and actions on both sides of a steer in
   expect(workSummary(NEXT_RESULT)).toHaveTextContent("Working for");
   expectWaitingAfter(NEXT_RESULT);
   expectTextOrder(RESULT, STEER, NEXT_RESULT);
+});
+
+test("Stop interrupts the live run and keeps the queued follow-up", async () => {
+  const interrupted: string[] = [];
+  const recalled: string[] = [];
+  installRunChat({
+    chatEvents: [...resultEvents(), pendingSteer()],
+    activeRunIds: [RUN_A],
+    onInterruptEventAppend: ({ interruptsRunId }) => {
+      interrupted.push(interruptsRunId);
+    },
+    onRecallEventAppend: ({ revokesEventId }) => {
+      recalled.push(revokesEventId);
+    },
+  });
+  await openChat(12);
+  const queued = await screen.findByRole("listitem", {
+    name: "Queued message",
+  });
+  expect(queued).toHaveTextContent(STEER);
+
+  click(await findEnabledButton("Stop"));
+
+  await waitFor(() => {
+    expect(interrupted).toStrictEqual([RUN_A]);
+  });
+  expect(recalled).toStrictEqual([]);
+  expect(
+    screen.getByRole("listitem", { name: "Queued message" }),
+  ).toHaveTextContent(STEER);
 });

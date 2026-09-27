@@ -2664,29 +2664,11 @@ describe("POST /api/webhooks/teams/bot", () => {
         activityId: queuedActivityId,
         body: {
           type: "message",
-          summary: expect.stringContaining("Run queued"),
-          attachments: [
-            {
-              contentType: "application/vnd.microsoft.card.adaptive",
-              content: {
-                type: "AdaptiveCard",
-                version: "1.4",
-                body: expect.arrayContaining([
-                  expect.objectContaining({ text: "Run queued" }),
-                ]),
-                actions: [
-                  {
-                    type: "Action.OpenUrl",
-                    title: "View queue",
-                    url: `${APP_ORIGIN}/?queue=1`,
-                  },
-                ],
-              },
-            },
-          ],
+          text: "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
+          replyToId: queuedActivityId,
         },
       });
-      expect(outboundRequests[3]?.body).not.toHaveProperty("text");
+      expect(outboundRequests[3]?.body).not.toHaveProperty("attachments");
       expect(outboundRequests.reactions).toHaveLength(0);
 
       // Freeing a slot picks the waiting thread and launches its message.

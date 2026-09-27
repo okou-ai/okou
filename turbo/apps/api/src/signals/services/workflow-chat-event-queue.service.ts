@@ -1,108 +1,69 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agents } from "@okouai/db/schema/agent";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { and, eq, inArray, isNotNull, isNull, notExists } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { command } from "ccstate";
+import { and, eq, inArray } from "drizzle-orm";
 
-import type { Db } from "../external/db";
+import { logger } from "../../lib/log";
+import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
+import type { Tx } from "../../lib/db-types";
+import { writeDb$, type Db } from "../external/db";
+import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
-  loadChatQueueHead,
-  loadPendingChatQueueEvent,
-} from "./chat-event-queue.service";
-import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
-import { chatEventTypeIn } from "./chat-event-type.service";
+  childAutonomyBudget,
+  loadRunAutonomyBudget,
+} from "./autonomy-budget.service";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
+import { listPendingChatInputs } from "./chat-event-queue.service";
+import {
+  insertChatEvent,
+  replaceChatEvent,
+  revokeChatEvent,
+} from "./chat-event.service";
 import {
   createUserMessageDocument,
   withAgentRunSourceAnnotation,
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
+import {
+  dispatchConfiguredOfficialWorkflowReconciliation$,
+  type OfficialWorkflowReconciliationResult,
+} from "./official-workflow-reconciliation-dispatch.service";
 import type {
   WorkflowAutomationEventPayload,
   WorkflowAutomationEventType,
 } from "./workflow-automation-context.service";
-import type { Tx } from "../../lib/db-types";
+import {
+  launchQueuedWorkflowAutomation$,
+  type RunFailure,
+} from "./workflow-automation-launch.service";
+import { buildWorkflowAutomationQueuedLaunchMaterial } from "./workflow-automation-queued-launch-context.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
-import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { measureWorkflowAdmissionStep } from "./workflow-queue-admission-timing.service";
 
-const automationEventRevoker = alias(chatEvents, "automation_event_revoker");
+const log = logger("WorkflowChatEventQueue");
 
 export type WorkflowQueueAdmissionTransaction = Tx;
-
-export async function pendingTickForAutomation(
-  db: Pick<Db, "select">,
-  automationId: string,
-): Promise<string | undefined> {
-  const [tick] = await db
-    .select({ id: chatEvents.id })
-    .from(chatAutomationContext)
-    .innerJoin(
-      chatEvents,
-      and(
-        eq(chatEvents.contextType, "automation"),
-        eq(chatEvents.contextId, chatAutomationContext.id),
-      ),
-    )
-    .where(
-      and(
-        eq(chatAutomationContext.automationId, automationId),
-        chatEventTypeIn(["input.automation"]),
-        isNull(chatEvents.runId),
-        notExists(
-          db
-            .select({ id: automationEventRevoker.id })
-            .from(automationEventRevoker)
-            .where(eq(automationEventRevoker.revokesEventId, chatEvents.id)),
-        ),
-      ),
-    )
-    .limit(1);
-  return tick?.id;
-}
-
-type WorkflowQueueAdmission =
-  | {
-      readonly kind: "inserted";
-      readonly eventId: string;
-      readonly scheduleClaimId?: string;
-    }
-  | {
-      readonly kind: "coalesced";
-      /** The recorded occurrence the pending event already belongs to. */
-      readonly scheduleClaimId?: string;
-    }
-  /**
-   * The schedule was not consumed: either a competing tick won the exact
-   * occurrence, or the pending event belongs to no recorded occurrence and a
-   * new anchor must not be attached to it. `next_run_at` is untouched, so the
-   * existing cron rereads the same due row on its next tick.
-   */
-  | {
-      readonly kind: "schedule_unavailable";
-      readonly reason: ScheduleUnclaimed;
-    };
-
-export type ScheduleUnclaimed = "superseded" | "untracked_pending_event";
 
 export type PersistWorkflowQueueSourceTransition = (
   tx: WorkflowQueueAdmissionTransaction,
 ) => Promise<void>;
+
+export type ScheduleUnclaimed = "superseded";
 
 export type WorkflowScheduleClaimAttempt =
   | { readonly kind: "claimed"; readonly claimId: string }
   | { readonly kind: "unavailable" };
 
 /**
- * Consumes the due occurrence in the admission transaction.
- *
- * The schedule CAS, the journal row and the queue event commit together, so a
- * claim never outlives a rolled-back admission and an admitted event always
- * carries the occurrence it was fired for.
+ * Consumes the due Morning Brief occurrence in the transaction that writes its
+ * queue event. The schedule CAS, the journal row and the queue event commit
+ * together, so a claim never outlives a rolled-back event and an admitted event
+ * always carries the occurrence it was fired for.
  */
 export interface WorkflowScheduleClaimPlan {
   readonly claim: (
@@ -112,17 +73,21 @@ export interface WorkflowScheduleClaimPlan {
     tx: WorkflowQueueAdmissionTransaction,
     args: { readonly claimId: string; readonly queueEventId: string },
   ) => Promise<void>;
-  /**
-   * The recorded occurrence a pending event already belongs to, or undefined
-   * when that event is untracked.
-   */
-  readonly recordedClaimForQueueEvent: (
-    tx: WorkflowQueueAdmissionTransaction,
-    queueEventId: string,
-  ) => Promise<string | undefined>;
 }
 
-interface WorkflowQueueAdmissionArgs {
+/**
+ * Thrown inside the event transaction when a competing tick already consumed
+ * the exact occurrence; it rolls the queue event back and the schedule stays
+ * due for the cron's next read.
+ */
+export class ScheduleOccurrenceUnavailableError extends Error {
+  constructor() {
+    super("Schedule occurrence was consumed by a competing tick");
+    this.name = "ScheduleOccurrenceUnavailableError";
+  }
+}
+
+interface WorkflowAutomationQueueEventArgs {
   readonly automation: typeof workflowAutomations.$inferSelect;
   readonly queueEventId?: string;
   readonly workflowName: string;
@@ -132,142 +97,24 @@ interface WorkflowQueueAdmissionArgs {
   readonly workflowAutomationEventPayload?: WorkflowAutomationEventPayload;
   readonly connectorSourceId?: string;
   readonly chatThreadId: string;
-  readonly triggerSource: TriggerSource;
   readonly triggerBrief: string | undefined;
-  readonly coalescePendingScheduleRun: boolean;
-  /**
-   * Atomically transitions a provider-owned source event only after its
-   * workflow queue item has been inserted. Throwing rolls back both writes.
-   */
-  readonly persistSourceTransition?: PersistWorkflowQueueSourceTransition;
-  /**
-   * Present only for the schedule occurrences this API version journals. Its
-   * absence keeps the historical claim-then-admit behavior untouched.
-   */
-  readonly scheduleClaim?: WorkflowScheduleClaimPlan;
-  readonly timing?: ApiDispatchTimingCollector;
 }
 
-async function admitCoalescedScheduleTick(
-  tx: WorkflowQueueAdmissionTransaction,
-  args: WorkflowQueueAdmissionArgs,
-  pendingEventId: string,
-): Promise<WorkflowQueueAdmission> {
-  if (!args.scheduleClaim) {
-    return { kind: "coalesced" };
-  }
-  const recorded = await args.scheduleClaim.recordedClaimForQueueEvent(
-    tx,
-    pendingEventId,
-  );
-  if (!recorded) {
-    // The pending event predates this journal or belongs to an untracked
-    // path. Attaching this occurrence's anchor to it would invent an identity
-    // for work nobody recorded, so the schedule stays due instead.
-    return { kind: "schedule_unavailable", reason: "untracked_pending_event" };
-  }
-  return { kind: "coalesced", scheduleClaimId: recorded };
-}
-
-async function admitWorkflowQueueInTransaction(
-  tx: WorkflowQueueAdmissionTransaction,
-  args: WorkflowQueueAdmissionArgs,
-  event: Parameters<typeof insertChatEvent>[1],
-): Promise<WorkflowQueueAdmission> {
-  const { automation, scheduleClaim, persistSourceTransition } = args;
-  if (args.coalescePendingScheduleRun && automation.kind === "schedule") {
-    const pending = await measureWorkflowAdmissionStep(
-      args.timing,
-      "api_dispatch_workflow_admission_pending_lookup",
-      async () => {
-        const pendingEventId = await pendingTickForAutomation(
-          tx,
-          automation.id,
-        );
-        return pendingEventId
-          ? await admitCoalescedScheduleTick(tx, args, pendingEventId)
-          : undefined;
-      },
-    );
-    if (pending) {
-      return pending;
-    }
-  }
-
-  const claim = scheduleClaim
-    ? await measureWorkflowAdmissionStep(
-        args.timing,
-        "api_dispatch_workflow_admission_schedule_claim",
-        async () => {
-          return await scheduleClaim.claim(tx);
-        },
-      )
-    : undefined;
-  if (claim?.kind === "unavailable") {
-    return { kind: "schedule_unavailable", reason: "superseded" };
-  }
-
-  const conflict = args.queueEventId === undefined ? "none" : "id";
-  // Context commits with the admitted event; a coalesced or superseded tick
-  // writes neither.
-  const inserted = await measureWorkflowAdmissionStep(
-    args.timing,
-    "api_dispatch_workflow_admission_event_insert",
-    async () => {
-      return await insertChatEvent(tx, event, conflict);
-    },
-  );
-  if (!inserted) {
-    if (args.queueEventId !== undefined) {
-      return { kind: "coalesced" };
-    }
-    throw new Error("Workflow queue event insert returned no row");
-  }
-  if (persistSourceTransition) {
-    await measureWorkflowAdmissionStep(
-      args.timing,
-      "api_dispatch_workflow_admission_source_transition",
-      async () => {
-        await persistSourceTransition(tx);
-      },
-    );
-  }
-  if (claim) {
-    await measureWorkflowAdmissionStep(
-      args.timing,
-      "api_dispatch_workflow_admission_event_binding",
-      async () => {
-        await scheduleClaim?.bindQueueEvent(tx, {
-          claimId: claim.claimId,
-          queueEventId: inserted.id,
-        });
-      },
-    );
-    return {
-      kind: "inserted",
-      eventId: inserted.id,
-      scheduleClaimId: claim.claimId,
-    };
-  }
-  return { kind: "inserted", eventId: inserted.id };
-}
-
-async function attemptWorkflowQueueAdmission(
+/**
+ * Build the run-less `input.automation` event for a fired automation. The
+ * returned writer inserts it; a retried ingress that reuses `queueEventId`
+ * writes nothing and returns null.
+ */
+export async function workflowAutomationQueueEventWriter(
   db: Db,
-  args: WorkflowQueueAdmissionArgs,
-): Promise<WorkflowQueueAdmission> {
+  args: WorkflowAutomationQueueEventArgs,
+): Promise<(tx: Db | Tx) => Promise<string | null>> {
   const { automation } = args;
-  const [workflow] = await measureWorkflowAdmissionStep(
-    args.timing,
-    "api_dispatch_workflow_admission_display_name",
-    async () => {
-      return await db
-        .select({ displayName: workflows.displayName })
-        .from(workflows)
-        .where(eq(workflows.id, automation.workflowId))
-        .limit(1);
-    },
-  );
+  const [workflow] = await db
+    .select({ displayName: workflows.displayName })
+    .from(workflows)
+    .where(eq(workflows.id, automation.workflowId))
+    .limit(1);
   if (!workflow) {
     throw new Error(`Workflow not found: ${automation.workflowId}`);
   }
@@ -285,186 +132,144 @@ async function attemptWorkflowQueueAdmission(
   const userMessage = args.agentRunSource
     ? withAgentRunSourceAnnotation(automationUserMessage, args.agentRunSource)
     : automationUserMessage;
-  const event = {
-    id: args.queueEventId,
-    chatThreadId: args.chatThreadId,
-    eventType: "input.automation",
-    content: null,
-    userMessage,
-    runId: null,
-    automationId: automation.id,
-    workflowName: args.workflowName,
-    workflowAutomationEventType: args.workflowAutomationEventType,
-    workflowAutomationEventPayload: args.workflowAutomationEventPayload,
-    connectorSourceId: args.connectorSourceId,
-    triggerBrief: args.triggerBrief ?? null,
-  } as const;
-  return await measureWorkflowAdmissionStep(
-    args.timing,
-    "api_dispatch_workflow_admission_transaction",
-    async () => {
-      return await db.transaction(async (tx) => {
-        return await measureWorkflowAdmissionStep(
-          args.timing,
-          "api_dispatch_workflow_admission_transaction_callback",
-          async () => {
-            return await admitWorkflowQueueInTransaction(tx, args, event);
-          },
-        );
-      });
-    },
-  );
-}
-
-/**
- * Persist every fired automation as a pending input event. Schedule coalescing
- * is best effort: a visible pending event absorbs another tick, but concurrent
- * admissions may both enqueue. Exact occurrence claims and source transitions
- * still commit atomically with their admitted events.
- */
-export async function admitWorkflowAutomationEvent(
-  db: Db,
-  args: WorkflowQueueAdmissionArgs,
-): Promise<WorkflowQueueAdmission> {
-  return await attemptWorkflowQueueAdmission(db, args);
-}
-
-export interface PendingWorkflowQueueEvent {
-  readonly id: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly automationId: string | null;
-  readonly chatThreadId: string;
-  readonly triggerSource: TriggerSource | null;
-  readonly triggerBrief: string | null;
-  readonly workflowName: string | null;
-  readonly workflowAutomationEventType: string | null;
-  readonly workflowAutomationEventPayload: WorkflowAutomationEventPayload | null;
-  readonly connectorSourceId: string | undefined;
-}
-
-/**
- * Load the thread's queue head when it is an automation event. The queue is
- * strict FIFO across user messages and automation events, and any active run
- * blocks the whole thread. Missing automation context is returned with null
- * launch fields so the drain can reject the persisted input and continue
- * instead of leaving the thread stuck.
- *
- * The read takes no lock: the launch's claim appends a replacement on the
- * event's unique revoke edge, so concurrent pickers cannot both consume it.
- * A concurrently deleted thread can remove the selected event before this
- * lookup; that canonical deletion race returns null rather than failing.
- */
-export async function loadNextWorkflowQueueEvent(
-  db: Db,
-  chatThreadId: string,
-): Promise<PendingWorkflowQueueEvent | null> {
-  const head = await loadChatQueueHead(db, chatThreadId);
-  if (head?.eventType !== "input.automation") {
-    return null;
-  }
-  const [event] = await db
-    .select({
-      id: chatEvents.id,
-      orgId: agents.orgId,
-      userId: chatThreads.userId,
-      automationId: chatAutomationContext.automationId,
-      automationKind: workflowAutomations.kind,
-      chatThreadId: chatEvents.chatThreadId,
-      triggerBrief: chatAutomationContext.triggerBrief,
-      workflowName: chatAutomationContext.workflowName,
-      workflowAutomationEventType: chatAutomationContext.eventType,
-      workflowAutomationEventPayload: chatAutomationContext.eventPayload,
-      connectorSourceId: chatAutomationContext.connectorSourceId,
-    })
-    .from(chatEvents)
-    .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .leftJoin(
-      chatAutomationContext,
-      and(
-        eq(chatEvents.contextType, "automation"),
-        eq(chatAutomationContext.id, chatEvents.contextId),
-      ),
-    )
-    .leftJoin(
-      workflowAutomations,
-      eq(workflowAutomations.id, chatAutomationContext.automationId),
-    )
-    .where(
-      and(
-        eq(chatEvents.id, head.id),
-        eq(chatEvents.chatThreadId, chatThreadId),
-        notExists(
-          db
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.chatThreadId, chatThreadId),
-                inArray(agentRuns.status, ["queued", "pending", "running"]),
-                isNotNull(agentRuns.triggerSource),
-              ),
-            ),
-        ),
-      ),
-    )
-    .limit(1);
-  if (!event) {
-    return null;
-  }
-  return {
-    ...event,
-    connectorSourceId: event.connectorSourceId ?? undefined,
-    triggerSource:
-      event.automationKind === null
-        ? null
-        : manualTriggerSource({ kind: event.automationKind }),
+  return async (tx) => {
+    const inserted = await insertChatEvent(
+      tx,
+      {
+        id: args.queueEventId,
+        chatThreadId: args.chatThreadId,
+        eventType: "input.automation",
+        content: null,
+        userMessage,
+        runId: null,
+        automationId: automation.id,
+        workflowName: args.workflowName,
+        workflowAutomationEventType: args.workflowAutomationEventType,
+        workflowAutomationEventPayload: args.workflowAutomationEventPayload,
+        connectorSourceId: args.connectorSourceId,
+        triggerBrief: args.triggerBrief ?? null,
+      },
+      args.queueEventId === undefined ? "none" : "id",
+    );
+    if (!inserted && args.queueEventId === undefined) {
+      throw new Error("Workflow queue event insert returned no row");
+    }
+    return inserted?.id ?? null;
   };
 }
 
-async function loadAutomationRejectionPayload(
-  db: Pick<Db, "select">,
-  eventId: string,
-) {
-  const [event] = await db
-    .select({
-      automationId: chatAutomationContext.automationId,
-      triggerBrief: chatAutomationContext.triggerBrief,
-      userMessage: canonicalChatEventUserMessage(),
-      workflowId: workflows.id,
-      workflowName: workflows.name,
-    })
-    .from(chatEvents)
-    .leftJoin(
-      chatAutomationContext,
-      and(
-        eq(chatEvents.contextType, "automation"),
-        eq(chatAutomationContext.id, chatEvents.contextId),
-      ),
-    )
-    .leftJoin(
-      workflowAutomations,
-      eq(workflowAutomations.id, chatAutomationContext.automationId),
-    )
-    .leftJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-    .where(eq(chatEvents.id, eventId))
-    .limit(1);
-  return event ?? null;
-}
-
-async function pendingAutomationEventStillExists(
+/**
+ * The automation's still-unconsumed events on its thread, read in bounded
+ * steps without a join: the thread's pending automation inputs, their
+ * context ids by primary key, then which of those contexts belong to this
+ * automation. `scheduleTicksOnly` drops explicit manual runs, which are never
+ * coalesced.
+ */
+async function pendingAutomationEventIds(
   db: Pick<Db, "select">,
   args: {
     readonly chatThreadId: string;
-    readonly eventId: string;
+    readonly automationId: string;
+    readonly scheduleTicksOnly?: boolean;
   },
-): Promise<boolean> {
-  const pending = await loadPendingChatQueueEvent(db, args);
-  return pending?.eventType === "input.automation";
+): Promise<readonly string[]> {
+  const pending = await listPendingChatInputs(db, {
+    chatThreadId: args.chatThreadId,
+    eventTypes: ["input.automation"],
+  });
+  if (pending.length === 0) {
+    return [];
+  }
+  const contexts = await db
+    .select({ eventId: chatEvents.id, contextId: chatEvents.contextId })
+    .from(chatEvents)
+    .where(
+      and(
+        inArray(
+          chatEvents.id,
+          pending.map(({ id }) => {
+            return id;
+          }),
+        ),
+        eq(chatEvents.contextType, "automation"),
+      ),
+    );
+  const contextIds = contexts.flatMap(({ contextId }) => {
+    return contextId === null ? [] : [contextId];
+  });
+  if (contextIds.length === 0) {
+    return [];
+  }
+  const owned = await db
+    .select({
+      id: chatAutomationContext.id,
+      eventType: chatAutomationContext.eventType,
+    })
+    .from(chatAutomationContext)
+    .where(
+      and(
+        inArray(chatAutomationContext.id, contextIds),
+        eq(chatAutomationContext.automationId, args.automationId),
+      ),
+    );
+  const ownedIds = new Set(
+    owned.flatMap(({ id, eventType }) => {
+      return args.scheduleTicksOnly === true && eventType === "manual"
+        ? []
+        : [id];
+    }),
+  );
+  return contexts.flatMap(({ eventId, contextId }) => {
+    return contextId !== null && ownedIds.has(contextId) ? [eventId] : [];
+  });
 }
 
-/** Reject an unfireable automation event while it still owns the queue head. */
+/** Whether the automation still has an unconsumed event on its thread. */
+export async function hasPendingAutomationEvent(
+  db: Pick<Db, "select">,
+  args: { readonly chatThreadId: string; readonly automationId: string },
+): Promise<boolean> {
+  return (await pendingAutomationEventIds(db, args)).length > 0;
+}
+
+/**
+ * Schedule coalescing belongs to the schedule trigger: when a new tick is
+ * enqueued, the automation's older unconsumed schedule ticks are revoked;
+ * explicit manual runs stay distinct queue items. `excludeEventId` keeps the
+ * new tick itself when the revoke runs in its insert transaction. A revoke
+ * that loses its unique revoke edge means the tick was already picked; the
+ * new tick is enqueued either way, so an occasional extra tick can run.
+ */
+export async function revokePendingScheduleTicks(
+  db: Db | Tx,
+  args: {
+    readonly chatThreadId: string;
+    readonly automationId: string;
+    readonly excludeEventId?: string;
+  },
+): Promise<void> {
+  const pending = await pendingAutomationEventIds(db, {
+    chatThreadId: args.chatThreadId,
+    automationId: args.automationId,
+    scheduleTicksOnly: true,
+  });
+  for (const eventId of pending) {
+    if (eventId === args.excludeEventId) {
+      continue;
+    }
+    await revokeChatEvent(db, eventId, {
+      chatThreadId: args.chatThreadId,
+      eventType: "control.revoke",
+      runId: null,
+    });
+  }
+}
+
+/**
+ * Consume an unfireable automation event as `input.rejected`. The rejected
+ * replacement conflicts on the event's revoke edge with any concurrent claim,
+ * recall or rejection, so it is written at most once.
+ */
 export async function rejectWorkflowQueueEvent(
   db: Db,
   args: {
@@ -473,48 +278,363 @@ export async function rejectWorkflowQueueEvent(
     readonly reason: string;
   },
 ): Promise<boolean> {
-  // The rejected replacement is the atomic consume: it conflicts on the
-  // event's revoke edge with any concurrent claim, recall or rejection.
-  // The event owned the runnable head before launch. A user message or run
-  // may win the thread while launch is in flight, but a permanent conflict
-  // must still consume this trigger instead of making it retry later.
-  if (!(await pendingAutomationEventStillExists(db, args))) {
+  const [event] = await db
+    .select({
+      userMessage: canonicalChatEventUserMessage(),
+      contextId: chatEvents.contextId,
+    })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.id, args.eventId),
+        eq(chatEvents.chatThreadId, args.chatThreadId),
+      ),
+    )
+    .limit(1);
+  if (!event?.userMessage) {
     return false;
   }
-  const payload = await loadAutomationRejectionPayload(db, args.eventId);
-  if (!payload) {
-    return false;
-  }
-  const userMessage =
-    payload.userMessage ??
-    (payload.workflowName === null
-      ? null
-      : createUserMessageDocument({
-          text: null,
-          nonContentPart: {
-            type: "automation",
-            workflowName: payload.workflowName,
-            ...(payload.workflowId === null
-              ? {}
-              : { workflowId: payload.workflowId }),
-            ...(payload.triggerBrief === null
-              ? {}
-              : { automationBrief: payload.triggerBrief }),
-          },
-        }));
-  if (!userMessage) {
-    return false;
-  }
+  const [context] =
+    event.contextId === null
+      ? []
+      : await db
+          .select({
+            automationId: chatAutomationContext.automationId,
+            triggerBrief: chatAutomationContext.triggerBrief,
+          })
+          .from(chatAutomationContext)
+          .where(eq(chatAutomationContext.id, event.contextId))
+          .limit(1);
   const rejected = await replaceChatEvent(db, args.eventId, {
     chatThreadId: args.chatThreadId,
     eventType: "input.rejected",
-    userMessage,
+    userMessage: event.userMessage,
     runId: null,
     error: args.reason,
-    ...(payload.automationId === null
-      ? {}
-      : { automationId: payload.automationId }),
-    triggerBrief: payload.triggerBrief,
+    ...(context ? { automationId: context.automationId } : {}),
+    triggerBrief: context?.triggerBrief ?? null,
   });
   return rejected !== null;
 }
+
+interface QueuedAutomationEvent {
+  readonly id: string;
+  readonly chatThreadId: string;
+  readonly automationId: string;
+  readonly triggerBrief: string | null;
+  readonly workflowName: string | null;
+  readonly eventType: string | null;
+  readonly eventPayload: WorkflowAutomationEventPayload | null;
+  readonly connectorSourceId: string | null;
+}
+
+/** The head's automation context, by primary keys only. */
+async function loadQueuedAutomationEvent(
+  db: Db,
+  args: { readonly chatThreadId: string; readonly eventId: string },
+): Promise<QueuedAutomationEvent | null> {
+  const [event] = await db
+    .select({ contextId: chatEvents.contextId })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.id, args.eventId),
+        eq(chatEvents.chatThreadId, args.chatThreadId),
+        eq(chatEvents.contextType, "automation"),
+      ),
+    )
+    .limit(1);
+  if (!event?.contextId) {
+    return null;
+  }
+  const [context] = await db
+    .select({
+      automationId: chatAutomationContext.automationId,
+      triggerBrief: chatAutomationContext.triggerBrief,
+      workflowName: chatAutomationContext.workflowName,
+      eventType: chatAutomationContext.eventType,
+      eventPayload: chatAutomationContext.eventPayload,
+      connectorSourceId: chatAutomationContext.connectorSourceId,
+    })
+    .from(chatAutomationContext)
+    .where(eq(chatAutomationContext.id, event.contextId))
+    .limit(1);
+  return context
+    ? { id: args.eventId, chatThreadId: args.chatThreadId, ...context }
+    : null;
+}
+
+interface LaunchTarget {
+  readonly automation: typeof workflowAutomations.$inferSelect;
+  readonly agentId: string;
+}
+
+async function loadLaunchTarget(
+  db: Db,
+  automationId: string,
+): Promise<LaunchTarget | null> {
+  const [row] = await db
+    .select({
+      automation: workflowAutomationColumns(),
+      agentId: workflows.agentId,
+    })
+    .from(workflowAutomations)
+    .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+    .where(eq(workflowAutomations.id, automationId))
+    .limit(1);
+  return row ?? null;
+}
+
+async function resolveAutonomyBudget(
+  db: Db,
+  event: QueuedAutomationEvent,
+  automation: typeof workflowAutomations.$inferSelect,
+): Promise<
+  | { readonly kind: "ok"; readonly autonomyBudget: number }
+  | { readonly kind: "invalid"; readonly message: string }
+> {
+  const label =
+    event.eventType === "manual" ? "Manual automation" : "Chat run finished";
+  const sourceRunId =
+    event.eventType === "chat-run-finished"
+      ? event.eventPayload?.["runId"]
+      : event.eventType === "manual"
+        ? event.eventPayload?.["sourceRunId"]
+        : undefined;
+  if (event.eventType !== "chat-run-finished" && sourceRunId === undefined) {
+    return { kind: "ok", autonomyBudget: automation.autonomyBudget };
+  }
+  if (typeof sourceRunId !== "string") {
+    return {
+      kind: "invalid",
+      message: `${label} event is missing its source run`,
+    };
+  }
+  const sourceAutonomyBudget = await loadRunAutonomyBudget(db, sourceRunId);
+  if (sourceAutonomyBudget === null) {
+    return {
+      kind: "invalid",
+      message: `${label} source run no longer exists`,
+    };
+  }
+  const derived = childAutonomyBudget(sourceAutonomyBudget);
+  return derived.kind === "exhausted"
+    ? { kind: "invalid", message: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE }
+    : { kind: "ok", autonomyBudget: derived.autonomyBudget };
+}
+
+function reconciliationConflictMessage(
+  reconciled: OfficialWorkflowReconciliationResult,
+): string {
+  return reconciled.kind === "needs-reconfiguration"
+    ? reconciled.message
+    : "Official Workflow automation no longer exists";
+}
+
+/**
+ * How launching an automation queue head ended. `rejected` has already
+ * consumed the head as `input.rejected`.
+ */
+export type QueuedAutomationEventLaunch =
+  | { readonly kind: "launched"; readonly runId: string }
+  | { readonly kind: "org-full" }
+  | { readonly kind: "lost" }
+  | { readonly kind: "rejected"; readonly failure: RunFailure };
+
+interface QueuedAutomationHead {
+  readonly chatThreadId: string;
+  readonly orgId: string;
+  readonly eventId: string;
+}
+
+/**
+ * Tell the thread's viewers its queue head was consumed. Whichever pick
+ * launched or rejected the head publishes, not only the one that enqueued it;
+ * a duplicate publish by the enqueuer is harmless.
+ */
+async function publishQueuedAutomationHeadConsumed(
+  db: Db,
+  head: QueuedAutomationHead,
+  signal: AbortSignal,
+): Promise<void> {
+  const [thread] = await db
+    .select({ userId: chatThreads.userId })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, head.chatThreadId))
+    .limit(1);
+  signal.throwIfAborted();
+  if (!thread) {
+    return;
+  }
+  await publishChatThreadMessageCreatedSafely({
+    userId: thread.userId,
+    orgId: head.orgId,
+    threadId: head.chatThreadId,
+  });
+  signal.throwIfAborted();
+}
+
+/**
+ * Consume a queued automation head as `input.rejected`. A head another writer
+ * already consumed reports `lost`.
+ */
+async function rejectQueuedAutomationEvent(
+  db: Db,
+  head: QueuedAutomationHead,
+  failure: RunFailure,
+  signal: AbortSignal,
+): Promise<QueuedAutomationEventLaunch> {
+  const reason =
+    failure.kind === "conflict"
+      ? failure.message
+      : failure.response.body.error.message;
+  const consumed = await rejectWorkflowQueueEvent(db, {
+    chatThreadId: head.chatThreadId,
+    eventId: head.eventId,
+    reason,
+  });
+  signal.throwIfAborted();
+  if (!consumed) {
+    return { kind: "lost" };
+  }
+  const logRejection =
+    failure.kind === "run_error" &&
+    failure.response.body.error.code !== "INSUFFICIENT_CREDITS"
+      ? log.warn
+      : log.debug;
+  logRejection("Rejected queued automation event", {
+    eventId: head.eventId,
+    chatThreadId: head.chatThreadId,
+    reason,
+  });
+  await publishQueuedAutomationHeadConsumed(db, head, signal);
+  return { kind: "rejected", failure };
+}
+
+/**
+ * The automation branch of the pick's launch: build launch params from the
+ * head's automation context (reconciling an Official Workflow first) and
+ * launch it. Every failure other than organization capacity consumes the
+ * head as `input.rejected`.
+ */
+export const launchQueuedAutomationEvent$ = command(
+  async (
+    { set },
+    args: {
+      readonly chatThreadId: string;
+      /** The thread's organization, known to the pick; no thread lookup. */
+      readonly orgId: string;
+      readonly eventId: string;
+      readonly apiStartTime: number;
+      readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
+      readonly timing?: ApiDispatchTimingCollector;
+    },
+    signal: AbortSignal,
+  ): Promise<QueuedAutomationEventLaunch> => {
+    const db = set(writeDb$);
+    const reject = (failure: RunFailure) => {
+      return rejectQueuedAutomationEvent(db, args, failure, signal);
+    };
+    const conflict = (message: string) => {
+      return reject({ kind: "conflict", message });
+    };
+
+    const event = await loadQueuedAutomationEvent(db, args);
+    signal.throwIfAborted();
+    if (!event) {
+      return await conflict("Workflow queue event payload is unreadable");
+    }
+    let target = await loadLaunchTarget(db, event.automationId);
+    signal.throwIfAborted();
+    if (!target) {
+      return await conflict("Workflow automation no longer exists");
+    }
+    if (target.automation.officialBlueprintKey !== null) {
+      const reconciled = await set(
+        dispatchConfiguredOfficialWorkflowReconciliation$,
+        {
+          orgId: target.automation.orgId,
+          member: { userId: target.automation.ownerUserId, role: "member" },
+          workflowId: target.automation.workflowId,
+          targetAutomationId: target.automation.id,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (reconciled.kind === "retry") {
+        // Reconciliation is busy elsewhere; the head keeps waiting.
+        return { kind: "lost" };
+      }
+      if (reconciled.kind !== "current") {
+        return await conflict(reconciliationConflictMessage(reconciled));
+      }
+      target = await loadLaunchTarget(db, event.automationId);
+      signal.throwIfAborted();
+      if (!target) {
+        return await conflict("Official Workflow automation no longer exists");
+      }
+    }
+    const material = buildWorkflowAutomationQueuedLaunchMaterial({
+      workflowName: event.workflowName,
+      eventType: event.eventType,
+      eventPayload: event.eventPayload,
+      automation: target.automation,
+      agentId: target.agentId,
+      chatThreadId: event.chatThreadId,
+    });
+    if (!material) {
+      return await conflict("Workflow queue event payload is unreadable");
+    }
+    const autonomyBudget = await resolveAutonomyBudget(
+      db,
+      event,
+      target.automation,
+    );
+    signal.throwIfAborted();
+    if (autonomyBudget.kind === "invalid") {
+      return await conflict(autonomyBudget.message);
+    }
+    const triggerSource: TriggerSource = manualTriggerSource(target.automation);
+    const result = await set(
+      launchQueuedWorkflowAutomation$,
+      {
+        due: {
+          automation: target.automation,
+          agentId: target.agentId,
+          chatThreadId: event.chatThreadId,
+          allowClaimedOnceScheduleAutomation:
+            material.allowClaimedOnceScheduleAutomation,
+        },
+        queueEventId: event.id,
+        apiStartTime: args.apiStartTime,
+        prompt: material.prompt,
+        triggerBrief: event.triggerBrief ?? undefined,
+        triggerSource,
+        ...(event.connectorSourceId
+          ? { connectorSourceId: event.connectorSourceId }
+          : {}),
+        appendSystemPrompt: material.appendSystemPrompt,
+        callbacks: material.callbacks,
+        autonomyBudget: autonomyBudget.autonomyBudget,
+        activePreviousRunPolicy: material.activePreviousRunPolicy,
+        recordLastRunId: material.recordLastRunId,
+        recordLastRunAt: material.recordLastRunAt,
+        dispatchFailedCallbacks: args.dispatchFailedCallbacks,
+        timing: args.timing,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result.kind === "ok") {
+      await publishQueuedAutomationHeadConsumed(db, args, signal);
+      return { kind: "launched", runId: result.runId };
+    }
+    if (result.kind === "org-full") {
+      return { kind: "org-full" };
+    }
+    if (result.kind === "lost") {
+      return { kind: "lost" };
+    }
+    return await reject(result);
+  },
+);

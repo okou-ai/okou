@@ -74,13 +74,6 @@ export class PiApiFirstTurnModelFailureError extends PiApiFirstTurnError {
   }
 }
 
-export class PiApiFirstTurnActiveInputBeforeProviderError extends Error {
-  constructor() {
-    super("Active input committed before Pi provider ownership");
-    this.name = "PiApiFirstTurnActiveInputBeforeProviderError";
-  }
-}
-
 export class PiApiFirstTurnCanonicalCancellationError extends Error {
   constructor() {
     super("Canonical Run cancellation owns the Pi API first turn");
@@ -112,7 +105,6 @@ type PiSandboxFallbackReason =
 export type PiSandboxFirstReason =
   | PiSandboxFallbackReason
   | "resume_history"
-  | "active_input"
   | "api_model_failed"
   | "api_attempt_timed_out";
 
@@ -165,34 +157,24 @@ type ApiFirstTurnCommitDecision =
   | { readonly outcome: "complete" }
   | {
       readonly outcome: "transfer";
-      readonly mode:
-        | "pending-tool-continuation"
-        | "settled-session-continuation";
-      readonly reason:
-        | "pending_tool_continuation"
-        | "active_input_pending_tool"
-        | "active_input_settled_session";
+      readonly mode: "pending-tool-continuation";
+      readonly reason: "pending_tool_continuation";
     };
 
-/** Apply only after the guarded H1 effect has reread lifecycle and identity. */
+/**
+ * Apply only after the guarded H1 effect has reread lifecycle and identity.
+ * API-first never steers: input that arrives during the turn stays queued and
+ * is picked after this run releases its slot. Only pending tool use moves the
+ * run to a sandbox, whose runner may then steer.
+ */
 export function decideApiFirstTurnCommit(facts: {
   readonly pendingTools: boolean;
-  readonly activeInput: boolean;
 }): ApiFirstTurnCommitDecision {
   if (facts.pendingTools) {
     return {
       outcome: "transfer",
       mode: "pending-tool-continuation",
-      reason: facts.activeInput
-        ? "active_input_pending_tool"
-        : "pending_tool_continuation",
-    };
-  }
-  if (facts.activeInput) {
-    return {
-      outcome: "transfer",
-      mode: "settled-session-continuation",
-      reason: "active_input_settled_session",
+      reason: "pending_tool_continuation",
     };
   }
   return { outcome: "complete" };
@@ -200,7 +182,6 @@ export function decideApiFirstTurnCommit(facts: {
 
 interface ApiFirstTurnRecoveryFacts {
   readonly failure: PiApiFirstTurnError;
-  readonly activeInputBeforeProvider: boolean;
   readonly ownershipStage: PiApiFirstTurnOwnershipStage;
   readonly commitStarted: boolean;
   readonly coordinationAborted: boolean;
@@ -219,11 +200,7 @@ type ApiFirstTurnRecoveryDecision = {
 function resourceFallbackReason(
   facts: ApiFirstTurnRecoveryFacts,
 ): PiSandboxFallbackReason | null {
-  if (
-    facts.activeInputBeforeProvider ||
-    facts.coordinationAborted ||
-    facts.ownershipStage !== "pre-provider"
-  ) {
+  if (facts.coordinationAborted || facts.ownershipStage !== "pre-provider") {
     return null;
   }
   switch (facts.failure.code) {
@@ -283,9 +260,8 @@ export function decideApiFirstTurnRecovery(
   if (facts.commitStarted) {
     return { ...diagnostics, outcome: "arbitrate-terminal" };
   }
-  const reason = facts.activeInputBeforeProvider
-    ? "active_input"
-    : apiOwnershipExpired && coordinationRemains
+  const reason =
+    apiOwnershipExpired && coordinationRemains
       ? "api_attempt_timed_out"
       : apiModelFailed
         ? "api_model_failed"

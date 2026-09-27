@@ -16,12 +16,7 @@ export type WorkflowAdmissionSchedulePath =
   | "unjournaled_schedule"
   | "journaled_schedule";
 
-export type WorkflowAdmissionOutcome =
-  | "inserted"
-  | "coalesced"
-  | "superseded"
-  | "untracked_pending"
-  | "failed";
+export type WorkflowAdmissionOutcome = "inserted" | "superseded" | "failed";
 
 type AdmissionTimingRecorder = Pick<
   ApiDispatchTimingCollector,

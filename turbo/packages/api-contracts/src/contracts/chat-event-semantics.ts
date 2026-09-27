@@ -213,14 +213,13 @@ export function semanticChatEventsFromChatEvents(
       ];
     }
 
-    const isUnassociatedUser =
-      chatEventCompatibilityRole(event.eventType) === "user" &&
-      event.runId === undefined;
-    const optimisticAssociation = event.optimisticUserMessageAssociation;
+    // A persisted input without a run waits in the queue until a replacement
+    // carrying the run revokes it. An optimistic input is still being sent.
     const isQueued =
-      isUnassociatedUser &&
-      optimisticAssociation !== "run" &&
-      event.eventType === "input.automation";
+      (event.eventType === "input.prompt" ||
+        event.eventType === "input.automation") &&
+      event.runId === undefined &&
+      event.seqId !== undefined;
     return [
       { event, isQueued, inputCreatedAt: inputCreatedAtById.get(event.id) },
     ];

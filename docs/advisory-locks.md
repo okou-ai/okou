@@ -426,3 +426,18 @@ That future change would remove three SQL sites, not twelve.
 Invitation-email arbitration is outside this preparation. Its existing unique
 index does not by itself preserve paid-purchase priority over an unpaid preview.
 Chat usage display is also outside the scope.
+
+## Schedule coalescing moves to the trigger (release 3)
+
+The prepared-key retirement above already removed the
+`chat_event_queue:<threadId>` key and left best-effort coalescing inside the
+admission transaction. The unified chat queue removes that in-transaction
+coalescing as well: enqueue upserts `queued_chat_threads` before appending the
+input, pick claims the thread with a lease, and pick and steering consume an
+input through its unique revoke edge. The schedule trigger revokes its old
+unconsumed schedule tick when it enqueues (a journaled Morning Brief tick only
+after its claim succeeds, in that transaction), so admission is generic and
+holds no lock.
+The literal inventory is unchanged. Mixed old/new API writers can add one extra
+schedule tick during the cutover; see
+[deployment compatibility](./deployment-compatibility.md#unified-chat-queue-release-3).

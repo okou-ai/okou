@@ -134,7 +134,10 @@ test("Manage work waiting in the queue", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  await expect(findButton("queue...")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("Waiting in queue..."),
+  ).resolves.toBeInTheDocument();
+  expect(queryButton("queue...")).toBeNull();
   expect(
     screen.queryByLabelText("Writing the queued report"),
   ).not.toBeInTheDocument();
@@ -166,7 +169,7 @@ test("Manage work waiting in the queue", async () => {
     screen.findByText("The queued report is ready."),
   ).resolves.toBeVisible();
   await waitFor(() => {
-    expect(queryButton("queue...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Waiting in queue...")).not.toBeInTheDocument();
   });
 
   events.push(
@@ -215,7 +218,7 @@ test("Manage work waiting in the queue", async () => {
   });
 });
 
-test("Show thinking while a newly accepted prompt starts", async () => {
+test("Show a sending prompt without thinking until its run starts", async () => {
   const runAccepted = context.mocks.deferred<void>();
   const lifecycle = installRunChat({ sendGate: runAccepted.promise });
 
@@ -226,14 +229,15 @@ test("Show thinking while a newly accepted prompt starts", async () => {
   await expect(
     screen.findByText("Start the pending analysis"),
   ).resolves.toBeVisible();
-  await expect(findButton("Stop")).resolves.toBeVisible();
+  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+  expect(queryButton("Stop")).toBeNull();
 
   runAccepted.resolve(undefined);
   await waitFor(() => {
-    expect(screen.getAllByText("Start the pending analysis")).toHaveLength(1);
-    expect(queryButton("Stop")).not.toBeNull();
-    expect(context.mocks.ably.hasSharedDatabaseSubscription()).toBeTruthy();
+    expect(queryButton("Stop")).toBeVisible();
+    expect(screen.getByText("Thinking...")).toBeInTheDocument();
   });
+  expect(screen.getAllByText("Start the pending analysis")).toHaveLength(1);
 
   lifecycle.completeRun("The pending analysis is complete.");
   await expect(
@@ -241,4 +245,70 @@ test("Show thinking while a newly accepted prompt starts", async () => {
   ).resolves.toBeVisible();
   await expect(findButton("Send")).resolves.toBeVisible();
   expect(queryButton("Stop")).toBeNull();
+});
+
+test("Show a prompt queued behind the running run in the queue bar", async () => {
+  installRunChat({
+    activeRunIds: [RUN_A],
+    chatEvents: [
+      promptEvent({
+        id: "behind-running-user",
+        runId: RUN_A,
+        seqId: 1,
+        text: "Draft the rollout",
+      }),
+      promptEvent({
+        id: "behind-queued-user",
+        seqId: 2,
+        text: "Add the appendix",
+      }),
+    ],
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  const queued = await screen.findByRole("listitem", {
+    name: "Queued message",
+  });
+  expect(within(queued).getByText("Add the appendix")).toBeInTheDocument();
+  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
+  await expect(findButton("Stop")).resolves.toBeVisible();
+});
+
+test("Show a prompt waiting for a slot without thinking or Stop", async () => {
+  installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: "slot-finished-user",
+        runId: RUN_A,
+        seqId: 1,
+        text: "Draft the rollout",
+      }),
+      assistantEvent({
+        id: "slot-finished-result",
+        runId: RUN_A,
+        seqId: 2,
+        text: "The rollout draft is ready.",
+      }),
+      completedEvent({ id: "slot-finished-done", runId: RUN_A, seqId: 3 }),
+      promptEvent({
+        id: "slot-queued-user",
+        seqId: 4,
+        text: "Add the appendix",
+      }),
+    ],
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  const queued = await screen.findByRole("listitem", {
+    name: "Queued message",
+  });
+  expect(within(queued).getByText("Add the appendix")).toBeInTheDocument();
+  expect(screen.getByText("The rollout draft is ready.")).toBeInTheDocument();
+  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+  expect(queryButton("Stop")).toBeNull();
+  expect(queryButton("Send")).not.toBeNull();
 });

@@ -153,7 +153,6 @@ const cronRetainChatEventsResponseSchema = z.object({
   skippedSearchWatermark: z.number().int().nonnegative(),
   skippedPendingRunless: z.number().int().nonnegative(),
   skippedNonterminalRun: z.number().int().nonnegative(),
-  skippedActiveInput: z.number().int().nonnegative(),
   hasMore: z.boolean(),
   sweepRestarted: z.boolean(),
   durationMs: z.number().int().nonnegative(),

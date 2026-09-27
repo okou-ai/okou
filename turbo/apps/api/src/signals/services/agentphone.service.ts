@@ -13,15 +13,12 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserAgentPreferences } from "@okouai/db/schema/agentphone-user-agent-preference";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import { and, desc, eq, isNull, like, notExists, or } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, desc, eq, like, or } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
 import {
@@ -62,13 +59,12 @@ import {
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
+import { markChatThreadQueued } from "./queued-chat-thread.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { insertChatEvent } from "./chat-event.service";
-import {
-  chatEventTypeIn,
-  chatInputPromptDispatchCondition,
-} from "./chat-event-type.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { InputFileImportError } from "./canonical-asset.service";
 import {
@@ -95,10 +91,6 @@ const AGENTPHONE_GROUP_ACCOUNT_COMMAND_MESSAGE =
   "Only the linked sender can use account commands in a group. Message this number directly to connect or manage your link.";
 const AGENTPHONE_CHAT_MESSAGE_ID_NAMESPACE =
   "3208d609-59a7-4b0e-9c3b-3db20e9c924f";
-const agentPhoneQueueEventRevoker = alias(
-  chatEvents,
-  "agentphone_queue_event_revoker",
-);
 
 const AGENTPHONE_DM_ROOT_MESSAGE_ID = "dm";
 
@@ -156,10 +148,7 @@ interface WorkspaceAgent {
 
 type AgentPhoneMessageDispatchResult =
   | { readonly kind: "ignored" }
-  | {
-      readonly kind: "accepted" | "queued";
-      readonly runId?: string;
-    };
+  | { readonly kind: "picked"; readonly reason: ChatQueueWaitReason };
 
 type ModelRoutePin = IntegrationModelRoutePin;
 
@@ -1585,6 +1574,12 @@ const persistAgentPhoneChatMessage$ = command(
           .filter(Boolean)
           .join("\n\n")
       : args.prompt;
+    // Queue row before the input event, so input is never left unqueued.
+    await markChatThreadQueued(args.db, {
+      chatThreadId: route.chatThreadId,
+      orgId: args.userLink.orgId,
+    });
+    signal.throwIfAborted();
     const persist = async (tx: Db, touchThread: () => Promise<void>) => {
       const event = await insertChatEvent(
         tx,
@@ -1644,58 +1639,6 @@ const persistAgentPhoneChatMessage$ = command(
   },
 );
 
-async function agentPhoneMessageDispatchState(
-  db: Db,
-  args: {
-    readonly chatThreadId: string;
-    readonly chatEventId: string;
-  },
-): Promise<AgentPhoneMessageDispatchResult> {
-  const [[run], [queued]] = await Promise.all([
-    db
-      .select({ runId: agentRuns.id })
-      .from(chatEvents)
-      .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
-      .where(
-        chatInputPromptDispatchCondition({
-          eventId: args.chatEventId,
-          chatThreadId: args.chatThreadId,
-        }),
-      )
-      .limit(1),
-    db
-      .select({ id: chatEvents.id })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, args.chatEventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          chatEventTypeIn(["input.prompt"]),
-          isNull(chatEvents.runId),
-          notExists(
-            db
-              .select({ id: agentPhoneQueueEventRevoker.id })
-              .from(agentPhoneQueueEventRevoker)
-              .where(
-                eq(agentPhoneQueueEventRevoker.revokesEventId, chatEvents.id),
-              ),
-          ),
-        ),
-      )
-      .limit(1),
-  ]);
-  if (queued) {
-    return {
-      kind: "queued",
-      ...(run ? { runId: run.runId } : {}),
-    };
-  }
-  return {
-    kind: "accepted",
-    ...(run ? { runId: run.runId } : {}),
-  };
-}
-
 const runAgentForAgentPhone$ = command(
   async (
     { set },
@@ -1724,19 +1667,13 @@ const runAgentForAgentPhone$ = command(
       return { kind: "ignored" };
     }
 
-    await publishChatThreadMessageCreatedSafely({
-      userId: args.userLink.userId,
-      orgId: args.userLink.orgId,
-      threadId: persisted.chatThreadId,
-    });
-    signal.throwIfAborted();
     await publishThreadListChangedSafely({
       userId: args.userLink.userId,
       orgId: args.userLink.orgId,
     });
     signal.throwIfAborted();
-    await set(
-      drainChatThreadQueueForThread$,
+    const picked = await set(
+      pickEnqueuedChatThread$,
       {
         chatThreadId: persisted.chatThreadId,
         orgId: args.userLink.orgId,
@@ -1745,7 +1682,17 @@ const runAgentForAgentPhone$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return await agentPhoneMessageDispatchState(args.db, persisted);
+    // A launch publishes this input together with its run. Publishing
+    // it before the pick would show it as queued until the launch lands.
+    if (picked.reason !== "launched") {
+      await publishChatThreadMessageCreatedSafely({
+        userId: args.userLink.userId,
+        orgId: args.userLink.orgId,
+        threadId: persisted.chatThreadId,
+      });
+      signal.throwIfAborted();
+    }
+    return { kind: "picked", reason: picked.reason };
   },
 );
 
@@ -1754,14 +1701,12 @@ async function handleAgentPhoneRunResult(
   result: AgentPhoneMessageDispatchResult,
   signal: AbortSignal,
 ): Promise<void> {
-  if (result.kind !== "queued") {
+  const notice =
+    result.kind === "picked" ? chatQueueWaitNotice(result.reason) : null;
+  if (!notice) {
     return;
   }
-  await sendAgentPhoneText(
-    event,
-    "Run queued because the concurrency limit was reached. It will start automatically when a slot is available.",
-    signal,
-  );
+  await sendAgentPhoneText(event, notice, signal);
 }
 
 export const handleAgentPhoneMessage$ = command(

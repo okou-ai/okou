@@ -16,6 +16,7 @@ import {
   queueThreadIdForRun,
 } from "./chat-thread-queue-drain.service";
 import { piApiFirstTurnObjectKey } from "./pi-api-first-turn-config";
+import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 
 const L = logger("RunLifecycle");
 
@@ -46,11 +47,11 @@ export const drainOrgQueueToCapacity$ = command(
  * waiting thread. Every run-end transaction that deletes an active row
  * (Runner completion, cancel, claim failure, cron timeout) calls this after
  * commit and after the run's terminal callbacks, so no end path owns a wakeup
- * of its own. Membership cleanup, which frees slots without ending a thread's
- * turn, and the stale-terminal sweep leave waiting threads to the cron
- * drain. Every enqueue records its thread as queued, so both picks go through
- * the queued-thread lease and its thread and capacity checks, and the
- * launch's final admission stays authoritative.
+ * of its own. Bulk revocations (membership removal, user deletion or ban) hand
+ * off through `handOffReleasedSlots$`; the stale-terminal sweep leaves waiting
+ * threads to the cron drain. Every enqueue records its thread as queued, so
+ * both picks go through the queued-thread lease and its thread and capacity
+ * checks, and the launch's final admission stays authoritative.
  */
 export const handOffReleasedSlot$ = command(
   async (
@@ -67,7 +68,7 @@ export const handOffReleasedSlot$ = command(
         signal,
       );
       signal.throwIfAborted();
-      if (own.outcome.kind === "launched") {
+      if (own.reason === "launched") {
         return;
       }
     }
@@ -81,6 +82,27 @@ export const handOffReleasedSlot$ = command(
       signal,
     );
     signal.throwIfAborted();
+  },
+);
+
+/** Hand off every slot a bulk revocation released, once per released run.
+ * A failed hand-off is logged and left to the cron drain. */
+export const handOffReleasedSlots$ = command(
+  async (
+    { set },
+    slots: readonly ReleasedRunSlot[],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    for (const slot of slots) {
+      await tapError(set(handOffReleasedSlot$, slot, signal), (error) => {
+        L.error("Failed to hand off revoked run slot", {
+          runId: slot.runId,
+          orgId: slot.orgId,
+          error,
+        });
+      });
+      signal.throwIfAborted();
+    }
   },
 );
 

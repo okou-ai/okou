@@ -3923,7 +3923,7 @@ describe("MCP chat mutations", () => {
     });
   });
 
-  it("does not withdraw reserved input and reports its later association with the same active run", async () => {
+  it("reports steered input as associated with the same active run after its receipt", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
     const actor = await nativeRunnerChatActor(f, auth);
@@ -3959,28 +3959,12 @@ describe("MCP chat mutations", () => {
       throw new Error("Expected the runner to reserve MCP input");
     }
     expect(reserved.eventIds).toStrictEqual([args.requestId]);
-    const recall = await revokeMessage(token, sent.inputRef);
-    expect(recall).toMatchObject({
-      outcome: "not_revocable",
-      reason: "reserved_or_associated",
-    });
+    // Reservation is read-only: the input stays queued until the receipt.
     await expect(sendMessage(token, args)).resolves.toMatchObject({
       inputRef: sent.inputRef,
       replayed: true,
-      disposition: "reserved",
-      runId: active.runId,
-    });
-    await expect(
-      getStatus(token, { inputRef: sent.inputRef }),
-    ).resolves.toMatchObject({
-      lifecycle: { phase: "queued", outcome: null, output: "pending" },
-      messages: {
-        arguments: {
-          threadId: active.threadId,
-          runId: active.runId,
-          limit: 20,
-        },
-      },
+      disposition: "queued",
+      runId: null,
     });
     await expect(
       f.api.recordRunnerActiveInputDelivery(

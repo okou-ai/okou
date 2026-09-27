@@ -26,7 +26,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Cron } from "croner";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -37,9 +36,6 @@ import {
   readNativeSchedule,
 } from "../../../test-fixtures/morning-brief-native-schedule";
 import {
-  holdWorkflowAutomationCommittedRunFixture,
-  installMorningBriefSettlementFailureFixture,
-  observeMorningBriefSettlementAttemptsFixture,
   readMorningBriefScheduleClaimsFixture,
   withWorkflowAutomationRunPersistenceFailureFixture,
 } from "../../../test-fixtures/morning-brief-schedule-claim";
@@ -251,13 +247,10 @@ async function readAcceptedDefinitionFixture(definitionName: string) {
     stateClient().action({ body: { action: "read", definitionName } }),
     [200],
   );
-  if (!response.body.definition || !response.body.storage) {
+  if (!response.body.definition) {
     throw new Error(`Accepted Definition is unavailable: ${definitionName}`);
   }
-  return {
-    definition: response.body.definition,
-    storage: response.body.storage,
-  };
+  return response.body.definition;
 }
 
 function s3BodyBuffer(body: unknown): Buffer {
@@ -1266,15 +1259,17 @@ describe("Morning Brief legacy schedule claim journal", () => {
     });
   });
 
-  it("settles once when a failed-Run callback races the real outer failure path", async () => {
+  it("settles an occurrence whose Run fails in the same launch that created it", async () => {
     const brief = await installJournaledBrief();
-    const acceptedDefinition =
-      await readAcceptedDefinitionFixture("morning-brief");
+    // Launch preparation presigns the accepted Definition's storage. Evict its
+    // cached URL and fail presigning, so the launch commits the Run as failed
+    // and dispatches its failed-Run callbacks before the tick returns.
+    const definition = await readAcceptedDefinitionFixture("morning-brief");
     await accept(
       storageClient().action({
         body: {
           action: "cleanup-owned-storage-cache",
-          storage_id: acceptedDefinition.definition.artifact.storageId,
+          storage_id: definition.artifact.storageId,
         },
       }),
       [200],
@@ -1282,92 +1277,19 @@ describe("Morning Brief legacy schedule claim journal", () => {
     context.mocks.s3.getSignedUrl.mockRejectedValue(
       new Error("forced Morning Brief launch preparation failure"),
     );
-    const settlementFault = await installMorningBriefSettlementFailureFixture({
-      automationId: brief.automationId,
-    });
-    onTestFinished(settlementFault.release);
-    const settlementAttempts = observeMorningBriefSettlementAttemptsFixture({
-      automationId: brief.automationId,
-    });
-    onTestFinished(settlementAttempts.release);
-    const committedGate = holdWorkflowAutomationCommittedRunFixture({
-      automationId: brief.automationId,
-      signal: context.signal,
-      rejectOnRelease: true,
-    });
-    onTestFinished(() => {
-      committedGate.release();
-    });
 
-    mockNow(brief.anchor + 60_000);
-    const tick = setupRawAppRequestWithRoutes({
-      context,
-      routes: testWorkflowAutomationExecutionRoutes,
-    })("/api/test/workflow-automation-execution/execute", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ automation_id: brief.automationId }),
-    });
-    onTestFinished(async () => {
-      committedGate.release();
-      await tick;
-    });
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    await flushWaitUntilForTest();
 
-    // The failed Run's automatic callback enters the real settlement handler.
-    // PostgreSQL rejects that update after arrival, so dispatcher bookkeeping
-    // persists a retryable callback failure while the occurrence stays open.
-    const committed = await committedGate.arrival;
-    await expect(settlementFault.readAttempts()).resolves.toBe(1);
-    expect(settlementAttempts.readArrivals()).toBe(1);
-    const claimsBeforeRace = await readMorningBriefScheduleClaimsFixture(
+    const claims = await readMorningBriefScheduleClaimsFixture(
       brief.automationId,
     );
-    expect(claimsBeforeRace[0]).toMatchObject({
-      runId: committed.runId,
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({
+      runId: expect.any(String),
       queueDisposition: "claimed",
-      settlement: "unsettled",
-    });
-
-    // Hold the exact row both settlement paths acquire first. The failed
-    // callback retry and the post-commit hook's outer failure are independently
-    // observed as two blocked PostgreSQL sessions before either can win.
-    const held = await holdWorkflowAutomationRowFixture({
-      automationId: brief.automationId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-    const callbackRetry = deliverBriefCallback(committed.runId, 1, "failed");
-    await expect.poll(settlementAttempts.readArrivals).toBe(2);
-    await expect
-      .poll(async () => {
-        return await held.blockedWaiterCount();
-      })
-      .toBe(1);
-    committedGate.release();
-    // The outer path has entered the same production settlement operation
-    // while the callback is observably blocked at its first row lock. A one-
-    // connection test pool may queue this transaction client-side, so handler
-    // entry—not a second PostgreSQL backend—is the portable overlap barrier.
-    await expect.poll(settlementAttempts.readArrivals).toBe(3);
-    held.release();
-    await held.done;
-    const [delivery, tickResponse] = await Promise.all([callbackRetry, tick]);
-    expect(tickResponse.status).toBe(200);
-    expect(delivery.callbackResults).toBeGreaterThan(0);
-    expect(delivery.successfulCallbacks).toBeGreaterThan(0);
-
-    const settled = await readMorningBriefScheduleClaimsFixture(
-      brief.automationId,
-    );
-    expect(settled).toHaveLength(1);
-    expect(["failed", "pre_run_failure"]).toContain(settled[0]?.settlement);
-    expect(settled[0]?.settledAt).not.toBeNull();
-    await expect(readBriefState(brief)).resolves.toMatchObject({
-      enabled: true,
-      nextRunAt: expect.any(String),
+      settlement: "failed",
+      settledAt: expect.any(Date),
     });
   });
 

@@ -222,7 +222,6 @@ import {
   useOpenThreadArtifacts,
 } from "./thread-sidebar.tsx";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
-import { openQueueDrawer$ } from "../../signals/queue-page/queue-drawer-state.ts";
 import {
   closeChatThreadEmojiMenu$,
   emojiMenuThreadId$,
@@ -4332,8 +4331,8 @@ function ThinkingLabel({
   serverThinkingLabel?: ServerThinkingLabel;
 }) {
   const { t } = useTranslation();
-  const openQueueDrawer = useSet(openQueueDrawer$);
 
+  // Only historical `run.queued` markers reach this state.
   if (isQueued) {
     const waitingIn = t(($) => {
       return $.chat.run.waitingIn;
@@ -4343,16 +4342,7 @@ function ThinkingLabel({
     });
     return (
       <ShimmerText>
-        {waitingIn}{" "}
-        <button
-          type="button"
-          onClick={() => {
-            openQueueDrawer();
-          }}
-          className="cursor-pointer underline underline-offset-2"
-        >
-          {queueEllipsis}
-        </button>
+        {waitingIn} {queueEllipsis}
       </ShimmerText>
     );
   }

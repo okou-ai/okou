@@ -8,7 +8,6 @@ import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
-import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -28,31 +27,6 @@ import {
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 
 const log = logger("MorningBriefScheduleClaim");
-
-interface MorningBriefSettlementAttemptSnapshot {
-  readonly automationId: string;
-  readonly subjectKind: "run" | "claim";
-}
-
-type MorningBriefSettlementAttemptHook = (
-  snapshot: MorningBriefSettlementAttemptSnapshot,
-) => Promise<void>;
-
-const morningBriefSettlementAttemptHook = testOverride<
-  MorningBriefSettlementAttemptHook | undefined
->(() => {
-  return undefined;
-});
-
-export function setMorningBriefSettlementAttemptHookForTest(
-  hook: MorningBriefSettlementAttemptHook,
-): void {
-  morningBriefSettlementAttemptHook.set(hook);
-}
-
-export function clearMorningBriefSettlementAttemptHookForTest(): void {
-  morningBriefSettlementAttemptHook.clear();
-}
 
 /** Mirrors the legacy poller and callback policy; they share one constant. */
 const MAX_CONSECUTIVE_FAILURES = 3;
@@ -222,34 +196,16 @@ export async function bindMorningBriefScheduleClaimQueueEvent(
 }
 
 /**
- * The journaled occupant of a pending queue event. The event and its journal
- * binding commit together, so a visible pending event can be distinguished
- * from a genuinely untracked event without serializing admission.
- */
-export async function loadMorningBriefScheduleClaimByQueueEvent(
-  tx: Tx,
-  queueEventId: string,
-): Promise<MorningBriefScheduleClaimRow | undefined> {
-  const [claim] = await tx
-    .select()
-    .from(morningBriefScheduleClaims)
-    .where(eq(morningBriefScheduleClaims.queueEventId, queueEventId))
-    .limit(1);
-  return claim;
-}
-
-/**
- * Bind the Run inside the authoritative launch transaction.
- *
- * The caller invokes this only after the exact original queue event has been
- * claimed, and the surrounding transaction still has to insert the Run, so a
- * lost claim or a rolled-back Run INSERT leaves no binding at all.
+ * Bind the Run to the occurrence its queue event was admitted for. The
+ * automation runs this inside the launch transaction that claimed that exact
+ * event and inserts the Run, so a lost claim or a rolled-back launch leaves no
+ * binding and no Run callback can observe the Run without it.
  */
 export async function bindMorningBriefScheduleClaimRun(
-  tx: Tx,
+  db: Db | Tx,
   args: { readonly queueEventId: string; readonly runId: string },
 ): Promise<void> {
-  await tx
+  await db
     .update(morningBriefScheduleClaims)
     .set({
       runId: args.runId,
@@ -480,10 +436,6 @@ async function settleMorningBriefSchedule(
   tx: Tx,
   args: SettleMorningBriefScheduleArgs,
 ): Promise<MorningBriefScheduleSettlementOutcome> {
-  await morningBriefSettlementAttemptHook.get()?.({
-    automationId: args.automationId,
-    subjectKind: args.subject.kind,
-  });
   const { lineage, authority } = await lockSettlementAuthority(tx, args);
   if (authority.kind === "stale") {
     return { settled: false };

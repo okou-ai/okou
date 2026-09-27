@@ -15,7 +15,6 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import { modelProviderTypeSchema } from "@okouai/api-contracts/contracts/model-providers";
 import type { PiApiHandoffUsage } from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
-import { activeInputDeliveries } from "@okouai/db/schema/active-input-delivery";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { blobs } from "@okouai/db/schema/blob";
 import {
@@ -66,7 +65,6 @@ import {
   decideApiFirstTurnTerminal,
   normalizedApiFirstTurnFailure,
   normalizedSandboxFallbackFailure,
-  PiApiFirstTurnActiveInputBeforeProviderError,
   PiApiFirstTurnCanonicalCancellationError,
   PiApiFirstTurnCodexReconnectRequiredError,
   PiApiFirstTurnError,
@@ -271,7 +269,6 @@ async function readResumeSessionMetadata(
 
 interface ApiFirstTurnLifecycleState {
   readonly triggerSource: string | null;
-  readonly activeDeliveryId: string | null;
   readonly chatThreadId: string | null;
   readonly orgId: string;
   readonly status: string;
@@ -283,30 +280,18 @@ async function readApiFirstTurnLifecycleState(
   db: Pick<Db, "select">,
   runId: string,
 ): Promise<ApiFirstTurnLifecycleState | null> {
-  const [[run], [activeInput]] = await Promise.all([
-    db
-      .select({
-        status: agentRuns.status,
-        triggerSource: agentRuns.triggerSource,
-        userId: agentRuns.userId,
-        orgId: agentRuns.orgId,
-        chatThreadId: agentRuns.chatThreadId,
-        launchSnapshot: agentRuns.launchSnapshot,
-      })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, runId))
-      .limit(1),
-    db
-      .select({ id: activeInputDeliveries.id })
-      .from(activeInputDeliveries)
-      .where(
-        and(
-          eq(activeInputDeliveries.runId, runId),
-          eq(activeInputDeliveries.status, "open"),
-        ),
-      )
-      .limit(1),
-  ]);
+  const [run] = await db
+    .select({
+      status: agentRuns.status,
+      triggerSource: agentRuns.triggerSource,
+      userId: agentRuns.userId,
+      orgId: agentRuns.orgId,
+      chatThreadId: agentRuns.chatThreadId,
+      launchSnapshot: agentRuns.launchSnapshot,
+    })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId))
+    .limit(1);
   return run
     ? {
         status: run.status,
@@ -315,7 +300,6 @@ async function readApiFirstTurnLifecycleState(
         orgId: run.orgId,
         chatThreadId: run.chatThreadId,
         launchSnapshot: run.launchSnapshot,
-        activeDeliveryId: activeInput?.id ?? null,
       }
     : null;
 }
@@ -1167,7 +1151,7 @@ async function acquireApiProviderOwnership(
   await onRejection(
     (async () => {
       signal.throwIfAborted();
-      const state = validateApiFirstTurnApiCommit(
+      validateApiFirstTurnApiCommit(
         args.context,
         await readApiFirstTurnLifecycleState(
           args.context.db,
@@ -1176,9 +1160,6 @@ async function acquireApiProviderOwnership(
         args.commitIdentity,
         "Pi API first turn lost eligibility before provider ownership",
       );
-      if (state.activeDeliveryId) {
-        throw new PiApiFirstTurnActiveInputBeforeProviderError();
-      }
       signal.throwIfAborted();
     })(),
     (error) => {
@@ -1331,7 +1312,6 @@ async function executeApiModelTurn(
     }
     if (
       executed.error instanceof PiApiFirstTurnError ||
-      executed.error instanceof PiApiFirstTurnActiveInputBeforeProviderError ||
       executed.error instanceof PiApiFirstTurnCanonicalCancellationError
     ) {
       throw executed.error;
@@ -1736,12 +1716,6 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
       commitIdentity,
       "Pi sandbox-first transfer lost commit eligibility",
     );
-    if (publication.reason === "active_input" && !state.activeDeliveryId) {
-      throw piApiFirstTurnError(
-        "PI_API_FIRST_TURN_NOT_COMMITTABLE",
-        "Pi active-input sandbox-first transfer lost its durable delivery",
-      );
-    }
     const published = await set(
       publishSandboxFirstCheckpoint$,
       args,
@@ -2149,7 +2123,7 @@ const commitApiFirstTurn$ = command(async function commitApiFirstTurn(
   return await onRejection(
     withApiFirstTurnLifecycle(args, async (tx) => {
       signal.throwIfAborted();
-      const state = validateApiFirstTurnApiCommit(
+      validateApiFirstTurnApiCommit(
         args,
         await readApiFirstTurnLifecycleState(tx, args.activation.runId),
         prepared.commitIdentity,
@@ -2160,7 +2134,6 @@ const commitApiFirstTurn$ = command(async function commitApiFirstTurn(
       commitProgress.started = true;
       const transition = decideApiFirstTurnCommit({
         pendingTools: prepared.turn.handoffRequired,
-        activeInput: state.activeDeliveryId !== null,
       });
 
       langfuseTransfer =
@@ -2427,12 +2400,6 @@ function sandboxFirstPublicationOutcome(reason: PiSandboxFirstReason): {
         reason,
       };
     }
-    case "active_input": {
-      return {
-        outcome: "ownership_transfer",
-        reason: "active_input_sandbox_first",
-      };
-    }
     case "resume_history": {
       return {
         outcome: "ownership_transfer",
@@ -2615,8 +2582,6 @@ const runPiApiFirstTurnCore$ = command(
     );
     const decision = decideApiFirstTurnRecovery({
       failure,
-      activeInputBeforeProvider:
-        executed.error instanceof PiApiFirstTurnActiveInputBeforeProviderError,
       ownershipStage: ownership.stage,
       commitStarted: commitProgress.started,
       coordinationAborted: signal.aborted,

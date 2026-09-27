@@ -342,7 +342,7 @@ export function agentRunList(args: {
       ? args.status.split(",").map((status) => {
           return status.trim();
         })
-      : ["queued", "pending", "running"];
+      : ["pending", "running"];
 
     for (const status of statusValues) {
       if (!ALL_RUN_STATUSES.includes(status as RunStatus)) {

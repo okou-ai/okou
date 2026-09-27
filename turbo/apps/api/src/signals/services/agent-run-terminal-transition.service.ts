@@ -86,6 +86,32 @@ export async function releaseActiveAgentRuns(
   });
 }
 
+export interface ReleasedRunSlot {
+  readonly runId: string;
+  readonly orgId: string;
+}
+
+/** Releases the active rows of the never-started runs among `transitions` and
+ * returns the slots this call freed, for the caller to hand off with
+ * `handOffReleasedSlots$` after commit. Same last-statement rule as
+ * `releaseActiveAgentRuns`.
+ */
+export async function releaseNeverStartedRunSlots(
+  tx: Tx,
+  transitions: readonly TerminalRunTransition[],
+): Promise<readonly ReleasedRunSlot[]> {
+  const released = new Set(
+    await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions)),
+  );
+  return transitions
+    .filter((transition) => {
+      return released.has(transition.runId);
+    })
+    .map((transition) => {
+      return { runId: transition.runId, orgId: transition.orgId };
+    });
+}
+
 export async function transitionAgentRunsToTerminal(
   tx: Tx,
   args: TransitionAgentRunsToTerminalArgs,

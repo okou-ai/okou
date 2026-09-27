@@ -2988,23 +2988,14 @@ const reserveActiveInputsInner$ = command(
       return forbidden("Active input delivery is not available");
     }
     if (result.outcome === "reserved") {
+      // The delivery ID is the source chat event ID.
       return {
         status: 200 as const,
         body: {
           outcome: result.outcome,
           deliveryId: result.deliveryId,
-          eventIds: [result.sourceEventId],
+          eventIds: [result.deliveryId],
           prompt: result.prompt,
-        },
-      };
-    }
-    if (result.outcome === "held") {
-      return {
-        status: 200 as const,
-        body: {
-          outcome: result.outcome,
-          deliveryId: result.deliveryId,
-          eventIds: [result.sourceEventId],
         },
       };
     }

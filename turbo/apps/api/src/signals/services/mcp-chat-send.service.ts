@@ -7,11 +7,7 @@ import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  activeInputDeliveries,
-  activeInputDeliveryItems,
-} from "@okouai/db/schema/active-input-delivery";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 import { env } from "../../lib/env";
@@ -41,7 +37,6 @@ export async function mcpInputDisposition(
     .select({
       replacementType: replacement.eventType,
       replacementRunId: replacement.runId,
-      reservedRunId: activeInputDeliveries.runId,
     })
     .from(chatEvents)
     .leftJoin(
@@ -49,20 +44,6 @@ export async function mcpInputDisposition(
       and(
         eq(replacement.revokesEventId, chatEvents.id),
         eq(replacement.chatThreadId, threadId),
-      ),
-    )
-    .leftJoin(
-      activeInputDeliveryItems,
-      and(
-        eq(activeInputDeliveryItems.sourceEventId, chatEvents.id),
-        isNull(activeInputDeliveryItems.disposition),
-      ),
-    )
-    .leftJoin(
-      activeInputDeliveries,
-      and(
-        eq(activeInputDeliveries.id, activeInputDeliveryItems.deliveryId),
-        eq(activeInputDeliveries.status, "open"),
       ),
     )
     .where(
@@ -84,9 +65,6 @@ export async function mcpInputDisposition(
   const runId = event.replacementRunId;
   if (runId !== null) {
     return { disposition: "associated", runId };
-  }
-  if (event.reservedRunId !== null) {
-    return { disposition: "reserved", runId: event.reservedRunId };
   }
   return { disposition: "queued", runId: null };
 }

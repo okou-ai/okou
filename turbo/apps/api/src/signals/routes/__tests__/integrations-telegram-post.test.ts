@@ -3598,9 +3598,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(queued.status).toBe(200);
     await flushWaitUntilForTest();
     expect(queuedTelegramMocks.chatActions).toHaveLength(1);
-    expect(queuedTelegramMocks.sentMessages[0]?.text).toContain("Run queued");
-    expect(queuedTelegramMocks.sentMessages[0]?.text).toContain(
-      "concurrency limit reached",
+    expect(queuedTelegramMocks.sentMessages[0]?.text).toBe(
+      "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
     );
   });
 

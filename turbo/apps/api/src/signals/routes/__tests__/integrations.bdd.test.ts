@@ -4121,6 +4121,63 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
+  it("tells the Slack sender when the org is at its concurrent run limit", async () => {
+    // One active run fills the org, independent of the plan's own limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const actor = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    integrations.configureSlackAppMocks();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    const slackUserId = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "occupy the only org run slot",
+      ts: "2910.000100",
+      channel: "C_BDD_ORG_FULL_ACTIVE",
+      channel_type: "channel",
+    });
+    const activeRunId = await pollSlackRun(runnerGroup);
+
+    const channelId = "C_BDD_ORG_FULL_WAITING";
+    const threadTs = "2910.000200";
+    context.mocks.slack.chat.postMessage.mockClear();
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: "wait for an org run slot",
+      ts: threadTs,
+      channel: channelId,
+      channel_type: "channel",
+    });
+    await flushWaitUntilForTest();
+
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
+      }),
+    );
+    // The waiting thread does not keep the admission "is thinking..." status.
+    expect(
+      context.mocks.slack.assistant.threads.setStatus,
+    ).toHaveBeenLastCalledWith({
+      channel_id: channelId,
+      thread_ts: threadTs,
+      status: "",
+    });
+
+    await runs.requestCancelRun(actor, activeRunId, [200]);
+    await flushWaitUntilForTest();
+  });
+
   it("titles canonical Slack threads when their run is created", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();

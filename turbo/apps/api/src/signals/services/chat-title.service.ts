@@ -162,7 +162,7 @@ function completedConversationContextMessageCondition(db: SelectDb) {
             .where(
               and(
                 eq(agentRuns.id, chatEvents.runId),
-                inArray(agentRuns.status, ["queued", "pending", "running"]),
+                inArray(agentRuns.status, ["pending", "running"]),
               ),
             ),
         ),

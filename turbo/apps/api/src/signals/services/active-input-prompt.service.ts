@@ -4,7 +4,7 @@ import {
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
@@ -22,7 +22,6 @@ import {
   projectUserMessage,
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
-import { pendingActiveInputCondition } from "./chat-event-queue.service";
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
@@ -79,34 +78,7 @@ function activeInputControlPayloadFits(payload: object): boolean {
   );
 }
 
-export function pendingActiveInputRows(
-  db: Pick<Db, "select">,
-  chatThreadId: string,
-  runId: string,
-  eventIds?: readonly string[],
-) {
-  return db
-    .select({
-      id: chatEvents.id,
-      chatThreadId: chatEvents.chatThreadId,
-      createdAt: chatEvents.createdAt,
-      eventType: chatEvents.eventType,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
-      userMessage: canonicalChatEventUserMessage(),
-      seqId: chatEvents.seqId,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, chatThreadId),
-        pendingActiveInputCondition(db, runId),
-        eventIds ? inArray(chatEvents.id, eventIds) : undefined,
-      ),
-    )
-    .orderBy(asc(chatEvents.seqId));
-}
-
+/** Load active-input source events of one thread by id, without locks. */
 export function activeInputRowsByIds(
   db: Pick<Db, "select">,
   chatThreadId: string,
@@ -122,7 +94,6 @@ export function activeInputRowsByIds(
       contextType: chatEvents.contextType,
       contextId: chatEvents.contextId,
       userMessage: canonicalChatEventUserMessage(),
-      seqId: chatEvents.seqId,
     })
     .from(chatEvents)
     .where(
@@ -130,73 +101,80 @@ export function activeInputRowsByIds(
         eq(chatEvents.chatThreadId, chatThreadId),
         inArray(chatEvents.id, eventIds),
       ),
-    )
-    .orderBy(asc(chatEvents.seqId));
+    );
 }
 
-export type PendingActiveInputRow = Awaited<
-  ReturnType<typeof pendingActiveInputRows>
+export type ActiveInputSourceRow = Awaited<
+  ReturnType<typeof activeInputRowsByIds>
 >[number];
 
 /**
- * One pending active input, rendered for delivery.
- *
- * `templateIdentities` travels with the prompt rather than being reported here:
- * materialization runs again whenever an open delivery is retrieved or a
- * reservation retries, so reporting at this point would count one steered
- * prompt several times. The caller reports it once, when the delivery row is
- * created.
+ * Render one pending active input for delivery. Reserve is read-only and may
+ * repeat for the same source, so template usage is reported at receipt time
+ * through `activeInputTemplateIdentities`, not here.
  */
-export interface MaterializedActiveInputPrompt {
-  readonly prompt: string;
-  readonly templateIdentities: readonly GenerationTemplateIdentity[];
-}
-
-export async function materializePendingActiveInputPrompts(
+export async function materializeActiveInputSource(
   db: Db,
-  candidates: readonly PendingActiveInputRow[],
+  source: ActiveInputSourceRow,
   auth: { readonly orgId: string; readonly userId: string },
   signal: AbortSignal,
-): Promise<Map<string, MaterializedActiveInputPrompt> | null> {
-  const prompts = new Map<string, MaterializedActiveInputPrompt>();
+): Promise<string> {
+  if (
+    !source.userMessage ||
+    (source.eventType !== "input.prompt" && source.eventType !== "input.budget")
+  ) {
+    throw new Error("Pending active input cannot be materialized");
+  }
+  if (source.contextType === null) {
+    throw new Error("Pending active input is missing its context type");
+  }
   const featureSwitchContext = await loadUserFeatureSwitchContext(
     db,
     auth.orgId,
     auth.userId,
   );
   signal.throwIfAborted();
-  for (const event of candidates) {
-    if (
-      !event.userMessage ||
-      (event.eventType !== "input.prompt" && event.eventType !== "input.budget")
-    ) {
-      return null;
-    }
-    if (event.contextType === null) {
-      throw new Error("Pending active input is missing its context type");
-    }
-    prompts.set(
-      event.id,
-      await materializeActiveInputPrompt(
-        db,
-        {
-          event: {
-            id: event.id,
-            chatThreadId: event.chatThreadId,
-            eventType: event.eventType,
-            contextType: event.contextType,
-            userMessage: event.userMessage,
-          },
-          orgId: auth.orgId,
-          userId: auth.userId,
-          featureSwitchContext,
-        },
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-  }
-  return prompts;
+  return await materializeActiveInputPrompt(
+    db,
+    {
+      event: {
+        id: source.id,
+        chatThreadId: source.chatThreadId,
+        eventType: source.eventType,
+        contextType: source.contextType,
+        userMessage: source.userMessage,
+      },
+      orgId: auth.orgId,
+      userId: auth.userId,
+      featureSwitchContext,
+    },
+    signal,
+  );
+}
+
+function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
+  const projection = projectUserMessage(userMessage);
+  return {
+    projection,
+    templates: resolveThreadGenerationTemplatePrompt({
+      explicit: projection.primaryTemplate,
+      explicitTemplates: projection.templates,
+      // Steered into a run that is already executing, whose volumes were fixed
+      // when it was created. There is no package to point the agent at, so a
+      // private template contributes no guidance rather than a dangling path.
+      // The custom catalog is mounted the same way and loses it for the same
+      // reason.
+      mountedUserPresentationTemplateIds: [],
+      mountedUserTemplates: [],
+    }),
+  };
+}
+
+/** Template identities a steered prompt carried, reported once at receipt. */
+export function activeInputTemplateIdentities(
+  userMessage: ChatEventUserMessage,
+): readonly GenerationTemplateIdentity[] {
+  return activeInputGenerationTemplates(userMessage).templates.identities;
 }
 
 function isContextBackedContextType(
@@ -260,7 +238,7 @@ function unreachableActiveInputContextType(contextType: never): never {
   throw new Error(`Unsupported active input context type: ${contextType}`);
 }
 
-/** Materialize one claimed input prompt into the same text capability as a run prompt. */
+/** Materialize one pending input prompt into the same text capability as a run prompt. */
 async function materializeActiveInputPrompt(
   db: Db,
   args: {
@@ -270,7 +248,7 @@ async function materializeActiveInputPrompt(
     readonly featureSwitchContext: FeatureSwitchContext;
   },
   signal: AbortSignal,
-): Promise<MaterializedActiveInputPrompt> {
+): Promise<string> {
   const userMessage = requiredUserMessageForEvent(
     args.event.eventType,
     args.event.userMessage,
@@ -278,7 +256,6 @@ async function materializeActiveInputPrompt(
   if (!userMessage) {
     throw new Error("Active input event is missing userMessage");
   }
-  const projection = projectUserMessage(userMessage);
   const integration = await loadIntegrationPromptMaterial(
     db,
     args.event,
@@ -293,22 +270,11 @@ async function materializeActiveInputPrompt(
       `${args.event.contextType} active input is missing launch material`,
     );
   }
-  const generationTemplates = resolveThreadGenerationTemplatePrompt({
-    explicit: projection.primaryTemplate,
-    explicitTemplates: projection.templates,
-    // Steered into a run that is already executing, whose volumes were fixed
-    // when it was created. There is no package to point the agent at, so a
-    // private template contributes no guidance rather than a dangling path.
-    // The custom catalog is mounted the same way and loses it for the same
-    // reason.
-    mountedUserPresentationTemplateIds: [],
-    mountedUserTemplates: [],
-  });
-  const generationTemplatePrompt = generationTemplates.prompt;
+  const { projection, templates } = activeInputGenerationTemplates(userMessage);
   const prompt = integration?.prompt ?? projection.agentPrompt;
   const parts = [
     integration?.appendSystemPrompt ?? "",
-    generationTemplatePrompt,
+    templates.prompt,
     prompt,
   ].filter((part) => {
     return part.length > 0;
@@ -317,8 +283,5 @@ async function materializeActiveInputPrompt(
   if (materialized.length === 0) {
     throw new Error("Active input event materialized to an empty prompt");
   }
-  return {
-    prompt: materialized,
-    templateIdentities: generationTemplates.identities,
-  };
+  return materialized;
 }

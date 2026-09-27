@@ -485,11 +485,21 @@ type CreatedQueuedRun = {
   readonly runId: string;
 };
 
+/** CONCURRENT_RUN_LIMIT: nothing was created and the input keeps waiting. */
+type QueuedRunAtOrgCapacity = {
+  readonly atOrgCapacity: true;
+};
+
 type CreateQueuedRun = (
   input: CreateQueuedChatRunInput,
   admissionTime: number,
   signal: AbortSignal,
-) => Promise<CreatedQueuedRun | QueuedMessageAdmissionFailure | null>;
+) => Promise<
+  | CreatedQueuedRun
+  | QueuedRunAtOrgCapacity
+  | QueuedMessageAdmissionFailure
+  | null
+>;
 
 interface ChatCallbackDependencies {
   readonly releaseBrowsersForRun: (
@@ -914,10 +924,8 @@ function buildQueuedCreateAgentRunArgs(
     userInfoExtras: input.userInfoExtras,
     dispatchFailedCallbacks,
     queueFirstAssociation: {
-      kind: "user_message" as const,
       threadId: input.threadId,
       eventId: input.queuedMessage.id,
-      admissionTime,
     },
     agentRunModelPin: {
       modelProvider: input.effectiveModelProvider ?? null,
@@ -3306,10 +3314,20 @@ async function buildCreateQueuedChatRunInput(
 async function createAutoSentQueuedRun(args: {
   readonly createRun: (
     input: CreateQueuedChatRunInput,
-  ) => Promise<CreatedQueuedRun | QueuedMessageAdmissionFailure | null>;
+  ) => Promise<
+    | CreatedQueuedRun
+    | QueuedRunAtOrgCapacity
+    | QueuedMessageAdmissionFailure
+    | null
+  >;
   readonly runInput: CreateQueuedChatRunInput;
   readonly timing: ChatCallbackPreCreateTimingCollector;
-}): Promise<CreatedQueuedRun | QueuedMessageAdmissionFailure | null> {
+}): Promise<
+  | CreatedQueuedRun
+  | QueuedRunAtOrgCapacity
+  | QueuedMessageAdmissionFailure
+  | null
+> {
   return await measureChatCallbackPreCreateTiming(
     args.timing,
     "api_dispatch_pre_create_agent_chat_callback_auto_send_create_run",
@@ -3628,7 +3646,12 @@ interface AutoSendQueuedMessageArgs {
   readonly admissionTime: number;
   readonly createRun: (
     input: CreateQueuedChatRunInput,
-  ) => Promise<CreatedQueuedRun | QueuedMessageAdmissionFailure | null>;
+  ) => Promise<
+    | CreatedQueuedRun
+    | QueuedRunAtOrgCapacity
+    | QueuedMessageAdmissionFailure
+    | null
+  >;
   readonly db: Db;
   readonly chatThreadId: string;
   readonly userId: string;
@@ -3749,7 +3772,7 @@ function autoSendAdmissionFailureArgs(
  */
 export type QueuedUserMessageLaunchOutcome =
   | { readonly kind: "launched"; readonly runId: string }
-  | { readonly kind: "consumed" | "stopped" | "none" };
+  | { readonly kind: "consumed" | "org-full" | "stopped" | "none" };
 
 /**
  * User-message half of the per-thread scheduler: when the thread has no
@@ -3819,6 +3842,7 @@ async function autoSendQueuedMessageForThread(
 
   let createdRunId: string | null = null;
   let admissionFailed = false;
+  let atOrgCapacity = false;
   const run = await onRejection(
     (async () => {
       const createdRun = await createAutoSentQueuedRun({
@@ -3827,6 +3851,10 @@ async function autoSendQueuedMessageForThread(
         timing: args.timing,
       });
       if (!createdRun) {
+        return null;
+      }
+      if ("atOrgCapacity" in createdRun) {
+        atOrgCapacity = true;
         return null;
       }
       if ("kind" in createdRun) {
@@ -3857,6 +3885,9 @@ async function autoSendQueuedMessageForThread(
   if (run) {
     recordAutoSentQueuedRunLaunch(args, run, runInput);
     return { kind: "launched", runId: run.runId };
+  }
+  if (atOrgCapacity) {
+    return { kind: "org-full" };
   }
   return { kind: admissionFailed ? "consumed" : "stopped" };
 }
@@ -3913,10 +3944,20 @@ async function createQueuedChatRun(
     readonly input: CreateQueuedChatRunInput;
     readonly createRun: (
       input: CreateQueuedChatRunInput,
-    ) => Promise<CreatedQueuedRun | QueuedMessageAdmissionFailure | null>;
+    ) => Promise<
+      | CreatedQueuedRun
+      | QueuedRunAtOrgCapacity
+      | QueuedMessageAdmissionFailure
+      | null
+    >;
   },
   signal: AbortSignal,
-): Promise<CreatedQueuedRun | QueuedMessageAdmissionFailure | null> {
+): Promise<
+  | CreatedQueuedRun
+  | QueuedRunAtOrgCapacity
+  | QueuedMessageAdmissionFailure
+  | null
+> {
   const created = await args.createRun(args.input);
   signal.throwIfAborted();
   return created;
@@ -4725,7 +4766,12 @@ const createQueuedRunForChatCallback$ = command(
       readonly admissionTime: number;
     },
     signal: AbortSignal,
-  ): Promise<CreatedQueuedRun | QueuedMessageAdmissionFailure | null> => {
+  ): Promise<
+    | CreatedQueuedRun
+    | QueuedRunAtOrgCapacity
+    | QueuedMessageAdmissionFailure
+    | null
+  > => {
     const dispatchFailedCallbacks = queuedChatDispatchFailedCallbacks(
       input.dependencies,
       input.runInput,
@@ -4771,7 +4817,7 @@ const createQueuedRunForChatCallback$ = command(
       // Only organization capacity keeps the message waiting for a later
       // pick. Any other rejection consumes it, as a web send would.
       if (runResult.body.error.code === "CONCURRENT_RUN_LIMIT") {
-        return null;
+        return { atOrgCapacity: true };
       }
       return rejectedQueuedRunAdmissionFailure(
         input.runInput,

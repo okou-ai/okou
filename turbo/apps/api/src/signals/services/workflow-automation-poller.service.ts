@@ -28,7 +28,6 @@ import {
   bindMorningBriefScheduleClaimQueueEvent,
   claimMorningBriefSchedule,
   isCanonicalMorningBriefAutomation,
-  loadMorningBriefScheduleClaimByQueueEvent,
   settleMorningBriefSchedulePreRunFailure,
 } from "./morning-brief-schedule-claim.service";
 import type {
@@ -250,16 +249,6 @@ function morningBriefScheduleClaimPlan(args: {
       return { kind: "claimed", claimId: attempt.claim.id };
     },
     bindQueueEvent: bindMorningBriefScheduleClaimQueueEvent,
-    recordedClaimForQueueEvent: async (tx, queueEventId) => {
-      const recorded = await loadMorningBriefScheduleClaimByQueueEvent(
-        tx,
-        queueEventId,
-      );
-      if (!recorded) {
-        args.onUnclaimed("untracked_pending_event");
-      }
-      return recorded?.id;
-    },
   };
 }
 

@@ -957,7 +957,7 @@ describe("workflow queue", () => {
     expect(claim.appendSystemPrompt).not.toContain("# Current context");
   });
 
-  it("coalesces a schedule tick when an earlier tick is already pending", async () => {
+  it("replaces the pending schedule tick with the newest tick", async () => {
     mockNow(Date.UTC(2020, 0, 1));
     const scenario = await setup();
     const webhookAutomation = await createWebhookAutomation(scenario);
@@ -988,10 +988,16 @@ describe("workflow queue", () => {
     );
     expect(kms.generateDataKeyCalls).toBe(1);
 
-    // Two due ticks while busy: the second coalesces into the pending one.
+    // Two due ticks while busy: the second revokes the first pending tick.
     mockNow(Date.parse(created.body.nextRunAt) + 60_000);
     await executeDueWorkflowAutomations(created.body.id);
     expect(kms.generateDataKeyCalls).toBe(1);
+    const [firstTick] = await pendingAutomationEvents(
+      webhookAutomation.threadId,
+    );
+    if (!firstTick) {
+      throw new Error("Expected the first schedule tick to queue");
+    }
     const updated = await accept(
       automationsClient().update({
         headers: authHeaders(),
@@ -1009,29 +1015,75 @@ describe("workflow queue", () => {
     if (!updated.body.nextRunAt) {
       throw new Error("Expected the updated automation to re-arm");
     }
-    const coalescedKms = useSecretKmsProbe();
     mockNow(Date.parse(updated.body.nextRunAt) + 60_000);
     await executeDueWorkflowAutomations(created.body.id);
-    expect(coalescedKms.generateDataKeyCalls).toBe(0);
-    const coalescedEvents = await pendingAutomationEvents(
+    const pendingTicks = await pendingAutomationEvents(
       webhookAutomation.threadId,
     );
-    expect(coalescedEvents).toHaveLength(1);
-    const coalescedEvent = coalescedEvents[0];
-    if (!coalescedEvent) {
-      throw new Error("Expected one coalesced schedule queue event");
-    }
-    await expect(
-      readChatEventContextFixture(coalescedEvent.id),
-    ).resolves.toMatchObject({
-      automationId: created.body.id,
-    });
+    expect(pendingTicks).toHaveLength(1);
+    expect(pendingTicks[0]?.id).not.toBe(firstTick.id);
     await completeRunThroughSandbox(scenario, busyRunId);
     const afterBusy = await workflowRunIds(webhookAutomation.threadId);
     expect(afterBusy).toHaveLength(2);
 
-    // Only the single coalesced tick ran; nothing else is queued.
+    // Only the newest tick ran; nothing else is queued.
     await completeRunThroughSandbox(scenario, afterBusy[1]!);
+    await expect(
+      workflowRunIds(webhookAutomation.threadId),
+    ).resolves.toHaveLength(2);
+  });
+
+  it("keeps a pending manual Run now when the schedule tick fires", async () => {
+    mockNow(Date.UTC(2020, 0, 1));
+    const scenario = await setup();
+    const webhookAutomation = await createWebhookAutomation(scenario);
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          schedule: {
+            type: "cron",
+            cronExpression: "0 9 * * *",
+            timezone: "UTC",
+          },
+        },
+      }),
+      [201],
+    );
+    if (!created.body.nextRunAt) {
+      throw new Error("Expected a scheduled next run");
+    }
+    const busyRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(webhookAutomation, "busy"),
+      webhookAutomation.threadId,
+    );
+    const manual = await accept(
+      automationsClient().run({
+        headers: authHeaders(),
+        params: { id: created.body.id },
+      }),
+      [201],
+    );
+    expect(manual.body.runId).toBeNull();
+    const manualEvent = await pendingAutomationEventForAutomation(
+      webhookAutomation.threadId,
+      created.body.id,
+    );
+    if (!manualEvent) {
+      throw new Error("Expected the manual run to queue");
+    }
+
+    mockNow(Date.parse(created.body.nextRunAt) + 60_000);
+    await executeDueWorkflowAutomations(created.body.id);
+
+    const pending = await pendingAutomationEvents(webhookAutomation.threadId);
+    expect(pending).toHaveLength(2);
+    expect(pending[0]?.id).toBe(manualEvent.id);
+    await expect(
+      pendingWorkflowAutomationIds(webhookAutomation.threadId),
+    ).resolves.toStrictEqual([created.body.id, created.body.id]);
+    await completeRunThroughSandbox(scenario, busyRunId);
     await expect(
       workflowRunIds(webhookAutomation.threadId),
     ).resolves.toHaveLength(2);

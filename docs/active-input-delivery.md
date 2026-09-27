@@ -1,61 +1,64 @@
 # Active Input Delivery
 
-Active input delivery prevents a prompt accepted by a running Guest from being
-lost or executed twice when run completion, cancellation, and queue scheduling
-overlap.
+Active input delivery steers a queued `input.prompt` into a running sandbox run
+without losing it or letting pick launch it a second time. It is one of the two
+consumers of queued chat input; pick is the other. Both consume an input the
+same way: they append a replacement event that carries the consuming `runId`
+and sets `revokesEventId` to the input. The unique revoke edge is the only
+mutual exclusion. Steering takes no locks and writes no delivery state.
 
 ## Lifecycle
 
-The Runner reserves the oldest active-input event before sending it to the
-Guest. New reservations contain one source event so each user message reaches
-the CLI as a separate input with its own delivery identity. Reservation creates
-one `active_input_deliveries` row and one `active_input_delivery_items` row, but
-it does not revoke or copy the source chat event. Retrying the reservation
-returns the same delivery ID, event ID, and materialized prompt while that
-delivery remains open.
+The delivery ID that the Runner and Guest carry is the source `chat_events` ID.
+`active_input_deliveries` and `active_input_delivery_items` are no longer read
+or written; release 4 drops them.
 
-The Runner sends the delivery UUID with the Guest control payload. The Guest
+- **Reserve** reads the thread's earliest run-less, unrevoked `input.prompt`,
+  or an `input.budget` that targets the current run, and returns its event ID as
+  the delivery ID with the materialized prompt. It writes nothing. A run that is
+  no longer running gets `run_not_running`. Retrying the reservation returns the
+  same source until something consumes it.
+- **Receipt** confirms that the Guest accepted the input. Without locks, it
+  checks that the run is still running and belongs to the source's thread, then
+  appends the replacement carrying this `runId`. On a revoke-edge conflict it
+  rereads the revoker: a replacement by this run counts as delivered and a
+  repeated receipt is idempotent; any other revoker (pick, recall, another run)
+  rejects the receipt. Template usage is logged here, not at reserve.
+- **Completion** (`/api/webhooks/agent/complete`) consumes the source IDs in
+  `activeInputDeliveryIds` the same way as receipt, before the terminal
+  transition releases the run's slot, so the pick that release triggers cannot
+  launch them again. After commit, an `input.budget` targeting the run that was
+  not delivered is revoked with `control.revoke`. An undelivered
+  `input.prompt` is left as is; the next pick launches it in a new run.
+
+The Runner sends the delivery ID with the Guest control payload. The Guest
 deduplicates that identity, persists it after the CLI backend accepts the
 follow-up, and attempts the direct receipt asynchronously. A delivered or
-acknowledgement-uncertain batch is not sent again while the API keeps returning
+acknowledgement-uncertain input is not sent again while the API keeps returning
 the same reservation. Explicit pre-write failures and retryable Guest capacity
 statuses retry the same identity.
-
-The delivery becomes settled through one of two proof-bearing paths:
-
-- A direct receipt confirms that the Guest accepted the input. Its source is
-  replaced by a run-attributed event and the item becomes `delivered`.
-- `/api/webhooks/agent/complete` proves that the Guest has quiesced, or that the
-  Runner observed process exit, stopped forwarding, and recovered the receipt
-  journal. Completion may overlap sandbox finalization after that boundary.
-  Delivery IDs in `activeInputDeliveryIds` become `delivered`. If the open
-  delivery ID is not present, prompt items become `released` and their original
-  source events stay pending; run-scoped budget items become `expired` and
-  receive a `control.revoke` event.
-
-All item and delivery transitions are monotonic. A late receipt for a released
-or expired delivery is rejected, while a repeated receipt for an already
-delivered delivery is idempotent. Duplicate completion still processes an open
-delivery even when the run is already terminal.
 
 After the Guest process exits, the Runner reads the bounded run-scoped receipt
 journal while it still owns the sandbox. It attempts those receipts within one
 total five-second budget and includes unresolved IDs in the normal completion
 request. This uses completion's existing retry and idempotency boundary as the
-final recovery path. A successful direct receipt also reuses the existing
-Runner notification channel when settlement exposes another queued prompt; the
-30-second poll remains notification-loss recovery rather than normal steering
-latency.
+final recovery path. A successful receipt reuses the existing Runner
+notification channel when another prompt is queued; the 30-second poll remains
+notification-loss recovery rather than normal steering latency.
+
+Pi API-first turns do not steer. A message sent during such a turn stays queued
+and is picked after the run completes and releases its slot. A turn that needs
+tools launches a sandbox, and the Runner steers there under the rules above.
 
 ## Terminal Status and Quiescence
 
 A terminal run status does not by itself prove that the old consumer is gone.
-Cancellation is visible immediately. Heartbeat timeout still records an unknown
-consumer state, but its transaction now settles any running chat delivery with
-an empty receipt set before committing `timeout`. After commit, the API sends a
-best-effort hard cancellation to the owning Runner group. Pending-run timeout
-does not perform delivery settlement or Runner cancellation because no consumer
-has claimed the run.
+Cancellation is visible immediately. Heartbeat timeout records an unknown
+consumer state and consumes no input; after commit, the API sends a
+best-effort hard cancellation to the owning Runner group. A receipt that
+arrives after the run left `running` is rejected, so its source stays queued
+for the next pick. Pending-run timeout performs no Runner cancellation because
+no consumer has claimed the run.
 
 ### Post-timeout Webhook Admission
 
@@ -77,49 +80,30 @@ to settle within the bounded sink window. A successful response still persists
 its receipt. If the response remains pending, Guest drops the non-reusable
 JSON-RPC request, terminates and waits for the owned app-server process, and
 only then closes the local sink operation and finalizes receipts. The
-unconfirmed delivery ID remains absent from completion, so the existing
-completion transaction releases or expires it only after consumer-stop proof.
+unconfirmed delivery ID remains absent from completion, so its prompt stays
+queued for the next pick and its budget input is revoked.
 
-Until completion or timeout cleanup settles it, an open delivery is a
-non-expiring thread-ordering barrier. The queue scheduler cannot skip its source
-events or launch later input on the same thread, even after cancellation
-recovery becomes stale. Released prompts return to their original FIFO position
-and the post-commit scheduler may create the successor run.
+A reservation holds nothing. Until a replacement revokes it, the source is an
+ordinary queued input in its original FIFO position, and the pick triggered by
+the run's slot release may launch it in the successor run.
 
 ## Transaction Boundary
 
-A running recheck first reads pending input without locks. If that read is
-empty, a fresh non-locking query confirms that the run is still running and no
-committed open delivery exists. It then returns `empty` without entering the
-serialized transaction. Input committed after the pending-input snapshot uses
-the realtime notification path, with the 30-second poll as notification-loss
-recovery.
+Reserve and receipt run without locks or transactions: reserve is a bounded
+read, and receipt ends with one replacement insert on the revoke edge. Input
+committed after a reserve read uses the realtime notification path, with the
+30-second poll as notification-loss recovery.
 
-Pending reservations, open-delivery retrieval, and direct receipt serialize
-database state in this order:
-
-1. chat thread;
-2. agent run;
-3. delivery and delivery items;
-4. source and revoking chat events.
-
-Completion and heartbeat-timeout finalization take the run's checkpoint
-lifecycle advisory lock before the same thread, run, delivery, and event order.
-They finalize the delivery and apply or observe the terminal run state in one
-short transaction. The shared lock order decides whether direct receipt or
-terminal finalization committed first.
-
-A run's time budget steer that no delivery consumed is revoked after that
+A run's time budget steer that nothing consumed is revoked after the completion
 commit rather than inside it. Steering appends only while the run is running,
 so the committed terminal state guarantees no later budget input. The budget
 event ID is derived from the run, so expiry is one primary-key read and one
 `control.revoke` append; the unique revoke edge decides a race with receipt or
-settlement. Expiry is best effort: a lost race or failure leaves an inert
+completion. Expiry is best effort: a lost race or failure leaves an inert
 pending budget row that no later run reserves.
 
-Realtime publication, callbacks, usage work, and queue drain run only after
-commit. A first late finalization drains the thread without replaying the run's
-ordinary terminal callbacks or billing work.
+Realtime publication, callbacks, usage work, and the slot hand-off pick run only
+after commit.
 
 ### Final Checkpoint Completion
 
@@ -128,14 +112,15 @@ The bundled Guest prepares final checkpoint metadata and sends it in
 before that request; completion carries their validated identities and storage
 snapshots together with the event watermark, active-input delivery IDs, and
 sandbox reuse metadata. The API then persists the checkpoint, promotes the
-eligible canonical AgentSession conversation, settles active-input delivery,
-and applies the terminal run state in the same database transaction.
+eligible canonical AgentSession conversation, and applies the terminal run
+state in the same database transaction. Delivered sources are consumed before
+that transaction, as described under Lifecycle.
 
 The nested checkpoint omits `runId`; the completion request's outer `runId` and
 sandbox authorization remain authoritative. Invalid checkpoint metadata rejects
-the combined request without partially finalizing delivery or changing the run
-status. Repeating a committed combined request is idempotent, and a later
-checkpoint-less Runner completion observes the first terminal result.
+the combined request without changing the run status. Repeating a committed
+combined request is idempotent, and a later checkpoint-less Runner completion
+observes the first terminal result.
 
 Successful execution and successful recovery send one combined completion and
 do not post the prepared checkpoint to the standalone route. Combined reporting
@@ -177,10 +162,12 @@ does not require cross-version negotiation. Independently deployed API and
 Runner versions remain compatible through the stable reserve response shape:
 `eventIds` is a one-element array, and empty completion receipts may be omitted.
 
+Because the delivery ID is now the source event ID, a Runner does not see a
+format change. During the release 3 rollout, a reservation made by one API
+version and settled by the other may be steered and later picked again; see
+[deployment compatibility](./deployment-compatibility.md#unified-chat-queue-release-3).
+
 The browser remains event-oriented: optimistic input is reconciled by its chat
 event ID, and receipt/completion replacements use the existing realtime chat
 event projection. Delivery IDs remain internal to API, Runner, and Guest, so
-activation does not introduce a frontend protocol or deployment dependency.
-
-Deleting a thread or run cascades its delivery state, so an abandoned delivery
-cannot block an unrelated thread.
+steering introduces no frontend protocol or deployment dependency.

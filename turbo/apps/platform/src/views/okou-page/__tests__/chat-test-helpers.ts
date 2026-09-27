@@ -661,6 +661,9 @@ export function mockChatLifecycle(
       seqId: allocateDynamicSeqId(),
       createdAt: now,
     });
+    // The server announces the persisted input like any other thread event;
+    // the sender learns it is queued from that event, not the send response.
+    createChatEvent(threadId);
     return { runId: null, threadId, createdAt: now };
   };
 

@@ -27,49 +27,20 @@ describe("Pi API-first transition precedence", () => {
     ).toBe(expected);
   });
   it.each([
-    {
-      pendingTools: false,
-      activeInput: false,
-      expected: { outcome: "complete" },
-    },
+    { pendingTools: false, expected: { outcome: "complete" } },
     {
       pendingTools: true,
-      activeInput: false,
       expected: {
         outcome: "transfer",
         mode: "pending-tool-continuation",
         reason: "pending_tool_continuation",
       },
     },
-    {
-      pendingTools: true,
-      activeInput: true,
-      expected: {
-        outcome: "transfer",
-        mode: "pending-tool-continuation",
-        reason: "active_input_pending_tool",
-      },
-    },
-    {
-      pendingTools: false,
-      activeInput: true,
-      expected: {
-        outcome: "transfer",
-        mode: "settled-session-continuation",
-        reason: "active_input_settled_session",
-      },
-    },
-  ])(
-    "commits pendingTools=$pendingTools activeInput=$activeInput",
-    ({ pendingTools, activeInput, expected }) => {
-      expect(
-        decideApiFirstTurnCommit({ pendingTools, activeInput }),
-      ).toStrictEqual(expected);
-    },
-  );
+  ])("commits pendingTools=$pendingTools", ({ pendingTools, expected }) => {
+    expect(decideApiFirstTurnCommit({ pendingTools })).toStrictEqual(expected);
+  });
 
   const attempt = {
-    activeInputBeforeProvider: false,
     ownershipStage: "pre-provider" as const,
     commitStarted: false,
     coordinationAborted: false,
@@ -129,23 +100,6 @@ describe("Pi API-first transition precedence", () => {
         failure: piApiFirstTurnError(code, "invalid"),
       }).outcome,
     ).toBe("arbitrate-terminal");
-  });
-
-  it("retains active-input precedence while requiring the guarded transfer to validate delivery", () => {
-    expect(
-      decideApiFirstTurnRecovery({
-        ...attempt,
-        activeInputBeforeProvider: true,
-        failure: piApiFirstTurnError(
-          "PI_API_FIRST_TURN_DEADLINE_EXCEEDED",
-          "deadline",
-        ),
-      }),
-    ).toMatchObject({
-      outcome: "sandbox-first",
-      reason: "active_input",
-      logAttemptTimeout: true,
-    });
   });
 
   it.each(["pre-provider", "provider-may-have-started"] as const)(

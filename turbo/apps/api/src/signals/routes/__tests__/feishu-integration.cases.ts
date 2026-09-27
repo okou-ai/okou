@@ -6789,7 +6789,7 @@ export function registerSharedFeishuConversationTests(): void {
       );
     });
 
-    it("shows the run queue link when Feishu reaches the concurrency limit", async () => {
+    it("tells the sender when Feishu reaches the concurrency limit", async () => {
       // The active runs below fill the plan, independent of its own limit.
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
       const fixture = await setupFeishuRunFixture();
@@ -6822,7 +6822,7 @@ export function registerSharedFeishuConversationTests(): void {
       }
 
       const queueNotice = fixtureState.outboundMessages.find((message) => {
-        return messageContent(message).includes("Run queued");
+        return messageContent(message).includes("Waiting for a run slot");
       });
       expect(queueNotice).toMatchObject({
         kind: "reply",
@@ -6831,11 +6831,10 @@ export function registerSharedFeishuConversationTests(): void {
       });
       expect(queueNotice?.msgType).toBe("interactive");
       const queueNoticeContent = queueNotice ? messageContent(queueNotice) : "";
-      expect(queueNoticeContent).toContain("Concurrency limit reached");
-      expect(queueNoticeContent).toContain("Will start automatically");
       expect(queueNoticeContent).toContain(
-        `[View queue](${APP_ORIGIN}/?queue=1)`,
+        "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
       );
+      expect(queueNoticeContent).not.toContain("View queue");
 
       const [firstRun, secondRun] = await Promise.all(
         prompts.slice(0, 2).map(async (prompt) => {

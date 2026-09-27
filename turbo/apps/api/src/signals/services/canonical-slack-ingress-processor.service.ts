@@ -38,7 +38,9 @@ import {
   canonicalSlackThreadStatusTargetForIngress,
   clearCanonicalSlackThreadStatusIfIdle,
 } from "./canonical-slack-thread-status.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
+import { markChatThreadQueued } from "./queued-chat-thread.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
@@ -354,6 +356,7 @@ async function markIngressFailure(
 }
 
 interface PersistedCanonicalSlackIngress {
+  readonly client: SlackClient;
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId: string;
@@ -363,12 +366,14 @@ interface PersistedCanonicalSlackIngress {
 }
 
 function persistedCanonicalSlackIngress(
+  client: SlackClient,
   ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
   orgId: string,
   threadTs: string,
   chatThreadId: string,
 ): PersistedCanonicalSlackIngress {
   return {
+    client,
     orgId,
     userId: ingress.userId,
     chatThreadId,
@@ -395,6 +400,41 @@ async function setCanonicalSlackThinkingStatus(args: {
     (error) => {
       L.warn("Failed to set canonical Slack thinking status", {
         ingressId: args.ingressId,
+        error,
+      });
+    },
+  );
+}
+
+/**
+ * The input waits for an org slot, not for the agent: replace the admission
+ * "is thinking..." status with the wait notice. The launched run's progress
+ * callbacks set the status again once it runs.
+ */
+async function postCanonicalSlackWaitNotice(
+  ingress: PersistedCanonicalSlackIngress,
+  ingressId: string,
+  notice: string,
+): Promise<void> {
+  await tapError(
+    (async () => {
+      await ingress.client.setThreadStatus(
+        ingress.channelId,
+        ingress.threadTs,
+        "",
+      );
+      const posted = await ingress.client.postMessage(
+        ingress.channelId,
+        notice,
+        { threadTs: ingress.threadTs },
+      );
+      if (posted.kind === "slack_error") {
+        throw new Error(posted.error);
+      }
+    })(),
+    (error) => {
+      L.warn("Failed to post canonical Slack wait notice", {
+        ingressId,
         error,
       });
     },
@@ -689,6 +729,9 @@ const persistClaimedCanonicalSlackIngress$ = command(
         error: permalinkResult.error,
       });
     }
+    // Queue row before the input event, so input is never left unqueued.
+    await markChatThreadQueued(db, { chatThreadId, orgId });
+    signal.throwIfAborted();
     await persistCanonicalSlackMessage(
       db,
       {
@@ -712,6 +755,7 @@ const persistClaimedCanonicalSlackIngress$ = command(
     );
     signal.throwIfAborted();
     return persistedCanonicalSlackIngress(
+      client,
       ingress,
       orgId,
       threadTs,
@@ -741,19 +785,13 @@ export const processCanonicalSlackIngress$ = command(
           signal,
         );
         signal.throwIfAborted();
-        await publishChatThreadMessageCreatedSafely({
-          userId: ingress.userId,
-          orgId: ingress.orgId,
-          threadId: ingress.chatThreadId,
-        });
-        signal.throwIfAborted();
         await publishThreadListChangedSafely({
           userId: ingress.userId,
           orgId: ingress.orgId,
         });
         signal.throwIfAborted();
-        await set(
-          drainChatThreadQueueForThread$,
+        const picked = await set(
+          pickEnqueuedChatThread$,
           {
             chatThreadId: ingress.chatThreadId,
             orgId: ingress.orgId,
@@ -762,6 +800,22 @@ export const processCanonicalSlackIngress$ = command(
           signal,
         );
         signal.throwIfAborted();
+        // A launch publishes this input together with its run. Publishing
+        // it before the pick would show it as queued until the launch lands.
+        if (picked.reason !== "launched") {
+          await publishChatThreadMessageCreatedSafely({
+            userId: ingress.userId,
+            orgId: ingress.orgId,
+            threadId: ingress.chatThreadId,
+          });
+          signal.throwIfAborted();
+        }
+        const notice = chatQueueWaitNotice(picked.reason);
+        if (notice) {
+          await postCanonicalSlackWaitNotice(ingress, args.ingressId, notice);
+          signal.throwIfAborted();
+          return true;
+        }
         await tapError(
           clearCanonicalSlackThreadStatusIfIdle(
             db,

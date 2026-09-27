@@ -11,7 +11,6 @@ import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
   coverRetentionThread$,
-  openRetentionActiveInput$,
   readRetentionEvents$,
   revokeRetentionEvent$,
   seedRetentionOutputEvent$,
@@ -19,7 +18,6 @@ import {
   seedRetentionPendingEvent$,
   seedRetentionRun$,
   setRetentionRunStatus$,
-  settleRetentionActiveInput$,
 } from "../../../test-fixtures/chat-event-retention";
 import { cronRetainChatEventsRoutes } from "../cron-retain-chat-events";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
@@ -191,7 +189,6 @@ describe("chat event retention cron", () => {
       skippedSearchWatermark: 0,
       skippedPendingRunless: 0,
       skippedNonterminalRun: 0,
-      skippedActiveInput: 0,
       hasMore: true,
     });
 
@@ -297,7 +294,7 @@ describe("chat event retention cron", () => {
     ).resolves.toHaveLength(0);
   }, 60_000);
 
-  it("holds pending runless, nonterminal-run, and open active-input evidence", async () => {
+  it("holds pending runless and nonterminal-run evidence", async () => {
     const threadId = await createFixtureThread("live-state-gates");
     const pendingEventId = await store.set(
       seedRetentionPendingEvent$,
@@ -318,29 +315,6 @@ describe("chat event retention cron", () => {
       },
       context.signal,
     );
-    const activeRunId = await store.set(
-      seedRetentionRun$,
-      { chatThreadId: threadId, status: "completed" },
-      context.signal,
-    );
-    const activeEventId = await store.set(
-      seedRetentionOutputEvent$,
-      {
-        chatThreadId: threadId,
-        runId: activeRunId,
-        offsetMs: OLD_OFFSET_MS,
-      },
-      context.signal,
-    );
-    await store.set(
-      openRetentionActiveInput$,
-      {
-        chatThreadId: threadId,
-        runId: activeRunId,
-        sourceEventId: activeEventId,
-      },
-      context.signal,
-    );
     await store.set(
       coverRetentionThread$,
       { chatThreadId: threadId },
@@ -352,11 +326,10 @@ describe("chat event retention cron", () => {
       deleted: 0,
       skippedPendingRunless: 1,
       skippedNonterminalRun: 1,
-      skippedActiveInput: 1,
     });
     await expect(
-      eventRows(pendingEventId, runningEventId, activeEventId),
-    ).resolves.toHaveLength(3);
+      eventRows(pendingEventId, runningEventId),
+    ).resolves.toHaveLength(2);
 
     const pendingRevokerId = await store.set(
       revokeRetentionEvent$,
@@ -372,7 +345,6 @@ describe("chat event retention cron", () => {
       { runId: runningRunId, status: "completed" },
       context.signal,
     );
-    await store.set(settleRetentionActiveInput$, activeEventId, context.signal);
     await store.set(
       coverRetentionThread$,
       { chatThreadId: threadId },
@@ -381,14 +353,9 @@ describe("chat event retention cron", () => {
 
     restartSweepOnNextRun();
     const released = await retainFixtures(threadId);
-    expect(released.deleted).toBe(4);
+    expect(released.deleted).toBe(3);
     await expect(
-      eventRows(
-        pendingEventId,
-        pendingRevokerId,
-        runningEventId,
-        activeEventId,
-      ),
+      eventRows(pendingEventId, pendingRevokerId, runningEventId),
     ).resolves.toHaveLength(0);
   }, 60_000);
 

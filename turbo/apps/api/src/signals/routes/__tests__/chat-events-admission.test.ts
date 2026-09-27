@@ -680,6 +680,56 @@ describe("CHAT-02: admission without spendable credits", () => {
     const afterRetry = await chat.listThreadEvents(actor, sent.body.threadId);
     expect(afterRetry.events).toHaveLength(3);
   }, 60_000);
+
+  it("settles a send right after cancelling a pending run with one rejection", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected chat actor to have an org");
+    }
+    const pending = await sendChatRun(actor, {
+      agentId,
+      prompt: "never started",
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId,
+      status: "suspended",
+      supportByok: true,
+      restrictedBuiltInModels: false,
+    });
+    // The cancel's slot hand-off is left running: it may reject the next
+    // send's input before the send rejects it itself.
+    await cancelChatRun(actor, pending.runId);
+
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: pending.threadId,
+        prompt: "sent right after the cancel",
+        clientEventId,
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the send to settle as a rejection");
+    }
+    expect(sent.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+
+    const messages = await chat.listThreadEvents(actor, pending.threadId);
+    expect(
+      userMessages(messages.events).filter((message) => {
+        return (
+          message.eventType === "input.rejected" &&
+          message.revokesEventId === clientEventId
+        );
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({ error: "insufficient_credits" }),
+    ]);
+  }, 60_000);
 });
 
 describe("CHAT-02: Okou Mail link delivery", () => {

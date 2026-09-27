@@ -14,7 +14,6 @@ import type {
   ChatTeamsMessageFile,
   ChatTeamsMessageFiles,
 } from "@okouai/db/jsonb-contracts/chat-teams-context";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
@@ -25,8 +24,7 @@ import type {
   TeamsInboundActivity,
   TeamsInboundAttachment,
 } from "@okouai/api-contracts/contracts/teams-bot";
-import { and, desc, eq, isNull, notExists, or } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, desc, eq, or } from "drizzle-orm";
 import { convert } from "html-to-text";
 
 import { env } from "../../lib/env";
@@ -55,7 +53,9 @@ import {
 } from "../external/teams-bot-client";
 import { bestEffort, safeJsonParse } from "../utils";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
+import { markChatThreadQueued } from "./queued-chat-thread.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import {
   resolveIntegrationModelRouteForUser$,
   type IntegrationModelRoutePin,
@@ -87,10 +87,6 @@ import {
 import { insertChatEvent } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
-import {
-  chatEventTypeIn,
-  chatInputPromptDispatchCondition,
-} from "./chat-event-type.service";
 
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT =
@@ -108,7 +104,6 @@ const TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE =
   "application/vnd.microsoft.teams.file.download.info";
 const TEAMS_REFERENCE_ATTACHMENT_CONTENT_TYPE = "reference";
 const TEAMS_CHAT_MESSAGE_ID_NAMESPACE = "b60a5846-d85f-4db8-b9aa-d7d803efbb57";
-const teamsQueueEventRevoker = alias(chatEvents, "teams_queue_event_revoker");
 
 type TeamsBotCommand = "help" | "connect" | "disconnect" | "switch" | "model";
 type TeamsCardAction = "switch_agent" | "switch_model";
@@ -209,7 +204,7 @@ type TeamsMessageDispatchResult =
       readonly card?: TeamsAdaptiveCard;
     }
   | {
-      readonly kind: "accepted" | "queued";
+      readonly kind: "accepted";
       readonly runId?: string;
     };
 
@@ -1783,6 +1778,12 @@ const persistTeamsChatMessage$ = command(
       ),
     });
     const chatEventId = teamsChatMessageId(args.activity, args.connection.id);
+    // Queue row before the input event, so input is never left unqueued.
+    await markChatThreadQueued(args.db, {
+      chatThreadId: route.chatThreadId,
+      orgId: args.installation.orgId,
+    });
+    signal.throwIfAborted();
     const persist = async (tx: Db, touchThread: () => Promise<void>) => {
       const event = await insertChatEvent(
         tx,
@@ -1841,56 +1842,6 @@ const persistTeamsChatMessage$ = command(
   },
 );
 
-async function teamsMessageDispatchState(
-  db: Db,
-  args: {
-    readonly chatThreadId: string;
-    readonly chatEventId: string;
-  },
-): Promise<TeamsMessageDispatchResult> {
-  const [[run], [queued]] = await Promise.all([
-    db
-      .select({ runId: agentRuns.id })
-      .from(chatEvents)
-      .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
-      .where(
-        chatInputPromptDispatchCondition({
-          eventId: args.chatEventId,
-          chatThreadId: args.chatThreadId,
-        }),
-      )
-      .limit(1),
-    db
-      .select({ id: chatEvents.id })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.id, args.chatEventId),
-          eq(chatEvents.chatThreadId, args.chatThreadId),
-          chatEventTypeIn(["input.prompt"]),
-          isNull(chatEvents.runId),
-          notExists(
-            db
-              .select({ id: teamsQueueEventRevoker.id })
-              .from(teamsQueueEventRevoker)
-              .where(eq(teamsQueueEventRevoker.revokesEventId, chatEvents.id)),
-          ),
-        ),
-      )
-      .limit(1),
-  ]);
-  if (queued) {
-    return {
-      kind: "queued",
-      ...(run ? { runId: run.runId } : {}),
-    };
-  }
-  return {
-    kind: "accepted",
-    ...(run ? { runId: run.runId } : {}),
-  };
-}
-
 const runAgentForTeams$ = command(
   async (
     { set },
@@ -1933,19 +1884,13 @@ const runAgentForTeams$ = command(
       return { kind: "ignored" };
     }
 
-    await publishChatThreadMessageCreatedSafely({
-      userId: args.connection.userId,
-      orgId: args.installation.orgId,
-      threadId: persisted.chatThreadId,
-    });
-    signal.throwIfAborted();
     await publishThreadListChangedSafely({
       userId: args.connection.userId,
       orgId: args.installation.orgId,
     });
     signal.throwIfAborted();
-    await set(
-      drainChatThreadQueueForThread$,
+    const picked = await set(
+      pickEnqueuedChatThread$,
       {
         chatThreadId: persisted.chatThreadId,
         orgId: args.installation.orgId,
@@ -1954,7 +1899,24 @@ const runAgentForTeams$ = command(
       signal,
     );
     signal.throwIfAborted();
-    return await teamsMessageDispatchState(db, persisted);
+    // A launch publishes this input together with its run. Publishing
+    // it before the pick would show it as queued until the launch lands.
+    if (picked.reason !== "launched") {
+      await publishChatThreadMessageCreatedSafely({
+        userId: args.connection.userId,
+        orgId: args.installation.orgId,
+        threadId: persisted.chatThreadId,
+      });
+      signal.throwIfAborted();
+    }
+    const notice = chatQueueWaitNotice(picked.reason);
+    if (notice) {
+      return { kind: "notice", replyText: notice };
+    }
+    return {
+      kind: "accepted",
+      ...(picked.runId ? { runId: picked.runId } : {}),
+    };
   },
 );
 

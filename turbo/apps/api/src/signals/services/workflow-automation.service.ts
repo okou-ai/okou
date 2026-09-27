@@ -4938,7 +4938,7 @@ export const runOwnedWorkflowAutomationNow$ = command(
             automationTimezone: automation.timezone,
             userTimezone: ownerTimezone,
           }) ?? undefined,
-        coalescePendingScheduleRun: false,
+        replacePendingScheduleTick: false,
         dispatchFailedCallbacks: dispatchFailedRunCallbacks,
       },
       signal,

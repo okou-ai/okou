@@ -2,7 +2,7 @@ import {
   sessionOutputDeltaSchema,
   type SessionOutputDelta,
 } from "@okouai/api-contracts/contracts/realtime";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
@@ -26,8 +26,8 @@ import {
   claimEnvironment,
   eventBackedContents,
   assistantEvent,
-  PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
   occurrences,
+  userMessages,
 } from "./helpers/chat-events-fixture";
 import {
   piResponsesTextSse,
@@ -40,7 +40,6 @@ const context = testContext();
 const {
   api,
   chat,
-  webhooks,
   chatCallbacks,
   entitledChatActor,
   seedBuiltInModelKey,
@@ -52,8 +51,6 @@ const {
   completeChatRunOk,
   cancelChatRun,
   mockPiCheckpointObjectStore,
-  piS3Object,
-  publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
   queueCapabilityProvenPiRun,
   completeSandboxFirstPiRun,
@@ -758,148 +755,15 @@ describe("CHAT-02: model-first provider policies", () => {
     ]);
   }, 90_000);
 
-  it("transfers pre-provider active input through one stable sandbox-first delivery", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await publishPendingPiInstructions(actor, agentId);
-    const resourceEntered = createDeferredPromise<void>(context.signal);
-    const releaseResource = createDeferredPromise<void>(context.signal);
-    server.use(
-      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, async ({ request }) => {
-        if (!resourceEntered.settled()) {
-          resourceEntered.resolve(undefined);
-        }
-        await releaseResource.promise;
-        const objectKey = new URL(request.url).searchParams.get("object");
-        if (!objectKey) {
-          throw new Error("Expected Pi resource archive object identity");
-        }
-        return new HttpResponse(piS3Object(objectKey), {
-          headers: { "content-type": "application/gzip" },
-        });
-      }),
-    );
-    let modelCalls = 0;
-    server.use(
-      http.post("https://api.openai.com/v1/responses", () => {
-        modelCalls += 1;
-        return new HttpResponse(piResponsesTextSse("unexpected", modelCalls), {
-          headers: { "content-type": "text/event-stream" },
-        });
-      }),
-    );
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const prompt = "execute the original prompt once in Sandbox";
-    const { launch } = await queueCapabilityProvenPiRun({
-      actor,
-      agentId,
-      runnerGroup,
-      prompt,
-    });
-
-    const run = await launch();
-    await resourceEntered.promise;
-    // The picked launch prepares resources in the background; the durable
-    // pending status is the Runner claim boundary.
-    await waitForRunStatus(actor, run.runId, "pending", 5000);
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    await waitForRunStatus(actor, run.runId, "running", 5000);
-    const activeInput = "apply this accepted steer once";
-    const activeInputEventId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: run.threadId,
-        prompt: activeInput,
-        clientEventId: activeInputEventId,
-      },
-      [201],
-    );
-    const sandboxToken = claimed.claim.sandboxToken;
-    const reserved = await api.reserveRunnerActiveInputs(
-      sandboxToken,
-      run.runId,
-    );
-    if (reserved.outcome !== "reserved") {
-      throw new Error("Expected pre-provider active input to be reserved");
-    }
-    await expect(
-      api.reserveRunnerActiveInputs(sandboxToken, run.runId),
-    ).resolves.toStrictEqual(reserved);
-
-    releaseResource.resolve(undefined);
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.get(manifestKey);
-      })
-      .toBeInstanceOf(Buffer);
-    expect(modelCalls).toBe(0);
-    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "running",
-    });
-    const manifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}"),
-    );
-    expect(manifest).toMatchObject({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode: "sandbox-first",
-      baseSession: { sessionId: run.threadId, sha256: null },
-      sandboxEventSequenceStart: 1,
-    });
-    const h0 =
-      checkpointObjects
-        .get(
-          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
-        )
-        ?.toString("utf8") ?? "";
-    expect(
-      MemoryPiSession.fromJsonl(h0).buildSessionContext().messages,
-    ).toHaveLength(0);
-    expect(claimed.claim.prompt).toBe(prompt);
-    const receipts = await Promise.all([
-      api.recordRunnerActiveInputDelivery(
-        claimed.claim.sandboxToken,
-        run.runId,
-        reserved.deliveryId,
-      ),
-      api.recordRunnerActiveInputDelivery(
-        claimed.claim.sandboxToken,
-        run.runId,
-        reserved.deliveryId,
-      ),
-    ]);
-    expect(receipts).toStrictEqual([
-      { outcome: "delivered" },
-      { outcome: "delivered" },
-    ]);
-    await expect(
-      api.recordRunnerActiveInputDelivery(
-        claimed.claim.sandboxToken,
-        run.runId,
-        reserved.deliveryId,
-      ),
-    ).resolves.toStrictEqual({ outcome: "delivered" });
-    const events = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      events.events.filter((event) => {
-        return (
-          event.runId === run.runId &&
-          event.revokesEventId === activeInputEventId
-        );
-      }),
-    ).toHaveLength(1);
-    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
-  }, 90_000);
-
-  it("publishes text H1 once and continues one in-flight active input as a new prompt", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+  it("keeps a message sent during an API-first turn queued until the run completes", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
     const providerEntered = createDeferredPromise<void>(context.signal);
     const releaseProvider = createDeferredPromise<void>(context.signal);
     let modelCalls = 0;
-    const apiAnswer = "API H1 settled before the accepted input";
+    const apiAnswer = "API-first answer without steering";
     server.use(
       http.post("https://api.openai.com/v1/responses", async () => {
         modelCalls += 1;
@@ -912,220 +776,58 @@ describe("CHAT-02: model-first provider policies", () => {
         });
       }),
     );
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const originalPrompt = "settle this original API prompt once";
-    const { launch } = await queueCapabilityProvenPiRun({
-      actor,
-      agentId,
-      runnerGroup,
-      prompt: originalPrompt,
-    });
 
-    const run = await launch();
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "answer this API-first prompt",
+      model: "gpt-5.6-terra",
+    });
     await providerEntered.promise;
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    const activeInput = "continue H1 with exactly one new prompt";
-    await chat.requestSendEvent(
+    const queuedEventId = randomUUID();
+    const queued = await chat.requestSendEvent(
       actor,
       {
         agentId,
         threadId: run.threadId,
-        prompt: activeInput,
-        clientEventId: randomUUID(),
+        prompt: "wait for the API-first turn",
+        clientEventId: queuedEventId,
       },
       [201],
     );
-    const sandboxToken = claimed.claim.sandboxToken;
-    const reserved = await api.reserveRunnerActiveInputs(
-      sandboxToken,
-      run.runId,
-    );
-    if (reserved.outcome !== "reserved") {
-      throw new Error("Expected in-flight active input to be reserved");
+    if (queued.status !== 201) {
+      throw new Error("Expected the message to be accepted");
     }
+    expect(queued.body.runId).toBeNull();
+
     releaseProvider.resolve(undefined);
-
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.get(manifestKey);
-      })
-      .toBeInstanceOf(Buffer);
-    expect(modelCalls).toBe(1);
-    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "running",
-    });
-    const manifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}"),
+    await waitForRunStatus(actor, run.runId, "completed");
+    const messages = await waitForThreadMessages(
+      actor,
+      run.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === queuedEventId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
     );
-    expect(manifest).toMatchObject({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode: "settled-session-continuation",
-      sandboxEventSequenceStart: 1,
-    });
-    const apiMessages = eventBackedContents(
-      (await chat.listThreadEvents(actor, run.threadId)).events,
-      run.runId,
-    );
+    const successor = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === queuedEventId;
+    })?.runId;
+    if (!successor) {
+      throw new Error("Expected the queued message to launch a run");
+    }
+    // API-first does not steer: the message starts the next run instead of
+    // joining the completed turn.
+    expect(successor).not.toBe(run.runId);
     expect(
-      apiMessages.filter((message) => {
-        return message.content === apiAnswer;
+      eventBackedContents(messages.events, run.runId).map((message) => {
+        return message.content;
       }),
-    ).toHaveLength(1);
-
-    const h1 =
-      checkpointObjects
-        .get(
-          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
-        )
-        ?.toString("utf8") ?? "";
-    expect(occurrences(h1, originalPrompt)).toBe(1);
-    expect(occurrences(h1, apiAnswer)).toBe(1);
-    expect(occurrences(h1, activeInput)).toBe(0);
-    const h2Session = MemoryPiSession.fromJsonl(h1);
-    h2Session.appendMessage({
-      role: "user",
-      content: activeInput,
-      timestamp: 3,
-    });
-    const sandboxAnswer = "Sandbox answered the accepted prompt once";
-    const hiddenCitation =
-      "<oai-mem-citation><citation_entries>memory.md:5-8|note=[sandbox used]</citation_entries><rollout_ids>019c6e27-e55b-73d1-87d8-4e01f1f75043</rollout_ids></oai-mem-citation>";
-    const sandboxRawAnswer = `${sandboxAnswer}${hiddenCitation}`;
-    h2Session.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: sandboxRawAnswer }],
-      api: "openai-responses",
-      provider: "openai",
-      model: "gpt-5.6-terra",
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "stop",
-      timestamp: 4,
-    });
-    const h2 = h2Session.toJsonl();
-    expect(occurrences(h2, originalPrompt)).toBe(1);
-    expect(occurrences(h2, activeInput)).toBe(1);
-    expect(occurrences(h2, hiddenCitation)).toBe(1);
-    const h2Hash = createHash("sha256").update(h2).digest("hex");
-    await webhooks.requestAgentCheckpointPrepareHistory(
-      {
-        runId: run.runId,
-        hash: h2Hash,
-        rawSize: Buffer.byteLength(h2),
-        encodedSize: Buffer.byteLength(h2),
-        encoding: "identity",
-      },
-      claimed.sandboxHeaders,
-      [200],
-    );
-    checkpointObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
-      Buffer.from(h2, "utf8"),
-    );
-    await expect(
-      api.recordRunnerActiveInputDelivery(
-        claimed.claim.sandboxToken,
-        run.runId,
-        reserved.deliveryId,
-      ),
-    ).resolves.toStrictEqual({ outcome: "delivered" });
-    const sandboxCitation = {
-      entries: [
-        {
-          path: "memory.md",
-          note: "sandbox used",
-          lineStart: 5,
-          lineEnd: 8,
-        },
-      ],
-      rolloutIds: ["019c6e27-e55b-73d1-87d8-4e01f1f75043"],
-    };
-    const sandboxEvents = [
-      {
-        type: "assistant" as const,
-        sequenceNumber: 1,
-        message: {
-          id: "new-guest-visible-answer",
-          content: [{ type: "text" as const, text: sandboxAnswer }],
-        },
-      },
-      {
-        type: "result" as const,
-        sequenceNumber: 2,
-        result: sandboxAnswer,
-      },
-    ];
-    const sandboxEventBody = {
-      runId: run.runId,
-      events: sandboxEvents,
-      piMemoryCitationTransport: {
-        schemaVersion: 1 as const,
-        citations: [{ sequenceNumber: 1, citation: sandboxCitation }],
-      },
-    };
-    await webhooks.requestAgentEvents(
-      sandboxEventBody,
-      claimed.sandboxHeaders,
-      [200],
-    );
-    await webhooks.requestAgentEvents(
-      sandboxEventBody,
-      claimed.sandboxHeaders,
-      [200],
-    );
-    const completion = await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        lastEventSequence: 2,
-        activeInputDeliveryIds: [reserved.deliveryId],
-        checkpoint: {
-          cliAgentType: "pi",
-          cliAgentSessionId: run.threadId,
-          cliAgentSessionHistoryHash: h2Hash,
-        },
-      },
-      claimed.sandboxHeaders,
-      [200],
-    );
-    expect(completion.body).toStrictEqual({
-      success: true,
-      status: "completed",
-    });
-    await waitForRunStatus(actor, run.runId, "completed", 5000);
-    expect(modelCalls).toBe(1);
-    const completedMessages = eventBackedContents(
-      (await chat.listThreadEvents(actor, run.threadId)).events,
-      run.runId,
-    );
-    expect(
-      completedMessages.filter((message) => {
-        return message.content === sandboxAnswer;
-      }),
-    ).toHaveLength(1);
-    expect(JSON.stringify(completedMessages)).not.toContain("oai-mem-citation");
-    expect(JSON.stringify(completedMessages)).not.toContain("memory.md");
-    // Private provenance intentionally has no user-facing API; this exact
-    // event association is the only assertion that crosses the route boundary.
-    await expect(
-      readRunOutputMemoryCitationsFixture(run.runId),
-    ).resolves.toStrictEqual([
-      {
-        sequenceNumber: 1,
-        citation: {
-          entries: sandboxCitation.entries,
-          rolloutIds: sandboxCitation.rolloutIds,
-        },
-      },
-    ]);
+    ).toStrictEqual([apiAnswer]);
+    await waitForRunStatus(actor, successor, "completed");
   }, 90_000);
 
   it("retains pending-tool continuation while one accepted input remains a steer", async () => {

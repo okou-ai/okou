@@ -225,7 +225,7 @@ function button(container: ParentNode, name: string): HTMLElement {
   return result!;
 }
 
-test("Active-run prompts stay in the conversation while automation events wait in the queue", async () => {
+test("Queued prompts and automation events wait together in the queue", async () => {
   installWorkflowQueueFixture(context, ACTIVE_PROMPT_THREAD_ID, [
     activeRunRow(ACTIVE_PROMPT_THREAD_ID),
     eventRow(ACTIVE_PROMPT_THREAD_ID, 2, {
@@ -268,16 +268,18 @@ test("Active-run prompts stay in the conversation while automation events wait i
 
   await waitFor(() => {
     expect(screen.getByText("Investigate the release")).toBeVisible();
-    expect(screen.getByText("2 events waiting")).toBeVisible();
+    expect(screen.getByText("1 message and 2 events waiting")).toBeVisible();
   });
-  expect(screen.getByText("Prepare the follow-up summary")).toBeVisible();
   const list = queueListForText("Check rollout health");
   const rows = Array.from(list.querySelectorAll('[role="listitem"]'));
-  expect(rows).toHaveLength(2);
-  expect(rows[0]).toHaveAccessibleName("Pending automation event");
-  expect(rows[0]).toHaveTextContent("Check rollout health");
+  expect(rows).toHaveLength(3);
+  expect(rows[0]).toHaveAccessibleName("Queued message");
+  expect(rows[0]).toHaveTextContent("Prepare the follow-up summary");
   expect(rows[1]).toHaveAccessibleName("Pending automation event");
-  expect(rows[1]).toHaveTextContent("Summarize new incidents");
+  expect(rows[1]).toHaveTextContent("Check rollout health");
+  expect(rows[2]).toHaveAccessibleName("Pending automation event");
+  expect(rows[2]).toHaveTextContent("Summarize new incidents");
+  expect(screen.getAllByText("Prepare the follow-up summary")).toHaveLength(1);
   expect(screen.getAllByText("Check rollout health")).toHaveLength(1);
   expect(screen.getAllByText("Summarize new incidents")).toHaveLength(1);
 });

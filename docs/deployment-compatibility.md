@@ -50,6 +50,66 @@ Old and new versions during deploy:
 
 No API rollback floor is needed.
 
+## Unified chat queue (release 3)
+
+Every input, from web sends and MCP to integrations and automations, enters
+through one enqueue entry: upsert `queued_chat_threads`, append the run-less
+`input.prompt` or `input.automation` event, then pick the thread once. One pick
+path launches runs; a running sandbox run consumes `input.prompt` by steering.
+Both consume an input the same way: a replacement event carrying the `runId`
+with `revokesEventId` set to the input, so the unique revoke edge is the only
+mutual exclusion. Schedule coalescing, already best-effort and lock-free since
+the prepared-key retirement, moves out of admission to the schedule trigger,
+which revokes its old unconsumed schedule tick (never a manual Run now) when it enqueues the new one;
+a journaled Morning Brief tick does so only after its claim succeeds, in the
+same transaction. Only `CONCURRENT_RUN_LIMIT` keeps
+an input waiting; every other launch failure appends `input.rejected`.
+
+Steering no longer reads or writes `active_input_deliveries` or
+`active_input_delivery_items`. Reserve returns the source `chat_events` id as
+the delivery ID without writing; receipt and completion insert the run's
+replacement on the revoke edge. The tables stay until release 4 drops them. See
+[active input delivery](./active-input-delivery.md). Runner and Guest do not
+change: they treat the delivery ID as an opaque UUID.
+
+**Merge gate:** merge only after release 2 (#37063) is merged and released to
+production, every earlier API instance has drained (no Axiom output from an
+earlier API commit), and the API rollback floor is at release 2. The
+[`agent_run_queue` drop](#agent_run_queue-dropped-release-3) already enforces
+that floor, so this change adds no migration and no new floor.
+
+Rolling back to release 2 is safe: this release persists no new shape, and
+replacement events look the same to both. This release writes no delivery rows,
+so release 2 reserves new ones for inputs this release left pending. Delivery
+rows that release 2 itself opened during the overlap are the exception: a
+receipt or terminal callback that reached this release left them `open`, and
+release 2 settles an open delivery only in its own run's receipt or terminal
+callback. After a rollback, such a row keeps hiding its source input from
+release 2's pick and steering until the row is settled by hand or the user
+sends again; an input this release already picked is consumed and unaffected.
+**Accepted risk:** this touches only inputs reserved in the overlap window
+whose run's callbacks ran on this release and that were still pending at the
+rollback.
+
+Old and new instances during deploy:
+
+- Enqueue and pick: both APIs admit through `queued_chat_threads` with the same
+  lease, idle-thread and capacity checks, so either picks input the other
+  enqueued. An older API still coalesces a schedule tick inside admission
+  while this release revokes the old tick from the trigger, so an overlapping
+  tick can add one extra automation input. This is accepted.
+- Steering: release 2 reserves by writing a delivery row and returns its ID;
+  this release returns the source event ID. A receipt or completion that reaches
+  the other API cannot settle that ID, so the source input stays run-less and a
+  later pick runs it again. The same holds for release 2 deliveries left
+  unsettled across the deploy. **Accepted risk:** for the few minutes both APIs
+  serve, and for those old deliveries, the model may see the same steered
+  message twice. No message is lost, and no compatibility fallback is added.
+- Pi API-first runs no longer steer. A message sent during such a run stays
+  queued and is picked after the run releases its slot. Release 2 instances
+  may still hand such a turn to a sandbox; both outcomes consume the input once
+  through the revoke edge.
+
 ## `agent_run_queue` dropped (release 3)
 
 Migration `1272_drop_agent_run_queue` drops `agent_run_queue` and its schema.

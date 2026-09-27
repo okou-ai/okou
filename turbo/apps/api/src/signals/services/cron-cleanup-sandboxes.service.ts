@@ -46,11 +46,7 @@ import {
 } from "./threadless-run-cleanup.service";
 import { cleanupExpiredPiApiFirstTurnData$ } from "./pi-api-first-turn-cleanup.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
-import {
-  expireRunTimeBudgetInput,
-  finalizeActiveInputDelivery,
-  type FinalizeActiveInputDeliveryResult,
-} from "./active-input-delivery.service";
+import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 
 const L = logger("CronCleanupSandboxes");
 
@@ -141,7 +137,6 @@ interface CommittedTimeout {
   readonly sandboxId: string | null;
   readonly runnerGroup: string | null;
   readonly chatThreadId: string | null;
-  readonly finalization: FinalizeActiveInputDeliveryResult;
   readonly slotReleased: boolean;
 }
 
@@ -345,16 +340,6 @@ async function commitStaleRunTimeout(
           return { kind: "skipped" };
         }
 
-        const finalization =
-          lockedRun.status === "running" && lockedRun.chatThreadId !== null
-            ? await finalizeActiveInputDelivery(tx, {
-                runId: run.id,
-                chatThreadId: lockedRun.chatThreadId,
-                deliveredDeliveryIds: new Set<string>(),
-              })
-            : { finalized: false, chatEventsAppended: false };
-        signal.throwIfAborted();
-
         const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
           values: {
             status: "timeout",
@@ -389,7 +374,6 @@ async function commitStaleRunTimeout(
             sandboxId: lockedRun.sandboxId,
             runnerGroup: lockedRun.runnerGroup,
             chatThreadId: lockedRun.chatThreadId,
-            finalization,
             slotReleased: released.length > 0,
           },
         };
@@ -468,8 +452,7 @@ const cleanupSingleRun$ = command(
               deliveryNotification: {
                 userId: committed.userId,
                 chatThreadId: committed.chatThreadId,
-                chatEventsAppended:
-                  committed.finalization.chatEventsAppended || budgetExpired,
+                chatEventsAppended: budgetExpired,
               },
             }
           : {}),

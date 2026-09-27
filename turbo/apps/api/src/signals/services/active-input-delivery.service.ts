@@ -1,25 +1,10 @@
-import { randomUUID } from "node:crypto";
-
 import {
   runStatusSchema,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
-import {
-  activeInputDeliveries,
-  activeInputDeliveryItems,
-} from "@okouai/db/schema/active-input-delivery";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import {
-  and,
-  asc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  notExists,
-} from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
@@ -29,21 +14,30 @@ import {
 } from "../external/realtime";
 import { settle } from "../utils";
 import { nowDate } from "../../lib/time";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
 import {
   activeInputDeliveryPromptFitsControlPayload,
   activeInputRowsByIds,
-  materializePendingActiveInputPrompts,
-  pendingActiveInputRows,
-  type MaterializedActiveInputPrompt,
-  type PendingActiveInputRow,
+  activeInputTemplateIdentities,
+  materializeActiveInputSource,
+  type ActiveInputSourceRow,
 } from "./active-input-prompt.service";
 import { logTemplateUsage } from "../../lib/template-usage-log";
-import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { runTimeBudgetEventIdForRun } from "./assistant-event-id";
 import { insertChatEvent, replaceLoadedChatEvent } from "./chat-event.service";
-import { lockPiApiFirstTurnLifecycle } from "./pi-api-first-turn-lifecycle.service";
+import { listPendingChatInputs } from "./chat-event-queue.service";
+
+/*
+ * Steering a pending input into a running sandbox run.
+ *
+ * The delivery ID the runner and guest carry is the source chat event ID.
+ * Reserve only reads; receipt and completion consume the source by appending
+ * a replacement that carries the run ID and revokes the source. The unique
+ * revoke edge is the only mutual exclusion against pick, recall and other
+ * consumers: the loser re-reads the revoker and treats a replacement by the
+ * same run as already delivered.
+ */
 
 const L = logger("active-input-delivery");
 
@@ -55,36 +49,19 @@ interface ActiveInputDeliveryScope {
   readonly status: RunStatus;
 }
 
-type ActiveInputReservationScope = ActiveInputDeliveryScope;
-
-interface ActiveInputDeliveryReference {
-  readonly deliveryId: string;
-  readonly sourceEventId: string;
-}
-
-interface LockedOpenActiveInputDelivery {
-  readonly deliveryId: string;
-  readonly items: LockedActiveInputDeliveryReceipt["items"];
-}
-
-interface ActiveInputDeliveryIdentity {
+interface ActiveInputRunThread {
   readonly runId: string;
   readonly chatThreadId: string;
 }
 
-export interface FinalizeActiveInputDeliveryResult {
-  readonly finalized: boolean;
-  readonly chatEventsAppended: boolean;
-}
-
 type ReserveActiveInputDeliveryResult =
-  | ({
+  | {
       readonly outcome: "reserved";
+      readonly deliveryId: string;
       readonly prompt: string;
-    } & ActiveInputDeliveryReference)
+    }
   | { readonly outcome: "empty" }
   | { readonly outcome: "terminal" }
-  | ({ readonly outcome: "held" } & ActiveInputDeliveryReference)
   | {
       readonly outcome: "rejected";
       readonly reason: "payload_too_large" | "run_not_running";
@@ -100,31 +77,10 @@ type RecordActiveInputDeliveryReceiptResult =
   | { readonly outcome: "rejected"; readonly replacementsAppended: false }
   | { readonly outcome: "forbidden"; readonly replacementsAppended: false };
 
-type ActiveInputDeliveryTransaction = Parameters<
-  Parameters<Db["transaction"]>[0]
->[0];
-
-type PreparedReservation =
-  | { readonly kind: "empty" }
-  | { readonly kind: "rejected"; readonly reason: "payload_too_large" }
-  | {
-      readonly kind: "ready";
-      readonly deliveryId: string;
-      readonly sourceEventId: string;
-      readonly prompt: string;
-      readonly templateIdentities: readonly GenerationTemplateIdentity[];
-    };
-
-type ReserveTransitionResult =
-  | Exclude<ReserveActiveInputDeliveryResult, { readonly outcome: "reserved" }>
-  | ({
-      readonly outcome: "created";
-      readonly prompt: string;
-    } & ActiveInputDeliveryReference)
-  | ({ readonly outcome: "retrieve" } & ActiveInputDeliveryReference)
-  | { readonly outcome: "retry" };
-
-const deliveryRevoker = alias(chatEvents, "active_input_delivery_revoker");
+type ActiveInputConsumption =
+  | { readonly outcome: "appended"; readonly source: ActiveInputSourceRow }
+  | { readonly outcome: "delivered" }
+  | { readonly outcome: "rejected" };
 
 function isTerminalRunStatus(status: RunStatus): boolean {
   return (
@@ -133,10 +89,6 @@ function isTerminalRunStatus(status: RunStatus): boolean {
     status === "timeout" ||
     status === "cancelled"
   );
-}
-
-function canReserveActiveInput(status: RunStatus): boolean {
-  return status === "running";
 }
 
 async function loadActiveInputDeliveryScope(
@@ -177,422 +129,7 @@ async function loadActiveInputDeliveryScope(
   };
 }
 
-function materializedPrompt(
-  row: PendingActiveInputRow,
-  prompts: ReadonlyMap<string, MaterializedActiveInputPrompt>,
-): MaterializedActiveInputPrompt {
-  const materialized = prompts.get(row.id);
-  if (materialized === undefined) {
-    throw new Error("Active input prompt materialization is missing");
-  }
-  return materialized;
-}
-
-async function prepareReservation(
-  db: Db,
-  scope: ActiveInputDeliveryScope,
-  signal: AbortSignal,
-): Promise<PreparedReservation> {
-  const rows = await pendingActiveInputRows(
-    db,
-    scope.chatThreadId,
-    scope.runId,
-  ).limit(1);
-  signal.throwIfAborted();
-  const [row] = rows;
-  if (!row) {
-    return { kind: "empty" };
-  }
-  const prepared = await settle(
-    materializePendingActiveInputPrompts(db, rows, scope, signal),
-    signal,
-  );
-  if (!prepared.ok) {
-    if (!(prepared.error instanceof DiscordQueuedLaunchUnavailableError)) {
-      throw prepared.error;
-    }
-    await rejectUnavailableDiscordActiveInput(
-      db,
-      scope,
-      { sourceEventId: row.id },
-      signal,
-    );
-    return { kind: "empty" };
-  }
-  if (!prepared.value) {
-    throw new Error("Pending active input cannot be materialized");
-  }
-  const materialized = materializedPrompt(row, prepared.value);
-  const deliveryId = randomUUID();
-  if (
-    !activeInputDeliveryPromptFitsControlPayload(
-      deliveryId,
-      materialized.prompt,
-    )
-  ) {
-    return { kind: "rejected", reason: "payload_too_large" };
-  }
-  return {
-    kind: "ready",
-    deliveryId,
-    sourceEventId: row.id,
-    prompt: materialized.prompt,
-    templateIdentities: materialized.templateIdentities,
-  };
-}
-
-async function canReturnEmptyReservation(
-  db: Db,
-  scope: ActiveInputReservationScope,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [run] = await db
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, scope.runId),
-        eq(agentRuns.chatThreadId, scope.chatThreadId),
-        eq(agentRuns.userId, scope.userId),
-        eq(agentRuns.orgId, scope.orgId),
-        inArray(agentRuns.status, ["running"]),
-        notExists(
-          db
-            .select({ id: activeInputDeliveries.id })
-            .from(activeInputDeliveries)
-            .where(
-              and(
-                eq(activeInputDeliveries.runId, scope.runId),
-                eq(activeInputDeliveries.status, "open"),
-              ),
-            ),
-        ),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return run !== undefined;
-}
-
-async function lockOpenDelivery(
-  tx: ActiveInputDeliveryTransaction,
-  scope: ActiveInputDeliveryIdentity,
-): Promise<LockedOpenActiveInputDelivery | null> {
-  const [delivery] = await tx
-    .select({
-      id: activeInputDeliveries.id,
-      chatThreadId: activeInputDeliveries.chatThreadId,
-    })
-    .from(activeInputDeliveries)
-    .where(
-      and(
-        eq(activeInputDeliveries.runId, scope.runId),
-        eq(activeInputDeliveries.status, "open"),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  if (!delivery) {
-    return null;
-  }
-  if (delivery.chatThreadId !== scope.chatThreadId) {
-    throw new Error("Active input delivery belongs to an unexpected thread");
-  }
-  const items = await tx
-    .select({
-      sourceEventId: activeInputDeliveryItems.sourceEventId,
-      disposition: activeInputDeliveryItems.disposition,
-    })
-    .from(activeInputDeliveryItems)
-    .where(eq(activeInputDeliveryItems.deliveryId, delivery.id))
-    .orderBy(asc(activeInputDeliveryItems.position))
-    .for("update");
-  if (
-    items.length === 0 ||
-    items.some((item) => {
-      return item.disposition !== null;
-    })
-  ) {
-    throw new Error("Open active input delivery has invalid items");
-  }
-  return {
-    deliveryId: delivery.id,
-    items,
-  };
-}
-
-async function transitionReservation(
-  tx: ActiveInputDeliveryTransaction,
-  scope: ActiveInputReservationScope,
-  prepared: PreparedReservation,
-): Promise<ReserveTransitionResult> {
-  await lockPiApiFirstTurnLifecycle(tx, scope.runId);
-  // The run row lock serializes against completion and timeout. Admission
-  // cannot claim this thread while the run is running, and a concurrent recall
-  // or rejection of the source is tolerated when the delivery settles.
-  const [run] = await tx
-    .select({ status: agentRuns.status })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, scope.runId),
-        eq(agentRuns.userId, scope.userId),
-        eq(agentRuns.orgId, scope.orgId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  if (!run) {
-    return { outcome: "forbidden" };
-  }
-  const status = runStatusSchema.parse(run.status);
-  const openDelivery = await lockOpenDelivery(tx, scope);
-  if (openDelivery) {
-    const [item] = openDelivery.items;
-    if (!item || openDelivery.items.length !== 1) {
-      throw new Error("Open active input reservation has invalid cardinality");
-    }
-    const reference = {
-      deliveryId: openDelivery.deliveryId,
-      sourceEventId: item.sourceEventId,
-    };
-    return canReserveActiveInput(status)
-      ? { outcome: "retrieve", ...reference }
-      : { outcome: "held", ...reference };
-  }
-  if (isTerminalRunStatus(status)) {
-    return { outcome: "terminal" };
-  }
-  if (!canReserveActiveInput(status)) {
-    return { outcome: "rejected", reason: "run_not_running" };
-  }
-  if (prepared.kind === "empty") {
-    return { outcome: "empty" };
-  }
-  if (prepared.kind === "rejected") {
-    return { outcome: "rejected", reason: prepared.reason };
-  }
-  const currentRows = await pendingActiveInputRows(
-    tx,
-    scope.chatThreadId,
-    scope.runId,
-    [prepared.sourceEventId],
-  );
-  if (
-    currentRows.length !== 1 ||
-    currentRows[0]?.id !== prepared.sourceEventId
-  ) {
-    return { outcome: "retry" };
-  }
-  await tx.insert(activeInputDeliveries).values({
-    id: prepared.deliveryId,
-    runId: scope.runId,
-    chatThreadId: scope.chatThreadId,
-    status: "open",
-  });
-  await tx.insert(activeInputDeliveryItems).values({
-    deliveryId: prepared.deliveryId,
-    sourceEventId: prepared.sourceEventId,
-    position: 0,
-  });
-  return {
-    outcome: "created",
-    deliveryId: prepared.deliveryId,
-    sourceEventId: prepared.sourceEventId,
-    prompt: prepared.prompt,
-  };
-}
-
-async function materializeDelivery(
-  db: Db,
-  scope: ActiveInputDeliveryScope,
-  delivery: ActiveInputDeliveryReference,
-  signal: AbortSignal,
-): Promise<string> {
-  const rows = await activeInputRowsByIds(db, scope.chatThreadId, [
-    delivery.sourceEventId,
-  ]);
-  signal.throwIfAborted();
-  const [row] = rows;
-  if (!row || rows.length !== 1 || row.id !== delivery.sourceEventId) {
-    throw new Error("Active input delivery source membership is invalid");
-  }
-  const prompts = await materializePendingActiveInputPrompts(
-    db,
-    rows,
-    scope,
-    signal,
-  );
-  if (!prompts) {
-    throw new Error("Active input delivery cannot be rematerialized");
-  }
-  const { prompt } = materializedPrompt(row, prompts);
-  if (
-    !activeInputDeliveryPromptFitsControlPayload(delivery.deliveryId, prompt)
-  ) {
-    throw new Error("Active input delivery exceeds the control payload limit");
-  }
-  return prompt;
-}
-
-interface ReserveActiveInputArgs {
-  readonly runId: string;
-  readonly userId: string;
-  readonly orgId: string;
-}
-
-async function reserveActiveInputDeliveryForOwner(
-  db: Db,
-  args: ReserveActiveInputArgs,
-  signal: AbortSignal,
-): Promise<ReserveActiveInputDeliveryResult> {
-  const loaded = await loadActiveInputDeliveryScope(db, args, signal);
-  if (!loaded) {
-    return { outcome: "forbidden" };
-  }
-  const scope: ActiveInputReservationScope = loaded;
-  while (true) {
-    const reservable = canReserveActiveInput(scope.status);
-    const prepared = reservable
-      ? await prepareReservation(db, scope, signal)
-      : ({ kind: "empty" } as const);
-    // A committed open delivery hides its source from the pending query, so
-    // recheck for one after an empty preparation before bypassing serialization.
-    if (
-      reservable &&
-      prepared.kind === "empty" &&
-      (await canReturnEmptyReservation(db, scope, signal))
-    ) {
-      return { outcome: "empty" };
-    }
-    const result = await db.transaction(async (tx) => {
-      return await transitionReservation(tx, scope, prepared);
-    });
-    signal.throwIfAborted();
-    if (result.outcome === "retry") {
-      continue;
-    }
-    if (result.outcome === "created") {
-      // The delivery row now exists, so this prompt reaches the run exactly
-      // once. Materialization is the wrong place to report it: it runs again on
-      // every retry and on every retrieval of an already-open delivery.
-      if (prepared.kind === "ready") {
-        logTemplateUsage(
-          {
-            dispatchPath: "active-input",
-            orgId: scope.orgId,
-            userId: scope.userId,
-            chatThreadId: scope.chatThreadId,
-          },
-          prepared.templateIdentities,
-        );
-      }
-      return {
-        outcome: "reserved",
-        deliveryId: result.deliveryId,
-        sourceEventId: result.sourceEventId,
-        prompt: result.prompt,
-      };
-    }
-    if (result.outcome === "retrieve") {
-      const prompt = await settle(
-        materializeDelivery(db, scope, result, signal),
-        signal,
-      );
-      if (!prompt.ok) {
-        if (!(prompt.error instanceof DiscordQueuedLaunchUnavailableError)) {
-          throw prompt.error;
-        }
-        await rejectUnavailableDiscordActiveInput(db, scope, result, signal);
-        return { outcome: "empty" };
-      }
-      return {
-        outcome: "reserved",
-        deliveryId: result.deliveryId,
-        sourceEventId: result.sourceEventId,
-        prompt: prompt.value,
-      };
-    }
-    return result;
-  }
-}
-
-export async function reserveActiveInputDelivery(
-  db: Db,
-  args: ReserveActiveInputArgs,
-  signal: AbortSignal,
-): Promise<ReserveActiveInputDeliveryResult> {
-  return await reserveActiveInputDeliveryForOwner(db, args, signal);
-}
-
-async function replacePendingActiveInputEvent(
-  tx: ActiveInputDeliveryTransaction,
-  event: PendingActiveInputRow,
-  runId: string,
-): Promise<void> {
-  if (!event.userMessage) {
-    throw new Error("Pending active input has invalid prompt data");
-  }
-  if (
-    event.eventType !== "input.prompt" &&
-    event.eventType !== "input.budget"
-  ) {
-    throw new Error("Pending active input has invalid event type");
-  }
-  const target = activeInputReplacementTarget(event);
-  const replacement =
-    event.eventType === "input.budget"
-      ? await replaceLoadedChatEvent(tx, target, {
-          chatThreadId: event.chatThreadId,
-          eventType: "input.budget",
-          runId,
-          userMessage: event.userMessage,
-        })
-      : await replaceLoadedChatEvent(tx, target, {
-          chatThreadId: event.chatThreadId,
-          eventType: "input.prompt",
-          runId,
-          userMessage: event.userMessage,
-        });
-  if (!replacement) {
-    throw new Error("Active input replacement lost after locking the thread");
-  }
-}
-
-type ActiveInputSourceRow = Awaited<
-  ReturnType<typeof activeInputRowsByIds>
->[number];
-
-type ActiveInputReplacementTargetSource = Pick<
-  ActiveInputSourceRow,
-  | "id"
-  | "chatThreadId"
-  | "createdAt"
-  | "eventType"
-  | "contextType"
-  | "contextId"
->;
-
-function activeInputReplacementTarget(
-  event: ActiveInputReplacementTargetSource,
-): {
-  readonly id: string;
-  readonly chatThreadId: string;
-  readonly createdAt: Date;
-  readonly eventType: ActiveInputSourceRow["eventType"];
-  readonly contextType: ActiveInputSourceRow["contextType"];
-  readonly contextId: ActiveInputSourceRow["contextId"];
-} {
-  return {
-    id: event.id,
-    chatThreadId: event.chatThreadId,
-    createdAt: event.createdAt,
-    eventType: event.eventType,
-    contextType: event.contextType,
-    contextId: event.contextId,
-  };
-}
-
+/** A run-less input the run may consume: any prompt, or its own budget. */
 function sourceIsPendingForRun(
   source: ActiveInputSourceRow,
   runId: string,
@@ -610,475 +147,280 @@ function sourceIsPendingForRun(
   );
 }
 
-interface LockedActiveInputDeliveryReceipt {
-  readonly status: (typeof activeInputDeliveries.$inferSelect)["status"];
-  readonly items: readonly {
-    readonly sourceEventId: string;
-    readonly disposition: (typeof activeInputDeliveryItems.$inferSelect)["disposition"];
-  }[];
-}
-
-interface ActiveInputDeliveryRevoker {
-  readonly eventType: (typeof chatEvents.$inferSelect)["eventType"];
-  readonly runId: string | null;
-}
-
-interface LockedActiveInputDeliverySources {
-  readonly sources: readonly ActiveInputSourceRow[];
-  readonly revokerBySource: ReadonlyMap<string, ActiveInputDeliveryRevoker>;
-}
-
-async function lockActiveInputDeliveryReceipt(
-  tx: ActiveInputDeliveryTransaction,
-  scope: ActiveInputDeliveryScope,
-  deliveryId: string,
-): Promise<LockedActiveInputDeliveryReceipt | null> {
-  const [run] = await tx
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, scope.runId),
-        eq(agentRuns.userId, scope.userId),
-        eq(agentRuns.orgId, scope.orgId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  if (!run) {
-    return null;
-  }
-  const [delivery] = await tx
-    .select({ status: activeInputDeliveries.status })
-    .from(activeInputDeliveries)
-    .where(
-      and(
-        eq(activeInputDeliveries.id, deliveryId),
-        eq(activeInputDeliveries.runId, scope.runId),
-        eq(activeInputDeliveries.chatThreadId, scope.chatThreadId),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  if (!delivery) {
-    return null;
-  }
-  const items = await tx
-    .select({
-      sourceEventId: activeInputDeliveryItems.sourceEventId,
-      disposition: activeInputDeliveryItems.disposition,
-    })
-    .from(activeInputDeliveryItems)
-    .where(eq(activeInputDeliveryItems.deliveryId, deliveryId))
-    .orderBy(asc(activeInputDeliveryItems.position))
-    .for("update");
-  if (items.length === 0) {
-    throw new Error("Active input delivery has no items");
-  }
-  return { status: delivery.status, items };
-}
-
-async function lockActiveInputDeliverySources(
-  tx: ActiveInputDeliveryTransaction,
-  scope: ActiveInputDeliveryIdentity,
-  items: LockedActiveInputDeliveryReceipt["items"],
-): Promise<LockedActiveInputDeliverySources> {
-  const eventIds = items.map((item) => {
-    return item.sourceEventId;
-  });
-  const sources = await activeInputRowsByIds(
-    tx,
-    scope.chatThreadId,
-    eventIds,
-  ).for("update");
-  if (
-    sources.length !== eventIds.length ||
-    sources.some((source, index) => {
-      return source.id !== eventIds[index];
-    })
-  ) {
-    throw new Error("Active input delivery source membership is invalid");
-  }
-  const revokers = await tx
-    .select({
-      revokesEventId: deliveryRevoker.revokesEventId,
-      eventType: deliveryRevoker.eventType,
-      runId: deliveryRevoker.runId,
-    })
-    .from(deliveryRevoker)
-    .where(inArray(deliveryRevoker.revokesEventId, eventIds))
-    .for("update");
-  const revokerBySource = new Map(
-    revokers.map((revoker) => {
-      if (!revoker.revokesEventId) {
-        throw new Error("Active input revoker is missing its source event");
-      }
-      return [
-        revoker.revokesEventId,
-        { eventType: revoker.eventType, runId: revoker.runId },
-      ] as const;
-    }),
-  );
-  return { sources, revokerBySource };
-}
-
-function activeInputDeliverySourcesAreDeliverable(
-  scope: ActiveInputDeliveryIdentity,
-  state: LockedActiveInputDeliverySources,
-): boolean {
-  return state.sources.every((source) => {
-    const revoker = state.revokerBySource.get(source.id);
-    if (revoker) {
-      return (
-        revoker.runId === scope.runId &&
-        revoker.eventType === source.eventType &&
-        (source.eventType === "input.prompt" ||
-          source.eventType === "input.budget")
-      );
-    }
-    return sourceIsPendingForRun(source, scope.runId);
-  });
-}
-
-async function settleActiveInputDeliveryItems(
-  tx: ActiveInputDeliveryTransaction,
-  deliveryId: string,
-  sourceEventIds: readonly string[],
-  disposition: "delivered" | "released" | "expired",
-): Promise<void> {
-  if (sourceEventIds.length === 0) {
-    return;
-  }
-  const updatedItems = await tx
-    .update(activeInputDeliveryItems)
-    .set({ disposition })
-    .where(
-      and(
-        eq(activeInputDeliveryItems.deliveryId, deliveryId),
-        inArray(activeInputDeliveryItems.sourceEventId, sourceEventIds),
-        isNull(activeInputDeliveryItems.disposition),
-      ),
-    )
-    .returning({ sourceEventId: activeInputDeliveryItems.sourceEventId });
-  if (updatedItems.length !== sourceEventIds.length) {
-    throw new Error("Active input delivery item settlement was incomplete");
-  }
-}
-
-async function settleActiveInputDelivery(
-  tx: ActiveInputDeliveryTransaction,
-  deliveryId: string,
-): Promise<void> {
-  const [settled] = await tx
-    .update(activeInputDeliveries)
-    .set({ status: "settled" })
-    .where(
-      and(
-        eq(activeInputDeliveries.id, deliveryId),
-        eq(activeInputDeliveries.status, "open"),
-      ),
-    )
-    .returning({ id: activeInputDeliveries.id });
-  if (!settled) {
-    throw new Error("Active input delivery settlement was incomplete");
-  }
-}
-
-async function settleOpenActiveInputDeliveryAsDelivered(
-  tx: ActiveInputDeliveryTransaction,
-  scope: ActiveInputDeliveryIdentity,
-  deliveryId: string,
-  items: LockedActiveInputDeliveryReceipt["items"],
-): Promise<{ readonly replacementsAppended: boolean } | null> {
-  const state = await lockActiveInputDeliverySources(tx, scope, items);
-  if (!activeInputDeliverySourcesAreDeliverable(scope, state)) {
-    return null;
-  }
-  let replacementsAppended = false;
-  for (const source of state.sources) {
-    if (!state.revokerBySource.has(source.id)) {
-      await replacePendingActiveInputEvent(tx, source, scope.runId);
-      replacementsAppended = true;
-    }
-  }
-  await settleActiveInputDeliveryItems(
-    tx,
-    deliveryId,
-    items.map((item) => {
-      return item.sourceEventId;
-    }),
-    "delivered",
-  );
-  await settleActiveInputDelivery(tx, deliveryId);
-  return { replacementsAppended };
-}
-
-async function settleOpenActiveInputDeliveryAsUndelivered(
-  tx: ActiveInputDeliveryTransaction,
-  scope: ActiveInputDeliveryIdentity,
-  deliveryId: string,
-  items: LockedActiveInputDeliveryReceipt["items"],
-): Promise<FinalizeActiveInputDeliveryResult> {
-  const state = await lockActiveInputDeliverySources(tx, scope, items);
-  const promptEventIds: string[] = [];
-  const budgetEventIds: string[] = [];
-  let chatEventsAppended = false;
-  for (const source of state.sources) {
-    if (
-      source.eventType !== "input.prompt" &&
-      source.eventType !== "input.budget"
-    ) {
-      throw new Error("Active input delivery has an invalid source type");
-    }
-    // Recall and rejection do not serialize with reservation, so a source may
-    // already be consumed elsewhere. Settle its item without appending again.
-    const consumed =
-      state.revokerBySource.has(source.id) ||
-      !sourceIsPendingForRun(source, scope.runId);
-    if (source.eventType === "input.prompt") {
-      promptEventIds.push(source.id);
-      continue;
-    }
-    budgetEventIds.push(source.id);
-    if (consumed) {
-      continue;
-    }
-    const revoked = await replaceLoadedChatEvent(
-      tx,
-      activeInputReplacementTarget(source),
-      {
-        chatThreadId: scope.chatThreadId,
-        eventType: "control.revoke",
-        runId: scope.runId,
-      },
-    );
-    if (revoked) {
-      chatEventsAppended = true;
-    }
-  }
-  await settleActiveInputDeliveryItems(
-    tx,
-    deliveryId,
-    promptEventIds,
-    "released",
-  );
-  await settleActiveInputDeliveryItems(
-    tx,
-    deliveryId,
-    budgetEventIds,
-    "expired",
-  );
-  await settleActiveInputDelivery(tx, deliveryId);
+function replacementTarget(source: ActiveInputSourceRow) {
   return {
-    finalized: true,
-    chatEventsAppended,
-  };
-}
-
-/** Revoke an undelivered Discord follow-up when its current binding is gone. */
-async function rejectUnavailableDiscordActiveInput(
-  db: Db,
-  scope: ActiveInputDeliveryScope,
-  source: { readonly sourceEventId: string; readonly deliveryId?: string },
-  signal: AbortSignal,
-): Promise<void> {
-  const rejected = await db.transaction(async (tx) => {
-    await lockPiApiFirstTurnLifecycle(tx, scope.runId);
-    if (source.deliveryId !== undefined) {
-      const delivery = await lockActiveInputDeliveryReceipt(
-        tx,
-        scope,
-        source.deliveryId,
-      );
-      if (!delivery || delivery.status === "settled") {
-        return false;
-      }
-      if (
-        delivery.items.length !== 1 ||
-        delivery.items[0]?.sourceEventId !== source.sourceEventId
-      ) {
-        throw new Error(
-          "Unavailable Discord active input has invalid membership",
-        );
-      }
-      await settleOpenActiveInputDeliveryAsUndelivered(
-        tx,
-        scope,
-        source.deliveryId,
-        delivery.items,
-      );
-    }
-    const [pending] = await pendingActiveInputRows(
-      tx,
-      scope.chatThreadId,
-      scope.runId,
-      [source.sourceEventId],
-    ).for("update");
-    if (!pending) {
-      return false;
-    }
-    if (pending.contextType !== "discord" || !pending.userMessage) {
-      throw new Error("Unavailable Discord active input has invalid context");
-    }
-    const rejectedInput = await replaceLoadedChatEvent(
-      tx,
-      activeInputReplacementTarget(pending),
-      {
-        chatThreadId: scope.chatThreadId,
-        eventType: "input.rejected",
-        userMessage: pending.userMessage,
-        runId: null,
-        error: "discord_access_revoked",
-      },
-    );
-    if (!rejectedInput) {
-      return false;
-    }
-    const error = await insertChatEvent(tx, {
-      chatThreadId: scope.chatThreadId,
-      eventType: "output.error",
-      content: new DiscordQueuedLaunchUnavailableError().message,
-      runId: null,
-      error: "discord_access_revoked",
-      createdAt: new Date(
-        Math.max(nowDate().getTime(), rejectedInput.createdAt.getTime() + 1),
-      ),
-    });
-    if (!error) {
-      throw new Error(
-        "Unavailable Discord active input rejection was not appended",
-      );
-    }
-    await touchChatThreadLastMessageAt(tx, scope.chatThreadId, error.createdAt);
-    return true;
-  });
-  signal.throwIfAborted();
-  if (rejected) {
-    await publishChatThreadMessageCreatedSafely({
-      userId: scope.userId,
-      orgId: scope.orgId,
-      threadId: scope.chatThreadId,
-    });
-    signal.throwIfAborted();
-    await publishThreadListChangedSafely({
-      userId: scope.userId,
-      orgId: scope.orgId,
-    });
-    signal.throwIfAborted();
-  }
-}
-
-async function recordActiveInputDeliveryReceiptTransition(
-  tx: ActiveInputDeliveryTransaction,
-  scope: ActiveInputDeliveryScope,
-  deliveryId: string,
-): Promise<RecordActiveInputDeliveryReceiptResult> {
-  const delivery = await lockActiveInputDeliveryReceipt(tx, scope, deliveryId);
-  if (!delivery) {
-    return { outcome: "forbidden", replacementsAppended: false };
-  }
-  if (delivery.status === "settled") {
-    if (
-      delivery.items.every((item) => {
-        return item.disposition === "delivered";
-      })
-    ) {
-      return {
-        outcome: "delivered",
-        replacementsAppended: false,
-        chatThreadId: scope.chatThreadId,
-      };
-    }
-    if (
-      delivery.items.every((item) => {
-        return item.disposition !== null;
-      })
-    ) {
-      return { outcome: "rejected", replacementsAppended: false };
-    }
-    throw new Error("Settled active input delivery has open items");
-  }
-  if (
-    delivery.items.some((item) => {
-      return item.disposition !== null;
-    })
-  ) {
-    throw new Error("Open active input delivery has settled items");
-  }
-  const settlement = await settleOpenActiveInputDeliveryAsDelivered(
-    tx,
-    scope,
-    deliveryId,
-    delivery.items,
-  );
-  if (!settlement) {
-    // The source was consumed elsewhere, so settling appends no event.
-    await settleOpenActiveInputDeliveryAsUndelivered(
-      tx,
-      scope,
-      deliveryId,
-      delivery.items,
-    );
-    return { outcome: "rejected", replacementsAppended: false };
-  }
-  return {
-    outcome: "delivered",
-    replacementsAppended: settlement.replacementsAppended,
-    chatThreadId: scope.chatThreadId,
-  };
-}
-
-export async function finalizeActiveInputDelivery(
-  tx: ActiveInputDeliveryTransaction,
-  args: ActiveInputDeliveryIdentity & {
-    readonly deliveredDeliveryIds: ReadonlySet<string>;
-  },
-): Promise<FinalizeActiveInputDeliveryResult> {
-  const delivery = await lockOpenDelivery(tx, args);
-  if (!delivery) {
-    return { finalized: false, chatEventsAppended: false };
-  }
-  if (!args.deliveredDeliveryIds.has(delivery.deliveryId)) {
-    return await settleOpenActiveInputDeliveryAsUndelivered(
-      tx,
-      args,
-      delivery.deliveryId,
-      delivery.items,
-    );
-  }
-  const settlement = await settleOpenActiveInputDeliveryAsDelivered(
-    tx,
-    args,
-    delivery.deliveryId,
-    delivery.items,
-  );
-  if (!settlement) {
-    return await settleOpenActiveInputDeliveryAsUndelivered(
-      tx,
-      args,
-      delivery.deliveryId,
-      delivery.items,
-    );
-  }
-  return {
-    finalized: true,
-    chatEventsAppended: settlement.replacementsAppended,
+    id: source.id,
+    chatThreadId: source.chatThreadId,
+    createdAt: source.createdAt,
+    eventType: source.eventType,
+    contextType: source.contextType,
+    contextId: source.contextId,
   };
 }
 
 /**
- * Revoke the run's time budget steer when no delivery consumed it.
+ * Reserve the thread's earliest pending prompt, or this run's budget input,
+ * for a running sandbox run. Read-only: the source stays pending until the
+ * receipt consumes it, so a repeated reserve returns the same source.
+ */
+export async function reserveActiveInputDelivery(
+  db: Db,
+  args: {
+    readonly runId: string;
+    readonly userId: string;
+    readonly orgId: string;
+  },
+  signal: AbortSignal,
+): Promise<ReserveActiveInputDeliveryResult> {
+  const scope = await loadActiveInputDeliveryScope(db, args, signal);
+  if (!scope) {
+    return { outcome: "forbidden" };
+  }
+  if (isTerminalRunStatus(scope.status)) {
+    return { outcome: "terminal" };
+  }
+  if (scope.status !== "running") {
+    return { outcome: "rejected", reason: "run_not_running" };
+  }
+  const [head] = await listPendingChatInputs(db, {
+    chatThreadId: scope.chatThreadId,
+    eventTypes: ["input.prompt"],
+    budgetForRunId: scope.runId,
+  });
+  signal.throwIfAborted();
+  if (!head) {
+    return { outcome: "empty" };
+  }
+  const [source] = await activeInputRowsByIds(db, scope.chatThreadId, [
+    head.id,
+  ]);
+  signal.throwIfAborted();
+  if (!source) {
+    throw new Error("Pending active input disappeared from its thread");
+  }
+  const prompt = await settle(
+    materializeActiveInputSource(db, source, scope, signal),
+    signal,
+  );
+  if (!prompt.ok) {
+    if (!(prompt.error instanceof DiscordQueuedLaunchUnavailableError)) {
+      throw prompt.error;
+    }
+    await rejectUnavailableDiscordActiveInput(db, scope, source, signal);
+    return { outcome: "empty" };
+  }
+  if (!activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)) {
+    return { outcome: "rejected", reason: "payload_too_large" };
+  }
+  return { outcome: "reserved", deliveryId: source.id, prompt: prompt.value };
+}
+
+/**
+ * Consume one delivered source for the run with a single replacement insert.
+ * On a revoke-edge conflict the revoker decides: this run's replacement means
+ * the source was already delivered, anything else means another consumer won.
+ * Without `append` (the run is no longer running) only the revoker is read, so
+ * a repeated receipt stays idempotent.
+ */
+async function consumeActiveInputSource(
+  db: Db,
+  scope: ActiveInputRunThread,
+  sourceEventId: string,
+  append: boolean,
+): Promise<ActiveInputConsumption> {
+  const [source] = await activeInputRowsByIds(db, scope.chatThreadId, [
+    sourceEventId,
+  ]);
+  if (
+    !source?.userMessage ||
+    (source.eventType !== "input.prompt" && source.eventType !== "input.budget")
+  ) {
+    return { outcome: "rejected" };
+  }
+  if (append && sourceIsPendingForRun(source, scope.runId)) {
+    const target = replacementTarget(source);
+    const replacement =
+      source.eventType === "input.budget"
+        ? await replaceLoadedChatEvent(db, target, {
+            chatThreadId: scope.chatThreadId,
+            eventType: "input.budget",
+            runId: scope.runId,
+            userMessage: source.userMessage,
+          })
+        : await replaceLoadedChatEvent(db, target, {
+            chatThreadId: scope.chatThreadId,
+            eventType: "input.prompt",
+            runId: scope.runId,
+            userMessage: source.userMessage,
+          });
+    if (replacement) {
+      return { outcome: "appended", source };
+    }
+  }
+  const [revoker] = await db
+    .select({ eventType: chatEvents.eventType, runId: chatEvents.runId })
+    .from(chatEvents)
+    .where(eq(chatEvents.revokesEventId, source.id))
+    .limit(1);
+  return revoker?.runId === scope.runId &&
+    revoker.eventType === source.eventType
+    ? { outcome: "delivered" }
+    : { outcome: "rejected" };
+}
+
+function logSteeredTemplateUsage(
+  scope: ActiveInputDeliveryScope,
+  source: ActiveInputSourceRow,
+): void {
+  if (source.eventType !== "input.prompt" || !source.userMessage) {
+    return;
+  }
+  logTemplateUsage(
+    {
+      dispatchPath: "active-input",
+      orgId: scope.orgId,
+      userId: scope.userId,
+      chatThreadId: scope.chatThreadId,
+    },
+    activeInputTemplateIdentities(source.userMessage),
+  );
+}
+
+/** The guest confirmed it handed the source to the model of a running run. */
+export async function recordActiveInputDeliveryReceipt(
+  db: Db,
+  args: {
+    readonly runId: string;
+    readonly deliveryId: string;
+    readonly userId: string;
+    readonly orgId: string;
+  },
+  signal: AbortSignal,
+): Promise<RecordActiveInputDeliveryReceiptResult> {
+  const scope = await loadActiveInputDeliveryScope(db, args, signal);
+  if (!scope) {
+    return { outcome: "forbidden", replacementsAppended: false };
+  }
+  const consumed = await consumeActiveInputSource(
+    db,
+    scope,
+    args.deliveryId,
+    scope.status === "running",
+  );
+  signal.throwIfAborted();
+  if (consumed.outcome === "rejected") {
+    return { outcome: "rejected", replacementsAppended: false };
+  }
+  if (consumed.outcome === "appended") {
+    logSteeredTemplateUsage(scope, consumed.source);
+  }
+  return {
+    outcome: "delivered",
+    replacementsAppended: consumed.outcome === "appended",
+    chatThreadId: scope.chatThreadId,
+  };
+}
+
+/**
+ * Consume the sources a completing run reports as delivered, before its
+ * terminal transition releases the slot, so a later pick cannot launch them
+ * again. Undelivered prompts stay pending for that pick; an undelivered
+ * budget input is revoked by `expireRunTimeBudgetInput` after the commit.
+ * Returns whether any replacement was appended.
+ */
+export async function consumeCompletedActiveInputDeliveries(
+  db: Db,
+  args: ActiveInputRunThread & {
+    readonly deliveryIds: readonly string[];
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  let appended = false;
+  for (const deliveryId of new Set(args.deliveryIds)) {
+    const consumed = await consumeActiveInputSource(db, args, deliveryId, true);
+    signal.throwIfAborted();
+    if (consumed.outcome === "appended") {
+      appended = true;
+    }
+  }
+  return appended;
+}
+
+/**
+ * Reject an undelivered Discord follow-up whose current binding is gone. The
+ * `input.rejected` replacement consumes the source on the revoke edge; only
+ * its winner appends the explanation.
+ */
+async function rejectUnavailableDiscordActiveInput(
+  db: Db,
+  scope: ActiveInputDeliveryScope,
+  source: ActiveInputSourceRow,
+  signal: AbortSignal,
+): Promise<void> {
+  if (source.contextType !== "discord" || !source.userMessage) {
+    throw new Error("Unavailable Discord active input has invalid context");
+  }
+  const rejectedInput = await replaceLoadedChatEvent(
+    db,
+    replacementTarget(source),
+    {
+      chatThreadId: scope.chatThreadId,
+      eventType: "input.rejected",
+      userMessage: source.userMessage,
+      runId: null,
+      error: "discord_access_revoked",
+    },
+  );
+  signal.throwIfAborted();
+  if (!rejectedInput) {
+    return;
+  }
+  const error = await insertChatEvent(db, {
+    chatThreadId: scope.chatThreadId,
+    eventType: "output.error",
+    content: new DiscordQueuedLaunchUnavailableError().message,
+    runId: null,
+    error: "discord_access_revoked",
+    createdAt: new Date(
+      Math.max(nowDate().getTime(), rejectedInput.createdAt.getTime() + 1),
+    ),
+  });
+  signal.throwIfAborted();
+  if (!error) {
+    throw new Error(
+      "Unavailable Discord active input rejection was not appended",
+    );
+  }
+  await touchChatThreadLastMessageAtIndependently(db, scope.chatThreadId, {
+    touchedAt: error.createdAt,
+  });
+  signal.throwIfAborted();
+  await publishChatThreadMessageCreatedSafely({
+    userId: scope.userId,
+    orgId: scope.orgId,
+    threadId: scope.chatThreadId,
+  });
+  signal.throwIfAborted();
+  await publishThreadListChangedSafely({
+    userId: scope.userId,
+    orgId: scope.orgId,
+  });
+  signal.throwIfAborted();
+}
+
+/**
+ * Revoke the run's time budget steer when no receipt consumed it.
  *
  * Call only after the terminal transition commits. Steering appends while the
- * run is running, so no budget input can appear afterwards, and an open
- * delivery was settled by the same commit. The budget event ID is derived from
- * the run, so this is one primary-key read and one append; the unique revoke
- * edge lets exactly one of receipt, settlement or this expiry consume the
- * source. Best effort: losing that race or failing leaves an inert pending row.
+ * run is running, so no budget input can appear afterwards. The budget event
+ * ID is derived from the run, so this is one primary-key read and one append;
+ * the unique revoke edge lets exactly one of receipt, completion or this
+ * expiry consume the source. Best effort: losing that race or failing leaves
+ * an inert pending row.
  */
 export async function expireRunTimeBudgetInput(
   db: Db,
-  args: ActiveInputDeliveryIdentity,
+  args: ActiveInputRunThread,
   signal: AbortSignal,
 ): Promise<boolean> {
   const expired = await settle(revokePendingRunTimeBudgetInput(db, args));
@@ -1095,7 +437,7 @@ export async function expireRunTimeBudgetInput(
 
 async function revokePendingRunTimeBudgetInput(
   db: Db,
-  args: ActiveInputDeliveryIdentity,
+  args: ActiveInputRunThread,
 ): Promise<boolean> {
   const [source] = await activeInputRowsByIds(db, args.chatThreadId, [
     runTimeBudgetEventIdForRun(args.runId),
@@ -1103,39 +445,10 @@ async function revokePendingRunTimeBudgetInput(
   if (!source) {
     return false;
   }
-  const revoked = await replaceLoadedChatEvent(
-    db,
-    activeInputReplacementTarget(source),
-    {
-      chatThreadId: args.chatThreadId,
-      eventType: "control.revoke",
-      runId: args.runId,
-    },
-  );
-  return revoked !== null;
-}
-
-export async function recordActiveInputDeliveryReceipt(
-  db: Db,
-  args: {
-    readonly runId: string;
-    readonly deliveryId: string;
-    readonly userId: string;
-    readonly orgId: string;
-  },
-  signal: AbortSignal,
-): Promise<RecordActiveInputDeliveryReceiptResult> {
-  const scope = await loadActiveInputDeliveryScope(db, args, signal);
-  if (!scope) {
-    return { outcome: "forbidden", replacementsAppended: false };
-  }
-  const result = await db.transaction(async (tx) => {
-    return await recordActiveInputDeliveryReceiptTransition(
-      tx,
-      scope,
-      args.deliveryId,
-    );
+  const revoked = await replaceLoadedChatEvent(db, replacementTarget(source), {
+    chatThreadId: args.chatThreadId,
+    eventType: "control.revoke",
+    runId: args.runId,
   });
-  signal.throwIfAborted();
-  return result;
+  return revoked !== null;
 }

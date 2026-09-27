@@ -2,13 +2,11 @@ import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events"
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, exists, isNull, notExists, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
@@ -142,20 +140,16 @@ export interface QueuedUserMessage {
     | { readonly kind: "unavailable"; readonly message: string };
 }
 
-export type QueueFirstRunAssociation =
-  | {
-      readonly kind: "user_message";
-      readonly threadId: string;
-      readonly eventId: string;
-      readonly admissionTime: number;
-    }
-  | {
-      readonly kind: "automation_event";
-      readonly threadId: string;
-      readonly eventId: string;
-      readonly prompt: string;
-      readonly automationId: string;
-    };
+/**
+ * The one queue consumption form: a launch claims the thread's FIFO head by
+ * appending a replacement that carries the new run id and revokes the head.
+ * Prompts and automation events are claimed alike; anything an automation
+ * binds to its run is recorded by the automation after the run exists.
+ */
+export interface QueueFirstRunAssociation {
+  readonly threadId: string;
+  readonly eventId: string;
+}
 
 export type QueueFirstRunClaimResult =
   | {
@@ -446,22 +440,9 @@ function queueFirstClaimHeadBase(db: DbTransaction) {
   return db
     .select({
       ...queueFirstReplacementTargetFields,
-      automationId: chatAutomationContext.automationId,
-      automationKind: workflowAutomations.kind,
       userMessage: canonicalChatEventUserMessage().as("user_message"),
     })
-    .from(chatEvents)
-    .leftJoin(
-      chatAutomationContext,
-      and(
-        eq(chatEvents.contextType, "automation"),
-        eq(chatAutomationContext.id, chatEvents.contextId),
-      ),
-    )
-    .leftJoin(
-      workflowAutomations,
-      eq(workflowAutomations.id, chatAutomationContext.automationId),
-    );
+    .from(chatEvents);
 }
 
 async function loadQueueFirstClaimHeadById(
@@ -489,69 +470,36 @@ function queueFirstClaimSnapshotFromHead(
   head: QueueFirstClaimHead,
   args: QueueFirstClaimArgs,
 ): QueueFirstClaimSnapshot | null {
-  if (args.kind === "user_message") {
-    if (
-      !head ||
-      head.eventType !== "input.prompt" ||
-      head.id !== args.eventId
-    ) {
-      return null;
-    }
-    if (!head.userMessage) {
-      throw new Error("Queued input event is missing userMessage");
-    }
-    const contextType = requiredQueuedUserMessageContextType(head.contextType);
-    return {
-      target: replacementTargetFromQueueHead(head),
-      routingContextType: contextType,
-      replacement: {
-        chatThreadId: args.threadId,
-        eventType: "input.prompt",
-        userMessage:
-          args.selectedModel === null
-            ? head.userMessage
-            : withRunModelAnnotation(
-                head.userMessage,
-                args.selectedModel,
-                args.serviceTier,
-              ),
-        runId: args.runId,
-      },
-    };
+  if (
+    !head ||
+    head.id !== args.eventId ||
+    (head.eventType !== "input.prompt" && head.eventType !== "input.automation")
+  ) {
+    return null;
   }
-  if (args.kind === "automation_event") {
-    if (
-      !head ||
-      head.eventType !== "input.automation" ||
-      head.id !== args.eventId ||
-      head.automationId !== args.automationId ||
-      head.automationKind === null
-    ) {
-      return null;
-    }
-    if (!head.userMessage) {
-      throw new Error("Workflow queue event is missing its user message");
-    }
-    return {
-      target: replacementTargetFromQueueHead(head),
-      routingContextType: "automation",
-      replacement: {
-        chatThreadId: args.threadId,
-        eventType: "input.prompt",
-        userMessage:
-          args.selectedModel === null
-            ? head.userMessage
-            : withRunModelAnnotation(
-                head.userMessage,
-                args.selectedModel,
-                args.serviceTier,
-              ),
-        runId: args.runId,
-      },
-    };
+  if (!head.userMessage) {
+    throw new Error("Queued input event is missing userMessage");
   }
-  // Retained association shape cannot grant launch authority after retirement.
-  return null;
+  return {
+    target: replacementTargetFromQueueHead(head),
+    routingContextType:
+      head.eventType === "input.automation"
+        ? "automation"
+        : requiredQueuedUserMessageContextType(head.contextType),
+    replacement: {
+      chatThreadId: args.threadId,
+      eventType: "input.prompt",
+      userMessage:
+        args.selectedModel === null
+          ? head.userMessage
+          : withRunModelAnnotation(
+              head.userMessage,
+              args.selectedModel,
+              args.serviceTier,
+            ),
+      runId: args.runId,
+    },
+  };
 }
 
 async function resolveQueueFirstClaimSnapshot(
@@ -567,7 +515,6 @@ async function resolveQueueFirstClaimSnapshot(
 async function loadQueueFirstAdmissionProjection(
   db: DbTransaction,
   args: {
-    readonly admissionTime: number;
     readonly association: QueueFirstRunAssociation;
   },
 ): Promise<{
@@ -589,12 +536,7 @@ async function loadQueueFirstAdmissionProjection(
   }
   // The association names a candidate; it must still be the FIFO head.
   const pendingHead = await loadChatQueueHead(db, threadId);
-  const expectedEventType =
-    args.association.kind === "user_message"
-      ? "input.prompt"
-      : "input.automation";
-  const isExpectedHead =
-    pendingHead?.id === eventId && pendingHead.eventType === expectedEventType;
+  const isExpectedHead = pendingHead?.id === eventId;
   return {
     admissionBlocked: false,
     head: isExpectedHead
@@ -611,7 +553,6 @@ async function loadQueueFirstAdmissionProjection(
 export async function resolveQueueFirstRunAdmission(
   db: DbTransaction,
   args: {
-    readonly admissionTime: number;
     readonly association: QueueFirstRunAssociation;
     readonly sessionSnapshotState: QueueFirstRunSessionSnapshotState;
     readonly timing: ApiDispatchTimingCollector;
@@ -657,9 +598,6 @@ export async function claimQueueFirstRunAssociation(
   args: QueueFirstClaimArgs,
 ): Promise<QueueFirstRunClaimResult> {
   let outcome: "claimed" | "lost" | "error" = "error";
-  const claimDimensions = {
-    queue_first_association_kind: args.kind,
-  };
   return await args.timing.measure(
     "api_dispatch_claim_queue_first_message",
     "nested",
@@ -679,7 +617,6 @@ export async function claimQueueFirstRunAssociation(
             ? queueFirstClaimSnapshotFromHead(admissionProjection.head, args)
             : await resolveQueueFirstClaimSnapshot(db, args);
         },
-        claimDimensions,
       );
       if (!snapshot) {
         outcome = "lost";
@@ -699,7 +636,6 @@ export async function claimQueueFirstRunAssociation(
             id: args.runId,
           });
         },
-        claimDimensions,
       );
       // The replacement's unique revoke edge is the claim's only mutual
       // exclusion: a concurrent claim, recall or rejection that appended first

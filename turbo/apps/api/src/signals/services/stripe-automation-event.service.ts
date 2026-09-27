@@ -1479,7 +1479,7 @@ async function processClaimedDelivery(
         apiStartTime: now(),
         triggerSource: "automation-event",
         triggerBrief: `Stripe invoice paid: ${args.delivery.snapshot.invoice.id}`,
-        coalescePendingScheduleRun: false,
+        replacePendingScheduleTick: false,
         persistSourceTransition: async (tx) => {
           await persistDeliveryAdmission(
             {

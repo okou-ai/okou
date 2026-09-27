@@ -58,8 +58,11 @@ export function lastAssistantCancelledFromGroups(
   return lastEvent ? isCancelledRunEvent(lastEvent) : false;
 }
 
-export type RunIndicatorState = "pending" | "running" | "queued" | null;
-type ActiveRunIndicatorState = "pending" | "running" | null;
+// Only a run makes the thread active. An input without a run is either still
+// being sent (optimistic) or waiting in the queue; neither shows "Thinking…".
+// "queued" is kept for historical `run.queued` markers.
+export type RunIndicatorState = "running" | "queued" | null;
+type ActiveRunIndicatorState = "running" | null;
 
 interface RunIndicatorContext {
   readonly terminatedRunIds: ReadonlySet<string>;
@@ -97,10 +100,6 @@ function nonAssistantRunIndicatorState(
   context: RunIndicatorContext,
   event: ChatEvent,
 ): ActiveRunIndicatorState | undefined {
-  // Unclaimed user messages and automation events both wait for a run.
-  if (isQueuedChatEvent(event) && event.runId === undefined) {
-    return "pending";
-  }
   const { runId } = event;
   return runId === undefined
     ? undefined
@@ -173,8 +172,6 @@ function activeRunIndicatorStateFromChatEvents(
     events,
     revokedEventIds,
   );
-  let newerPendingState: "pending" | null = null;
-
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index]!;
     if (revokedEventIds.has(event.id)) {
@@ -198,7 +195,7 @@ function activeRunIndicatorStateFromChatEvents(
         }
       }
       if (state === null) {
-        return newerPendingState;
+        return null;
       }
       if (state === "running") {
         return state;
@@ -208,19 +205,15 @@ function activeRunIndicatorStateFromChatEvents(
         (event.eventType === "output.message" ||
           event.eventType === "output.error")
       ) {
-        return newerPendingState;
+        return null;
       }
       continue;
     }
-    const state = nonAssistantRunIndicatorState(context, event);
-    if (state === "running") {
-      return state;
-    }
-    if (state === "pending" && newerPendingState === null) {
-      newerPendingState = state;
+    if (nonAssistantRunIndicatorState(context, event) === "running") {
+      return "running";
     }
   }
-  return newerPendingState;
+  return null;
 }
 
 export function deriveRunIndicatorStateFromChatEvents(

@@ -8,7 +8,6 @@ import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
 import { logger } from "../../lib/log";
-import { env } from "../../lib/env";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
 import { inferMimetype } from "../../lib/mimetype";
 import {
@@ -35,7 +34,8 @@ import {
 } from "../external/realtime";
 import { settle } from "../utils";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
+import { markChatThreadQueued } from "./queued-chat-thread.service";
 import {
   isFeishuInstallationEnabled,
   buildFeishuChatOpenUrl,
@@ -47,7 +47,8 @@ import {
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
 import { insertChatEvent } from "./chat-event.service";
-import { loadPendingChatQueueEvent } from "./chat-event-queue.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
+import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import {
@@ -442,6 +443,12 @@ const persistCanonicalFeishuIngress$ = command(
         : prompt;
     }, args.message.promptText);
 
+    // Queue row before the input event, so input is never left unqueued.
+    await markChatThreadQueued(args.db, {
+      chatThreadId: route.chatThreadId,
+      orgId: args.installation.orgId,
+    });
+    signal.throwIfAborted();
     const persist = async (tx: Db, touchThread: () => Promise<void>) => {
       const chatOpenUrl = buildFeishuChatOpenUrl(
         args.message.chatId,
@@ -500,27 +507,23 @@ const persistCanonicalFeishuIngress$ = command(
   },
 );
 
-/** Tell the sender when the pick left their message waiting in the queue. */
-async function notifyQueuedFeishuRun(
+/** Tell the sender when their message waits for an org run slot. */
+async function notifyFeishuChatQueueWait(
   args: {
     readonly db: Db;
     readonly ingressId: string;
-    readonly chatThreadId: string;
     readonly message: CanonicalFeishuInboundMessage;
+    readonly reason: ChatQueueWaitReason;
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const pending = await loadPendingChatQueueEvent(args.db, {
-    chatThreadId: args.chatThreadId,
-    eventId: args.ingressId,
-  });
-  signal.throwIfAborted();
-  if (!pending) {
+  const notice = chatQueueWaitNotice(args.reason);
+  if (!notice) {
     return;
   }
   const message = buildFeishuNoticeMessage({
-    title: "Run queued",
-    text: `Concurrency limit reached. Will start automatically when a slot is available.\n\n[View queue](${env("APP_URL")}/?queue=1)`,
+    title: "Waiting for a run slot",
+    text: notice,
     kind: "warning",
   });
   await replyWithFeishuMessage(
@@ -775,19 +778,13 @@ export const processCanonicalFeishuIngress$ = command(
       success: true,
     });
 
-    await publishChatThreadMessageCreatedSafely({
-      userId: result.value.userId,
-      orgId: result.value.orgId,
-      threadId: result.value.chatThreadId,
-    });
-    signal.throwIfAborted();
     await publishThreadListChangedSafely({
       userId: result.value.userId,
       orgId: result.value.orgId,
     });
     signal.throwIfAborted();
-    await set(
-      drainChatThreadQueueForThread$,
+    const picked = await set(
+      pickEnqueuedChatThread$,
       {
         chatThreadId: result.value.chatThreadId,
         orgId: result.value.orgId,
@@ -796,12 +793,22 @@ export const processCanonicalFeishuIngress$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await notifyQueuedFeishuRun(
+    // A launch publishes this input together with its run. Publishing
+    // it before the pick would show it as queued until the launch lands.
+    if (picked.reason !== "launched") {
+      await publishChatThreadMessageCreatedSafely({
+        userId: result.value.userId,
+        orgId: result.value.orgId,
+        threadId: result.value.chatThreadId,
+      });
+      signal.throwIfAborted();
+    }
+    await notifyFeishuChatQueueWait(
       {
         db,
         ingressId: args.ingressId,
-        chatThreadId: result.value.chatThreadId,
         message: result.value.message,
+        reason: picked.reason,
       },
       signal,
     );

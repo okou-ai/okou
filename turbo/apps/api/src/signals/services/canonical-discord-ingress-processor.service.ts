@@ -55,7 +55,9 @@ import {
   insertChatEvent,
   type DiscordChatEventContext,
 } from "./chat-event.service";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
+import { markChatThreadQueued } from "./queued-chat-thread.service";
+import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { prepareCanonicalDiscordIngressRoute$ } from "./discord-route-admission.service";
@@ -360,6 +362,12 @@ async function persistMessage(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
+  // Queue row before the input event, so input is never left unqueued.
+  await markChatThreadQueued(db, {
+    chatThreadId: args.ingress.chatThreadId,
+    orgId: args.orgId,
+  });
+  signal.throwIfAborted();
   // Claim ownership and acknowledgement remain atomic with the accepted input.
   const persisted = await db.transaction(async (tx) => {
     const [claimed] = await tx
@@ -717,6 +725,28 @@ function claimedIngressMessage(ingress: ClaimedIngress): DiscordMessageCreate {
   return message;
 }
 
+/** The sender's still-verified binding for the connection that claimed it. */
+function requireClaimedIngressBinding(
+  bindings: readonly DiscordVerifiedBinding[],
+  ingress: ClaimedIngress,
+): DiscordVerifiedBinding {
+  const binding = bindings.find((candidate) => {
+    return (
+      candidate.connectionId === ingress.connectionId &&
+      candidate.userId === ingress.userId
+    );
+  });
+  if (!binding) {
+    throw new DiscordIngressFailure(
+      "binding:revoked",
+      false,
+      0,
+      "Discord connection is no longer available",
+    );
+  }
+  return binding;
+}
+
 const persistClaimedIngress$ = command(
   async (
     { get, set },
@@ -747,20 +777,7 @@ const persistClaimedIngress$ = command(
     const message = claimedIngressMessage(ingress);
     const bindings = await get(discordIngressSenderBindings(message.author.id));
     signal.throwIfAborted();
-    const binding = bindings.find((candidate) => {
-      return (
-        candidate.connectionId === ingress.connectionId &&
-        candidate.userId === ingress.userId
-      );
-    });
-    if (!binding) {
-      throw new DiscordIngressFailure(
-        "binding:revoked",
-        false,
-        0,
-        "Discord connection is no longer available",
-      );
-    }
+    const binding = requireClaimedIngressBinding(bindings, ingress);
     const accessArgs = {
       connectionId: binding.connectionId,
       orgId: binding.orgId,
@@ -843,6 +860,8 @@ const persistClaimedIngress$ = command(
           orgId: binding.orgId,
           userId: binding.userId,
           chatThreadId: ingress.chatThreadId,
+          connectionId: ingress.connectionId,
+          destinationChannelId: ingress.destinationChannelId,
         }
       : null;
   },
@@ -1165,19 +1184,13 @@ export const processCanonicalDiscordIngress$ = command(
       return false;
     }
     const ingress = result.value;
-    await publishChatThreadMessageCreatedSafely({
-      userId: ingress.userId,
-      orgId: ingress.orgId,
-      threadId: ingress.chatThreadId,
-    });
-    signal.throwIfAborted();
     await publishThreadListChanged({
       userId: ingress.userId,
       orgId: ingress.orgId,
     });
     signal.throwIfAborted();
-    await set(
-      drainChatThreadQueueForThread$,
+    const picked = await set(
+      pickEnqueuedChatThread$,
       {
         chatThreadId: ingress.chatThreadId,
         orgId: ingress.orgId,
@@ -1185,6 +1198,30 @@ export const processCanonicalDiscordIngress$ = command(
       },
       signal,
     );
+    signal.throwIfAborted();
+    // A launch publishes this input together with its run. Publishing
+    // it before the pick would show it as queued until the launch lands.
+    if (picked.reason !== "launched") {
+      await publishChatThreadMessageCreatedSafely({
+        userId: ingress.userId,
+        orgId: ingress.orgId,
+        threadId: ingress.chatThreadId,
+      });
+      signal.throwIfAborted();
+    }
+    const notice = chatQueueWaitNotice(picked.reason);
+    if (notice) {
+      await sendDiscordIngressNotice(
+        db,
+        {
+          ingressId: args.ingressId,
+          connectionId: ingress.connectionId,
+          channelId: ingress.destinationChannelId,
+          content: notice,
+        },
+        signal,
+      );
+    }
     return true;
   },
 );

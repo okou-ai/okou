@@ -15,9 +15,9 @@ import { logger } from "../../lib/log";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
 import {
-  neverStartedRunIds,
-  releaseActiveAgentRuns,
+  releaseNeverStartedRunSlots,
   transitionAgentRunsToTerminal,
+  type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefNativeAuthority } from "./morning-brief-native-schedule.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
@@ -28,6 +28,8 @@ import { deleteDiscordOrgMemberData } from "./discord-owner-cleanup.service";
 
 import type { Db } from "../external/db";
 
+/** Returns the slots the revoked runs released; the calling command hands
+ * them off after this cleanup completes. */
 export async function cleanupOrgMemberResources(
   db: Db,
   args: {
@@ -36,8 +38,8 @@ export async function cleanupOrgMemberResources(
     readonly membershipId?: string;
   },
   signal: AbortSignal,
-): Promise<void> {
-  await revokeOrgMemberRunAuthority(db, args, signal);
+): Promise<readonly ReleasedRunSlot[]> {
+  const releasedSlots = await revokeOrgMemberRunAuthority(db, args, signal);
   signal.throwIfAborted();
   await deleteDiscordOrgMemberData(db, args);
   signal.throwIfAborted();
@@ -169,18 +171,19 @@ export async function cleanupOrgMemberResources(
       ),
     );
   signal.throwIfAborted();
+  return releasedSlots;
 }
 
 async function revokeOrgMemberRunAuthority(
   db: Db,
   args: { readonly orgId: string; readonly userId: string },
   signal: AbortSignal,
-): Promise<void> {
+): Promise<readonly ReleasedRunSlot[]> {
   // Membership revocation is a hard authority boundary, including credentials
   // retained by ordinary personal-settings disconnect. Commit revocation before
   // best-effort runner notification or the remaining member resource cleanup.
   const revokedAt = nowDate();
-  const cancelled = await db.transaction(async (tx) => {
+  const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     // Cleanup scope ownership precedes Run and all other business-row locks.
     await eraseVncOwner(tx, {
       kind: "owner",
@@ -204,7 +207,7 @@ async function revokeOrgMemberRunAuthority(
       conditions: [
         eq(agentRuns.orgId, args.orgId),
         eq(agentRuns.userId, args.userId),
-        inArray(agentRuns.status, ["queued", "pending", "running"]),
+        inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
     // A Morning Brief collection attempt is the same kind of authority, so it
@@ -260,8 +263,8 @@ async function revokeOrgMemberRunAuthority(
           eq(secrets.type, "model-provider"),
         ),
       );
-    await releaseActiveAgentRuns(tx, neverStartedRunIds(rows));
-    return rows;
+    const released = await releaseNeverStartedRunSlots(tx, rows);
+    return { cancelled: rows, releasedSlots: released };
   });
   signal.throwIfAborted();
   await Promise.all(
@@ -281,4 +284,5 @@ async function revokeOrgMemberRunAuthority(
     }),
   );
   signal.throwIfAborted();
+  return releasedSlots;
 }

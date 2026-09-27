@@ -8,8 +8,6 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
-import type { Tx } from "../../lib/db-types";
-import { testOverride } from "../../lib/singleton";
 import { now, nowDate } from "../../lib/time";
 import {
   isQueueFirstRunClaimLost,
@@ -51,48 +49,6 @@ import {
 
 export type AutomationRow = typeof workflowAutomations.$inferSelect;
 
-export interface WorkflowAutomationCommittedRunSnapshot {
-  readonly automationId: string;
-  readonly runId: string;
-  readonly runStatus: string;
-}
-
-type WorkflowAutomationCommittedRunHook = (
-  snapshot: WorkflowAutomationCommittedRunSnapshot,
-) => Promise<void>;
-
-const workflowAutomationCommittedRunHook = testOverride<
-  WorkflowAutomationCommittedRunHook | undefined
->(() => {
-  return undefined;
-});
-
-export function setWorkflowAutomationCommittedRunHookForTest(
-  hook: WorkflowAutomationCommittedRunHook,
-): void {
-  workflowAutomationCommittedRunHook.set(hook);
-}
-
-export function clearWorkflowAutomationCommittedRunHookForTest(): void {
-  workflowAutomationCommittedRunHook.clear();
-}
-
-/**
- * The Run and queue claim are committed while the legacy last-run fields have
- * not been written. Tests suspend this production boundary to prove callback
- * authority does not depend on that late write.
- */
-async function awaitCommittedRunTestHook(
-  automationId: string,
-  run: { readonly runId: string; readonly status: string },
-): Promise<void> {
-  await workflowAutomationCommittedRunHook.get()?.({
-    automationId,
-    runId: run.runId,
-    runStatus: run.status,
-  });
-}
-
 export interface DueWorkflowAutomation {
   readonly automation: AutomationRow;
   // The owning agent is derived from the workflow row (hard 1:N); automations no
@@ -113,7 +69,7 @@ type RunErrorResponse = {
 
 export type RunWorkflowAutomationResult =
   | { readonly kind: "ok"; readonly runId: string }
-  // The event was accepted into the workflow queue instead of starting a run.
+  // The event was accepted into the chat thread queue instead of starting a run.
   | { readonly kind: "enqueued" }
   | { readonly kind: "conflict"; readonly message: string }
   | { readonly kind: "run_error"; readonly response: RunErrorResponse };
@@ -122,6 +78,16 @@ export type RunFailure = Exclude<
   RunWorkflowAutomationResult,
   { kind: "ok" } | { kind: "enqueued" }
 >;
+
+/**
+ * How launching a queued automation event ended. Only `org-full` keeps the
+ * event waiting; a `lost` claim means another picker consumed the head.
+ */
+export type QueuedWorkflowAutomationLaunchResult =
+  | { readonly kind: "ok"; readonly runId: string }
+  | { readonly kind: "org-full" }
+  | { readonly kind: "lost" }
+  | RunFailure;
 type ActivePreviousRunPolicy = "block" | "allow";
 
 interface InternalRunCallbackInput {
@@ -161,17 +127,20 @@ export interface RunWorkflowAutomationNowArgs {
   // Display-only trigger summary used by workflow annotations and run history.
   readonly triggerBrief?: string;
   readonly triggerSource?: TriggerSource;
-  // Automated schedule ticks coalesce while pending. Explicit manual runs set
-  // this false so every user action remains a distinct queue item.
-  readonly coalescePendingScheduleRun?: boolean;
   /**
-   * Admission-only source transition. This callback is never serialized into
-   * the durable workflow queue payload.
+   * Automated schedule ticks replace this automation's still-pending tick.
+   * Explicit manual runs set this false so every user action remains a
+   * distinct queue item.
+   */
+  readonly replacePendingScheduleTick?: boolean;
+  /**
+   * Source transition committed in the same transaction as the queue event.
+   * This callback is never serialized into the durable queue payload.
    */
   readonly persistSourceTransition?: PersistWorkflowQueueSourceTransition;
   /**
-   * Consumes the due schedule occurrence inside the queue admission
-   * transaction. Only journaled legacy Morning Brief ticks pass one.
+   * Consumes the due schedule occurrence in the same transaction as the queue
+   * event. Only journaled legacy Morning Brief ticks pass one.
    */
   readonly scheduleClaim?: WorkflowScheduleClaimPlan;
   readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
@@ -580,18 +549,6 @@ async function buildTimedWorkflowAutomationRunInput(args: {
   );
 }
 
-/**
- * Ordinary, failed-launch and Pi commits all claim the queue event through the
- * same helper, so one hook binds the journaled occurrence at the authoritative
- * transaction boundary for every path. It is a no-op for the events this API
- * version does not journal.
- */
-function bindJournaledOccurrenceRun(queueEventId: string) {
-  return (tx: Tx, runId: string): Promise<void> => {
-    return bindMorningBriefScheduleClaimRun(tx, { queueEventId, runId });
-  };
-}
-
 async function recordWorkflowAutomationRunStart(
   input: {
     readonly db: Db;
@@ -688,7 +645,7 @@ async function checkQueuedWorkflowLaunchReadiness(
     readonly timing: ReturnType<typeof workflowAutomationTiming>;
   },
   signal: AbortSignal,
-): Promise<RunWorkflowAutomationResult | null> {
+): Promise<RunFailure | null> {
   const { automation, agentId } = input.args.due;
   const activePreviousRunFailure = await checkActivePreviousWorkflowRun(
     {
@@ -749,7 +706,7 @@ export const launchQueuedWorkflowAutomation$ = command(
     { set },
     args: LaunchQueuedWorkflowAutomationArgs,
     signal: AbortSignal,
-  ): Promise<RunWorkflowAutomationResult> => {
+  ): Promise<QueuedWorkflowAutomationLaunchResult> => {
     const db = set(writeDb$);
     const { automation, agentId, chatThreadId } = args.due;
     const timing = workflowAutomationTiming(args);
@@ -833,13 +790,9 @@ export const launchQueuedWorkflowAutomation$ = command(
           ? {}
           : { requiredOfficialWorkflowIds: [automation.workflowId] }),
         queueFirstAssociation: {
-          kind: "automation_event",
           threadId: chatThreadId,
           eventId: args.queueEventId,
-          prompt: runInput.prompt,
-          automationId: automation.id,
         },
-        bindClaimedQueueFirstRun: bindJournaledOccurrenceRun(args.queueEventId),
         agentRunModelPin: {
           modelProvider: effectiveModelProvider ?? null,
           modelProviderId: modelPin.modelProviderId,
@@ -848,6 +801,15 @@ export const launchQueuedWorkflowAutomation$ = command(
         },
         piExecution: modelContext.piExecution,
         dispatchFailedCallbacks: args.dispatchFailedCallbacks,
+        // A journaled Morning Brief occurrence records its Run in the same
+        // transaction that inserts it, before any Run callback can look the
+        // claim up; other automations match no journal row.
+        persistProducerRunBinding: (tx, run) => {
+          return bindMorningBriefScheduleClaimRun(tx, {
+            queueEventId: args.queueEventId,
+            runId: run.runId,
+          });
+        },
         timing,
       },
       signal,
@@ -855,17 +817,16 @@ export const launchQueuedWorkflowAutomation$ = command(
 
     if (isQueueFirstRunClaimLost(result)) {
       signal.throwIfAborted();
-      return { kind: "enqueued" };
+      return { kind: "lost" };
     }
     if (result.status !== 201) {
       signal.throwIfAborted();
       // At organization capacity the event stays queued for a later pick.
       if (result.body.error.code === "CONCURRENT_RUN_LIMIT") {
-        return { kind: "enqueued" };
+        return { kind: "org-full" };
       }
       return { kind: "run_error", response: result };
     }
-    await awaitCommittedRunTestHook(automation.id, result.body);
     signal.throwIfAborted();
     await recordWorkflowAutomationRunStart({ db, args, run: result }, signal);
 

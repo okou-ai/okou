@@ -5,14 +5,10 @@ import type {
   McpRevokeQueuedMessageInput,
   McpRevokeQueuedMessageOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
-import {
-  activeInputDeliveries,
-  activeInputDeliveryItems,
-} from "@okouai/db/schema/active-input-delivery";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { waitUntil } from "../context/wait-until";
@@ -52,7 +48,7 @@ export const revokeQueuedMcpMessage$ = command(
     const result = await db.transaction(
       async (tx): Promise<McpRevokeQueuedMessageOutput> => {
         // Authorization is established under the thread row lock. Queue picks
-        // and active-input reservations take no thread lock; the unique
+        // and active-input steering take no thread lock; the unique
         // revocation edge on the target event keeps this revoke and a
         // concurrent consumer from both replacing it.
         const [thread] = await tx
@@ -128,27 +124,11 @@ export const revokeQueuedMcpMessage$ = command(
           eventId,
         });
         if (!pending || target.revokesEventId !== null) {
-          const [reservation] = await tx
-            .select({ runId: activeInputDeliveries.runId })
-            .from(activeInputDeliveryItems)
-            .innerJoin(
-              activeInputDeliveries,
-              eq(activeInputDeliveries.id, activeInputDeliveryItems.deliveryId),
-            )
-            .where(
-              and(
-                eq(activeInputDeliveryItems.sourceEventId, eventId),
-                eq(activeInputDeliveries.chatThreadId, threadId),
-                eq(activeInputDeliveries.status, "open"),
-                isNull(activeInputDeliveryItems.disposition),
-              ),
-            )
-            .limit(1);
           return {
             ...reference,
             outcome: "not_revocable",
-            runId: reservation?.runId ?? null,
-            reason: reservation ? "reserved_or_associated" : "not_queued",
+            runId: null,
+            reason: "not_queued",
           };
         }
 
@@ -158,7 +138,13 @@ export const revokeQueuedMcpMessage$ = command(
           runId: null,
         });
         if (!revoked) {
-          throw new Error("Locked queued input was not revoked");
+          // A pick or steer receipt consumed the input after the read above.
+          return {
+            ...reference,
+            outcome: "not_revocable",
+            runId: null,
+            reason: "reserved_or_associated",
+          };
         }
         return { ...reference, outcome: "revoked", runId: null };
       },

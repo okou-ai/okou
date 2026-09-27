@@ -12,7 +12,8 @@ import {
   lockMorningBriefLegacyWriterAuthority,
   settleSelectedLegacyMorningBriefObligation,
 } from "./morning-brief-native-schedule.service";
-import { pendingTickForAutomation } from "./workflow-chat-event-queue.service";
+import { hasPendingAutomationEvent } from "./workflow-chat-event-queue.service";
+import { loadWorkflowUserAutomationThreadId } from "./workflow-user-automation-thread.service";
 import { SCHEDULE_GRACE_MS, scheduleExpired } from "./schedule-expiry-policy";
 
 type Automation = typeof workflowAutomations.$inferSelect;
@@ -45,6 +46,22 @@ function stillExpired(
   );
 }
 
+/** Whether a tick of this automation still waits in its thread's queue. */
+async function hasPendingTick(tx: Tx, current: Automation): Promise<boolean> {
+  const chatThreadId = await loadWorkflowUserAutomationThreadId(tx, {
+    orgId: current.orgId,
+    userId: current.ownerUserId,
+    workflowId: current.workflowId,
+  });
+  return (
+    chatThreadId !== null &&
+    (await hasPendingAutomationEvent(tx, {
+      chatThreadId,
+      automationId: current.id,
+    }))
+  );
+}
+
 async function isAlreadyClaimed(
   tx: Tx,
   current: Automation,
@@ -61,7 +78,7 @@ async function isAlreadyClaimed(
       ),
     )
     .limit(1);
-  if (claim || (await pendingTickForAutomation(tx, current.id))) {
+  if (claim || (await hasPendingTick(tx, current))) {
     return true;
   }
   if (authority.kind !== "selected") {

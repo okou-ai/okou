@@ -13,12 +13,8 @@ import {
   type RunStatus as AgentRunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import {
-  activeInputDeliveries,
-  activeInputDeliveryItems,
-} from "@okouai/db/schema/active-input-delivery";
 import { computed, type Computed } from "ccstate";
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { delay } from "signal-timers";
 
 import type { Tx } from "../../lib/db-types";
@@ -56,9 +52,7 @@ interface InputStatus {
   readonly ref: McpChatInputRef;
   readonly state:
     | "queued"
-    | "reserved"
     | "associated"
-    | "delivered"
     | "rejected"
     | "revoked"
     | "unavailable";
@@ -136,12 +130,10 @@ function inputLifecycle(
     case "revoked": {
       return { phase: "settled", outcome: "revoked", output: "none" };
     }
-    case "queued":
-    case "reserved": {
+    case "queued": {
       return { phase: "queued", outcome: null, output: "pending" };
     }
-    case "associated":
-    case "delivered": {
+    case "associated": {
       if (observation.run === null) {
         throw new Error("Associated chat input is missing its selected run");
       }
@@ -292,67 +284,6 @@ function resolveInput(
   };
 }
 
-async function observeDelivery(
-  tx: Tx,
-  principal: Principal,
-  input: InputStatus,
-  budget: HistoryBudget,
-): Promise<InputStatus> {
-  if (input.state !== "queued" && input.state !== "associated") {
-    return input;
-  }
-  await boundHistoryQuery(tx, budget);
-  const receipts = await tx
-    .select({
-      runId: agentRuns.id,
-      disposition: activeInputDeliveryItems.disposition,
-    })
-    .from(activeInputDeliveryItems)
-    .innerJoin(
-      activeInputDeliveries,
-      eq(activeInputDeliveries.id, activeInputDeliveryItems.deliveryId),
-    )
-    .innerJoin(agentRuns, eq(agentRuns.id, activeInputDeliveries.runId))
-    .where(
-      and(
-        eq(activeInputDeliveryItems.sourceEventId, input.ref.eventId),
-        eq(activeInputDeliveries.chatThreadId, input.ref.threadId),
-        eq(agentRuns.chatThreadId, input.ref.threadId),
-        eq(agentRuns.userId, principal.userId),
-        eq(agentRuns.orgId, principal.orgId),
-        input.runId === null ? undefined : eq(agentRuns.id, input.runId),
-        input.state === "queued"
-          ? and(
-              eq(activeInputDeliveries.status, "open"),
-              isNull(activeInputDeliveryItems.disposition),
-            )
-          : and(
-              eq(activeInputDeliveries.status, "settled"),
-              eq(activeInputDeliveryItems.disposition, "delivered"),
-            ),
-      ),
-    )
-    .limit(2);
-  budget.check();
-  if (receipts.length > 1) {
-    throw new Error("Chat input has ambiguous delivery receipts");
-  }
-  const receipt = receipts[0];
-  if (!receipt) {
-    return input;
-  }
-  if (receipt.disposition === "delivered") {
-    if (input.runId !== receipt.runId) {
-      throw new Error("Delivered chat input is missing its run association");
-    }
-    return { ...input, state: "delivered" };
-  }
-  if (input.state !== "queued") {
-    throw new Error("Reserved chat input is already associated");
-  }
-  return { ...input, state: "reserved", runId: receipt.runId };
-}
-
 async function readRun(
   tx: Tx,
   principal: Principal,
@@ -460,14 +391,9 @@ async function readStatusSelection(
   args: McpGetChatStatusInput,
 ): Promise<StatusSelection> {
   const inputRef = statusInputRef(args);
-  let input = inputRef
-    ? await observeDelivery(
-        tx,
-        principal,
-        resolveInput(inputRef, rows, budget),
-        budget,
-      )
-    : null;
+  // A steered input is associated with its run by the same replacement event
+  // a queue launch appends, so status reads chat events only.
+  let input = inputRef ? resolveInput(inputRef, rows, budget) : null;
   const run = await readRun(tx, principal, statusThreadId(args), input, budget);
   const associationUnavailable =
     input !== null && input.runId !== null && run === null;
@@ -544,8 +470,7 @@ async function projectMcpChatStatus(
   const retry =
     output.state === "pending" ||
     output.state === "partial" ||
-    selection.input?.state === "queued" ||
-    selection.input?.state === "reserved";
+    selection.input?.state === "queued";
   const readyMessagePage = includeMessagePage
     ? readReadyMessagePage(projectedMessages, budget, {
         principal,

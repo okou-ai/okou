@@ -42,7 +42,6 @@ import {
   OPENROUTER_US_ORIGIN,
 } from "@okouai/api-contracts/contracts/openrouter-routing";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { isUnsupportedRunAdmission } from "./run-admission-input";
 import { createHash, randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
 import {
@@ -1065,6 +1064,19 @@ export type DispatchFailedRunCallbacks = (
   error: string,
 ) => Promise<void>;
 
+/**
+ * A run producer's own write that must commit atomically with the Run insert.
+ * The launch runs it inside the transaction that inserts the Run, after the
+ * insert, for both admitted and failed launches. A lost claim or rolled-back
+ * launch therefore leaves no write, and nothing observing the committed Run
+ * (such as its terminal callbacks) can precede it. In-memory only; never
+ * serialized into run metadata.
+ */
+export type PersistProducerRunBinding = (
+  tx: Tx,
+  run: { readonly runId: string },
+) => Promise<void>;
+
 interface PiStableContextCacheIdentity {
   readonly owner: PiStableContextOwner;
   readonly variantDigest: string;
@@ -1140,14 +1152,7 @@ export interface CreateAgentRunArgs {
   readonly enforceBuiltInCredits?: boolean;
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
-  /**
-   * In-memory binding fence for a caller that journals the occurrence this run
-   * belongs to. It runs only after the exact original queue event has been
-   * claimed, inside the same launch transaction that still has to insert the
-   * Run, so a lost claim or a rolled-back INSERT leaves no binding. It is never
-   * serialized into run metadata.
-   */
-  readonly bindClaimedQueueFirstRun?: (tx: Tx, runId: string) => Promise<void>;
+  readonly persistProducerRunBinding?: PersistProducerRunBinding;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
@@ -8382,6 +8387,9 @@ async function persistAtomicLaunchRows(
       return await persistPendingAtomicLaunch(args, context);
     },
   );
+  await args.commit.createArgs.persistProducerRunBinding?.(args.tx, {
+    runId: persisted.run.id,
+  });
 
   observePreparedLaunchPersistenceForTest(
     args.commit.createArgs.agentRunMetadata?.workflowAutomationId,
@@ -8432,10 +8440,6 @@ async function resolveQueueFirstAdmissionForLaunch(args: {
     throw new Error("Queue-first association must match the run chat thread");
   }
   return await resolveQueueFirstRunAdmission(args.tx, {
-    admissionTime:
-      association.kind === "user_message"
-        ? association.admissionTime
-        : args.createArgs.apiStartTime,
     association,
     sessionSnapshotState: args.sessionSnapshotState,
     timing: args.timing,
@@ -8459,7 +8463,7 @@ async function claimQueueFirstAssociationForLaunch(args: {
   if (!args.createArgs.agentRunModelPin) {
     throw new Error("Queue-first claim requires a run model pin");
   }
-  const claim = await claimQueueFirstRunAssociation(args.tx, {
+  return await claimQueueFirstRunAssociation(args.tx, {
     ...association,
     admission: args.admission,
     runId: args.identity.runId,
@@ -8469,13 +8473,6 @@ async function claimQueueFirstAssociationForLaunch(args: {
       : {}),
     timing: args.timing,
   });
-  if (claim.kind === "claimed") {
-    await args.createArgs.bindClaimedQueueFirstRun?.(
-      args.tx,
-      args.identity.runId,
-    );
-  }
-  return claim;
 }
 
 interface CommitFailedLaunchArgs {
@@ -8559,6 +8556,9 @@ async function persistFailedLaunch(
     officialWorkflowProvenance: args.context.officialWorkflowRun?.provenance,
     error: message,
     creditAdmitted: false,
+  });
+  await args.createArgs.persistProducerRunBinding?.(tx, {
+    runId: args.identity.runId,
   });
   return {
     kind: "failed",
@@ -11472,9 +11472,6 @@ export const prepareAgentRun$ = command(
     input: PrepareAgentRunArgs,
     signal: AbortSignal,
   ): Promise<PreparedAgentRun | CreateRunErrorResult> => {
-    if (isUnsupportedRunAdmission(input.args.queueFirstAssociation)) {
-      return conflict("Unsupported run input");
-    }
     assertThreadBoundRunHasQueueAssociation(input.args);
     // A preview request that passed the protection guard carries the bypass as
     // API-authored environment while the runner preserves its existing filter.
@@ -11542,9 +11539,6 @@ export const completeAgentRun$ = command(
     input: CompleteAgentRunArgs,
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
-    if (isUnsupportedRunAdmission(input.prepared.args.queueFirstAssociation)) {
-      return conflict("Unsupported run input");
-    }
     assertThreadBoundRunHasQueueAssociation(input.prepared.args);
     const db = set(writeDb$);
     const { args, timing } = input.prepared;

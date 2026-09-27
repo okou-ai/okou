@@ -35,6 +35,8 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { onRejection, settle } from "../utils";
 import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
+import { handOffReleasedSlots$ } from "./agent-run-lifecycle.service";
+import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import {
@@ -319,7 +321,7 @@ async function commitOrgMemberRemoval(
   args: { readonly orgId: string; readonly userId: string },
   reservationId: string | null,
   deleteMembership: () => Promise<void>,
-): Promise<void> {
+): Promise<readonly ReleasedRunSlot[]> {
   // Once Clerk accepts the deletion, billing and resource cleanup must finish
   // even if the originating request disconnects.
   const commitSignal = new AbortController().signal;
@@ -331,8 +333,9 @@ async function commitOrgMemberRemoval(
   commitSignal.throwIfAborted();
   await refundUsagePackMemberCredits(db, args, commitSignal);
   commitSignal.throwIfAborted();
-  await cleanupOrgMemberResources(db, args, commitSignal);
+  const releasedSlots = await cleanupOrgMemberResources(db, args, commitSignal);
   commitSignal.throwIfAborted();
+  return releasedSlots;
 }
 
 export const leaveOrg$ = command(
@@ -356,12 +359,19 @@ export const leaveOrg$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await commitOrgMemberRemoval(writeDb, args, reservationId, async () => {
-      await client.organizations.deleteOrganizationMembership({
-        organizationId: args.orgId,
-        userId: args.userId,
-      });
-    });
+    const releasedSlots = await commitOrgMemberRemoval(
+      writeDb,
+      args,
+      reservationId,
+      async () => {
+        await client.organizations.deleteOrganizationMembership({
+          organizationId: args.orgId,
+          userId: args.userId,
+        });
+      },
+    );
+    signal.throwIfAborted();
+    await set(handOffReleasedSlots$, releasedSlots, signal);
     signal.throwIfAborted();
 
     return { message: "Left org" };
@@ -416,7 +426,7 @@ export const removeOrgMember$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await commitOrgMemberRemoval(
+    const releasedSlots = await commitOrgMemberRemoval(
       writeDb,
       { orgId: args.orgId, userId: target.id },
       reservationId,
@@ -427,6 +437,8 @@ export const removeOrgMember$ = command(
         });
       },
     );
+    signal.throwIfAborted();
+    await set(handOffReleasedSlots$, releasedSlots, signal);
     signal.throwIfAborted();
 
     return { message: `Removed ${args.email} from org` };

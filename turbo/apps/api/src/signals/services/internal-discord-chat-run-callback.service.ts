@@ -321,8 +321,8 @@ async function sendIngressNotice(
 }
 
 /**
- * Fire and forget: call once, after the ingress became terminal. Failures are
- * logged and never propagate to the caller.
+ * Fire and forget: call once, after the ingress became terminal or its input
+ * was enqueued. Failures are logged and never propagate to the caller.
  */
 export async function sendDiscordIngressNotice(
   db: Db,

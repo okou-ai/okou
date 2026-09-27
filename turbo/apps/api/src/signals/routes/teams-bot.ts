@@ -11,7 +11,6 @@ import {
   readTeamsActivityChannelId,
   readTeamsActivityServiceUrl,
 } from "../../lib/teams-bot-activity";
-import { env } from "../../lib/env";
 import { verifyTeamsBotAuthorization } from "../../lib/teams-bot-auth";
 import { logger } from "../../lib/log";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
@@ -88,42 +87,6 @@ function buildTeamsLoginPromptCard(args: {
   };
 }
 
-function queueUrl(): string {
-  return `${env("APP_URL")}/?queue=1`;
-}
-
-function buildTeamsQueueText(url: string): string {
-  return `\u26a0 Run queued -- concurrency limit reached. Will start automatically when a slot is available. [View queue](${url})`;
-}
-
-function buildTeamsQueueCard(args: {
-  readonly url: string;
-}): TeamsAdaptiveCard {
-  return {
-    type: "AdaptiveCard",
-    version: "1.4",
-    body: [
-      {
-        type: "TextBlock",
-        text: "Run queued",
-        wrap: true,
-      },
-      {
-        type: "TextBlock",
-        text: "Concurrency limit reached. Will start automatically when a slot is available.",
-        wrap: true,
-      },
-    ],
-    actions: [
-      {
-        type: "Action.OpenUrl",
-        title: "View queue",
-        url: args.url,
-      },
-    ],
-  };
-}
-
 type TeamsDispatchReplySource =
   | {
       readonly kind: "notice";
@@ -131,7 +94,6 @@ type TeamsDispatchReplySource =
       readonly connectUrl?: string;
       readonly card?: TeamsAdaptiveCard;
     }
-  | { readonly kind: "queued" }
   | { readonly kind: "ignored" | "accepted" };
 
 type TeamsMessageActivity = Extract<TeamsInboundActivity, { kind: "message" }>;
@@ -158,13 +120,6 @@ function dispatchReplyContent(dispatch: TeamsDispatchReplySource): {
               }),
             }
           : {}),
-    };
-  }
-  if (dispatch.kind === "queued") {
-    const url = queueUrl();
-    return {
-      replyText: buildTeamsQueueText(url),
-      card: buildTeamsQueueCard({ url }),
     };
   }
   return { replyText: null };

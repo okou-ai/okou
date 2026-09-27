@@ -11,6 +11,7 @@ import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/cont
 import { captureTaskCompletedSuccessfully } from "../../lib/posthog.ts";
 import type { ChatEventDataKey } from "../../shared-database/data-key.ts";
 import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
+import { reloadBillingStatus$ } from "../okou-page/billing.ts";
 import { notifyChatEventsChanged$ } from "./chat-event-change-registry.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import {
@@ -59,6 +60,33 @@ function reportNewCompletedRuns({
     captureTaskCompletedSuccessfully();
   }
   return newlyCompletedRunIds.length > 0;
+}
+
+/**
+ * An insufficient-credits rejection is rendered with the org's billing state,
+ * so a newly persisted one refreshes that state instead of trusting a copy
+ * loaded before the credits ran out. Only rejections after the last known
+ * persisted event count: the first merge of a thread's history (no baseline)
+ * replays old rejections, which the billing state loaded with the page covers.
+ */
+function hasNewInsufficientCreditsRejection({
+  persistentEvents,
+  events,
+}: {
+  persistentEvents: readonly PersistedChatEvent[];
+  events: readonly PersistedChatEvent[];
+}): boolean {
+  const lastKnownSeqId = persistentEvents.at(-1)?.seqId;
+  if (lastKnownSeqId === undefined) {
+    return false;
+  }
+  return events.some((event) => {
+    return (
+      event.eventType === "input.rejected" &&
+      event.error === "insufficient_credits" &&
+      event.seqId > lastKnownSeqId
+    );
+  });
 }
 
 function mergePersistentEvents(
@@ -216,10 +244,11 @@ export function createChatEventStorageSignals({
       if (events.length === 0) {
         return;
       }
-      reportNewCompletedRuns({
-        persistentEvents: get(persistentChatEvents$),
-        events,
-      });
+      const persistentEvents = get(persistentChatEvents$);
+      reportNewCompletedRuns({ persistentEvents, events });
+      if (hasNewInsufficientCreditsRejection({ persistentEvents, events })) {
+        set(reloadBillingStatus$);
+      }
       set(persistentChatEvents$, (previous) => {
         return mergePersistentEvents([previous, events]);
       });

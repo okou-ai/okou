@@ -29,7 +29,8 @@ import { settle, settleIncludingAbort } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { appendMcpQueuedUserMessageInTransaction } from "./chat-events.command";
-import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
+import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
+import { markChatThreadQueued } from "./queued-chat-thread.service";
 import { createChatThreadInTransaction } from "./chat-thread.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
@@ -375,6 +376,12 @@ async function initializeThread(
     return false;
   }
   if (isCombinedCreation(input)) {
+    // Queue row before the input event, once the thread row exists.
+    await markChatThreadQueued(tx, {
+      chatThreadId: input.requestId,
+      orgId: principal.orgId,
+    });
+    signal.throwIfAborted();
     await appendMcpQueuedUserMessageInTransaction(tx, {
       ...principal,
       threadId: input.requestId,
@@ -627,7 +634,7 @@ export const createMcpChatThread$ = command(
         output: result.value,
         drain: () => {
           return set(
-            drainChatThreadQueueForThread$,
+            pickEnqueuedChatThread$,
             {
               chatThreadId: result.value.threadId,
               orgId: args.principal.orgId,

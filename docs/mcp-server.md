@@ -467,8 +467,8 @@ from the authorized thread and uses its current model configuration and ordinary
 admission checks. This tool does not accept Agent/model overrides, attachments,
 or an explicit choice between a new run and steering an active run.
 
-The existing scheduler can leave the input queued, associate it with a new run,
-or reserve it for delivery to an active run. The response returns:
+The queue can leave the input queued or associate it with a run: a new run, or
+the active run that it is steered into. The response returns:
 
 | Field                      | Meaning                                                                                                   |
 | -------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -481,8 +481,9 @@ or reserve it for delivery to an active run. The response returns:
 | `nextAction`               | Ready-to-use `get_chat_status` call containing the complete `inputRef`.                                   |
 
 Acceptance means an input was persisted. It does not guarantee model admission,
-delivery, compliance, completion, or a new run. `reserved` does not prove the
-runner received the input, and `associated` does not prove successful execution.
+delivery, compliance, completion, or a new run. `associated` does not prove
+successful execution. `reserved` remains in the contract for compatibility, but
+steering no longer records a reservation, so current APIs do not return it.
 A definitive admission failure after input persistence can leave its disposition
 `rejected` or `revoked`. `unavailable` means retained live evidence cannot resolve
 its current disposition; it does not mean the input was never accepted.

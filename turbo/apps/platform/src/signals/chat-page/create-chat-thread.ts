@@ -237,7 +237,6 @@ import {
   createChatEventSignals,
   type ChatEventSignals,
   type SendChatEventInput,
-  type SendChatEventResult,
   type SendInputChatEvent,
 } from "./chat-event-signals.ts";
 import {
@@ -3215,10 +3214,7 @@ interface SendMessageDeps {
   draft: DraftSignals;
   cancelDraftSync$: Command<void, []>;
   flushDraftClear$: Command<Promise<void>, [AbortSignal]>;
-  sendEvent$: Command<
-    Promise<SendChatEventResult>,
-    [SendChatEventInput, AbortSignal]
-  >;
+  sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }
 
 interface ValidatedSendMessageRequest {
@@ -3333,7 +3329,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         request.modelSelection,
         request.options?.videoRunOptions,
       );
-      const [, sendResult] = await Promise.all([
+      await Promise.all([
         flushDraftForSend(request.options?.forward, () => {
           return set(flushDraftClear$, signal);
         }),
@@ -3350,10 +3346,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         ),
       ]);
       signal.throwIfAborted();
-      L.debug("sendMessage$ POST accepted", {
-        threadId,
-        runId: sendResult.runId,
-      });
+      L.debug("sendMessage$ POST accepted", { threadId });
       return true;
     },
   );
@@ -3481,10 +3474,7 @@ interface RecallMessageDeps {
   chatEvents$: Computed<ChatEvent[]>;
   draft: DraftSignals;
   queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
-  sendEvent$: Command<
-    Promise<SendChatEventResult>,
-    [SendChatEventInput, AbortSignal]
-  >;
+  sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }
 
 function createRecallMessage(deps: RecallMessageDeps) {
@@ -3583,11 +3573,15 @@ function createThreadMessageActions(deps: MessageCommandsDeps) {
   return {
     ...createMessageCommands(deps),
     skipAutomationEvent$: createSkipAutomationEvent(deps),
-    cancelRun$: createCancelRunWithQueuedRecall(deps),
+    cancelRun$: createInterruptLiveRuns(deps),
   };
 }
 
-function createCancelRunWithQueuedRecall({
+/**
+ * Stop interrupts the thread's live runs only. Queued follow-ups stay in the
+ * queue bar; the user recalls them one by one.
+ */
+function createInterruptLiveRuns({
   threadId,
   agentId,
   chatEvents$,
@@ -3596,10 +3590,7 @@ function createCancelRunWithQueuedRecall({
   readonly threadId: string;
   readonly agentId: string;
   chatEvents$: Computed<ChatEvent[]>;
-  sendEvent$: Command<
-    Promise<SendChatEventResult>,
-    [SendChatEventInput, AbortSignal]
-  >;
+  sendEvent$: Command<Promise<void>, [SendChatEventInput, AbortSignal]>;
 }) {
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
@@ -3610,14 +3601,8 @@ function createCancelRunWithQueuedRecall({
       });
       return;
     }
-    const chatEvents = get(chatEvents$);
-    const queuedEvents = queuedEventsFromChatEvents(chatEvents).filter(
-      (event) => {
-        return event.eventType === "input.prompt";
-      },
-    );
-    await Promise.all([
-      ...liveRunIdsFromChatEvents(chatEvents).map((runId) => {
+    await Promise.all(
+      liveRunIdsFromChatEvents(get(chatEvents$)).map((runId) => {
         return set(
           sendEvent$,
           {
@@ -3628,18 +3613,7 @@ function createCancelRunWithQueuedRecall({
           signal,
         );
       }),
-      ...queuedEvents.map((event) => {
-        return set(
-          sendEvent$,
-          {
-            kind: "revoke",
-            agentId,
-            revokesEventId: event.id,
-          },
-          signal,
-        );
-      }),
-    ]);
+    );
     signal.throwIfAborted();
   });
 }

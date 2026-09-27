@@ -7,7 +7,7 @@ const activeCancellationControllers = singleton(() => {
   return new Map<string, Set<AbortController>>();
 });
 
-/** Serialize active-input reservation, API-first publication, and cancellation. */
+/** Serialize API-first publication and cancellation. */
 export async function lockPiApiFirstTurnLifecycle(
   tx: Pick<Tx, "execute">,
   runId: string,

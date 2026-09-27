@@ -2,10 +2,6 @@ import { z } from "zod";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, sql } from "drizzle-orm";
-import {
-  activeInputDeliveries,
-  activeInputDeliveryItems,
-} from "@okouai/db/schema/active-input-delivery";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventRetentionCursors } from "@okouai/db/schema/chat-event-retention-cursor";
@@ -56,7 +52,6 @@ export interface ChatEventRetentionStats {
   readonly skippedSearchWatermark: number;
   readonly skippedPendingRunless: number;
   readonly skippedNonterminalRun: number;
-  readonly skippedActiveInput: number;
   readonly hasMore: boolean;
   readonly sweepRestarted: boolean;
   readonly durationMs: number;
@@ -73,8 +68,7 @@ type SkipReason =
   | "snapshot"
   | "search_watermark"
   | "pending_runless"
-  | "nonterminal_run"
-  | "active_input";
+  | "nonterminal_run";
 
 interface ScannedEvent {
   readonly id: string;
@@ -237,65 +231,15 @@ async function nonterminalRunIds(
   );
 }
 
-async function activeInputSourceIds(
-  db: Db,
-  eventIds: readonly string[],
-): Promise<ReadonlySet<string>> {
-  const items = await db
-    .select({
-      sourceEventId: activeInputDeliveryItems.sourceEventId,
-      deliveryId: activeInputDeliveryItems.deliveryId,
-      disposition: activeInputDeliveryItems.disposition,
-    })
-    .from(activeInputDeliveryItems)
-    .where(inArray(activeInputDeliveryItems.sourceEventId, eventIds));
-  if (items.length === 0) {
-    return new Set();
-  }
-  const openDeliveries = await db
-    .select({ id: activeInputDeliveries.id })
-    .from(activeInputDeliveries)
-    .where(
-      and(
-        inArray(
-          activeInputDeliveries.id,
-          items.map((item) => {
-            return item.deliveryId;
-          }),
-        ),
-        eq(activeInputDeliveries.status, "open"),
-      ),
-    );
-  const openDeliveryIds = new Set(
-    openDeliveries.map((delivery) => {
-      return delivery.id;
-    }),
-  );
-  return new Set(
-    items
-      .filter((item) => {
-        return (
-          item.disposition === null || openDeliveryIds.has(item.deliveryId)
-        );
-      })
-      .map((item) => {
-        return item.sourceEventId;
-      }),
-  );
-}
-
 /**
  * Classify with bounded single-table reads and no locks. Every hold resolves
- * monotonically (archives and watermarks advance, runs terminate, deliveries
- * settle), so a stale read can only hold a row for one more sweep.
+ * monotonically (archives and watermarks advance, runs terminate), so a
+ * stale read can only hold a row for one more sweep.
  */
 async function classify(
   db: Db,
   events: readonly ScannedEvent[],
 ): Promise<ReadonlyMap<string, SkipReason | null>> {
-  const eventIds = events.map((event) => {
-    return event.id;
-  });
   const chatThreadIds = [
     ...new Set(
       events.map((event) => {
@@ -321,7 +265,6 @@ async function classify(
   const indexed = await indexedSeqIds(db, chatThreadIds);
   const revoked = await revokedEventIds(db, runlessInputIds);
   const nonterminal = await nonterminalRunIds(db, runIds);
-  const activeInputs = await activeInputSourceIds(db, eventIds);
 
   return new Map(
     events.map((event) => {
@@ -340,8 +283,6 @@ async function classify(
         reason = "pending_runless";
       } else if (event.runId !== null && nonterminal.has(event.runId)) {
         reason = "nonterminal_run";
-      } else if (activeInputs.has(event.id)) {
-        reason = "active_input";
       }
       return [event.id, reason];
     }),
@@ -460,7 +401,6 @@ async function retainChatEventPage(
     skippedSearchWatermark: count("search_watermark"),
     skippedPendingRunless: count("pending_runless"),
     skippedNonterminalRun: count("nonterminal_run"),
-    skippedActiveInput: count("active_input"),
     hasMore: events.length === CHAT_EVENT_RETENTION_SCAN_LIMIT,
     sweepRestarted,
   };

@@ -75,6 +75,7 @@ import { decryptPersistentSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
+import { handOffReleasedSlots$ } from "./agent-run-lifecycle.service";
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import {
@@ -93,6 +94,8 @@ import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candida
 import {
   neverStartedRunIds,
   releaseActiveAgentRuns,
+  releaseNeverStartedRunSlots,
+  type ReleasedRunSlot,
   transitionAgentRunsToTerminal,
 } from "./agent-run-terminal-transition.service";
 import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
@@ -157,7 +160,7 @@ async function cancelOrgRuns(
         scope.cascadeOwnedAgents
           ? organizationAgentRunScopePredicate(tx, orgId)
           : eq(agentRuns.orgId, orgId),
-        inArray(agentRuns.status, ["queued", "pending", "running"]),
+        inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
     if (scope.revokeMorningBriefCollection) {
@@ -226,13 +229,15 @@ async function cancelLastAdminOrgsStripeSubscriptions(
   }
 }
 
+/** Returns the slots the cancelled runs released, for the calling command to
+ * hand off. */
 async function cancelUserRuns(
   db: Db,
   userId: string,
   scope: UserRunCancellationScope = {},
-): Promise<void> {
+): Promise<readonly ReleasedRunSlot[]> {
   const revokedAt = nowDate();
-  const cancelled = await db.transaction(async (tx) => {
+  const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: "cancelled",
@@ -241,7 +246,7 @@ async function cancelUserRuns(
       },
       conditions: [
         eq(agentRuns.userId, userId),
-        inArray(agentRuns.status, ["queued", "pending", "running"]),
+        inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
     if (scope.revokeMorningBriefCollection) {
@@ -252,14 +257,15 @@ async function cancelUserRuns(
       );
       await revokeMorningBriefDeliveryOwnership(tx, { kind: "user", userId });
     }
-    await releaseActiveAgentRuns(tx, neverStartedRunIds(rows));
-    return rows;
+    const released = await releaseNeverStartedRunSlots(tx, rows);
+    return { cancelled: rows, releasedSlots: released };
   });
   await Promise.all(
     cancelled.map((run) => {
       return publishCancelBestEffort(run.runnerGroup, run.runId);
     }),
   );
+  return releasedSlots;
 }
 
 async function cleanupWorkspaceInstallation(
@@ -1019,7 +1025,9 @@ export const cleanupClerkDeletedUser$ = command(
     await eraseVncOwnerData(db, { kind: "user", userId });
     signal.throwIfAborted();
     // Only the user's own runs: members' runs on Agents the user owns continue.
-    await cancelUserRuns(db, userId, { revokeMorningBriefCollection: true });
+    const releasedSlots = await cancelUserRuns(db, userId, {
+      revokeMorningBriefCollection: true,
+    });
     signal.throwIfAborted();
     await revokeMorningBriefScheduleOwnership(db, { kind: "user", userId });
     signal.throwIfAborted();
@@ -1073,6 +1081,10 @@ export const cleanupClerkDeletedUser$ = command(
       await deleteOrgData(db, orgId, signal);
       signal.throwIfAborted();
     }
+    // Handed off only once the user's data is gone, so the slots go to other
+    // members' waiting threads.
+    await set(handOffReleasedSlots$, releasedSlots, signal);
+    signal.throwIfAborted();
   },
 );
 
@@ -1083,14 +1095,15 @@ async function commitClerkDeletedOrgMembershipCleanup(
     readonly userId: string;
     readonly membershipId?: string;
   },
-): Promise<void> {
+): Promise<readonly ReleasedRunSlot[]> {
   const commitSignal = new AbortController().signal;
   await removeUsagePackMemberAllocation(db, args, commitSignal);
   commitSignal.throwIfAborted();
   await refundUsagePackMemberCredits(db, args, commitSignal);
   commitSignal.throwIfAborted();
-  await cleanupOrgMemberResources(db, args, commitSignal);
+  const releasedSlots = await cleanupOrgMemberResources(db, args, commitSignal);
   commitSignal.throwIfAborted();
+  return releasedSlots;
 }
 
 export const cleanupClerkDeletedOrgMembership$ = command(
@@ -1104,7 +1117,12 @@ export const cleanupClerkDeletedOrgMembership$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    await commitClerkDeletedOrgMembershipCleanup(db, args);
+    const releasedSlots = await commitClerkDeletedOrgMembershipCleanup(
+      db,
+      args,
+    );
+    signal.throwIfAborted();
+    await set(handOffReleasedSlots$, releasedSlots, signal);
     signal.throwIfAborted();
   },
 );
@@ -1112,8 +1130,9 @@ export const cleanupClerkDeletedOrgMembership$ = command(
 export const cleanupClerkBannedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await cancelUserRuns(db, userId);
+    const releasedSlots = await cancelUserRuns(db, userId);
     signal.throwIfAborted();
+    await set(handOffReleasedSlots$, releasedSlots, signal);
     signal.throwIfAborted();
     await cancelLastAdminOrgsStripeSubscriptions(db, userId);
   },

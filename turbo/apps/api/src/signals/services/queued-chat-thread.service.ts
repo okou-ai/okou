@@ -4,6 +4,7 @@ import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { and, asc, eq, gt, isNull, lte, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
+import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 
 /**
@@ -28,7 +29,7 @@ function leaseFree(at: Date) {
  * survives, and the enqueuer's own pick can take the lease.
  */
 export async function markChatThreadQueued(
-  db: Db,
+  db: Db | Tx,
   args: { readonly chatThreadId: string; readonly orgId: string },
 ): Promise<void> {
   await db

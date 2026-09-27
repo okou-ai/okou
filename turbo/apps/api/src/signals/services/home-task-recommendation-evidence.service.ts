@@ -100,7 +100,7 @@ async function recentThreads(
             .where(
               and(
                 eq(agentRuns.chatThreadId, chatThreads.id),
-                inArray(agentRuns.status, ["queued", "pending", "running"]),
+                inArray(agentRuns.status, ["pending", "running"]),
               ),
             ),
         ),
