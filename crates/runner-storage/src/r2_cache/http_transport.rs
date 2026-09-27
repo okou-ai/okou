@@ -6,6 +6,10 @@
 use std::{
     io,
     pin::Pin,
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicI64, Ordering},
+    },
     time::{Duration, SystemTime},
 };
 
@@ -25,7 +29,10 @@ use reqwest::{
     Client, Method, Request, Response, StatusCode,
     header::{CONTENT_TYPE, ETAG},
 };
-use tokio::io::AsyncRead;
+use tokio::{
+    io::AsyncRead,
+    sync::{OwnedSemaphorePermit, Semaphore},
+};
 use tokio_util::io::StreamReader;
 use url::Url;
 
@@ -38,6 +45,12 @@ const PART_TIMEOUT: Duration = Duration::from_secs(300);
 // The original S3 client uses the standard retry policy (three attempts).
 // Retain the bounded attempt count; every attempt is signed afresh.
 const MAX_ATTEMPTS: usize = 3;
+// The pinned SDK's standard retry bucket starts with 500 tokens. The legacy
+// policy charges five for service failures and ten for transient I/O failures.
+const RETRY_QUOTA: usize = 500;
+// The SDK's default retry partition is `s3-auto`, shared by its clients in one
+// process. R2 clients here likewise share one budget, not one per upload.
+static SHARED_RETRY_QUOTA: OnceLock<Arc<Semaphore>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
 enum ExpectedBody {
@@ -72,6 +85,10 @@ pub(super) struct R2HttpClient {
     endpoint: Url,
     bucket: String,
     credentials: Credentials,
+    // The SDK retains server clock skew across requests on the same client.
+    clock_skew_ms: Arc<AtomicI64>,
+    retry_quota: Arc<Semaphore>,
+    retry_quota_capacity: usize,
 }
 
 impl std::fmt::Debug for R2HttpClient {
@@ -126,6 +143,18 @@ impl R2HttpClient {
         Ok(client)
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_test_endpoint_retry_quota(
+        endpoint: Url,
+        bucket: String,
+        quota: usize,
+    ) -> Result<Self, R2Error> {
+        let mut client = Self::with_test_endpoint(endpoint, bucket)?;
+        client.retry_quota = Arc::new(Semaphore::new(quota));
+        client.retry_quota_capacity = quota;
+        Ok(client)
+    }
+
     fn make_client(read_timeout: Duration) -> Result<Client, R2Error> {
         Client::builder()
             .connect_timeout(Duration::from_secs(10))
@@ -158,6 +187,11 @@ impl R2HttpClient {
             endpoint,
             bucket,
             credentials: Credentials::new(access_key, secret_key, None, None, "r2-env"),
+            clock_skew_ms: Arc::new(AtomicI64::new(0)),
+            retry_quota: SHARED_RETRY_QUOTA
+                .get_or_init(|| Arc::new(Semaphore::new(RETRY_QUOTA)))
+                .clone(),
+            retry_quota_capacity: RETRY_QUOTA,
         })
     }
 
@@ -223,7 +257,10 @@ impl R2HttpClient {
             .identity(&identity)
             .region("auto")
             .name("s3")
-            .time(SystemTime::now())
+            .time(adjust_signing_time(
+                SystemTime::now(),
+                self.clock_skew_ms.load(Ordering::Relaxed),
+            ))
             .settings(settings)
             .build()
             .map_err(|e| R2Error::S3(format!("build R2 signing parameters: {e}")))?
@@ -267,6 +304,28 @@ impl R2HttpClient {
         Ok(request)
     }
 
+    // Acquire without waiting: depleted SDK retry quota returns the original
+    // error. A previous retry's quota is spent when another retry is reserved;
+    // the most recent permit is returned on success or cancellation.
+    fn reserve_retry(&self, permit: &mut Option<OwnedSemaphorePermit>, cost: u32) -> bool {
+        let Ok(next) = self.retry_quota.clone().try_acquire_many_owned(cost) else {
+            return false;
+        };
+        if let Some(previous) = permit.replace(next) {
+            previous.forget();
+        }
+        true
+    }
+
+    fn reward_success(&self, permit: &mut Option<OwnedSemaphorePermit>) {
+        if let Some(permit) = permit.take() {
+            drop(permit);
+        } else if self.retry_quota.available_permits() < self.retry_quota_capacity {
+            // The standard policy regenerates one token on first-try success.
+            self.retry_quota.add_permits(1);
+        }
+    }
+
     async fn execute(
         &self,
         method: Method,
@@ -282,15 +341,20 @@ impl R2HttpClient {
         } else {
             &self.client
         };
+        let mut retry_permit = None;
         for attempt in 1..=MAX_ATTEMPTS {
             // Request bodies are Bytes, so retries replay the identical payload;
             // fresh SigV4 timestamps and headers are generated on every attempt.
             let request =
                 self.signed_request(method.clone(), url.clone(), body.clone(), content_type)?;
+            let sent = SystemTime::now();
             let mut response = match client.execute(request).await {
                 Ok(response) => response,
                 Err(e) => {
-                    if attempt < MAX_ATTEMPTS && retryable_transport(&e) {
+                    if attempt < MAX_ATTEMPTS
+                        && retryable_transport(&e)
+                        && self.reserve_retry(&mut retry_permit, 10)
+                    {
                         retry_delay(attempt, None).await;
                         continue;
                     }
@@ -301,6 +365,10 @@ impl R2HttpClient {
                     });
                 }
             };
+            let measured_skew = measure_clock_skew(&response, sent, SystemTime::now());
+            if let Some(skew_ms) = measured_skew {
+                self.clock_skew_ms.store(skew_ms, Ordering::Relaxed);
+            }
             let status = response.status();
             // The SDK interprets x-amz-retry-after as milliseconds, capped by
             // the standard policy's maximum backoff.
@@ -318,7 +386,9 @@ impl R2HttpClient {
                     match bounded_bytes(&mut response, MAX_ERROR_BYTES).await {
                         Ok(body) => Some(body),
                         Err(BodyReadError::Transport(e))
-                            if attempt < MAX_ATTEMPTS && retryable_transport(&e) =>
+                            if attempt < MAX_ATTEMPTS
+                                && retryable_transport(&e)
+                                && self.reserve_retry(&mut retry_permit, 10) =>
                         {
                             retry_delay(attempt, retry_after).await;
                             continue;
@@ -341,7 +411,9 @@ impl R2HttpClient {
                 let body = match bounded_bytes(&mut response, MAX_XML_BYTES).await {
                     Ok(body) => body,
                     Err(BodyReadError::Transport(e))
-                        if attempt < MAX_ATTEMPTS && retryable_transport(&e) =>
+                        if attempt < MAX_ATTEMPTS
+                            && retryable_transport(&e)
+                            && self.reserve_retry(&mut retry_permit, 10) =>
                     {
                         retry_delay(attempt, retry_after).await;
                         continue;
@@ -353,7 +425,10 @@ impl R2HttpClient {
                     if document.root_element().tag_name().name() != "CompleteMultipartUploadResult"
                     {
                         let code = xml_code(&body);
-                        if attempt < MAX_ATTEMPTS && is_retryable(status, code.as_deref()) {
+                        if attempt < MAX_ATTEMPTS
+                            && is_retryable(status, code.as_deref(), measured_skew)
+                            && self.reserve_retry(&mut retry_permit, retry_cost(code.as_deref()))
+                        {
                             retry_delay(attempt, retry_after).await;
                             continue;
                         }
@@ -363,6 +438,7 @@ impl R2HttpClient {
                         )));
                     }
                 }
+                self.reward_success(&mut retry_permit);
                 return Ok(TransportReply {
                     response,
                     xml: Some(body),
@@ -371,8 +447,24 @@ impl R2HttpClient {
             if !status.is_success() {
                 let body = match bounded_bytes(&mut response, MAX_ERROR_BYTES).await {
                     Ok(body) => body,
+                    // SDK's status classifier still retries 500/502/503/504
+                    // when the error body is too large or fails to deserialize.
+                    Err(BodyReadError::TooLarge)
+                        if attempt < MAX_ATTEMPTS
+                            && is_retryable(status, None, measured_skew)
+                            && self.reserve_retry(&mut retry_permit, 5) =>
+                    {
+                        retry_delay(attempt, retry_after).await;
+                        continue;
+                    }
                     Err(BodyReadError::Transport(e))
-                        if attempt < MAX_ATTEMPTS && retryable_transport(&e) =>
+                        if attempt < MAX_ATTEMPTS
+                            && (retryable_transport(&e)
+                                || is_retryable(status, None, measured_skew))
+                            && self.reserve_retry(
+                                &mut retry_permit,
+                                if retryable_transport(&e) { 10 } else { 5 },
+                            ) =>
                     {
                         retry_delay(attempt, retry_after).await;
                         continue;
@@ -380,7 +472,10 @@ impl R2HttpClient {
                     Err(error) => return Err(error.into()),
                 };
                 let code = xml_code(&body);
-                if attempt < MAX_ATTEMPTS && is_retryable(status, code.as_deref()) {
+                if attempt < MAX_ATTEMPTS
+                    && is_retryable(status, code.as_deref(), measured_skew)
+                    && self.reserve_retry(&mut retry_permit, retry_cost(code.as_deref()))
+                {
                     retry_delay(attempt, retry_after).await;
                     continue;
                 }
@@ -389,6 +484,7 @@ impl R2HttpClient {
                     code.as_deref().unwrap_or("unknown")
                 )));
             }
+            self.reward_success(&mut retry_permit);
             return Ok(TransportReply {
                 response,
                 xml: None,
@@ -576,6 +672,43 @@ impl R2HttpClient {
     }
 }
 
+fn adjust_signing_time(now: SystemTime, skew_ms: i64) -> SystemTime {
+    let shifted = if skew_ms >= 0 {
+        now.checked_add(Duration::from_millis(skew_ms as u64))
+    } else {
+        now.checked_sub(Duration::from_millis(skew_ms.unsigned_abs()))
+    };
+    shifted.unwrap_or(now)
+}
+
+// Match the SDK's response-Date midpoint measurement. Cached responses, an
+// invalid Date, and round trips over 15 minutes cannot authorize a skew retry.
+fn measure_clock_skew(response: &Response, sent: SystemTime, received: SystemTime) -> Option<i64> {
+    if response.headers().contains_key(reqwest::header::AGE) {
+        return None;
+    }
+    let elapsed = received.duration_since(sent).ok()?;
+    if elapsed > Duration::from_secs(15 * 60) {
+        return None;
+    }
+    let date = response
+        .headers()
+        .get(reqwest::header::DATE)?
+        .to_str()
+        .ok()?;
+    let server: SystemTime = chrono::DateTime::parse_from_rfc2822(date)
+        .ok()?
+        .with_timezone(&chrono::Utc)
+        .into();
+    let midpoint = sent.checked_add(elapsed / 2)?;
+    match server.duration_since(midpoint) {
+        Ok(delta) => i64::try_from(delta.as_millis()).ok(),
+        Err(error) => i64::try_from(error.duration().as_millis())
+            .ok()?
+            .checked_neg(),
+    }
+}
+
 fn retryable_transport(error: &reqwest::Error) -> bool {
     error.is_timeout()
         || error.is_connect()
@@ -584,11 +717,33 @@ fn retryable_transport(error: &reqwest::Error) -> bool {
         || error.is_decode()
 }
 
+fn retry_cost(code: Option<&str>) -> u32 {
+    if matches!(
+        code,
+        Some("InternalError" | "RequestTimeout" | "RequestTimeoutException")
+    ) {
+        10
+    } else {
+        5
+    }
+}
+
 // Narrow equivalent of the S3 standard policy's status and AWS error-code
 // classifiers for the operations used by the template cache. Do not retry
 // missing objects, invalid parts, authentication failures, or malformed XML.
-fn is_retryable(status: StatusCode, code: Option<&str>) -> bool {
+fn is_retryable(status: StatusCode, code: Option<&str>, skew_ms: Option<i64>) -> bool {
     matches!(status.as_u16(), 500 | 502 | 503 | 504)
+        || (skew_ms.is_some_and(|ms| ms.unsigned_abs() > 4 * 60 * 1000)
+            && matches!(
+                code,
+                Some(
+                    "InvalidSignatureException"
+                        | "SignatureDoesNotMatch"
+                        | "AuthFailure"
+                        | "RequestTimeTooSkewed"
+                        | "AccessDeniedException"
+                )
+            ))
         || matches!(
             code,
             Some(
@@ -603,7 +758,6 @@ fn is_retryable(status: StatusCode, code: Option<&str>) -> bool {
                     | "TooManyRequestsException"
                     | "RequestLimitExceeded"
                     | "BandwidthLimitExceeded"
-                    | "LimitExceededException"
                     | "RequestThrottled"
                     | "PriorRequestNotComplete"
                     | "ProvisionedThroughputExceededException"

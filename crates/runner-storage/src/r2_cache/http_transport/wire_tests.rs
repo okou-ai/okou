@@ -39,6 +39,57 @@ async fn scripted_server(responses: Vec<&'static str>) -> (Url, tokio::task::Joi
     (url, handle)
 }
 
+async fn scripted_server_capture(
+    responses: Vec<String>,
+) -> (Url, tokio::task::JoinHandle<Vec<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+    let handle = tokio::spawn(async move {
+        let mut requests = Vec::new();
+        for response in responses {
+            let (mut connection, _) =
+                tokio::time::timeout(Duration::from_secs(5), listener.accept())
+                    .await
+                    .expect("retry attempt did not arrive")
+                    .unwrap();
+            let mut received = Vec::new();
+            loop {
+                let mut buf = [0u8; 4096];
+                let n = connection.read(&mut buf).await.unwrap();
+                assert!(n > 0, "request closed before headers");
+                received.extend_from_slice(&buf[..n]);
+                if received.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let request = String::from_utf8(received).unwrap();
+            assert!(request.to_ascii_lowercase().contains("authorization:"));
+            requests.push(request);
+            connection.write_all(response.as_bytes()).await.unwrap();
+            connection.shutdown().await.unwrap();
+        }
+        requests
+    });
+    (url, handle)
+}
+
+fn mock_reply(status: &str, body: &str, headers: &str) -> String {
+    format!(
+        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n{headers}\r\n{body}",
+        body.len()
+    )
+}
+
+fn signed_date(request: &str) -> chrono::DateTime<chrono::Utc> {
+    let line = request
+        .lines()
+        .find(|line| line.to_ascii_lowercase().starts_with("x-amz-date:"))
+        .unwrap();
+    chrono::NaiveDateTime::parse_from_str(line.split_once(':').unwrap().1.trim(), "%Y%m%dT%H%M%SZ")
+        .unwrap()
+        .and_utc()
+}
+
 fn client(server: &MockServer) -> R2HttpClient {
     R2HttpClient::with_endpoint(
         Url::parse(&server.base_url()).unwrap(),
@@ -264,6 +315,170 @@ async fn transient_failure_retries_signed_head_and_upload_part() {
         .unwrap();
     assert_eq!(part.etag, "\"part\"");
     assert_eq!(server.await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn retryable_status_does_not_depend_on_bounded_error_body() {
+    let (url, server) = scripted_server_capture(vec![
+        mock_reply(
+            "503 Service Unavailable",
+            &"x".repeat(MAX_ERROR_BYTES + 616),
+            "",
+        ),
+        mock_reply("404 Not Found", "<Error><Code>NoSuchKey</Code></Error>", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert!(
+        c.get("runner-templates/missing.tar.zst")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(server.await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn sdk_style_clock_skew_retry_requires_trustworthy_date_and_persists() {
+    let future = chrono::Utc::now() + chrono::Duration::minutes(10);
+    let date = future.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+    let (url, server) = scripted_server_capture(vec![
+        mock_reply(
+            "403 Forbidden",
+            "<Error><Code>RequestTimeTooSkewed</Code></Error>",
+            &format!("Date: {date}\r\n"),
+        ),
+        mock_reply("404 Not Found", "<Error><Code>NoSuchKey</Code></Error>", ""),
+        mock_reply("404 Not Found", "", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert!(
+        c.get("runner-templates/missing.tar.zst")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(!c.head("runner-templates/another.tar.zst").await.unwrap());
+    let requests = server.await.unwrap();
+    assert_eq!(requests.len(), 3);
+    for request in &requests[1..] {
+        assert!(
+            (570..=630).contains(&(signed_date(request) - signed_date(&requests[0])).num_seconds())
+        );
+    }
+
+    let server = MockServer::start_async().await;
+    let cached = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(403)
+                .header("date", &date)
+                .header("age", "0")
+                .body("<Error><Code>RequestTimeTooSkewed</Code></Error>");
+        })
+        .await;
+    assert!(
+        client(&server)
+            .get("runner-templates/h.tar.zst")
+            .await
+            .is_err()
+    );
+    cached.assert_calls_async(1).await;
+
+    let near_date = (chrono::Utc::now() + chrono::Duration::minutes(2))
+        .format("%a, %d %b %Y %H:%M:%S GMT")
+        .to_string();
+    let server = MockServer::start_async().await;
+    let near = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(403)
+                .header("date", &near_date)
+                .body("<Error><Code>RequestTimeTooSkewed</Code></Error>");
+        })
+        .await;
+    assert!(
+        client(&server)
+            .get("runner-templates/h.tar.zst")
+            .await
+            .is_err()
+    );
+    near.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn sdk_style_retry_quota_blocks_extra_attempts_and_recovers_on_success() {
+    let server = MockServer::start_async().await;
+    let unavailable = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(503);
+        })
+        .await;
+    let c = R2HttpClient::with_test_endpoint_retry_quota(
+        Url::parse(&server.base_url()).unwrap(),
+        "test-bucket".into(),
+        0,
+    )
+    .unwrap();
+    assert!(c.get("runner-templates/h.tar.zst").await.is_err());
+    unavailable.assert_calls_async(1).await;
+
+    let (url, attempts) = scripted_server_capture(vec![
+        mock_reply("503 Service Unavailable", "", "x-amz-retry-after: 0\r\n"),
+        mock_reply("200 OK", "", ""),
+        mock_reply("503 Service Unavailable", "", "x-amz-retry-after: 0\r\n"),
+        mock_reply("200 OK", "", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint_retry_quota(url, "test-bucket".into(), 5).unwrap();
+    for _ in 0..2 {
+        assert!(c.get("runner-templates/h.tar.zst").await.unwrap().is_some());
+        assert_eq!(c.retry_quota.available_permits(), 5);
+    }
+    assert_eq!(attempts.await.unwrap().len(), 4);
+
+    let server = MockServer::start_async().await;
+    let transient = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(503)
+                .body("<Error><Code>InternalError</Code></Error>");
+        })
+        .await;
+    let c = R2HttpClient::with_test_endpoint_retry_quota(
+        Url::parse(&server.base_url()).unwrap(),
+        "test-bucket".into(),
+        5,
+    )
+    .unwrap();
+    assert!(c.get("runner-templates/h.tar.zst").await.is_err());
+    transient.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn unrelated_error_code_does_not_expand_sdk_retry_classifier() {
+    let server = MockServer::start_async().await;
+    let unsupported = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(400)
+                .body("<Error><Code>LimitExceededException</Code></Error>");
+        })
+        .await;
+    assert!(
+        client(&server)
+            .get("runner-templates/h.tar.zst")
+            .await
+            .is_err()
+    );
+    unsupported.assert_calls_async(1).await;
 }
 
 #[tokio::test]
