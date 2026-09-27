@@ -424,6 +424,17 @@ fn select_with_limit(
     }))
 }
 
+fn reparent(raw: &[u8], parent: Option<&str>) -> Option<Vec<u8>> {
+    let mut value: Value = serde_json::from_slice(strip_jsonl_line_ending(raw)).ok()?;
+    value.as_object_mut()?.insert(
+        "parentId".into(),
+        parent.map_or(Value::Null, |id| json!(id)),
+    );
+    let mut bytes = serde_json::to_vec(&value).ok()?;
+    bytes.push(b'\n');
+    Some(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{PiHistoryIneligibleReason, PiHistorySelection, select_with_limit};
@@ -461,15 +472,4 @@ mod tests {
             PiHistorySelection::Ineligible(PiHistoryIneligibleReason::SourceChanged)
         );
     }
-}
-
-fn reparent(raw: &[u8], parent: Option<&str>) -> Option<Vec<u8>> {
-    let mut value: Value = serde_json::from_slice(strip_jsonl_line_ending(raw)).ok()?;
-    value.as_object_mut()?.insert(
-        "parentId".into(),
-        parent.map_or(Value::Null, |id| json!(id)),
-    );
-    let mut bytes = serde_json::to_vec(&value).ok()?;
-    bytes.push(b'\n');
-    Some(bytes)
 }

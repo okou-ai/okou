@@ -18,12 +18,12 @@ impl Drop for PiHistoryFileGuard {
 fn write_oversized_pi_history(
     session_id: &str,
     with_compact: bool,
-) -> (PiHistoryFileGuard, Vec<u8>) {
-    let path = std::path::Path::new(
+) -> std::io::Result<(PiHistoryFileGuard, Vec<u8>)> {
+    let session_dir = std::path::Path::new(
         api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR,
-    )
-    .join(format!("restored-{session_id}.jsonl"));
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    );
+    std::fs::create_dir_all(session_dir)?;
+    let path = session_dir.join(format!("restored-{session_id}.jsonl"));
     let mut history = Vec::new();
     for record in [
         json!({"type":"session","version":3,"id":session_id,"cwd":"/home/user/workspace","timestamp":"2026-09-27T00:00:00Z"}),
@@ -40,8 +40,8 @@ fn write_oversized_pi_history(
     }
     history.extend_from_slice(json!({"type":"message","id":"done","parentId":if with_compact {"compact"} else {"kept"},"timestamp":"2026-09-27T00:00:00Z","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"provider":"faux","model":"faux-1","stopReason":"stop","timestamp":1}}).to_string().as_bytes());
     history.push(b'\n');
-    std::fs::write(&path, &history).unwrap();
-    (PiHistoryFileGuard(path), history)
+    std::fs::write(&path, &history)?;
+    Ok((PiHistoryFileGuard(path), history))
 }
 
 fn assert_session_history_prune_operation(
@@ -90,7 +90,7 @@ async fn pi_checkpoint_commits_bounded_native_generation_after_ack() {
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
-    let (history_file, original) = write_oversized_pi_history(&session_id, true);
+    let (history_file, original) = write_oversized_pi_history(&session_id, true).unwrap();
     assert!(original.len() as u64 > CHECKPOINT_TEST_MAX_BYTES);
     let candidate =
         session_history_selector::select_pi_compact_generation_with_candidate_limit_for_test(
@@ -140,7 +140,7 @@ async fn pi_checkpoint_leaves_under_limit_native_history_unchanged() {
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
-    let (history_file, _) = write_oversized_pi_history(&session_id, true);
+    let (history_file, _) = write_oversized_pi_history(&session_id, true).unwrap();
     let selected =
         session_history_selector::select_pi_compact_generation_with_candidate_limit_for_test(
             &mut std::fs::File::open(&history_file.0).unwrap(),
@@ -189,7 +189,7 @@ async fn pi_checkpoint_preserves_live_history_if_server_rejects_candidate() {
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
-    let (history_file, original) = write_oversized_pi_history(&session_id, true);
+    let (history_file, original) = write_oversized_pi_history(&session_id, true).unwrap();
     let prepare = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/checkpoints/prepare-history");
@@ -219,7 +219,7 @@ async fn pi_checkpoint_rejects_oversized_history_without_compact_before_completi
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = uuid::Uuid::new_v4().to_string();
     guest_agent::paths::write_private(session_id_file(), &session_id).unwrap();
-    let (_history_file, original) = write_oversized_pi_history(&session_id, false);
+    let (_history_file, original) = write_oversized_pi_history(&session_id, false).unwrap();
     let complete = server.mock(|when, then| {
         when.method(POST).path("/api/webhooks/agent/complete");
         then.status(200);

@@ -39,21 +39,20 @@ fn history(first_kept: &str, with_compact: bool) -> String {
     source
 }
 
-fn select(source: &str, limit: u64) -> PiHistorySelection {
-    let mut file = NamedTempFile::new().unwrap();
-    file.write_all(source.as_bytes()).unwrap();
+fn select(source: &str, limit: u64) -> std::io::Result<PiHistorySelection> {
+    let mut file = NamedTempFile::new()?;
+    file.write_all(source.as_bytes())?;
     select_pi_compact_generation_with_candidate_limit_for_test(
-        &mut File::open(file.path()).unwrap(),
+        &mut File::open(file.path())?,
         SESSION_ID,
         limit,
     )
-    .unwrap()
 }
 
 #[test]
 fn retains_kept_precompact_messages_and_prior_thinking_state() {
     let source = history("kept", true);
-    let result = select(&source, 1024);
+    let result = select(&source, 1024).unwrap();
     let PiHistorySelection::Candidate(candidate) = result else {
         panic!("expected a bounded native generation: {result:?}");
     };
@@ -87,7 +86,7 @@ fn carries_the_prior_assistant_model_when_compact_is_the_leaf() {
     source.push_str(&line(json!({"type":"message","id":"large","parentId":"think","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));
     source.push_str(&line(json!({"type":"message","id":"kept","parentId":"large","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"kept"}})));
     source.push_str(&line(json!({"type":"compaction","id":"compact","parentId":"kept","timestamp":"2026-09-27T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":1000})));
-    let PiHistorySelection::Candidate(candidate) = select(&source, 1024) else {
+    let PiHistorySelection::Candidate(candidate) = select(&source, 1024).unwrap() else {
         panic!("expected bounded model-and-thinking generation");
     };
     let rows: Vec<Value> = std::str::from_utf8(candidate.as_bytes())
@@ -110,33 +109,35 @@ fn carries_the_prior_assistant_model_when_compact_is_the_leaf() {
 #[test]
 fn rejects_ineligible_or_oversized_generation_without_falling_back() {
     assert_eq!(
-        select(&history("kept", false), 1024),
+        select(&history("kept", false), 1024).unwrap(),
         PiHistorySelection::Ineligible(Reason::NoCompactBoundary)
     );
     assert_eq!(
         select(
             &format!("{}{{invalid json}}\n", history("kept", true)),
             1024
-        ),
+        )
+        .unwrap(),
         PiHistorySelection::Ineligible(Reason::InvalidRecord)
     );
     assert_eq!(
-        select(&history("absent", true), 1024),
+        select(&history("absent", true), 1024).unwrap(),
         PiHistorySelection::Ineligible(Reason::InvalidCompactBoundary)
     );
     assert_eq!(
-        select(&history("large", true), 1024),
+        select(&history("large", true), 1024).unwrap(),
         PiHistorySelection::Ineligible(Reason::CandidateTooLarge)
     );
     assert_eq!(
-        select(&history("kept", true), 10_000),
+        select(&history("kept", true), 10_000).unwrap(),
         PiHistorySelection::Ineligible(Reason::SourceWithinGuard)
     );
     assert_eq!(
         select(
             &history("kept", true).replace("\"version\":3", "\"version\":99"),
             1024
-        ),
+        )
+        .unwrap(),
         PiHistorySelection::Ineligible(Reason::UnsupportedVersion)
     );
 }
@@ -192,7 +193,7 @@ fn selects_only_the_active_branch_not_abandoned_payloads() {
     source.push_str(&line(json!({"type":"branch_summary","id":"branch","parentId":"root","fromId":"abandoned","timestamp":"2026-09-27T00:00:00Z","summary":"earlier branch"})));
     source.push_str(&line(json!({"type":"compaction","id":"compact","parentId":"branch","timestamp":"2026-09-27T00:00:00Z","summary":"compacted","firstKeptEntryId":"branch"})));
     source.push_str(&line(entry("message", "done", Some("compact"))));
-    let PiHistorySelection::Candidate(candidate) = select(&source, 1024) else {
+    let PiHistorySelection::Candidate(candidate) = select(&source, 1024).unwrap() else {
         panic!("expected active branch only");
     };
     let entries: Vec<Value> = std::str::from_utf8(candidate.as_bytes())
