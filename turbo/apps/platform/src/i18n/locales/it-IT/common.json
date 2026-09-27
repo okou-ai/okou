@@ -7261,6 +7261,7 @@
       "appleVncPasswordDestinationHelp": "Per la password VNC classica, inserisci 127.0.0.1 o ::1 sul Mac raggiunto tramite SSH salvato.",
       "destination": "Destinazione RFB",
       "destinationHelp": "Per i percorsi SSH, questo host e questa porta vengono raggiunti dal server SSH selezionato, non direttamente dal Runner.",
+      "privateDirectHelp": "Gli indirizzi IP privati o di loopback richiedono un host SSH salvato. Scegli il percorso SSH sopra; la connessione non cambierà automaticamente.",
       "direct": "Diretto dal Runner",
       "empty": "Non sono disponibili host SSH salvati. Aggiungine uno nelle impostazioni SSH prima di usare questo percorso.",
       "loadFailed": "Impossibile caricare gli host SSH salvati.",

@@ -7261,6 +7261,7 @@
       "appleVncPasswordDestinationHelp": "Para la contraseña VNC clásica de Mac, usa 127.0.0.1 o ::1 en el Mac alcanzado por SSH guardado.",
       "destination": "Destino RFB",
       "destinationHelp": "En las rutas SSH, se accede a este host y puerto desde el servidor SSH seleccionado, no directamente desde el Runner.",
+      "privateDirectHelp": "Las direcciones IP privadas o de bucle local requieren un host SSH guardado. Elige la ruta SSH de arriba; no se cambiará automáticamente.",
       "direct": "Directa desde Runner",
       "empty": "No hay hosts SSH guardados. Añade uno en la configuración de SSH antes de usar esta ruta.",
       "loadFailed": "No se pudieron cargar los hosts SSH guardados.",

@@ -241,6 +241,10 @@ const editor$ = state({
   trust: "system" as "system" | "custom_ca",
   transport: "direct" as "direct" | "ssh",
   sshConnectionId: "",
+  loopbackHost: "127.0.0.1" as "127.0.0.1" | "::1",
+  destinationHost: "",
+  tlsServerName: "",
+  caBundle: "",
   replace: false,
 });
 const uncertain$ = state(false);
@@ -300,6 +304,29 @@ export const chooseVncProfile$ = command(
     }
   },
 );
+export const chooseVncLoopbackHost$ = command(
+  ({ get, set }, host: string | null) => {
+    if (!get(editorLocked$) && (host === "127.0.0.1" || host === "::1")) {
+      const loopbackHost: Editor["loopbackHost"] = host;
+      set(editor$, (current): Editor => ({ ...current, loopbackHost }));
+    }
+  },
+);
+export const editVncDestinationHost$ = command(({ get, set }, host: string) => {
+  if (!get(editorLocked$)) {
+    set(editor$, (current) => ({ ...current, destinationHost: host }));
+  }
+});
+export const editVncServerName$ = command(({ get, set }, name: string) => {
+  if (!get(editorLocked$)) {
+    set(editor$, (current) => ({ ...current, tlsServerName: name }));
+  }
+});
+export const editVncCaBundle$ = command(({ get, set }, bundle: string) => {
+  if (!get(editorLocked$)) {
+    set(editor$, (current) => ({ ...current, caBundle: bundle }));
+  }
+});
 export const chooseVncTrust$ = command(({ get, set }, trust: string | null) => {
   if (!get(editorLocked$) && (trust === "system" || trust === "custom_ca")) {
     set(editor$, (current): Editor => {
@@ -352,6 +379,10 @@ export const closeVncDialog$ = command(({ set }) => {
     trust: "system",
     transport: "direct",
     sshConnectionId: "",
+    loopbackHost: "127.0.0.1",
+    destinationHost: "",
+    tlsServerName: "",
+    caBundle: "",
     replace: false,
   });
 });
@@ -407,6 +438,18 @@ function initialVncEditor(
         : "system",
     transport: sshConnectionId || isAppleVncProfile(profile) ? "ssh" : "direct",
     sshConnectionId: sshConnectionId ?? "",
+    loopbackHost: connection?.host === "::1" ? "::1" : "127.0.0.1",
+    destinationHost: connection?.host ?? "",
+    tlsServerName:
+      connection && "serverName" in connection.security
+        ? (connection.security.serverName ?? "")
+        : "",
+    caBundle:
+      connection &&
+      "trust" in connection.security &&
+      connection.security.trust.mode === "custom_ca"
+        ? connection.security.trust.caBundle
+        : "",
     replace: false,
   };
 }
@@ -551,16 +594,22 @@ interface Editor {
   readonly trust: "system" | "custom_ca";
   readonly transport: "direct" | "ssh";
   readonly sshConnectionId: string;
+  readonly loopbackHost: "127.0.0.1" | "::1";
+  readonly destinationHost: string;
+  readonly tlsServerName: string;
+  readonly caBundle: string;
   readonly replace: boolean;
 }
 
 function connectionFields(form: HTMLFormElement, editor: Editor) {
   const serverName = isAppleVncProfile(editor.profile)
     ? ""
-    : textField(form, "serverName").trim();
+    : editor.tlsServerName.trim();
   return {
     displayName: textField(form, "displayName"),
-    host: textField(form, "host"),
+    host: isAppleVncProfile(editor.profile)
+      ? editor.loopbackHost
+      : editor.destinationHost,
     port: Number(textField(form, "port")),
     transport:
       editor.transport === "ssh"
@@ -580,7 +629,7 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
               ? { mode: "system" as const }
               : {
                   mode: "custom_ca" as const,
-                  caBundle: textField(form, "caBundle"),
+                  caBundle: editor.caBundle,
                 },
         },
   };

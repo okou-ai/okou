@@ -206,11 +206,17 @@ VNC route, switch it explicitly to Direct where that destination is valid, or
 delete it first. The app reports this dependency without cascading, clearing or
 silently converting the VNC route.
 
-For Mac Screen Sharing, choose the exact Apple DH, Apple Direct SRP or Apple
+For a Mac VNC service, choose the exact Apple DH, Apple Direct SRP or Apple
 RSA/SRP profile and a saved, host-key-verified SSH connection terminating on
-that same controlled Mac. Enter `127.0.0.1` or `::1` as the RFB destination.
-The app hides direct transport and X.509 trust fields and offers only
-profile-matching credentials. SSH protects the entire VNC session; neither
+that same controlled Mac. The app sets the RFB destination to `127.0.0.1` by
+default; select `::1` explicitly if that Mac uses IPv6 loopback. Port 5900 is
+a default, not a fixed requirement. The Add host dialog follows the SSH form:
+display name first, then security profile, its dependent route/target settings,
+and compatible credentials. Apple profiles have no Direct option or free-form
+RFB destination. For X509 profiles, Direct and saved SSH remain explicit choices;
+a private or loopback IP literal under Direct must be corrected by the owner,
+not automatically rerouted. The app hides X.509 trust fields for Apple and
+offers only profile-matching credentials. SSH protects the entire VNC session; neither
 Apple DH nor SRP server proof replaces this transport protection. Saving does
 not verify Screen Sharing settings or prove the SSH server has no downstream
 proxy. A real product session must separately validate saved-host creation,

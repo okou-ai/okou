@@ -10,6 +10,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SegmentControl,
+  SegmentControlItem,
 } from "@okouai/ui";
 import {
   VNC_CA_BUNDLE_MAX_LENGTH,
@@ -27,6 +29,10 @@ import {
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
   chooseVncCredential$,
+  chooseVncLoopbackHost$,
+  editVncDestinationHost$,
+  editVncServerName$,
+  editVncCaBundle$,
   chooseVncProfile$,
   chooseVncSshConnection$,
   chooseVncTransport$,
@@ -42,6 +48,55 @@ import {
 } from "../../signals/vnc.ts";
 import { invalidateSsh$, sshConnections$ } from "../../signals/ssh.ts";
 
+// Fast feedback for literal destinations; the API remains authoritative for
+// canonicalization and all other host / route validation.
+export function isPrivateVncLiteral(host: string): boolean {
+  const parts = host.split(".");
+  if (
+    parts.length === 4 &&
+    parts.every((part) => /^\d{1,3}$/u.test(part) && Number(part) <= 255)
+  ) {
+    const first = Number(parts[0]);
+    const second = Number(parts[1]);
+    return (
+      first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168)
+    );
+  }
+  const lower = host.toLowerCase();
+  return (
+    lower === "::" ||
+    lower === "::1" ||
+    /^f[cd][0-9a-f]*:/u.test(lower) ||
+    /^fe[89ab][0-9a-f]*:/u.test(lower)
+  );
+}
+
+export function VncDisplayNameField({
+  connection,
+}: {
+  readonly connection: VncConnectionResponse | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <label className="grid gap-2 text-sm">
+      <span>{t(($) => $.vnc.displayName)}</span>
+      <Input
+        name="displayName"
+        required
+        maxLength={VNC_DISPLAY_NAME_MAX_LENGTH}
+        defaultValue={connection?.displayName ?? ""}
+        placeholder={t(($) => $.vnc.displayNameHint)}
+      />
+    </label>
+  );
+}
+
 export function VncEndpointFields({
   connection,
 }: {
@@ -49,91 +104,97 @@ export function VncEndpointFields({
 }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
+  const chooseLoopback = useSet(chooseVncLoopbackHost$);
+  const editDestination = useSet(editVncDestinationHost$);
+  const apple = isAppleProfile(editor.profile);
+  const privateDirect =
+    !apple &&
+    editor.transport === "direct" &&
+    isPrivateVncLiteral(editor.destinationHost);
+  const loopbackItems = [
+    { value: "127.0.0.1", label: "127.0.0.1" },
+    { value: "::1", label: "::1" },
+  ];
   return (
-    <div className="grid gap-4">
-      <label className="grid gap-2 text-sm">
-        <span>
-          {t(($) => {
-            return $.vnc.displayName;
-          })}
-        </span>
-        <Input
-          name="displayName"
-          required
-          maxLength={VNC_DISPLAY_NAME_MAX_LENGTH}
-          defaultValue={connection?.displayName ?? ""}
-          placeholder={t(($) => {
-            return $.vnc.displayNameHint;
-          })}
-        />
-      </label>
-      <label className="grid gap-2 text-sm">
-        <span>
-          {t(($) => {
-            return $.vnc.host;
-          })}
-        </span>
-        <Input
-          name="host"
-          required
-          maxLength={VNC_HOST_MAX_LENGTH}
-          pattern={
-            editor.profile === "apple_vnc_password" ||
-            editor.profile === "apple_dh" ||
-            editor.profile === "apple_srp" ||
-            editor.profile === "apple_rsa_srp"
-              ? String.raw`(127\.0\.0\.1|::1)`
-              : undefined
-          }
-          defaultValue={connection?.host ?? ""}
-          placeholder={t(($) => {
-            return $.vnc.hostHint;
-          })}
-          aria-describedby="vnc-destination-help"
-        />
-      </label>
-      <label className="grid gap-2 text-sm">
-        <span>
-          {t(($) => {
-            return $.vnc.port;
-          })}
-        </span>
-        <Input
-          name="port"
-          type="number"
-          required
-          min={1}
-          max={65_535}
-          defaultValue={connection?.port ?? 5900}
-          aria-describedby="vnc-destination-help"
-        />
-      </label>
+    <div className="grid gap-3">
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_6rem]">
+        {apple ? (
+          <div className="grid min-w-0 gap-2 text-sm">
+            <label htmlFor="vnc-loopback-host">{t(($) => $.vnc.host)}</label>
+            <Select
+              items={loopbackItems}
+              value={editor.loopbackHost}
+              onValueChange={(value, details) => {
+                if (value !== "127.0.0.1" && value !== "::1") {
+                  details.cancel();
+                  return;
+                }
+                chooseLoopback(value);
+              }}
+            >
+              <SelectTrigger id="vnc-loopback-host">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {loopbackItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <label className="grid min-w-0 gap-2 text-sm">
+            <span>{t(($) => $.vnc.host)}</span>
+            <Input
+              name="host"
+              required
+              maxLength={VNC_HOST_MAX_LENGTH}
+              value={editor.destinationHost}
+              onChange={(event) => editDestination(event.currentTarget.value)}
+              placeholder={t(($) => $.vnc.hostHint)}
+              aria-describedby={
+                privateDirect
+                  ? "vnc-destination-help vnc-direct-private-error"
+                  : "vnc-destination-help"
+              }
+              aria-invalid={privateDirect}
+            />
+          </label>
+        )}
+        <label className="grid gap-2 text-sm">
+          <span>{t(($) => $.vnc.port)}</span>
+          <Input
+            name="port"
+            type="number"
+            required
+            min={1}
+            max={65_535}
+            defaultValue={connection?.port ?? 5900}
+            aria-describedby="vnc-destination-help"
+          />
+        </label>
+      </div>
+      {privateDirect && (
+        <p
+          id="vnc-direct-private-error"
+          role="alert"
+          className="text-sm text-destructive"
+        >
+          {t(($) => $.vnc.transport.privateDirectHelp)}
+        </p>
+      )}
       <p id="vnc-destination-help" className="text-sm text-muted-foreground">
-        {editor.profile === "apple_vnc_password"
-          ? t(($) => {
-              return $.vnc.transport.appleVncPasswordDestinationHelp;
-            })
-          : editor.profile === "apple_dh"
-            ? t(($) => {
-                return $.vnc.transport.appleDhDestinationHelp;
-              })
-            : editor.profile === "apple_srp"
-              ? t(($) => {
-                  return $.vnc.transport.appleSrpDestinationHelp;
-                })
-              : editor.profile === "apple_rsa_srp"
-                ? t(($) => {
-                    return $.vnc.transport.appleRsaSrpDestinationHelp;
-                  })
-                : t(($) => {
-                    return $.vnc.transport.destinationHelp;
-                  })}
+        {apple
+          ? t(($) => $.vnc.transport.sshHelp)
+          : t(($) => $.vnc.transport.destinationHelp)}
       </p>
     </div>
   );
 }
 
-function VncSecurityProfileField({
+export function VncSecurityProfileField({
   profile,
   disabled,
 }: {
@@ -284,7 +345,7 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
       return connection.id === editor.sshConnectionId;
     });
   return (
-    <div className="grid gap-3 rounded-lg border bg-muted/30 p-4">
+    <div className="grid min-w-0 gap-2">
       <label htmlFor="vnc-ssh-connection" className="text-sm">
         {t(($) => {
           return $.vnc.transport.sshConnection;
@@ -383,76 +444,33 @@ export function VncTransportFields({
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
   const chooseTransport = useSet(chooseVncTransport$);
-  const transportItems = [
-    {
-      value: "direct",
-      label: t(($) => {
-        return $.vnc.transport.direct;
-      }),
-    },
-    {
-      value: "ssh",
-      label: t(($) => {
-        return $.vnc.transport.ssh;
-      }),
-    },
-  ].filter((item) => {
-    return (
-      (editor.profile !== "apple_vnc_password" &&
-        editor.profile !== "apple_dh" &&
-        editor.profile !== "apple_srp" &&
-        editor.profile !== "apple_rsa_srp") ||
-      item.value === "ssh"
-    );
-  });
   return (
-    <fieldset className="grid min-w-0 gap-3">
-      <legend className="mb-1 text-sm font-semibold">
-        {t(($) => {
-          return $.vnc.transport.title;
-        })}
-      </legend>
-      <Select
-        items={transportItems}
-        value={editor.transport}
-        onValueChange={(value, details) => {
-          if (
-            (value !== "direct" && value !== "ssh") ||
-            ((editor.profile === "apple_vnc_password" ||
-              editor.profile === "apple_dh" ||
-              editor.profile === "apple_srp" ||
-              editor.profile === "apple_rsa_srp") &&
-              value !== "ssh")
-          ) {
-            details.cancel();
-            return;
-          }
-          chooseTransport(value);
-        }}
-        disabled={disabled}
-      >
-        <SelectTrigger
-          id="vnc-transport"
-          aria-label={t(($) => {
-            return $.vnc.transport.title;
-          })}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {transportItems.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
+    <div className="grid min-w-0 gap-4">
+      {!isAppleProfile(editor.profile) && (
+        <div className="grid gap-2">
+          <span id="vnc-connection-mode" className="text-sm">
+            {t(($) => $.vnc.transport.title)}
+          </span>
+          <SegmentControl
+            className="justify-self-start"
+            aria-labelledby="vnc-connection-mode"
+            disabled={disabled}
+            value={editor.transport}
+            onValueChange={chooseTransport}
+          >
+            <SegmentControlItem value="direct">
+              {t(($) => $.vnc.transport.direct)}
+            </SegmentControlItem>
+            <SegmentControlItem value="ssh">
+              {t(($) => $.vnc.transport.ssh)}
+            </SegmentControlItem>
+          </SegmentControl>
+        </div>
+      )}
       {editor.transport === "ssh" && (
         <VncSshConnectionFields disabled={disabled} />
       )}
-    </fieldset>
+    </div>
   );
 }
 
@@ -465,25 +483,12 @@ function isAppleProfile(profile: VncProfile): boolean {
   );
 }
 
-function x509Security(connection: VncConnectionResponse | null) {
-  const security = connection?.security;
-  return security?.type === "x509_vnc" || security?.type === "x509_plain"
-    ? security
-    : undefined;
-}
-
-export function VncSecurityFields({
-  connection,
-  disabled,
-}: {
-  readonly connection: VncConnectionResponse | null;
-  readonly disabled: boolean;
-}) {
+export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
   const choose = useSet(chooseVncTrust$);
-  const savedSecurity = x509Security(connection);
-  const savedTrust = savedSecurity?.trust;
+  const editServerName = useSet(editVncServerName$);
+  const editCaBundle = useSet(editVncCaBundle$);
   const trustItems = [
     {
       value: "system",
@@ -500,7 +505,6 @@ export function VncSecurityFields({
   ];
   return (
     <div className="grid gap-3">
-      <VncSecurityProfileField profile={editor.profile} disabled={disabled} />
       {isAppleProfile(editor.profile) ? null : (
         <>
           <label htmlFor="vnc-server-name" className="text-sm">
@@ -512,7 +516,8 @@ export function VncSecurityFields({
             id="vnc-server-name"
             name="serverName"
             maxLength={VNC_HOST_MAX_LENGTH}
-            defaultValue={savedSecurity?.serverName ?? ""}
+            value={editor.tlsServerName}
+            onChange={(event) => editServerName(event.currentTarget.value)}
             placeholder={t(($) => {
               return $.vnc.security.serverNameHint;
             })}
@@ -569,9 +574,8 @@ export function VncSecurityFields({
                 required
                 maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
                 aria-describedby="vnc-ca-help"
-                defaultValue={
-                  savedTrust?.mode === "custom_ca" ? savedTrust.caBundle : ""
-                }
+                value={editor.caBundle}
+                onChange={(event) => editCaBundle(event.currentTarget.value)}
                 placeholder={t(($) => {
                   return $.vnc.security.caHint;
                 })}

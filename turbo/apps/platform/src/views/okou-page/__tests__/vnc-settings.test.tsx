@@ -213,6 +213,15 @@ test("VNC host settings update the chat default in thread remote access mode", a
 });
 
 async function choose(dialog: HTMLElement, label: string, name: string) {
+  if (label === "Connection route") {
+    await userEvent.click(
+      within(within(dialog).getByRole("radiogroup", { name: label })).getByRole(
+        "radio",
+        { name },
+      ),
+    );
+    return;
+  }
   await userEvent.click(within(dialog).getByLabelText(label));
   await userEvent.click(await screen.findByRole("option", { name }));
 }
@@ -349,6 +358,10 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
   expect(within(dialog).getByLabelText("SSH host")).toHaveTextContent(
     "Desktop gateway",
   );
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Second desktop",
+  );
 
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
@@ -418,7 +431,7 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
         ...host,
         id: tunneledHost.id,
         displayName: tunneledHost.displayName,
-        host: tunneledHost.host,
+        host: "desktop.example.com",
         port: tunneledHost.port,
         security: tunneledHost.security,
         generation: tunneledHost.generation + 1,
@@ -442,14 +455,22 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
 
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog", { name: "Edit host" });
-  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
-    "Through saved SSH host",
-  );
+  expect(
+    within(dialog).getByRole("radio", { name: "Through saved SSH host" }),
+  ).toBeChecked();
   expect(
     within(dialog).getByText(/The selected SSH host is no longer available/u),
   ).toBeInTheDocument();
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   await choose(dialog, "Connection route", "Direct from Runner");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "Private and loopback IP addresses require a saved SSH host",
+  );
+  await fill(
+    within(dialog).getByLabelText("RFB destination host"),
+    "desktop.example.com",
+  );
   expect(getAction("button", "Save", dialog)).toBeEnabled();
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
@@ -461,7 +482,7 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
       body: {
         expectedGeneration: tunneledHost.generation,
         displayName: tunneledHost.displayName,
-        host: tunneledHost.host,
+        host: "desktop.example.com",
         port: tunneledHost.port,
         transport: { type: "direct" },
         credential: { id: tunneledHost.credentialId },
@@ -619,6 +640,40 @@ test("Profile selection filters credentials and clears incompatible choices", as
   );
 });
 
+test("Name stays first and a later profile choice never rewrites the earlier draft", async () => {
+  mockSettings({ connections: [], credentials: [], sshConnections: [sshHost] });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  expect(within(dialog).getAllByRole("textbox")[0]).toHaveAccessibleName(
+    "Display name",
+  );
+  await fill(within(dialog).getByLabelText("Display name"), "Office desktop");
+  await fill(
+    within(dialog).getByLabelText("RFB destination host"),
+    "desktop.example.com",
+  );
+  await choose(dialog, "Security profile", "Mac Screen Sharing (Apple DH)");
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Office desktop",
+  );
+  expect(
+    within(dialog).queryByRole("radio", { name: "Direct from Runner" }),
+  ).toBeNull();
+  expect(
+    within(dialog).getByLabelText("RFB destination host"),
+  ).toHaveTextContent("127.0.0.1");
+  await choose(dialog, "Security profile", "Encrypted VNC (X509Vnc)");
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Office desktop",
+  );
+  expect(within(dialog).getByLabelText("RFB destination host")).toHaveValue(
+    "desktop.example.com",
+  );
+  expect(
+    within(dialog).getByRole("radio", { name: "Through saved SSH host" }),
+  ).toBeChecked();
+});
+
 test("Mac classic password is an explicit SSH-only profile with risk disclosure and bounded password", async () => {
   mockSettings({
     connections: [],
@@ -652,20 +707,19 @@ test("Mac classic password is an explicit SSH-only profile with risk disclosure 
   expect(
     within(dialog).queryByLabelText("Server certificate trust"),
   ).toBeNull();
-  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
-    "Through saved SSH host",
-  );
-  await userEvent.click(within(dialog).getByLabelText("Connection route"));
   expect(
-    screen.queryByRole("option", { name: "Direct from Runner" }),
+    within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
   ).toBeNull();
-  await userEvent.keyboard("{Escape}");
+  expect(
+    within(dialog).queryByRole("radio", { name: "Direct from Runner" }),
+  ).toBeNull();
   await choose(dialog, "SSH host", "Desktop gateway · gateway.example.com:22");
   await fill(within(dialog).getByLabelText("Display name"), "Mac classic VNC");
   const destination = within(dialog).getByLabelText("RFB destination host");
-  await fill(destination, "localhost");
-  expect(destination).toBeInvalid();
-  await fill(destination, "127.0.0.1");
+  expect(destination).toHaveTextContent("127.0.0.1");
+  await userEvent.click(destination);
+  expect(screen.queryByRole("option", { name: "localhost" })).toBeNull();
+  await userEvent.keyboard("{Escape}");
   await choose(dialog, "Credential", "Create new credential");
   await fill(
     within(dialog).getByLabelText("Credential name"),
@@ -749,14 +803,12 @@ test.each([
     expect(
       within(dialog).queryByLabelText("Server certificate trust"),
     ).toBeNull();
-    expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
-      "Through saved SSH host",
-    );
-    await userEvent.click(within(dialog).getByLabelText("Connection route"));
     expect(
-      screen.queryByRole("option", { name: "Direct from Runner" }),
+      within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
     ).toBeNull();
-    await userEvent.keyboard("{Escape}");
+    expect(
+      within(dialog).queryByRole("radio", { name: "Direct from Runner" }),
+    ).toBeNull();
     await choose(
       dialog,
       "SSH host",
@@ -767,10 +819,10 @@ test.each([
       "Mac Screen Sharing",
     );
     const destination = within(dialog).getByLabelText("RFB destination host");
-    await fill(destination, "localhost");
-    expect(destination).toBeInvalid();
-    await fill(destination, "127.0.0.1");
-    expect(destination).toBeValid();
+    expect(destination).toHaveTextContent("127.0.0.1");
+    await choose(dialog, "RFB destination host", "::1");
+    expect(destination).toHaveTextContent("::1");
+    await choose(dialog, "RFB destination host", "127.0.0.1");
     await choose(dialog, "Credential", "Create new credential");
     await fill(within(dialog).getByLabelText("Credential name"), "Mac login");
     const usernameField = within(dialog).getByLabelText("Username");

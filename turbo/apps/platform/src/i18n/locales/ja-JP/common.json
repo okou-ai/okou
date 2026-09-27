@@ -7164,6 +7164,7 @@
       "appleVncPasswordDestinationHelp": "Mac の従来の VNC パスワードでは、保存済み SSH 接続先 Mac の 127.0.0.1 または ::1 を指定してください。",
       "destination": "RFB接続先",
       "destinationHelp": "SSHルートでは、このホストとポートへRunnerから直接ではなく、選択したSSHサーバーから接続します。",
+      "privateDirectHelp": "プライベート IP またはループバック IP には保存済み SSH ホストが必要です。上で SSH 経由を選んでください。接続方法は自動では変更されません。",
       "direct": "Runnerから直接",
       "empty": "保存済みSSHホストがありません。このルートを使用する前にSSH設定で追加してください。",
       "loadFailed": "保存済みSSHホストを読み込めませんでした。",

@@ -7261,6 +7261,7 @@
       "appleVncPasswordDestinationHelp": "Pour le mot de passe VNC classique, saisissez 127.0.0.1 ou ::1 sur le Mac joint par SSH enregistré.",
       "destination": "Destination RFB",
       "destinationHelp": "Pour une route SSH, cet hôte et ce port sont joints depuis le serveur SSH sélectionné, et non directement depuis le Runner.",
+      "privateDirectHelp": "Les adresses IP privées ou de bouclage nécessitent un hôte SSH enregistré. Choisissez la route SSH ci-dessus ; elle ne sera pas modifiée automatiquement.",
       "direct": "Direct depuis le Runner",
       "empty": "Aucun hôte SSH enregistré n’est disponible. Ajoutez-en un dans les paramètres SSH avant d’utiliser cette route.",
       "loadFailed": "Impossible de charger les hôtes SSH enregistrés.",

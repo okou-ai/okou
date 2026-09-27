@@ -7164,6 +7164,7 @@
       "appleVncPasswordDestinationHelp": "经典 VNC 密码模式请填写 127.0.0.1 或 ::1；这是通过已保存 SSH 主机访问的 Mac 本机回环地址。",
       "destination": "RFB目标",
       "destinationHelp": "使用SSH路由时，将从所选SSH服务器访问此主机和端口，而不是由Runner直接访问。",
+      "privateDirectHelp": "私有或回环 IP 地址必须通过已保存的 SSH 主机访问。请主动选择上方的 SSH 路由；连接方式不会自动更改。",
       "direct": "Runner直连",
       "empty": "没有可用的已保存SSH主机。使用此路由前，请先在SSH设置中添加主机。",
       "loadFailed": "无法加载已保存的SSH主机。",
