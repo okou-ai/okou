@@ -79,6 +79,34 @@ fn retains_kept_precompact_messages_and_prior_thinking_state() {
 }
 
 #[test]
+fn selects_a_compaction_with_no_kept_precompact_entries() {
+    let mut source = session();
+    source.push_str(&line(json!({"type":"model_change","id":"model","parentId":null,"timestamp":"2026-09-27T00:00:00Z","provider":"faux","modelId":"faux-1"})));
+    source.push_str(&line(json!({"type":"message","id":"old","parentId":"model","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));
+    // Pi's appendCompaction(summary, null, ...) writes its new ID as the
+    // first-kept ID when the entire pre-compact context was summarized.
+    source.push_str(&line(json!({"type":"compaction","id":"compact","parentId":"old","timestamp":"2026-09-27T00:00:00Z","summary":"summary","firstKeptEntryId":"compact","tokensBefore":1000})));
+    source.push_str(&line(json!({"type":"message","id":"done","parentId":"compact","timestamp":"2026-09-27T00:00:00Z","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"provider":"faux","model":"faux-1","stopReason":"stop","timestamp":1}})));
+    let PiHistorySelection::Candidate(candidate) = select(&source, 1024).unwrap() else {
+        panic!("expected a bounded generation with no pre-compact messages");
+    };
+    let entries: Vec<Value> = std::str::from_utf8(candidate.as_bytes())
+        .unwrap()
+        .lines()
+        .map(|row| serde_json::from_str(row).unwrap())
+        .collect();
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| entry["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [SESSION_ID, "model", "compact", "done"]
+    );
+    assert_eq!(entries[2]["parentId"], "model");
+    assert_eq!(entries[2]["firstKeptEntryId"], "compact");
+}
+
+#[test]
 fn carries_the_prior_assistant_model_when_compact_is_the_leaf() {
     let mut source = session();
     source.push_str(&line(json!({"type":"message","id":"model","parentId":null,"timestamp":"2026-09-27T00:00:00Z","message":{"role":"assistant","content":[{"type":"text","text":"previous model"}],"provider":"faux","model":"faux-1","stopReason":"stop","timestamp":1}})));

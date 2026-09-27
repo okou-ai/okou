@@ -335,6 +335,91 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
   });
 });
 
+it("restores a Pi-written compaction with no kept pre-compact entries", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-compact-no-kept-"));
+  onTestFinished(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const timestamp = "2026-09-27T00:00:00Z";
+  const header = {
+    type: "session",
+    version: 3,
+    id: "pi-no-kept",
+    cwd: root,
+    timestamp,
+  };
+  const model = {
+    type: "model_change",
+    id: "model",
+    parentId: null,
+    timestamp,
+    provider: "faux",
+    modelId: "faux-1",
+  };
+  const old = {
+    type: "message",
+    id: "old",
+    parentId: "model",
+    timestamp,
+    message: { role: "user", content: "X".repeat(2048) },
+  };
+  const originalPath = join(root, "original.jsonl");
+  await writeFile(
+    originalPath,
+    [header, model, old]
+      .map((entry) => {
+        return JSON.stringify(entry);
+      })
+      .join("\n") + "\n",
+  );
+  const original = SessionManager.open(originalPath, root, root);
+  const compactId = original.appendCompaction("summary", null, 1000);
+  const doneId = original.appendMessage(fauxAssistantMessage("done"));
+  const entries = original.getEntries();
+  const compact = entries.find((entry) => {
+    return entry.id === compactId;
+  });
+  const done = entries.find((entry) => {
+    return entry.id === doneId;
+  });
+  expect(compact).toMatchObject({
+    type: "compaction",
+    firstKeptEntryId: compactId,
+    parentId: "old",
+  });
+  expect(done).toMatchObject({ type: "message", parentId: compactId });
+  if (!compact || !done) {
+    throw new Error("Pi did not write the expected native entries");
+  }
+  const candidateJsonl = [
+    header,
+    model,
+    { ...compact, parentId: "model" },
+    done,
+  ]
+    .map((entry) => {
+      return JSON.stringify(entry);
+    })
+    .join("\n");
+  const candidatePath = join(root, "candidate.jsonl");
+  await writeFile(candidatePath, candidateJsonl);
+  const candidate = SessionManager.open(candidatePath, root, root);
+  expect(candidate.buildSessionContext()).toEqual(
+    original.buildSessionContext(),
+  );
+  expect(candidate.getSessionName()).toBe(original.getSessionName());
+  expect(
+    candidate.getBranch().map((entry) => {
+      return entry.id;
+    }),
+  ).toEqual(["model", compactId, doneId]);
+  expect(inspectPiSessionJsonl(candidateJsonl)).toMatchObject({
+    sessionId: header.id,
+    isSettledCheckpoint: true,
+    hasPendingToolCalls: false,
+  });
+});
+
 it("preserves a cleared optional native session name after a bounded cut", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-compact-cleared-name-"));
   onTestFinished(async () => {

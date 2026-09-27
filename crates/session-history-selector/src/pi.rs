@@ -374,11 +374,9 @@ fn select_with_limit(
             Reason::InvalidCompactBoundary,
         ));
     };
-    if first_index >= compact_index {
-        return Ok(PiHistorySelection::Ineligible(
-            Reason::InvalidCompactBoundary,
-        ));
-    }
+    // Pi uses the compact's own ID when no pre-compact entry is kept. In that
+    // case the compact itself starts the retained path and older context is
+    // represented only by its summary (plus portable model/title settings).
     let Some(prefix) = branch.get(..first_index) else {
         return Ok(PiHistorySelection::Ineligible(Reason::BrokenBranch));
     };
