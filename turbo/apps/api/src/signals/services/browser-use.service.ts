@@ -1106,6 +1106,7 @@ function browserUseControlInspectionFunction(): string {
           option.value.length <= ${BROWSER_USER_ACTION_MAX_OPTION_VALUE_LENGTH}));
       const supported =
         textarea || select || (input && supportedInputTypes.has(control.type));
+      const mainDocument = control.ownerDocument === document && control.getRootNode() === document;
       const textual = supported && (textarea || !["number", "range", "color", "date", "time", "datetime-local", "month", "week", "checkbox", "radio", "file"].includes(control.type));
       const range = input && control.type === "range";
       const color = input && control.type === "color";
@@ -1138,8 +1139,8 @@ function browserUseControlInspectionFunction(): string {
         tagName: typeof control.tagName === "string" ? control.tagName : "",
         inputType: input ? control.type : textarea ? "textarea" : select ? (control.multiple ? "select-multiple" : "select-one") : "",
         connected: control.isConnected === true,
-        mainDocument: control.ownerDocument === document,
-        writable: supported && boundedFiles && boundedNumberConstraints && boundedRange && boundedColor && boundedOptions && !control.readOnly && !control.matches(":disabled") && !(input && control.type === "checkbox" && control.indeterminate),
+        mainDocument,
+        writable: mainDocument && supported && boundedFiles && boundedNumberConstraints && boundedRange && boundedColor && boundedOptions && !control.readOnly && !control.matches(":disabled") && !(input && control.type === "checkbox" && control.indeterminate),
         siteRequired: supported && control.required === true,
         ...(input && control.type === "checkbox" ? { checked: control.checked } : {}),
         ...(range && boundedRange ? { rangeValue: control.value } : {}),
@@ -2510,8 +2511,12 @@ async function writeBrowserUseApplyFields(
               controls.push(otherControlValues[index]);
               values.push(otherControlValues[index + 1]);
             }
+            const inMainDocument = (control) => control.isConnected &&
+              control.ownerDocument === document && control.getRootNode() === document;
+            if (!controls.every(inMainDocument)) return false;
             for (let index = 0; index < controls.length; index += 1) {
               const control = controls[index];
+              if (!inMainDocument(control)) return false;
               const prototype = control instanceof HTMLTextAreaElement
                 ? HTMLTextAreaElement.prototype
                 : HTMLInputElement.prototype;
@@ -2554,6 +2559,7 @@ async function writeBrowserUseApplyFields(
             return controls.every((control, index) => {
               return control.isConnected &&
                 control.ownerDocument === document &&
+                control.getRootNode() === document &&
                 control.value === expectedValues[index];
             });
           }`,
@@ -2588,7 +2594,8 @@ function browserUseMixedControlWriterFunction(): string {
           }
           if (memberOffset !== rest.length) return false;
           const matches = (control, spec, final) => {
-            if (!control.isConnected || control.ownerDocument !== document || control.matches(":disabled")) return false;
+            if (!control.isConnected || control.ownerDocument !== document ||
+                control.getRootNode() !== document || control.matches(":disabled")) return false;
             if (spec.kind === "radio") {
               if (!(control instanceof HTMLInputElement) || control.type !== "radio" ||
                   control.getRootNode() !== document || control.name !== spec.name ||
@@ -2622,8 +2629,7 @@ function browserUseMixedControlWriterFunction(): string {
               const dateTime = control instanceof HTMLInputElement && ["date", "time", "datetime-local", "month", "week"].includes(control.type);
               const textual = control instanceof HTMLTextAreaElement || (control instanceof HTMLInputElement && !["number", "range", "color", "date", "time", "datetime-local", "month", "week", "checkbox", "radio"].includes(control.type));
               const constrained = control instanceof HTMLInputElement && (control.type === "number" || control.type === "range" || dateTime);
-              if (actualType === "color" && (spec.colorMode !== "opaque-srgb" || control.getRootNode() !== document ||
-                  control.hasAttribute("alpha") || control.hasAttribute("colorspace") || !/^#[0-9a-f]{6}$/.test(control.value))) return false;
+              if (actualType === "color" && (spec.colorMode !== "opaque-srgb" || control.hasAttribute("alpha") || control.hasAttribute("colorspace") || !/^#[0-9a-f]{6}$/.test(control.value))) return false;
               if ((control instanceof HTMLInputElement && control.type === "email" ? control.multiple : false) !== spec.multiple ||
                   (textual && (control.minLength !== (spec.minLength ?? -1) ||
                     control.maxLength !== (spec.maxLength ?? -1) ||
@@ -3005,7 +3011,8 @@ async function applyBrowserUseFileActionOnSocket(
   };
   const writer = `function (original, operation, files) {
     if (!(this instanceof HTMLInputElement) || this.type !== "file" ||
-      !this.isConnected || this.ownerDocument !== document || this.matches(":disabled") ||
+      !this.isConnected || this.ownerDocument !== document ||
+      this.getRootNode() !== document || this.matches(":disabled") ||
       this.webkitdirectory ||
       this.accept !== original.accept || this.multiple !== original.multiple ||
       this.required !== original.required ||
@@ -3060,7 +3067,8 @@ async function applyBrowserUseFileActionOnSocket(
           objectId,
           functionDeclaration: `function (original, expected) {
       return this instanceof HTMLInputElement && this.type === "file" &&
-        this.isConnected && this.ownerDocument === document && !this.matches(":disabled") &&
+        this.isConnected && this.ownerDocument === document &&
+        this.getRootNode() === document && !this.matches(":disabled") &&
         !this.webkitdirectory &&
         this.accept === original.accept && this.multiple === original.multiple &&
         this.required === original.required &&

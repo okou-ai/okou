@@ -833,6 +833,7 @@ function mockNativeFileTarget(state: {
     type: string;
   }[];
   readonly writable: () => boolean;
+  readonly mainDocument: () => boolean;
   readonly missingNode: () => boolean;
   readonly readback: () => boolean;
   readonly accept: () => string;
@@ -907,7 +908,7 @@ function mockNativeFileTarget(state: {
                 tagName: "INPUT",
                 inputType: "file",
                 connected: true,
-                mainDocument: true,
+                mainDocument: state.mainDocument(),
                 writable: state.writable(),
                 siteRequired: false,
                 multiple: state.multiple(),
@@ -953,6 +954,7 @@ describe("Browser user-action route", () => {
     let siteAccept = ".txt";
     const multiple = true;
     let writable = true;
+    let fileInMainDocument = true;
     let missingNode = false;
     let readback = true;
     mockNativeFileTarget({
@@ -961,6 +963,9 @@ describe("Browser user-action route", () => {
       },
       writable: () => {
         return writable;
+      },
+      mainDocument: () => {
+        return fileInMainDocument;
       },
       missingNode: () => {
         return missingNode;
@@ -1145,6 +1150,42 @@ describe("Browser user-action route", () => {
     });
     expect(unavailable.status).toBe(409);
     writable = true;
+    const movedToShadow = await create();
+    fileInMainDocument = false;
+    const staleRoot = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: movedToShadow.body.action.requestToken },
+        body: { values: [] },
+      }),
+      [200],
+    );
+    expect(staleRoot.body.state).toBe("stale");
+    expect(files).toStrictEqual([
+      { name: "note.txt", size: 4, type: "text/plain" },
+    ]);
+    const unsupportedFileRoot = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after unsupported file root",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "document",
+            label: "Document",
+            fieldKind: "file",
+            required: false,
+            backendNodeId: 45,
+          },
+        ],
+      },
+    });
+    expect(unsupportedFileRoot).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
+    });
+    fileInMainDocument = true;
     const missing = await create();
     missingNode = true;
     const staleNode = await accept(
@@ -3343,6 +3384,7 @@ describe("Browser user-action route", () => {
     acceptBrowserUseCdpSessions([providerId]);
     let currentLoaderId = "native-input-loader";
     let controlWritable = true;
+    let controlMainDocument = true;
     let controlConnected = true;
     let controlTagName = "INPUT";
     let controlSiteRequired = false;
@@ -3462,7 +3504,7 @@ describe("Browser user-action route", () => {
                         ? "tel"
                         : "password",
                 connected: controlConnected,
-                mainDocument: true,
+                mainDocument: controlMainDocument,
                 writable: controlWritable,
                 siteRequired: controlSiteRequired,
                 multiple:
@@ -3564,6 +3606,29 @@ describe("Browser user-action route", () => {
       },
     });
     controlWritable = true;
+    controlMainDocument = false;
+    const unsupportedRoot = await userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input",
+        callbackPrompt: "Continue after unsupported root",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password",
+            required: true,
+            backendNodeId: 42,
+          },
+        ],
+      },
+    });
+    expect(unsupportedRoot).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL" } },
+    });
+    controlMainDocument = true;
     context.mocks.browserUseCdp.connect.mockClear();
     context.mocks.browserUseCdp.command.mockClear();
     providerReadCount = 0;
@@ -4357,6 +4422,39 @@ describe("Browser user-action route", () => {
     );
     expect(detachedReadback.body.state).toBe("stale");
     expect(browserInputWrites()).toHaveLength(writesBeforeStale);
+
+    const shadowCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after control leaves the document root",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              backendNodeId: 44,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    controlMainDocument = false;
+    const shadowPreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: shadowCandidate.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(shadowPreflight.body.state).toBe("stale");
+    expect(browserInputWrites()).toHaveLength(writesBeforeStale);
+    controlMainDocument = true;
 
     const unwritableCandidate = await accept(
       userActionClient().create({
