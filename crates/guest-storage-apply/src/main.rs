@@ -1,4 +1,5 @@
 use guest_contracts::{env, runtime_paths};
+use guest_storage_apply::input_telemetry::{InputPhase, record_payload_size, record_phase};
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
 use std::fs::File;
 #[cfg(unix)]
@@ -82,17 +83,24 @@ fn manifest_input_from_args() -> Option<ManifestInput> {
 fn run(input: ManifestInput) -> bool {
     match input {
         ManifestInput::FilesStdin => {
-            if !remove_stale_manifest_file(runtime_paths::STORAGE_MANIFEST_PATH) {
+            let stale_start = Instant::now();
+            let stale_removed = remove_stale_manifest_file(runtime_paths::STORAGE_MANIFEST_PATH);
+            record_phase(InputPhase::StaleCleanup, stale_start, stale_removed);
+            if !stale_removed {
+                record_payload_size(None);
                 return false;
             }
             let mut input = Vec::new();
             let limit = guest_contracts::storage_files::MAX_INPUT_BYTES as u64;
-            if std::io::stdin()
+            let read_start = Instant::now();
+            let read_ok = std::io::stdin()
                 .take(limit + 1)
                 .read_to_end(&mut input)
-                .is_err()
-                || input.len() as u64 > limit
-            {
+                .is_ok()
+                && input.len() as u64 <= limit;
+            record_phase(InputPhase::Read, read_start, read_ok);
+            if !read_ok {
+                record_payload_size(None);
                 log_error!(LOG_TAG, "Failed to read bounded storage files input");
                 return false;
             }

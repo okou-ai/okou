@@ -11,6 +11,7 @@ mod attribution;
 mod connection_observation;
 mod empty_artifact;
 mod http_failure;
+mod input_attribution;
 mod manifest_input;
 mod redaction;
 mod runtime_paths;
