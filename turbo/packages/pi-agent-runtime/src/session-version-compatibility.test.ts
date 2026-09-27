@@ -195,7 +195,11 @@ it("restores the same native compacted context and pending tools after a bounded
     sourceManager.buildSessionContext(),
   );
   expect(resumed.buildSessionContext()).toEqual(original.buildSessionContext());
-  expect(resumed.getBranch().map((entry) => entry.id)).toEqual([
+  expect(
+    resumed.getBranch().map((entry) => {
+      return entry.id;
+    }),
+  ).toEqual([
     "39d32408",
     "01001b0c",
     "7a8ffa1b",
@@ -263,7 +267,9 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
     tokensBefore: 1000,
   };
   const source = [header, model, thinking, large, kept, compact]
-    .map((entry) => JSON.stringify(entry))
+    .map((entry) => {
+      return JSON.stringify(entry);
+    })
     .join("\n");
   const bounded = [
     header,
@@ -272,7 +278,9 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
     { ...kept, parentId: "think" },
     compact,
   ]
-    .map((entry) => JSON.stringify(entry))
+    .map((entry) => {
+      return JSON.stringify(entry);
+    })
     .join("\n");
   const originalPath = join(root, "source.jsonl");
   const candidatePath = join(root, "candidate.jsonl");
@@ -287,12 +295,11 @@ it("preserves a pre-compact assistant model and thinking setting when compact is
   expect(candidate.buildSessionContext()).toEqual(
     original.buildSessionContext(),
   );
-  expect(candidate.getBranch().map((entry) => entry.id)).toEqual([
-    "model",
-    "think",
-    "kept",
-    "compact",
-  ]);
+  expect(
+    candidate.getBranch().map((entry) => {
+      return entry.id;
+    }),
+  ).toEqual(["model", "think", "kept", "compact"]);
   const settledCandidate = [
     bounded,
     JSON.stringify({
