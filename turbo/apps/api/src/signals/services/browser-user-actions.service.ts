@@ -192,6 +192,7 @@ export const prepareBrowserUserFileUpload$ = command(
         {
           usePublicEndpoint: true,
           checksumSha256,
+          contentLength: args.input.size,
           expiresInSeconds: 60,
         },
         signal,

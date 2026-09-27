@@ -3,7 +3,11 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
-import { DeleteObjectsCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { runInNewContext } from "node:vm";
 
 import { testBrowserReconcileContract } from "@okouai/api-contracts/contracts/test-browser-reconcile";
@@ -1156,6 +1160,17 @@ describe("Browser user-action route", () => {
         [200],
       );
       expect(prepared.body.uploadUrl).toMatch(/^https?:\/\//u);
+      const signing = context.mocks.s3.getSignedUrl.mock.lastCall;
+      const signedCommand = signing?.[1];
+      if (!(signedCommand instanceof PutObjectCommand)) {
+        throw new Error("Expected a synthetic signed PUT command");
+      }
+      expect(signedCommand.input).toMatchObject({
+        Bucket: "test-user-storages",
+        ContentLength: bytes.length,
+        ContentType: "application/octet-stream",
+      });
+      expect(signing?.[2]).toMatchObject({ expiresIn: 60 });
       expect(prepared.body.uploadHeaders["x-amz-checksum-sha256"]).toBe(
         createHash("sha256").update(bytes).digest("base64"),
       );
