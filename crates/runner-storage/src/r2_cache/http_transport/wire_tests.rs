@@ -1,6 +1,43 @@
 use super::*;
 use httpmock::MockServer;
-use tokio::io::AsyncReadExt;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpListener,
+};
+
+/// A one-shot-per-connection server: unlike static mocks, this can prove
+/// which retry attempt received which response. The URL never leaves localhost.
+async fn scripted_server(responses: Vec<&'static str>) -> (Url, tokio::task::JoinHandle<usize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+    let handle = tokio::spawn(async move {
+        let mut attempts = 0;
+        for response in responses {
+            let (mut connection, _) =
+                tokio::time::timeout(Duration::from_secs(5), listener.accept())
+                    .await
+                    .expect("retry attempt did not arrive")
+                    .unwrap();
+            let mut received = Vec::new();
+            loop {
+                let mut buf = [0u8; 4096];
+                let n = connection.read(&mut buf).await.unwrap();
+                assert!(n > 0, "request closed before headers");
+                received.extend_from_slice(&buf[..n]);
+                if received.windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let request = String::from_utf8_lossy(&received);
+            assert!(request.to_ascii_lowercase().contains("authorization:"));
+            connection.write_all(response.as_bytes()).await.unwrap();
+            connection.shutdown().await.unwrap();
+            attempts += 1;
+        }
+        attempts
+    });
+    (url, handle)
+}
 
 fn client(server: &MockServer) -> R2HttpClient {
     R2HttpClient::with_endpoint(
@@ -197,6 +234,64 @@ async fn complete_http_200_embedded_error_fails_and_caller_can_abort() {
         .unwrap();
     complete.assert_calls_async(1).await;
     abort.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn transient_failure_retries_signed_head_and_upload_part() {
+    let (url, server) = scripted_server(vec![
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert!(c.head("runner-templates/h.tar.zst").await.unwrap());
+    assert_eq!(server.await.unwrap(), 2);
+
+    let (url, server) = scripted_server(vec![
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nETag: \"part\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    let part = c
+        .upload_part(
+            "runner-templates/h.tar.zst",
+            "upload",
+            1,
+            Bytes::from_static(b"payload"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(part.etag, "\"part\"");
+    assert_eq!(server.await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn complete_retries_embedded_internal_error_but_not_invalid_part() {
+    let (url, server) = scripted_server(vec![
+        "HTTP/1.1 200 OK\r\nContent-Length: 41\r\nConnection: close\r\n\r\n<Error><Code>InternalError</Code></Error>",
+        "HTTP/1.1 200 OK\r\nContent-Length: 32\r\nConnection: close\r\n\r\n<CompleteMultipartUploadResult/>",
+    ]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    c.complete_multipart("runner-templates/h.tar.zst", "upload", &[])
+        .await
+        .unwrap();
+    assert_eq!(server.await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn lost_complete_response_retries_but_does_not_infer_success_from_nosuchupload() {
+    let (url, server) = scripted_server(vec![
+        "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 40\r\nConnection: close\r\n\r\n<Error><Code>NoSuchUpload</Code></Error>",
+    ]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    let error = c
+        .complete_multipart("runner-templates/h.tar.zst", "upload", &[])
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("NoSuchUpload"), "{error}");
+    assert_eq!(server.await.unwrap(), 2);
 }
 
 #[tokio::test]

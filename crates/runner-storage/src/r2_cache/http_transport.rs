@@ -35,6 +35,9 @@ const MAX_XML_BYTES: usize = 64 * 1024;
 const MAX_ERROR_BYTES: usize = 16 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 const PART_TIMEOUT: Duration = Duration::from_secs(300);
+// The original S3 client uses the standard retry policy (three attempts).
+// Retain the bounded attempt count; every attempt is signed afresh.
+const MAX_ATTEMPTS: usize = 3;
 
 pub(super) struct DownloadResponse {
     pub(super) content_length: Option<i64>,
@@ -258,27 +261,106 @@ impl R2HttpClient {
         query: &[(&str, &str)],
         body: Bytes,
         content_type: Option<&str>,
+        complete: bool,
     ) -> Result<Response, R2Error> {
         let url = self.url(key, query)?;
-        let is_part = method == Method::PUT;
-        let request = self.signed_request(method, url, body, content_type)?;
-        let client = if is_part {
+        let client = if method == Method::PUT {
             &self.part_client
         } else {
             &self.client
         };
-        client.execute(request).await.map_err(|e| {
-            if e.is_timeout() {
-                R2Error::S3(format!("R2 request timeout: {e}"))
-            } else {
-                R2Error::S3(format!("R2 request failed: {e}"))
+        for attempt in 1..=MAX_ATTEMPTS {
+            // Request bodies are Bytes, so retries replay the identical payload;
+            // fresh SigV4 timestamps and headers are generated on every attempt.
+            let request =
+                self.signed_request(method.clone(), url.clone(), body.clone(), content_type)?;
+            let mut response = match client.execute(request).await {
+                Ok(response) => response,
+                Err(e) => {
+                    if attempt < MAX_ATTEMPTS && retryable_transport(&e) {
+                        retry_delay(attempt, None).await;
+                        continue;
+                    }
+                    return Err(if e.is_timeout() {
+                        R2Error::S3(format!("R2 request timeout: {e}"))
+                    } else {
+                        R2Error::S3(format!("R2 request failed: {e}"))
+                    });
+                }
+            };
+            let status = response.status();
+            // The SDK interprets x-amz-retry-after as milliseconds, capped by
+            // the standard policy's maximum backoff.
+            let retry_after = response
+                .headers()
+                .get("x-amz-retry-after")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok())
+                .map(|ms| Duration::from_millis(ms).min(Duration::from_secs(20)));
+            // HEAD 404 is a cache miss; GET 404 needs its unconsumed XML body
+            // to distinguish NoSuchKey from NoSuchBucket.
+            if status == StatusCode::NOT_FOUND {
+                return Ok(response);
             }
-        })
+            if complete && status.is_success() {
+                // Complete may carry an Error in a 200 response. The SDK
+                // retries retryable embedded codes; never mark one as success.
+                let body = match bounded_bytes(&mut response, MAX_XML_BYTES).await {
+                    Ok(body) => body,
+                    Err(BodyReadError::Transport(e))
+                        if attempt < MAX_ATTEMPTS && retryable_transport(&e) =>
+                    {
+                        retry_delay(attempt, retry_after).await;
+                        continue;
+                    }
+                    Err(error) => return Err(error.into()),
+                };
+                let document = parse_xml(&body)?;
+                if document.root_element().tag_name().name() == "CompleteMultipartUploadResult" {
+                    // The caller needs only success, not the consumed XML body.
+                    return Ok(response);
+                }
+                let code = xml_code(&body);
+                if attempt < MAX_ATTEMPTS && is_retryable(status, code.as_deref()) {
+                    retry_delay(attempt, retry_after).await;
+                    continue;
+                }
+                return Err(R2Error::S3(format!(
+                    "complete_multipart_upload: unexpected response {}",
+                    code.as_deref().unwrap_or("unknown")
+                )));
+            }
+            if !status.is_success() {
+                let body = match bounded_bytes(&mut response, MAX_ERROR_BYTES).await {
+                    Ok(body) => body,
+                    Err(BodyReadError::Transport(e))
+                        if attempt < MAX_ATTEMPTS && retryable_transport(&e) =>
+                    {
+                        retry_delay(attempt, retry_after).await;
+                        continue;
+                    }
+                    Err(error) => return Err(error.into()),
+                };
+                let code = xml_code(&body);
+                if attempt < MAX_ATTEMPTS && is_retryable(status, code.as_deref()) {
+                    retry_delay(attempt, retry_after).await;
+                    continue;
+                }
+                return Err(R2Error::S3(format!(
+                    "R2 request: HTTP {status}, code {}",
+                    code.as_deref().unwrap_or("unknown")
+                )));
+            }
+            return Ok(response);
+        }
+        Err(R2Error::S3(
+            "R2 retry loop exhausted without a response".into(),
+        ))
     }
 
     pub(super) async fn head(&self, key: &str) -> Result<bool, R2Error> {
         let response = self
-            .execute(Method::HEAD, key, &[], Bytes::new(), None)
+            .execute(Method::HEAD, key, &[], Bytes::new(), None, false)
             .await?;
         match response.status() {
             StatusCode::OK => Ok(true),
@@ -288,12 +370,12 @@ impl R2HttpClient {
     }
 
     pub(super) async fn get(&self, key: &str) -> Result<Option<DownloadResponse>, R2Error> {
-        let response = self
-            .execute(Method::GET, key, &[], Bytes::new(), None)
+        let mut response = self
+            .execute(Method::GET, key, &[], Bytes::new(), None, false)
             .await?;
         if response.status() == StatusCode::NOT_FOUND {
             // Unlike HEAD, a 404 may be a missing bucket. Require NoSuchKey.
-            let body = bounded_bytes(response, MAX_ERROR_BYTES).await?;
+            let body = bounded_bytes(&mut response, MAX_ERROR_BYTES).await?;
             if xml_code(&body).as_deref() == Some("NoSuchKey") {
                 return Ok(None);
             }
@@ -317,13 +399,20 @@ impl R2HttpClient {
     }
 
     pub(super) async fn create_multipart(&self, key: &str) -> Result<String, R2Error> {
-        let response = self
-            .execute(Method::POST, key, &[("uploads", "")], Bytes::new(), None)
+        let mut response = self
+            .execute(
+                Method::POST,
+                key,
+                &[("uploads", "")],
+                Bytes::new(),
+                None,
+                false,
+            )
             .await?;
         if !response.status().is_success() {
             return Err(status_error("create_multipart_upload", response).await);
         }
-        let body = bounded_bytes(response, MAX_XML_BYTES).await?;
+        let body = bounded_bytes(&mut response, MAX_XML_BYTES).await?;
         let document = parse_xml(&body)?;
         if document.root_element().tag_name().name() != "InitiateMultipartUploadResult" {
             return Err(R2Error::S3(
@@ -355,6 +444,7 @@ impl R2HttpClient {
                 &[("partNumber", &pn), ("uploadId", upload_id)],
                 chunk,
                 None,
+                false,
             )
             .await?;
         if !response.status().is_success() {
@@ -400,20 +490,13 @@ impl R2HttpClient {
                 &[("uploadId", upload_id)],
                 Bytes::from(xml),
                 Some("application/xml"),
+                true,
             )
             .await?;
         if !response.status().is_success() {
             return Err(status_error("complete_multipart_upload", response).await);
         }
-        // S3 and R2 can report a failed Complete with HTTP 200 and an XML Error.
-        let body = bounded_bytes(response, MAX_XML_BYTES).await?;
-        let document = parse_xml(&body)?;
-        if document.root_element().tag_name().name() != "CompleteMultipartUploadResult" {
-            return Err(R2Error::S3(format!(
-                "complete_multipart_upload: unexpected response {}",
-                xml_code(&body).as_deref().unwrap_or("unknown")
-            )));
-        }
+        // execute validated the entire XML body, including HTTP 200 errors.
         Ok(())
     }
 
@@ -425,6 +508,7 @@ impl R2HttpClient {
                 &[("uploadId", upload_id)],
                 Bytes::new(),
                 None,
+                false,
             )
             .await?;
         if !response.status().is_success() {
@@ -432,6 +516,58 @@ impl R2HttpClient {
         }
         Ok(())
     }
+}
+
+fn retryable_transport(error: &reqwest::Error) -> bool {
+    error.is_timeout()
+        || error.is_connect()
+        || error.is_request()
+        || error.is_body()
+        || error.is_decode()
+}
+
+// Narrow equivalent of the S3 standard policy's status and AWS error-code
+// classifiers for the operations used by the template cache. Do not retry
+// missing objects, invalid parts, authentication failures, or malformed XML.
+fn is_retryable(status: StatusCode, code: Option<&str>) -> bool {
+    matches!(status.as_u16(), 500 | 502 | 503 | 504)
+        || matches!(
+            code,
+            Some(
+                "InternalError"
+                    | "RequestTimeout"
+                    | "RequestTimeoutException"
+                    | "SlowDown"
+                    | "Throttling"
+                    | "ThrottlingException"
+                    | "ThrottledException"
+                    | "RequestThrottledException"
+                    | "TooManyRequestsException"
+                    | "RequestLimitExceeded"
+                    | "BandwidthLimitExceeded"
+                    | "LimitExceededException"
+                    | "RequestThrottled"
+                    | "PriorRequestNotComplete"
+                    | "ProvisionedThroughputExceededException"
+                    | "TransactionInProgressException"
+                    | "EC2ThrottledException"
+            )
+        )
+}
+
+async fn retry_delay(attempt: usize, retry_after: Option<Duration>) {
+    if let Some(retry_after) = retry_after {
+        tokio::time::sleep(retry_after).await;
+        return;
+    }
+    // Standard SDK backoff is exponential with full jitter, starting at 1s.
+    // This is a non-cryptographic delay; no randomness is used for signing.
+    let cap_ms = 1_000u64 << (attempt - 1);
+    let nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos() as u64;
+    tokio::time::sleep(Duration::from_millis(nanos % (cap_ms + 1))).await;
 }
 
 fn xml_escape(value: &str) -> String {
@@ -462,27 +598,38 @@ fn xml_code(body: &[u8]) -> Option<String> {
     code.text().map(str::to_owned)
 }
 
-async fn bounded_bytes(response: Response, max: usize) -> Result<Bytes, R2Error> {
+enum BodyReadError {
+    Transport(reqwest::Error),
+    TooLarge,
+}
+
+impl From<BodyReadError> for R2Error {
+    fn from(error: BodyReadError) -> Self {
+        match error {
+            BodyReadError::Transport(e) => Self::S3(format!("read R2 response: {e}")),
+            BodyReadError::TooLarge => Self::S3("R2 XML response exceeds size limit".into()),
+        }
+    }
+}
+
+async fn bounded_bytes(response: &mut Response, max: usize) -> Result<Bytes, BodyReadError> {
     let mut bytes = Vec::new();
-    let mut stream = response.bytes_stream();
-    use futures_util::StreamExt;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| R2Error::S3(format!("read R2 response: {e}")))?;
+    while let Some(chunk) = response.chunk().await.map_err(BodyReadError::Transport)? {
         if bytes
             .len()
             .checked_add(chunk.len())
             .is_none_or(|len| len > max)
         {
-            return Err(R2Error::S3("R2 XML response exceeds size limit".into()));
+            return Err(BodyReadError::TooLarge);
         }
         bytes.extend_from_slice(&chunk);
     }
     Ok(Bytes::from(bytes))
 }
 
-async fn status_error(operation: &str, response: Response) -> R2Error {
+async fn status_error(operation: &str, mut response: Response) -> R2Error {
     let status = response.status();
-    let body = bounded_bytes(response, MAX_ERROR_BYTES).await;
+    let body = bounded_bytes(&mut response, MAX_ERROR_BYTES).await;
     let code = body.as_ref().ok().and_then(|body| xml_code(body));
     R2Error::S3(format!(
         "{operation}: HTTP {status}, code {}",

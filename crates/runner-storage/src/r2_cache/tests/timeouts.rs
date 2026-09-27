@@ -78,5 +78,7 @@ async fn upload_parts_allow_slow_responses_without_relaxing_control_requests() {
         error.to_string().to_ascii_lowercase().contains("timeout"),
         "{error}"
     );
-    head.assert_calls_async(1).await;
+    // The SDK-standard retry budget is three attempts; every control attempt
+    // retains the shorter timeout, rather than inheriting the part budget.
+    head.assert_calls_async(3).await;
 }
