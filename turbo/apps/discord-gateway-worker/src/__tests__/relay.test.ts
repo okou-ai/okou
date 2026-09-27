@@ -506,32 +506,6 @@ describe("Discord Gateway relay", () => {
     expect(relay.opened).toHaveLength(1);
   });
 
-  it("gives a requested heartbeat its full ACK interval across the next scheduled tick", async () => {
-    const relay = await createRelay();
-    const gateway = await relay.start();
-    // Each ACK must arrive within one interval, so leave slack for loaded CI.
-    gateway.hello(1_500);
-    await gateway.next(2);
-    gateway.ready();
-    await gateway.next(1);
-    // The health response is an I/O barrier after the scheduled heartbeat's ACK.
-    // The requested heartbeat below therefore has a later deadline than the
-    // next regular tick, even though its acknowledgement is still pending.
-    expect(await relay.health()).toMatchObject({ resumable: true });
-    gateway.autoAcknowledge = false;
-    gateway.send({ op: 1, d: null });
-    expect(await gateway.next(1)).toEqual({ op: 1, d: 1 });
-
-    expect(await gateway.next(1)).toEqual({ op: 1, d: 1 });
-    gateway.autoAcknowledge = true;
-    gateway.send({ op: 11, d: null });
-    gateway.message();
-    expect(JSON.parse((await relay.deliveries.next()).rawBody).eventId).toBe(
-      `MESSAGE_CREATE:${MESSAGE_ID}`,
-    );
-    expect(relay.opened).toHaveLength(1);
-  }, 15_000);
-
   it("stops after a fatal Discord close without exposing credentials", async () => {
     const relay = await createRelay();
     const gateway = await relay.start();

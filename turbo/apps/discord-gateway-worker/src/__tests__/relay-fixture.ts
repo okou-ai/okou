@@ -28,19 +28,29 @@ type Packet = z.infer<typeof packetSchema>;
 
 class Events<T> {
   private readonly buffered: T[] = [];
-  private readonly waiting: Array<(event: T) => void> = [];
+  private readonly waiting: Array<{
+    resolve: (event: T) => void;
+    reject: (error: Error) => void;
+  }> = [];
+  private closed: Error | null = null;
 
   push(event: T): void {
     const waiter = this.waiting.shift();
-    if (waiter) waiter(event);
+    if (waiter) waiter.resolve(event);
     else this.buffered.push(event);
+  }
+
+  close(error: Error): void {
+    this.closed = error;
+    for (const waiter of this.waiting.splice(0)) waiter.reject(error);
   }
 
   async next(): Promise<T> {
     const event = this.buffered.shift();
     if (event !== undefined) return event;
-    return new Promise((resolve) => {
-      this.waiting.push(resolve);
+    if (this.closed) throw this.closed;
+    return new Promise((resolve, reject) => {
+      this.waiting.push({ resolve, reject });
     });
   }
 }
@@ -67,6 +77,9 @@ export class GatewayConnection {
     });
     this.socket.addEventListener("close", (event) => {
       this.closed.resolve({ code: event.code, reason: event.reason });
+      this.incoming.close(
+        new Error(`Gateway socket closed (${event.code}: ${event.reason})`),
+      );
     });
   }
 
