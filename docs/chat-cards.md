@@ -798,9 +798,9 @@ switch is enabled. Direct Browser takeover is a last resort for unsupported
 interactions or when native input is unavailable. The agent then shares the
 current `okou browser view` link and explains the step in its response. The
 user opens the existing thread Browser card or viewer, then replies in chat
-when finished or blocked. The
-ordinary user message starts the next agent round; no Browser user-action
-request or Done/Cancel callback is created. Browser reconciliation removes
+when finished or blocked. The ordinary user message starts the next agent
+round; no Browser user-action request or Done/Cancel callback is created.
+Browser reconciliation removes
 retired direct-action rows in bounded batches even while their Browser remains
 live, so old action URLs become unavailable without blocking Browser cleanup.
 

@@ -176,6 +176,7 @@ describe("Pi stable context projection", () => {
       discordEnabled: false,
       deliveryFormatGuidanceEnabled: false,
       presentationConvertEnabled: false,
+      browserNativeInputEnabled: false,
       customConnectorMcpEnabled: false,
       triggerSource: "web",
     };

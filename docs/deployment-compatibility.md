@@ -8,13 +8,13 @@ enabled. The API still enforces the switch for input actions; an older CLI or
 agent prompt cannot grant access. When the switch is off, the new prompt does
 not advertise native input and keeps viewer takeover as a last resort.
 
-The optional `browserNativeInputEnabled` prompt input is written on new runs and
-recomputed from the current feature context on stable-context recapture. Older
-persisted inputs without it remain accepted; recapture computes the current
-switch state before building the replacement prompt, and the prompt builder
-treats an absent value as disabled. The flag participates in the feature-prompt
-digest so a changed switch state cannot silently reuse the old cached
-guidance. Older API versions ignore the new semantic field; no database
+The required `browserNativeInputEnabled` prompt input is written on new runs
+and recomputed from the current feature context on stable-context recapture.
+Older persisted inputs without it remain readable: recapture uses their
+existing trigger source and thread Browser state, then constructs fresh prompt
+inputs before calling the prompt builder. The flag participates in the
+feature-prompt digest so a changed switch state cannot silently reuse the old
+cached guidance. Older API versions ignore the new semantic field; no database
 migration or rollback floor is needed.
 
 ## Member source-first onboarding completion column (2026-09-27)

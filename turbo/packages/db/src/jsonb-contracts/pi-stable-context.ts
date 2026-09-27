@@ -60,8 +60,7 @@ export interface PiStableContextPromptInputs {
   readonly discordEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
-  /** Absent only in persisted snapshots created before native-input prompt gating. */
-  readonly browserNativeInputEnabled?: boolean;
+  readonly browserNativeInputEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;

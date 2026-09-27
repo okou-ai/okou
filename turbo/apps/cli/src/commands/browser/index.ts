@@ -589,7 +589,6 @@ Examples:
   Keep it alive:              okou browser lease
   Create another browser:     okou browser new --name booking --country us
   Use the browser:            agent-browser --session ${DEFAULT_AGENT_BROWSER_SESSION} open https://example.com
-  Share live view:            okou browser view
   Request native input:       okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --callback-prompt "Continue after the user enters their email"
   Request login credentials:  okou browser input-request --field '{"key":"username","label":"Email","fieldKind":"username","required":true,"target":"@e1"}' --field '{"key":"password","label":"Password","fieldKind":"password","required":true,"target":"@e2"}' --callback-prompt "Continue the login after the user enters their credentials"
   Request a one-time code:    okou browser input-request --field '{"key":"code","label":"Verification code","fieldKind":"one_time_code","required":true,"target":"@e3"}' --callback-prompt "Continue the login after the user enters their code"
@@ -600,6 +599,7 @@ Examples:
   Request a checkbox:         okou browser input-request --field '{"key":"consent","label":"Consent","fieldKind":"checkbox","required":true,"target":"@e4"}' --callback-prompt "Continue after the user confirms the checkbox"
   Request a radio group:      okou browser input-request --field '{"key":"delivery","label":"Delivery","fieldKind":"radio","required":true,"target":"@e5"}' --callback-prompt "Continue after the user chooses a delivery option"
   Request a local file:       okou browser input-request --field '{"key":"document","label":"Document","fieldKind":"file","required":true,"target":"@e6"}' --callback-prompt "Continue after the user chooses a website file"
+  Last-resort takeover:      okou browser view
 
 Notes:
   - The browser outlives this run; the user can keep working in it from the viewer link

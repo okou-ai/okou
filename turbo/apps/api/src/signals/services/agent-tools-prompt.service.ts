@@ -61,9 +61,7 @@ export function buildAgentToolsPromptInputs(args: {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
-}): PiStableContextPromptInputs & {
-  readonly browserNativeInputEnabled: boolean;
-} {
+}): PiStableContextPromptInputs {
   const context = args.featureSwitchContext;
   return {
     privateArtifactsEnabled: isFeatureEnabled(
@@ -99,7 +97,7 @@ export function buildAgentToolsPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
-  readonly browserNativeInputEnabled?: boolean;
+  readonly browserNativeInputEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
