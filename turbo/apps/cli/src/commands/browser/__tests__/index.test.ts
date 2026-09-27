@@ -101,10 +101,13 @@ describe("okou browser command", () => {
       "Direct Browser takeover is a last resort for unsupported or unavailable input",
     );
     expect(help.indexOf("Request login credentials:")).toBeLessThan(
-      help.indexOf("Last-resort takeover:"),
+      help.indexOf("View browser / takeover:"),
     );
-    expect(help.indexOf("Last-resort takeover:")).toBeLessThan(
+    expect(help.indexOf("View browser / takeover:")).toBeLessThan(
       help.indexOf("Direct Browser takeover is a last resort"),
+    );
+    expect(help).toContain(
+      "An explicit user request to view the Browser is not a takeover",
     );
   });
 

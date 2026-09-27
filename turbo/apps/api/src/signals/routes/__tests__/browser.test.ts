@@ -5742,6 +5742,9 @@ describe("okou browser route", () => {
     expect(appendSystemPrompt).toContain(
       "Direct Browser takeover is a last resort, not the default for login",
     );
+    expect(appendSystemPrompt).toContain(
+      "If the user explicitly asks to view the Browser, you may share its live view without treating that request as a takeover",
+    );
     expect(appendSystemPrompt).not.toContain(
       "Browser native input is off for this run.",
     );

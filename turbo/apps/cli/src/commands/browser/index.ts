@@ -486,7 +486,7 @@ const statusCommand = new Command()
 
 const viewCommand = new Command()
   .name("view")
-  .description("Print the viewer link for last-resort user takeover")
+  .description("Print the current thread browser's authenticated viewer link")
   .action(
     withErrorHandler(async () => {
       console.log((await getCurrentBrowser()).viewerUrl);
@@ -599,7 +599,7 @@ Examples:
   Request a checkbox:         okou browser input-request --field '{"key":"consent","label":"Consent","fieldKind":"checkbox","required":true,"target":"@e4"}' --callback-prompt "Continue after the user confirms the checkbox"
   Request a radio group:      okou browser input-request --field '{"key":"delivery","label":"Delivery","fieldKind":"radio","required":true,"target":"@e5"}' --callback-prompt "Continue after the user chooses a delivery option"
   Request a local file:       okou browser input-request --field '{"key":"document","label":"Document","fieldKind":"file","required":true,"target":"@e6"}' --callback-prompt "Continue after the user chooses a website file"
-  Last-resort takeover:      okou browser view
+  View browser / takeover:   okou browser view
 
 Notes:
   - The browser outlives this run; the user can keep working in it from the viewer link
@@ -615,5 +615,6 @@ Notes:
   - When native input is enabled, prefer input-request for user-held values in supported exact controls, including passwords and one-time codes; use agent-browser for ordinary form values
   - Never put user-held credentials or codes in CLI arguments, the callback prompt, or chat; input-request fills controls but does not submit the website form
   - After input-request succeeds, return its exact URL and run no later Browser command in this turn; on callback, inspect the page, submit if needed, and verify
-  - Direct Browser takeover is a last resort for unsupported or unavailable input. Return the exact okou browser view URL, explain the step, ask for a chat reply when finished or blocked, and stop using the Browser in this turn`,
+  - Direct Browser takeover is a last resort for unsupported or unavailable input. Return the exact okou browser view URL, explain the step, ask for a chat reply when finished or blocked, and stop using the Browser in this turn
+  - An explicit user request to view the Browser is not a takeover; sharing the current view URL is fine`,
   );
