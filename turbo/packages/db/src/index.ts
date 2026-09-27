@@ -26,7 +26,6 @@ import * as chatAgentphoneContextSchema from "./schema/chat-agentphone-context";
 import * as chatAutomationContextSchema from "./schema/chat-automation-context";
 import * as chatDiscordContextSchema from "./schema/chat-discord-context";
 import * as chatFeishuContextSchema from "./schema/chat-feishu-context";
-import * as chatGithubContextSchema from "./schema/chat-github-context";
 import * as chatSlackContextSchema from "./schema/chat-slack-context";
 import * as discordGatewayReceiptSchema from "./schema/discord-gateway-receipt";
 import * as chatTeamsContextSchema from "./schema/chat-teams-context";
@@ -56,7 +55,6 @@ import * as usagePackSubscriptionSchema from "./schema/usage-pack-subscription";
 import * as runBuiltInAdmissionSchema from "./schema/run-built-in-admission";
 import * as githubInstallationSchema from "./schema/github-installation";
 import * as githubUserLinkSchema from "./schema/github-user-link";
-import * as githubChatThreadRouteSchema from "./schema/github-chat-thread-route";
 import * as telegramInstallationSchema from "./schema/telegram-installation";
 import * as telegramOfficialUserLinkSchema from "./schema/telegram-official-user-link";
 import * as telegramUserLinkSchema from "./schema/telegram-user-link";
@@ -198,7 +196,6 @@ export const schema = {
   ...chatAutomationContextSchema,
   ...chatDiscordContextSchema,
   ...chatFeishuContextSchema,
-  ...chatGithubContextSchema,
   ...chatSlackContextSchema,
   ...chatTeamsContextSchema,
   ...discordGatewayReceiptSchema,
@@ -250,7 +247,6 @@ export const schema = {
   ...runBuiltInAdmissionSchema,
   ...githubInstallationSchema,
   ...githubUserLinkSchema,
-  ...githubChatThreadRouteSchema,
   ...telegramInstallationSchema,
   ...telegramOfficialUserLinkSchema,
   ...telegramUserLinkSchema,

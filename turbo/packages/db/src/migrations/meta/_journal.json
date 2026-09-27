@@ -1345,6 +1345,13 @@
       "when": 1790498751259,
       "tag": "1269_org_member_onboarding_completed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 1270,
+      "version": "7",
+      "when": 1790506860311,
+      "tag": "1270_drop_github_chat_tables",
+      "breakpoints": true
     }
   ]
 }

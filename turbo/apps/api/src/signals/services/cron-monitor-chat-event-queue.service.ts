@@ -1,7 +1,6 @@
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
@@ -27,7 +26,6 @@ const MONITORED_CONTEXT_TYPES = [
   "teams",
   "discord",
   "telegram",
-  "github",
   "agentphone",
   "automation",
 ] as const;
@@ -112,15 +110,6 @@ async function loadExistingContextRows(
         })
         .from(chatTelegramContext)
         .where(inArray(chatTelegramContext.id, [...contextIds]));
-    }
-    case "github": {
-      return await db
-        .select({
-          id: chatGithubContext.id,
-          chatThreadId: chatGithubContext.chatThreadId,
-        })
-        .from(chatGithubContext)
-        .where(inArray(chatGithubContext.id, [...contextIds]));
     }
     case "agentphone": {
       return await db

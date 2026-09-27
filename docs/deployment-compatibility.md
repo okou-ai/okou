@@ -105,9 +105,17 @@ absent. No producer has existed since #24941, so no such payload or pending
 dispatch queries, so historical rows are never dispatched as HTTP callbacks.
 Persisted `context_type = 'github'` events and GitHub source annotations still
 parse and render; like `automation` and `goal`, a `github` context can no
-longer route a queued user message. The `chat_github_context` and
-`github_chat_thread_routes` tables remain until a later migration drops them.
-No DB, App, CLI or public contract changes.
+longer route a queued user message. No App, CLI or public contract changes.
+
+Migration `1270_drop_github_chat_tables` then drops `chat_github_context` and
+`github_chat_thread_routes`, and the queued-event monitor stops checking
+`github` contexts. The older API still has GitHub readers for both tables, but
+they only run for a `github` context event or a GitHub delivery callback, and
+production has neither pending (zero `github` context events; one delivered
+`github:chat` callback). Its queued-event monitor queries a context table only
+for context types present among the scanned events, so it never reaches the
+dropped table. `context_type = 'github'` stays in the `chat_events` check
+constraint as a historical value.
 
 ## pgstattuple extension dropped (2026-09-26)
 

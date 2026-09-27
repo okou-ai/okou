@@ -83,10 +83,6 @@ const STALE_CONTEXT_FIXTURES = [
     eventType: "input.prompt",
   },
   {
-    contextType: "github",
-    eventType: "input.prompt",
-  },
-  {
     contextType: "agentphone",
     eventType: "input.prompt",
   },
