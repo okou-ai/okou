@@ -143,7 +143,9 @@ impl GuestDuplexAcceptor for Acceptor {
             biased;
             () = self.shared.closed.cancelled() => return Err(unavailable()),
             () = assignment_cancel.cancelled() => return Err(unavailable()),
-            guest = self.shared.context.guest.lock() => guest.as_ref().cloned().ok_or_else(unavailable)?,
+            guest = tokio::time::timeout(ACCEPT_TIMEOUT, self.shared.context.guest.lock()) =>
+                guest.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "guest control unavailable"))?
+                    .as_ref().cloned().ok_or_else(unavailable)?,
         };
         self.shared.ensure_running()?;
         let (reservation, cancelled) = self

@@ -134,6 +134,23 @@ async fn only_current_assignment_activates_private_guest_stream_and_reserves_par
 }
 
 #[tokio::test]
+async fn attach_waiting_on_guest_control_is_bounded_without_activating_socket() {
+    let fixture = Fixture::new().await;
+    let locked = fixture.guest.lock().await;
+    let mut guest = UnixStream::connect(&fixture.path).await.unwrap();
+    let error = fixture.acceptor("run-a").accept().await.err().unwrap();
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    let mut activation = [0];
+    assert_eq!(guest.read(&mut activation).await.unwrap(), 0);
+    drop(locked);
+    let mut next = UnixStream::connect(&fixture.path).await.unwrap();
+    let accepted = fixture.acceptor("run-a").accept().await.unwrap();
+    next.read_exact(&mut activation).await.unwrap();
+    assert_eq!(activation, [1]);
+    drop(accepted);
+}
+
+#[tokio::test]
 async fn bind_collision_preserves_original_and_runtime_exit_unlinks() {
     let fixture = Fixture::new().await;
     assert!(
