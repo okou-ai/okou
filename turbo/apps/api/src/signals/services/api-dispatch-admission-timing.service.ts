@@ -76,9 +76,9 @@ export class AdmissionAttemptTiming {
   }
 
   /**
-   * Start of the final admission section: after the org lock for official
-   * workflow runs, or right after transaction setup for ordinary launches,
-   * which take no org lock. Existing `admission_lock_*` series names are kept.
+   * Start of final admission after transaction setup and any Official credit
+   * plan acquisition. No org advisory lock is taken; the existing
+   * `admission_lock_*` series names are kept.
    */
   admissionStarted(): void {
     this.heldStartedAt = this.nowMs();

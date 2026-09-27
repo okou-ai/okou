@@ -208,24 +208,29 @@ Official installation cleanup. Private Agent creation and metadata-only edits
 also stop entering the public quota key. Count these separately from literal
 SQL sites and runtime key acquisitions.
 
-The retained GA preparation keys have concrete outgoing-writer or reader
-constraints: Browser profile cleanup, automation destination resolution, SSH
-creation-ID replay, export-job admission, built-in generation quotas, and
-Official catalog publication/organization lock ordering. Their replacement
-protocols and removal conditions are recorded in
+The GA preparation covered Browser profile cleanup, automation destination
+resolution, SSH creation-ID replay, export-job admission, built-in generation
+quotas, and Official catalog publication/organization lock ordering. Seven
+prepared keys retire in the follow-up below; reconciliation needs the additional
+Morning Brief preparation described there. Their replacement protocols are in
 [deployment compatibility](./deployment-compatibility.md#scoped-advisory-cleanup-and-owner-row-preparation-2026-09-26).
 Do not infer necessity from the remaining count or from a test that waits for a
 lock.
 
-## Narrow cleanup and writer preparation (2026-09-27)
+## Narrow cleanup and prepared-key retirement (2026-09-27)
 
-Against main `736f70167be41d6d99cf07d842071cbd9b2fa68c`, this batch removes
-two production acquisition sites: failed Official Run persistence and installed
-Official uninstall. They retain catalog and existing row/foreign-key protection
-without entering the credit plan after Workflow rows. The inventory becomes
-44 literal sites: 42 production, one catalog test-isolation site, and one billing
-attribution operator-tool site. The six historical SQL migration sites are
-unchanged and counted separately.
+Against main `931167c9d234821a3ffd186d7493058e92631cb3`, this batch removes
+nine production acquisition sites, reducing the inventory from **46 to 37**:
+35 production, one catalog test-isolation site, and one billing attribution
+operator-tool site. The six historical SQL migration sites are unchanged and
+counted separately.
+
+Two removals cover failed Official Run persistence and installed Official
+uninstall. They retain catalog and existing row/foreign-key protection without
+entering the credit plan after Workflow rows. The other seven retire #37009's
+prepared keys: Browser profile, automation destination resolver, SSH creation-ID,
+export admission, generation admission, catalog publisher, and the Official
+normal-admission organization site.
 
 Two shared entrances are narrower without deleting another SQL definition:
 only schedule automations acquire the queue-admission key, including manual
@@ -239,8 +244,14 @@ credentials, and completion marker in the same existing account transaction.
 Their advisory keys remain until these new writer preparations cover serving
 and supported rollback versions and outgoing requests drain.
 
-The eight other sites prepared by #37009 also remain. Production preparation
-and a successful promotion alone do not prove that retained deployment URLs,
-old invocations, or rollback writers can no longer execute. The per-family
-retirement gates remain in
-[deployment compatibility](./deployment-compatibility.md#scoped-advisory-cleanup-and-owner-row-preparation-2026-09-26).
+The reconciliation organization key also remains. Morning Brief dormant
+validation/finalization now take native authority before the Workflow, matching
+the reservation/staging paths. This new row-order preparation must cover
+serving and supported rollback writers before that key can retire; the already
+deployed #37009 preparation does not contain it.
+
+Production API 1.682.4 includes #37009's preparation. The rollback resolver now
+requires its merge commit `c639e3397602b5c9b049315c7a99f5ed2e23e660`; the accepted
+serving boundary and the separate copy/device/reconciliation preparation gates
+are recorded in
+[deployment compatibility](./deployment-compatibility.md#prepared-advisory-key-retirement-and-writer-preparation-2026-09-27).

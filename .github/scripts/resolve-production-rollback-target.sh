@@ -21,6 +21,9 @@ readonly COMPUTER_USE_AUDIT_WRITER_COMMIT=cdeec36c168636b1a2e510e660eb6139c9c4e0
 # public.pgstatginindex. Migration 1265 drops pgstattuple, so earlier APIs fail
 # every chat search projection tick.
 readonly CHAT_SEARCH_GIN_MAINTENANCE_REMOVAL_COMMIT=98b5515ae2874128734b19a17b96dc8c6c7afe47
+# #37009 prepared constraint, owner-row and catalog protocols before retiring
+# their advisory keys. Earlier API writers do not coordinate with those protocols.
+readonly ADVISORY_LOCK_PREPARATION_COMMIT=c639e3397602b5c9b049315c7a99f5ed2e23e660
 # #36945 made every non-empty chat thread snapshot response R2-only. API targets
 # before it may still return inline data to an old header-less client.
 readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40da0ad4
@@ -82,6 +85,9 @@ if ! git merge-base --is-ancestor "$COMPUTER_USE_AUDIT_WRITER_COMMIT" "$TARGET_C
 fi
 if ! git merge-base --is-ancestor "$CHAT_SEARCH_GIN_MAINTENANCE_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the chat search GIN maintenance removal: ${CHAT_SEARCH_GIN_MAINTENANCE_REMOVAL_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$ADVISORY_LOCK_PREPARATION_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the advisory lock replacement protocols: ${ADVISORY_LOCK_PREPARATION_COMMIT}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames

@@ -331,7 +331,6 @@ import {
   type CapturedPersonalSubscriptionAccount,
 } from "./model-provider-account.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
-import { lockPreparedLaunchAdmission } from "./prepared-launch-admission-lock.service";
 import {
   builtinConnectorRuntimeCredentialStatusWithMethod,
   type ConnectorCredentialStatus,
@@ -5900,10 +5899,9 @@ async function buildPermissionManifest(
 }
 
 /**
- * Final admission callers own the organization capacity advisory lock; the
- * preflight caller reads without it. The outcome stays the existing capacity
- * outcome, so a queue-enabled caller queues and a nonqueue caller keeps its
- * current error.
+ * Both preflight and final admission read the same coarse capacity count.
+ * Concurrent launches can exceed the limit; a queue-enabled caller queues
+ * when the observed count is full and a nonqueue caller keeps its error.
  */
 async function checkRunConcurrencyLimit(
   db: Pick<Db, "select">,
@@ -9332,37 +9330,20 @@ async function finishAdmittedLaunch(
 }
 
 /**
- * Enter final admission. Ordinary launches take no organization lock: the
- * capacity check is a coarse count of the org's sandbox-occupying runs, and
- * concurrent launches may overshoot the limit. Official workflow runs keep the
- * org lock until outgoing writers drain: they lock workflow/automation rows
- * before the plan row. New admission takes its credit plan lock first, matching
- * reconciliation. Returns when the org lock was acquired.
+ * Official admission takes the credit plan before Workflow/Automation rows,
+ * matching reconciliation and plan changes. Persistence rereads the same plan
+ * without changing the lock order.
  */
-async function enterFinalLaunchAdmission(
+async function lockOfficialWorkflowLaunchPlan(
   tx: DbTransaction,
   args: CommitPreparedLaunchArgs,
-): Promise<number | null> {
-  if (!args.context.officialWorkflowRun) {
-    return null;
+): Promise<void> {
+  if (!args.context.officialWorkflowRun || !args.enforceBuiltInCredits) {
+    return;
   }
-  await args.timing.measure(
-    "api_dispatch_admission_lock_wait",
-    "nested",
-    async () => {
-      await lockPreparedLaunchAdmission(tx, args.createArgs.orgId);
-    },
-  );
-  const acquiredAt = now();
-  if (args.enforceBuiltInCredits) {
-    // Reconciliation and plan changes lock the entitlement before Automation
-    // rows. Acquire the same plan row before validating Official installations;
-    // persistAtomicLaunchRows rereads it without changing the lock order.
-    await loadOrgPlanCapabilities(tx, args.createArgs.orgId, {
-      forUpdate: true,
-    });
-  }
-  return acquiredAt;
+  await loadOrgPlanCapabilities(tx, args.createArgs.orgId, {
+    forUpdate: true,
+  });
 }
 
 async function commitPreparedLaunch(
@@ -9402,10 +9383,7 @@ async function commitPreparedLaunch(
           tx,
           preparedArgs.context.officialWorkflowRun,
         );
-        const admissionLockHeldStartedAt = await enterFinalLaunchAdmission(
-          tx,
-          preparedArgs,
-        );
+        await lockOfficialWorkflowLaunchPlan(tx, preparedArgs);
         admissionTiming.admissionStarted();
         const result = await commitPreparedLaunchAdmission(
           tx,
@@ -9418,27 +9396,16 @@ async function commitPreparedLaunch(
         ) {
           await finishAdmittedLaunch(tx, attemptArgs, result.run);
         }
-        return { result, admissionLockHeldStartedAt };
+        return result;
       })().finally(() => {
         admissionTiming.callbackFinished();
       });
     }),
   );
   const outcome: AdmissionAttemptOutcome = settledTransaction.ok
-    ? admissionAttemptOutcome(settledTransaction.value.result)
+    ? admissionAttemptOutcome(settledTransaction.value)
     : "rolled_back";
   const transactionReturnedAt = now();
-  if (
-    settledTransaction.ok &&
-    settledTransaction.value.admissionLockHeldStartedAt !== null
-  ) {
-    args.timing.recordElapsed(
-      "api_dispatch_admission_lock_held",
-      "nested",
-      settledTransaction.value.admissionLockHeldStartedAt,
-      transactionReturnedAt,
-    );
-  }
   const launchConflict = settledTransaction.ok
     ? undefined
     : launchConflictResult(preparedArgs, settledTransaction.error);
@@ -9451,7 +9418,7 @@ async function commitPreparedLaunch(
     throw settledTransaction.error;
   }
   return {
-    result: settledTransaction.value.result,
+    result: settledTransaction.value,
     transactionReturnedAt,
   };
 }

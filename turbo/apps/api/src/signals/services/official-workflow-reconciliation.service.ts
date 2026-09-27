@@ -385,6 +385,9 @@ async function acquireReconciliationLocks(
   orgId: string,
 ): Promise<void> {
   await lockAcceptedOfficialWorkflowCatalog(db);
+  // Outgoing dormant-materialization writers lock Workflow before the Morning
+  // Brief owner. Retire this fence after the owner-first preparation is serving
+  // and those requests have drained.
   // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
   await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
 }
@@ -2490,8 +2493,16 @@ interface DormantMaterializationOwnershipArgs {
 async function lockDormantMaterializationOwnership(
   db: Tx,
   args: DormantMaterializationOwnershipArgs,
+  morningBriefAuthority: Exclude<
+    MorningBriefLegacyWriterAuthority,
+    { kind: "stale" }
+  >,
 ): Promise<OfficialAutomationRow | null> {
-  const rows = await lockDormantMaterializationRows(db, args);
+  const rows = await lockDormantMaterializationRows(
+    db,
+    args,
+    morningBriefAuthority,
+  );
   if (
     !rows ||
     rows.identity.state !== "reconciling" ||
@@ -2505,6 +2516,10 @@ async function lockDormantMaterializationOwnership(
 async function lockDormantMaterializationRows(
   db: Tx,
   args: DormantMaterializationOwnershipArgs,
+  morningBriefAuthority: Exclude<
+    MorningBriefLegacyWriterAuthority,
+    { kind: "stale" }
+  >,
 ): Promise<{
   readonly automation: OfficialAutomationRow;
   readonly identity: typeof officialWorkflowAutomationIdentities.$inferSelect;
@@ -2513,20 +2528,6 @@ async function lockDormantMaterializationRows(
     { kind: "stale" }
   >;
 } | null> {
-  const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.workflowId,
-      automationId: args.automationId,
-      definitionName: args.definitionName,
-      blueprintKey: args.blueprintKey,
-    },
-  );
-  if (morningBriefAuthority.kind === "stale") {
-    return null;
-  }
   const [automation] = await db
     .select()
     .from(workflowAutomations)
@@ -2589,17 +2590,15 @@ async function validateDormantMaterialization(
           activeDefinitionOnly: args.activeDefinitionOnly,
         },
         signal,
-      )) ||
-      !(await lockInstalledWorkflow(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        definitionName: args.definitionName,
-      }))
+      ))
     ) {
       return null;
     }
-    return await lockDormantMaterializationOwnership(tx, args);
+    const authority = await lockReconciliationMutationContext(tx, args);
+    if (authority === null) {
+      return null;
+    }
+    return await lockDormantMaterializationOwnership(tx, args, authority);
   });
 }
 
@@ -2620,17 +2619,15 @@ async function finalizeDormantMaterialization(
           activeDefinitionOnly: args.activeDefinitionOnly,
         },
         signal,
-      )) ||
-      !(await lockInstalledWorkflow(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        definitionName: args.definitionName,
-      }))
+      ))
     ) {
       return false;
     }
-    const rows = await lockDormantMaterializationRows(tx, args);
+    const authority = await lockReconciliationMutationContext(tx, args);
+    if (authority === null) {
+      return false;
+    }
+    const rows = await lockDormantMaterializationRows(tx, args, authority);
     const expectedEnabled =
       rows?.morningBriefAuthority.kind === "selected"
         ? rows.morningBriefAuthority.row.enabled
@@ -2709,7 +2706,11 @@ async function discardDormantMaterialization(
 ): Promise<boolean> {
   const persisted = await db.transaction(async (tx) => {
     await acquireReconciliationLocks(tx, args.orgId);
-    const rows = await lockDormantMaterializationRows(tx, args);
+    const authority = await lockReconciliationMorningBriefAuthority(tx, args);
+    if (authority.kind === "stale") {
+      return null;
+    }
+    const rows = await lockDormantMaterializationRows(tx, args, authority);
     if (
       !rows ||
       !(
@@ -2785,7 +2786,11 @@ async function discardDormantMaterialization(
   }
   return await db.transaction(async (tx) => {
     await acquireReconciliationLocks(tx, args.orgId);
-    const rows = await lockDormantMaterializationRows(tx, args);
+    const authority = await lockReconciliationMorningBriefAuthority(tx, args);
+    if (authority.kind === "stale") {
+      return false;
+    }
+    const rows = await lockDormantMaterializationRows(tx, args, authority);
     if (
       !rows ||
       rows.automation.enabled ||

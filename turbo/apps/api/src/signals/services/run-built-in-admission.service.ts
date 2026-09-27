@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { runBuiltInAdmissions } from "@okouai/db/schema/run-built-in-admission";
-import { and, count, eq, lte, sql } from "drizzle-orm";
+import { and, count, eq, lte } from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -85,13 +85,6 @@ export const startRunBuiltInAdmission$ = command(
     const runId = args.runId;
     const writeDb = set(writeDb$);
     return await writeDb.transaction(async (tx) => {
-      // Keep outgoing API admissions in the same critical section until this
-      // preparation is deployed and their transactions have drained. Then the
-      // existing Run row alone owns the count-and-insert quota below.
-      await tx.execute(
-        // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-        sql`SELECT pg_advisory_xact_lock(hashtext('run_builtin_' || ${runId}))`,
-      );
       await tx
         .select({ id: agentRuns.id })
         .from(agentRuns)

@@ -34,6 +34,8 @@ case "${1:-}" in
       [ "${MOCK_COMPUTER_USE_AUDIT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "98b5515ae2874128734b19a17b96dc8c6c7afe47" ]; then
       [ "${MOCK_CHAT_SEARCH_GIN_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "c639e3397602b5c9b049315c7a99f5ed2e23e660" ]; then
+      [ "${MOCK_ADVISORY_LOCK_PREPARATION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
       [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
@@ -165,6 +167,7 @@ grep -Fxq "git merge-base --is-ancestor 3333333333333333333333333333333333333333
 grep -Fxq "git merge-base --is-ancestor 4444444444444444444444444444444444444444 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the personal subscription account-only floor"
 grep -Fxq "git merge-base --is-ancestor cdeec36c168636b1a2e510e660eb6139c9c4e07a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the computer-use audit column cutover floor"
 grep -Fxq "git merge-base --is-ancestor 98b5515ae2874128734b19a17b96dc8c6c7afe47 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat search GIN maintenance removal floor"
+grep -Fxq "git merge-base --is-ancestor c639e3397602b5c9b049315c7a99f5ed2e23e660 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the advisory replacement protocol floor"
 grep -Fxq "git merge-base --is-ancestor 5555555555555555555555555555555555555555 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
 grep -Fxq "git merge-base --is-ancestor 6666666666666666666666666666666666666666 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Stripe Portal purpose-only floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
@@ -199,6 +202,15 @@ grep -Fq '98b5515ae2874128734b19a17b96dc8c6c7afe47' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/chat-search-gin-floor.output" ] || fail "pre-removal API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-removal API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the advisory lock replacement protocols" \
+  run_resolver "${tmp_dir}/advisory-lock-preparation-floor.output" MOCK_ADVISORY_LOCK_PREPARATION_FLOOR_VALID=0
+grep -Fq 'c639e3397602b5c9b049315c7a99f5ed2e23e660' "${tmp_dir}/failure.err" || fail "advisory retirement rejection must identify the preparation commit"
+[ ! -s "${tmp_dir}/advisory-lock-preparation-floor.output" ] || fail "pre-preparation API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-preparation API target must fail before artifact or host access"
 fi
 
 for cutover_commit in "" invalid; do

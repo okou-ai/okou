@@ -1034,17 +1034,6 @@ const scheduleBrowserScreenshotCapture$ = command(
   },
 );
 
-// Keep the deployed profile key until older cleanup requests and rollback
-// targets use conditional session retirement. Provider creation stays outside.
-async function lockBrowserProfileCreation(
-  tx: DbTransaction,
-  chatThreadId: string,
-): Promise<void> {
-  const lockKey = `zero_browser_profile:${chatThreadId}`;
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
-}
-
 async function latestThreadRunId(
   db: Pick<Db, "select">,
   chatThreadId: string,
@@ -1384,7 +1373,6 @@ async function retireBrowserProfileOwnership(
   signal: AbortSignal,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    await lockBrowserProfileCreation(tx, target.chatThreadId);
     const ownedBrowsers = await tx
       .select({
         id: browserSessions.id,
@@ -1540,14 +1528,11 @@ async function getOrCreateBrowserProfile(
   }
 
   const claimed = await settle(
-    db.transaction(async (tx) => {
-      await lockBrowserProfileCreation(tx, context.chatThreadId);
-      return await claimBrowserProfile(tx, {
-        orgId: context.orgId,
-        userId: context.userId,
-        chatThreadId: context.chatThreadId,
-        providerProfileId: provider.value,
-      });
+    claimBrowserProfile(db, {
+      orgId: context.orgId,
+      userId: context.userId,
+      chatThreadId: context.chatThreadId,
+      providerProfileId: provider.value,
     }),
   );
   if (!claimed.ok || !claimed.value.created) {
@@ -3011,7 +2996,6 @@ async function claimExpiredInactiveBrowser(
   const claimedAt = nowDate();
   const claimed = await db.transaction(async (tx) => {
     await lockBrowserThread(tx, target.chatThreadId);
-    await lockBrowserProfileCreation(tx, target.chatThreadId);
     const [browser] = await tx
       .update(browserSessions)
       .set({
@@ -3139,7 +3123,6 @@ async function retireExpiredInactiveBrowser(
 ): Promise<boolean> {
   const retired = await db.transaction(async (tx) => {
     await lockBrowserThread(tx, target.chatThreadId);
-    await lockBrowserProfileCreation(tx, target.chatThreadId);
     const [[browser], [profile]] = await Promise.all([
       tx
         .select({

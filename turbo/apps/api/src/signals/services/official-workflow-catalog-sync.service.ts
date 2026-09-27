@@ -20,12 +20,11 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
   OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   readAllCurrentSchemaOfficialWorkflowRevisions,
@@ -714,12 +713,6 @@ async function activateCandidate(
   signal: AbortSignal,
 ): Promise<OfficialWorkflowCatalogSyncResponse> {
   return await db.transaction(async (tx) => {
-    // Outgoing readers still hold only the shared advisory key. Keep this
-    // publisher key until those readers drain; new readers use the singleton.
-    await tx.execute(
-      // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-      sql`SELECT pg_advisory_xact_lock(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-    );
     const [state] = await tx
       .select({
         acceptedReleaseId: officialWorkflowCatalogState.acceptedReleaseId,

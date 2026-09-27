@@ -10,7 +10,7 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
 import {
@@ -271,18 +271,6 @@ async function createAutomationChatThread(
   return thread.id;
 }
 
-// Coordinate with the outgoing resolver, which discovers a destination before
-// locking the binding and rejects a concurrent rebind. Remove this key after
-// those serving requests and rollback targets have retired.
-async function lockWorkflowUserAutomationThreadResolution(
-  db: ChatThreadEventTransaction,
-  owner: WorkflowUserAutomationThreadOwner,
-): Promise<void> {
-  const key = `workflow_user_automation_thread:${owner.orgId}:${owner.userId}:${owner.workflowId}`;
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
-}
-
 export async function ensureWorkflowUserAutomationThread(
   db: ChatThreadEventTransaction,
   args: {
@@ -315,8 +303,6 @@ export async function ensureWorkflowUserAutomationThread(
     )
     .for("key share");
 
-  await lockWorkflowUserAutomationThreadResolution(db, args);
-
   await db
     .insert(workflowUserAutomationThreads)
     .values({
@@ -333,8 +319,8 @@ export async function ensureWorkflowUserAutomationThread(
         workflowUserAutomationThreads.workflowId,
       ],
     });
-  // The owner key arbitrates the first binding; its row serializes destination
-  // creation and deletion. Reusing it touches no existing thread row.
+  // The unique owner key arbitrates the first binding; its row serializes
+  // destination creation and deletion. Reusing it touches no existing thread.
   const [binding] = await db
     .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
     .from(workflowUserAutomationThreads)

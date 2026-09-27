@@ -213,13 +213,6 @@ export const startUserExport$ = command(
     signal.throwIfAborted();
     const result = await settle(
       db.transaction(async (tx): Promise<StartUserExportResult> => {
-        // Keep the existing key until every serving writer handles active-index
-        // conflicts. Outgoing versions still INSERT after an unlocked active read.
-        await tx.execute(
-          // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-          sql`select pg_advisory_xact_lock(hashtextextended(${`user-export:${args.userId}`}, 0))`,
-        );
-        signal.throwIfAborted();
         const jobId = randomUUID();
         // Claim before checking cooldown so a concurrently completed job cannot
         // disappear between the check and admission. A no-op conflict update
