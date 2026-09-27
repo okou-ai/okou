@@ -149,6 +149,8 @@ describe("internal WSS target via guarded test API route", () => {
     provision();
     const f = await setup();
     const run = await createRun(f);
+    await heartbeat(f, randomUUID(), "running", 1);
+    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
     const runnerId = randomUUID();
     await claimRun(f, run.runId, {
       runnerId,
