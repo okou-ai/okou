@@ -136,6 +136,25 @@ describe("internal WSS target via guarded test API route", () => {
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
   });
 
+  it("does not trust runner identity or hostname supplied by a PAT claimant", async () => {
+    const f = await setup();
+    const run = await createRun(f);
+    const runnerId = randomUUID();
+    const apiKey = await f.api.createCliToken(f.actor);
+    await f.api.requestClaimRunnerJobAs(
+      `Bearer ${apiKey.token}`,
+      run.runId,
+      [200],
+      {
+        runnerIdentity: { runnerId, heartbeatGeneration: 1 },
+        runnerHostname: inventoryHostname,
+      },
+    );
+    await heartbeat(f, runnerId, "running", 1);
+    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    await f.api.requestCancelRun(f.actor, run.runId, [200]);
+  });
+
   it("keeps draining available for owned runs but rejects stopped, mismatched and stale snapshots", async () => {
     const f = await setup();
     const run = await createRun(f);
