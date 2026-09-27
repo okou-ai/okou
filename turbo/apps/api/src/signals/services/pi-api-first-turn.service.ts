@@ -280,11 +280,11 @@ interface ApiFirstTurnLifecycleState {
 }
 
 async function readApiFirstTurnLifecycleState(
-  tx: Tx,
+  db: Pick<Db, "select">,
   runId: string,
 ): Promise<ApiFirstTurnLifecycleState | null> {
   const [[run], [activeInput]] = await Promise.all([
-    tx
+    db
       .select({
         status: agentRuns.status,
         triggerSource: agentRuns.triggerSource,
@@ -296,7 +296,7 @@ async function readApiFirstTurnLifecycleState(
       .from(agentRuns)
       .where(eq(agentRuns.id, runId))
       .limit(1),
-    tx
+    db
       .select({ id: activeInputDeliveries.id })
       .from(activeInputDeliveries)
       .where(
@@ -1165,11 +1165,14 @@ async function acquireApiProviderOwnership(
     signal,
   );
   await onRejection(
-    withApiFirstTurnLifecycle(args.context, async (tx) => {
+    (async () => {
       signal.throwIfAborted();
       const state = validateApiFirstTurnApiCommit(
         args.context,
-        await readApiFirstTurnLifecycleState(tx, args.activation.runId),
+        await readApiFirstTurnLifecycleState(
+          args.context.db,
+          args.activation.runId,
+        ),
         args.commitIdentity,
         "Pi API first turn lost eligibility before provider ownership",
       );
@@ -1177,7 +1180,7 @@ async function acquireApiProviderOwnership(
         throw new PiApiFirstTurnActiveInputBeforeProviderError();
       }
       signal.throwIfAborted();
-    }),
+    })(),
     (error) => {
       finish(
         error instanceof PiApiFirstTurnCanonicalCancellationError
@@ -1187,8 +1190,8 @@ async function acquireApiProviderOwnership(
     },
   );
   signal.throwIfAborted();
-  // Resolving the lifecycle transaction commits the durable uncertainty fence.
-  // Only then may the runtime adapter cross its actual HTTP boundary.
+  // This eligibility snapshot does not reserve provider execution. Final
+  // publication still arbitrates with cancellation and active input delivery.
   markProviderRequestMayHaveStarted();
   finish("success");
 }

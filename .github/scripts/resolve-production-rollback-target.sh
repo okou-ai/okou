@@ -21,9 +21,10 @@ readonly COMPUTER_USE_AUDIT_WRITER_COMMIT=cdeec36c168636b1a2e510e660eb6139c9c4e0
 # public.pgstatginindex. Migration 1265 drops pgstattuple, so earlier APIs fail
 # every chat search projection tick.
 readonly CHAT_SEARCH_GIN_MAINTENANCE_REMOVAL_COMMIT=98b5515ae2874128734b19a17b96dc8c6c7afe47
-# #37009 prepared constraint, owner-row and catalog protocols before retiring
-# their advisory keys. Earlier API writers do not coordinate with those protocols.
-readonly ADVISORY_LOCK_PREPARATION_COMMIT=c639e3397602b5c9b049315c7a99f5ed2e23e660
+# #37076 includes #37057's copy/device/reconciliation protocols and prepares
+# SSH credential deletion alongside #37071's exact host-FK error handling.
+# Earlier API writers cannot safely overlap their advisory-free replacements.
+readonly ADVISORY_LOCK_PREPARATION_COMMIT=ee863a302a6c547f94e50ec4069f70910d68bee2
 # #36945 made every non-empty chat thread snapshot response R2-only. API targets
 # before it may still return inline data to an old header-less client.
 readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40da0ad4

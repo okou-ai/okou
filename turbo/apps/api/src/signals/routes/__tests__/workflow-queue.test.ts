@@ -958,7 +958,7 @@ describe("workflow queue", () => {
     expect(claim.appendSystemPrompt).not.toContain("# Current context");
   });
 
-  it("coalesces schedule ticks: at most one pending tick per automation", async () => {
+  it("coalesces a schedule tick when an earlier tick is already pending", async () => {
     mockNow(Date.UTC(2020, 0, 1));
     const scenario = await setup();
     const webhookAutomation = await createWebhookAutomation(scenario);
@@ -1654,7 +1654,7 @@ describe("workflow queue", () => {
     await flushWaitUntilForTest();
   });
 
-  it("keeps each explicit schedule Run now as a distinct queued event", async () => {
+  it("queues concurrent schedule Run now requests and drains each exactly once", async () => {
     const scenario = await setup();
     const automation = await createScheduleAutomation(scenario);
     expect(automation.threadId).toBeNull();
@@ -1667,21 +1667,68 @@ describe("workflow queue", () => {
       [201],
     );
     expect(first.body.runId).toStrictEqual(expect.any(String));
+    const firstRunId = first.body.runId;
+    if (!firstRunId) {
+      throw new Error("Expected the first manual run to start");
+    }
     const threadId = first.body.chatThreadId;
 
-    for (let index = 0; index < 2; index++) {
-      const queued = await accept(
-        automationsClient().run({
-          headers: authHeaders(),
-          params: { id: automation.automationId },
-        }),
-        [201],
+    const queued = await Promise.all(
+      Array.from({ length: 2 }, async () => {
+        return await accept(
+          automationsClient().run({
+            headers: authHeaders(),
+            params: { id: automation.automationId },
+          }),
+          [201],
+        );
+      }),
+    );
+    for (const response of queued) {
+      expect(response.body).toMatchObject({
+        runId: null,
+        chatThreadId: threadId,
+      });
+    }
+    const pendingEvents = await pendingAutomationEvents(threadId);
+    expect(pendingEvents).toHaveLength(2);
+    for (const event of pendingEvents) {
+      expect(chatEventDisplayText(event)).toBe(
+        "A manual run of this workflow was requested.",
       );
-      expect(queued.body.runId).toBeNull();
     }
 
-    await expect(pendingWorkflowAutomationIds(threadId)).resolves.toStrictEqual(
-      [automation.automationId, automation.automationId],
-    );
+    await completeRunThroughSandbox(scenario, firstRunId);
+    const afterFirst = await workflowRunIds(threadId);
+    expect(afterFirst).toHaveLength(2);
+    const secondRunId = afterFirst[1];
+    if (!secondRunId) {
+      throw new Error("Expected the first queued schedule request to start");
+    }
+    await expect(pendingAutomationEvents(threadId)).resolves.toHaveLength(1);
+
+    await completeRunThroughSandbox(scenario, secondRunId);
+    const afterSecond = await workflowRunIds(threadId);
+    expect(afterSecond).toHaveLength(3);
+    const thirdRunId = afterSecond[2];
+    if (!thirdRunId) {
+      throw new Error("Expected the second queued schedule request to start");
+    }
+    await expect(pendingAutomationEvents(threadId)).resolves.toHaveLength(0);
+    const events = await wf.readThreadEvents(threadId);
+    for (const pending of pendingEvents) {
+      expect(
+        events.filter((event) => {
+          return (
+            event.eventType === "input.prompt" &&
+            event.revokesEventId === pending.id &&
+            event.runId
+          );
+        }),
+      ).toHaveLength(1);
+    }
+
+    await completeRunThroughSandbox(scenario, thirdRunId);
+    await expect(workflowRunIds(threadId)).resolves.toHaveLength(3);
   });
 });

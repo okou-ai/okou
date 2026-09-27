@@ -366,6 +366,48 @@ reported API `1.683.0`, commit
 does not establish serving coverage for SSH or the earlier Device auth,
 Official copy publication and Official reconciliation preparations.
 
+## Soft limits and prepared-key retirement (2026-09-27)
+
+Both `api.okou.ai/api/build-info` and `api.vm0.ai/api/build-info` now report API
+**1.684.2**, commit `6b624e6e1b23a45386db5c07f9b21a8ffdd8af9f`. Production
+[promotion run 36306299421](https://github.com/okou-ai/okou/actions/runs/36306299421)
+completed its API promotion at **2026-09-27T08:33:45Z**. The aliases were
+rechecked after the API's configured 300-second maximum invocation duration
+had elapsed. This covers the supported alias/cron writer surface and outgoing
+requests; retained deployment URLs remain outside the serving boundary already
+accepted above. It is not a claim that those retained deployments were deleted.
+
+**API rollback floor: `ee863a302a6c547f94e50ec4069f70910d68bee2`** (#37076).
+The canonical resolver now rejects earlier targets before selecting artifacts.
+This includes #37057's complete-copy-conflict recovery, atomic device completion
+and native-before-Workflow reconciliation order, plus #37071's exact SSH host-FK
+error recovery and #37076's parent-first credential-deletion protocol.
+
+Official copy, Device auth and Official reconciliation retire their advisory
+SQL sites. SSH credential deletion also stops entering its owner helper. The
+other SSH owner callers remain. Supported outgoing/rollback writers may still
+take these keys, but both versions retain the same unique constraints, account
+transaction, row order and conditional writes. Deletion preserves its fresh
+READ COMMITTED reference check, revision predicate and complete-rollback host
+error mapping. No schema, stored payload or client/Runner protocol changes.
+
+The Public Agent limit is explicitly soft: a request that observes a full
+organization is rejected; overlapping requests may both create or publish.
+Pending schedule coalescing is also best-effort. A concurrent cron/manual pair
+can admit two legitimate events, each of which follows normal Run admission
+and billing. Exact scheduled-occurrence claims, event identities, transactional
+source transitions, FIFO and Run/event consumption are unchanged. These product
+semantics apply during mixed-version serving as well: an old writer's advisory
+key does not serialize a new writer, and that accepted overshoot needs no new
+counter or coordination protocol.
+
+VNC Agent access retains shared cleanup scopes and existing Agent row
+protection; thread override clear only deletes its exact owned selection.
+Calendar retry retention keeps its exact channel predicate and cancellation
+rollback. Pi's provider preflight only reads eligibility; it leaves authoritative
+publication/cancellation checks intact. These narrower entrances require no new
+writer preparation.
+
 ## Workflow import source column (2026-09-25)
 
 Migration `1264_workflow_import_source` adds the nullable

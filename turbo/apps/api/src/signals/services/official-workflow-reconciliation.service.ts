@@ -21,7 +21,7 @@ import {
   workflows,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
@@ -380,18 +380,6 @@ function accountProjectionMatchesPatch(
   );
 }
 
-async function acquireReconciliationLocks(
-  db: Tx,
-  orgId: string,
-): Promise<void> {
-  await lockAcceptedOfficialWorkflowCatalog(db);
-  // Outgoing dormant-materialization writers lock Workflow before the Morning
-  // Brief owner. Retire this fence after the owner-first preparation is serving
-  // and those requests have drained.
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
-}
-
 async function acceptedBlueprintIsCurrent(
   db: ReadonlyDb,
   args: {
@@ -648,7 +636,7 @@ async function persistReconfigurationPatch(
   signal: AbortSignal,
 ): Promise<PersistedReconfiguration | null> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -810,7 +798,7 @@ async function restoreFailedReconfiguration(
 ): Promise<void> {
   const cleanupSignal = new AbortController().signal;
   const restored = await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     const accountProjection = await lockOfficialAutomationAccountProjection(
       tx,
       {
@@ -938,7 +926,7 @@ async function finalizeReconfiguration(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -1029,7 +1017,7 @@ async function pauseForReconfiguration(
   signal: AbortSignal,
 ): Promise<OfficialWorkflowReconciliationResult> {
   const persisted = await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -1287,7 +1275,7 @@ async function stageAutomationStructureTransition(
   signal: AbortSignal,
 ): Promise<PersistedReconfiguration | null> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -1605,7 +1593,7 @@ async function finalizeAutomationStructureTransition(
   signal: AbortSignal,
 ): Promise<FinalizeAutomationStructureTransitionResult> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -1971,7 +1959,7 @@ async function markActiveAutomationFailed(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2150,7 +2138,7 @@ async function reserveDormantIdentity(
   signal: AbortSignal,
 ): Promise<DormantIdentityReservation | null> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2257,7 +2245,7 @@ async function retainDormantIdentity(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2373,7 +2361,7 @@ async function removeDormantCreationOrphan(
   signal: AbortSignal,
 ): Promise<boolean> {
   const result = await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2579,7 +2567,7 @@ async function validateDormantMaterialization(
   signal: AbortSignal,
 ): Promise<OfficialAutomationRow | null> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2608,7 +2596,7 @@ async function finalizeDormantMaterialization(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2705,7 +2693,7 @@ async function discardDormantMaterialization(
   signal: AbortSignal,
 ): Promise<boolean> {
   const persisted = await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     const authority = await lockReconciliationMorningBriefAuthority(tx, args);
     if (authority.kind === "stale") {
       return null;
@@ -2785,7 +2773,7 @@ async function discardDormantMaterialization(
     return false;
   }
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     const authority = await lockReconciliationMorningBriefAuthority(tx, args);
     if (authority.kind === "stale") {
       return false;
@@ -3123,7 +3111,7 @@ async function pauseRemovedAutomationConfiguration(
   | undefined
 > {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedDefinitionOmitsBlueprint(
         tx,
@@ -3214,7 +3202,7 @@ async function deleteRemovedAutomationConfiguration(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedDefinitionOmitsBlueprint(
         tx,

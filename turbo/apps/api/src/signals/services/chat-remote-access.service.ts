@@ -461,7 +461,6 @@ export async function clearThreadRemoteAccessOverride(
   protocol: RemoteAccessProtocol,
 ): Promise<ThreadRemoteHostAccess | null> {
   const result = await db.transaction(async (tx) => {
-    await enterRemoteAccessWrite(tx, owner, protocol);
     if (!(await ownedThreadExists(tx, owner))) {
       return null;
     }

@@ -27,7 +27,7 @@ import type {
 } from "@okouai/connectors/auth-providers/provider-flow-types";
 import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
 import { command } from "ccstate";
-import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, or } from "drizzle-orm";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
@@ -401,17 +401,6 @@ async function resolveStoredDeviceAuthMethod(args: {
     return connectorOauthDeviceAuthUnavailable(args.connectorSlug);
   }
   return resolved;
-}
-
-async function lockDeviceAuthSessionOwner(
-  args: BuiltinConnectorDeviceAuthSessionOwner & {
-    readonly writeDb: Db;
-  },
-): Promise<void> {
-  await args.writeDb.execute(
-    // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-    sql`SELECT pg_advisory_xact_lock(hashtext('oauth_device_authorization:' || ${args.orgId} || ':' || ${args.userId} || ':' || ${args.connectorSlug} || ':' || ${args.authMethod}))`,
-  );
 }
 
 async function markActiveSessionsSuperseded(
@@ -822,15 +811,6 @@ const completeClaimedSession$ = command(
     );
     let postCommitAbort: unknown = null;
     const result = await args.writeDb.transaction(async (tx) => {
-      // Outgoing completions persist credentials in a separate transaction.
-      // Retain their device key until preparation covers serving/rollback writers.
-      await lockDeviceAuthSessionOwner({
-        writeDb: tx,
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: args.resolvedMethod.connectorSlug,
-        authMethod: args.resolvedMethod.authMethodId,
-      });
       const write = { ...prepared, db: tx };
       const resolution = await resolveBuiltinConnectorTokenConnectionMutation(
         write,
@@ -1121,13 +1101,6 @@ async function createDeviceAuthSession(
   signal: AbortSignal,
 ) {
   return await db.transaction(async (tx) => {
-    await lockDeviceAuthSessionOwner({
-      connectorSlug: args.connectorSlug,
-      authMethod: args.authMethod,
-      writeDb: tx,
-      orgId: args.orgId,
-      userId: args.userId,
-    });
     const mutationResolution = await resolveConnectorConnectionMutation(tx, {
       orgId: args.orgId,
       userId: args.userId,

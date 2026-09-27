@@ -336,3 +336,45 @@ publication. Its full-key retirement, Device auth and Official reconciliation
 still have the separate rollout gates above. SSH preparation and the supported
 mixed-writer boundaries are described in
 [deployment compatibility](./deployment-compatibility.md#constraint-arbitration-and-narrower-advisory-entrances-2026-09-27).
+
+## Soft limits and prepared-key retirement (2026-09-27)
+
+Against main `6b624e6e1b23a45386db5c07f9b21a8ffdd8af9f`, this batch removes
+five acquisition SQL sites: **36 to 31**, comprising **29 production**, one
+catalog fixture and one billing-attribution operator site. The six historical
+SQL migration sites are unchanged. Copy and reconciliation contain separate
+SQL sites for the same organization key; this inventory counts the sites.
+
+| Removed SQL site         | Preserved behavior                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public Agent quota       | COUNT prechecks reject an already-full organization. The seven-Agent limit is soft: concurrent requests may exceed it. Permissions and uniqueness stay. |
+| Official Workflow copy   | Catalog/source row protection, source revalidation, private-name uniqueness, complete rollback conflict recovery and unpublished-volume cleanup.        |
+| Device authorization     | Existing account-target transaction, exact polling claim, credential persistence and completion marker. Provider work stays outside the transaction.    |
+| Official reconciliation  | Existing native authority, Workflow and Automation/identity protection in that order, with revision and lineage conditions.                             |
+| Schedule queue admission | Best-effort pending-event coalescing, exact occurrence claims, event identity, transactional source transitions and the existing FIFO/Run claim.        |
+
+Public Agent capacity and pending schedule coalescing no longer require strict
+cross-request serialization. Schedule admission still checks for a pending item
+before insertion, but concurrent legitimate triggers can both enqueue and run.
+Each resulting Run follows normal admission and billing. Ordinary cron retains
+its exact `nextRunAt` conditional claim; journaled Morning Brief retains its
+atomic occurrence claim and queue-event binding. This does not permit duplicate
+consumption of one occurrence or one event.
+
+Five additional business entrances stop acquiring a shared helper's advisory
+key, without removing another SQL definition:
+
+| Entrance                            | Retained protocol                                                                                                   |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| SSH credential deletion             | Exact parent row protection, fresh READ COMMITTED reference check, revision DELETE and precise host-FK recovery.    |
+| VNC Agent access update             | All three shared cleanup scopes and the existing Agent row protection.                                              |
+| VNC thread override clear           | Ownership checks and exact selection DELETE; override SET retains its lifecycle entrance.                           |
+| Calendar registered-watch retention | Exact watch/channel conditional UPDATE, transaction and post-write cancellation check.                              |
+| Pi provider preflight               | Read-only eligibility checks; result publication, fallback, cancellation and input reservation keep their protocol. |
+
+The former Pi preflight transaction ended before starting the provider request;
+the preflight never reserves provider execution. Browser publication and the remaining
+SSH/VNC owner operations need further conditional-write preparation and are
+outside this batch. No new lock, constraint, migration or fallback is added.
+Serving evidence and the enforced rollback floor are recorded in
+[deployment compatibility](./deployment-compatibility.md#soft-limits-and-prepared-key-retirement-2026-09-27).

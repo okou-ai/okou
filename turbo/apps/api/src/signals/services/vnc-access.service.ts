@@ -14,7 +14,10 @@ import { and, asc, eq, isNotNull, or } from "drizzle-orm";
 import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { enterVncWrite, type VncOwner } from "./vnc-owner-lifecycle.service";
+import {
+  shareVncCleanupScopes,
+  type VncOwner,
+} from "./vnc-owner-lifecycle.service";
 import {
   runThreadExists,
   runThreadSshAccess,
@@ -61,7 +64,7 @@ export async function updateAgentVncAccess(
   signal: AbortSignal,
 ) {
   return await db.transaction(async (tx) => {
-    await enterVncWrite(tx, owner);
+    await shareVncCleanupScopes(tx, owner);
     const [agent] = await tx
       .select({ id: agents.id })
       .from(agents)

@@ -5,13 +5,11 @@ import {
   agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
 import { parseAvatarComposerUrl } from "@okouai/core/agent-avatar";
-import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
-import { createDeferredPromise } from "../../utils";
 import {
   createAuthOrgAgentsBddApi,
   type ApiTestUser,
@@ -301,7 +299,7 @@ describe("POST /api/agents", () => {
     expect(response.body.displayName).toBe("After Delete");
   });
 
-  it("serializes concurrent public create slots", async () => {
+  it("keeps concurrent public creates consistent and rejects later creates once full", async () => {
     const fixture = agentsFixture("concurrent-limit");
     mocks.clerk.session(fixture.userId, fixture.orgId);
     context.mocks.s3.send.mockClear();
@@ -322,25 +320,6 @@ describe("POST /api/agents", () => {
     const baselineStorageCount = await instructionStorageCount(fixture);
     expect(baselineStorageCount).toBe(6);
 
-    const uploadsReady = createDeferredPromise<void>(context.signal);
-    const releaseUploads = createDeferredPromise<void>(context.signal);
-    let putObjectCalls = 0;
-    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-      if (command?.constructor.name === "PutObjectCommand") {
-        putObjectCalls += 1;
-        if (putObjectCalls === 4) {
-          uploadsReady.resolve(undefined);
-        }
-        await releaseUploads.promise;
-      }
-      return {};
-    });
-    onTestFinished(() => {
-      if (!releaseUploads.settled()) {
-        releaseUploads.resolve(undefined);
-      }
-    });
-
     const requests = ["First contender", "Second contender"].map(
       async (displayName) => {
         return await accept(
@@ -353,17 +332,12 @@ describe("POST /api/agents", () => {
       },
     );
 
-    await uploadsReady.promise;
-    releaseUploads.resolve(undefined);
     const responses = await Promise.all(requests);
-
-    expect(
-      responses
-        .map((response) => {
-          return response.status;
-        })
-        .sort(),
-    ).toStrictEqual([201, 409]);
+    const createdIds = responses.flatMap((response) => {
+      return response.status === 201 ? [response.body.agentId] : [];
+    });
+    // The count is a soft limit: both concurrent requests may see a free slot.
+    expect([1, 2]).toContain(createdIds.length);
 
     const listResponse = await accept(
       agentsClient().list({ headers: authHeaders() }),
@@ -373,9 +347,23 @@ describe("POST /api/agents", () => {
       listResponse.body.filter((agent) => {
         return agent.visibility === "public";
       }),
-    ).toHaveLength(7);
+    ).toHaveLength(6 + createdIds.length);
+    for (const agentId of createdIds) {
+      expect(listResponse.body).toContainEqual(
+        expect.objectContaining({ agentId, visibility: "public" }),
+      );
+    }
     await expect(instructionStorageCount(fixture)).resolves.toBe(
-      baselineStorageCount + 1,
+      baselineStorageCount + createdIds.length,
     );
+
+    const blocked = await accept(
+      agentsClient().create({
+        headers: authHeaders(),
+        body: { displayName: "After concurrent creates", visibility: "public" },
+      }),
+      [409],
+    );
+    expect(blocked.body.error.code).toBe("CONFLICT");
   });
 });

@@ -222,9 +222,9 @@ export async function bindMorningBriefScheduleClaimQueueEvent(
 }
 
 /**
- * The journaled occupant of a pending queue event, read under the thread's
- * admission lock so a coalescing tick can tell a recorded replay of its own
- * occurrence from a genuinely untracked event.
+ * The journaled occupant of a pending queue event. The event and its journal
+ * binding commit together, so a visible pending event can be distinguished
+ * from a genuinely untracked event without serializing admission.
  */
 export async function loadMorningBriefScheduleClaimByQueueEvent(
   tx: Tx,

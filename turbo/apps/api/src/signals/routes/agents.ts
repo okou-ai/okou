@@ -37,7 +37,6 @@ import {
   visibleJoinedAgentCondition,
 } from "../services/agent-data.service";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
-import { lockCanonicalAgentPublicLimit } from "../services/agent-mutation-lock.service";
 import { buildAgentIdentityPrompt } from "../services/agent-identity-prompt.service";
 import {
   invalidatePiStableContext,
@@ -54,6 +53,7 @@ import {
 import { onRejection } from "../utils";
 import type { RouteEntry } from "../route-entry";
 
+// This is a soft limit: concurrent requests may both observe an available slot.
 const PUBLIC_AGENT_LIMIT = 7;
 
 interface AgentUpdateBody {
@@ -365,9 +365,6 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
     const transactionResult = await writeDb.transaction(async (tx) => {
       if (visibility === "public") {
-        await lockCanonicalAgentPublicLimit(tx, auth.orgId);
-        signal.throwIfAborted();
-
         const [publicAgentCount] = await tx
           .select({ value: count() })
           .from(agents)
@@ -532,10 +529,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const writeDb = set(writeDb$);
   const result = await writeDb.transaction(async (tx) => {
-    if (body.data.visibility === "public") {
-      await lockCanonicalAgentPublicLimit(tx, auth.orgId);
-    }
-
     await tx
       .select({ id: agents.id })
       .from(agents)
@@ -626,10 +619,6 @@ const updateAgentMetadataInner$ = command(
 
     const writeDb = set(writeDb$);
     const result = await writeDb.transaction(async (tx) => {
-      if (body.data.visibility === "public") {
-        await lockCanonicalAgentPublicLimit(tx, auth.orgId);
-      }
-
       await tx
         .select({ id: agents.id })
         .from(agents)

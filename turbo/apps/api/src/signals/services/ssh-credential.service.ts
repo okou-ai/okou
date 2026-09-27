@@ -412,7 +412,6 @@ export async function deleteSshCredential(args: {
 }): Promise<SshResult<undefined>> {
   const result = await args.db.transaction(
     async (tx) => {
-      await lockSshOwner(tx, args.owner);
       // The FK takes KEY SHARE on the credential. Wait here before checking
       // references in a fresh READ COMMITTED statement; a single DELETE's
       // absence check can retain the snapshot from before an attachment commits.

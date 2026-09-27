@@ -5,15 +5,7 @@ import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import {
-  and,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  notExists,
-  sql,
-} from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, notExists } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import type { Db } from "../external/db";
@@ -41,16 +33,6 @@ import { measureWorkflowAdmissionStep } from "./workflow-queue-admission-timing.
 const automationEventRevoker = alias(chatEvents, "automation_event_revoker");
 
 export type WorkflowQueueAdmissionTransaction = Tx;
-
-async function chatEventQueueAdmissionLock(
-  tx: WorkflowQueueAdmissionTransaction,
-  chatThreadId: string,
-): Promise<void> {
-  // Serialize schedule coalescing and admission for the same chat thread.
-  const lockKey = `chat_event_queue:${chatThreadId}`;
-  // eslint-disable-next-line api/no-new-advisory-lock -- 2026-09-26 前存量；禁止新增 advisory lock
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
-}
 
 export async function pendingTickForAutomation(
   db: Pick<Db, "select">,
@@ -193,99 +175,81 @@ async function admitWorkflowQueueInTransaction(
   event: Parameters<typeof insertChatEvent>[1],
 ): Promise<WorkflowQueueAdmission> {
   const { automation, scheduleClaim, persistSourceTransition } = args;
-  if (automation.kind === "schedule") {
-    // Manual schedule runs must also coordinate with coalescing cron ticks.
+  if (args.coalescePendingScheduleRun && automation.kind === "schedule") {
+    const pending = await measureWorkflowAdmissionStep(
+      args.timing,
+      "api_dispatch_workflow_admission_pending_lookup",
+      async () => {
+        const pendingEventId = await pendingTickForAutomation(
+          tx,
+          automation.id,
+        );
+        return pendingEventId
+          ? await admitCoalescedScheduleTick(tx, args, pendingEventId)
+          : undefined;
+      },
+    );
+    if (pending) {
+      return pending;
+    }
+  }
+
+  const claim = scheduleClaim
+    ? await measureWorkflowAdmissionStep(
+        args.timing,
+        "api_dispatch_workflow_admission_schedule_claim",
+        async () => {
+          return await scheduleClaim.claim(tx);
+        },
+      )
+    : undefined;
+  if (claim?.kind === "unavailable") {
+    return { kind: "schedule_unavailable", reason: "superseded" };
+  }
+
+  const conflict = args.queueEventId === undefined ? "none" : "id";
+  // Context commits with the admitted event; a coalesced or superseded tick
+  // writes neither.
+  const inserted = await measureWorkflowAdmissionStep(
+    args.timing,
+    "api_dispatch_workflow_admission_event_insert",
+    async () => {
+      return await insertChatEvent(tx, event, conflict);
+    },
+  );
+  if (!inserted) {
+    if (args.queueEventId !== undefined) {
+      return { kind: "coalesced" };
+    }
+    throw new Error("Workflow queue event insert returned no row");
+  }
+  if (persistSourceTransition) {
     await measureWorkflowAdmissionStep(
       args.timing,
-      "api_dispatch_workflow_admission_schedule_lock_wait",
+      "api_dispatch_workflow_admission_source_transition",
       async () => {
-        await chatEventQueueAdmissionLock(tx, args.chatThreadId);
+        await persistSourceTransition(tx);
       },
     );
   }
-
-  const admit = async (): Promise<WorkflowQueueAdmission> => {
-    if (args.coalescePendingScheduleRun && automation.kind === "schedule") {
-      const pending = await measureWorkflowAdmissionStep(
-        args.timing,
-        "api_dispatch_workflow_admission_pending_lookup",
-        async () => {
-          const pendingEventId = await pendingTickForAutomation(
-            tx,
-            automation.id,
-          );
-          return pendingEventId
-            ? await admitCoalescedScheduleTick(tx, args, pendingEventId)
-            : undefined;
-        },
-      );
-      if (pending) {
-        return pending;
-      }
-    }
-
-    const claim = scheduleClaim
-      ? await measureWorkflowAdmissionStep(
-          args.timing,
-          "api_dispatch_workflow_admission_schedule_claim",
-          async () => {
-            return await scheduleClaim.claim(tx);
-          },
-        )
-      : undefined;
-    if (claim?.kind === "unavailable") {
-      return { kind: "schedule_unavailable", reason: "superseded" };
-    }
-
-    const conflict = args.queueEventId === undefined ? "none" : "id";
-    // Context commits with the admitted event; a coalesced or superseded tick
-    // writes neither.
-    const inserted = await measureWorkflowAdmissionStep(
+  if (claim) {
+    await measureWorkflowAdmissionStep(
       args.timing,
-      "api_dispatch_workflow_admission_event_insert",
+      "api_dispatch_workflow_admission_event_binding",
       async () => {
-        return await insertChatEvent(tx, event, conflict);
+        await scheduleClaim?.bindQueueEvent(tx, {
+          claimId: claim.claimId,
+          queueEventId: inserted.id,
+        });
       },
     );
-    if (!inserted) {
-      if (args.queueEventId !== undefined) {
-        return { kind: "coalesced" };
-      }
-      throw new Error("Workflow queue event insert returned no row");
-    }
-    if (persistSourceTransition) {
-      await measureWorkflowAdmissionStep(
-        args.timing,
-        "api_dispatch_workflow_admission_source_transition",
-        async () => {
-          await persistSourceTransition(tx);
-        },
-      );
-    }
-    if (claim) {
-      await measureWorkflowAdmissionStep(
-        args.timing,
-        "api_dispatch_workflow_admission_event_binding",
-        async () => {
-          await scheduleClaim?.bindQueueEvent(tx, {
-            claimId: claim.claimId,
-            queueEventId: inserted.id,
-          });
-        },
-      );
-      return {
-        kind: "inserted",
-        eventId: inserted.id,
-        scheduleClaimId: claim.claimId,
-      };
-    }
-    return { kind: "inserted", eventId: inserted.id };
-  };
-  return await measureWorkflowAdmissionStep(
-    automation.kind === "schedule" ? args.timing : undefined,
-    "api_dispatch_workflow_admission_schedule_lock_held",
-    admit,
-  );
+    return {
+      kind: "inserted",
+      eventId: inserted.id,
+      scheduleClaimId: claim.claimId,
+    };
+  }
+  return { kind: "inserted", eventId: inserted.id };
 }
 
 async function attemptWorkflowQueueAdmission(
@@ -353,9 +317,10 @@ async function attemptWorkflowQueueAdmission(
 }
 
 /**
- * Persist every fired automation as a pending input event. The locked
- * coalescing predicate is unchanged: schedule automations have at most one
- * unclaimed, unrevoked event when the caller enables coalescing.
+ * Persist every fired automation as a pending input event. Schedule coalescing
+ * is best effort: a visible pending event absorbs another tick, but concurrent
+ * admissions may both enqueue. Exact occurrence claims and source transitions
+ * still commit atomically with their admitted events.
  */
 export async function admitWorkflowAutomationEvent(
   db: Db,

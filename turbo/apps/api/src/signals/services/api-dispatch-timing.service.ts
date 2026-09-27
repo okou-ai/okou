@@ -146,8 +146,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_workflow_admission_display_name"
   | "api_dispatch_workflow_admission_transaction"
   | "api_dispatch_workflow_admission_transaction_callback"
-  | "api_dispatch_workflow_admission_schedule_lock_wait"
-  | "api_dispatch_workflow_admission_schedule_lock_held"
   | "api_dispatch_workflow_admission_pending_lookup"
   | "api_dispatch_workflow_admission_schedule_claim"
   | "api_dispatch_workflow_admission_event_insert"

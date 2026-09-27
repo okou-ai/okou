@@ -1731,8 +1731,6 @@ async function restorePreparedCalendarWatch(args: {
 
 async function retainRegisteredCalendarWatchForRetry(args: {
   readonly db: Db;
-  readonly access: GoogleCalendarAccess;
-  readonly calendarId: string;
   readonly prepared: PreparedGoogleCalendarWatch;
   readonly resourceId: string;
   readonly resourceUri: string;
@@ -1740,11 +1738,6 @@ async function retainRegisteredCalendarWatchForRetry(args: {
 }): Promise<void> {
   const lifecycleSignal = AbortSignal.timeout(WATCH_LIFECYCLE_TIMEOUT_MS);
   await args.db.transaction(async (tx) => {
-    await lockGoogleCalendarLifecycle(
-      tx,
-      args.access.connectorId,
-      args.calendarId,
-    );
     const currentTime = nowDate();
     await tx
       .update(googleCalendarWatchStates)
