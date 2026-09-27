@@ -789,19 +789,43 @@ function browserSelectSubmissionValue(
   if (!options || !optionSetFingerprint) {
     return null;
   }
-  const choice = choiceDraft.get(field.key);
-  if (choice && choice.optionSetFingerprint !== optionSetFingerprint) {
-    return null;
-  }
-  const selection = choice?.optionIndexes;
+  const saved = choiceDraft.get(field.key);
+  // A fresh preflight may replace the website choices. Ignore a stale draft
+  // instead of reusing its indices against the new option set.
+  const selection =
+    saved?.optionSetFingerprint === optionSetFingerprint
+      ? saved.optionIndexes
+      : undefined;
   if (selection === undefined) {
-    return field.required ||
-      (field.control.siteRequired &&
+    if (!field.required) {
+      return field.control.siteRequired &&
         !options.some((option) => {
           return option.selected && !option.disabled && !option.empty;
-        }))
-      ? null
-      : undefined;
+        })
+        ? null
+        : undefined;
+    }
+    const observed = options.filter((option) => {
+      return option.selected;
+    });
+    if (
+      observed.length === 0 ||
+      observed.some((option) => {
+        return option.disabled;
+      }) ||
+      observed.every((option) => {
+        return option.empty;
+      })
+    ) {
+      return null;
+    }
+    return {
+      key: field.key,
+      optionIndexes: observed.map((option) => {
+        return option.index;
+      }),
+      optionSetFingerprint,
+    };
   }
   if (
     selection.some((index) => {
@@ -835,19 +859,51 @@ function browserCheckboxSubmissionValue(
   if (observedChecked === undefined) {
     return null;
   }
-  const choice = checkboxDraft.get(field.key);
-  if (choice && choice.observedChecked !== observedChecked) {
-    return null;
-  }
+  const saved = checkboxDraft.get(field.key);
+  const choice = saved?.observedChecked === observedChecked ? saved : undefined;
   if (!choice) {
-    return field.required || (field.control.siteRequired && !observedChecked)
-      ? null
-      : undefined;
+    if (field.required) {
+      return observedChecked
+        ? { key: field.key, checked: true, observedChecked }
+        : null;
+    }
+    return field.control.siteRequired && !observedChecked ? null : undefined;
   }
   if ((field.required || field.control.siteRequired) && !choice.checked) {
     return null;
   }
   return { key: field.key, checked: choice.checked, observedChecked };
+}
+
+function observedRadioSubmissionValue(
+  field: BrowserInputAction["fields"][number],
+  options: NonNullable<
+    BrowserInputAction["fields"][number]["control"]["radioOptions"]
+  >,
+  fingerprint: string,
+  selectedIndex: number,
+):
+  | Extract<
+      BrowserUserActionApplyRequest["values"][number],
+      { memberIndex: number }
+    >
+  | null
+  | undefined {
+  if (selectedIndex === -1) {
+    return field.required || field.control.siteRequired ? null : undefined;
+  }
+  if (!field.required) {
+    return undefined;
+  }
+  if (options[selectedIndex]?.disabled) {
+    return null;
+  }
+  return {
+    key: field.key,
+    memberIndex: selectedIndex,
+    observedSelectedIndex: selectedIndex,
+    groupFingerprint: fingerprint,
+  };
 }
 
 function browserRadioSubmissionValue(
@@ -868,19 +924,19 @@ function browserRadioSubmissionValue(
   const selectedIndex = options.findIndex((option) => {
     return option.selected;
   });
-  const choice = radioDraft.get(field.key);
-  if (
-    choice &&
-    (choice.groupFingerprint !== fingerprint ||
-      choice.observedSelectedIndex !== selectedIndex)
-  ) {
-    return null;
-  }
-  if (!choice) {
-    return field.required ||
-      (field.control.siteRequired && selectedIndex === -1)
-      ? null
+  const saved = radioDraft.get(field.key);
+  const choice =
+    saved?.groupFingerprint === fingerprint &&
+    saved.observedSelectedIndex === selectedIndex
+      ? saved
       : undefined;
+  if (!choice) {
+    return observedRadioSubmissionValue(
+      field,
+      options,
+      fingerprint,
+      selectedIndex,
+    );
   }
   if (
     choice.memberIndex >= options.length ||
@@ -917,10 +973,9 @@ export function fileDraftIsValid(
     return false;
   }
   if (!draft) {
-    return (
-      !field.required &&
-      (!field.control.siteRequired || field.control.files.length > 0)
-    );
+    return field.required
+      ? field.control.files.length > 0
+      : !field.control.siteRequired || field.control.files.length > 0;
   }
   if (draft.observedFingerprint !== fingerprint) {
     return false;
@@ -974,7 +1029,13 @@ async function browserFileSubmissionValue(
     return null;
   }
   if (!draft) {
-    return undefined;
+    if (!field.required) {
+      return undefined;
+    }
+    const observedFingerprint = field.control.fileSetFingerprint;
+    return observedFingerprint
+      ? { key: field.key, operation: "keep", observedFingerprint, files: [] }
+      : null;
   }
   return {
     key: field.key,

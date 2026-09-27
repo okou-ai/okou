@@ -450,7 +450,6 @@ function BrowserInputControl({
   draft,
   busy,
   onUpdate,
-  onRemove,
   inputId,
   describedBy,
 }: BrowserInputEditProps & {
@@ -516,11 +515,7 @@ function BrowserInputControl({
       disabled={busy}
       onChange={(event) => {
         const value = event.currentTarget.value;
-        if (["number", "date_time"].includes(field.fieldKind) && value === "") {
-          onRemove(field.key);
-        } else {
-          onUpdate(field.key, value);
-        }
+        onUpdate(field.key, value);
       }}
     />
   );
@@ -585,9 +580,7 @@ function BrowserFileActions({
   field,
   existing,
   draft,
-  fingerprint,
   busy,
-  onUpdate,
   onRemove,
 }: {
   readonly field: PendingBrowserInputField;
@@ -596,69 +589,25 @@ function BrowserFileActions({
     readonly size: number;
   }[];
   readonly draft: BrowserFileDraft | undefined;
-  readonly fingerprint: string | undefined;
   readonly busy: boolean;
-  readonly onUpdate: (key: string, draft: BrowserFileDraft) => void;
   readonly onRemove: (key: string) => void;
 }) {
   const { t } = useTranslation();
-  return (
-    <div className="flex flex-wrap gap-2">
-      {existing.length > 0 && fingerprint && (
-        <Button
-          type="button"
-          size="xs"
-          variant="link"
-          disabled={busy}
-          onClick={() => {
-            return onUpdate(field.key, {
-              operation: "keep",
-              files: [],
-              observedFingerprint: fingerprint,
-            });
-          }}
-        >
-          {t(($) => {
-            return $.chat.browserInput.keepValue;
-          })}
-        </Button>
-      )}
-      {!field.required && !field.control.siteRequired && fingerprint && (
-        <Button
-          type="button"
-          size="xs"
-          variant="link"
-          disabled={busy}
-          onClick={() => {
-            return onUpdate(field.key, {
-              operation: "clear",
-              files: [],
-              observedFingerprint: fingerprint,
-            });
-          }}
-        >
-          {t(($) => {
-            return $.chat.browserInput.clearValue;
-          })}
-        </Button>
-      )}
-      {draft && !field.required && (
-        <Button
-          type="button"
-          size="xs"
-          variant="link"
-          disabled={busy}
-          onClick={() => {
-            return onRemove(field.key);
-          }}
-        >
-          {t(($) => {
-            return $.chat.browserInput.fileLeave;
-          })}
-        </Button>
-      )}
-    </div>
-  );
+  return draft && (existing.length > 0 || !field.required) ? (
+    <Button
+      type="button"
+      size="xs"
+      variant="link"
+      disabled={busy}
+      onClick={() => {
+        return onRemove(field.key);
+      }}
+    >
+      {t(($) => {
+        return $.chat.browserInput.fileLeave;
+      })}
+    </Button>
+  ) : null;
 }
 
 function BrowserFileControl({
@@ -741,9 +690,7 @@ function BrowserFileControl({
         field={field}
         existing={existing}
         draft={draft}
-        fingerprint={fingerprint}
         busy={busy}
-        onUpdate={onUpdate}
         onRemove={onRemove}
       />
     </div>
@@ -758,16 +705,11 @@ function requiredSelectsSatisfied(
     if (field.fieldKind !== "select") {
       return true;
     }
-    const choice = choiceDraft.get(field.key);
-    if (
-      choice &&
-      choice.optionSetFingerprint !== field.control.optionSetFingerprint
-    ) {
-      return false;
-    }
-    if (field.required && !choice) {
-      return false;
-    }
+    const saved = choiceDraft.get(field.key);
+    const choice =
+      saved?.optionSetFingerprint === field.control.optionSetFingerprint
+        ? saved
+        : undefined;
     if (!field.required && !field.control.siteRequired) {
       return true;
     }
@@ -785,17 +727,37 @@ function requiredSelectsSatisfied(
           return option.index;
         });
     return (
-      (choice === undefined ||
-        selected.every((index) => {
-          const option = options[index];
-          return option && !option.disabled;
-        })) &&
+      selected.every((index) => {
+        const option = options[index];
+        return option && !option.disabled;
+      }) &&
       selected.some((index) => {
         const option = options[index];
         return option && !option.disabled && !option.empty;
       })
     );
   });
+}
+
+function radioChoiceIsValid(
+  options: NonNullable<PendingBrowserInputField["control"]["radioOptions"]>,
+  selectedIndex: number,
+  choice: BrowserRadioDraft | undefined,
+): boolean {
+  if (!choice) {
+    return true;
+  }
+  if (
+    choice.memberIndex >= options.length ||
+    options[choice.memberIndex]?.disabled
+  ) {
+    return false;
+  }
+  return (
+    choice.memberIndex !== -1 ||
+    selectedIndex === -1 ||
+    !options[selectedIndex]?.disabled
+  );
 }
 
 function requiredRadiosSatisfied(
@@ -814,25 +776,19 @@ function requiredRadiosSatisfied(
     const selectedIndex = options.findIndex((option) => {
       return option.selected;
     });
-    const choice = radioDraft.get(field.key);
-    if (
-      choice &&
-      (choice.groupFingerprint !== fingerprint ||
-        choice.observedSelectedIndex !== selectedIndex ||
-        choice.memberIndex >= options.length ||
-        options[choice.memberIndex]?.disabled ||
-        (choice.memberIndex === -1 &&
-          selectedIndex !== -1 &&
-          options[selectedIndex]?.disabled))
-    ) {
-      return false;
-    }
-    if (field.required && !choice) {
+    const saved = radioDraft.get(field.key);
+    const choice =
+      saved?.groupFingerprint === fingerprint &&
+      saved.observedSelectedIndex === selectedIndex
+        ? saved
+        : undefined;
+    if (!radioChoiceIsValid(options, selectedIndex, choice)) {
       return false;
     }
     return (
       !(field.required || field.control.siteRequired) ||
-      (choice?.memberIndex ?? selectedIndex) >= 0
+      ((choice?.memberIndex ?? selectedIndex) >= 0 &&
+        !options[choice?.memberIndex ?? selectedIndex]?.disabled)
     );
   });
 }
@@ -846,14 +802,11 @@ function requiredCheckboxesSatisfied(
       return true;
     }
     const observed = field.control.checked;
-    const choice = checkboxDraft.get(field.key);
-    if (
-      observed === undefined ||
-      (choice && choice.observedChecked !== observed) ||
-      (field.required && !choice)
-    ) {
+    if (observed === undefined) {
       return false;
     }
+    const saved = checkboxDraft.get(field.key);
+    const choice = saved?.observedChecked === observed ? saved : undefined;
     return (
       !(field.required || field.control.siteRequired) ||
       (choice?.checked ?? observed)
@@ -882,30 +835,10 @@ function selectedSelectIndices(
   );
 }
 
-function canKeepSiteSelectChoice(
-  field: PendingBrowserInputField,
-  choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
-): boolean {
-  if (!field.required) {
-    return choiceDraft.has(field.key);
-  }
-  const selected = selectedSelectIndices(field, undefined);
-  return (
-    selected.every((index) => {
-      const option = field.control.options?.[index];
-      return option && !option.disabled;
-    }) &&
-    selected.some((index) => {
-      const option = field.control.options?.[index];
-      return option && !option.empty;
-    })
-  );
-}
-
 function selectedEnabledOptionIndices(control: HTMLSelectElement): number[] {
   return [...control.selectedOptions]
     .filter((option) => {
-      return !option.disabled;
+      return !option.disabled && option.value !== "";
     })
     .map((option) => {
       return Number(option.value);
@@ -933,13 +866,11 @@ function BrowserSelectControl({
   ) => void;
   readonly onRemove: (key: string) => void;
 }) {
-  const { t } = useTranslation();
   const options = field.control.options;
   const ready =
     options !== undefined && field.control.optionSetFingerprint !== undefined;
   const selected = selectedSelectIndices(field, choiceDraft.get(field.key));
   const siteSelected = selectedSelectIndices(field, undefined);
-  const canKeep = canKeepSiteSelectChoice(field, choiceDraft);
   const multiple = field.control.inputType === "select-multiple";
   const required = field.required || field.control.siteRequired;
   return (
@@ -963,15 +894,21 @@ function BrowserSelectControl({
           if (!field.control.optionSetFingerprint) {
             return;
           }
-          onUpdate(
-            field.key,
-            selectedEnabledOptionIndices(event.currentTarget),
-            field.control.optionSetFingerprint,
-          );
+          const selection = selectedEnabledOptionIndices(event.currentTarget);
+          if (
+            selection.length === siteSelected.length &&
+            selection.every((index, position) => {
+              return index === siteSelected[position];
+            })
+          ) {
+            onRemove(field.key);
+          } else {
+            onUpdate(field.key, selection, field.control.optionSetFingerprint);
+          }
         }}
       >
         {!multiple && (
-          <option value="" disabled>
+          <option value="" disabled={required}>
             —
           </option>
         )}
@@ -987,52 +924,6 @@ function BrowserSelectControl({
           );
         })}
       </select>
-      {ready && (!required || canKeep) && (
-        <div className="flex max-w-full flex-wrap gap-2">
-          {!required && (
-            <Button
-              type="button"
-              variant="link"
-              size="xs"
-              className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
-              disabled={busy}
-              onClick={() => {
-                const fingerprint = field.control.optionSetFingerprint;
-                if (fingerprint) {
-                  onUpdate(field.key, [], fingerprint);
-                }
-              }}
-            >
-              {t(($) => {
-                return $.chat.browserInput.clearValue;
-              })}
-            </Button>
-          )}
-          {canKeep && (
-            <Button
-              type="button"
-              variant="link"
-              size="xs"
-              className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
-              disabled={busy}
-              onClick={() => {
-                if (field.required) {
-                  const fingerprint = field.control.optionSetFingerprint;
-                  if (fingerprint) {
-                    onUpdate(field.key, siteSelected, fingerprint);
-                  }
-                } else {
-                  onRemove(field.key);
-                }
-              }}
-            >
-              {t(($) => {
-                return $.chat.browserInput.keepValue;
-              })}
-            </Button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -1054,7 +945,6 @@ function BrowserRadioControl({
   readonly onUpdate: (key: string, choice: BrowserRadioDraft) => void;
   readonly onRemove: (key: string) => void;
 }) {
-  const { t } = useTranslation();
   const options = field.control.radioOptions;
   const fingerprint = field.control.radioGroupFingerprint;
   if (!options || !fingerprint) {
@@ -1096,11 +986,15 @@ function BrowserRadioControl({
               required={required && option.index === firstEnabled}
               disabled={busy || option.disabled}
               onChange={() => {
-                return onUpdate(field.key, {
-                  memberIndex: option.index,
-                  observedSelectedIndex: observed,
-                  groupFingerprint: fingerprint,
-                });
+                if (option.index === observed) {
+                  onRemove(field.key);
+                } else {
+                  onUpdate(field.key, {
+                    memberIndex: option.index,
+                    observedSelectedIndex: observed,
+                    groupFingerprint: fingerprint,
+                  });
+                }
               }}
             />
             <span className="min-w-0 break-words">
@@ -1109,54 +1003,6 @@ function BrowserRadioControl({
           </label>
         );
       })}
-      <div className="flex max-w-full flex-wrap items-center gap-2">
-        {!required && observed !== -1 && !options[observed]?.disabled && (
-          <Button
-            type="button"
-            variant="link"
-            size="xs"
-            className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
-            disabled={busy}
-            onClick={() => {
-              return onUpdate(field.key, {
-                memberIndex: -1,
-                observedSelectedIndex: observed,
-                groupFingerprint: fingerprint,
-              });
-            }}
-          >
-            {t(($) => {
-              return $.chat.browserInput.clearValue;
-            })}
-          </Button>
-        )}
-        {(field.required
-          ? observed !== -1 && !options[observed]?.disabled
-          : draft !== undefined) && (
-          <Button
-            type="button"
-            variant="link"
-            size="xs"
-            className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
-            disabled={busy}
-            onClick={() => {
-              if (field.required) {
-                onUpdate(field.key, {
-                  memberIndex: observed,
-                  observedSelectedIndex: observed,
-                  groupFingerprint: fingerprint,
-                });
-              } else {
-                onRemove(field.key);
-              }
-            }}
-          >
-            {t(($) => {
-              return $.chat.browserInput.keepValue;
-            })}
-          </Button>
-        )}
-      </div>
     </div>
   );
 }
@@ -1182,7 +1028,6 @@ function BrowserCheckboxControl({
   ) => void;
   readonly onRemove: (key: string) => void;
 }) {
-  const { t } = useTranslation();
   const observed = field.control.checked;
   const choice = checkboxDraft.get(field.key);
   const checked =
@@ -1203,90 +1048,15 @@ function BrowserCheckboxControl({
         disabled={busy || observed === undefined}
         onChange={(event) => {
           if (observed !== undefined) {
-            onUpdate(field.key, event.currentTarget.checked, observed);
+            if (event.currentTarget.checked === observed) {
+              onRemove(field.key);
+            } else {
+              onUpdate(field.key, event.currentTarget.checked, observed);
+            }
           }
         }}
       />
-      {observed !== undefined && !required && (
-        <Button
-          type="button"
-          variant="link"
-          size="xs"
-          className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
-          disabled={busy}
-          onClick={() => {
-            onUpdate(field.key, false, observed);
-          }}
-        >
-          {t(($) => {
-            return $.chat.browserInput.clearValue;
-          })}
-        </Button>
-      )}
-      {observed !== undefined &&
-        (field.required ? observed : choice !== undefined) && (
-          <Button
-            type="button"
-            variant="link"
-            size="xs"
-            className="h-auto min-h-7 max-w-full whitespace-normal py-1 text-left"
-            disabled={busy}
-            onClick={() => {
-              if (field.required) {
-                onUpdate(field.key, true, observed);
-              } else {
-                onRemove(field.key);
-              }
-            }}
-          >
-            {t(($) => {
-              return $.chat.browserInput.keepValue;
-            })}
-          </Button>
-        )}
     </div>
-  );
-}
-
-function OptionalConstrainedInputClearAction({
-  field,
-  draft,
-  busy,
-  onUpdate,
-  onRemove,
-}: BrowserInputEditProps) {
-  const { t } = useTranslation();
-  if (
-    !["number", "date_time"].includes(field.fieldKind) ||
-    field.required ||
-    field.control.siteRequired
-  ) {
-    return null;
-  }
-  const clearing = draft.has(field.key) && draft.get(field.key) === "";
-  return (
-    <Button
-      type="button"
-      variant="link"
-      size="xs"
-      className="h-auto self-start p-0 text-xs"
-      disabled={busy}
-      onClick={() => {
-        if (clearing) {
-          onRemove(field.key);
-        } else {
-          onUpdate(field.key, "");
-        }
-      }}
-    >
-      {clearing
-        ? t(($) => {
-            return $.chat.browserInput.keepValue;
-          })
-        : t(($) => {
-            return $.chat.browserInput.clearValue;
-          })}
-    </Button>
   );
 }
 
@@ -1382,13 +1152,17 @@ function BrowserRangeControl({
           value={choice?.value ?? observed}
           disabled={busy}
           onChange={(event) => {
-            onUpdate(field.key, {
-              observedValue: observed,
-              observedMin: field.control.min,
-              observedMax: field.control.max,
-              observedStep: field.control.step,
-              value: event.currentTarget.value,
-            });
+            if (event.currentTarget.value === observed && !required) {
+              onRemove(field.key);
+            } else {
+              onUpdate(field.key, {
+                observedValue: observed,
+                observedMin: field.control.min,
+                observedMax: field.control.max,
+                observedStep: field.control.step,
+                value: event.currentTarget.value,
+              });
+            }
           }}
         />
         <output htmlFor={inputId} className="min-w-12 text-right tabular-nums">
@@ -1414,21 +1188,6 @@ function BrowserRangeControl({
         >
           {t(($) => {
             return $.chat.browserInput.confirmRangeValue;
-          })}
-        </Button>
-      ) : !required && saved ? (
-        <Button
-          type="button"
-          variant="link"
-          size="xs"
-          className="h-auto self-start p-0 text-xs"
-          disabled={busy}
-          onClick={() => {
-            onRemove(field.key);
-          }}
-        >
-          {t(($) => {
-            return $.chat.browserInput.keepValue;
           })}
         </Button>
       ) : null}
@@ -1472,10 +1231,14 @@ function BrowserColorControl({
           value={choice?.value ?? observed}
           disabled={busy}
           onChange={(event) => {
-            onUpdate(field.key, {
-              observedColor: observed,
-              value: event.currentTarget.value,
-            });
+            if (event.currentTarget.value === observed && !required) {
+              onRemove(field.key);
+            } else {
+              onUpdate(field.key, {
+                observedColor: observed,
+                value: event.currentTarget.value,
+              });
+            }
           }}
         />
         <output
@@ -1501,21 +1264,6 @@ function BrowserColorControl({
         >
           {t(($) => {
             return $.chat.browserInput.confirmRangeValue;
-          })}
-        </Button>
-      ) : !required && saved ? (
-        <Button
-          type="button"
-          variant="link"
-          size="xs"
-          className="h-auto self-start p-0 text-xs"
-          disabled={busy}
-          onClick={() => {
-            return onRemove(field.key);
-          }}
-        >
-          {t(($) => {
-            return $.chat.browserInput.keepValue;
           })}
         </Button>
       ) : null}
@@ -1665,7 +1413,7 @@ function BrowserInputFieldControl({
 function BrowserInputField(
   props: Parameters<typeof BrowserInputFieldControl>[0],
 ) {
-  const { field, index, draft, busy, onUpdate, onRemove } = props;
+  const { field, index } = props;
   const inputId = `browser-input-field-${index}`;
   const requirementId = `${inputId}-requirement`;
   const descriptionId = field.description
@@ -1680,13 +1428,6 @@ function BrowserInputField(
         descriptionId={descriptionId}
       />
       <BrowserInputFieldControl {...props} />
-      <OptionalConstrainedInputClearAction
-        field={field}
-        draft={draft}
-        busy={busy}
-        onUpdate={onUpdate}
-        onRemove={onRemove}
-      />
     </div>
   );
 }

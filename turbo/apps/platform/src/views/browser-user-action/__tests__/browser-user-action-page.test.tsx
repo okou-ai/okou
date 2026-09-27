@@ -516,7 +516,7 @@ test("An optional native slider stays untouched unless the user changes it", asy
   await waitFor(() => {
     return expect(within(form).getByText("16")).toBeInTheDocument();
   });
-  click(button("Leave website value unchanged"));
+  fireEvent.change(slider, { target: { value: "19" } });
   click(button("Add to browser"));
   await waitFor(() => {
     return expect(sent).toStrictEqual([]);
@@ -656,7 +656,7 @@ test("An optional native color remains untouched or submits an explicit change",
   await waitFor(() => {
     return expect(within(form).getByText("#00ff00")).toBeInTheDocument();
   });
-  click(button("Leave website value unchanged"));
+  fireEvent.change(picker, { target: { value: "#123abc" } });
   expect(picker).toHaveValue("#123abc");
   click(button("Add to browser"));
   await waitFor(() => {
@@ -825,7 +825,7 @@ test("A failed local file read reports an error without applying the Browser act
   expect(button("Add to browser")).toBeEnabled();
 });
 
-test("An optional file selection leaves existing website files untouched unless cleared", async () => {
+test("An optional file selection leaves existing website files untouched without auxiliary buttons", async () => {
   let sent: unknown = null;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, fileAction({ required: false, preflight: false }));
@@ -857,18 +857,59 @@ test("An optional file selection leaves existing website files untouched unless 
   await waitFor(() => {
     return expect(button("Add to browser")).toBeEnabled();
   });
-  click(button("Clear website value"));
+  expect(screen.queryByText("Clear website value")).toBeNull();
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
   click(button("Add to browser"));
   await waitFor(() => {
-    return expect(sent).toStrictEqual([
+    return expect(sent).toStrictEqual([]);
+  });
+});
+
+test("A required file field can retain already selected website files without a keep button", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...fileAction({ required: true, preflight: false }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      fileAction({ required: true, preflight: true, existing: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
       {
         key: "document",
-        operation: "clear",
+        operation: "keep",
         files: [],
         observedFingerprint: FILE_FINGERPRINT,
       },
     ]);
+    state = "succeeded";
+    return respond(200, {
+      ...fileAction({ required: true, preflight: false }),
+      state,
+    });
   });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await screen.findByText(/old.txt/u);
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
 test("The standalone form accepts input and submission while its background check is pending", async () => {
@@ -1075,16 +1116,11 @@ test("The standalone form uses the existing input style with live number constra
 });
 
 test.each([
-  { clear: false, typedThenDeleted: false, expected: [] },
-  {
-    clear: true,
-    typedThenDeleted: false,
-    expected: [{ key: "quantity", value: "" }],
-  },
-  { clear: false, typedThenDeleted: true, expected: [] },
+  { typedThenDeleted: false, expected: [] },
+  { typedThenDeleted: true, expected: [{ key: "quantity", value: "" }] },
 ])(
-  "Optional number field can be untouched or explicitly cleared ($clear, $typedThenDeleted)",
-  async ({ clear, typedThenDeleted, expected }) => {
+  "Optional number field can be untouched or cleared using its input ($typedThenDeleted)",
+  async ({ typedThenDeleted, expected }) => {
     let state: BrowserUserActionResponse["state"] = "pending";
     context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
       return respond(200, { ...numberAction(false), state });
@@ -1113,17 +1149,13 @@ test.each([
       "type",
       "number",
     );
-    if (clear) {
-      click(button("Clear website value"));
-    }
     if (typedThenDeleted) {
       const quantity = within(form).getByLabelText(/Quantity/u);
       await fill(quantity, "12.5");
       await fill(quantity, "");
     }
-    expect(
-      button(clear ? "Leave website value unchanged" : "Clear website value"),
-    ).toBeVisible();
+    expect(screen.queryByText("Clear website value")).toBeNull();
+    expect(screen.queryByText("Leave website value unchanged")).toBeNull();
     click(button("Add to browser"));
     await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   },
@@ -1200,9 +1232,13 @@ test.each([
       host: "app.okou.ai",
       featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
     });
-    await screen.findByRole("form", { name: "Enter information in browser" });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
     if (clear) {
-      click(button("Clear website value"));
+      const picker = within(form).getByLabelText(/Arrival/u);
+      fireEvent.change(picker, { target: { value: "2026-09-25" } });
+      fireEvent.change(picker, { target: { value: "" } });
     }
     click(button("Add to browser"));
     await expect(
@@ -1312,7 +1348,7 @@ test("An untouched optional checkbox preserves a checked website value", async (
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
-test("A required checked checkbox needs explicit confirmation", async () => {
+test("A required checked checkbox submits its valid website state without auxiliary confirmation", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, {
@@ -1353,14 +1389,13 @@ test("A required checked checkbox needs explicit confirmation", async () => {
     expect(checkbox).toBeEnabled();
   });
   expect(checkbox).toBeChecked();
-  expect(button("Add to browser")).toBeDisabled();
-  click(button("Leave website value unchanged"));
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
-test("A changed checkbox state on Retry requires a fresh confirmation", async () => {
+test("A changed checkbox state on Retry uses the fresh valid website snapshot", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   let checks = 0;
   let applies = 0;
@@ -1424,8 +1459,6 @@ test("A changed checkbox state on Retry requires a fresh confirmation", async ()
     expect(checks).toBe(2);
   });
   expect(checkbox).toBeChecked();
-  expect(button("Add to browser")).toBeDisabled();
-  click(button("Leave website value unchanged"));
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -1435,70 +1468,62 @@ test("A changed checkbox state on Retry requires a fresh confirmation", async ()
   ]);
 });
 
-test.each([
-  { memberIndex: 1, label: "2. Same" },
-  { memberIndex: -1, label: "Clear website value" },
-])(
-  "A radio group submits an indexed choice or explicit clear without its duplicate value ($memberIndex)",
-  async ({ memberIndex, label }) => {
-    let state: BrowserUserActionResponse["state"] = "pending";
-    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-      return respond(200, {
-        ...radioAction({ required: false, selected: 0 }),
-        state,
-      });
+test("A radio group submits an indexed choice without its duplicate value", async () => {
+  const memberIndex = 1;
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...radioAction({ required: false, selected: 0 }),
+      state,
     });
-    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-      return respond(
-        200,
-        radioAction({ required: false, selected: 0, preflight: true }),
-      );
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(
+      200,
+      radioAction({ required: false, selected: 0, preflight: true }),
+    );
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "delivery",
+        memberIndex,
+        observedSelectedIndex: 0,
+        groupFingerprint: RADIO_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...radioAction({ required: false, selected: 0 }),
+      state,
     });
-    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
-      expect(body.values).toStrictEqual([
-        {
-          key: "delivery",
-          memberIndex,
-          observedSelectedIndex: 0,
-          groupFingerprint: RADIO_FINGERPRINT,
-        },
-      ]);
-      state = "succeeded";
-      return respond(200, {
-        ...radioAction({ required: false, selected: 0 }),
-        state,
-      });
-    });
-    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-      expect(body.prompt).toBe(CALLBACK_PROMPT);
-      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-    });
-    await setupPage({
-      context,
-      path: route(),
-      host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-    });
-    const form = await screen.findByRole("form", {
-      name: "Enter information in browser",
-    });
-    const radios = await within(form).findAllByRole("radio");
-    expect(radios).toHaveLength(3);
-    expect(radios[0]).toBeChecked();
-    expect(radios[2]).toBeDisabled();
-    if (memberIndex >= 0) {
-      await userEvent
-        .setup({ delay: null })
-        .click(within(form).getByRole("radio", { name: label }));
-    } else {
-      click(button(label));
-    }
-    click(button("Add to browser"));
-    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  },
-);
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.prompt).toBe(CALLBACK_PROMPT);
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const radios = await within(form).findAllByRole("radio");
+  expect(radios).toHaveLength(3);
+  expect(radios[0]).toBeChecked();
+  expect(radios[2]).toBeDisabled();
+  await userEvent
+    .setup({ delay: null })
+    .click(within(form).getByRole("radio", { name: "2. Same" }));
+  expect(screen.queryByText("Clear website value")).toBeNull();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
 
-test("A radio choice from a changed website group cannot survive Retry without new confirmation", async () => {
+test("A radio choice from a changed website group uses its fresh snapshot on Retry", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   let checks = 0;
   const submissions: unknown[] = [];
@@ -1561,8 +1586,6 @@ test("A radio choice from a changed website group cannot survive Retry without n
     expect(checks).toBe(2);
     expect(radios[1]).toBeChecked();
   });
-  expect(button("Add to browser")).toBeDisabled();
-  click(button("Leave website value unchanged"));
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -1625,7 +1648,7 @@ test("An untouched optional radio group preserves the existing selection", async
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
-test("An Agent-required radio group needs a deliberate confirmation of the website choice", async () => {
+test("An Agent-required radio group submits its existing valid website choice", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, {
@@ -1667,8 +1690,7 @@ test("An Agent-required radio group needs a deliberate confirmation of the websi
     name: "Enter information in browser",
   });
   await within(form).findAllByRole("radio");
-  expect(button("Add to browser")).toBeDisabled();
-  click(button("Leave website value unchanged"));
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -1846,18 +1868,91 @@ test("An optional multiple select distinguishes untouched from an explicit clear
     expect(region).toBeEnabled();
   });
   expect(region).toHaveAttribute("multiple");
-  click(button("Clear website value"));
-  expect(button("Leave website value unchanged")).toBeVisible();
+  await userEvent.setup({ delay: null }).deselectOptions(region, "1");
+  expect(screen.queryByText("Clear website value")).toBeNull();
+  expect(screen.queryByText("Leave website value unchanged")).toBeNull();
+  click(button("Add to browser"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+});
+
+test("An optional single select clears its website selection through the native empty option", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  const snapshot = selectAction({
+    required: false,
+    multiple: false,
+    preflight: true,
+  });
+  const [field] = snapshot.fields;
+  if (!field?.control.options) {
+    throw new Error("Expected select options");
+  }
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...selectAction({ required: false, multiple: false }),
+      state,
+    });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, {
+      ...snapshot,
+      fields: [
+        {
+          ...field,
+          control: {
+            ...field.control,
+            options: field.control.options?.map((option) => {
+              return {
+                ...option,
+                selected: option.index === 1,
+              };
+            }),
+          },
+        },
+      ],
+    });
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      {
+        key: "region",
+        optionIndexes: [],
+        optionSetFingerprint: SELECT_FINGERPRINT,
+      },
+    ]);
+    state = "succeeded";
+    return respond(200, {
+      ...selectAction({ required: false, multiple: false }),
+      state,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const region = within(form).getByLabelText(/Region/u);
+  await waitFor(() => {
+    return expect(region).toHaveValue("1");
+  });
+  await userEvent.setup({ delay: null }).selectOptions(region, "");
+  expect(region).toHaveValue("");
   click(button("Add to browser"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
 test.each([
-  { siteSelection: 1, confirmedIndex: 1, canKeep: true },
-  { siteSelection: 0, confirmedIndex: 2, canKeep: false },
+  { siteSelection: 1, confirmedIndex: 1, siteValid: true },
+  { siteSelection: 0, confirmedIndex: 2, siteValid: false },
 ])(
-  "A changed select snapshot requires a fresh choice or valid website confirmation ($siteSelection)",
-  async ({ siteSelection, confirmedIndex, canKeep }) => {
+  "A changed select snapshot accepts valid website selection or requires a fresh choice ($siteSelection)",
+  async ({ siteSelection, confirmedIndex, siteValid }) => {
     let state: BrowserUserActionResponse["state"] = "pending";
     let preflights = 0;
     let applies = 0;
@@ -1942,13 +2037,8 @@ test.each([
       expect(preflights).toBe(2);
     });
     expect(region).toHaveValue(String(siteSelection));
-    expect(button("Add to browser")).toBeDisabled();
-    expect(screen.queryByText("Leave website value unchanged") !== null).toBe(
-      canKeep,
-    );
-    if (canKeep) {
-      click(button("Leave website value unchanged"));
-    } else {
+    expect(button("Add to browser")).toHaveProperty("disabled", !siteValid);
+    if (!siteValid) {
       await user.selectOptions(region, "2");
     }
     expect(button("Add to browser")).toBeEnabled();
