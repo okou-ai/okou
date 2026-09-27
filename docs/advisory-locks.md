@@ -378,3 +378,51 @@ SSH/VNC owner operations need further conditional-write preparation and are
 outside this batch. No new lock, constraint, migration or fallback is added.
 Serving evidence and the enforced rollback floor are recorded in
 [deployment compatibility](./deployment-compatibility.md#soft-limits-and-prepared-key-retirement-2026-09-27).
+
+## Custom account, Browser and bootstrap preparation (2026-09-27)
+
+Against main `6184cf9fc2ccad47a262a4efe9436393ed75c2ec`, this preparation
+retains **31** literal acquisition sites: **29 production**, one catalog fixture
+and one billing-attribution operator. Six historical SQL migration sites remain
+separate. No acquisition expression is removed or narrowed in this preparation.
+
+| Protocol                 | Retained SQL sites | Retained acquisition expressions | Prepared replacement                                                                                                    |
+| ------------------------ | -----------------: | -------------------------------: | ----------------------------------------------------------------------------------------------------------------------- |
+| Custom account target    |                  1 |     4 custom-capable expressions | Existing definition protection, ordered account mutations, selection UNIQUE/FK arbitration and exact rollback recovery. |
+| Browser thread lifecycle |                  1 |                                6 | Owned-thread partial UNIQUE, exact state transitions, atomic instance publication and claim-scoped failure cleanup.     |
+| Limited-free bootstrap   |                  1 |                                2 | The actual instructions Storage parent, a fresh default-Agent check and compensation for the captured Storage identity. |
+
+Custom account default changes and sibling promotion use `FOR NO KEY UPDATE`
+in account-ID order. Only the account being deleted upgrades to `FOR UPDATE`,
+before a fresh statement clears its selections. This allows selection FK
+checks to finish without a promotion/selection lock cycle. Existing-thread SET
+converts only the custom-selection FK violation after the complete transaction
+rolls back. Initial-thread creation rolls back just that custom selection's
+savepoint and preserves the existing missing-account omission contract.
+Builtin event-source projection and its account-target protocol are unchanged.
+
+Browser publication retains instance-before-logical statement order. Its
+conditional logical transition must succeed in the same transaction as the
+provider instance and screen; losing the claim rolls back all three and cleans
+up the exact provider. A lost publication does not enter generic start-failure
+cleanup. Fresh claims store millisecond timestamps explicitly so state
+comparisons round-trip through the existing Date decoder. These timestamps
+compare observed state; they are not a new globally unique attempt generation.
+
+Bootstrap acquires the actual canonical instructions Storage before checking
+whether a default Agent still needs publication. It captures the returned
+Storage ID and S3 prefix before upload; rollback compensation cannot adopt a
+replacement with the same name. Existing grant idempotency, permissions and
+paid-tier behavior remain. The existing S3-in-transaction boundary remains;
+acquiring the Storage earlier is not a shorter-transaction optimization.
+
+These keys retire only after this new preparation covers the supported serving
+and rollback writers and outgoing requests drain. That gate is separate from
+earlier advisory preparations; see the [compatibility protocol](./deployment-compatibility.md#custom-account-browser-and-bootstrap-owner-protocols-2026-09-27).
+After retirement, Custom removes one expression and narrows three shared
+expressions to builtin targets; Browser removes six and bootstrap removes two.
+That future change would remove three SQL sites, not twelve.
+
+Invitation-email arbitration is outside this preparation. Its existing unique
+index does not by itself preserve paid-purchase priority over an unpaid preview.
+Chat usage display is also outside the scope.

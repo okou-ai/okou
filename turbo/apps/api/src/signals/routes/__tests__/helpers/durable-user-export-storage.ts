@@ -22,6 +22,7 @@ interface StoredObject {
   readonly bytes: Buffer;
   readonly metadata: Readonly<Record<string, string>>;
   readonly etag: string;
+  readonly lastModified: Date;
 }
 
 interface StoredUpload {
@@ -68,6 +69,7 @@ function storedObject(
 ): StoredObject {
   return {
     bytes: Buffer.from(bytes),
+    lastModified: nowDate(),
     metadata,
     etag: `"${createHash("sha256").update(bytes).digest("hex")}"`,
   };
@@ -154,7 +156,11 @@ export function installDurableUserExportStorage(
     const next = offset + page.length;
     return {
       Contents: page.map((key) => {
-        return { Key: key, Size: objects.get(key)?.bytes.length ?? 0 };
+        return {
+          Key: key,
+          Size: objects.get(key)?.bytes.length ?? 0,
+          LastModified: objects.get(key)?.lastModified,
+        };
       }),
       IsTruncated: next < keys.length,
       NextContinuationToken: next < keys.length ? String(next) : undefined,

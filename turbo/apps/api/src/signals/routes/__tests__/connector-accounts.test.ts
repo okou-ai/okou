@@ -42,6 +42,7 @@ import {
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 
 const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
@@ -1202,6 +1203,123 @@ describe("connector account lifecycle routes", () => {
       }),
       [404],
     );
+  });
+
+  it("keeps one custom default through concurrent creation, default changes and deletion", async () => {
+    await seedFixture();
+    const definition = await accept(
+      customConnectorClient().create({
+        headers: authHeaders(),
+        body: manualHttpCustomConnectorCreateBody({
+          slug: `_concurrent-accounts-${randomUUID()}`,
+          displayName: "Concurrent custom accounts",
+          prefixTemplates: ["https://concurrent-accounts.example.test/"],
+        }),
+      }),
+      [201],
+    );
+    const target = {
+      kind: "custom" as const,
+      customConnectorId: definition.body.id,
+    };
+    const [first, second] = await Promise.all(
+      ["Work", "Personal"].map(async (displayName) => {
+        const connected = await accept(
+          customConnectorValuesClient().set({
+            headers: authHeaders(),
+            params: { id: definition.body.id },
+            body: {
+              values: [{ key: "secret", kind: "secret", value: displayName }],
+              account: { intent: "add", displayName },
+            },
+          }),
+          [200],
+        );
+        if (!connected.body.connectedAccountId) {
+          throw new Error("Expected a connected custom account");
+        }
+        return connected.body.connectedAccountId;
+      }),
+    );
+    if (!first || !second) {
+      throw new Error("Expected two connected custom accounts");
+    }
+    const created = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { ...target, limit: 100 },
+      }),
+      [200],
+    );
+    expect(created.body.connections).toHaveLength(2);
+    expect(
+      created.body.connections.filter((account) => {
+        return account.isDefault;
+      }),
+    ).toHaveLength(1);
+
+    await Promise.all(
+      [first, second].map(async (connectionId) => {
+        await accept(
+          accountClient().setDefault({
+            headers: authHeaders(),
+            params: { connectionId },
+            body: { target },
+          }),
+          [200],
+        );
+      }),
+    );
+    const afterDefaultChanges = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { ...target, limit: 100 },
+      }),
+      [200],
+    );
+    expect(
+      afterDefaultChanges.body.connections.filter((account) => {
+        return account.isDefault;
+      }),
+    ).toHaveLength(1);
+    await accept(
+      accountClient().setDefault({
+        headers: authHeaders(),
+        params: { connectionId: second },
+        body: { target },
+      }),
+      [200],
+    );
+    const [, deleted] = await Promise.all([
+      accept(
+        accountClient().setDefault({
+          headers: authHeaders(),
+          params: { connectionId: first },
+          body: { target },
+        }),
+        [200],
+      ),
+      accept(
+        accountClient().delete({
+          headers: authHeaders(),
+          params: { connectionId: second },
+          body: { target },
+        }),
+        [200],
+      ),
+    ]);
+    expect(deleted.body.deletedConnectionId).toBe(second);
+    expect([null, first]).toContain(deleted.body.promotedDefaultConnectionId);
+    const remaining = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: { ...target, limit: 100 },
+      }),
+      [200],
+    );
+    expect(remaining.body.connections).toMatchObject([
+      { id: first, isDefault: true },
+    ]);
   });
 
   it.each([

@@ -470,6 +470,59 @@ rollback. Pi's provider preflight only reads eligibility; it leaves authoritativ
 publication/cancellation checks intact. These narrower entrances require no new
 writer preparation.
 
+## Custom account, Browser and bootstrap owner protocols (2026-09-27)
+
+This is writer preparation. All three advisory keys and their acquisition
+expressions remain; no schema, persisted payload, public API response or
+rollback-floor change is introduced. Old and new API instances still coordinate
+on their existing keys throughout this release.
+
+Custom account mutations retain the definition credential-contract protection
+already taken by creation and exact deletion. Default changes lock the affected
+accounts in ID order with `FOR NO KEY UPDATE`; deletion uses that order for the
+deleted account and promotion candidate, then upgrades only the deleted account
+to `FOR UPDATE`. A fresh READ COMMITTED statement clears its selections after
+the upgrade. Promotion does not block a selection's FK KEY SHARE on the sibling.
+SET handles only `fk_chat_thread_connector_selections_custom_connector` after
+whole-transaction rollback; initial thread creation handles that same FK within
+one selection savepoint and omits that vanished account. Other failures propagate.
+Definition deletion, Feishu uninstall and owner cleanup keep their existing
+protocols; no early account KEY SHARE is added to selection writes.
+
+Browser creation and resume prepare exact owned-thread unique outcomes. Provider
+publication inserts its instance before changing the exact logical browser, in
+the same order as physical stop. The logical write compares its observed state;
+failure rolls back the instance and screen before mapping to the existing
+conflict response and reclaiming the provider. Rejected publication skips the
+generic mark-error path; real provider failures can only mark their original
+claim. Fresh claims explicitly write the same millisecond timestamp format as
+resume, avoiding Date round-trip precision loss. The old advisory key did not
+span provider HTTP or establish a unique cross-provider attempt generation;
+this preparation does not claim to fix every pre-existing stale observation.
+Retention continues to use its exact claim and provider-profile identity.
+
+Bootstrap's final transaction atomically ensures the real Storage parent using
+its existing owner/name unique constraint, preserving the incumbent row's ID,
+prefix and metadata on conflict. After acquiring that parent it reads the
+default Agent in a fresh statement before writing seed instructions. The
+publication attempt captures its actual Storage ID and prefix before S3 work.
+After rollback, compensation only locks/deletes that captured generation and
+rechecks the default Agent after acquiring the row; an absent old row never
+redirects cleanup to a new same-name Storage. S3 cleanup uses the captured prefix
+after the database transaction. The existing S3 work inside the publication
+transaction remains and the Storage row is held earlier.
+
+Before a later key-retirement PR, this preparation must cover supported serving
+and rollback versions, and unprepared in-flight work must drain. The current
+rollback floor does not prove coverage of code introduced by this preparation.
+In particular, old custom deletion can hold a sibling FOR UPDATE while waiting
+for a selection; a new keyless selection can hold that selection while waiting
+for the sibling. Old bootstrap compensation can read no default, wait for the
+Storage, and delete a newer publisher's successful instructions without
+rechecking. Old Browser publication still uses unconditional thread writes.
+Retaining the common advisory keys prevents introducing those mixed-writer
+combinations in this PR. No production release or activation is part of it.
+
 ## Workflow import source column (2026-09-25)
 
 Migration `1264_workflow_import_source` adds the nullable

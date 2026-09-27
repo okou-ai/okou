@@ -37,7 +37,7 @@ import {
 } from "../../../test-fixtures/browser-user-action";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -5903,6 +5903,74 @@ describe("okou browser route", () => {
     await flushWaitUntilForTest();
   });
 
+  it("rejects and stops a provider that finishes starting after its thread is deleted", async () => {
+    const { runs, chat, actor, agent } = await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Open a browser while its provider is still starting",
+    );
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    const createStarted = createDeferredPromise<void>(context.signal);
+    const finishCreate = createDeferredPromise<void>(context.signal);
+    const stoppedProviderIds: string[] = [];
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, async () => {
+        createStarted.resolve(undefined);
+        await finishCreate.promise;
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        const stoppedId = String(params.id);
+        stoppedProviderIds.push(stoppedId);
+        return HttpResponse.json(
+          providerBrowser(stoppedId, { status: "stopped" }),
+        );
+      }),
+    );
+
+    const [started] = await Promise.all([
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      (async () => {
+        const deleted = await settleIncludingAbort(
+          (async () => {
+            await createStarted.promise;
+            await chat.deleteThread(actor, current.threadId);
+          })(),
+        );
+        finishCreate.resolve(undefined);
+        if (!deleted.ok) {
+          throw deleted.error;
+        }
+      })(),
+    ]);
+    expect(started).toMatchObject({
+      status: 409,
+      body: { error: { code: "BROWSER_RUN_ENDED" } },
+    });
+    await flushWaitUntilForTest();
+    expect(stoppedProviderIds).toStrictEqual([providerId]);
+
+    await accept(
+      client().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: current.threadId },
+      }),
+      [404],
+    );
+  });
+
   it("isolates profiles across concurrent thread browser sessions", async () => {
     const { routeMocks, runs, chat, webhooks, actor, agent } =
       await setupBrowserScenario();
@@ -6329,7 +6397,7 @@ describe("okou browser route", () => {
     { caseName: "provider rejects resize", abortAfterReply: false },
     { caseName: "deadline aborts after resize reply", abortAfterReply: true },
   ])(
-    "fails browser start when its initial size cannot be applied: $caseName",
+    "can retry browser start after its initial size cannot be applied: $caseName",
     async ({ abortAfterReply }) => {
       const { runs, chat, actor, agent } = await setupBrowserScenario();
       const first = await createClaimedChatRun(
@@ -6407,9 +6475,40 @@ describe("okou browser route", () => {
       expect(current.body.browser.status).toBe("error");
       expect(current.body.browser).not.toHaveProperty("screen");
 
+      const retryProviderId = randomUUID();
+      acceptBrowserUseCdpSessions([retryProviderId]);
+      context.mocks.abortSignal.timeout.mockImplementation(() => {
+        return undefined;
+      });
+      context.mocks.browserUseCdp.command.mockImplementation(() => {
+        return undefined;
+      });
+      server.use(
+        http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+          return HttpResponse.json(providerBrowser(retryProviderId), {
+            status: 201,
+          });
+        }),
+        http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+          return HttpResponse.json(providerBrowser(String(params.id)));
+        }),
+      );
+      const retried = await accept(
+        client().use({ headers: first.claim.browserHeaders, body: {} }),
+        [200],
+      );
+      expect(retried.body.browser).toMatchObject({
+        threadId: first.threadId,
+        status: "active",
+        screen: { width: 1440, height: 900, resizable: true },
+      });
+      expect(retried.body.cdpUrl).toBe(
+        `https://${retryProviderId}.cdp.browser-use.com/`,
+      );
+
       await chat.deleteThread(actor, first.threadId);
       await flushWaitUntilForTest();
-      expect(providerStops).toBe(1);
+      expect(providerStops).toBe(2);
     },
     120_000,
   );

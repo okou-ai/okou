@@ -956,7 +956,29 @@ export async function setDefaultConnectorAccount(
     ) {
       return null;
     }
-    if (!(await exactOwnedAccountExists(tx, args))) {
+    if (args.target.kind === "custom") {
+      // Default changes touch sibling rows. Acquire them in the same order as
+      // deletion, without blocking the selection FK's KEY SHARE on survivors.
+      const accounts = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            targetCondition(args.target),
+          ),
+        )
+        .orderBy(asc(connectors.id))
+        .for("no key update");
+      if (
+        !accounts.some((account) => {
+          return account.id === args.connectionId;
+        })
+      ) {
+        return null;
+      }
+    } else if (!(await exactOwnedAccountExists(tx, args))) {
       return null;
     }
     await tx
@@ -967,12 +989,25 @@ export async function setDefaultConnectorAccount(
           eq(connectors.orgId, args.orgId),
           eq(connectors.userId, args.userId),
           targetCondition(args.target),
+          args.target.kind === "custom"
+            ? and(
+                eq(connectors.isDefault, true),
+                ne(connectors.id, args.connectionId),
+              )
+            : undefined,
         ),
       );
     const [updated] = await tx
       .update(connectors)
       .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, args.connectionId))
+      .where(
+        and(
+          eq(connectors.id, args.connectionId),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          targetCondition(args.target),
+        ),
+      )
       .returning({ updatedAt: connectors.updatedAt });
     await reprojectWorkflowAutomationsForOwner(tx, args, signal);
     return updated?.updatedAt ?? null;
@@ -988,7 +1023,7 @@ async function oldestConnectorAccountSibling(
     readonly excludedConnectionId: string;
   },
 ): Promise<{ readonly id: string } | null> {
-  const [row] = await db
+  const query = db
     .select({ id: connectors.id })
     .from(connectors)
     .where(
@@ -1000,8 +1035,9 @@ async function oldestConnectorAccountSibling(
       ),
     )
     .orderBy(asc(connectors.createdAt), asc(connectors.id))
-    .for("update")
     .limit(1);
+  const [row] =
+    args.target.kind === "custom" ? await query : await query.for("update");
   return row ?? null;
 }
 
@@ -1064,7 +1100,10 @@ type PreparedConnectorAccountDeletion =
       readonly promotedDefaultConnectionId: string | null;
     };
 
-/** The caller must hold this account target's lock in db until commit. */
+/**
+ * Hold the account target's lock until commit. Custom deletion also holds its
+ * definition's credential-contract row in a READ COMMITTED transaction.
+ */
 export async function prepareConnectorAccountDeletionWithTargetLocked(
   db: Tx,
   args: {
@@ -1075,6 +1114,50 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
   },
   signal: AbortSignal,
 ): Promise<PreparedConnectorAccountDeletion> {
+  let sibling: { readonly id: string } | null = null;
+  if (args.target.kind === "custom") {
+    const [observed] = await db
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.id, args.connectionId),
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          targetCondition(args.target),
+        ),
+      )
+      .limit(1);
+    if (!observed) {
+      return { kind: "missing" };
+    }
+    const candidate = await oldestConnectorAccountSibling(db, {
+      ...args,
+      excludedConnectionId: args.connectionId,
+    });
+    // The definition row stabilizes membership. Lock the deletion/promotion
+    // pair in ID order before upgrading only the account being deleted.
+    const accounts = await db
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          targetCondition(args.target),
+          inArray(
+            connectors.id,
+            candidate ? [args.connectionId, candidate.id] : [args.connectionId],
+          ),
+        ),
+      )
+      .orderBy(asc(connectors.id))
+      .for("no key update");
+    sibling =
+      accounts.find((account) => {
+        return account.id === candidate?.id;
+      }) ?? null;
+  }
   const [account] = await db
     .select({ id: connectors.id, isDefault: connectors.isDefault })
     .from(connectors)
@@ -1092,10 +1175,14 @@ export async function prepareConnectorAccountDeletionWithTargetLocked(
     return { kind: "missing" };
   }
 
-  const sibling = await oldestConnectorAccountSibling(db, {
-    ...args,
-    excludedConnectionId: args.connectionId,
-  });
+  if (args.target.kind === "builtin") {
+    sibling = await oldestConnectorAccountSibling(db, {
+      ...args,
+      excludedConnectionId: args.connectionId,
+    });
+  }
+  // Use a fresh statement after the parent FOR UPDATE has waited for prior
+  // FK attachments. New selections cannot attach to the account before DELETE.
   const resolvedSelectionCount =
     (
       await db

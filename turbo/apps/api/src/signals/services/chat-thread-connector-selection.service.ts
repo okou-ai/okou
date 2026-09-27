@@ -14,7 +14,9 @@ import { connectors } from "@okouai/db/schema/connector";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import type { Db, ReadonlyDb } from "../external/db";
+import { settle } from "../utils";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
   loadAgentConnectorScope,
@@ -506,6 +508,18 @@ async function upsertSelection(
   return selection;
 }
 
+function isCustomSelectionAccountMissing(error: unknown): boolean {
+  return (
+    isForeignKeyViolation(error) &&
+    error instanceof Error &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "constraint" in error.cause &&
+    error.cause.constraint ===
+      "fk_chat_thread_connector_selections_custom_connector"
+  );
+}
+
 export async function updateChatThreadConnectorSelection(
   db: Db,
   args: {
@@ -516,40 +530,59 @@ export async function updateChatThreadConnectorSelection(
   },
   signal: AbortSignal,
 ): Promise<UpdateChatThreadConnectorSelectionResult> {
-  return await db.transaction(async (tx) => {
-    const thread = await loadLockedOwnedChatThread(tx, args);
-    if (!thread) {
-      return { kind: "not_found" };
-    }
-    const prepared = await prepareChatThreadConnectorSelections(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: thread.agentId,
-      selections: [args.selection],
-    });
-    if (prepared.kind === "invalid") {
-      return prepared;
-    }
-    const [selection] = prepared.selections;
-    if (!selection) {
-      throw new Error("Expected one prepared connector selection");
-    }
-    const updated = await upsertSelection(tx, args.chatThreadId, selection);
-    await reprojectWorkflowAutomationsForOwner(
-      tx,
-      { ...args, target: selection.target },
-      signal,
-    );
-    await invalidatePiStableContext(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      agentId: thread.agentId,
-    });
+  const result = await settle(
+    db.transaction(
+      async (tx): Promise<UpdateChatThreadConnectorSelectionResult> => {
+        const thread = await loadLockedOwnedChatThread(tx, args);
+        if (!thread) {
+          return { kind: "not_found" };
+        }
+        const prepared = await prepareChatThreadConnectorSelections(tx, {
+          orgId: args.orgId,
+          userId: args.userId,
+          agentId: thread.agentId,
+          selections: [args.selection],
+        });
+        if (prepared.kind === "invalid") {
+          return prepared;
+        }
+        const [selection] = prepared.selections;
+        if (!selection) {
+          throw new Error("Expected one prepared connector selection");
+        }
+        const updated = await upsertSelection(tx, args.chatThreadId, selection);
+        await reprojectWorkflowAutomationsForOwner(
+          tx,
+          { ...args, target: selection.target },
+          signal,
+        );
+        await invalidatePiStableContext(tx, {
+          orgId: args.orgId,
+          userId: args.userId,
+          agentId: thread.agentId,
+        });
+        return {
+          kind: "updated",
+          selection: updated,
+        };
+      },
+    ),
+  );
+  if (result.ok) {
+    return result.value;
+  }
+  // Wait for the whole transaction to roll back before reporting a lost
+  // account, including its selection change and generation invalidation.
+  if (
+    args.selection.target.kind === "custom" &&
+    isCustomSelectionAccountMissing(result.error)
+  ) {
     return {
-      kind: "updated",
-      selection: updated,
+      kind: "invalid",
+      message: "Connector account does not match the requested target",
     };
-  });
+  }
+  throw result.error;
 }
 
 export async function clearChatThreadConnectorSelection(
@@ -610,15 +643,39 @@ export async function insertInitialChatThreadConnectorSelections(
   if (args.selections.length === 0) {
     return;
   }
-  await tx.insert(chatThreadConnectorSelections).values(
-    args.selections.map((selection) => {
-      return {
-        chatThreadId: args.chatThreadId,
-        connectorId: selection.connectionId,
-        ...targetColumns(selection.target),
-      };
-    }),
-  );
+  const builtinSelections = args.selections.filter((selection) => {
+    return selection.target.kind === "builtin";
+  });
+  if (builtinSelections.length > 0) {
+    await tx.insert(chatThreadConnectorSelections).values(
+      builtinSelections.map((selection) => {
+        return {
+          chatThreadId: args.chatThreadId,
+          connectorId: selection.connectionId,
+          ...targetColumns(selection.target),
+        };
+      }),
+    );
+  }
+  for (const selection of args.selections) {
+    if (selection.target.kind !== "custom") {
+      continue;
+    }
+    // Initial thread creation omits vanished accounts. A savepoint contains
+    // only this child insert, preserving the thread and its other selections.
+    const inserted = await settle(
+      tx.transaction(async (selectionTx) => {
+        await selectionTx.insert(chatThreadConnectorSelections).values({
+          chatThreadId: args.chatThreadId,
+          connectorId: selection.connectionId,
+          ...targetColumns(selection.target),
+        });
+      }),
+    );
+    if (!inserted.ok && !isCustomSelectionAccountMissing(inserted.error)) {
+      throw inserted.error;
+    }
+  }
 }
 
 export async function resolveChatThreadConnectorSelections(
