@@ -104,6 +104,79 @@ async function expectPiActivitySummary(
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
 }
 
+function boundedPiCheckpointHistory(jsonl: string): {
+  readonly original: string;
+  readonly bounded: string;
+} {
+  // Keep the exact native pre-compact path and settled leaf while removing
+  // one old parent. The API accepts only the smaller candidate as H2.
+  const nativeLines = jsonl.trimEnd().split("\n");
+  const headerLine = nativeLines[0];
+  if (!headerLine) {
+    throw new Error("Expected a native Pi session header");
+  }
+  const piEntry = z
+    .object({
+      type: z.string(),
+      id: z.string(),
+      parentId: z.string().nullable(),
+    })
+    .passthrough();
+  const firstKept = piEntry.parse(JSON.parse(nativeLines[1] ?? "null"));
+  const finalAssistant = piEntry.parse(
+    JSON.parse(nativeLines.at(-1) ?? "null"),
+  );
+  if (
+    firstKept.parentId !== null ||
+    finalAssistant.type !== "message" ||
+    !finalAssistant.parentId
+  ) {
+    throw new Error("Expected a root and a settled native Pi leaf");
+  }
+  const oldId = randomUUID();
+  const compactId = randomUUID();
+  const compactLine = JSON.stringify({
+    type: "compaction",
+    id: compactId,
+    parentId: finalAssistant.parentId,
+    timestamp: "2026-09-27T00:00:00Z",
+    summary: "prior work summarized by Pi",
+    firstKeptEntryId: firstKept.id,
+    tokensBefore: 90_000,
+  });
+  const settledLine = JSON.stringify({
+    ...finalAssistant,
+    parentId: compactId,
+  });
+  const middleLines = nativeLines.slice(2, -1);
+  const oldLine = JSON.stringify({
+    type: "message",
+    id: oldId,
+    parentId: null,
+    timestamp: "2026-09-27T00:00:00Z",
+    message: { role: "user", content: "older work ".repeat(8192) },
+  });
+  return {
+    original: [
+      headerLine,
+      oldLine,
+      JSON.stringify({ ...firstKept, parentId: oldId }),
+      ...middleLines,
+      compactLine,
+      settledLine,
+      "",
+    ].join("\n"),
+    bounded: [
+      headerLine,
+      JSON.stringify(firstKept),
+      ...middleLines,
+      compactLine,
+      settledLine,
+      "",
+    ].join("\n"),
+  };
+}
+
 describe("CHAT-02: model-first provider policies", () => {
   async function piActivityScenario(): Promise<void> {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -378,7 +451,21 @@ describe("CHAT-02: model-first provider policies", () => {
       stopReason: "stop",
       timestamp: 5,
     });
-    const h2 = h2Session.toJsonl();
+    // Exercise the API H2 endpoint with a compacted native candidate; the
+    // larger original remains test-owned and is never persisted as H2.
+    const { original: originalH2, bounded: h2 } = boundedPiCheckpointHistory(
+      h2Session.toJsonl(),
+    );
+    expect(Buffer.byteLength(originalH2)).toBeGreaterThan(
+      Buffer.byteLength(h2),
+    );
+    const originalNative = MemoryPiSession.fromJsonl(originalH2);
+    const boundedNative = MemoryPiSession.fromJsonl(h2);
+    expect(boundedNative.buildSessionContext()).toStrictEqual(
+      originalNative.buildSessionContext(),
+    );
+    expect(boundedNative.isSettledCheckpoint()).toBeTruthy();
+    expect(boundedNative.getSessionId()).toBe(run.threadId);
     const h2Hash = createHash("sha256").update(h2).digest("hex");
     const preparedH2 = await webhooks.requestAgentCheckpointPrepareHistory(
       {
