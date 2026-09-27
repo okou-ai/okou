@@ -35,8 +35,9 @@ const PG_FOREIGN_KEY_VIOLATION = "23503";
  * How consuming one queue head ended:
  * - `launched`: the head was replaced by its run-bound copy and a run started;
  * - `waiting`: a 429 left the head queued;
- * - `passed`: the head was rejected as `input.rejected`, or was not launched
- *   by this pick (another consumer took it or its producer is not ready).
+ * - `passed`: the head was rejected as `input.rejected` (any failure other
+ *   than a 429, including an unexpected error), or was not launched by this
+ *   pick because another consumer took it or the thread became busy.
  */
 export type ChatQueueHeadConsumption =
   | { readonly kind: "launched"; readonly runId: string }
@@ -285,14 +286,42 @@ export const consumeChatQueueHead$ = command(
       dispatchFailedCallbacks: input.dispatchFailedCallbacks,
       ...loaded,
     };
-    const assembly = await set(
-      head.contextType === "automation"
-        ? assembleQueuedAutomationRun$
-        : assembleQueuedPromptRun$,
-      head,
+    // An unexpected failure is a failure like any other: it rejects the head
+    // rather than leaving it for the cron to retry every minute.
+    const unexpected = (error: unknown): ChatQueueHeadRejection => {
+      log.error("Unexpected failure while launching queued chat input", {
+        chatThreadId: head.chatThreadId,
+        eventId: head.id,
+        contextType: head.contextType,
+        error,
+      });
+      return {
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "The input could not be started",
+        },
+        userId: head.userId,
+      };
+    };
+    const assembled = await settle(
+      set(
+        head.contextType === "automation"
+          ? assembleQueuedAutomationRun$
+          : assembleQueuedPromptRun$,
+        head,
+        signal,
+      ),
       signal,
     );
-    signal.throwIfAborted();
+    if (!assembled.ok) {
+      await set(
+        rejectChatQueueHead$,
+        { head, rejection: unexpected(assembled.error) },
+        signal,
+      );
+      return { kind: "passed" };
+    }
+    const assembly = assembled.value;
     if (assembly.kind === "not-ready") {
       return { kind: "passed" };
     }
@@ -307,8 +336,8 @@ export const consumeChatQueueHead$ = command(
 
     const created = await settle(
       set(createQueueFirstAgentRun$, assembly.run, signal),
+      signal,
     );
-    signal.throwIfAborted();
     if (!created.ok) {
       // The thread was deleted while its head was being launched.
       if (
@@ -317,7 +346,13 @@ export const consumeChatQueueHead$ = command(
       ) {
         return { kind: "passed" };
       }
-      throw created.error;
+      const rejection = unexpected(created.error);
+      await set(
+        rejectChatQueueHead$,
+        { head, rejection: assembly.rejection(rejection.error) },
+        signal,
+      );
+      return { kind: "passed" };
     }
     const result = created.value;
     if (isQueueFirstRunClaimLost(result)) {

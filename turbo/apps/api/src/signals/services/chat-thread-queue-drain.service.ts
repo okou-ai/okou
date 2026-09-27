@@ -189,8 +189,9 @@ export const pickQueuedChatThread$ = command(
       const next = await loadChatQueueHead(db, claim.chatThreadId);
       signal.throwIfAborted();
       if (consumed.kind === "passed" && next?.id === head.id) {
-        // The head was neither launched nor consumed: the thread became busy
-        // or its producer is not ready. It waits for a later pick.
+        // The head was neither launched nor consumed because the thread
+        // became busy between the check and the launch; the run's end picks
+        // the organization again.
         await releaseQueuedChatThreadClaim(db, claim);
         signal.throwIfAborted();
         return { reason: "thread-busy", orgId: claim.orgId, eventId: head.id };

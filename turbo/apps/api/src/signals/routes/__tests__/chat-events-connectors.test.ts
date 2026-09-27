@@ -390,7 +390,7 @@ describe("CHAT-02: thread connector account selection", () => {
     await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
   });
 
-  it("keeps the input queued when thread selection and provider resolution fail at pick", async () => {
+  it("rejects the input when thread selection and provider resolution fail at pick", async () => {
     const fixture = await selectedThreadConnectorFixture(
       "Runtime context thread priority thread",
     );
@@ -432,7 +432,7 @@ describe("CHAT-02: thread connector account selection", () => {
       threadId: fixture.threadId,
     });
     // The send only enqueues; the background pick meets both failures and
-    // leaves the input queued instead of launching or rejecting it.
+    // rejects the input instead of leaving it for the cron to retry.
     await flushWaitUntilForTest();
     expect(providerFailureStarted.settled()).toBeTruthy();
     expect(kms.decryptCalls).toBeGreaterThan(0);
@@ -440,11 +440,26 @@ describe("CHAT-02: thread connector account selection", () => {
       fixture.actor,
       fixture.threadId,
     );
-    const inputs = userMessages(messages.events);
-    expect(inputs).toStrictEqual([
-      expect.objectContaining({ id: clientEventId, eventType: "input.prompt" }),
+    expect(
+      messages.events.filter((event) => {
+        return event.eventType === "input.rejected";
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        revokesEventId: clientEventId,
+        error: "internal_error",
+      }),
     ]);
-    expect(inputs[0]?.runId).toBeUndefined();
+    expect(
+      messages.events.some((event) => {
+        return event.eventType === "output.error";
+      }),
+    ).toBeTruthy();
+    expect(
+      messages.events.some((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined;
+      }),
+    ).toBeFalsy();
   });
 
   it.each(["revocation", "reauthorization"] as const)(

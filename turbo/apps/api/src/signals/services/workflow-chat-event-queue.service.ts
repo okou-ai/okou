@@ -378,7 +378,11 @@ async function resolveAutonomyBudget(
 function reconciliationConflictMessage(
   reconciled: OfficialWorkflowReconciliationResult,
 ): string {
-  return reconciled.kind === "needs-reconfiguration"
+  // A `retry` result (a superseded reconciliation, or an event preparation or
+  // watch registration failure) rejects the head like any other failure; the
+  // next trigger reconciles again.
+  return reconciled.kind === "needs-reconfiguration" ||
+    reconciled.kind === "retry"
     ? reconciled.message
     : "Official Workflow automation no longer exists";
 }
@@ -544,10 +548,6 @@ export const assembleQueuedAutomationRun$ = command(
         signal,
       );
       signal.throwIfAborted();
-      if (reconciled.kind === "retry") {
-        // Reconciliation is busy elsewhere; the head keeps waiting.
-        return { kind: "not-ready" };
-      }
       if (reconciled.kind !== "current") {
         return conflict(reconciliationConflictMessage(reconciled));
       }
