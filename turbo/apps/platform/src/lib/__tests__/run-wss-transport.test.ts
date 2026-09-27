@@ -192,6 +192,9 @@ test("a dead listener or denied admission reconnects with fresh bootstrap and ne
   third.message(JSON.stringify({ type: "auth.ok" }));
   await connected;
   third.close(); // a post-auth loss also fetches a new ticket
+  await expect(transport.connect(context.signal)).rejects.toThrow(
+    "reconnecting",
+  );
   await waitFor(() => {
     return expect(sockets).toHaveLength(4);
   });

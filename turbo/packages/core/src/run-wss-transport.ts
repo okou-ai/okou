@@ -81,6 +81,7 @@ export class RunWssTransport {
   private socket: Socket | null = null;
   private readonly lifetime = new AbortController();
   private firstReady: Promise<void> | null = null;
+  private hasConnected = false;
   private resolveReady: (() => void) | null = null;
   private rejectReady: ((reason: Error) => void) | null = null;
   private externalSignal: AbortSignal | null = null;
@@ -95,7 +96,7 @@ export class RunWssTransport {
     return this.stateValue;
   }
 
-  /** Explicit opt-in only: construction never requests a ticket or opens a socket. */
+  /** Explicit opt-in only. Resolves on first admission; later losses are reported via state. */
   connect(signal?: AbortSignal): Promise<void> {
     if (this.stateValue === "closed" || this.stateValue === "failed") {
       return Promise.reject(abortError());
@@ -105,6 +106,9 @@ export class RunWssTransport {
       return Promise.reject(abortError());
     }
     if (this.firstReady) {
+      if (this.hasConnected && this.stateValue !== "ready") {
+        return Promise.reject(new Error("Run WSS is reconnecting"));
+      }
       return this.firstReady;
     }
     this.externalSignal = signal ?? null;
@@ -181,6 +185,7 @@ export class RunWssTransport {
         const { closed } = await this.open(signal);
         signal.throwIfAborted();
         this.setState("ready");
+        this.hasConnected = true;
         this.resolveReady?.();
         this.resolveReady = null;
         this.rejectReady = null;
@@ -273,6 +278,9 @@ export class RunWssTransport {
         socket.removeEventListener("close", fail);
         if (this.socket === socket) {
           this.socket = null;
+        }
+        if (this.stateValue === "ready" && !signal.aborted) {
+          this.setState("reconnecting");
         }
         credential = null;
         resolveClosed();
