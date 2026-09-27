@@ -1100,7 +1100,7 @@ async function revokePendingRunTimeBudgetInput(
   const [source] = await activeInputRowsByIds(db, args.chatThreadId, [
     runTimeBudgetEventIdForRun(args.runId),
   ]);
-  if (!source || !sourceIsPendingForRun(source, args.runId)) {
+  if (!source) {
     return false;
   }
   const revoked = await replaceLoadedChatEvent(
