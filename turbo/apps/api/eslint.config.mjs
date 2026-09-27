@@ -771,6 +771,11 @@ export default [
       // any product endpoint. The suite seeds only those states directly and
       // observes recovery through the real GET and scoped cron routes.
       "src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts",
+      // #37100: Exact process-local 512-owner FIFO eviction is an internal
+      // capacity bound. Exercising it via HTTP creates 513 workflows and made
+      // CI hooks time out; route tests retain missing-user TTL, access and
+      // cancellation coverage through the production endpoints.
+      "src/signals/services/__tests__/workflow-owner-profile-negative-cache.test.ts",
     ],
     rules: {
       "no-restricted-syntax": [
