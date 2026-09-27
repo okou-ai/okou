@@ -83,20 +83,6 @@
           - wss_caddy_version_output.stdout.split(' ')[0] == 'v2.11.4'
         fail_msg: Caddy v2.11.4 must be installed separately with its default service inactive.
 
-    - name: Create dedicated Caddy connector (no Runner writer membership)
-      ansible.builtin.group:
-        name: "{{ wss_caddy_group }}"
-        system: true
-
-    - name: Create unprivileged Caddy service account
-      ansible.builtin.user:
-        name: okou-wss-caddy
-        group: "{{ wss_caddy_group }}"
-        system: true
-        shell: /usr/sbin/nologin
-        home: /var/lib/okou-wss-caddy
-        create_home: false
-
     - name: Inspect ingress paths without following symlinks
       ansible.builtin.stat:
         path: "{{ item.path }}"
@@ -165,6 +151,20 @@
       loop: "{{ wss_file_contents.results }}"
       loop_control:
         label: "{{ item.item.item }}"
+
+    - name: Create dedicated Caddy connector (no Runner writer membership)
+      ansible.builtin.group:
+        name: "{{ wss_caddy_group }}"
+        system: true
+
+    - name: Create unprivileged Caddy service account
+      ansible.builtin.user:
+        name: okou-wss-caddy
+        group: "{{ wss_caddy_group }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: /var/lib/okou-wss-caddy
+        create_home: false
 
     - name: Create protected root-owned socket directory
       ansible.builtin.file:
