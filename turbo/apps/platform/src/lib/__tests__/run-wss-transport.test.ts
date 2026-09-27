@@ -289,6 +289,33 @@ test("repeated listener failure stops after the bounded fresh bootstrap budget",
   expect(transport.state).toBe("failed");
 });
 
+test("cancelling from a connection observer never bootstraps", async () => {
+  const resetOwner$ = resetSignal();
+  let calls = 0;
+  const transport = new RunWssTransport(
+    RUN_ID,
+    () => {
+      calls++;
+      return Promise.resolve({ kind: "transient" as const });
+    },
+    {
+      onFrame: () => {
+        return undefined;
+      },
+      onStateChange: (state) => {
+        if (state === "connecting") {
+          context.store.set(resetOwner$);
+        }
+      },
+    },
+  );
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
+  await expect(transport.connect(ownerSignal)).rejects.toMatchObject({
+    name: "AbortError",
+  });
+  expect(calls).toBe(0);
+});
+
 test("expired tickets and unsafe URLs never open a socket", async () => {
   let calls = 0;
   const { transport, sockets } = makeTransport(() => {

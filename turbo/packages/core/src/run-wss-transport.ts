@@ -97,11 +97,11 @@ export class RunWssTransport {
   }
 
   /** Explicit opt-in only. Resolves on first admission; later losses are reported via state. */
-  connect(signal?: AbortSignal): Promise<void> {
+  connect(signal: AbortSignal): Promise<void> {
     if (this.stateValue === "closed" || this.stateValue === "failed") {
       return Promise.reject(abortError());
     }
-    if (signal?.aborted) {
+    if (signal.aborted) {
       this.close();
       return Promise.reject(abortError());
     }
@@ -111,8 +111,8 @@ export class RunWssTransport {
       }
       return this.firstReady;
     }
-    this.externalSignal = signal ?? null;
-    signal?.addEventListener("abort", this.closeOnAbort, { once: true });
+    this.externalSignal = signal;
+    signal.addEventListener("abort", this.closeOnAbort, { once: true });
     this.firstReady = new Promise<void>((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
@@ -181,6 +181,9 @@ export class RunWssTransport {
     let failures = 0;
     while (!signal.aborted) {
       this.setState(failures === 0 ? "connecting" : "reconnecting");
+      if (signal.aborted) {
+        return;
+      }
       try {
         const { closed } = await this.open(signal);
         signal.throwIfAborted();
