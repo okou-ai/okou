@@ -27,9 +27,9 @@
     "check-types:chat-event-acceptance": "tsc -p scripts/chat-event-acceptance/tsconfig.json --checkers $(node ../../scripts/tsc-checkers.mjs)"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1127.0",
-    "@aws-sdk/client-s3": "^3.1127.0",
-    "@aws-sdk/s3-request-presigner": "^3.1127.0",
+    "@aws-sdk/client-kms": "^3.1136.0",
+    "@aws-sdk/client-s3": "^3.1136.0",
+    "@aws-sdk/s3-request-presigner": "^3.1136.0",
     "@axiomhq/js": "^1.5.0",
     "@axiomhq/logging": "^0.1.6",
     "@clerk/backend": "^3.13.1",
@@ -53,7 +53,7 @@
     "@okouai/core": "workspace:*",
     "@okouai/db": "workspace:*",
     "@okouai/pi-agent-runtime": "workspace:*",
-    "ably": "^2.21.0",
+    "ably": "^2.28.0",
     "archiver": "^8.0.0",
     "ccstate": "^5.5.0",
     "croner": "^9.1.0",
@@ -102,6 +102,6 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "^8.0.16",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }

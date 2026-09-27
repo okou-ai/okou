@@ -42,11 +42,11 @@ jq -e '
   ) and
   any($coverage.steps[];
     .name == "Install cargo-llvm-cov" and
-    .uses == "taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3" and
+    .uses == "taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5" and
     .with.tool == "cargo-llvm-cov@0.9.1"
   ) and
   any($coverage.steps[];
-    .uses == "astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4" and
+    .uses == "astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7" and
     .with["working-directory"] == "crates/runner/mitm-addon" and
     .with["enable-cache"] == true
   ) and

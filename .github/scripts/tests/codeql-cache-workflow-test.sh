@@ -21,7 +21,7 @@ init = codeql.fetch("steps").find do |step|
 end
 raise "CodeQL init step is missing" unless init
 raise "CodeQL init action changed" unless init.fetch("uses") ==
-  "github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63"
+  "github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd"
 raise "CodeQL language changed" unless init.fetch("with").fetch("languages") ==
   "javascript-typescript"
 raise "CodeQL must use action-managed TRAP caching" if
@@ -34,7 +34,7 @@ analyze = codeql.fetch("steps").find do |step|
 end
 raise "CodeQL analyze step is missing" unless analyze
 raise "CodeQL analyze action changed" unless analyze.fetch("uses") ==
-  "github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63"
+  "github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd"
 raise "CodeQL SARIF category changed" unless analyze.fetch("with").fetch("category") ==
   "codeql"
 raise "Security gate no longer requires CodeQL" unless
