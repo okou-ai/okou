@@ -509,6 +509,9 @@ describe("CHAT-02: model-first provider policies", () => {
       prompt: "continue with active plan capabilities",
     });
     await cancelChatRun(actor, activeFollowUp.runId);
+    // The cancel released the never-started run's slot; let its hand-off
+    // finish before the next send so the two cannot both admit that send.
+    await flushWaitUntilForTest();
 
     await upsertOrgPlanEntitlementFixture({
       orgId,

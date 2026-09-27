@@ -1228,9 +1228,6 @@ export function createChatEventsFixture(context: TestContext) {
   ): Promise<void> {
     await api.requestCancelRun(actor, runId, [200]);
     await waitForRunStatus(actor, runId, "cancelled");
-    // Cancel side effects, including a released slot's hand-off, run after the
-    // response; finish them before the caller's next request.
-    await flushWaitUntilForTest();
     if (sandboxHeaders) {
       await failChatRun(runId, sandboxHeaders, "Run cancelled");
       await flushWaitUntilForTest();
