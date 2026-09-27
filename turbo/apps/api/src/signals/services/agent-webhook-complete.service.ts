@@ -882,12 +882,12 @@ export const dispatchCompleteSideEffectsCore$ = command(
  * Expire the run's unconsumed time budget steer after the completion commit;
  * the heartbeat-timeout branch never finalizes input, so it is skipped too.
  */
-async function expireCommittedRunTimeBudget(
+async function expireCommittedRunTimeBudget<T extends CompletionCommit>(
   db: Db,
   runId: string,
-  commit: CompletionCommit,
+  commit: T,
   signal: AbortSignal,
-): Promise<CompletionCommit> {
+): Promise<T> {
   if (commit.run.chatThreadId === null || commit.run.status === "timeout") {
     return commit;
   }
