@@ -1,5 +1,8 @@
 use super::super::super::*;
-use super::super::support::{mock_run_config, shutdown, test_profiles, wait_status_mode};
+use super::super::support::{
+    TEST_HEARTBEAT_GENERATION, minimal_context, mock_run_config, mock_run_config_with_overrides,
+    push_job, shutdown, test_profiles, wait_cancel_token, wait_status_mode,
+};
 use std::sync::Arc;
 use tokio::net::UnixStream;
 
@@ -76,6 +79,88 @@ async fn listener_starts_before_ready_and_is_removed_after_stop() {
         !path.exists(),
         "only this process's socket is removed on stop"
     );
+}
+
+#[tokio::test]
+async fn two_runner_ids_coexist_and_remove_only_their_own_socket() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("wss");
+    std::fs::create_dir(&dir).unwrap();
+    let (mut first, first_env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    let (mut second, second_env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    second.runner.identity = runner_host::runner_process_identity::RunnerProcessIdentity::new(
+        uuid::Uuid::new_v4(),
+        TEST_HEARTBEAT_GENERATION,
+    )
+    .unwrap();
+    let first_path = dir.join(format!("{}.sock", first.runner.identity.runner_id()));
+    let second_path = dir.join(format!("{}.sock", second.runner.identity.runner_id()));
+    assert_ne!(first_path, second_path);
+    enable_wss(&mut first, dir.clone());
+    enable_wss(&mut second, dir);
+    let first_handle = tokio::spawn(run(first));
+    let second_handle = tokio::spawn(run(second));
+    wait_status_mode(
+        &first_env._temp_dir.path().join("status.json"),
+        "running",
+        Duration::from_secs(5),
+    )
+    .await;
+    wait_status_mode(
+        &second_env._temp_dir.path().join("status.json"),
+        "running",
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(UnixStream::connect(&first_path).await.is_ok());
+    assert!(UnixStream::connect(&second_path).await.is_ok());
+    shutdown(&second_env, second_handle).await;
+    assert!(!second_path.exists());
+    assert!(UnixStream::connect(&first_path).await.is_ok());
+    shutdown(&first_env, first_handle).await;
+    assert!(!first_path.exists());
+}
+
+#[tokio::test]
+async fn soft_drain_retains_socket_until_active_run_finishes() {
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::with_wait_process_gate(
+        Arc::clone(&gate),
+    ));
+    let (mut config, env) = mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
+    let dir = env._temp_dir.path().join("wss");
+    std::fs::create_dir(&dir).unwrap();
+    let path = dir.join(format!("{}.sock", config.runner.identity.runner_id()));
+    enable_wss(&mut config, dir);
+    let status_path = env._temp_dir.path().join("status.json");
+    let run_handle = tokio::spawn(run(config));
+    let run_id = RunId::new_v4();
+    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+    let _token = wait_cancel_token(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+
+    env.drain();
+    wait_status_mode(&status_path, "draining", Duration::from_secs(5)).await;
+    assert!(
+        !run_handle.is_finished(),
+        "active job must survive soft drain"
+    );
+    assert!(
+        UnixStream::connect(&path).await.is_ok(),
+        "old Runner must retain its WSS socket for run reconnects"
+    );
+
+    gate.notify_one();
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await;
+    assert!(completion.is_some(), "active run must finish normally");
+    tokio::time::timeout(Duration::from_secs(5), run_handle)
+        .await
+        .expect("drained Runner must exit after last run")
+        .unwrap()
+        .unwrap();
+    assert!(!path.exists(), "socket must close after last run finishes");
 }
 
 #[tokio::test]
