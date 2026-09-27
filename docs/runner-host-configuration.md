@@ -18,7 +18,8 @@ load and omit the canonical hostname fields.
 
 Hostname does not select a Runner process, local service, directory, release,
 or rollback target. The WSS resolver's browser-facing origin is a distinct,
-default-off use of the claimed hostname.
+internal-only use of the claimed hostname until ticket issuance is authorized
+after the fleet rollout and ingress checks.
 
 Systemd service suffixes are opaque local instance names. Production currently
 passes its explicit `runner_release` value as the service name and Runner

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  supportsMandatoryWssListener,
-  wssOriginFromRunnerHostname,
-  wssMinimumRunnerVersionSchema,
-} from "./runner-wss-target-config";
+import { wssOriginFromRunnerHostname } from "./runner-wss-target-config";
 
 describe("WSS target provisioning", () => {
   it("uses the configured Runner hostname as the canonical WSS origin", () => {
@@ -48,28 +44,5 @@ describe("WSS target provisioning", () => {
     ]) {
       expect(wssOriginFromRunnerHostname(hostname), hostname).toBeNull();
     }
-  });
-
-  it("compares exact safe release numbers, not lexical versions", () => {
-    expect(wssMinimumRunnerVersionSchema.safeParse("0.214.0").success).toBe(
-      true,
-    );
-    for (const version of [
-      "0.214",
-      "0.214.0-rc1",
-      "00.214.0",
-      "0.999999999999999999999.0",
-      "0.214.0 ",
-    ]) {
-      expect(wssMinimumRunnerVersionSchema.safeParse(version).success).toBe(
-        false,
-      );
-    }
-    expect(supportsMandatoryWssListener("0.213.99", "0.214.0")).toBe(false);
-    expect(supportsMandatoryWssListener("0.214.0", "0.214.0")).toBe(true);
-    expect(supportsMandatoryWssListener("0.214.10", "0.214.2")).toBe(true);
-    expect(supportsMandatoryWssListener("0.215.0", "0.214.2")).toBe(true);
-    expect(supportsMandatoryWssListener("1.0.0", "0.214.2")).toBe(false);
-    expect(supportsMandatoryWssListener("0.214.2-dev", "0.214.2")).toBe(false);
   });
 });

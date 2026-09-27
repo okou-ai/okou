@@ -3,11 +3,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerState } from "@okouai/db/schema/runner-state";
 import { and, eq, gt, inArray, like, lte } from "drizzle-orm";
 
-import { env } from "../../lib/env";
-import {
-  supportsMandatoryWssListener,
-  wssOriginFromRunnerHostname,
-} from "../../lib/runner-wss-target-config";
+import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
 import type { ReadonlyDb } from "../external/db";
 
 // Three missed 10-second routine heartbeats. A snapshot is NOT a socket or
@@ -22,7 +18,6 @@ export interface RunnerWssTarget {
   readonly publicOrigin: string;
   /** This service does not inspect DNS, browser TLS, Caddy or the listener. */
   readonly ingressVerification: "not-observed";
-  readonly claimedVersion: string;
   readonly observedMode: "running" | "draining";
   readonly observedAt: Date;
 }
@@ -40,17 +35,11 @@ export async function resolveRunnerWssTarget(
     readonly now: Date;
   },
 ): Promise<RunnerWssTarget | null> {
-  const minimumVersion = env("OKOU_WSS_MIN_RUNNER_VERSION");
-  if (!minimumVersion) {
-    return null;
-  }
-
   const [row] = await db
     .select({
       runId: agentRuns.id,
       runnerId: agentRuns.runnerId,
       runnerHostname: agentRuns.runnerHostname,
-      runnerVersion: agentRuns.runnerVersion,
       mode: runnerState.mode,
       lastSeenAt: runnerState.lastSeenAt,
     })
@@ -93,9 +82,7 @@ export async function resolveRunnerWssTarget(
     !row ||
     !row.runnerId ||
     !row.runnerHostname ||
-    !row.runnerVersion ||
-    (row.mode !== "running" && row.mode !== "draining") ||
-    !supportsMandatoryWssListener(row.runnerVersion, minimumVersion)
+    (row.mode !== "running" && row.mode !== "draining")
   ) {
     return null;
   }
@@ -110,7 +97,6 @@ export async function resolveRunnerWssTarget(
     runnerId: row.runnerId,
     publicOrigin,
     ingressVerification: "not-observed",
-    claimedVersion: row.runnerVersion,
     observedMode: row.mode,
     observedAt: row.lastSeenAt,
   };

@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { testRuntimeStateRoutes } from "../test-runtime-state";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -19,11 +18,6 @@ function testClient() {
   return setupApp({ context, routes: testRuntimeStateRoutes })(
     testRuntimeStateContract,
   );
-}
-
-function provision() {
-  // Synthetic future floor. A real floor is configured only after #37027.
-  mockEnv("OKOU_WSS_MIN_RUNNER_VERSION", "0.214.0");
 }
 
 async function setup() {
@@ -115,7 +109,7 @@ async function heartbeat(
 }
 
 describe("internal WSS target via guarded test API route", () => {
-  it("defaults off, then resolves only the authorized active winner after the version gate", async () => {
+  it("resolves only the authorized active official winner", async () => {
     const f = await setup();
     const run = await createRun(f);
     const runnerId = randomUUID();
@@ -125,14 +119,11 @@ describe("internal WSS target via guarded test API route", () => {
       version: "0.214.2",
     });
     await heartbeat(f, runnerId, "running", 1);
-    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
-    mockEnv("OKOU_WSS_MIN_RUNNER_VERSION", "0.214.0");
     await expect(readTarget(run.runId, f.actor)).resolves.toMatchObject({
       runId: run.runId,
       runnerId,
       publicOrigin,
       ingressVerification: "not-observed",
-      claimedVersion: "0.214.2",
       observedMode: "running",
     });
     await expect(
@@ -146,7 +137,6 @@ describe("internal WSS target via guarded test API route", () => {
   });
 
   it("keeps draining available for owned runs but rejects stopped, mismatched and stale snapshots", async () => {
-    provision();
     const f = await setup();
     const run = await createRun(f);
     await heartbeat(f, randomUUID(), "running", 1);
@@ -180,8 +170,7 @@ describe("internal WSS target via guarded test API route", () => {
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
 
-  it("rejects unsupported and missing Runner claim metadata", async () => {
-    provision();
+  it("does not infer listener support from a claim version, but needs a hostname", async () => {
     const f = await setup();
     const runnerId = randomUUID();
     await heartbeat(f, runnerId, "running", 1);
@@ -191,26 +180,28 @@ describe("internal WSS target via guarded test API route", () => {
       hostname: inventoryHostname,
       version: "0.213.99",
     });
-    await expect(readTarget(oldRun.runId, f.actor)).resolves.toBeNull();
+    await expect(readTarget(oldRun.runId, f.actor)).resolves.toMatchObject({
+      publicOrigin,
+      ingressVerification: "not-observed",
+    });
     const historical = await createRun(f);
     await claimRun(f, historical.runId, { runnerId });
     await expect(readTarget(historical.runId, f.actor)).resolves.toBeNull();
-    const current = await createRun(f);
-    await claimRun(f, current.runId, {
+    const noVersion = await createRun(f);
+    await claimRun(f, noVersion.runId, {
       runnerId,
       hostname: inventoryHostname,
-      version: "0.214.9",
     });
-    await expect(readTarget(current.runId, f.actor)).resolves.toMatchObject({
+    await expect(readTarget(noVersion.runId, f.actor)).resolves.toMatchObject({
       publicOrigin,
+      ingressVerification: "not-observed",
     });
-    for (const runId of [oldRun.runId, historical.runId, current.runId]) {
+    for (const runId of [oldRun.runId, historical.runId, noVersion.runId]) {
       await f.api.requestCancelRun(f.actor, runId, [200]);
     }
   });
 
   it("rejects a browser-normalized IP hostname in an otherwise eligible official claim", async () => {
-    provision();
     const f = await setup();
     const run = await createRun(f);
     const runnerId = randomUUID();

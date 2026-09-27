@@ -265,7 +265,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
       runnerId: z.uuid(),
       publicOrigin: z.string(),
       ingressVerification: z.literal("not-observed"),
-      claimedVersion: z.string(),
       observedMode: z.enum(["running", "draining"]),
       observedAt: z.iso.datetime(),
     })
