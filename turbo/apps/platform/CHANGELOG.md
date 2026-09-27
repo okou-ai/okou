@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.973.2](https://github.com/okou-ai/okou/compare/app-v0.973.1...app-v0.973.2) (2026-09-27)
+
+
+### Refactoring
+
+* **api:** drop github chat tables and dead queue response fields ([#37091](https://github.com/okou-ai/okou/issues/37091)) ([26730a7](https://github.com/okou-ai/okou/commit/26730a72c87f9bc51ef8fafd6041ef85af331052))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.518.0
+    * @okouai/core bumped to 8.712.6
+
 ## [0.973.1](https://github.com/okou-ai/okou/compare/app-v0.973.0...app-v0.973.1) (2026-09-27)
 
 

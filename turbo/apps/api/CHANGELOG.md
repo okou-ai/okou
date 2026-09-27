@@ -8,6 +8,35 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.686.0](https://github.com/okou-ai/okou/compare/api-v1.685.0...api-v1.686.0) (2026-09-27)
+
+
+### Features
+
+* **api:** add guarded single-use runner wss tickets ([#37072](https://github.com/okou-ai/okou/issues/37072)) ([960548c](https://github.com/okou-ai/okou/commit/960548c473f7c7fae3dc339b5c071000cd9769dc))
+* **api:** force app.vm0.ai clients to upgrade to v0.973.0 ([#37093](https://github.com/okou-ai/okou/issues/37093)) ([6184cf9](https://github.com/okou-ai/okou/commit/6184cf9fc2ccad47a262a4efe9436393ed75c2ec))
+
+
+### Bug Fixes
+
+* **browser:** prefer native input before user takeover ([#37090](https://github.com/okou-ai/okou/issues/37090)) ([7421f04](https://github.com/okou-ai/okou/commit/7421f04be2136fe0be188cc56364e45765e84699))
+
+
+### Refactoring
+
+* **api:** drop github chat tables and dead queue response fields ([#37091](https://github.com/okou-ai/okou/issues/37091)) ([26730a7](https://github.com/okou-ai/okou/commit/26730a72c87f9bc51ef8fafd6041ef85af331052))
+* **api:** prepare account, browser and bootstrap advisory retirement ([#37097](https://github.com/okou-ai/okou/issues/37097)) ([405c214](https://github.com/okou-ai/okou/commit/405c21452010c37e4ce2facd51c3f1b231646e7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.518.0
+    * @okouai/core bumped to 8.712.6
+    * @okouai/db bumped to 1.308.0
+    * @okouai/pi-agent-runtime bumped to 1.40.34
+
 ## [1.685.0](https://github.com/okou-ai/okou/compare/api-v1.684.2...api-v1.685.0) (2026-09-27)
 
 

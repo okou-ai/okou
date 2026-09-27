@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.367.3](https://github.com/okou-ai/okou/compare/cli-v9.367.2...cli-v9.367.3) (2026-09-27)
+
+
+### Bug Fixes
+
+* **browser:** prefer native input before user takeover ([#37090](https://github.com/okou-ai/okou/issues/37090)) ([7421f04](https://github.com/okou-ai/okou/commit/7421f04be2136fe0be188cc56364e45765e84699))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.518.0
+    * @okouai/core bumped to 8.712.6
+    * @okouai/pi-agent-runtime bumped to 1.40.34
+
 ## [9.367.2](https://github.com/okou-ai/okou/compare/cli-v9.367.1...cli-v9.367.2) (2026-09-27)
 
 

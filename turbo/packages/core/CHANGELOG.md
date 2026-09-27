@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.712.6](https://github.com/okou-ai/okou/compare/core-v8.712.5...core-v8.712.6) (2026-09-27)
+
+
+### Refactoring
+
+* **api:** drop github chat tables and dead queue response fields ([#37091](https://github.com/okou-ai/okou/issues/37091)) ([26730a7](https://github.com/okou-ai/okou/commit/26730a72c87f9bc51ef8fafd6041ef85af331052))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.518.0
+
 ## [8.712.5](https://github.com/okou-ai/okou/compare/core-v8.712.4...core-v8.712.5) (2026-09-27)
 
 
