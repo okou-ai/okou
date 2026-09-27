@@ -28,6 +28,7 @@ import {
   context,
   findButton,
   installRunChat,
+  NEW_CHAT_PATH,
   promptEvent,
   readyChat,
   RUN_PATH,
@@ -407,6 +408,93 @@ test("Show a new credit rejection with the current balance", async () => {
     return respond(200, billingStatus({ ...tierArgs, credits: 0 }));
   });
   await sendText("Try the brief once more");
+
+  await expect(
+    screen.findAllByText("You're out of credits"),
+  ).resolves.not.toHaveLength(0);
+  expect(screen.queryByText("Credits available")).not.toBeInTheDocument();
+});
+
+// A new thread's first send has no persisted history before its rejection, so
+// the rejection of the page's own pending message is what makes it new.
+test("Show a first-message credit rejection in a new chat with the current balance", async () => {
+  const tierArgs = { tier: "pro", canBuyCredits: true } as const;
+  installBillingState({ ...tierArgs, role: "admin", credits: 25_000 });
+  let billingRequests = 0;
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    billingRequests += 1;
+    return respond(200, billingStatus({ ...tierArgs, credits: 25_000 }));
+  });
+  installRunChat();
+  let sentThreadId: string | null = null;
+  const events: MockChatEventInput[] = [];
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    ({ params, query, respond }) => {
+      const rows =
+        params.threadId === sentThreadId
+          ? mockChatEventRows(
+              normalizeMockChatEvents(events, params.threadId),
+            ).filter((row) => {
+              return row.seqId > query.sinceSeqId;
+            })
+          : [];
+      return respond(200, chatEventRowsResponse(rows, query));
+    },
+  );
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    if (body.threadId === undefined || body.clientEventId === undefined) {
+      throw new Error("Expected a new-thread send with client ids");
+    }
+    const threadId = body.threadId;
+    sentThreadId = threadId;
+    const createdAt = "2026-08-01T10:01:00.000Z";
+    events.push(
+      {
+        id: body.clientEventId,
+        role: "user",
+        eventType: "input.prompt",
+        content: null,
+        userMessage: body.userMessage,
+        seqId: 1,
+        createdAt,
+      },
+      {
+        id: "first-message-rejection",
+        role: "user",
+        eventType: "input.rejected",
+        content: null,
+        error: "insufficient_credits",
+        revokesEventId: body.clientEventId,
+        userMessage: body.userMessage,
+        seqId: 2,
+        createdAt: "2026-08-01T10:01:00.001Z",
+      },
+      {
+        id: "first-message-rejection-error",
+        eventType: "output.error",
+        role: "assistant",
+        content: null,
+        error: "insufficient_credits",
+        seqId: 3,
+        createdAt: "2026-08-01T10:01:00.002Z",
+      },
+    );
+    createChatEvent(threadId);
+    return respond(201, { runId: null, threadId, createdAt });
+  });
+
+  await setupPage({ context, path: NEW_CHAT_PATH });
+
+  await readyChat();
+  await waitFor(() => {
+    expect(billingRequests).toBeGreaterThan(0);
+  });
+
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, billingStatus({ ...tierArgs, credits: 0 }));
+  });
+  await sendText("Draft the first campaign brief");
 
   await expect(
     screen.findAllByText("You're out of credits"),

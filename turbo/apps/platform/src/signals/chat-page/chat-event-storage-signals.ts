@@ -65,26 +65,34 @@ function reportNewCompletedRuns({
 /**
  * An insufficient-credits rejection is rendered with the org's billing state,
  * so a newly persisted one refreshes that state instead of trusting a copy
- * loaded before the credits ran out. Only rejections after the last known
- * persisted event count: the first merge of a thread's history (no baseline)
- * replays old rejections, which the billing state loaded with the page covers.
+ * loaded before the credits ran out. A rejection is new when it follows the
+ * last known persisted event, or when it resolves a user message this page is
+ * still showing optimistically (a new thread's first send has no persisted
+ * baseline). Other rejections in the first merge of a thread's history are
+ * old, and the billing state loaded with the page covers them.
  */
 function hasNewInsufficientCreditsRejection({
   persistentEvents,
   events,
+  pendingUserMessageIds,
 }: {
   persistentEvents: readonly PersistedChatEvent[];
   events: readonly PersistedChatEvent[];
+  pendingUserMessageIds: ReadonlySet<string>;
 }): boolean {
   const lastKnownSeqId = persistentEvents.at(-1)?.seqId;
-  if (lastKnownSeqId === undefined) {
-    return false;
-  }
   return events.some((event) => {
+    if (
+      event.eventType !== "input.rejected" ||
+      event.error !== "insufficient_credits"
+    ) {
+      return false;
+    }
     return (
-      event.eventType === "input.rejected" &&
-      event.error === "insufficient_credits" &&
-      event.seqId > lastKnownSeqId
+      (lastKnownSeqId !== undefined && event.seqId > lastKnownSeqId) ||
+      pendingUserMessageIds.has(event.id) ||
+      (event.revokesEventId !== undefined &&
+        pendingUserMessageIds.has(event.revokesEventId))
     );
   });
 }
@@ -246,7 +254,20 @@ export function createChatEventStorageSignals({
       }
       const persistentEvents = get(persistentChatEvents$);
       reportNewCompletedRuns({ persistentEvents, events });
-      if (hasNewInsufficientCreditsRejection({ persistentEvents, events })) {
+      const pendingUserMessageIds = new Set(
+        get(optimisticEvents$).flatMap((entry) => {
+          return entry.optimisticUserMessageAssociation === undefined
+            ? []
+            : [entry.event.id];
+        }),
+      );
+      if (
+        hasNewInsufficientCreditsRejection({
+          persistentEvents,
+          events,
+          pendingUserMessageIds,
+        })
+      ) {
         set(reloadBillingStatus$);
       }
       set(persistentChatEvents$, (previous) => {
