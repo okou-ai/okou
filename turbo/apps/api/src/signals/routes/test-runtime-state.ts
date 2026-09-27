@@ -1781,7 +1781,9 @@ const specializedRuntimeFixtureAction$ = command(
     if (body.action === "expire-runner-wss-tickets") {
       await db
         .update(runnerWssTickets)
-        .set({ expiresAt: sql`now() - interval '1 second'` })
+        .set({
+          expiresAt: sql`timezone('UTC', clock_timestamp()) - interval '1 second'`,
+        })
         .where(eq(runnerWssTickets.runId, body.run_id));
       signal.throwIfAborted();
       return { status: 200 as const, body: { ok: true as const } };

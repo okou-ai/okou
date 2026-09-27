@@ -10,6 +10,10 @@ import type { Db } from "../external/db";
 import { resolveRunnerWssTarget } from "./runner-wss-target.service";
 
 const MAX_PENDING_PER_RUN = 16;
+// PostgreSQL now() is fixed at transaction start. A Run-row lock can delay
+// issuance or redemption past a short ticket's deadline, so use the actual
+// database wall clock in the UTC convention of the stored timestamp columns.
+const databaseNow = sql`timezone('UTC', clock_timestamp())`;
 
 function digestOf(ticket: string): string {
   return createHash("sha256").update(ticket, "utf8").digest("hex");
@@ -62,7 +66,7 @@ export async function issueRunnerWssTicket(
       .where(
         and(
           eq(runnerWssTickets.runId, run.id),
-          gt(runnerWssTickets.expiresAt, sql`now()`),
+          gt(runnerWssTickets.expiresAt, databaseNow),
           isNull(runnerWssTickets.consumedAt),
           isNull(runnerWssTickets.revokedAt),
         ),
@@ -80,7 +84,12 @@ export async function issueRunnerWssTicket(
         tx
           .select({ digest: runnerWssTickets.digest })
           .from(runnerWssTickets)
-          .where(lt(runnerWssTickets.expiresAt, sql`now() - interval '1 day'`))
+          .where(
+            lt(
+              runnerWssTickets.expiresAt,
+              sql`${databaseNow} - interval '1 day'`,
+            ),
+          )
           .orderBy(runnerWssTickets.expiresAt)
           .limit(100)
           // Issuers hold different Run rows: do not wait on another issuer's
@@ -99,7 +108,8 @@ export async function issueRunnerWssTicket(
         userId: args.owner.userId,
         runnerId: target.runnerId,
         origin: target.publicOrigin,
-        expiresAt: sql`now() + interval '30 seconds'`,
+        createdAt: databaseNow,
+        expiresAt: sql`${databaseNow} + interval '30 seconds'`,
       })
       .returning({ expiresAt: runnerWssTickets.expiresAt });
     if (!issued) {
@@ -162,7 +172,7 @@ export async function consumeRunnerWssTicket(
           eq(runnerWssTickets.runId, args.runId),
           eq(runnerWssTickets.runnerId, args.runnerId),
           eq(runnerWssTickets.origin, args.origin),
-          gt(runnerWssTickets.expiresAt, sql`now()`),
+          gt(runnerWssTickets.expiresAt, databaseNow),
           isNull(runnerWssTickets.consumedAt),
           isNull(runnerWssTickets.revokedAt),
         ),
@@ -184,13 +194,13 @@ export async function consumeRunnerWssTicket(
     }
     const [consumed] = await tx
       .update(runnerWssTickets)
-      .set({ consumedAt: sql`now()` })
+      .set({ consumedAt: databaseNow })
       .where(
         and(
           eq(runnerWssTickets.digest, digest),
           isNull(runnerWssTickets.consumedAt),
           isNull(runnerWssTickets.revokedAt),
-          gt(runnerWssTickets.expiresAt, sql`now()`),
+          gt(runnerWssTickets.expiresAt, databaseNow),
         ),
       )
       .returning({ digest: runnerWssTickets.digest });
@@ -220,7 +230,7 @@ export async function revokeRunnerWssTickets(
     }
     await tx
       .update(runnerWssTickets)
-      .set({ revokedAt: sql`now()` })
+      .set({ revokedAt: databaseNow })
       .where(
         and(
           eq(runnerWssTickets.runId, run.id),
