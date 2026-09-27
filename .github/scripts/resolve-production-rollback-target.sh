@@ -31,6 +31,10 @@ readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40d
 # #37063 removed the last reader of agent_run_queue, which migration 1272
 # drops. Earlier APIs still read it while promoting queued runs.
 readonly QUEUED_RUN_PROMOTION_REMOVAL_COMMIT=84ac71914345b8360f3df43cc2cd47f0a8af7a23
+# #37082 (release 3) moved steering onto chat events and stopped reading and
+# writing active_input_deliveries and active_input_delivery_items, which
+# migration 1273 drops. Earlier APIs reserve steered input in those tables.
+readonly UNIFIED_CHAT_QUEUE_RELEASE_COMMIT=553fc566b7e9be2cd4a8c1de314d55939b99490a
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -95,6 +99,9 @@ if ! git merge-base --is-ancestor "$ADVISORY_LOCK_PREPARATION_COMMIT" "$TARGET_C
 fi
 if ! git merge-base --is-ancestor "$QUEUED_RUN_PROMOTION_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the queued run promotion removal: ${QUEUED_RUN_PROMOTION_REMOVAL_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$UNIFIED_CHAT_QUEUE_RELEASE_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the unified chat queue release: ${UNIFIED_CHAT_QUEUE_RELEASE_COMMIT}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames

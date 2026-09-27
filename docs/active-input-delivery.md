@@ -10,8 +10,8 @@ mutual exclusion. Steering takes no locks and writes no delivery state.
 ## Lifecycle
 
 The delivery ID that the Runner and Guest carry is the source `chat_events` ID.
-`active_input_deliveries` and `active_input_delivery_items` are no longer read
-or written; release 4 drops them.
+Steering keeps no delivery state of its own; release 4 dropped the former
+delivery tables (migration `1273_drop_active_input_delivery_tables`).
 
 - **Reserve** reads the thread's earliest run-less, unrevoked `input.prompt`,
   or an `input.budget` that targets the current run, and returns its event ID as

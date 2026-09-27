@@ -50,6 +50,25 @@ Old and new versions during deploy:
 
 No API rollback floor is needed.
 
+## Unified chat queue (release 4)
+
+Migration `1273_drop_active_input_delivery_tables` drops
+`active_input_delivery_items`, then `active_input_deliveries`, and their schema.
+Release 3 (#37082) removed every read and write of both tables. Dropping them
+removes their foreign keys to `chat_events`, `agent_runs` and `chat_threads`,
+which takes a brief `ACCESS EXCLUSIVE` lock on each referenced table under the
+default 1 s `lock_timeout`.
+
+**Merge gate:** merge only after release 3 (#37082) is released to production
+and every earlier API instance has drained (no Axiom output from an earlier API
+commit).
+
+**API rollback floor: release 3**, main commit
+`553fc566b7e9be2cd4a8c1de314d55939b99490a`, pinned in
+`resolve-production-rollback-target.sh`. Release 2 APIs reserve steered input by
+writing the dropped tables. Rolling back to release 3 is safe: it never names
+the dropped tables and understands every replacement event this release writes.
+
 ## Unified chat queue (release 3)
 
 Every input, from web sends and MCP to integrations and automations, enters
@@ -68,7 +87,7 @@ an input waiting; every other launch failure appends `input.rejected`.
 Steering no longer reads or writes `active_input_deliveries` or
 `active_input_delivery_items`. Reserve returns the source `chat_events` id as
 the delivery ID without writing; receipt and completion insert the run's
-replacement on the revoke edge. The tables stay until release 4 drops them. See
+replacement on the revoke edge. Release 4 drops the tables. See
 [active input delivery](./active-input-delivery.md). Runner and Guest do not
 change: they treat the delivery ID as an opaque UUID.
 
