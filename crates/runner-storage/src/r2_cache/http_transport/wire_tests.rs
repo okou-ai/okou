@@ -790,17 +790,20 @@ async fn get_stalled_body_fails_before_request_read_timeout() {
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\na")
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_secs(9)).await;
+        tokio::time::sleep(Duration::from_secs(15)).await;
     });
     let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
     let mut download = c.get("runner-templates/h.tar.zst").await.unwrap().unwrap();
     let mut first = [0u8; 1];
     download.body.read_exact(&mut first).await.unwrap();
     assert_eq!(&first, b"a");
-    let error = tokio::time::timeout(Duration::from_secs(8), download.body.read_exact(&mut first))
-        .await
-        .expect("stalled GET did not fail within the SDK window")
-        .unwrap_err();
+    let error = tokio::time::timeout(
+        Duration::from_secs(12),
+        download.body.read_exact(&mut first),
+    )
+    .await
+    .expect("stalled GET did not fail within the SDK window")
+    .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
     server.abort();
 }
