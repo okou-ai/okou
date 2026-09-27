@@ -8,6 +8,34 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.685.0](https://github.com/okou-ai/okou/compare/api-v1.684.2...api-v1.685.0) (2026-09-27)
+
+
+### Features
+
+* **onboarding:** run source-first onboarding for invited members ([#37080](https://github.com/okou-ai/okou/issues/37080)) ([581e380](https://github.com/okou-ai/okou/commit/581e38071d8e06cfc409de571984dc965118ec2d))
+
+
+### Bug Fixes
+
+* **api:** reject shadow-root browser input controls ([#37083](https://github.com/okou-ai/okou/issues/37083)) ([621bd08](https://github.com/okou-ai/okou/commit/621bd0873753b0664073a2e34e06e31adcb68a00))
+
+
+### Refactoring
+
+* **api:** retire prepared advisory locks and soften capacity checks ([#37084](https://github.com/okou-ai/okou/issues/37084)) ([f70b42e](https://github.com/okou-ai/okou/commit/f70b42e31789ff3aab82f3711c1262bea8b15eb9))
+* **api:** retire queue and github chat leftovers ([#37079](https://github.com/okou-ai/okou/issues/37079)) ([1b37d15](https://github.com/okou-ai/okou/commit/1b37d153716ad5b6acc9be9fc731ca7a20608c4f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.517.0
+    * @okouai/core bumped to 8.712.5
+    * @okouai/db bumped to 1.307.0
+    * @okouai/pi-agent-runtime bumped to 1.40.33
+
 ## [1.684.2](https://github.com/okou-ai/okou/compare/api-v1.684.1...api-v1.684.2) (2026-09-27)
 
 
