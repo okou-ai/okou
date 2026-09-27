@@ -69,6 +69,16 @@ commit).
 writing the dropped tables. Rolling back to release 3 is safe: it never names
 the dropped tables and understands every replacement event this release writes.
 
+Release 4 also adds two runner steer endpoints next to the unchanged reserve
+and receipt endpoints: `GET /api/runners/runs/:runId/steerable-inputs/next`
+returns the next run-less, unrevoked `input.prompt` after the queue input the
+run consumed last, without writing, and
+`POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered` consumes it
+with the same replacement event as receipt. No Runner calls them yet; the
+current Runner keeps using reserve, receipt and `activeInputDeliveryIds`, so the
+additive endpoints need no deploy order. A later Runner that calls them
+requires an API at or above this release.
+
 ## Unified chat queue (release 3)
 
 Every input, from web sends and MCP to integrations and automations, enters

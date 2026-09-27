@@ -10,6 +10,7 @@ import {
   runnersJobClaimContract,
   runnersModelProviderFailuresContract,
   runnersPollContract,
+  runnersSteerContract,
 } from "../contracts/runners";
 import {
   webhookCheckpointsContract,
@@ -96,6 +97,29 @@ export const rustRouteBindings = [
       "receipt",
     ],
     rustConstName: "RECEIPT",
+  },
+  {
+    route: runnersSteerContract.next,
+    rustModulePath: [
+      "runners",
+      "runs",
+      "by_run_id",
+      "steerable_inputs",
+      "next",
+    ],
+    rustConstName: "NEXT",
+  },
+  {
+    route: runnersSteerContract.steered,
+    rustModulePath: [
+      "runners",
+      "runs",
+      "by_run_id",
+      "steerable_inputs",
+      "by_event_id",
+      "steered",
+    ],
+    rustConstName: "STEERED",
   },
   {
     route: runnersModelProviderFailuresContract.report,
