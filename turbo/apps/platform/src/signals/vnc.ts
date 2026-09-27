@@ -308,23 +308,31 @@ export const chooseVncLoopbackHost$ = command(
   ({ get, set }, host: string | null) => {
     if (!get(editorLocked$) && (host === "127.0.0.1" || host === "::1")) {
       const loopbackHost: Editor["loopbackHost"] = host;
-      set(editor$, (current): Editor => ({ ...current, loopbackHost }));
+      set(editor$, (current): Editor => {
+        return { ...current, loopbackHost };
+      });
     }
   },
 );
 export const editVncDestinationHost$ = command(({ get, set }, host: string) => {
   if (!get(editorLocked$)) {
-    set(editor$, (current) => ({ ...current, destinationHost: host }));
+    set(editor$, (current) => {
+      return { ...current, destinationHost: host };
+    });
   }
 });
 export const editVncServerName$ = command(({ get, set }, name: string) => {
   if (!get(editorLocked$)) {
-    set(editor$, (current) => ({ ...current, tlsServerName: name }));
+    set(editor$, (current) => {
+      return { ...current, tlsServerName: name };
+    });
   }
 });
 export const editVncCaBundle$ = command(({ get, set }, bundle: string) => {
   if (!get(editorLocked$)) {
-    set(editor$, (current) => ({ ...current, caBundle: bundle }));
+    set(editor$, (current) => {
+      return { ...current, caBundle: bundle };
+    });
   }
 });
 export const chooseVncTrust$ = command(({ get, set }, trust: string | null) => {

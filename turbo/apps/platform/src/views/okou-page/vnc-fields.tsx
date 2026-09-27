@@ -54,7 +54,9 @@ export function isPrivateVncLiteral(host: string): boolean {
   const parts = host.split(".");
   if (
     parts.length === 4 &&
-    parts.every((part) => /^\d{1,3}$/u.test(part) && Number(part) <= 255)
+    parts.every((part) => {
+      return /^\d{1,3}$/u.test(part) && Number(part) <= 255;
+    })
   ) {
     const first = Number(parts[0]);
     const second = Number(parts[1]);
@@ -85,13 +87,19 @@ export function VncDisplayNameField({
   const { t } = useTranslation();
   return (
     <label className="grid gap-2 text-sm">
-      <span>{t(($) => $.vnc.displayName)}</span>
+      <span>
+        {t(($) => {
+          return $.vnc.displayName;
+        })}
+      </span>
       <Input
         name="displayName"
         required
         maxLength={VNC_DISPLAY_NAME_MAX_LENGTH}
         defaultValue={connection?.displayName ?? ""}
-        placeholder={t(($) => $.vnc.displayNameHint)}
+        placeholder={t(($) => {
+          return $.vnc.displayNameHint;
+        })}
       />
     </label>
   );
@@ -120,7 +128,11 @@ export function VncEndpointFields({
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
         {apple ? (
           <div className="grid min-w-0 gap-2 text-sm">
-            <label htmlFor="vnc-loopback-host">{t(($) => $.vnc.host)}</label>
+            <label htmlFor="vnc-loopback-host">
+              {t(($) => {
+                return $.vnc.host;
+              })}
+            </label>
             <Select
               items={loopbackItems}
               value={editor.loopbackHost}
@@ -136,24 +148,34 @@ export function VncEndpointFields({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {loopbackItems.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
+                {loopbackItems.map((item) => {
+                  return (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
         ) : (
           <label className="grid min-w-0 gap-2 text-sm">
-            <span>{t(($) => $.vnc.host)}</span>
+            <span>
+              {t(($) => {
+                return $.vnc.host;
+              })}
+            </span>
             <Input
               name="host"
               required
               maxLength={VNC_HOST_MAX_LENGTH}
               value={editor.destinationHost}
-              onChange={(event) => editDestination(event.currentTarget.value)}
-              placeholder={t(($) => $.vnc.hostHint)}
+              onChange={(event) => {
+                editDestination(event.currentTarget.value);
+              }}
+              placeholder={t(($) => {
+                return $.vnc.hostHint;
+              })}
               aria-describedby={
                 privateDirect
                   ? "vnc-destination-help vnc-direct-private-error"
@@ -164,7 +186,11 @@ export function VncEndpointFields({
           </label>
         )}
         <label className="grid gap-2 text-sm">
-          <span>{t(($) => $.vnc.port)}</span>
+          <span>
+            {t(($) => {
+              return $.vnc.port;
+            })}
+          </span>
           <Input
             name="port"
             type="number"
@@ -182,11 +208,15 @@ export function VncEndpointFields({
           role="alert"
           className="text-sm text-destructive"
         >
-          {t(($) => $.vnc.transport.privateDirectHelp)}
+          {t(($) => {
+            return $.vnc.transport.privateDirectHelp;
+          })}
         </p>
       )}
       <p id="vnc-destination-help" className="text-sm text-muted-foreground">
-        {t(($) => $.vnc.transport.destinationHelp)}
+        {t(($) => {
+          return $.vnc.transport.destinationHelp;
+        })}
       </p>
     </div>
   );
@@ -447,7 +477,9 @@ export function VncTransportFields({
       {!isAppleProfile(editor.profile) && (
         <div className="grid gap-2">
           <span id="vnc-connection-mode" className="text-sm">
-            {t(($) => $.vnc.transport.title)}
+            {t(($) => {
+              return $.vnc.transport.title;
+            })}
           </span>
           <SegmentControl
             className="justify-self-start"
@@ -457,10 +489,14 @@ export function VncTransportFields({
             onValueChange={chooseTransport}
           >
             <SegmentControlItem value="direct">
-              {t(($) => $.vnc.transport.direct)}
+              {t(($) => {
+                return $.vnc.transport.direct;
+              })}
             </SegmentControlItem>
             <SegmentControlItem value="ssh">
-              {t(($) => $.vnc.transport.ssh)}
+              {t(($) => {
+                return $.vnc.transport.ssh;
+              })}
             </SegmentControlItem>
           </SegmentControl>
         </div>
@@ -515,7 +551,9 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
             name="serverName"
             maxLength={VNC_HOST_MAX_LENGTH}
             value={editor.tlsServerName}
-            onChange={(event) => editServerName(event.currentTarget.value)}
+            onChange={(event) => {
+              editServerName(event.currentTarget.value);
+            }}
             placeholder={t(($) => {
               return $.vnc.security.serverNameHint;
             })}
@@ -573,7 +611,9 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
                 maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
                 aria-describedby="vnc-ca-help"
                 value={editor.caBundle}
-                onChange={(event) => editCaBundle(event.currentTarget.value)}
+                onChange={(event) => {
+                  editCaBundle(event.currentTarget.value);
+                }}
                 placeholder={t(($) => {
                   return $.vnc.security.caHint;
                 })}

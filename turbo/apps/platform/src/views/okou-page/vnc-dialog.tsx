@@ -267,7 +267,9 @@ function VncForm({
               <>
                 <fieldset className="grid min-w-0 gap-4">
                   <legend className="mb-3 text-sm font-semibold">
-                    {t(($) => $.ssh.hostSection)}
+                    {t(($) => {
+                      return $.ssh.hostSection;
+                    })}
                   </legend>
                   <VncDisplayNameField connection={dialog.connection} />
                   <VncSecurityProfileField
