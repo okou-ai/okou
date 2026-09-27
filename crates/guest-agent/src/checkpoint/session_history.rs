@@ -1142,6 +1142,17 @@ fn prepare_checkpoint_session_history(
     }
 }
 
+fn pi_history_preparation_is_fatal(
+    mode: CheckpointMode,
+    framework: env::Framework,
+    error: &AgentError,
+) -> bool {
+    framework == env::Framework::Pi
+        && (matches!(error, AgentError::PiCompactGenerationUnavailable { .. })
+            || (mode.can_prune_history()
+                && matches!(error, AgentError::CheckpointHistoryTooLarge { .. })))
+}
+
 pub(super) async fn prepare_and_upload_session_history(
     http: &HttpClient,
     run_id: &str,
@@ -1156,15 +1167,14 @@ pub(super) async fn prepare_and_upload_session_history(
     }
     let cli_agent_session_id = inputs.cli_agent_session_id.clone();
     let framework = inputs.framework;
+    let mode = inputs.mode;
     let prepared =
         match run_session_history_blocking(move || prepare_checkpoint_session_history(inputs))
             .await?
         {
             Ok(prepared) => prepared,
             Err(error) => {
-                if framework == env::Framework::Pi
-                    && matches!(error, AgentError::PiCompactGenerationUnavailable { .. })
-                {
+                if pi_history_preparation_is_fatal(mode, framework, &error) {
                     return Err(error);
                 }
                 log_warn!(
@@ -1367,6 +1377,26 @@ mod tests {
         assert!(matches!(
             error,
             AgentError::CheckpointHistoryTooLarge { max_bytes: 1 }
+        ));
+    }
+
+    #[test]
+    fn pi_success_does_not_downgrade_a_late_history_size_failure() {
+        let too_large = AgentError::CheckpointHistoryTooLarge { max_bytes: 128 };
+        assert!(pi_history_preparation_is_fatal(
+            CheckpointMode::Success,
+            env::Framework::Pi,
+            &too_large
+        ));
+        assert!(!pi_history_preparation_is_fatal(
+            CheckpointMode::Recovery,
+            env::Framework::Pi,
+            &too_large
+        ));
+        assert!(!pi_history_preparation_is_fatal(
+            CheckpointMode::Success,
+            env::Framework::ClaudeCode,
+            &too_large
         ));
     }
 

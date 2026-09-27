@@ -173,6 +173,22 @@ fn rejects_off_branch_label_for_a_retained_entry() {
 }
 
 #[test]
+fn rejects_unknown_native_types_on_or_off_the_retained_branch() {
+    for compact_parent in ["kept", "future"] {
+        let mut source = session();
+        source.push_str(&line(json!({"type":"message","id":"old","parentId":null,"timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));
+        source.push_str(&line(json!({"type":"message","id":"kept","parentId":"old","timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"kept"}})));
+        source.push_str(&line(json!({"type":"future_extension_state","id":"future","parentId":"kept","timestamp":"2026-09-27T00:00:00Z","referencedId":"old","data":{"counter":1}})));
+        source.push_str(&line(json!({"type":"compaction","id":"compact","parentId":compact_parent,"timestamp":"2026-09-27T00:00:00Z","summary":"summary","firstKeptEntryId":"kept","tokensBefore":1000})));
+        assert_eq!(
+            select(&source, 1024).unwrap(),
+            PiHistorySelection::Ineligible(Reason::UnsafeNativeState),
+            "future native state with compact parent {compact_parent} cannot be proven safe"
+        );
+    }
+}
+
+#[test]
 fn rejects_session_title_on_an_abandoned_branch() {
     let mut source = session();
     source.push_str(&line(json!({"type":"message","id":"old","parentId":null,"timestamp":"2026-09-27T00:00:00Z","message":{"role":"user","content":"X".repeat(2048)}})));

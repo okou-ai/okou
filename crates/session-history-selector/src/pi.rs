@@ -216,6 +216,25 @@ fn select_with_limit(
         {
             return Ok(PiHistorySelection::Ineligible(Reason::InvalidRecord));
         }
+        // Pi parses unknown v3 records without schema validation. We cannot
+        // prove their global effects or references survive a branch cut, even
+        // if the record itself would be retained in the candidate.
+        if !matches!(
+            kind,
+            "message"
+                | "thinking_level_change"
+                | "model_change"
+                | "usage"
+                | "compaction"
+                | "branch_summary"
+                | "custom"
+                | "custom_message"
+                | "context_edit"
+                | "label"
+                | "session_info"
+        ) {
+            return Ok(PiHistorySelection::Ineligible(Reason::UnsafeNativeState));
+        }
         let parent = match value.get("parentId") {
             Some(Value::Null) => None,
             Some(Value::String(parent))

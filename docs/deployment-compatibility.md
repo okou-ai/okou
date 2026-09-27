@@ -3819,11 +3819,12 @@ ID, active context and latest native session name. It replaces its live file
 only after the API accepts the checkpoint. If selection or replacement staging
 fails while the original still fits within the 128 MiB upload bound, the Guest
 uploads the original instead. When the original exceeds that bound, selection
-failures (including unsafe opaque extension state, globally visible labels or
-retained references) and replacement staging failures cause the new Guest to
-fail explicitly rather than send a missing H2 hash.
-An older Guest can still fail the existing H2 hash check on oversized Pi files
-until its running jobs drain. New and old APIs read the selected native v3 H2
+failures (including unknown native record kinds, unsafe opaque extension state,
+globally visible labels or retained references) and replacement staging
+failures cause the new Guest to fail explicitly rather than send a missing H2
+hash. A late bounded-read size failure during a success checkpoint likewise
+fails locally. An older Guest can still fail the existing H2 hash check on
+oversized Pi files until its running jobs drain. New and old APIs read the selected native v3 H2
 through the existing blob/hash contract; no wire change or migration is
 introduced. Rolling back the Guest restores the old oversized-file failure
 for new runs, but committed bounded native histories remain readable.
