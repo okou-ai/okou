@@ -6,6 +6,8 @@ import {
 
 describe("Gateway heartbeat ACK deadline", () => {
   it("keeps the full ACK interval for a requested heartbeat across the next scheduled tick", () => {
+    // The real WebSocket tests cover delivery and reconnection, but the
+    // Gateway's randomized first tick cannot pin this exact timing boundary.
     const interval = 1_500;
     // The preceding scheduled heartbeat was acknowledged before the request.
     const requestedAt = 500;

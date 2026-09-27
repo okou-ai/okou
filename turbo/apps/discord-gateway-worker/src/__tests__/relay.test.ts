@@ -506,6 +506,27 @@ describe("Discord Gateway relay", () => {
     expect(relay.opened).toHaveLength(1);
   });
 
+  it("continues scheduled heartbeats after acknowledging a requested heartbeat", async () => {
+    const relay = await createRelay();
+    const gateway = await relay.start();
+    gateway.hello(1_500);
+    await gateway.next(2);
+    gateway.ready();
+    await gateway.next(1);
+    expect(await relay.health()).toMatchObject({ resumable: true });
+
+    gateway.send({ op: 1, d: null });
+    expect(await gateway.next(1)).toEqual({ op: 1, d: 1 });
+    // The fixture acknowledges each heartbeat; the next scheduled tick must
+    // still reach the same connection after the requested heartbeat.
+    expect(await gateway.next(1)).toEqual({ op: 1, d: 1 });
+    gateway.message();
+    expect(JSON.parse((await relay.deliveries.next()).rawBody).eventId).toBe(
+      `MESSAGE_CREATE:${MESSAGE_ID}`,
+    );
+    expect(relay.opened).toHaveLength(1);
+  }, 10_000);
+
   it("stops after a fatal Discord close without exposing credentials", async () => {
     const relay = await createRelay();
     const gateway = await relay.start();
