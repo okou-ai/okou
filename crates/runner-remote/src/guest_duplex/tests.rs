@@ -112,6 +112,29 @@ async fn exact_run_isolation_and_reuse_epoch() {
 }
 
 #[tokio::test]
+async fn split_channel_retains_independent_listener_cancellation_observer() {
+    let registry = RunGuestChannels::default();
+    let fixture = Fixture::new();
+    let run = RunId::new_v4();
+    let cancel = CancellationToken::new();
+    let registration = fixture.register(&registry, run, "a", &cancel);
+    let _guest = fixture.guest("a").await;
+    let channel = registry.open(run).await.unwrap();
+    let observer = channel.cancellation();
+    let (mut sender, mut receiver) = channel.split();
+    drop(registration);
+    observer.cancelled().await;
+    assert_eq!(
+        sender.send(b"late").await.err().unwrap().kind(),
+        io::ErrorKind::NotConnected
+    );
+    assert_eq!(
+        receiver.recv().await.err().unwrap().kind(),
+        io::ErrorKind::NotConnected
+    );
+}
+
+#[tokio::test]
 async fn pending_attach_is_cancelled_before_it_can_follow_a_new_epoch() {
     let registry = RunGuestChannels::default();
     let old_fixture = Fixture::new();

@@ -168,11 +168,34 @@ impl Channel {
     pub async fn finish_send(&mut self) -> io::Result<()> {
         self.tx.finish().await
     }
+    /// Retain this observer before splitting the two independently owned halves.
+    /// The WSS owner must select it even when both directions await client I/O.
+    pub fn cancellation(&self) -> ChannelCancellation {
+        ChannelCancellation {
+            run_cancelled: self.tx.run_cancelled.clone(),
+            assignment_cancelled: self.tx.assignment_cancelled.clone(),
+            broken: self.tx.broken.clone(),
+        }
+    }
+
+    pub async fn cancelled(&self) {
+        self.cancellation().cancelled().await;
+    }
+}
+
+/// Cloneable terminal signal for the owning listener, independent of split IO.
+#[derive(Clone)]
+pub struct ChannelCancellation {
+    run_cancelled: CancellationToken,
+    assignment_cancelled: CancellationToken,
+    broken: CancellationToken,
+}
+impl ChannelCancellation {
     pub async fn cancelled(&self) {
         tokio::select! {
-            () = self.tx.run_cancelled.cancelled() => (),
-            () = self.tx.assignment_cancelled.cancelled() => (),
-            () = self.tx.broken.cancelled() => (),
+            () = self.run_cancelled.cancelled() => (),
+            () = self.assignment_cancelled.cancelled() => (),
+            () = self.broken.cancelled() => (),
         }
     }
 }
