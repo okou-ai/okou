@@ -402,9 +402,17 @@ async fn sdk_style_retry_quota_blocks_extra_attempts_and_recovers_on_success() {
     unavailable.assert_calls_async(1).await;
 
     let (url, attempts) = scripted_server(vec![
-        mock_reply("503 Service Unavailable", "", "x-amz-retry-after: 0\r\n"),
+        mock_reply(
+            "400 Bad Request",
+            "<Error><Code>LimitExceededException</Code></Error>",
+            "x-amz-retry-after: 0\r\n",
+        ),
         mock_reply("200 OK", "", ""),
-        mock_reply("503 Service Unavailable", "", "x-amz-retry-after: 0\r\n"),
+        mock_reply(
+            "400 Bad Request",
+            "<Error><Code>LimitExceededException</Code></Error>",
+            "x-amz-retry-after: 0\r\n",
+        ),
         mock_reply("200 OK", "", ""),
     ])
     .await;
@@ -435,23 +443,161 @@ async fn sdk_style_retry_quota_blocks_extra_attempts_and_recovers_on_success() {
 }
 
 #[tokio::test]
-async fn unrelated_error_code_does_not_expand_sdk_retry_classifier() {
+async fn pinned_sdk_retries_limit_exceeded_and_404_slowdown_but_not_head_404() {
+    let (url, requests) = scripted_server(vec![
+        mock_reply(
+            "400 Bad Request",
+            "<Error><Code>LimitExceededException</Code></Error>",
+            "x-amz-retry-after: 0\r\n",
+        ),
+        mock_reply("404 Not Found", "<Error><Code>NoSuchKey</Code></Error>", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert!(
+        c.get("runner-templates/missing.tar.zst")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(requests.await.unwrap().len(), 2);
+
+    let (url, requests) = scripted_server(vec![
+        mock_reply(
+            "404 Not Found",
+            "<Error><Code>SlowDown</Code></Error>",
+            "x-amz-retry-after: 0\r\n",
+        ),
+        mock_reply("404 Not Found", "<Error><Code>NoSuchKey</Code></Error>", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert!(
+        c.get("runner-templates/missing.tar.zst")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(requests.await.unwrap().len(), 2);
+
     let server = MockServer::start_async().await;
-    let unsupported = server
+    let head = server
         .mock_async(|when, then| {
-            when.method("GET")
-                .path("/test-bucket/runner-templates/h.tar.zst");
-            then.status(400)
-                .body("<Error><Code>LimitExceededException</Code></Error>");
+            when.method("HEAD")
+                .path("/test-bucket/runner-templates/missing.tar.zst");
+            then.status(404)
+                .body("<Error><Code>SlowDown</Code></Error>");
         })
         .await;
     assert!(
-        client(&server)
-            .get("runner-templates/h.tar.zst")
+        !client(&server)
+            .head("runner-templates/missing.tar.zst")
             .await
-            .is_err()
+            .unwrap()
     );
-    unsupported.assert_calls_async(1).await;
+    head.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn sdk_status_costs_and_throttling_override_share_retry_quota() {
+    let server = MockServer::start_async().await;
+    let unavailable = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(503);
+        })
+        .await;
+    let c = R2HttpClient::with_test_endpoint_retry_quota(
+        server.base_url().parse().unwrap(),
+        "test-bucket".into(),
+        5,
+    )
+    .unwrap();
+    assert!(c.get("runner-templates/h.tar.zst").await.is_err());
+    unavailable.assert_calls_async(1).await;
+
+    let (url, attempts) = scripted_server(vec![
+        mock_reply("503 Service Unavailable", "", "x-amz-retry-after: 0\r\n"),
+        mock_reply("200 OK", "", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint_retry_quota(url, "test-bucket".into(), 10).unwrap();
+    assert!(c.get("runner-templates/h.tar.zst").await.unwrap().is_some());
+    assert_eq!(attempts.await.unwrap().len(), 2);
+
+    let (url, attempts) = scripted_server(vec![
+        mock_reply(
+            "503 Service Unavailable",
+            "<Error><Code>SlowDown</Code></Error>",
+            "x-amz-retry-after: 0\r\n",
+        ),
+        mock_reply("200 OK", "", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint_retry_quota(url, "test-bucket".into(), 5).unwrap();
+    assert!(c.get("runner-templates/h.tar.zst").await.unwrap().is_some());
+    assert_eq!(attempts.await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn multipart_operations_classify_404_error_codes_before_failing() {
+    let throttled = || {
+        mock_reply(
+            "404 Not Found",
+            "<Error><Code>SlowDown</Code></Error>",
+            "x-amz-retry-after: 0\r\n",
+        )
+    };
+    let (url, attempts) = scripted_server(vec![
+        throttled(),
+        mock_reply("200 OK", "<InitiateMultipartUploadResult><UploadId>id</UploadId></InitiateMultipartUploadResult>", ""),
+    ]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert_eq!(
+        c.create_multipart("runner-templates/h.tar.zst")
+            .await
+            .unwrap(),
+        "id"
+    );
+    assert_eq!(attempts.await.unwrap().len(), 2);
+
+    let (url, attempts) = scripted_server(vec![
+        throttled(),
+        mock_reply("200 OK", "", "ETag: \"part\"\r\n"),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    let part = c
+        .upload_part(
+            "runner-templates/h.tar.zst",
+            "id",
+            1,
+            Bytes::from_static(b"part"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(part.etag, "\"part\"");
+    assert_eq!(attempts.await.unwrap().len(), 2);
+
+    let (url, attempts) = scripted_server(vec![
+        throttled(),
+        mock_reply("200 OK", "<CompleteMultipartUploadResult/>", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    c.complete_multipart("runner-templates/h.tar.zst", "id", &[])
+        .await
+        .unwrap();
+    assert_eq!(attempts.await.unwrap().len(), 2);
+
+    let (url, attempts) =
+        scripted_server(vec![throttled(), mock_reply("204 No Content", "", "")]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    c.abort_multipart("runner-templates/h.tar.zst", "id")
+        .await
+        .unwrap();
+    assert_eq!(attempts.await.unwrap().len(), 2);
 }
 
 #[tokio::test]

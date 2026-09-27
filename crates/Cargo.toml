@@ -105,6 +105,7 @@ chrono = { version = "0.4", default-features = false }
 clap = { version = "4", default-features = false }
 crypto-bigint = { version = "0.7", default-features = false }
 des = { version = "0.9", default-features = false }
+fastrand = { version = "2", default-features = false }
 flate2 = { version = "1", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 getrandom = { version = "0.4", default-features = false }

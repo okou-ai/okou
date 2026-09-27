@@ -378,27 +378,14 @@ impl R2HttpClient {
                 .and_then(|value| value.to_str().ok())
                 .and_then(|value| value.parse::<u64>().ok())
                 .map(|ms| Duration::from_millis(ms).min(Duration::from_secs(20)));
-            // HEAD 404 is a cache miss; GET 404 needs its XML body to
-            // distinguish NoSuchKey from NoSuchBucket. Read and retry inside
-            // the same attempt budget as the signed request.
-            if status == StatusCode::NOT_FOUND {
-                let xml = if matches!(expected, ExpectedBody::GetMissingXml) {
-                    match bounded_bytes(&mut response, MAX_ERROR_BYTES).await {
-                        Ok(body) => Some(body),
-                        Err(BodyReadError::Transport(e))
-                            if attempt < MAX_ATTEMPTS
-                                && retryable_transport(&e)
-                                && self.reserve_retry(&mut retry_permit, 10) =>
-                        {
-                            retry_delay(attempt, retry_after).await;
-                            continue;
-                        }
-                        Err(error) => return Err(error.into()),
-                    }
-                } else {
-                    None
-                };
-                return Ok(TransportReply { response, xml });
+            // A HEAD 404 has no usable XML body in the SDK and is a cache
+            // miss. Other 404s must go through error-code classification:
+            // even a 404 can carry a retryable S3 code such as SlowDown.
+            if status == StatusCode::NOT_FOUND && method == Method::HEAD {
+                return Ok(TransportReply {
+                    response,
+                    xml: None,
+                });
             }
             if status.is_success()
                 && matches!(
@@ -427,7 +414,10 @@ impl R2HttpClient {
                         let code = xml_code(&body);
                         if attempt < MAX_ATTEMPTS
                             && is_retryable(status, code.as_deref(), measured_skew)
-                            && self.reserve_retry(&mut retry_permit, retry_cost(code.as_deref()))
+                            && self.reserve_retry(
+                                &mut retry_permit,
+                                retry_cost(status, code.as_deref()),
+                            )
                         {
                             retry_delay(attempt, retry_after).await;
                             continue;
@@ -452,7 +442,7 @@ impl R2HttpClient {
                     Err(BodyReadError::TooLarge)
                         if attempt < MAX_ATTEMPTS
                             && is_retryable(status, None, measured_skew)
-                            && self.reserve_retry(&mut retry_permit, 5) =>
+                            && self.reserve_retry(&mut retry_permit, retry_cost(status, None)) =>
                     {
                         retry_delay(attempt, retry_after).await;
                         continue;
@@ -463,7 +453,11 @@ impl R2HttpClient {
                                 || is_retryable(status, None, measured_skew))
                             && self.reserve_retry(
                                 &mut retry_permit,
-                                if retryable_transport(&e) { 10 } else { 5 },
+                                if retryable_transport(&e) {
+                                    10
+                                } else {
+                                    retry_cost(status, None)
+                                },
                             ) =>
                     {
                         retry_delay(attempt, retry_after).await;
@@ -474,10 +468,18 @@ impl R2HttpClient {
                 let code = xml_code(&body);
                 if attempt < MAX_ATTEMPTS
                     && is_retryable(status, code.as_deref(), measured_skew)
-                    && self.reserve_retry(&mut retry_permit, retry_cost(code.as_deref()))
+                    && self.reserve_retry(&mut retry_permit, retry_cost(status, code.as_deref()))
                 {
                     retry_delay(attempt, retry_after).await;
                     continue;
+                }
+                if status == StatusCode::NOT_FOUND
+                    && matches!(expected, ExpectedBody::GetMissingXml)
+                {
+                    return Ok(TransportReply {
+                        response,
+                        xml: Some(body),
+                    });
                 }
                 return Err(R2Error::S3(format!(
                     "R2 request: HTTP {status}, code {}",
@@ -717,15 +719,43 @@ fn retryable_transport(error: &reqwest::Error) -> bool {
         || error.is_decode()
 }
 
-fn retry_cost(code: Option<&str>) -> u32 {
+fn retry_cost(status: StatusCode, code: Option<&str>) -> u32 {
+    // The SDK's AWS error-code classifier takes priority over the generic
+    // status classifier: throttling uses five tokens even on HTTP 503.
+    if is_throttling_code(code) {
+        return 5;
+    }
     if matches!(
         code,
         Some("InternalError" | "RequestTimeout" | "RequestTimeoutException")
-    ) {
+    ) || matches!(status.as_u16(), 500 | 502 | 503 | 504)
+    {
         10
     } else {
         5
     }
+}
+
+fn is_throttling_code(code: Option<&str>) -> bool {
+    matches!(
+        code,
+        Some(
+            "Throttling"
+                | "ThrottlingException"
+                | "ThrottledException"
+                | "RequestThrottledException"
+                | "TooManyRequestsException"
+                | "ProvisionedThroughputExceededException"
+                | "TransactionInProgressException"
+                | "RequestLimitExceeded"
+                | "BandwidthLimitExceeded"
+                | "LimitExceededException"
+                | "RequestThrottled"
+                | "SlowDown"
+                | "PriorRequestNotComplete"
+                | "EC2ThrottledException"
+        )
+    )
 }
 
 // Narrow equivalent of the S3 standard policy's status and AWS error-code
@@ -746,25 +776,9 @@ fn is_retryable(status: StatusCode, code: Option<&str>, skew_ms: Option<i64>) ->
             ))
         || matches!(
             code,
-            Some(
-                "InternalError"
-                    | "RequestTimeout"
-                    | "RequestTimeoutException"
-                    | "SlowDown"
-                    | "Throttling"
-                    | "ThrottlingException"
-                    | "ThrottledException"
-                    | "RequestThrottledException"
-                    | "TooManyRequestsException"
-                    | "RequestLimitExceeded"
-                    | "BandwidthLimitExceeded"
-                    | "RequestThrottled"
-                    | "PriorRequestNotComplete"
-                    | "ProvisionedThroughputExceededException"
-                    | "TransactionInProgressException"
-                    | "EC2ThrottledException"
-            )
+            Some("InternalError" | "RequestTimeout" | "RequestTimeoutException")
         )
+        || is_throttling_code(code)
 }
 
 async fn retry_delay(attempt: usize, retry_after: Option<Duration>) {
@@ -772,14 +786,11 @@ async fn retry_delay(attempt: usize, retry_after: Option<Duration>) {
         tokio::time::sleep(retry_after).await;
         return;
     }
-    // Standard SDK backoff is exponential with full jitter, starting at 1s.
-    // This is a non-cryptographic delay; no randomness is used for signing.
-    let cap_ms = 1_000u64 << (attempt - 1);
-    let nanos = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos() as u64;
-    tokio::time::sleep(Duration::from_millis(nanos % (cap_ms + 1))).await;
+    // The pinned standard policy uses fastrand full jitter over exponential
+    // backoff (1s for the first retry, 2s for the second). This non-crypto
+    // randomness is only for the delay, never for signing.
+    let backoff = Duration::from_secs(1 << (attempt - 1));
+    tokio::time::sleep(backoff.mul_f64(fastrand::f64())).await;
 }
 
 fn xml_escape(value: &str) -> String {

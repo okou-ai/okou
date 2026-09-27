@@ -3373,6 +3373,7 @@ dependencies = [
  "bytes",
  "chrono",
  "crc32fast",
+ "fastrand",
  "flate2",
  "futures-util",
  "guest-contracts",
