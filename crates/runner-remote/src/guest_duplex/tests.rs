@@ -163,6 +163,26 @@ async fn concurrent_streams_and_malformed_frame_fail_only_its_stream() {
 }
 
 #[tokio::test]
+async fn stalled_guest_backpressures_writer_and_run_cancel_interrupts_it() {
+    let registry = RunGuestChannels::default();
+    let fixture = Fixture::new();
+    let run = RunId::new_v4();
+    let cancel = CancellationToken::new();
+    let _registration = fixture.register(&registry, run, "a", &cancel);
+    let _unread_guest = fixture.guest("a").await;
+    let mut channel = registry.open(run).await.unwrap();
+    let full = vec![7u8; MAX_FRAME_BYTES];
+    channel.send(&full).await.unwrap();
+    let mut blocked = Box::pin(channel.send(&full));
+    assert!(futures_util::poll!(blocked.as_mut()).is_pending());
+    cancel.cancel();
+    assert_eq!(
+        blocked.await.err().unwrap().kind(),
+        io::ErrorKind::NotConnected
+    );
+}
+
+#[tokio::test]
 async fn cancellation_capacity_and_oversized_frames() {
     let registry = RunGuestChannels::default();
     let fixture = Fixture::new();
