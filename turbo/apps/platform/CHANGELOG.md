@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.972.0](https://github.com/okou-ai/okou/compare/app-v0.971.0...app-v0.972.0) (2026-09-27)
+
+
+### Features
+
+* **browser:** support native color inputs ([#37067](https://github.com/okou-ai/okou/issues/37067)) ([351704f](https://github.com/okou-ai/okou/commit/351704facfd73434f93af3d8973b5efc8610f2bd))
+* **browser:** support native range input requests ([#37047](https://github.com/okou-ai/okou/issues/37047)) ([8a221c9](https://github.com/okou-ai/okou/commit/8a221c9632f40ba9b711659e3accfbeda2a9523c))
+
+
+### Bug Fixes
+
+* **platform:** unify access impact acknowledgements ([#37045](https://github.com/okou-ai/okou/issues/37045)) ([c892a0d](https://github.com/okou-ai/okou/commit/c892a0d9fdc8e73fd4632bc31040369802743d0d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.516.0
+    * @okouai/core bumped to 8.712.3
+
 ## [0.971.0](https://github.com/okou-ai/okou/compare/app-v0.970.3...app-v0.971.0) (2026-09-27)
 
 

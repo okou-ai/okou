@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.24](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.23...guest-storage-apply-v0.24.24) (2026-09-27)
+
+
+### Performance Improvements
+
+* **guest:** attribute bounded decoded-storage input phases ([#37062](https://github.com/okou-ai/okou/issues/37062)) ([62535dc](https://github.com/okou-ai/okou/commit/62535dce8732c3ca000d6af075cfdf8cc68abb81))
+
 ## [0.24.23](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.22...guest-storage-apply-v0.24.23) (2026-09-26)
 
 ## [0.24.22](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.21...guest-storage-apply-v0.24.22) (2026-09-25)

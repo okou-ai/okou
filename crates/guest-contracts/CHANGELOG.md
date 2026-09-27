@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.6...guest-contracts-v0.17.7) (2026-09-27)
+
+
+### Performance Improvements
+
+* **storage:** avoid copying decoded files payload on input encoding ([#37046](https://github.com/okou-ai/okou/issues/37046)) ([e7d3762](https://github.com/okou-ai/okou/commit/e7d3762b33c7b491a99d06715f012be08fc4d3e5))
+
 ## [0.17.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.5...guest-contracts-v0.17.6) (2026-09-26)
 
 ## [0.17.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.4...guest-contracts-v0.17.5) (2026-09-25)
