@@ -1,11 +1,6 @@
-use std::time::Duration;
+use std::sync::Arc;
 
-use aws_sdk_s3::config::{
-    BehaviorVersion, Credentials, Region, ResponseChecksumValidation, SharedCredentialsProvider,
-    timeout::TimeoutConfig,
-};
-
-use super::{R2Error, R2ImageCache, io_other};
+use super::{R2Error, R2ImageCache, http_transport::R2HttpClient, io_other};
 
 /// All four R2 env vars must be set together. Missing all four -> cache disabled
 /// (dev path); missing 1-3 -> fatal misconfiguration.
@@ -51,34 +46,14 @@ impl R2ImageCache {
         let secret_key = std::env::var("R2_SECRET_ACCESS_KEY").map_err(io_other)?;
         let bucket = std::env::var("R2_USER_STORAGES_BUCKET_NAME").map_err(io_other)?;
 
-        let endpoint = format!("https://{account_id}.r2.cloudflarestorage.com");
-        let creds = Credentials::new(access_key, secret_key, None, None, "r2-env");
-        // Build the S3 config directly without going through `aws_config::defaults()`
-        // — that's the entry point for the credential / region / endpoint discovery
-        // chain, which can hit IMDS on EC2-like hosts and waste seconds on metal.
-        // We have all four values explicitly, so skip the chain entirely.
-        let config = aws_sdk_s3::Config::builder()
-            .behavior_version(BehaviorVersion::latest())
-            .region(Region::new("auto"))
-            .endpoint_url(endpoint)
-            .credentials_provider(SharedCredentialsProvider::new(creds))
-            // Bound connection and first-response waits. Upload parts use a
-            // separate response budget; downloaded bodies retain SDK stalled-stream
-            // protection without a short whole-transfer deadline.
-            .timeout_config(
-                TimeoutConfig::builder()
-                    .connect_timeout(Duration::from_secs(10))
-                    .read_timeout(Duration::from_secs(60))
-                    .build(),
-            )
-            // The SDK default enables GetObject checksum validation when supported.
-            // R2/S3 multipart objects may return part-level checksums that the Rust
-            // SDK cannot validate, which only produces noisy warnings. We do not
-            // explicitly request checksum validation on R2 cache downloads.
-            .response_checksum_validation(ResponseChecksumValidation::WhenRequired)
-            .build();
-        let client = aws_sdk_s3::Client::from_conf(config);
-
+        // Only this explicit R2 endpoint and these explicit credentials are
+        // used; never fall back to instance-metadata credential discovery.
+        let client = Arc::new(R2HttpClient::new(
+            &account_id,
+            bucket.clone(),
+            access_key,
+            secret_key,
+        )?);
         Ok(Some(Self { client, bucket }))
     }
 }

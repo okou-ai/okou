@@ -1,26 +1,10 @@
 use std::path::Path;
 
-use aws_sdk_s3::error::SdkError;
-use aws_sdk_s3::operation::head_object::HeadObjectError;
-
 use super::{R2Error, R2ImageCache, keys::key_for_template_hash, multipart::MultipartUploadGuard};
 
 impl R2ImageCache {
     async fn exists_key(&self, key: &str) -> Result<bool, R2Error> {
-        match self
-            .client
-            .head_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .send()
-            .await
-        {
-            Ok(_) => Ok(true),
-            Err(SdkError::ServiceError(e)) if matches!(e.err(), HeadObjectError::NotFound(_)) => {
-                Ok(false)
-            }
-            Err(e) => Err(R2Error::S3(format!("head_object {key}: {e:?}"))),
-        }
+        self.client.head(key).await
     }
 
     /// Pack one `template.ext4` member and stream-upload it under
@@ -48,17 +32,7 @@ impl R2ImageCache {
             return Ok(());
         }
 
-        let create = self
-            .client
-            .create_multipart_upload()
-            .bucket(&self.bucket)
-            .key(key)
-            .send()
-            .await?;
-        let upload_id = create
-            .upload_id()
-            .ok_or_else(|| R2Error::S3("create_multipart_upload: no upload_id".into()))?
-            .to_string();
+        let upload_id = self.client.create_multipart(key).await?;
         let mut upload_guard = MultipartUploadGuard::new(
             self.client.clone(),
             self.bucket.clone(),

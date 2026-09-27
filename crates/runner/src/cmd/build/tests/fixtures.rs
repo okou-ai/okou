@@ -1,9 +1,6 @@
 use super::super::guest::{ResolvedGuest, guest_definitions};
 use super::*;
-use aws_smithy_mocks::{Rule, RuleMode, mock, mock_client};
-use std::sync::Arc;
-
-use crate::test_fixtures_http_body::byte_stream_with_error_after;
+use runner_storage::r2_cache::test_support::Rule;
 
 pub(super) const TEST_TEMPLATE_DISK_BYTES: u64 = 128 * 1024 * 1024;
 
@@ -72,8 +69,7 @@ pub(super) fn template_input<'a>(
 }
 
 pub(super) fn mock_r2_cache(rules: &[&Rule]) -> R2ImageCache {
-    let client = mock_client!(aws_sdk_s3, RuleMode::MatchAny, rules);
-    R2ImageCache::with_client(client, "test-bucket".to_string())
+    R2ImageCache::with_test_rules("test-bucket".to_string(), rules)
 }
 
 pub(super) async fn fake_rootfs_scripts() -> (RootfsScripts, RootfsScriptDir) {
@@ -202,78 +198,29 @@ pub(super) async fn empty_template_archive_bytes() -> Vec<u8> {
 }
 
 pub(super) fn template_get_rule(body: Vec<u8>) -> Rule {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::get_object::GetObjectOutput;
-    use aws_sdk_s3::primitives::ByteStream;
-
-    let body = Arc::new(body);
-    let body_for_closure = Arc::clone(&body);
-    mock!(Client::get_object)
-        .match_requests(|req| {
-            req.bucket() == Some("test-bucket")
-                && req.key() == Some("runner-templates/test-template-hash.tar.zst")
-        })
-        .then_output(move || {
-            GetObjectOutput::builder()
-                .body(ByteStream::from((*body_for_closure).clone()))
-                .build()
-        })
+    Rule::get(body).with_matcher(|req| {
+        req.bucket == "test-bucket" && req.key == "runner-templates/test-template-hash.tar.zst"
+    })
 }
 
 pub(super) fn template_get_body_error_rule(body: Vec<u8>) -> Rule {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::get_object::GetObjectOutput;
-
-    let body = Arc::new(body);
-    let body_for_closure = Arc::clone(&body);
-    mock!(Client::get_object)
-        .match_requests(|req| {
-            req.bucket() == Some("test-bucket")
-                && req.key() == Some("runner-templates/test-template-hash.tar.zst")
-        })
-        .then_output(move || {
-            GetObjectOutput::builder()
-                .body(byte_stream_with_error_after(
-                    (*body_for_closure).clone(),
-                    std::io::Error::new(
-                        std::io::ErrorKind::ConnectionReset,
-                        "injected R2 body transport failure",
-                    ),
-                ))
-                .build()
-        })
+    Rule::get_error_after(body, "injected R2 body transport failure").with_matcher(|req| {
+        req.bucket == "test-bucket" && req.key == "runner-templates/test-template-hash.tar.zst"
+    })
 }
 
 pub(super) fn template_get_miss_rule() -> Rule {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::get_object::GetObjectError;
-    use aws_sdk_s3::types::error::NoSuchKey;
-
-    mock!(Client::get_object).then_error(|| GetObjectError::NoSuchKey(NoSuchKey::builder().build()))
+    Rule::get_missing()
 }
 
 pub(super) fn template_head_miss_rule() -> Rule {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::head_object::HeadObjectError;
-    use aws_sdk_s3::types::error::NotFound;
-
-    mock!(Client::head_object).then_error(|| HeadObjectError::NotFound(NotFound::builder().build()))
+    Rule::head(false)
 }
 
 pub(super) fn multipart_success_rules() -> (Rule, Rule, Rule) {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadOutput;
-    use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadOutput;
-    use aws_sdk_s3::operation::upload_part::UploadPartOutput;
-
-    let create = mock!(Client::create_multipart_upload).then_output(|| {
-        CreateMultipartUploadOutput::builder()
-            .upload_id("test-upload-id")
-            .build()
-    });
-    let upload_part = mock!(Client::upload_part)
-        .then_output(|| UploadPartOutput::builder().e_tag("\"etag-123\"").build());
-    let complete = mock!(Client::complete_multipart_upload)
-        .then_output(|| CompleteMultipartUploadOutput::builder().build());
-    (create, upload_part, complete)
+    (
+        Rule::create(Some("test-upload-id")),
+        Rule::upload_part(Some("\"etag-123\"")),
+        Rule::complete(),
+    )
 }

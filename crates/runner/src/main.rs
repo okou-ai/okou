@@ -33,8 +33,6 @@ mod status_file;
 use runner_executor::telemetry;
 #[cfg(test)]
 use runner_executor::test_fixtures;
-#[cfg(test)]
-mod test_fixtures_http_body;
 use runner_lifecycle::workspace_image_cache;
 use runner_lifecycle::workspace_mount;
 #[cfg(test)]

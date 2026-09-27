@@ -1,8 +1,6 @@
-use std::{future::Future, path::Path, time::Duration};
+use std::{future::Future, path::Path, sync::Arc};
 
-use aws_sdk_s3::config::timeout::TimeoutConfig;
-use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
+use super::{http_transport::Part, transport::R2Transport};
 use tokio::io::AsyncReadExt;
 
 use super::{R2Error, R2ImageCache, archive::pack_template_to_writer, io_other};
@@ -10,10 +8,6 @@ use super::{R2Error, R2ImageCache, archive::pack_template_to_writer, io_other};
 /// Multipart part size. R2 minimum is 5 MiB (except last part); 16 MiB
 /// keeps part count reasonable for large images and fits comfortably in memory.
 const PART_SIZE: usize = 16 * 1024 * 1024;
-
-/// The SDK response timeout includes sending the body. Allow slow 16 MiB
-/// uploads without leaving the final response wait unbounded.
-const UPLOAD_PART_RESPONSE_TIMEOUT: Duration = Duration::from_secs(300);
 
 impl R2ImageCache {
     pub(super) async fn do_multipart_upload(
@@ -24,16 +18,7 @@ impl R2ImageCache {
     ) -> Result<(), R2Error> {
         let parts = self.stream_upload(key, upload_id, template).await?;
         self.client
-            .complete_multipart_upload()
-            .bucket(&self.bucket)
-            .key(key)
-            .upload_id(upload_id)
-            .multipart_upload(
-                CompletedMultipartUpload::builder()
-                    .set_parts(Some(parts))
-                    .build(),
-            )
-            .send()
+            .complete_multipart(key, upload_id, &parts)
             .await?;
         Ok(())
     }
@@ -44,7 +29,7 @@ impl R2ImageCache {
         key: &str,
         upload_id: &str,
         template: &Path,
-    ) -> Result<Vec<CompletedPart>, R2Error> {
+    ) -> Result<Vec<Part>, R2Error> {
         // Duplex buffer ≈ 2× PART_SIZE so the producer can stay one part ahead
         // of the consumer without backpressure stalls.
         let (writer, reader) = tokio::io::duplex(PART_SIZE * 2);
@@ -81,57 +66,23 @@ impl R2ImageCache {
         key: &str,
         upload_id: &str,
         reader: tokio::io::DuplexStream,
-    ) -> Result<Vec<CompletedPart>, R2Error> {
+    ) -> Result<Vec<Part>, R2Error> {
         // Bounded concurrency: 4 in-flight parts gives ~75% reduction in wall
         // time vs serial without saturating the bucket's per-prefix throughput.
         const CONCURRENCY: usize = 4;
 
         let client = self.client.clone();
-        let part_timeouts = client
-            .config()
-            .timeout_config()
-            .map(TimeoutConfig::to_builder)
-            .unwrap_or_else(TimeoutConfig::builder)
-            .read_timeout(UPLOAD_PART_RESPONSE_TIMEOUT)
-            .build();
-        let bucket = self.bucket.clone();
         let key_owned = key.to_string();
         let upload_id_owned = upload_id.to_string();
 
         upload_parts_streaming_with(reader, PART_SIZE, CONCURRENCY, move |pn, chunk| {
             let client = client.clone();
-            let part_timeouts = part_timeouts.clone();
-            let bucket = bucket.clone();
             let key_owned = key_owned.clone();
             let upload_id_owned = upload_id_owned.clone();
             async move {
-                let resp = client
-                    .upload_part()
-                    .bucket(&bucket)
-                    .key(&key_owned)
-                    .upload_id(&upload_id_owned)
-                    .part_number(pn)
-                    .body(ByteStream::from(chunk))
-                    .customize()
-                    .config_override(
-                        aws_sdk_s3::config::Builder::new().timeout_config(part_timeouts),
-                    )
-                    .send()
-                    .await?;
-                // S3 / R2 always return ETag for a successful upload_part.
-                // A missing ETag here would silently produce a CompletedPart
-                // that fails Complete with "InvalidPart"; surface a clearer
-                // error pinned to the offending part_number instead.
-                let e_tag = resp
-                    .e_tag()
-                    .ok_or_else(|| {
-                        R2Error::S3(format!("upload_part {pn}: missing e_tag in response"))
-                    })?
-                    .to_string();
-                Ok(CompletedPart::builder()
-                    .e_tag(e_tag)
-                    .part_number(pn)
-                    .build())
+                client
+                    .upload_part(&key_owned, &upload_id_owned, pn, chunk)
+                    .await
             }
         })
         .await
@@ -143,18 +94,17 @@ async fn upload_parts_streaming_with<R, Upload, UploadFuture>(
     part_size: usize,
     concurrency: usize,
     upload: Upload,
-) -> Result<Vec<CompletedPart>, R2Error>
+) -> Result<Vec<Part>, R2Error>
 where
     R: tokio::io::AsyncRead + Unpin,
     Upload: Fn(i32, bytes::Bytes) -> UploadFuture + Clone + Send + Sync + 'static,
-    UploadFuture: Future<Output = Result<CompletedPart, R2Error>> + Send + 'static,
+    UploadFuture: Future<Output = Result<Part, R2Error>> + Send + 'static,
 {
     assert!(part_size > 0, "multipart part_size must be non-zero");
     assert!(concurrency > 0, "multipart concurrency must be non-zero");
 
-    let mut tasks: tokio::task::JoinSet<Result<(i32, CompletedPart), R2Error>> =
-        tokio::task::JoinSet::new();
-    let mut parts: Vec<(i32, CompletedPart)> = Vec::new();
+    let mut tasks: tokio::task::JoinSet<Result<(i32, Part), R2Error>> = tokio::task::JoinSet::new();
+    let mut parts: Vec<(i32, Part)> = Vec::new();
     let mut part_number: i32 = 1;
     let mut eof = false;
 
@@ -207,7 +157,7 @@ where
 }
 
 pub(super) struct MultipartUploadGuard {
-    client: aws_sdk_s3::Client,
+    client: Arc<dyn R2Transport>,
     bucket: String,
     key: String,
     upload_id: String,
@@ -217,7 +167,7 @@ pub(super) struct MultipartUploadGuard {
 
 impl MultipartUploadGuard {
     pub(super) fn new(
-        client: aws_sdk_s3::Client,
+        client: Arc<dyn R2Transport>,
         bucket: String,
         key: String,
         upload_id: String,
@@ -273,22 +223,16 @@ impl Drop for MultipartUploadGuard {
 }
 
 async fn abort_multipart_upload(
-    client: aws_sdk_s3::Client,
+    client: Arc<dyn R2Transport>,
     bucket: String,
     key: String,
     upload_id: String,
     reason: &'static str,
 ) {
-    if let Err(e) = client
-        .abort_multipart_upload()
-        .bucket(bucket)
-        .key(&key)
-        .upload_id(&upload_id)
-        .send()
-        .await
-    {
+    if let Err(e) = client.abort_multipart(&key, &upload_id).await {
         tracing::warn!(
             error = %e,
+            bucket,
             key,
             upload_id,
             reason,
@@ -415,10 +359,10 @@ mod tests {
                         .send(part_number)
                         .expect("send completion event");
 
-                    Ok(CompletedPart::builder()
-                        .e_tag(format!("etag-{part_number}"))
-                        .part_number(part_number)
-                        .build())
+                    Ok(Part {
+                        number: part_number,
+                        etag: format!("etag-{part_number}"),
+                    })
                 }
             }
         };
@@ -462,12 +406,7 @@ mod tests {
 
         let completed_parts = parts
             .iter()
-            .map(|part| {
-                (
-                    part.part_number().expect("part_number"),
-                    part.e_tag().expect("e_tag").to_string(),
-                )
-            })
+            .map(|part| (part.number, part.etag.clone()))
             .collect::<Vec<_>>();
         assert_eq!(
             completed_parts,
@@ -523,7 +462,7 @@ mod tests {
                         initial_uploads_ready.wait().await;
 
                         if part_number == 1 {
-                            std::future::pending::<Result<CompletedPart, R2Error>>().await
+                            std::future::pending::<Result<Part, R2Error>>().await
                         } else {
                             match failure {
                                 Failure::Upload => {

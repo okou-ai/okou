@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 
+use super::super::test_support::{Operation, Rule};
 use super::super::{
     R2DownloadError, R2Error,
     archive::{MAX_TEMPLATE_METADATA_BYTES, TEMPLATE_FILE},
@@ -22,11 +23,11 @@ use super::fixtures::{
     sparse_template_archive_with_extensions, template_archive_with_extra,
     template_archive_with_trailing_decompressed_data, zstd_bytes,
 };
-use aws_sdk_s3::primitives::ByteStream;
-use aws_smithy_mocks::mock;
 use bytes::Bytes;
-use http_body::{Body, Frame};
-use tokio::sync::Notify;
+use tokio::{
+    io::{AsyncRead, ReadBuf},
+    sync::Notify,
+};
 
 const SMALL_TEMPLATE_BYTES: u64 = 5;
 const BODY_CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -88,30 +89,30 @@ struct ControlledBody {
     state: Arc<ControlledBodyState>,
 }
 
-impl Body for ControlledBody {
-    type Data = Bytes;
-    type Error = std::io::Error;
-
-    fn poll_frame(
+impl AsyncRead for ControlledBody {
+    fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        if let Some(bytes) = self.bytes.take() {
-            return Poll::Ready(Some(Ok(Frame::data(bytes))));
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        if let Some(mut bytes) = self.bytes.take() {
+            let len = buf.remaining().min(bytes.len());
+            buf.put_slice(&bytes.split_to(len));
+            if !bytes.is_empty() {
+                self.bytes = Some(bytes);
+            }
+            return Poll::Ready(Ok(()));
         }
-
-        // This post-frame poll proves that the real extraction worker consumed
-        // the R2 archive frame. Hold EOF so its async waiter can be cancelled.
+        // This post-frame poll proves extraction consumed the archive bytes.
         self.state.blocked.notify_one();
         if self.state.released.load(Ordering::Acquire) {
-            return Poll::Ready(None);
+            return Poll::Ready(Ok(()));
         }
-
         let mut waker = self.state.waker.lock().unwrap();
         *waker = Some(cx.waker().clone());
         if self.state.released.load(Ordering::Acquire) {
             waker.take();
-            Poll::Ready(None)
+            Poll::Ready(Ok(()))
         } else {
             Poll::Pending
         }
@@ -217,12 +218,7 @@ async fn downloads_gnu_sparse_template_and_preserves_holes() {
 
 #[tokio::test]
 async fn cache_miss_cleans_stale_staging_without_touching_destination() {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::get_object::GetObjectError;
-    use aws_sdk_s3::types::error::NoSuchKey;
-
-    let get = mock!(Client::get_object)
-        .then_error(|| GetObjectError::NoSuchKey(NoSuchKey::builder().build()));
+    let get = Rule::get_missing();
     let cache = mock_cache("test-bucket", &[&get]);
     let dst = tempfile::tempdir().unwrap();
     let destination = dst.path().join("template.ext4");
@@ -245,10 +241,6 @@ async fn cache_miss_cleans_stale_staging_without_touching_destination() {
 
 #[tokio::test]
 async fn cancelled_download_recovers_staging_on_next_cache_miss() {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
-    use aws_sdk_s3::types::error::NoSuchKey;
-
     let controller = ControlledBodyController::new();
     let body_state = Arc::clone(&controller.state);
     let archive = Bytes::from(regular_template_archive(b"hello"));
@@ -259,25 +251,20 @@ async fn cancelled_download_recovers_staging_on_next_cache_miss() {
         .unwrap();
     let staging = file_staging_dir(&destination);
     let staging_at_request = staging.clone();
-    let get = mock!(Client::get_object)
-        .match_requests(move |_| {
-            assert!(
-                !staging_at_request.exists(),
-                "download must remove stale staging before its R2 request"
-            );
-            true
+    let get = Rule::get_reader(move || {
+        Box::pin(ControlledBody {
+            bytes: Some(archive.clone()),
+            state: Arc::clone(&body_state),
         })
-        .sequence()
-        .output(move || {
-            GetObjectOutput::builder()
-                .body(ByteStream::from_body_1_x(ControlledBody {
-                    bytes: Some(archive.clone()),
-                    state: Arc::clone(&body_state),
-                }))
-                .build()
-        })
-        .error(|| GetObjectError::NoSuchKey(NoSuchKey::builder().build()))
-        .build();
+    })
+    .then(Rule::get_missing())
+    .with_matcher(move |_| {
+        assert!(
+            !staging_at_request.exists(),
+            "download must remove stale staging before its R2 request"
+        );
+        true
+    });
     let cache = mock_cache("test-bucket", &[&get]);
 
     let mut downloads = tokio::task::JoinSet::new();
@@ -347,15 +334,7 @@ async fn cancelled_download_recovers_staging_on_next_cache_miss() {
 
 #[tokio::test]
 async fn request_failure_remains_distinct_from_invalid_object() {
-    use aws_sdk_s3::Client;
-
-    let get = mock!(Client::get_object)
-        .sequence()
-        .http_status(
-            500,
-            Some("<Error><Code>InternalError</Code></Error>".into()),
-        )
-        .build();
+    let get = Rule::fail(Operation::Get, "InternalError");
     let cache = mock_cache("test-bucket", &[&get]);
     let dst = tempfile::tempdir().unwrap();
     let destination = dst.path().join("template.ext4");
@@ -660,10 +639,7 @@ async fn cleanup_failure_does_not_mask_original_invalid_object() {
     assert!(staging.exists());
 }
 
-async fn assert_invalid_preserves_destination(
-    get: aws_smithy_mocks::Rule,
-    expected_bytes: u64,
-) -> R2DownloadError {
+async fn assert_invalid_preserves_destination(get: Rule, expected_bytes: u64) -> R2DownloadError {
     let cache = mock_cache("test-bucket", &[&get]);
     let dst = tempfile::tempdir().unwrap();
     let destination = dst.path().join("template.ext4");

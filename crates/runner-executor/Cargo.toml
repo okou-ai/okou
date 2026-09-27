@@ -45,7 +45,6 @@ uuid = { workspace = true, features = ["serde", "std", "v4", "v5"] }
 zstd = { workspace = true, features = ["zstdmt"] }
 
 [dev-dependencies]
-aws-sdk-s3 = { workspace = true, features = ["test-util"] }
 guest-storage-apply.workspace = true
 httpmock = { workspace = true, features = ["cookies"] }
 runner-host = { workspace = true, features = ["test-support"] }

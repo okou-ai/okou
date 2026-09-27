@@ -1,11 +1,8 @@
 use std::time::Duration;
 
-use aws_sdk_s3::config::{
-    BehaviorVersion, Credentials, Region, retry::RetryConfig, timeout::TimeoutConfig,
-};
 use httpmock::MockServer;
 
-use super::super::R2ImageCache;
+use super::super::{R2ImageCache, http_transport::R2HttpClient};
 use super::fixtures::small_src_file;
 
 #[tokio::test]
@@ -54,24 +51,14 @@ async fn upload_parts_allow_slow_responses_without_relaxing_control_requests() {
         })
         .await;
 
-    let config = aws_sdk_s3::Config::builder()
-        .behavior_version(BehaviorVersion::latest())
-        .region(Region::new("auto"))
-        .endpoint_url(server.base_url())
-        .force_path_style(true)
-        .credentials_provider(Credentials::new("test", "test", None, None, "test"))
-        .retry_config(RetryConfig::standard().with_max_attempts(1))
-        .timeout_config(
-            TimeoutConfig::builder()
-                .connect_timeout(Duration::from_secs(10))
-                .read_timeout(Duration::from_secs(1))
-                .build(),
-        )
-        .build();
-    let cache = R2ImageCache::with_client(
-        aws_sdk_s3::Client::from_conf(config),
+    let client = R2HttpClient::with_test_endpoint_timeouts(
+        server.base_url().parse().unwrap(),
         "test-bucket".to_string(),
-    );
+        Duration::from_secs(1),
+        Duration::from_secs(3),
+    )
+    .unwrap();
+    let cache = R2ImageCache::with_http_client(client, "test-bucket".to_string());
     let (_source_dir, source) = small_src_file().await;
 
     tokio::time::timeout(

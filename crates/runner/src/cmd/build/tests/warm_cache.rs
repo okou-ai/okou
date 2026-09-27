@@ -1,21 +1,13 @@
 use super::fixtures::*;
 use super::*;
 
-use aws_smithy_mocks::mock;
+use runner_storage::r2_cache::test_support::{Operation, Rule};
 
 #[tokio::test]
 async fn warm_cache_download_request_failure_is_fatal() {
-    use aws_sdk_s3::Client;
-
     let dir = tempfile::tempdir().unwrap();
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
-    let get = mock!(Client::get_object)
-        .sequence()
-        .http_status(
-            500,
-            Some("<Error><Code>InternalError</Code></Error>".into()),
-        )
-        .build();
+    let get = Rule::fail(Operation::Get, "InternalError");
     let cache = mock_r2_cache(&[&get]);
     let input = template_input(&home, TemplateCache::Required(&cache));
     let (_scripts, work_dir) = fake_rootfs_scripts().await;
@@ -43,17 +35,11 @@ async fn warm_cache_download_request_failure_is_fatal() {
 
 #[tokio::test]
 async fn warm_cache_existing_remote_uses_head_without_download_or_build() {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::head_object::HeadObjectOutput;
-
     let dir = tempfile::tempdir().unwrap();
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
-    let head = mock!(Client::head_object)
-        .match_requests(|req| {
-            req.bucket() == Some("test-bucket")
-                && req.key() == Some("runner-templates/test-template-hash.tar.zst")
-        })
-        .then_output(|| HeadObjectOutput::builder().build());
+    let head = Rule::head(true).with_matcher(|req| {
+        req.bucket == "test-bucket" && req.key == "runner-templates/test-template-hash.tar.zst"
+    });
     let cache = mock_r2_cache(&[&head]);
     let input = template_input(&home, TemplateCache::Required(&cache));
 
@@ -75,9 +61,6 @@ async fn warm_cache_existing_remote_uses_head_without_download_or_build() {
 
 #[tokio::test]
 async fn warm_cache_head_hit_cleans_stale_local_attempts() {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::head_object::HeadObjectOutput;
-
     let dir = tempfile::tempdir().unwrap();
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let warm_parent = template_warm_parent_dir(&home, "test-template-hash");
@@ -86,12 +69,9 @@ async fn warm_cache_head_hit_cleans_stale_local_attempts() {
     tokio::fs::write(stale_attempt.join(TEMPLATE_FILE), b"stale")
         .await
         .unwrap();
-    let head = mock!(Client::head_object)
-        .match_requests(|req| {
-            req.bucket() == Some("test-bucket")
-                && req.key() == Some("runner-templates/test-template-hash.tar.zst")
-        })
-        .then_output(|| HeadObjectOutput::builder().build());
+    let head = Rule::head(true).with_matcher(|req| {
+        req.bucket == "test-bucket" && req.key == "runner-templates/test-template-hash.tar.zst"
+    });
     let cache = mock_r2_cache(&[&head]);
     let input = template_input(&home, TemplateCache::Required(&cache));
 
@@ -113,17 +93,9 @@ async fn warm_cache_head_hit_cleans_stale_local_attempts() {
 
 #[tokio::test]
 async fn warm_cache_head_request_failure_is_fatal() {
-    use aws_sdk_s3::Client;
-
     let dir = tempfile::tempdir().unwrap();
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
-    let head = mock!(Client::head_object)
-        .sequence()
-        .http_status(
-            500,
-            Some("<Error><Code>InternalError</Code></Error>".into()),
-        )
-        .build();
+    let head = Rule::fail(Operation::Head, "InternalError");
     let cache = mock_r2_cache(&[&head]);
     let input = template_input(&home, TemplateCache::Required(&cache));
 
@@ -204,18 +176,10 @@ async fn warm_cache_head_miss_uses_template_uploaded_by_another_runner() {
 
 #[tokio::test]
 async fn warm_cache_upload_failure_is_fatal() {
-    use aws_sdk_s3::Client;
-
     let dir = tempfile::tempdir().unwrap();
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let get = template_get_miss_rule();
-    let head = mock!(Client::head_object)
-        .sequence()
-        .http_status(
-            500,
-            Some("<Error><Code>InternalError</Code></Error>".into()),
-        )
-        .build();
+    let head = Rule::fail(Operation::Head, "InternalError");
     let cache = mock_r2_cache(&[&get, &head]);
     let input = template_input(&home, TemplateCache::Required(&cache));
     let (_scripts, work_dir) = fake_rootfs_scripts().await;
@@ -244,13 +208,10 @@ async fn warm_cache_upload_failure_is_fatal() {
 
 #[tokio::test]
 async fn warm_cache_invalid_remote_object_force_overwrites_r2() {
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::head_object::HeadObjectOutput;
-
     let dir = tempfile::tempdir().unwrap();
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let get = template_get_rule(empty_template_archive_bytes().await);
-    let head = mock!(Client::head_object).then_output(|| HeadObjectOutput::builder().build());
+    let head = Rule::head(true);
     let (create, upload_part, complete) = multipart_success_rules();
     let cache = mock_r2_cache(&[&get, &head, &create, &upload_part, &complete]);
     let input = template_input(&home, TemplateCache::Required(&cache));

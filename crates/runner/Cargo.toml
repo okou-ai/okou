@@ -61,13 +61,7 @@ runner-storage = { workspace = true, features = ["test-support"] }
 runner-supervisor = { workspace = true, features = ["test-support"] }
 guest-control-client = { workspace = true }
 log = { workspace = true }
-# `test-util` feature exposes `with_test_defaults_v2()` on `aws_sdk_s3::Config`,
-# which `aws_smithy_mocks::mock_client!` needs. Feature applies only to the
-# test build — no impact on the production binary.
-aws-sdk-s3 = { workspace = true, features = ["test-util"] }
-aws-smithy-mocks = { workspace = true }
 httpmock = { workspace = true, features = ["cookies"] }
-http-body = { workspace = true }
 sandbox-mock = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
 tracing-test-support.workspace = true

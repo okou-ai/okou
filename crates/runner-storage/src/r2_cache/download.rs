@@ -7,7 +7,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use aws_sdk_s3::error::SdkError;
 use tokio::io::{AsyncRead, ReadBuf};
 
 use super::{
@@ -49,31 +48,16 @@ impl R2ImageCache {
         let limits =
             TemplateArchiveLimits::new(expected_template_bytes).map_err(R2DownloadError::Local)?;
 
-        let resp = match self
+        let Some(resp) = self
             .client
-            .get_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .send()
+            .get(key)
             .await
-        {
-            Ok(r) => r,
-            Err(SdkError::ServiceError(e))
-                if matches!(
-                    e.err(),
-                    aws_sdk_s3::operation::get_object::GetObjectError::NoSuchKey(_)
-                ) =>
-            {
-                return Ok(false);
-            }
-            Err(e) => {
-                return Err(R2DownloadError::Request(R2Error::S3(format!(
-                    "get_object {key}: {e:?}"
-                ))));
-            }
+            .map_err(R2DownloadError::Request)?
+        else {
+            return Ok(false);
         };
 
-        if let Some(content_length) = resp.content_length() {
+        if let Some(content_length) = resp.content_length {
             let content_length = u64::try_from(content_length).map_err(|_| {
                 R2DownloadError::InvalidObject(R2Error::Io(io_other(format!(
                     "get_object {key} returned negative content length {content_length}"
@@ -99,7 +83,7 @@ impl R2ImageCache {
             .await
             .map_err(|e| R2DownloadError::Local(R2Error::Io(e)))?;
 
-        let (body_reader, body_read_failure) = TrackedBodyReader::new(resp.body.into_async_read());
+        let (body_reader, body_read_failure) = TrackedBodyReader::new(resp.body);
 
         if let Err(e) = tokio::fs::create_dir_all(&staging).await {
             return Err(finish_file_staging_error(

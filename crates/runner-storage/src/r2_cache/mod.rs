@@ -113,14 +113,20 @@
 //! GNU sparse extension headers and grows its sparse block list before returning
 //! the entry. Sparse payload extraction remains streaming and preserves holes.
 
-use aws_sdk_s3::error::SdkError;
+use std::sync::Arc;
+use transport::R2Transport;
 
 mod archive;
 mod config;
 mod download;
+mod http_transport;
 mod keys;
 mod multipart;
+mod transport;
 mod upload;
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
 #[cfg(test)]
 mod tests;
@@ -154,20 +160,10 @@ impl R2DownloadError {
     }
 }
 
-impl<E, R> From<SdkError<E, R>> for R2Error
-where
-    E: std::fmt::Debug,
-    R: std::fmt::Debug,
-{
-    fn from(e: SdkError<E, R>) -> Self {
-        Self::S3(format!("{e:?}"))
-    }
-}
-
-/// Cache handle. Cheap to clone (the underlying SDK client is `Arc`-internal).
+/// Cache handle. The network transport is shared between clones.
 #[derive(Clone)]
 pub struct R2ImageCache {
-    client: aws_sdk_s3::Client,
+    client: Arc<dyn R2Transport>,
     bucket: String,
 }
 
@@ -183,13 +179,12 @@ pub(super) fn io_other<E: std::fmt::Display>(e: E) -> std::io::Error {
     std::io::Error::other(e.to_string())
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 impl R2ImageCache {
-    /// Test-only constructor. Lets unit tests inject a mock `aws_sdk_s3::Client`
-    /// (built via `aws_smithy_mocks::mock_client!`) without going through
-    /// `from_env`, which reads process env vars. Production code MUST construct
-    /// via `from_env`.
-    pub fn with_client(client: aws_sdk_s3::Client, bucket: String) -> Self {
-        Self { client, bucket }
+    fn with_http_client(client: http_transport::R2HttpClient, bucket: String) -> Self {
+        Self {
+            client: Arc::new(client),
+            bucket,
+        }
     }
 }

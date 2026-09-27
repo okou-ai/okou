@@ -112,11 +112,8 @@ async fn from_env_child() {
             assert!(result.is_some(), "all four set → Some");
             let cache = result.unwrap();
             assert_eq!(cache.bucket, "test-bucket");
-            let timeouts = cache.client.config().timeout_config().unwrap();
-            assert_eq!(timeouts.connect_timeout(), Some(Duration::from_secs(10)));
-            assert_eq!(timeouts.read_timeout(), Some(Duration::from_secs(60)));
-            assert_eq!(timeouts.operation_timeout(), None);
-            assert_eq!(timeouts.operation_attempt_timeout(), None);
+            // The production transport owns the timeout budgets; HTTP wire
+            // tests exercise request behavior instead of SDK configuration.
         }
         ALL_EMPTY_SCENARIO => {
             let result = R2ImageCache::from_env().await.unwrap();

@@ -3,17 +3,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::super::test_support::Rule;
 use super::super::{
     R2ImageCache,
     archive::{TEMPLATE_FILE, TemplateArchiveLimits, pack_template_to_writer},
 };
-use aws_smithy_mocks::{Rule, RuleMode, mock, mock_client};
-
-use crate::test_fixtures::http_body::byte_stream_with_error_after;
 
 pub(super) fn mock_cache(bucket: &str, rules: &[&Rule]) -> R2ImageCache {
-    let client = mock_client!(aws_sdk_s3, RuleMode::MatchAny, rules);
-    R2ImageCache::with_client(client, bucket.to_string())
+    R2ImageCache::with_test_rules(bucket.to_string(), rules)
 }
 
 pub(super) async fn wait_for_rule_calls(rule: &Rule, expected: usize) {
@@ -166,43 +163,17 @@ pub(super) fn get_object_body(bytes: Vec<u8>) -> Rule {
 }
 
 pub(super) fn get_object_body_then_error(bytes: Vec<u8>, message: &'static str) -> Rule {
-    use std::sync::Arc;
-
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::get_object::GetObjectOutput;
-
-    let body = Arc::new(bytes);
-    let body_for_closure = Arc::clone(&body);
-    mock!(Client::get_object).then_output(move || {
-        GetObjectOutput::builder()
-            .body(byte_stream_with_error_after(
-                (*body_for_closure).clone(),
-                std::io::Error::new(std::io::ErrorKind::ConnectionReset, message),
-            ))
-            .build()
-    })
+    Rule::get_error_after(bytes, message)
 }
 
 pub(super) fn get_object_body_with_content_length(
     bytes: Vec<u8>,
     content_length: Option<i64>,
 ) -> Rule {
-    use std::sync::Arc;
-
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::get_object::GetObjectOutput;
-    use aws_sdk_s3::primitives::ByteStream;
-
-    let body = Arc::new(bytes);
-    let body_for_closure = Arc::clone(&body);
-    mock!(Client::get_object).then_output(move || {
-        let mut output =
-            GetObjectOutput::builder().body(ByteStream::from((*body_for_closure).clone()));
-        if let Some(content_length) = content_length {
-            output = output.content_length(content_length);
-        }
-        output.build()
-    })
+    match content_length {
+        Some(length) => Rule::get_with_content_length(bytes, length),
+        None => Rule::get(bytes),
+    }
 }
 
 pub(super) fn get_object_body_for_key(
@@ -210,19 +181,5 @@ pub(super) fn get_object_body_for_key(
     key: &'static str,
     bytes: Vec<u8>,
 ) -> Rule {
-    use std::sync::Arc;
-
-    use aws_sdk_s3::Client;
-    use aws_sdk_s3::operation::get_object::GetObjectOutput;
-    use aws_sdk_s3::primitives::ByteStream;
-
-    let body = Arc::new(bytes);
-    let body_for_closure = Arc::clone(&body);
-    mock!(Client::get_object)
-        .match_requests(move |req| req.bucket() == Some(bucket) && req.key() == Some(key))
-        .then_output(move || {
-            GetObjectOutput::builder()
-                .body(ByteStream::from((*body_for_closure).clone()))
-                .build()
-        })
+    Rule::get(bytes).with_matcher(move |req| req.bucket == bucket && req.key == key)
 }
