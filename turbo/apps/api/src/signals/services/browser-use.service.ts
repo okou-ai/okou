@@ -1109,7 +1109,9 @@ function browserUseControlInspectionFunction(): string {
       const textual = supported && (textarea || !["number", "range", "color", "date", "time", "datetime-local", "month", "week", "checkbox", "radio", "file"].includes(control.type));
       const range = input && control.type === "range";
       const color = input && control.type === "color";
-      const boundedColor = !color || (!control.hasAttribute("alpha") && !control.hasAttribute("colorspace") &&
+      // Shadow-root controls share ownerDocument with the page but are outside this supported subset.
+      const boundedColor = !color || (control.getRootNode() === document &&
+        !control.hasAttribute("alpha") && !control.hasAttribute("colorspace") &&
         /^#[0-9a-f]{6}$/.test(control.value));
       const constrained = input && (control.type === "number" || range || dateTimeTypes.has(control.type));
       const file = input && control.type === "file";
@@ -2620,8 +2622,8 @@ function browserUseMixedControlWriterFunction(): string {
               const dateTime = control instanceof HTMLInputElement && ["date", "time", "datetime-local", "month", "week"].includes(control.type);
               const textual = control instanceof HTMLTextAreaElement || (control instanceof HTMLInputElement && !["number", "range", "color", "date", "time", "datetime-local", "month", "week", "checkbox", "radio"].includes(control.type));
               const constrained = control instanceof HTMLInputElement && (control.type === "number" || control.type === "range" || dateTime);
-              if (actualType === "color" && (spec.colorMode !== "opaque-srgb" || control.hasAttribute("alpha") ||
-                  control.hasAttribute("colorspace") || !/^#[0-9a-f]{6}$/.test(control.value))) return false;
+              if (actualType === "color" && (spec.colorMode !== "opaque-srgb" || control.getRootNode() !== document ||
+                  control.hasAttribute("alpha") || control.hasAttribute("colorspace") || !/^#[0-9a-f]{6}$/.test(control.value))) return false;
               if ((control instanceof HTMLInputElement && control.type === "email" ? control.multiple : false) !== spec.multiple ||
                   (textual && (control.minLength !== (spec.minLength ?? -1) ||
                     control.maxLength !== (spec.maxLength ?? -1) ||
