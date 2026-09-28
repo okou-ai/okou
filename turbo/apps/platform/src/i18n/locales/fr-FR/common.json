@@ -5646,7 +5646,6 @@
     "editHelp": "Changer les identifiants ne modifie que cet hôte. Modifier une destination directe efface sa clé d’hôte enregistrée ; les changements impliquant Cloudflare Access la conservent.",
     "empty": "Aucun hôte SSH configuré. Ajoutez un hôte pour le rendre disponible aux Agents disposant d’un accès SSH.",
     "errors": {
-      "agentUnavailable": "Cet agent n’est plus disponible. Choisissez un autre agent.",
       "configurationChanged": "Cet hôte a changé pendant votre modification. Votre brouillon est conservé. Vérifiez ses derniers paramètres avant d’appliquer vos modifications.",
       "credentialChanged": "Cet identifiant a été modifié pendant votre édition. Votre brouillon est conservé. Vérifiez les derniers paramètres et les hôtes concernés avant d’enregistrer.",
       "credentialInUse": "Ces identifiants sont utilisés. Réaffectez ou supprimez les hôtes concernés d’abord.",

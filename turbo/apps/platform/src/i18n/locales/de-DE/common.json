@@ -5576,7 +5576,6 @@
     "editHelp": "Andere Zugangsdaten auszuwählen ändert nur diesen Host. Änderungen am direkten Endpunkt löschen den gespeicherten Hostschlüssel; Änderungen mit Cloudflare Access behalten ihn bei.",
     "empty": "Keine SSH-Hosts konfiguriert. Fügen Sie einen Host hinzu, um ihn Agents mit SSH-Zugriff bereitzustellen.",
     "errors": {
-      "agentUnavailable": "Dieser Agent ist nicht mehr verfügbar. Wähle einen anderen Agent.",
       "configurationChanged": "Dieser Host wurde während der Bearbeitung geändert. Dein Entwurf bleibt erhalten. Prüfe die aktuellen Einstellungen, bevor du deine Änderungen anwendest.",
       "credentialChanged": "Diese Zugangsdaten wurden während der Bearbeitung geändert. Ihr Entwurf bleibt erhalten. Prüfen Sie vor dem Speichern die neuesten Einstellungen und betroffenen Hosts.",
       "credentialInUse": "Diese Zugangsdaten werden verwendet. Weisen Sie den Hosts andere zu oder löschen Sie die Hosts zuerst.",

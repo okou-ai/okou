@@ -5646,7 +5646,6 @@
     "editHelp": "Scegliere credenziali diverse modifica solo questo host. I cambiamenti all’endpoint diretto cancellano la chiave host salvata; quelli che coinvolgono Cloudflare Access la conservano.",
     "empty": "Nessun host SSH configurato. Aggiungi un host per renderlo disponibile agli Agents con accesso SSH.",
     "errors": {
-      "agentUnavailable": "Questo agente non è più disponibile. Scegli un altro agente.",
       "configurationChanged": "Questo host è cambiato durante la modifica. La bozza è conservata. Controlla le impostazioni più recenti prima di applicare le modifiche.",
       "credentialChanged": "Questa credenziale è cambiata durante la modifica. La bozza è conservata. Controlla le impostazioni aggiornate e gli host interessati prima di salvare.",
       "credentialInUse": "Queste credenziali sono in uso. Assegna altre credenziali agli host o elimina prima gli host.",

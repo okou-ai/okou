@@ -5646,7 +5646,6 @@
     "editHelp": "Selecionar outra credencial altera apenas este host. Alterações no destino direto apagam a chave de host aprendida; alterações envolvendo Cloudflare Access a preservam.",
     "empty": "Nenhum host SSH configurado. Adicione um host para disponibilizá-lo aos Agents com acesso SSH.",
     "errors": {
-      "agentUnavailable": "Este agente não está mais disponível. Escolha outro agente.",
       "configurationChanged": "Este host mudou durante a edição. Seu rascunho foi preservado. Revise as configurações mais recentes antes de aplicar suas alterações.",
       "credentialChanged": "Esta credencial mudou enquanto você a editava. Seu rascunho foi preservado. Revise as configurações mais recentes e os hosts afetados antes de salvar.",
       "credentialInUse": "Esta credencial está em uso. Selecione outra para os hosts ou exclua esses hosts primeiro.",

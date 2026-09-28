@@ -5568,7 +5568,6 @@
     "editHelp": "Selecting a different credential changes only this host. Direct endpoint changes clear its learned host key; changes involving Cloudflare Access keep it.",
     "empty": "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
     "errors": {
-      "agentUnavailable": "This Agent is no longer available. Choose another Agent.",
       "configurationChanged": "This host changed while you were editing. Your draft is preserved. Review its latest settings before applying your changes.",
       "credentialChanged": "This credential changed while you were editing. Your draft is preserved. Review its latest settings and affected hosts before saving your changes.",
       "credentialInUse": "This credential is used by a host. Select another credential for its hosts or delete those hosts first.",
