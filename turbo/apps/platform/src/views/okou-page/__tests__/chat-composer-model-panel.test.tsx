@@ -96,6 +96,9 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
     }),
   ).toBeFalsy();
   expect(within(panel).getByRole("slider", { name: "Effort" })).toBeVisible();
+  // The trigger already names the level, so the panel does not repeat it above
+  // the bar.
+  expect(within(panel).queryByText("Max")).toBeNull();
   expect(within(panel).getByRole("switch", { name: "Fast" })).toBeVisible();
 });
 

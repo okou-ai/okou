@@ -11,8 +11,8 @@ describe("model run options", () => {
     const configured = supportedRunModelSchema.options.filter((model) => {
       return getModelRunOptions(model).fast !== undefined;
     });
-    expect(configured.toSorted()).toStrictEqual(
-      [...CODEX_FAST_MODE_MODELS].toSorted(),
+    expect([...configured].sort()).toStrictEqual(
+      [...CODEX_FAST_MODE_MODELS].sort(),
     );
   });
 
