@@ -821,6 +821,19 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
     result.runId,
   );
   expect(execution.connectorRuntimeTargets).toStrictEqual([]);
+  expect(execution.piSessionId).toBe(result.runId);
+  expect(execution.resumeSession).toBeNull();
+  expect(execution.encryptedSecrets).toEqual(expect.any(String));
+  expect(execution.storageManifest?.storageMounts).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: "memory",
+        storageId: scope.memoryStorageId,
+        versionId: baseVersion.versionId,
+        missingRootPolicy: "fail",
+      }),
+    ]),
+  );
   expect(execution.piModelConfig).toMatchObject({
     provider: "deepseek",
     model: "deepseek-flash",

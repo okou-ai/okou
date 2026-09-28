@@ -254,6 +254,8 @@ const dispatchClaim$ = command(
         body: {
           prompt: "Run first-party Pi memory maintenance.",
           triggerSource: "agent",
+          // Private BYOK runs need an encrypted namespace for dynamic secrets.
+          secrets: {},
           artifacts: [
             {
               name: "memory",
@@ -312,7 +314,7 @@ const dispatchClaim$ = command(
         ],
         includeOkouTokenSecret: false,
         productAgentExecutionPlan: {
-          identity: "pi-memory-phase2-maintenance",
+          identity: "no-agent",
           content: {
             version: "1",
             // Pi is the sandbox execution overlay; run preparation still
@@ -327,7 +329,8 @@ const dispatchClaim$ = command(
         validateEnvironmentReferences: false,
         enforceBuiltInCredits: credential.pin.modelProvider === "built-in",
         piExecution: true,
-        piMemoryPhase2Maintenance: maintenance,
+        piLaunchConfig: { maintenance },
+        artifactMissingRootPolicy: "fail",
       },
       signal,
     );

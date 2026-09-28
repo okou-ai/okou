@@ -40,7 +40,7 @@ import {
   persistAgentCheckpointInTransaction,
   prepareAgentCheckpointPersistence$,
 } from "./agent-webhook-checkpoints.service";
-import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
+import { lockPiMemoryPhase2CompletionStorage } from "./pi-memory-phase2-maintenance.service";
 import {
   releaseRunSlots,
   transitionAgentRunsToTerminal,
@@ -496,8 +496,8 @@ async function lockCompletionPiMemoryStorage(
   tx: Tx,
   run: RunRecord,
 ): Promise<void> {
-  if (run.launchSnapshot?.framework === "pi") {
-    await lockPiMemoryCandidateStorage(tx, run);
+  if (run.chatThreadId === null && run.launchSnapshot?.framework === "pi") {
+    await lockPiMemoryPhase2CompletionStorage(tx, run);
   }
 }
 

@@ -39,7 +39,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { blobs } from "@okouai/db/schema/blob";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import {
   runnerState,
@@ -52,6 +51,8 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
+  isNull,
   lt,
   lte,
   notInArray,
@@ -959,18 +960,23 @@ async function getClaimableJob(
         appendSystemPrompt: agentRuns.appendSystemPrompt,
         vars: agentRuns.vars,
       },
-      maintenanceRunId: piMemoryPhase2Jobs.maintenanceRunId,
     })
     .from(runnerJobQueue)
     .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .leftJoin(
-      piMemoryPhase2Jobs,
+    .innerJoin(
+      agentSessions,
       and(
-        eq(piMemoryPhase2Jobs.maintenanceRunId, agentRuns.id),
-        eq(piMemoryPhase2Jobs.orgId, agentRuns.orgId),
-        eq(piMemoryPhase2Jobs.userId, agentRuns.userId),
-        eq(piMemoryPhase2Jobs.status, "leased"),
+        eq(agentSessions.id, agentRuns.sessionId),
+        or(
+          isNotNull(agentSessions.agentId),
+          // An unbound session belongs directly to the run's owner. Its
+          // producer owns admission and lifecycle fencing, not runner claim.
+          and(
+            eq(agentSessions.orgId, agentRuns.orgId),
+            eq(agentSessions.userId, agentRuns.userId),
+            isNull(agentRuns.chatThreadId),
+          ),
+        ),
       ),
     )
     .where(
@@ -982,10 +988,7 @@ async function getClaimableJob(
     .limit(1);
   signal.throwIfAborted();
 
-  if (
-    jobWithRun &&
-    (jobWithRun.run.agentId !== null || jobWithRun.maintenanceRunId === runId)
-  ) {
+  if (jobWithRun) {
     return {
       job: jobWithRun.job,
       run: jobWithRun.run,

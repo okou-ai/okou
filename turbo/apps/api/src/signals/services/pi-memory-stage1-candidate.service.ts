@@ -23,8 +23,8 @@ import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { advancePiMemoryPhase2InputRevision } from "./pi-memory-phase2-job.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 
-// Completion can retain checkpoint blobs before admission. Lock an existing
-// owner before either operation to avoid a parent/blob cycle with cleanup.
+// Stage 1 admission and maintenance completion retain checkpoint blobs. Lock
+// their existing owner first to avoid a parent/blob cycle with cleanup.
 export async function lockPiMemoryCandidateStorage(
   tx: Tx,
   owner: { readonly orgId: string; readonly userId: string },
