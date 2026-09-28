@@ -123,7 +123,10 @@ async function countOrgActiveAgentRuns(
     .select({ count: count() })
     .from(activeAgentRuns)
     .where(eq(activeAgentRuns.orgId, orgId));
-  return row?.count ?? 0;
+  if (!row) {
+    throw new Error("Active agent run count returned no row");
+  }
+  return row.count;
 }
 
 /** Fresh direct admission only, ordered at the caller's single captured `at`. */
