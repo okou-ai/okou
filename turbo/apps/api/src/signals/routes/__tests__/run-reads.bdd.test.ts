@@ -7,15 +7,12 @@ import {
   SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
   SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
 } from "@okouai/api-contracts/contracts/runners";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { readCanonicalAgentNameFixture } from "../../../test-fixtures/canonical-agent-authority";
 import { clearRunLaunchSnapshotFixture } from "../../../test-fixtures/agent-runs";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
@@ -26,6 +23,7 @@ import {
 } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
+import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import {
   createRunsApi,
   expectCanonicalStorageManifest,
@@ -140,18 +138,6 @@ async function readChatInputOutcome(
     return { kind: "launched", runId: successor.runId };
   }
   return { kind: "rejected" };
-}
-
-/** Run the real cron pick sweep scoped to one thread. */
-async function sweepQueuedThread(threadId: string): Promise<void> {
-  await accept(
-    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-      testCronCleanupSandboxesStateContract,
-    ).cleanup({
-      body: { chatThreadIds: [threadId], runIds: [], exportJobIds: [] },
-    }),
-    [200],
-  );
 }
 
 async function createChatAgent(actor: ApiTestUser): Promise<string> {
@@ -1532,7 +1518,7 @@ describe("RUN-01: direct run admission boundaries", () => {
     });
 
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
-    await sweepQueuedThread(limited.threadId);
+    await refreshConcurrencyEntitlement(actor, context.signal);
     const uncapped = await readChatInputOutcome(actor, limited);
     if (uncapped.kind !== "launched") {
       throw new Error("Expected the uncapped pick to launch the queued input");

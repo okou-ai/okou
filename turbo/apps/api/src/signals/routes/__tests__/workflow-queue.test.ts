@@ -43,6 +43,7 @@ import {
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
 import { readThreadSessionBinding } from "./helpers/runtime-state";
+import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const TEST_APP_ROUTES = Object.freeze([
@@ -456,10 +457,13 @@ async function executeDueWorkflowAutomations(
   await flushWaitUntilForTest();
 }
 
-async function cleanupWorkflowQueueFixtures(args: {
+async function releaseStaleRunAndPickWorkflowQueue(args: {
+  readonly actor: ApiTestUser;
   readonly threadId: string;
   readonly runIds: readonly string[];
 }): Promise<void> {
+  // The scoped fixture releases only this test's terminal slot. The Stripe
+  // webhook then exercises the production organization pick used by cron.
   await accept(
     cleanupSandboxesClient().cleanup({
       body: {
@@ -470,6 +474,7 @@ async function cleanupWorkflowQueueFixtures(args: {
     }),
     [200],
   );
+  await refreshConcurrencyEntitlement(args.actor, context.signal);
 }
 
 describe("workflow queue", () => {
@@ -553,10 +558,11 @@ describe("workflow queue", () => {
       prepared = await prepareStaleEvent();
     });
 
-    it("recovers a stale automation event after its terminal callback is missed", async () => {
-      const { automation, firstRunId } = prepared;
+    it("picks a stale automation event after releasing its missed terminal slot", async () => {
+      const { scenario, automation, firstRunId } = prepared;
 
-      await cleanupWorkflowQueueFixtures({
+      await releaseStaleRunAndPickWorkflowQueue({
+        actor: scenario.actor,
         threadId: automation.threadId,
         runIds: [firstRunId],
       });
@@ -570,7 +576,7 @@ describe("workflow queue", () => {
     });
   });
 
-  it("recovers a stale user message after its terminal callback is missed", async () => {
+  it("picks a stale user message after releasing its missed terminal slot", async () => {
     mockNow(Date.UTC(2020, 0, 1));
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
@@ -607,7 +613,8 @@ describe("workflow queue", () => {
     await runsApi.claimRunnerJob(firstRunId);
     await completeRunWithoutCallbacksFixture({ runId: firstRunId });
 
-    await cleanupWorkflowQueueFixtures({
+    await releaseStaleRunAndPickWorkflowQueue({
+      actor: scenario.actor,
       threadId: automation.threadId,
       runIds: [firstRunId],
     });

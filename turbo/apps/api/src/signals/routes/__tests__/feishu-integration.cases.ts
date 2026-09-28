@@ -5492,7 +5492,7 @@ export function registerFeishuIntegrationTests(
         const fixture = await setupFeishuRunFixture({
           useAlternateInstallationDefault: true,
         });
-        const { actor, runnerGroup, appId, callbackUrl, alternateAgentId } =
+        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
           fixture;
         await connectFixtureUser(fixture);
         fixtureState.outboundMessages = [];
@@ -5584,9 +5584,7 @@ export function registerFeishuIntegrationTests(
         );
         const chatThreadCreated = requireValue(
           threadEvents.body.events.find((event) => {
-            return (
-              event.kind === "created" && event.agentId === alternateAgentId
-            );
+            return event.kind === "created" && event.agentId === defaultAgentId;
           }),
           "Expected the canonical Feishu chat thread",
         );
@@ -5613,7 +5611,7 @@ export function registerFeishuIntegrationTests(
         await runsApi.heartbeatRunner(runnerGroup);
         const claim = await runsApi.claimRunnerJob(run.id);
         expect(claim.prompt).toBe("do the Feishu task");
-        expect(claim.platformEnvironment.OKOU_AGENT_ID).toBe(alternateAgentId);
+        expect(claim.platformEnvironment.OKOU_AGENT_ID).toBe(defaultAgentId);
         expect(claim.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe(
           platform,
         );
