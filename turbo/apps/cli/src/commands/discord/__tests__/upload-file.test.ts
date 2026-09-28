@@ -129,7 +129,12 @@ describe("okou discord upload-file", () => {
         return HttpResponse.json({
           ...PUBLISHED,
           uploadUrl: UPLOAD_URL,
-          uploadHeaders: { "x-amz-meta-checksum": "checksum" },
+          uploadHeaders: {
+            "x-amz-meta-checksum": "checksum",
+            "x-amz-checksum-sha256": createHash("sha256")
+              .update("Weekly report")
+              .digest("base64"),
+          },
         });
       }),
       http.put(UPLOAD_URL, async ({ request }) => {
@@ -137,6 +142,9 @@ describe("okou discord upload-file", () => {
         expect(request.headers.get("cookie")).toBeNull();
         expect(request.headers.get("content-type")).toBe("text/plain");
         expect(request.headers.get("x-amz-meta-checksum")).toBe("checksum");
+        expect(request.headers.get("x-amz-checksum-sha256")).toBe(
+          createHash("sha256").update("Weekly report").digest("base64"),
+        );
         storedContent = await request.text();
         return new HttpResponse(null, { status: 200 });
       }),

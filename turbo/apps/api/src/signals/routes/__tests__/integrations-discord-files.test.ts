@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import {
@@ -29,6 +30,7 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
+import { realSignedPutUrl } from "./helpers/real-signed-put-url";
 import {
   discordChatThreads,
   discordMessageForTest,
@@ -782,19 +784,37 @@ describe("Canonical Discord file publication and delivery", () => {
   it("publishes one canonical artifact before delivery and reuses its receipt", async () => {
     const fixture = await boundFixture();
     const upload = await canonicalUpload(fixture);
+    const checksum = Buffer.from(upload.body.checksumSha256, "hex").toString(
+      "base64",
+    );
+    expect(upload.initialized.uploadHeaders).toMatchObject({
+      "x-amz-checksum-sha256": checksum,
+      "x-amz-meta-artifact-id": upload.operation.assetId,
+    });
     expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         input: expect.objectContaining({
           Key: `private-artifacts/${upload.operation.assetId}/${upload.body.filename}`,
-          ChecksumSHA256: Buffer.from(
-            upload.body.checksumSha256,
-            "hex",
-          ).toString("base64"),
+          ChecksumSHA256: checksum,
         }),
       }),
       expect.anything(),
     );
+    const signing = context.mocks.s3.getSignedUrl.mock.calls.find((call) => {
+      const command = call[1];
+      return (
+        command instanceof PutObjectCommand &&
+        command.input.Key?.endsWith(`/${upload.body.filename}`)
+      );
+    });
+    const signed = await realSignedPutUrl(signing);
+    const signedHeaders = signed.searchParams
+      .get("X-Amz-SignedHeaders")
+      ?.split(";");
+    expect(signed.searchParams.has("x-amz-checksum-sha256")).toBeFalsy();
+    expect(signedHeaders).toContain("x-amz-checksum-sha256");
+    expect(signedHeaders).toContain("content-type");
     const client = fileClients();
     const materialized = await accept(
       client.materialize({ headers: fixture.headers, body: upload.operation }),

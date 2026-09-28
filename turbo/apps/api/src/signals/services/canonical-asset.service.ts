@@ -1311,7 +1311,14 @@ const prepareCanonicalUpload$ = command(
               canonicalAssetLinkLayout(asset.metadata),
             )
           : undefined;
-    const uploadHeaders = metadata ? s3MetadataHeaders(metadata) : undefined;
+    const checksumSha256 =
+      args.provider === "discord"
+        ? Buffer.from(args.checksumSha256, "hex").toString("base64")
+        : undefined;
+    const uploadHeaders = {
+      ...(metadata ? s3MetadataHeaders(metadata) : {}),
+      ...(checksumSha256 ? { "x-amz-checksum-sha256": checksumSha256 } : {}),
+    };
 
     const url = canonicalAssetUrl(asset);
     if (asset.materializationStatus === "ready") {
@@ -1360,14 +1367,7 @@ const prepareCanonicalUpload$ = command(
         {
           usePublicEndpoint: true,
           metadata,
-          ...(args.provider === "discord"
-            ? {
-                checksumSha256: Buffer.from(
-                  args.checksumSha256,
-                  "hex",
-                ).toString("base64"),
-              }
-            : {}),
+          ...(checksumSha256 ? { checksumSha256 } : {}),
         },
         signal,
       ),
@@ -1377,7 +1377,7 @@ const prepareCanonicalUpload$ = command(
       assetId: asset.id,
       operationId: args.operationId,
       uploadUrl,
-      ...(uploadHeaders ? { uploadHeaders } : {}),
+      ...(Object.keys(uploadHeaders).length > 0 ? { uploadHeaders } : {}),
       url,
     };
   },

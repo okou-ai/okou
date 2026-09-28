@@ -13,6 +13,14 @@ Verify that property against real development R2 with matching and altered
 synthetic bytes before treating the fix as release-ready. The previous
 query-only workaround failed this integrity check and must not be used.
 
+The shared signer also serves Discord canonical uploads. Discord's API prepare
+response must return its required checksum in `uploadHeaders` alongside signed
+object-metadata headers. Existing Discord CLI versions already forward these
+headers on PUT, so the API can fix their missing-checksum 403 without changing
+the Discord CLI wire contract. A Discord upload prepared by an older API that
+omits the header remains incompatible until it is prepared again by the new
+API; do not silently retry a failed upload or duplicate its delivery.
+
 An old `okou host` binary that omits the header will continue to receive a
 signature error from the header-bound API. This release assumes workflows use
 the newest CLI; confirm the CLI version in each publishing environment before
