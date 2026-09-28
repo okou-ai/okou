@@ -336,7 +336,7 @@ test("The dialog lists only workflows the import tagged", async () => {
   expect(within(dialog).queryByText("Made in chat")).toBeNull();
 });
 
-test("Reopening the dialog after an import leads with the imported skills", async () => {
+test("Reopening the dialog lists only the skills that opening imports", async () => {
   const workflows = mockWorkflows();
   mockSessions();
   await openWorkflowsPage();
@@ -348,14 +348,13 @@ test("Reopening the dialog after an import leads with the imported skills", asyn
   ).toBeVisible();
 
   // The user's Claude Code session writes one skill back.
-  workflows.write([
-    workflow({
-      id: "d0000000-0000-4000-a000-000000000411",
-      name: "weekly-report",
-      displayName: "Weekly report",
-      importSource: "claudeCode",
-    }),
-  ]);
+  const weeklyReport = workflow({
+    id: "d0000000-0000-4000-a000-000000000411",
+    name: "weekly-report",
+    displayName: "Weekly report",
+    importSource: "claudeCode",
+  });
+  workflows.write([weeklyReport]);
   await expect(
     within(dialog).findByText("Weekly report"),
   ).resolves.toBeVisible();
@@ -373,16 +372,26 @@ test("Reopening the dialog after an import leads with the imported skills", asyn
     screen.findByText("Imported from Claude Code"),
   ).resolves.toBeVisible();
 
+  // Reopening starts over: the same steps, and none of the earlier skills.
   click(getButtonNamed("Import skills"));
   dialog = await findDialog();
-  expect(within(dialog).getByText("Weekly report")).toBeVisible();
-  expect(
-    within(dialog).queryByRole("region", { name: PROMPT_LABEL }),
-  ).toBeNull();
+  await findCopyPrompt(dialog);
+  expect(within(dialog).queryByText("Weekly report")).toBeNull();
+  expect(within(dialog).getByRole("status")).toHaveTextContent(
+    "Imported skills appear here as they arrive.",
+  );
 
-  const showPrompt = getButtonNamed("Show prompt", dialog);
-  expect(showPrompt).toHaveAttribute("aria-expanded", "false");
-  click(showPrompt);
-
-  await expect(showFullPrompt(dialog)).resolves.toBeVisible();
+  workflows.write([
+    weeklyReport,
+    workflow({
+      id: "d0000000-0000-4000-a000-000000000412",
+      name: "launch-checklist",
+      displayName: "Launch checklist",
+      importSource: "claudeCode",
+    }),
+  ]);
+  await expect(
+    within(dialog).findByText("Launch checklist"),
+  ).resolves.toBeVisible();
+  expect(within(dialog).queryByText("Weekly report")).toBeNull();
 });

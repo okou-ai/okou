@@ -10,13 +10,21 @@
  * an import takes a baseline when it is first entered and polls for what
  * appeared after it. The baseline and the session live as long as the signals
  * built here, so coming back to an import still shows the skills it brought in,
- * under the prompt the user was already given.
+ * under the prompt the user was already given, unless its owner starts the
+ * list over.
  *
  * The onboarding skills step and the workflows page's import dialog each build
  * their own set: they differ in where the tool comes from and in what they
  * report, not in how an import runs.
  */
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 import { skillImportSessionsContract } from "@okouai/api-contracts/contracts/skill-import";
 import {
   workflowsCollectionContract,
@@ -72,6 +80,12 @@ export interface SkillImportSignals {
    * so it goes to the clipboard and nowhere else.
    */
   readonly copyPrompt$: Command<Promise<boolean>, [AbortSignal]>;
+  /**
+   * Starts the imported list over: the next entry takes a fresh baseline, so
+   * only skills that arrive after it read as imported. The session, and the
+   * prompt built from it, are kept.
+   */
+  readonly reset$: Command<void, []>;
 }
 
 interface SkillImportOptions {
@@ -216,22 +230,75 @@ function createImportedSkills(
     },
   );
 
-  return { internalBaseline$, internalImported$, recordImportedSkills$ };
+  /** Forgets the baseline, so the next entry takes a fresh one. */
+  const resetImportedSkills$ = command(({ set }) => {
+    set(internalBaseline$, null);
+    set(internalImported$, []);
+  });
+
+  return {
+    internalBaseline$,
+    internalImported$,
+    recordImportedSkills$,
+    resetImportedSkills$,
+  };
+}
+
+/**
+ * Copying the prompt of the session being shown. The prompt carries the
+ * session's token, so it goes to the clipboard and nowhere else.
+ */
+function createPromptCopy(
+  internalSession$: State<SkillImportSession | null>,
+  provider$: Computed<SkillImportProvider | null>,
+  onPromptCopied$: Command<void, []> | undefined,
+) {
+  const internalCopied$ = state(false);
+
+  const copyPrompt$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+      const session = get(internalSession$);
+      const prompt =
+        session?.provider === get(provider$) ? session?.prompt : undefined;
+      if (prompt === undefined) {
+        return false;
+      }
+      const copied = await writeToClipboard(prompt);
+      signal.throwIfAborted();
+      if (copied) {
+        set(internalCopied$, true);
+        if (onPromptCopied$) {
+          set(onPromptCopied$);
+        }
+      }
+      return copied;
+    },
+  );
+
+  return { internalCopied$, copyPrompt$ };
 }
 
 export function createSkillImportSignals(
   options: SkillImportOptions,
 ): SkillImportSignals {
-  const { provider$, onPromptShown$, onPromptCopied$ } = options;
-  const { internalBaseline$, internalImported$, recordImportedSkills$ } =
-    createImportedSkills(
-      options.requireImportSource ?? false,
-      options.onSkillImported$,
-    );
+  const { provider$, onPromptShown$ } = options;
+  const {
+    internalBaseline$,
+    internalImported$,
+    recordImportedSkills$,
+    resetImportedSkills$,
+  } = createImportedSkills(
+    options.requireImportSource ?? false,
+    options.onSkillImported$,
+  );
 
   const internalSession$ = state<SkillImportSession | null>(null);
-  const internalCopied$ = state(false);
   const internalFailed$ = state(false);
+  const { internalCopied$, copyPrompt$ } = createPromptCopy(
+    internalSession$,
+    provider$,
+    options.onPromptCopied$,
+  );
 
   const state$ = computed((get): SkillImportState => {
     const session = get(internalSession$);
@@ -335,25 +402,10 @@ export function createSkillImportSignals(
     },
   );
 
-  const copyPrompt$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      const session = get(internalSession$);
-      const prompt =
-        session?.provider === get(provider$) ? session?.prompt : undefined;
-      if (prompt === undefined) {
-        return false;
-      }
-      const copied = await writeToClipboard(prompt);
-      signal.throwIfAborted();
-      if (copied) {
-        set(internalCopied$, true);
-        if (onPromptCopied$) {
-          set(onPromptCopied$);
-        }
-      }
-      return copied;
-    },
-  );
+  const reset$ = command(({ set }) => {
+    set(resetImportedSkills$);
+    set(internalCopied$, false);
+  });
 
-  return { state$, enter$, copyPrompt$ };
+  return { state$, enter$, copyPrompt$, reset$ };
 }

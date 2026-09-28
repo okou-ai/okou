@@ -8046,9 +8046,7 @@
       "action": "Importar skills",
       "description": "Execute este prompt onde suas skills estão. Cada uma vira um fluxo de trabalho privado.",
       "emptyAction": "Importar do Claude Code ou Codex",
-      "hidePrompt": "Ocultar prompt",
       "providerLabel": "Importar de",
-      "showPrompt": "Mostrar prompt",
       "source": {
         "claudeCode": "Importado do Claude Code",
         "codex": "Importado do Codex"

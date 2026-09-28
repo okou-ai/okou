@@ -7941,9 +7941,7 @@
       "action": "スキルをインポート",
       "description": "スキルがある環境でこのプロンプトを実行してください。各スキルは非公開のワークフローになります。",
       "emptyAction": "Claude Code または Codex からインポート",
-      "hidePrompt": "プロンプトを隠す",
       "providerLabel": "インポート元",
-      "showPrompt": "プロンプトを表示",
       "source": {
         "claudeCode": "Claude Code からインポート",
         "codex": "Codex からインポート"

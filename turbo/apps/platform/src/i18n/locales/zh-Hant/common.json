@@ -7941,9 +7941,7 @@
       "action": "匯入技能",
       "description": "在你的技能所在的地方執行這段提示詞。每個技能都會成為一個私人工作流程。",
       "emptyAction": "從 Claude Code 或 Codex 匯入",
-      "hidePrompt": "隱藏提示詞",
       "providerLabel": "匯入來源",
-      "showPrompt": "顯示提示詞",
       "source": {
         "claudeCode": "匯入自 Claude Code",
         "codex": "匯入自 Codex"

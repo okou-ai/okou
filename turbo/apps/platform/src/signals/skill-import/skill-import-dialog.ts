@@ -1,8 +1,8 @@
 /**
  * The import skills dialog the workflows page and the composer's plus menu
- * open. It runs one skill import for the app session: the tool is picked in
- * the dialog, and its baseline and session survive closing it, so reopening
- * the dialog still lists what this session already imported.
+ * open. The tool is picked in the dialog, and each opening lists only the
+ * skills imported while it is open: the session and its prompt survive
+ * closing it, but the imported list starts over.
  */
 import { command, computed, state } from "ccstate";
 import { resetSignal } from "../utils.ts";
@@ -12,16 +12,8 @@ import {
   type SkillImportProvider,
 } from "./skill-import.ts";
 
-/**
- * `prompt-first` is the dialog's own layout. A dialog reopened after skills
- * arrived leads with them and keeps the prompt behind a disclosure, which the
- * user may open.
- */
-type SkillImportPromptDisclosure = "prompt-first" | "collapsed" | "expanded";
-
 const internalOpen$ = state(false);
 const internalProvider$ = state<SkillImportProvider>("claudeCode");
-const internalDisclosure$ = state<SkillImportPromptDisclosure>("prompt-first");
 /** The full prompt under its one-line preview; copying it needs neither. */
 const internalPromptShown$ = state(false);
 /** Owns the poll while the dialog is open; closing or re-entering aborts it. */
@@ -33,10 +25,6 @@ export const skillImportDialogOpen$ = computed((get) => {
 
 export const skillImportDialogProvider$ = computed((get) => {
   return get(internalProvider$);
-});
-
-export const skillImportPromptDisclosure$ = computed((get) => {
-  return get(internalDisclosure$);
 });
 
 export const skillImportPromptShown$ = computed((get) => {
@@ -63,12 +51,10 @@ export const startSkillImport$ = command(
 );
 
 export const openSkillImportDialog$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const { imported } = get(skillImportDialogSignals.state$);
-    set(
-      internalDisclosure$,
-      imported.length > 0 ? "collapsed" : "prompt-first",
-    );
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    // Skills an earlier opening brought in are already on the workflow list;
+    // this one shows only what arrives while it is open.
+    set(skillImportDialogSignals.reset$);
     set(internalPromptShown$, false);
     set(internalOpen$, true);
     await set(startSkillImport$, signal);
@@ -99,12 +85,6 @@ export const selectSkillImportProvider$ = command(
     }
     set(internalProvider$, provider);
     await set(startSkillImport$, signal);
-  },
-);
-
-export const setSkillImportPromptExpanded$ = command(
-  ({ set }, expanded: boolean) => {
-    set(internalDisclosure$, expanded ? "expanded" : "collapsed");
   },
 );
 

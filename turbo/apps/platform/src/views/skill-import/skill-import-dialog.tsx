@@ -2,7 +2,6 @@
 // workflows page and the composer's plus menu.
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -14,7 +13,6 @@ import {
   SegmentControl,
   SegmentControlItem,
   buttonVariants,
-  cn,
 } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -22,12 +20,10 @@ import type { SkillImportProvider } from "../../signals/skill-import/skill-impor
 import {
   closeSkillImportDialog$,
   selectSkillImportProvider$,
-  setSkillImportPromptExpanded$,
   setSkillImportPromptShown$,
   skillImportDialogOpen$,
   skillImportDialogProvider$,
   skillImportDialogSignals,
-  skillImportPromptDisclosure$,
   skillImportPromptShown$,
   startSkillImport$,
 } from "../../signals/skill-import/skill-import-dialog.ts";
@@ -94,53 +90,10 @@ function SkillImportPromptSection() {
   );
 }
 
-/**
- * A dialog reopened after skills arrived leads with them; the prompt stays one
- * click away for the next batch.
- */
-function SkillImportPromptDisclosure({
-  expanded,
-}: {
-  readonly expanded: boolean;
-}) {
-  const { t } = useTranslation();
-  const setExpanded = useSet(setSkillImportPromptExpanded$);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <Button
-        type="button"
-        variant="quiet"
-        size="sm"
-        className="gap-1.5 self-start"
-        aria-expanded={expanded}
-        onClick={() => {
-          setExpanded(!expanded);
-        }}
-      >
-        <ChevronDown
-          size={14}
-          aria-hidden="true"
-          className={cn("transition-transform", expanded && "rotate-180")}
-        />
-        {expanded
-          ? t(($) => {
-              return $.workflows.skillImport.hidePrompt;
-            })
-          : t(($) => {
-              return $.workflows.skillImport.showPrompt;
-            })}
-      </Button>
-      {expanded ? <SkillImportPromptSection /> : null}
-    </div>
-  );
-}
-
 export function SkillImportDialog() {
   const { t } = useTranslation();
   const open = useGet(skillImportDialogOpen$);
   const close = useSet(closeSkillImportDialog$);
-  const disclosure = useGet(skillImportPromptDisclosure$);
   const { imported } = useGet(skillImportDialogSignals.state$);
 
   return (
@@ -169,32 +122,19 @@ export function SkillImportDialog() {
         {/* The dialog body is a grid, whose items would otherwise grow to
             the prompt's widest line instead of the dialog's width. */}
         <div className="flex min-w-0 flex-col gap-4">
-          {disclosure === "prompt-first" ? (
-            <>
-              <SkillImportPromptSection />
-              {/* Until a skill arrives, the footer says the import is
-                  waiting; the list takes the room once there is one. */}
-              {imported.length > 0 ? (
-                <div className="border-t border-border/60 pt-4">
-                  <ImportedSkillList skills={imported} scroll />
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <>
+          <SkillImportPromptSection />
+          {/* Until a skill arrives, the footer says the import is waiting;
+              the list takes the room once there is one. */}
+          {imported.length > 0 ? (
+            <div className="border-t border-border/60 pt-4">
               <ImportedSkillList skills={imported} scroll />
-              <SkillImportPromptDisclosure
-                expanded={disclosure === "expanded"}
-              />
-            </>
-          )}
-        </div>
-        <DialogFooter>
-          {disclosure === "prompt-first" ? (
-            <div className="mr-auto min-w-0 self-center">
-              <SkillImportStatus count={imported.length} />
             </div>
           ) : null}
+        </div>
+        <DialogFooter>
+          <div className="mr-auto min-w-0 self-center">
+            <SkillImportStatus count={imported.length} />
+          </div>
           <Button
             type="button"
             variant="quiet"
