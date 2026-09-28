@@ -35,7 +35,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-function xml(body: string): HttpResponse {
+function xml(body: string) {
   return new HttpResponse(body, {
     headers: { "Content-Type": "application/xml" },
   });

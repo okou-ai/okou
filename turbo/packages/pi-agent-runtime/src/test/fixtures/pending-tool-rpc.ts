@@ -46,7 +46,9 @@ const server = setupServer(
               },
             },
           ]
-            .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+            .map((event) => {
+              return `data: ${JSON.stringify(event)}\n\n`;
+            })
             .join(""),
           { headers: { "content-type": "text/event-stream" } },
         );

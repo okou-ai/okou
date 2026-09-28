@@ -1369,6 +1369,27 @@ describe("POST /api/chat-threads", () => {
 
   it("uses the member model and priority default and allows an explicit standard override", async () => {
     const fixture = await seedAgent();
+    const { providerId } = await api.ensureOrgModelProvider(fixture.actor);
+    const priorityProvider = await api.createOrgModelProvider(fixture.actor, {
+      type: "openai-api-key",
+      secret: "test-priority-openai-key",
+    });
+    await api.updateOrgModelPolicies(fixture.actor, [
+      {
+        model: WORKSPACE_DEFAULT_MODEL,
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model: PRIORITY_MODEL,
+        isDefault: false,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: priorityProvider.providerId,
+      },
+    ]);
     createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
     await accept(
       preferenceClient().update({

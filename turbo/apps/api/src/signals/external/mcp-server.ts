@@ -593,7 +593,7 @@ function registerManageTools(
     "update_chat_thread",
     {
       description:
-        "Update title and/or future-run model atomically; omitted fields stay unchanged. metadataUpdatedAt is the metadata clock, not lastMessageAt. model:null clears the pin; future inputs capture the organization default at enqueue without changing the pin. A title update suppresses automatic naming; model changes do not affect queued inputs or an active run. Use one UUID requestId per patch. For 24 hours, retry only the identical threadId and patch; retryUntil is the deadline. Updates are not generally idempotent after expiry; inspect current state. Replay returns current state without restoring older settings.",
+        "Update title/model atomically; omitted fields stay unchanged. metadataUpdatedAt is the metadata clock. model:null clears the pin; future inputs capture the organization default at enqueue without changing the pin. Title changes disable automatic naming; model changes affect neither queued inputs nor an active run. Use one UUID requestId per patch. For 24 hours, retry identical threadId and patch until retryUntil. Updates are not generally idempotent after expiry; inspect current state. Replay returns current state without reverting settings.",
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {

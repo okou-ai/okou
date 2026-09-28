@@ -55,6 +55,7 @@ export async function appendOfficialWorkflowQueueInputFixture(args: {
         id: randomUUID(),
         chatThreadId: source.chatThreadId,
         eventType: "input.prompt",
+        modelSelection: source.modelSelection,
         contextType: args.contextType,
         contextId: args.contextId,
         requiredOfficialWorkflowIds: args.claim,
