@@ -82,14 +82,13 @@ export function isPrivateVncLiteral(host: string): boolean {
   if (!value.includes(":")) {
     return false;
   }
-  let address: string;
-  try {
-    // Match the API's canonical IPv6 interpretation, including expanded and
-    // IPv4-mapped forms; an invalid literal is left to form/API validation.
-    address = new URL(`http://[${value}]`).hostname.slice(1, -1);
-  } catch {
+  // Match the API's canonical IPv6 interpretation, including expanded and
+  // IPv4-mapped forms; an invalid literal is left to form/API validation.
+  const url = `http://[${value}]`;
+  if (!URL.canParse(url)) {
     return false;
   }
+  const address = new URL(url).hostname.slice(1, -1);
   if (address === "::" || address === "::1") {
     return true;
   }
