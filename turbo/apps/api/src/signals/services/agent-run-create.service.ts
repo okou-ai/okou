@@ -357,7 +357,6 @@ import {
   type QueueFirstRunSessionSnapshotState,
 } from "./chat-queued-event.service";
 import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
-import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
 import { resolveMediaModelsForRun } from "./run-media-model.service";
 import {
@@ -1035,7 +1034,6 @@ type CreateRunRouteResult =
   | ApiErrorResponse<404, "NOT_FOUND">
   | ApiErrorResponse<409, "CONFLICT">
   | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
-  | ApiErrorResponse<429, "PI_INFERENCE_BUSY">
   | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
 
 type CreateRunErrorResult = Exclude<
@@ -1059,7 +1057,7 @@ export type DispatchFailedRunCallbacks = (
  */
 export type PersistProducerRunBinding = (
   tx: Tx,
-  run: { readonly runId: string },
+  run: { readonly runId: string; readonly status: "pending" | "failed" },
 ) => Promise<void>;
 
 interface PiStableContextCacheIdentity {
@@ -1138,8 +1136,6 @@ export interface CreateAgentRunArgs {
   readonly piExecution: boolean;
   /** Private non-interactive Pi memory maintenance input and claim fence. */
   readonly piMemoryPhase2Maintenance?: PiMemoryPhase2Maintenance;
-  /** In-memory private admission fence; never serialized into run metadata. */
-  readonly validatePiMemoryPhase2Admission?: (tx: Tx) => Promise<void>;
   readonly timing?: ApiDispatchTimingCollector;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
 }
@@ -8252,6 +8248,7 @@ async function persistAtomicLaunchRows(
   );
   await args.commit.createArgs.persistProducerRunBinding?.(args.tx, {
     runId: persisted.run.id,
+    status: "pending",
   });
 
   observePreparedLaunchPersistenceForTest(
@@ -8336,13 +8333,6 @@ async function persistFailedLaunch(
   args: CommitFailedLaunchArgs,
   message: string,
 ): Promise<FailedLaunchCommitResult> {
-  if (args.createArgs.piMemoryPhase2Maintenance) {
-    const validate = args.createArgs.validatePiMemoryPhase2Admission;
-    if (!validate) {
-      throw new Error("Private maintenance requires source admission");
-    }
-    await validate(tx);
-  }
   await acquireOfficialWorkflowRunCatalogAdmissionLock(
     tx,
     args.context.officialWorkflowRun,
@@ -8404,6 +8394,7 @@ async function persistFailedLaunch(
   });
   await args.createArgs.persistProducerRunBinding?.(tx, {
     runId: args.identity.runId,
+    status: "failed",
   });
   return {
     kind: "failed",
@@ -8690,7 +8681,6 @@ async function commitPendingPreparedLaunch(
       });
     },
   );
-  await bindPreparedPiMemoryPhase2MaintenanceRun(tx, args, persisted.run.id);
   await activatePreparedLaunchUsageAllowance({
     tx,
     commit: args,
@@ -8702,31 +8692,6 @@ async function commitPendingPreparedLaunch(
     runContextSnapshot: args.launch.runContextSnapshot,
     queueFirstClaim,
   };
-}
-
-async function bindPreparedPiMemoryPhase2MaintenanceRun(
-  tx: DbTransaction,
-  args: PreparedCommitPreparedLaunchArgs,
-  runId: string,
-): Promise<void> {
-  const maintenance = args.createArgs.piMemoryPhase2Maintenance;
-  if (!maintenance) {
-    return;
-  }
-  await args.admissionTiming.measureLeaf("maintenance_binding", () => {
-    return bindPiMemoryPhase2MaintenanceRun(tx, {
-      runId,
-      binding: {
-        memoryStorageId: maintenance.memoryStorageId,
-        orgId: args.createArgs.orgId,
-        userId: args.createArgs.userId,
-        leaseToken: maintenance.leaseToken,
-        claimedRevision: maintenance.claimedRevision,
-        claimedBaseVersionId: maintenance.claimedBaseVersionId,
-        selectionDigest: maintenance.selectionDigest,
-      },
-    });
-  });
 }
 
 async function validateCapturedSubscriptionAccount(
@@ -8812,15 +8777,6 @@ async function commitPreparedLaunchAdmission(
     : await validateThreadSession();
   let capturedIdentity: string | null = null;
   if (threadSessionValidation?.kind !== "thread-session-snapshot-stale") {
-    if (args.createArgs.piMemoryPhase2Maintenance) {
-      const validate = args.createArgs.validatePiMemoryPhase2Admission;
-      if (!validate) {
-        throw new Error("Private maintenance requires source admission");
-      }
-      await args.admissionTiming.measureLeaf("maintenance", () => {
-        return validate(tx);
-      });
-    }
     const failure = await validateCapturedSubscriptionAccount(tx, args);
     if (failure && "identity" in failure) {
       capturedIdentity = failure.identity;
@@ -9802,9 +9758,6 @@ function agentRunResolutionOptions(
     throw new Error(
       "Pi memory maintenance payload and execution identity must match",
     );
-  }
-  if (args.validatePiMemoryPhase2Admission && !privateMaintenanceIdentity) {
-    throw new Error("Phase 2 admission belongs only to private maintenance");
   }
   if (
     privateMaintenanceIdentity &&

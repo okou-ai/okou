@@ -23,6 +23,7 @@ import {
   resolvePiMemoryPhase2Credential,
 } from "./pi-memory-phase2-credential.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import {
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
@@ -267,7 +268,25 @@ const dispatchClaim$ = command(
         modelProviderCredentialScope:
           credential.pin.modelProviderCredentialScope,
         agentRunModelPin: credential.pin,
-        validatePiMemoryPhase2Admission: credential.validate,
+        // Pi memory's own same-transaction admission fence and claim binding.
+        // A failed launch only re-validates; binding it would strand the job.
+        persistProducerRunBinding: async (tx, run) => {
+          await credential.validate(tx);
+          if (run.status === "pending") {
+            await bindPiMemoryPhase2MaintenanceRun(tx, {
+              runId: run.runId,
+              binding: {
+                memoryStorageId: maintenance.memoryStorageId,
+                orgId: claim.orgId,
+                userId: claim.userId,
+                leaseToken: maintenance.leaseToken,
+                claimedRevision: maintenance.claimedRevision,
+                claimedBaseVersionId: maintenance.claimedBaseVersionId,
+                selectionDigest: maintenance.selectionDigest,
+              },
+            });
+          }
+        },
         selectedModelOverride: credential.pin.selectedModel,
         builtInModelRuntimeRoute: credential.route,
         callbacks: [
