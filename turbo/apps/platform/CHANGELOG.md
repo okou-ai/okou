@@ -11,6 +11,13 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.976.0](https://github.com/okou-ai/okou/compare/app-v0.975.0...app-v0.976.0) (2026-09-28)
+
+
+### Features
+
+* **vnc:** align host form with ssh and constrain routes ([#37126](https://github.com/okou-ai/okou/issues/37126)) ([0747697](https://github.com/okou-ai/okou/commit/074769780f811108f6fb81e8c03a98f29c67559c))
+
 ## [0.975.0](https://github.com/okou-ai/okou/compare/app-v0.974.1...app-v0.975.0) (2026-09-28)
 
 
