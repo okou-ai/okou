@@ -155,7 +155,7 @@ describe("direct Runner WSS ticket boundary", () => {
       }),
       [200],
     );
-    expect(digests.body.wss_ticket_digests).toEqual([]);
+    expect(digests.body.wss_ticket_digests).toStrictEqual([]);
 
     await f.api.requestHeartbeatRunner(true, [200], {
       runnerId: f.runnerId,

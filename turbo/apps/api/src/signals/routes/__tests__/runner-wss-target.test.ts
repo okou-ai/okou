@@ -98,15 +98,17 @@ async function heartbeat(
   runnerId: string,
   mode: "running" | "draining" | "starting" | "stopping",
   sequence: number,
-  group = f.runnerGroup,
-  caddyServiceActive = true,
+  options: {
+    readonly group?: string;
+    readonly caddyServiceActive?: boolean;
+  } = {},
 ) {
   await f.api.requestHeartbeatRunner(true, [200], {
     runnerId,
-    group,
+    group: options.group ?? f.runnerGroup,
     mode,
     snapshotSequence: sequence,
-    caddyServiceActive,
+    caddyServiceActive: options.caddyServiceActive ?? true,
   });
 }
 
@@ -184,11 +186,11 @@ describe("internal WSS target via guarded test API route", () => {
     await expect(
       readTarget(run.runId, f.actor, new Date(observed.getTime() - 5001)),
     ).resolves.toBeNull();
-    await heartbeat(f, runnerId, "draining", 3, f.runnerGroup, false);
+    await heartbeat(f, runnerId, "draining", 3, { caddyServiceActive: false });
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
     await heartbeat(f, runnerId, "stopping", 4);
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
-    await heartbeat(f, runnerId, "running", 5, "vm0/other");
+    await heartbeat(f, runnerId, "running", 5, { group: "vm0/other" });
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
@@ -205,13 +207,13 @@ describe("internal WSS target via guarded test API route", () => {
       snapshotSequence: 1,
     });
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
-    await heartbeat(f, runnerId, "running", 2, f.runnerGroup, true);
+    await heartbeat(f, runnerId, "running", 2);
     await expect(readTarget(run.runId, f.actor)).resolves.toMatchObject({
       runnerId,
     });
-    await heartbeat(f, runnerId, "running", 3, f.runnerGroup, false);
+    await heartbeat(f, runnerId, "running", 3, { caddyServiceActive: false });
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
-    await heartbeat(f, runnerId, "running", 2, f.runnerGroup, true);
+    await heartbeat(f, runnerId, "running", 2);
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
