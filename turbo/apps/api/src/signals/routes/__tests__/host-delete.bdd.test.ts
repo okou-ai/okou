@@ -37,10 +37,14 @@ function ownedActor(actor: ApiTestUser): {
   return { userId: actor.userId, orgId: actor.orgId };
 }
 
-async function enableHostedSiteDelete(actor: ApiTestUser) {
+async function setHostedSiteDelete(actor: ApiTestUser, enabled: boolean) {
   await updateFeatureSwitchesForUser(context, ownedActor(actor), {
-    [FeatureSwitchKey.HostedSiteDelete]: true,
+    [FeatureSwitchKey.HostedSiteDelete]: enabled,
   });
+}
+
+async function enableHostedSiteDelete(actor: ApiTestUser) {
+  await setHostedSiteDelete(actor, true);
 }
 
 function errorMessage(body: unknown): string {
@@ -185,6 +189,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     );
     await api.completeHostedSite(owner, published.deploymentId);
 
+    await setHostedSiteDelete(owner, false);
     const disabled = await api.requestDeleteHostedSite(owner, site, [404]);
     expect(errorMessage(disabled.body)).toBe(
       "Hosted site deletion is not available",
