@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { testRuntimeStateContract } from "@okouai/api-contracts/contracts/test-runtime-state";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
+import { clearMockNow, mockNow } from "../../../lib/time";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { testRuntimeStateRoutes } from "../test-runtime-state";
 import { createBddApi } from "./helpers/api-bdd";
@@ -138,6 +139,39 @@ describe("internal WSS target via guarded test API route", () => {
     ).resolves.toBeNull();
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+  });
+
+  it("refreshes an unchanged snapshot while preserving WSS ordering", async () => {
+    const f = await setup();
+    const run = await createRun(f);
+    const runnerId = randomUUID();
+    await claimRun(f, run.runId, { runnerId, hostname: inventoryHostname });
+    await heartbeat(f, runnerId, "running", 1);
+    const initial = await readTarget(run.runId, f.actor);
+    if (!initial) {
+      throw new Error("Expected an initial Runner target");
+    }
+
+    const nextHeartbeatAt = new Date(initial.observedAt).getTime() + 1000;
+    mockNow(nextHeartbeatAt);
+    onTestFinished(clearMockNow);
+    // The JSONB arrays are unchanged, but freshness must still advance.
+    await heartbeat(f, runnerId, "running", 2);
+    const refreshed = await readTarget(run.runId, f.actor);
+    expect(new Date(refreshed?.observedAt ?? 0).getTime()).toBe(
+      nextHeartbeatAt,
+    );
+    await heartbeat(f, runnerId, "running", 1, {
+      wssIngressServiceActive: false,
+    });
+    await expect(readTarget(run.runId, f.actor)).resolves.toMatchObject({
+      runnerId,
+    });
+    await heartbeat(f, runnerId, "running", 3, {
+      wssIngressServiceActive: false,
+    });
+    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
 
   it("does not trust runner identity or hostname supplied by a PAT claimant", async () => {
