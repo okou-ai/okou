@@ -327,6 +327,16 @@ const discordModelPicker$ = command(
           "You no longer have access to that model. Run `/okou model` again.",
         );
       }
+      const saved = await set(
+        saveDiscordModelPreference$,
+        { binding: args.binding, model: option.value },
+        signal,
+      );
+      if (!saved) {
+        return discordAccountMessage(STALE_CONTROL);
+      }
+      // Only after the connection re-check above does the choice also apply
+      // to the conversation this interaction came from.
       const chatThreadId = await findDiscordInteractionChatThreadId(
         set(writeDb$),
         {
@@ -347,19 +357,6 @@ const discordModelPicker$ = command(
         },
         signal,
       );
-      if (threadModel.kind === "rejected") {
-        return discordAccountMessage(
-          "You no longer have access to that model. Run `/okou model` again.",
-        );
-      }
-      const saved = await set(
-        saveDiscordModelPreference$,
-        { binding: args.binding, model: option.value },
-        signal,
-      );
-      if (!saved) {
-        return discordAccountMessage(STALE_CONTROL);
-      }
       return discordAccountMessage(
         threadModel.kind === "updated"
           ? `Model selected for this conversation and new conversations: ${option.label}.`
