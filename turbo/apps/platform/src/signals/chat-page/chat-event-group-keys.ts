@@ -18,9 +18,9 @@ export function chatEventRenderKey(event: EnrichedChatEvent): string {
   return event.inputOriginId ?? event.id;
 }
 
+// Every user group is created with its first input.
 function userTurnKey(group: ChatEventGroup): string {
-  const first = group.events[0];
-  return first === undefined ? group.beginEventId : chatEventRenderKey(first);
+  return chatEventRenderKey(group.events[0]!);
 }
 
 /** The identity of the assistant turn answering a user turn. */

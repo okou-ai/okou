@@ -263,14 +263,12 @@ test("Keep separate histories, artifacts and actions on both sides of a steer in
   expectTextOrder(RESULT, STEER, NEXT_RESULT);
 });
 
-function userBubble(text: string): HTMLElement {
-  const bubble = screen
-    .getByText(text)
-    .closest<HTMLElement>('[data-role="user"]');
-  if (!bubble) {
-    throw new Error(`Expected a user message for ${text}`);
+function textNode(text: string): Text {
+  const node = screen.getByText(text).firstChild;
+  if (!(node instanceof Text)) {
+    throw new Error(`Expected a text node for ${text}`);
   }
-  return bubble;
+  return node;
 }
 
 function statusRow(): HTMLElement {
@@ -283,7 +281,23 @@ function statusRow(): HTMLElement {
   return row;
 }
 
-test("Keep the prompt and its status row mounted when a run claims the prompt", async () => {
+// The user selects the conversation tail, from their message through the run
+// status row, as they would before copying it.
+function selectFromMessageThroughStatus(text: string): void {
+  const row = statusRow();
+  const range = document.createRange();
+  range.setStart(textNode(text), 0);
+  range.setEnd(row, row.childNodes.length);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+function selectedText(): string {
+  return window.getSelection()?.toString().replace(/\s+/gu, " ").trim() ?? "";
+}
+
+test("Keep the selected prompt and status row when a run claims the prompt", async () => {
   const events: MockChatEventInput[] = [
     promptEvent({
       id: "queued-request",
@@ -294,9 +308,10 @@ test("Keep the prompt and its status row mounted when a run claims the prompt", 
   ];
   installRunChat({ chatEvents: events });
   await openChat(1);
-  await expect(screen.findByText("Waiting in queue...")).resolves.toBeVisible();
-  const prompt = userBubble("Review the API");
-  const row = statusRow();
+  await expect(
+    screen.findByText("Waiting in queue..."),
+  ).resolves.toBeInTheDocument();
+  selectFromMessageThroughStatus("Review the API");
 
   events.push({
     ...promptEvent({
@@ -310,23 +325,20 @@ test("Keep the prompt and its status row mounted when a run claims the prompt", 
   });
   publishRunUpdate();
 
-  await waitFor(() => {
-    expect(document.querySelector("[data-thinking-indicator]")).toBe(row);
-  });
+  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
   expect(screen.queryByText("Waiting in queue...")).toBeNull();
-  expect(userBubble("Review the API")).toBe(prompt);
   expect(screen.getAllByText("Review the API")).toHaveLength(1);
+  const selected = selectedText();
+  expect(selected.startsWith("Review the API")).toBeTruthy();
+  expect(selected.endsWith("Thinking...")).toBeTruthy();
 });
 
-test("Keep the steer and its reply turn mounted through steer delivery and the first result", async () => {
+test("Keep the selected steer and status row through steer delivery and the first result", async () => {
   const events = [...resultEvents(), pendingSteer()];
   installRunChat({ chatEvents: events, activeRunIds: [RUN_A] });
   await openChat(12);
   expectWaitingAfter(STEER);
-  const steer = userBubble(STEER);
-  const row = statusRow();
-  const replyTurn = row.closest<HTMLElement>('[data-role="assistant"]');
-  expect(replyTurn).not.toBeNull();
+  selectFromMessageThroughStatus(STEER);
 
   mockNow(new Date(createdAt(20)), context.signal);
   events.push(
@@ -341,11 +353,12 @@ test("Keep the steer and its reply turn mounted through steer delivery and the f
   );
   publishRunUpdate();
 
-  await expect(screen.findByText(NEXT_RESULT)).resolves.toBeVisible();
-  expect(userBubble(STEER)).toBe(steer);
-  expect(assistantGroup(NEXT_RESULT)).toBe(replyTurn);
-  expect(statusRow()).toBe(row);
+  await expect(screen.findByText(NEXT_RESULT)).resolves.toBeInTheDocument();
   expectWaitingAfter(NEXT_RESULT);
+  const selected = selectedText();
+  expect(selected.startsWith(STEER)).toBeTruthy();
+  expect(selected).toContain(NEXT_RESULT);
+  expect(selected.endsWith("Thinking...")).toBeTruthy();
 });
 
 test("Stop interrupts the live run and keeps the queued follow-up", async () => {
