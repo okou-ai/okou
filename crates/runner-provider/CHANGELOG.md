@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.14...runner-provider-v0.3.15) (2026-09-28)
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
 ## [0.3.14](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.13...runner-provider-v0.3.14) (2026-09-28)
 
 ## [0.3.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.3.12...runner-provider-v0.3.13) (2026-09-27)

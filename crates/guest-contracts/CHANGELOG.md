@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.9](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.8...guest-contracts-v0.17.9) (2026-09-28)
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
 ## [0.17.8](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.7...guest-contracts-v0.17.8) (2026-09-28)
 
 ## [0.17.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.17.6...guest-contracts-v0.17.7) (2026-09-27)

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.714.0](https://github.com/okou-ai/okou/compare/core-v8.713.0...core-v8.714.0) (2026-09-28)
+
+
+### Features
+
+* **host:** let owners soft-delete a hosted site with okou host delete ([#37182](https://github.com/okou-ai/okou/issues/37182)) ([2d7b45c](https://github.com/okou-ai/okou/commit/2d7b45cff7a39047acd200659010fbb176902a86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.519.0
+
 ## [8.713.0](https://github.com/okou-ai/okou/compare/core-v8.712.7...core-v8.713.0) (2026-09-28)
 
 
