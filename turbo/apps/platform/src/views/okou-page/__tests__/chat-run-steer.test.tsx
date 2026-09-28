@@ -9,6 +9,7 @@ import {
   assistantEvent,
   context,
   expectTextOrder,
+  findButton,
   findEnabledButton,
   installRunChat,
   promptEvent,
@@ -308,9 +309,7 @@ test("Keep the selected prompt and status row when a run claims the prompt", asy
   ];
   installRunChat({ chatEvents: events });
   await openChat(1);
-  await expect(
-    screen.findByText("Waiting in queue..."),
-  ).resolves.toBeInTheDocument();
+  await expect(findButton("queue...")).resolves.toBeInTheDocument();
   selectFromMessageThroughStatus("Review the API");
 
   events.push({
@@ -326,7 +325,7 @@ test("Keep the selected prompt and status row when a run claims the prompt", asy
   publishRunUpdate();
 
   await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Waiting in queue...")).toBeNull();
+  expect(queryButton("queue...")).toBeNull();
   expect(screen.getAllByText("Review the API")).toHaveLength(1);
   const selected = selectedText();
   expect(selected.startsWith("Review the API")).toBeTruthy();

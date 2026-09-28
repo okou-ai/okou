@@ -226,6 +226,7 @@ import {
   useOpenThreadArtifacts,
 } from "./thread-sidebar.tsx";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
+import { openQueueDrawer$ } from "../../signals/queue-page/queue-drawer-state.ts";
 import {
   closeChatThreadEmojiMenu$,
   emojiMenuThreadId$,
@@ -4353,8 +4354,10 @@ function ThinkingLabel({
   serverThinkingLabel?: ServerThinkingLabel;
 }) {
   const { t } = useTranslation();
+  const openQueueDrawer = useSet(openQueueDrawer$);
 
-  // The server holds input without a run.
+  // The server holds input without a run. The queue drawer shows the org's
+  // slot usage by member and how to add slots.
   if (isQueued) {
     const waitingIn = t(($) => {
       return $.chat.run.waitingIn;
@@ -4364,7 +4367,16 @@ function ThinkingLabel({
     });
     return (
       <ShimmerText>
-        {waitingIn} {queueEllipsis}
+        {waitingIn}{" "}
+        <button
+          type="button"
+          onClick={() => {
+            openQueueDrawer();
+          }}
+          className="cursor-pointer underline underline-offset-2"
+        >
+          {queueEllipsis}
+        </button>
       </ShimmerText>
     );
   }
