@@ -1,4 +1,7 @@
-import { withModelReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  type ReasoningEffort,
+  withModelReasoningEffort,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
   Switch,
   Tooltip,
@@ -38,10 +41,23 @@ export function useChatEffort(
  * `ultra`, Claude runs `low`/`medium`/`high`/`extra`/`max`/`ultracode`.
  * Renaming them to a house scale would tell a user something their model does
  * not say. The only thing this changes is the case: a level is a label in the
- * interface, not the raw enum it happens to be on the wire.
+ * interface, not the raw enum it happens to be on the wire. Each label is
+ * spelled out rather than derived, because a compound level such as `xhigh`
+ * does not survive a mechanical capitalisation (`Xhigh`).
  */
-export function formatChatEffort(effort: string) {
-  return effort.charAt(0).toUpperCase() + effort.slice(1);
+const CHAT_EFFORT_LABELS: Readonly<Record<ReasoningEffort, string>> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "xHigh",
+  extra: "Extra",
+  max: "Max",
+  ultra: "Ultra",
+  ultracode: "Ultracode",
+};
+
+export function formatChatEffort(effort: ReasoningEffort) {
+  return CHAT_EFFORT_LABELS[effort];
 }
 
 /**
