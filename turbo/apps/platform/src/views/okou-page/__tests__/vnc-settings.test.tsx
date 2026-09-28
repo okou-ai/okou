@@ -356,9 +356,9 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
     "desktop.internal.example.com",
   );
   await choose(dialog, "Connection route", "Through saved SSH host");
-  expect(within(dialog).getByLabelText("SSH host")).toHaveTextContent(
-    "Desktop gateway",
-  );
+  await expect(
+    within(dialog).findByLabelText("SSH host"),
+  ).resolves.toHaveTextContent("Desktop gateway");
   expect(getAction("button", "Save", dialog)).toBeEnabled();
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
     "Second desktop",

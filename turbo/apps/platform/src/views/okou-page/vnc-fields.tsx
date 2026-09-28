@@ -565,96 +565,92 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
       }),
     },
   ];
+  if (isAppleProfile(editor.profile)) {
+    return null;
+  }
   return (
     <div className="grid gap-3">
-      {isAppleProfile(editor.profile) ? null : (
-        <>
-          <label htmlFor="vnc-server-name" className="text-sm">
+      <label htmlFor="vnc-server-name" className="text-sm">
+        {t(($) => {
+          return $.vnc.security.serverName;
+        })}
+      </label>
+      <Input
+        id="vnc-server-name"
+        name="serverName"
+        maxLength={VNC_HOST_MAX_LENGTH}
+        value={editor.tlsServerName}
+        onChange={(event) => {
+          editServerName(event.currentTarget.value);
+        }}
+        placeholder={t(($) => {
+          return $.vnc.security.serverNameHint;
+        })}
+        aria-describedby="vnc-server-name-help"
+      />
+      <p id="vnc-server-name-help" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.security.serverNameHelp;
+        })}
+      </p>
+      <label htmlFor="vnc-trust" className="text-sm">
+        {t(($) => {
+          return $.vnc.security.title;
+        })}
+      </label>
+      <Select
+        items={trustItems}
+        value={editor.trust}
+        onValueChange={(value, details) => {
+          if (value !== "system" && value !== "custom_ca") {
+            details.cancel();
+            return;
+          }
+          choose(value);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger id="vnc-trust">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {trustItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+      {editor.trust === "custom_ca" && (
+        <div className="grid gap-2 text-sm">
+          <label htmlFor="vnc-ca-bundle">
             {t(($) => {
-              return $.vnc.security.serverName;
+              return $.vnc.security.caBundle;
             })}
           </label>
-          <Input
-            id="vnc-server-name"
-            name="serverName"
-            maxLength={VNC_HOST_MAX_LENGTH}
-            value={editor.tlsServerName}
+          <Textarea
+            id="vnc-ca-bundle"
+            name="caBundle"
+            required
+            maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
+            aria-describedby="vnc-ca-help"
+            value={editor.caBundle}
             onChange={(event) => {
-              editServerName(event.currentTarget.value);
+              editCaBundle(event.currentTarget.value);
             }}
             placeholder={t(($) => {
-              return $.vnc.security.serverNameHint;
+              return $.vnc.security.caHint;
             })}
-            aria-describedby="vnc-server-name-help"
+            className="min-h-32 font-mono text-xs"
           />
-          <p
-            id="vnc-server-name-help"
-            className="text-sm text-muted-foreground"
-          >
+          <p id="vnc-ca-help" className="text-muted-foreground">
             {t(($) => {
-              return $.vnc.security.serverNameHelp;
+              return $.vnc.security.caHelp;
             })}
           </p>
-          <label htmlFor="vnc-trust" className="text-sm">
-            {t(($) => {
-              return $.vnc.security.title;
-            })}
-          </label>
-          <Select
-            items={trustItems}
-            value={editor.trust}
-            onValueChange={(value, details) => {
-              if (value !== "system" && value !== "custom_ca") {
-                details.cancel();
-                return;
-              }
-              choose(value);
-            }}
-            disabled={disabled}
-          >
-            <SelectTrigger id="vnc-trust">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {trustItems.map((item) => {
-                return (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-          {editor.trust === "custom_ca" && (
-            <div className="grid gap-2 text-sm">
-              <label htmlFor="vnc-ca-bundle">
-                {t(($) => {
-                  return $.vnc.security.caBundle;
-                })}
-              </label>
-              <Textarea
-                id="vnc-ca-bundle"
-                name="caBundle"
-                required
-                maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
-                aria-describedby="vnc-ca-help"
-                value={editor.caBundle}
-                onChange={(event) => {
-                  editCaBundle(event.currentTarget.value);
-                }}
-                placeholder={t(($) => {
-                  return $.vnc.security.caHint;
-                })}
-                className="min-h-32 font-mono text-xs"
-              />
-              <p id="vnc-ca-help" className="text-muted-foreground">
-                {t(($) => {
-                  return $.vnc.security.caHelp;
-                })}
-              </p>
-            </div>
-          )}
-        </>
+        </div>
       )}
     </div>
   );
