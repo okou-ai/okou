@@ -17,7 +17,6 @@ import {
   updateVncCredentialRequestSchema,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
-import { agentVncAccessContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { VNC_ERROR_CODES } from "@okouai/api-contracts/contracts/vnc-errors";
 import { accept } from "../lib/accept.ts";
 import { authenticatedSessionKey$, clerk$, user$ } from "./auth.ts";
@@ -67,7 +66,6 @@ export const vncClients$ = computed(async (get) => {
     identity,
     connections: createClient(vncConnectionsContract, options),
     credentials: createClient(vncCredentialsContract, options),
-    access: createClient(agentVncAccessContract, options),
   };
 });
 
@@ -80,7 +78,7 @@ export const invalidateVnc$ = command(({ set }) => {
 });
 
 export const retryVnc$ = command(({ set }) => {
-  // Grant views also depend on shared Agent data that may have failed to load.
+  // Remote settings also depend on shared Agent data that may have failed to load.
   set(reloadAgents$);
   set(reloadAgentById$);
   set(invalidateVnc$);

@@ -1,4 +1,3 @@
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -182,9 +181,6 @@ test.each([2])(
 function mockCatalog() {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, []);
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: false });
-  });
 }
 
 async function page(path = "/connectors") {

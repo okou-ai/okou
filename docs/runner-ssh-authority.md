@@ -85,11 +85,11 @@ owner advisory lock; shared rotation locks referencing hosts in stable ID order
 before the credential, matching the connection-first pin/observation lock order.
 Encryption occurs before row locks; the credential revision is rechecked after
 locking. Invalidation is best-effort after commit, not part of that transaction.
-The Run-wide hook accepts an Agent scope. Explicit per-user Agent grant changes
-use that scope; automatic visible-Agent authorization when creating the first
-host invalidates the current user's active Runs. Discovery does not depend on
-a surviving grant. Current Agent visibility is rechecked on live inventory and
-actual resolve/pin calls; the accepted cache lifetime below remains unchanged.
+The Run-wide hook remains available for shared credential rotation. Creating
+a host targets its own connection ID instead of changing Agent-wide grants.
+Recipient discovery does not depend on a grant. Current Agent visibility is
+rechecked on live inventory and actual resolve/pin calls; the accepted cache
+lifetime below remains unchanged.
 
 Notices are sent after commit and before the request observes cancellation. A
 failed publish is logged, not reported as failure of the already-committed edit.
@@ -218,17 +218,16 @@ must not be activated on that Runner. See the activation gate below.
 Pin and observation retain host-first locking and recheck protected authority
 through the non-null configuration with a share lock. Owner mutations use the
 owner advisory lock, ordered affected-host locks, then configuration locks.
-Legacy SSH-grant edits retain their existing Agent-lock boundary. Token replacement
-advances both config generation and every referencing host generation atomically.
+Token replacement advances both config generation and every referencing host
+generation atomically.
 Metadata rename advances only config revision. Configurations have no separate
 enabled state. Host pins survive rotation, rebinding and every transition
 involving Access; explicit reset clears protected trust. Direct-to-Direct endpoint edits retain their
 existing behavior.
 
 Access mutations publish identifier-only invalidations for captured affected
-connection IDs, scoped to owner Runs. SSH-grant changes invalidate both transport
-modes for that owner's affected Agent Runs, including after revocation. Direct
-hosts are not evicted by Access configuration changes. Browser notifications use
+connection IDs, scoped to owner Runs. Direct hosts are not evicted by Access
+configuration changes. Browser notifications use
 the existing owner `ssh:changed` topic with `{orgId}`, including for unreferenced
 configurations and metadata-only edits.
 Rename does not interrupt runtime sessions. Notifications remain best effort;

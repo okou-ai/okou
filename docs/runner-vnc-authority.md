@@ -160,11 +160,12 @@ no 30-second lease or promise to disconnect an idle session within that interval
 Per-operation enforcement and real-server multi-client behavior must be verified
 before activation. This API slice alone does not enforce a live Runner socket.
 
-Owner cleanup removes connections, credentials and grants, including grants
-without connections. It locks grant-owning Agent parents in stable order before
-business rows so concurrent Agent deletion cannot invert its Run-to-grant
-cascade order. Grant/configuration writes retain the existing cleanup and
-owner admission. KMS and Clerk calls never run under these locks.
+Owner cleanup still removes retained historical grants, including rows without
+connections, while older API instances drain. It locks grant-owning Agent
+parents in stable order before business rows so concurrent Agent deletion
+cannot invert its Run-to-grant cascade order. Current host configuration writes
+retain cleanup and owner admission. KMS and Clerk calls never run under these
+locks.
 
 ## Deployment
 

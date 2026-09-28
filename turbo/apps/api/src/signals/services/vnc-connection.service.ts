@@ -4,8 +4,6 @@ import type {
   VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { agents } from "@okouai/db/schema/agent";
-import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
@@ -13,7 +11,6 @@ import { and, asc, count, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import {
   canonicalizeVncHost,
   isVncProfileCompatible,
@@ -176,26 +173,6 @@ async function hasReferencedSshConnection(
   );
 }
 
-async function lockVisibleAgentsForFirstHost(
-  tx: VncTransaction,
-  owner: VncOwner,
-): Promise<{ id: string }[]> {
-  if ((await summarizeVncConnections(tx, owner)).configuredCount !== 0) {
-    return [];
-  }
-  return await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, owner.orgId),
-        visibleJoinedAgentCondition(owner.userId),
-      ),
-    )
-    .orderBy(asc(agents.id))
-    .for("update");
-}
-
 export async function listVncConnections(
   db: ReadonlyDb,
   owner: VncOwner,
@@ -219,24 +196,6 @@ export async function listVncConnections(
   return rows.map(({ connection, credential }) => {
     return response(connection, credential);
   });
-}
-
-async function grantFirstHostAccess(
-  tx: VncTransaction,
-  owner: VncOwner,
-  visibleAgents: readonly { readonly id: string }[],
-): Promise<void> {
-  if (visibleAgents.length === 0) {
-    return;
-  }
-  await tx
-    .insert(agentVncAccess)
-    .values(
-      visibleAgents.map((agent) => {
-        return { ...owner, agentId: agent.id };
-      }),
-    )
-    .onConflictDoNothing();
 }
 
 export async function summarizeVncConnections(
@@ -378,9 +337,6 @@ export async function createVncConnection(args: {
       ) {
         return vncFailure("profileMismatch");
       }
-      // Match SSH's zero-to-one host transition, including re-adding after all
-      // hosts were deleted. enterVncWrite serializes concurrent owner writes.
-      const visibleAgents = await lockVisibleAgentsForFirstHost(tx, owner);
       const [created] = await tx
         .insert(vncConnections)
         .values({
@@ -398,7 +354,6 @@ export async function createVncConnection(args: {
       if (!created) {
         throw new Error("VNC connection insert returned no row");
       }
-      await grantFirstHostAccess(tx, owner, visibleAgents);
       return { ok: true as const, value: response(created, credential.value) };
     }),
   );

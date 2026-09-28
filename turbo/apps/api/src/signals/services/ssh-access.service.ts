@@ -2,15 +2,13 @@ import { sshHostSchema } from "@okouai/api-contracts/contracts/ssh-access";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { and, asc, eq, or } from "drizzle-orm";
 
-import type { Db, ReadonlyDb } from "../external/db";
+import type { ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 import {
   runThreadExists,
   runThreadSshAccess,
@@ -20,70 +18,6 @@ interface Owner {
   readonly orgId: string;
   readonly userId: string;
 }
-interface AgentAccessScope extends Owner {
-  readonly agentId: string;
-}
-
-function visibleAgent(owner: AgentAccessScope) {
-  return and(
-    eq(agents.id, owner.agentId),
-    eq(agents.orgId, owner.orgId),
-    visibleJoinedAgentCondition(owner.userId),
-  );
-}
-
-function ownedGrant(owner: AgentAccessScope) {
-  return and(
-    eq(agentSshAccess.agentId, owner.agentId),
-    eq(agentSshAccess.orgId, owner.orgId),
-    eq(agentSshAccess.userId, owner.userId),
-  );
-}
-
-export async function getAgentSshAccess(
-  db: ReadonlyDb,
-  owner: AgentAccessScope,
-) {
-  const [row] = await db
-    .select({ grant: agentSshAccess.agentId })
-    .from(agents)
-    .leftJoin(agentSshAccess, ownedGrant(owner))
-    .where(visibleAgent(owner));
-  return row ? { enabled: row.grant !== null } : null;
-}
-
-export async function updateAgentSshAccess(
-  db: Db,
-  owner: AgentAccessScope,
-  enabled: boolean,
-  signal: AbortSignal,
-) {
-  const result = await db.transaction(async (tx) => {
-    const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(visibleAgent(owner))
-      .for("update");
-    signal.throwIfAborted();
-    if (!agent) {
-      return null;
-    }
-    if (enabled) {
-      await tx.insert(agentSshAccess).values(owner).onConflictDoNothing();
-    } else {
-      await tx.delete(agentSshAccess).where(ownedGrant(owner));
-    }
-    signal.throwIfAborted();
-    return { enabled };
-  });
-  if (result) {
-    // The grant may already be deleted. Discover recipients through owner Runs.
-    await publishSshRuntimeInvalidation(db, { ...owner, connectionId: null });
-  }
-  signal.throwIfAborted();
-  return result;
-}
-
 function runSshHostRows(
   db: ReadonlyDb,
   owner: Owner & { readonly runId: string },

@@ -67,6 +67,23 @@ Follow-up cleanup, in order:
    once no supported client reads it, then drop the column in a later release
    after the rollback floor passes the first step.
 
+## SSH/VNC Agent-grant interface contraction (#36360)
+
+The live Run and Runner authority uses exact chat host defaults/overrides (cutover
+#36440, switch graduation #37235). This step retires the old owner Agent-grant
+GET/PUT routes, public contracts and first-host auto-grant inserts. An older
+client calling those routes cannot gain new broad host authority; the new API
+has no handler for them. Current SSH/VNC host inventory and private Runner
+checks continue to require the Run's chat permission.
+
+The physical `agent_ssh_access` and `agent_vnc_access` tables remain in this
+release. Production migrations precede API promotion, so a still-serving older
+API may read or write those rows during the overlap. Existing rows never
+authorize access on the new API. The owner does not require preserving rollback
+to a pre-cutover API for this cleanup. Physical table removal (#37272) is a
+separate deployment: first confirm every serving API instance that references
+the tables has drained; do not infer drain from this PR's merge or deployment.
+
 ## Video model columns and `video_model_updated` dropped (#37249)
 
 Final contract step of the video retirement (#37242, #37256).
@@ -1031,7 +1048,9 @@ arbitrate duplicate IDs. A losing insert rolls back the whole transaction,
 including any inline credential, before resolving an owned replay or an ID
 conflict. Only the requested table's primary-key violation is handled; unrelated
 constraint and database failures still propagate. Existing-resource VNC replays
-still skip KMS. The owner lifecycle locks and first-host Agent grants remain.
+still skip KMS. At that release, the owner lifecycle locks and first-host
+Agent grants remained; the later [grant contraction](#sshvnc-agent-grant-interface-contraction-36360)
+retired first-host writes.
 
 Banking Connect creates sessions under a short `FOR NO KEY UPDATE` lock on the
 existing connection row, retaining the partial unique index for one pending

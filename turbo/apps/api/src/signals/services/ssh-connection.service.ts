@@ -7,8 +7,6 @@ import type {
   UpdateSshConnectionRequest,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { agents } from "@okouai/db/schema/agent";
-import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import {
   findSshCredential,
@@ -30,7 +28,6 @@ import { safeSqlStateCode } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 import {
@@ -459,26 +456,6 @@ export async function summarizeSshConnections(
   };
 }
 
-async function lockVisibleAgentsForFirstHost(
-  tx: Transaction,
-  owner: { readonly orgId: string; readonly userId: string },
-) {
-  if ((await countOwnerConnections(tx, owner.orgId, owner.userId)) !== 0) {
-    return [];
-  }
-  return await tx
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, owner.orgId),
-        visibleJoinedAgentCondition(owner.userId),
-      ),
-    )
-    .orderBy(asc(agents.id))
-    .for("update");
-}
-
 export async function createSshConnection(
   args: CreateSshConnectionArgs,
 ): Promise<SshConnectionResult<SshConnectionResponse | undefined>> {
@@ -519,7 +496,6 @@ export async function createSshConnection(
           return {
             ok: true as const,
             value: undefined,
-            authorizedAgents: false,
             createdAccess: false,
           };
         }
@@ -547,9 +523,6 @@ export async function createSshConnection(
           preparedAccess,
           accessId,
         );
-        // Match Connector's zero-to-one account transition, including re-adding
-        // after all hosts were deleted. The owner lock serializes concurrent adds.
-        const visibleAgents = await lockVisibleAgentsForFirstHost(tx, args);
         const [connection] = await tx
           .insert(sshConnections)
           .values({
@@ -566,24 +539,9 @@ export async function createSshConnection(
         if (!connection) {
           throw new Error("SSH connection insert returned no row");
         }
-        if (visibleAgents.length > 0) {
-          await tx
-            .insert(agentSshAccess)
-            .values(
-              visibleAgents.map((agent) => {
-                return {
-                  orgId: args.orgId,
-                  userId: args.userId,
-                  agentId: agent.id,
-                };
-              }),
-            )
-            .onConflictDoNothing();
-        }
         return {
           ok: true as const,
           value: toSshConnectionResponse(connection, credential.value),
-          authorizedAgents: visibleAgents.length > 0,
           createdAccess: selectedAccess.created,
         };
       }),
@@ -603,7 +561,7 @@ export async function createSshConnection(
     await publishSshConnectionMutationInvalidation(
       args.db,
       args,
-      result.authorizedAgents ? null : result.value.id,
+      result.value.id,
       result.createdAccess,
     );
   }

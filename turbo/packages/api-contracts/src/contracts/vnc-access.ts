@@ -6,8 +6,6 @@ import { sshHostAvailabilitySchema } from "./ssh-access";
 import { vncConnectionMetadataSchema } from "./vnc-connections";
 
 const c = initContract();
-const agentPath = z.object({ agentId: z.uuid() }).strict();
-const accessSchema = z.object({ enabled: z.boolean() }).strict();
 const errors = {
   400: apiErrorSchema,
   401: apiErrorSchema,
@@ -63,26 +61,6 @@ export const vncHostSchema = z.discriminatedUnion("securityType", [
     })
     .strict(),
 ]);
-
-export const agentVncAccessContract = c.router({
-  get: {
-    method: "GET",
-    path: "/api/agents/:agentId/vnc-access",
-    pathParams: agentPath,
-    headers: authHeadersSchema,
-    responses: { 200: accessSchema, ...errors },
-    summary: "Read the owner's Agent VNC access",
-  },
-  update: {
-    method: "PUT",
-    path: "/api/agents/:agentId/vnc-access",
-    pathParams: agentPath,
-    headers: authHeadersSchema,
-    body: accessSchema,
-    responses: { 200: accessSchema, ...errors },
-    summary: "Explicitly grant or revoke access to current owner VNC hosts",
-  },
-});
 
 export const vncHostsContract = c.router({
   list: {
