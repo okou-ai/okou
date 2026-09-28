@@ -775,14 +775,19 @@ describe("CHAT-02: queueing and recalling messages", () => {
       },
       [201],
     );
-    expect(queuedRetry.body).toStrictEqual(queued.body);
+    expect(queuedRetry.body).toStrictEqual({
+      runId: null,
+      threadId: first.threadId,
+      createdAt: expect.any(String),
+    });
     await expectNoThreadModelUpdateEvent(
       actor,
       first.threadId,
       "claude-opus-5",
     );
 
-    // Another user's send cannot claim the queued message's client id.
+    // Another user's send cannot claim the queued message's client id: the
+    // conflicting insert is accepted as a duplicate and appends nothing.
     const { actor: stranger, agentId: strangerAgentId } =
       await entitledNativeChatActor();
     const strangerThread = await chat.createThread(stranger, {
@@ -797,12 +802,13 @@ describe("CHAT-02: queueing and recalling messages", () => {
         prompt: "cross-user retry",
         clientEventId: queuedId,
       },
-      [409],
+      [201],
     );
-    expectApiError(crossUser.body);
-    expect(crossUser.body.error.message).toBe(
-      "clientEventId is already in use",
-    );
+    expect(crossUser.body).toStrictEqual({
+      runId: null,
+      threadId: strangerThread.id,
+      createdAt: expect.any(String),
+    });
     const strangerMessages = await chat.listThreadEvents(
       stranger,
       strangerThread.id,

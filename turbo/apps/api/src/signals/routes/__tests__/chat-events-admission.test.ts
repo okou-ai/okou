@@ -293,6 +293,35 @@ describe("CHAT-02: web chat send and client ids", () => {
       "Only the private agent owner can run this agent",
     );
   }, 30_000);
+
+  it("rejects an existing-thread send naming another agent than the thread's", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    const threadAgent = await bdd.createAgent(actor, {
+      displayName: "Thread owner agent",
+    });
+    const otherAgent = await bdd.createAgent(actor, {
+      displayName: "Other agent in the same org",
+    });
+    const thread = await chat.createThread(actor, {
+      agentId: threadAgent.agentId,
+      title: "Agent mismatch thread",
+    });
+
+    const mismatched = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: otherAgent.agentId,
+        threadId: thread.id,
+        prompt: "send through the wrong agent",
+      },
+      [404],
+    );
+    expectApiError(mismatched.body);
+    expect(mismatched.body.error.message).toBe("Chat thread not found");
+    const events = await chat.listThreadEvents(actor, thread.id);
+    expect(events.events).toStrictEqual([]);
+  }, 30_000);
 });
 
 describe("CHAT-02: interrupting active chat runs", () => {
@@ -462,8 +491,9 @@ describe("CHAT-02: interrupting active chat runs", () => {
       "Only active chat runs can be interrupted",
     );
 
-    // The interrupt's client message id is burned for normal sends.
-    const reusedInterruptId = await chat.requestSendEvent(
+    // The interrupt's client message id is burned for normal sends: the
+    // conflicting send is accepted as a duplicate and enqueues nothing.
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -471,12 +501,16 @@ describe("CHAT-02: interrupting active chat runs", () => {
         prompt: "reuse the interrupt client id",
         clientEventId: interruptId,
       },
-      [409],
+      [201],
     );
-    expectApiError(reusedInterruptId.body);
-    expect(reusedInterruptId.body.error.message).toBe(
-      "clientEventId is already in use",
-    );
+    const afterReuse = await chat.listThreadEvents(actor, first.threadId);
+    expect(
+      afterReuse.events.filter((message) => {
+        return JSON.stringify(message).includes(
+          "reuse the interrupt client id",
+        );
+      }),
+    ).toStrictEqual([]);
 
     // Neither cancelled round saved native history, so the next run replays
     // both rounds in a fresh session.

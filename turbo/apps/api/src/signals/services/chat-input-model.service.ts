@@ -19,6 +19,7 @@ import {
   resolveDefaultModelFirstPin,
   resolveModelSelectionPin,
 } from "./model-selection.service";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 /** Capture an input's model once, using the workspace default when unavailable. */
 export async function resolveChatInputModelSelection(
@@ -30,6 +31,8 @@ export async function resolveChatInputModelSelection(
     readonly codexServiceTier: CodexServiceTier | null;
     readonly modelSettings: ModelSettings;
     readonly reasoningEffort?: ReasoningEffort;
+    /** The organization's plan, when the caller already read it in this request. */
+    readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
   },
 ) {
   let selectedModel = args.selectedModel;
@@ -43,6 +46,7 @@ export async function resolveChatInputModelSelection(
           modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
           selectedModel,
         },
+        orgPlanCapabilities: args.orgPlanCapabilities,
       })
     : null;
   if (!selected || "status" in selected) {
@@ -51,6 +55,7 @@ export async function resolveChatInputModelSelection(
       args.orgId,
       args.userId,
       "workspace",
+      args.orgPlanCapabilities,
     );
     selectedModel = workspaceDefault.selectedModel;
     codexServiceTier = null;

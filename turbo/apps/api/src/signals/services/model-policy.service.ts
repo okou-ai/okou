@@ -618,12 +618,21 @@ async function ensureOrgModelPoliciesLocked(
   };
 }
 
+/**
+ * A caller that already read the organization's plan in this request supplies
+ * it; otherwise the plan and the policies are read in parallel.
+ */
 export async function loadOrgModelPolicyFacts(
   db: Db,
   orgId: string,
+  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
 ): Promise<EnsuredOrgModelPolicyFacts> {
-  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
-  const policies = await loadRows(db, orgId);
+  const [orgPlanCapabilities, policies] = await Promise.all([
+    suppliedPlanCapabilities === undefined
+      ? loadOrgPlanCapabilities(db, orgId)
+      : suppliedPlanCapabilities,
+    loadRows(db, orgId),
+  ]);
   return {
     orgPlanCapabilities,
     policies: sortRowsByCatalog(policies),
@@ -634,8 +643,13 @@ export async function ensureOrgModelPolicyFacts(
   db: Db,
   orgId: string,
   userId: string,
+  suppliedPlanCapabilities?: OrgPlanCapabilities | null,
 ): Promise<EnsuredOrgModelPolicyFacts> {
-  const initial = await loadOrgModelPolicyFacts(db, orgId);
+  const initial = await loadOrgModelPolicyFacts(
+    db,
+    orgId,
+    suppliedPlanCapabilities,
+  );
   const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
   if (
     initial.policies.length > 0 &&

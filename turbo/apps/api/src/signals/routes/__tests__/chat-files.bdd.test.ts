@@ -438,13 +438,17 @@ describe("CHAT-02 chat messages and visible validation", () => {
         prompt: "Reuse the client message id in another thread",
         clientEventId,
       },
-      [409],
+      [201],
     );
-    expectApiError(duplicateAcrossThreads.body);
-    expect(duplicateAcrossThreads.body.error.code).toBe("CONFLICT");
-    expect(duplicateAcrossThreads.body.error.message).toBe(
-      "clientEventId is already in use",
+    expect(duplicateAcrossThreads.body).toMatchObject({
+      runId: null,
+      threadId: secondThread.id,
+    });
+    const secondThreadEvents = await api.listThreadEvents(
+      actor,
+      secondThread.id,
     );
+    expect(secondThreadEvents.events).toStrictEqual([]);
 
     if (!rejectedUserMessage) {
       throw new Error("Expected the no-credit send to create a user message");

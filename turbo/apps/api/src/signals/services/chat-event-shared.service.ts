@@ -196,6 +196,43 @@ export async function touchChatThreadLastMessageAtIndependently(
   });
 }
 
+/**
+ * A direct send's sidebar touch, run after the pick. The send already
+ * authorized the thread and knows its identity, so this does not re-read the
+ * thread; unlike a run's terminal touch, it never unarchives it.
+ */
+export async function touchSentChatThreadSort(
+  db: Db,
+  args: {
+    readonly threadId: string;
+    readonly userId: string;
+    readonly orgId: string;
+    readonly agentId: string;
+    readonly touchedAt: Date;
+    readonly eventId: string | undefined;
+  },
+): Promise<void> {
+  await attemptChatEventSideEffect("last_message_at", args.threadId, () => {
+    return db
+      .update(chatThreads)
+      .set({
+        lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${args.touchedAt.toISOString()}::timestamp)`,
+      })
+      .where(eq(chatThreads.id, args.threadId));
+  });
+  await attemptChatEventSideEffect("sort_touched", args.threadId, () => {
+    return appendChatThreadEvent(db, {
+      kind: "sort_touched",
+      userId: args.userId,
+      orgId: args.orgId,
+      chatThreadId: args.threadId,
+      agentId: args.agentId,
+      eventId: args.eventId,
+      createdAt: args.touchedAt,
+    });
+  });
+}
+
 export async function touchChatThreadLastMessageAt(
   tx: ChatThreadEventTransaction,
   threadId: string,

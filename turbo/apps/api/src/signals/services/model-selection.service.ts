@@ -152,11 +152,21 @@ async function prepareModelRoutingFacts(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly selectedModel: string | null;
+  readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
 }): Promise<ModelRoutingFacts> {
   const policyFactsPromise =
     params.userId === "__no_preference__"
-      ? loadOrgModelPolicyFacts(params.db, params.orgId)
-      : ensureOrgModelPolicyFacts(params.db, params.orgId, params.userId);
+      ? loadOrgModelPolicyFacts(
+          params.db,
+          params.orgId,
+          params.orgPlanCapabilities,
+        )
+      : ensureOrgModelPolicyFacts(
+          params.db,
+          params.orgId,
+          params.userId,
+          params.orgPlanCapabilities,
+        );
   const [policyFacts, member] = await Promise.all([
     policyFactsPromise,
     prepareMemberModelRouteContext(params.db, params.orgId, params.userId),
@@ -206,17 +216,23 @@ async function resolveValidPolicyRoute(params: {
     : null;
 }
 
+/**
+ * `orgPlanCapabilities` is the organization's plan when the caller already
+ * read it in this request; omitted, the plan is read with the policies.
+ */
 export async function resolveDefaultModelFirstPin(
   db: Db,
   orgId: string,
   userId: string,
   defaultSource: "member" | "workspace" = "member",
+  orgPlanCapabilities?: OrgPlanCapabilities | null,
 ): Promise<DefaultModelFirstPin> {
   const facts = await prepareModelRoutingFacts({
     db,
     orgId,
     userId,
     selectedModel: null,
+    orgPlanCapabilities,
   });
   const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
   if (defaultSource === "member" && userId !== "__no_preference__") {
@@ -314,6 +330,8 @@ export async function resolveModelSelectionPin(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly modelSelection: ModelSelectionRequest;
+  /** The organization's plan, when the caller already read it in this request. */
+  readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
 }): Promise<
   | ModelFirstPin
   | ReturnType<typeof badRequestMessage>
@@ -323,9 +341,12 @@ export async function resolveModelSelectionPin(params: {
   if (getRunModelAccess(modelSelection.selectedModel) === "retired") {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
   }
-  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
-  const capabilities = modelRouteCapabilities(orgPlanCapabilities);
   if (modelSelection.modelProviderId !== MODEL_FIRST_SELECTION_PROVIDER_ID) {
+    const capabilities = modelRouteCapabilities(
+      params.orgPlanCapabilities === undefined
+        ? await loadOrgPlanCapabilities(db, orgId)
+        : params.orgPlanCapabilities,
+    );
     const provider = await loadAvailableModelProviderPin({
       db,
       orgId,
@@ -367,6 +388,7 @@ export async function resolveModelSelectionPin(params: {
     orgId,
     userId,
     selectedModel: modelSelection.selectedModel,
+    orgPlanCapabilities: params.orgPlanCapabilities,
   });
   // Resolve the configured route without plan filtering first. Model access is
   // decided from that route so BYOK never inherits a built-in-only model gate.
@@ -437,6 +459,50 @@ async function resolveEffectiveModelProviderType(params: {
   return provider?.type ?? params.requestedModelProvider;
 }
 
+/** Whether the pinned custom surface maps the model for the effective provider. */
+async function customSurfaceMapsModel(params: {
+  readonly db: Db;
+  readonly orgId: string;
+  readonly modelProviderId: string | null;
+  readonly effectiveModelProvider: string | null | undefined;
+  readonly selectedModel: string;
+}): Promise<boolean> {
+  if (params.modelProviderId === null) {
+    return false;
+  }
+  const [customSurface] = await params.db
+    .select({
+      protocol: modelProviderSurfaces.protocol,
+      modelMappings: modelProviderSurfaces.modelMappings,
+    })
+    .from(modelProviderSurfaces)
+    .innerJoin(
+      modelProviderConnections,
+      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
+    )
+    .where(
+      and(
+        eq(modelProviderSurfaces.id, params.modelProviderId),
+        eq(modelProviderConnections.orgId, params.orgId),
+      ),
+    )
+    .limit(1);
+  const surfaceProviderType = customSurface
+    ? providerTypeForSurfaceProtocol(customSurface.protocol)
+    : null;
+  return (
+    surfaceProviderType !== null &&
+    surfaceProviderType === params.effectiveModelProvider &&
+    typeof customSurface?.modelMappings[params.selectedModel] === "string"
+  );
+}
+
+/**
+ * `trust-enqueued` skips re-validating that the resolved provider supports
+ * the model an enqueue already captured; a mismatch fails at execution.
+ */
+export type ProviderModelSupport = "validate" | "trust-enqueued";
+
 export async function resolveModelFirstProviderAdmission(params: {
   readonly db: Db;
   readonly orgId: string;
@@ -444,6 +510,7 @@ export async function resolveModelFirstProviderAdmission(params: {
   readonly modelPin: ModelFirstPin;
   readonly requestedModelProvider: string | undefined;
   readonly externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource;
+  readonly providerModelSupport: ProviderModelSupport;
 }): Promise<{
   readonly effectiveModelProvider: string | null | undefined;
   readonly cliAgentType: SupportedFramework | null;
@@ -454,34 +521,6 @@ export async function resolveModelFirstProviderAdmission(params: {
   const effectiveModelProvider =
     await resolveEffectiveModelProviderType(params);
   const selectedModel = params.modelPin.selectedModel;
-  const [customSurface] =
-    params.modelPin.modelProviderId === null
-      ? []
-      : await params.db
-          .select({
-            protocol: modelProviderSurfaces.protocol,
-            modelMappings: modelProviderSurfaces.modelMappings,
-          })
-          .from(modelProviderSurfaces)
-          .innerJoin(
-            modelProviderConnections,
-            eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-          )
-          .where(
-            and(
-              eq(modelProviderSurfaces.id, params.modelPin.modelProviderId),
-              eq(modelProviderConnections.orgId, params.orgId),
-            ),
-          )
-          .limit(1);
-  const customSurfaceProviderType = customSurface
-    ? providerTypeForSurfaceProtocol(customSurface.protocol)
-    : null;
-  const usesCustomSurface =
-    customSurfaceProviderType !== null &&
-    customSurfaceProviderType === effectiveModelProvider &&
-    isSupportedRunModel(selectedModel) &&
-    typeof customSurface?.modelMappings[selectedModel] === "string";
   const parsedProvider = modelProviderTypeSchema.safeParse(
     effectiveModelProvider,
   );
@@ -495,10 +534,17 @@ export async function resolveModelFirstProviderAdmission(params: {
       )
     : null;
   if (
+    params.providerModelSupport === "validate" &&
     isSupportedRunModel(selectedModel) &&
-    !usesCustomSurface &&
     (!knownProvider ||
-      !isModelSupportedByProvider(selectedModel, knownProvider))
+      !isModelSupportedByProvider(selectedModel, knownProvider)) &&
+    !(await customSurfaceMapsModel({
+      db: params.db,
+      orgId: params.orgId,
+      modelProviderId: params.modelPin.modelProviderId,
+      effectiveModelProvider,
+      selectedModel,
+    }))
   ) {
     return {
       effectiveModelProvider,
