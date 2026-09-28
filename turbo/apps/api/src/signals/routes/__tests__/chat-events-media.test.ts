@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   DEFAULT_IMAGE_MODEL,
   DEFAULT_IMAGE_MODEL_ENV,
@@ -33,6 +32,7 @@ const {
   sendChatRun,
   sendWaitingChatInput,
   claimChatRun,
+  waitForRunStatus,
   cancelChatRun,
 } = createChatEventsFixture(context);
 
@@ -480,22 +480,15 @@ describe("CHAT-02: run image model snapshot", () => {
     await chat.updateUserModelPreference(actor, null, "gpt-image-2");
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
 
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "image snapshot survives pre-runner dispatch failure",
-        clientEventId: randomUUID(),
-      },
-      [201],
+    // The pick creates the run and fails it when dispatch cannot start.
+    const sent = await sendChatRun(actor, {
+      agentId,
+      prompt: "image snapshot survives pre-runner dispatch failure",
+    });
+    await waitForRunStatus(actor, sent.runId, "failed");
+    await expect(readRunImageModelSnapshotFixture(sent.runId)).resolves.toBe(
+      "gpt-image-2",
     );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected the failed dispatch to create a run");
-    }
-    expect(sent.body.status).toBe("failed");
-    await expect(
-      readRunImageModelSnapshotFixture(sent.body.runId),
-    ).resolves.toBe("gpt-image-2");
   }, 90_000);
 
   it("persists the resolved image model on a run picked from the org queue", async () => {

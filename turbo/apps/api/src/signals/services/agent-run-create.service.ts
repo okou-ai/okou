@@ -1047,7 +1047,6 @@ type CreateRunRouteResult =
   | ApiErrorResponse<404, "NOT_FOUND">
   | ApiErrorResponse<409, "CONFLICT">
   | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
-  | ApiErrorResponse<429, "CONCURRENT_RUN_LIMIT">
   | ApiErrorResponse<429, "PI_INFERENCE_BUSY">
   | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
 
@@ -1141,11 +1140,6 @@ export interface CreateAgentRunArgs {
   readonly connectorScope: ExplicitConnectorScope;
   readonly validateEnvironmentReferences?: boolean;
   readonly agentRunMetadata?: AgentRunMetadata;
-  /**
-   * Admit without the organization capacity check. The run still occupies an
-   * active slot and counts toward later capacity checks.
-   */
-  readonly ignoreConcurrencyLimit?: boolean;
   /** Require initial Built-in credits; this does not grant deficit continuation. */
   readonly enforceBuiltInCredits?: boolean;
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
@@ -1258,18 +1252,6 @@ function insufficientCredits(): ApiErrorResponse<402, "INSUFFICIENT_CREDITS"> {
       error: {
         message: "Insufficient credits. Please add credits to continue.",
         code: "INSUFFICIENT_CREDITS",
-      },
-    },
-  };
-}
-
-function concurrentRunLimit(): ApiErrorResponse<429, "CONCURRENT_RUN_LIMIT"> {
-  return {
-    status: 429,
-    body: {
-      error: {
-        message: "Concurrent run limit reached",
-        code: "CONCURRENT_RUN_LIMIT",
       },
     },
   };
@@ -5896,14 +5878,14 @@ async function buildPermissionManifest(
 }
 
 /**
- * Coarse count of the org's sandbox-occupying runs, taken without a lock by
- * preflight, queue pickers, and final admission alike. Concurrent launches may
- * overshoot the limit.
+ * Lock-free coarse capacity read, taken only by the queue pick before it
+ * consumes a head. Run creation itself does not check capacity. Concurrent
+ * pickers may both see a free slot, so the limit is soft.
  */
-async function checkRunConcurrencyLimit(
+export async function orgHasRunCapacity(
   db: Pick<Db, "select">,
   orgId: string,
-): Promise<CreateRunErrorResult | null> {
+): Promise<boolean> {
   const at = nowDate();
   const state = await loadOrgConcurrencyAdmissionState(db, {
     orgId,
@@ -5914,21 +5896,7 @@ async function checkRunConcurrencyLimit(
     state.baseConcurrencyLimit,
     state.paidSlots,
   );
-  if (limit === 0) {
-    return null;
-  }
-  return state.activeRunCount >= limit ? concurrentRunLimit() : null;
-}
-
-/**
- * Lock-free coarse capacity read for queue pickers. Concurrent pickers may
- * both see a free slot; the launch's own final count stays authoritative.
- */
-export async function orgHasRunCapacity(
-  db: Pick<Db, "select">,
-  orgId: string,
-): Promise<boolean> {
-  return (await checkRunConcurrencyLimit(db, orgId)) === null;
+  return limit === 0 || state.activeRunCount < limit;
 }
 
 async function checkFinalRunAdmission(
@@ -8414,24 +8382,6 @@ async function persistAtomicLaunchRows(
   return persisted;
 }
 
-/**
- * Early rejection only. Final admission re-checks the same coarse capacity
- * count inside the launch transaction, so this read needs no lock.
- */
-async function checkRunConcurrencyPreflight(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly timing: ApiDispatchTimingCollector;
-}): Promise<CreateRunErrorResult | null> {
-  return await args.timing.measure(
-    "api_dispatch_concurrency_preflight_check",
-    "nested",
-    async () => {
-      return await checkRunConcurrencyLimit(args.db, args.orgId);
-    },
-  );
-}
-
 async function resolveQueueFirstAdmissionForLaunch(args: {
   readonly tx: DbTransaction;
   readonly createArgs: CreateAgentRunArgs;
@@ -9032,24 +8982,6 @@ async function commitValidatedPreparedLaunch(
     });
   }
   const validatedThreadSession = threadSessionValidation;
-  const concurrency = await args.admissionTiming.measureLeaf(
-    "concurrency",
-    () => {
-      return args.timing.measure(
-        "api_dispatch_check_concurrency_limit",
-        "nested",
-        async () => {
-          return args.createArgs.ignoreConcurrencyLimit
-            ? null
-            : await checkRunConcurrencyLimit(tx, args.createArgs.orgId);
-        },
-      );
-    },
-  );
-
-  if (concurrency) {
-    return concurrency;
-  }
 
   const queueFirstClaim = args.createArgs.queueFirstAssociation
     ? await args.admissionTiming.measureLeaf("queue_first", async () => {
@@ -11278,17 +11210,6 @@ const createAtomicLaunchRun$ = command(
     const identity = prepareLaunchRunIdentity({
       resolved: input.context.resolved,
     });
-    if (!input.args.ignoreConcurrencyLimit) {
-      const preflightConcurrency = await checkRunConcurrencyPreflight({
-        db: input.db,
-        orgId: input.args.orgId,
-        timing: input.timing,
-      });
-      signal.throwIfAborted();
-      if (preflightConcurrency) {
-        return preflightConcurrency;
-      }
-    }
 
     const callbackRows = await prepareRunCallbackRows({
       runId: identity.runId,

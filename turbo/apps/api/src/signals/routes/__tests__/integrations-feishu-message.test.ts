@@ -530,18 +530,11 @@ describe("POST /api/integrations/feishu/message", () => {
       await runsApi.ensureOrgModelProvider(actor);
       const runnerGroup = runsApi.configureRunnerGroup();
       await runsApi.heartbeatRunner(runnerGroup);
-      const sent = await chatApi.requestSendEvent(
-        actor,
-        {
-          agentId,
-          prompt: "Create a run for Feishu file upload completion",
-        },
-        [201],
-      );
-      if (sent.status !== 201 || sent.body.runId === null) {
-        throw new Error("Expected chat send to create a run for Feishu upload");
-      }
-      const token = okouToken({ ...actor, platform, runId: sent.body.runId });
+      const sent = await chatApi.sendAndLaunch(actor, {
+        agentId,
+        prompt: "Create a run for Feishu file upload completion",
+      });
+      const token = okouToken({ ...actor, platform, runId: sent.runId });
       const content = Buffer.from("feishu upload bytes");
       context.mocks.s3.getSignedUrl.mockResolvedValue(
         "https://storage.test/feishu-upload",
@@ -652,13 +645,10 @@ describe("POST /api/integrations/feishu/message", () => {
           replyInThread: false,
         },
       ]);
-      const artifacts = await chatApi.listThreadArtifacts(
-        actor,
-        sent.body.threadId,
-      );
+      const artifacts = await chatApi.listThreadArtifacts(actor, sent.threadId);
       const files =
         artifacts.runs.find((run) => {
-          return run.runId === sent.body.runId;
+          return run.runId === sent.runId;
         })?.files ?? [];
       expect(files).toHaveLength(1);
       expect(files[0]).toMatchObject({

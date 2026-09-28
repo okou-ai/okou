@@ -188,9 +188,10 @@ Notes:
   - --user-message-file sends the document as written, validated before the request
   - file parts reference an uploaded web file id (okou web upload-file)
   - The API derives the agent prompt and title state from the document itself
-  - Every normal message enters the thread queue first; an idle queue may dispatch it immediately
-  - Sending starts or queues the target run but does not wait for completion; that run has an independent lifetime
-  - Cancel a dispatched run with --run-id, or a queued message with its --event-id, using okou chat cancel
+  - The message is sent to the thread queue; the API returns without waiting for a run to start or finish
+  - Failures such as insufficient credits appear later in the thread as a rejected message, not as a send error
+  - Cancel the message while it is still queued with okou chat cancel --event-id <event-id>
+  - Sync the thread's messages with okou chat messages --thread-id <thread-id> --output-dir <directory>
   - Authenticates via OKOU_TOKEN (requires chat-thread:read and chat-event:write capabilities)`,
   )
   .action(
@@ -209,34 +210,33 @@ Notes:
         chatThreadSortEventId: randomUUID(),
         userMessage: message.userMessage,
       });
-      const queued = result.runId === null;
 
       if (options.json) {
         console.log(
           JSON.stringify({
             threadId: result.threadId,
             eventId,
-            runId: result.runId,
-            status: result.status ?? null,
             createdAt: result.createdAt ?? null,
-            messageQueued: queued,
           }),
         );
         return;
       }
 
-      console.log(
-        chalk.green(
-          queued ? "✓ Chat message queued" : "✓ Chat message dispatched",
-        ),
-      );
+      console.log(chalk.green("✓ Chat message sent"));
       console.log(chalk.dim(`  Thread: ${result.threadId}`));
       console.log(chalk.dim(`  Event:  ${eventId}`));
-      if (result.runId) {
-        console.log(chalk.dim(`  Run:    ${result.runId}`));
-      }
-      if (result.status) {
-        console.log(chalk.dim(`  Status: ${result.status}`));
-      }
+      console.log();
+      console.log("Sync the thread's messages:");
+      console.log(
+        chalk.cyan(
+          `  okou chat messages --thread-id ${result.threadId} --output-dir <directory>`,
+        ),
+      );
+      console.log("Cancel it while it is still queued:");
+      console.log(
+        chalk.cyan(
+          `  okou chat cancel --thread-id ${result.threadId} --event-id ${eventId}`,
+        ),
+      );
     }),
   );

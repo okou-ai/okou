@@ -6,7 +6,6 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
 import {
-  AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
   autonomyBudgetExhausted,
   badRequestMessage,
   conflict,
@@ -361,23 +360,12 @@ const runAutomationInner$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (result.kind === "ok" || result.kind === "enqueued") {
+    if (result.kind === "enqueued") {
+      // The pick launches or rejects the run later, in the thread.
       return {
         status: 201 as const,
-        body: {
-          runId: result.kind === "ok" ? result.runId : null,
-          chatThreadId: result.chatThreadId,
-        },
+        body: { runId: null, chatThreadId: result.chatThreadId },
       };
-    }
-    if (result.kind === "run_error") {
-      return result.response;
-    }
-    if (
-      result.kind === "conflict" &&
-      result.message === AUTONOMY_BUDGET_EXHAUSTED_MESSAGE
-    ) {
-      return autonomyBudgetExhausted();
     }
     return automationErrorResponse(result);
   },

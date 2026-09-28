@@ -12,14 +12,11 @@ import { logger } from "../../lib/log";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { tapError } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { calculateNextRun } from "./time-automation";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import {
   scheduleTriggerContext,
   type DueWorkflowAutomation,
-  type RunFailure,
   type AutomationRow,
   type RunWorkflowAutomationNowArgs,
   type RunWorkflowAutomationResult,
@@ -28,16 +25,16 @@ import {
   bindMorningBriefScheduleClaimQueueEvent,
   claimMorningBriefSchedule,
   isCanonicalMorningBriefAutomation,
-  settleMorningBriefSchedulePreRunFailure,
 } from "./morning-brief-schedule-claim.service";
 import type {
   ScheduleUnclaimed,
   WorkflowScheduleClaimPlan,
 } from "./workflow-chat-event-queue.service";
 import {
-  lockMorningBriefLegacyWriterAuthority,
-  settleSelectedLegacyMorningBriefObligation,
-} from "./morning-brief-native-schedule.service";
+  preRunFailureFromError,
+  recordPreRunFailure,
+  settleJournaledSchedulePreRunFailure,
+} from "./workflow-schedule-failure.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
@@ -53,7 +50,6 @@ import {
 
 const log = logger("WorkflowAutomationPoller");
 
-const MAX_CONSECUTIVE_FAILURES = 3;
 const DUE_BATCH_LIMIT = 200;
 // Reserved lanes never sum above the legacy tick cap. A poison head in any
 // lane cannot use the capacity reserved for fresh and one-time obligations.
@@ -109,36 +105,8 @@ async function startDueWorkflowAutomation(
           automationTimezone: automation.timezone,
           userTimezone: args.row.userTimezone,
         }) ?? undefined,
-      dispatchFailedCallbacks: dispatchFailedRunCallbacks,
     },
     signal,
-  );
-}
-
-function isRunFailure(error: unknown): error is RunFailure {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "kind" in error &&
-    (error.kind === "conflict" || error.kind === "run_error")
-  );
-}
-
-function failureMessage(error: unknown): string {
-  if (!isRunFailure(error)) {
-    return error instanceof Error ? error.message : String(error);
-  }
-  if (error.kind === "run_error") {
-    return `${error.response.status} ${error.response.body.error.code}: ${error.response.body.error.message}`;
-  }
-  return error.message;
-}
-
-function isInsufficientCreditsFailure(error: unknown): boolean {
-  return (
-    isRunFailure(error) &&
-    error.kind === "run_error" &&
-    error.response.body.error.code === "INSUFFICIENT_CREDITS"
   );
 }
 
@@ -311,12 +279,11 @@ function journaledScheduleExecution(
       // completion callback uses; only an unjournaled tick keeps the legacy
       // update that can overlap a failed-Run callback.
       if (claimId !== undefined) {
-        await settleMorningBriefSchedulePreRunFailure(args.db, {
-          automationId: automation.id,
+        await settleJournaledSchedulePreRunFailure(args.db, {
+          automation,
           claimId,
-          isCreditError: isInsufficientCreditsFailure(error),
+          failure: preRunFailureFromError(error),
         });
-        logPreRunFailure(automation, error);
         return;
       }
       // Failing before any claim is not authority to mutate the schedule: a
@@ -325,219 +292,12 @@ function journaledScheduleExecution(
       await recordPreRunFailure(
         args.db,
         automation,
-        error,
+        preRunFailureFromError(error),
         signal,
         args.scheduledAnchorAt ?? undefined,
       );
     },
   };
-}
-
-function advanceAfterPreRunFailure(
-  automation: AutomationRow,
-  failureTime: Date,
-  shouldDisable: boolean,
-): Date | null {
-  if (shouldDisable) {
-    return null;
-  }
-  if (automation.scheduleType === "cron" && automation.cronExpression) {
-    return calculateNextRun(
-      automation.cronExpression,
-      automation.timezone,
-      failureTime,
-    );
-  }
-  if (automation.scheduleType === "loop" && automation.intervalSeconds) {
-    return new Date(failureTime.getTime() + automation.intervalSeconds * 1000);
-  }
-  return null;
-}
-
-function logPreRunFailure(automation: AutomationRow, error: unknown): void {
-  const context = {
-    automationId: automation.id,
-    workflowId: automation.workflowId,
-    orgId: automation.orgId,
-    userId: automation.ownerUserId,
-    error: failureMessage(error),
-  };
-  if (isInsufficientCreditsFailure(error)) {
-    log.debug("Workflow automation skipped: insufficient credits", context);
-  } else {
-    log.error("Workflow automation pre-run failed", context);
-  }
-}
-
-async function recordSelectedMorningBriefPreRunFailure(
-  db: Db,
-  automation: AutomationRow,
-  error: unknown,
-  signal: AbortSignal,
-  stillDueAt?: Date,
-): Promise<boolean> {
-  if (
-    automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
-    automation.ownerUserId === null
-  ) {
-    return false;
-  }
-  const isCreditError = isInsufficientCreditsFailure(error);
-  const outcome = await db.transaction(async (tx) => {
-    const lineage = {
-      orgId: automation.orgId,
-      userId: automation.ownerUserId,
-      workflowId: automation.workflowId,
-      automationId: automation.id,
-    };
-    const authority = await lockMorningBriefLegacyWriterAuthority(tx, lineage);
-    if (authority.kind === "ordinary") {
-      // Additional Morning Brief installations are not durable authority. Keep
-      // their exact legacy pre-run failure path below.
-      return undefined;
-    }
-    if (authority.kind === "stale") {
-      return { disabled: false, consecutiveFailures: 0 };
-    }
-    const [current] = await tx
-      .select(workflowAutomationColumns())
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, automation.id))
-      .limit(1)
-      .for("update");
-    if (
-      current === undefined ||
-      authority.row.phase !== "legacy" ||
-      (stillDueAt !== undefined &&
-        current.nextRunAt?.getTime() !== stillDueAt.getTime()) ||
-      (current.scheduleType !== "once" && !current.enabled)
-    ) {
-      return { disabled: false, consecutiveFailures: 0 };
-    }
-    const failureTime = nowDate();
-    const consecutiveFailures = isCreditError
-      ? current.consecutiveFailures
-      : current.consecutiveFailures + 1;
-    const shouldDisable =
-      !isCreditError && consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
-    const nextRunAt = advanceAfterPreRunFailure(
-      current,
-      failureTime,
-      shouldDisable,
-    );
-    await tx
-      .update(workflowAutomations)
-      .set({
-        consecutiveFailures,
-        ...(shouldDisable ? { enabled: false } : {}),
-        ...(shouldDisable ? { officialIntendedEnabled: false } : {}),
-        nextRunAt,
-        updatedAt: failureTime,
-      })
-      .where(eq(workflowAutomations.id, current.id));
-    await settleSelectedLegacyMorningBriefObligation(tx, lineage, authority, {
-      enabled: !shouldDisable,
-      cronExpression: current.cronExpression,
-      timezone: current.timezone,
-      nextRunAt,
-      at: failureTime,
-    });
-    return { disabled: shouldDisable, consecutiveFailures };
-  });
-  signal.throwIfAborted();
-  if (outcome === undefined) {
-    return false;
-  }
-  if (outcome.disabled) {
-    log.warn("Workflow automation auto-disabled after consecutive failures", {
-      automationId: automation.id,
-      workflowId: automation.workflowId,
-      orgId: automation.orgId,
-      userId: automation.ownerUserId,
-      error: failureMessage(error),
-      consecutiveFailures: outcome.consecutiveFailures,
-    });
-  }
-  return true;
-}
-
-/**
- * `stillDueAt` restricts the update to the exact unconsumed occurrence this
- * tick resolved. A journal-aware tick that failed before it acquired any claim
- * passes it, so it can never republish a schedule, raise a failure count or
- * disable an automation that another tick already claimed or that a user has
- * since rescheduled. Legacy unjournaled ticks pass nothing and keep their exact
- * previous behavior.
- */
-async function recordPreRunFailure(
-  db: Db,
-  automation: AutomationRow,
-  error: unknown,
-  signal: AbortSignal,
-  stillDueAt?: Date,
-): Promise<void> {
-  const isCreditError = isInsufficientCreditsFailure(error);
-  const context = {
-    automationId: automation.id,
-    workflowId: automation.workflowId,
-    orgId: automation.orgId,
-    userId: automation.ownerUserId,
-    error: failureMessage(error),
-  };
-  logPreRunFailure(automation, error);
-
-  if (
-    await recordSelectedMorningBriefPreRunFailure(
-      db,
-      automation,
-      error,
-      signal,
-      stillDueAt,
-    )
-  ) {
-    return;
-  }
-
-  const failureTime = nowDate();
-  const newFailureCount = isCreditError
-    ? automation.consecutiveFailures
-    : automation.consecutiveFailures + 1;
-  const shouldDisable =
-    !isCreditError && newFailureCount >= MAX_CONSECUTIVE_FAILURES;
-  const nextRunAt = advanceAfterPreRunFailure(
-    automation,
-    failureTime,
-    shouldDisable,
-  );
-  const stillOwnsOccurrence = stillDueAt
-    ? eq(workflowAutomations.nextRunAt, stillDueAt)
-    : undefined;
-  const automationIsStillEligible =
-    automation.scheduleType === "once"
-      ? and(eq(workflowAutomations.id, automation.id), stillOwnsOccurrence)
-      : and(
-          eq(workflowAutomations.id, automation.id),
-          eq(workflowAutomations.enabled, true),
-          stillOwnsOccurrence,
-        );
-
-  await db
-    .update(workflowAutomations)
-    .set({
-      consecutiveFailures: newFailureCount,
-      ...(shouldDisable ? { enabled: false } : {}),
-      nextRunAt,
-      updatedAt: failureTime,
-    })
-    .where(automationIsStillEligible);
-  signal.throwIfAborted();
-
-  if (shouldDisable) {
-    log.warn("Workflow automation auto-disabled after consecutive failures", {
-      ...context,
-      consecutiveFailures: newFailureCount,
-    });
-  }
 }
 
 async function ensureDueWorkflowAutomationChatThread(
@@ -904,15 +664,6 @@ async function launchClaimedDueRow(
         reason: "unavailable",
       });
     }
-    counters.skipped++;
-    return;
-  }
-  if (result.kind === "enqueued") {
-    counters.executed++;
-    return;
-  }
-  if (result.kind !== "ok") {
-    await execution.recordFailure(result);
     counters.skipped++;
     return;
   }

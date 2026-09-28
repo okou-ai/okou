@@ -19,8 +19,11 @@ import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { activityRevision, mergeActivity } from "../../lib/run-activity";
 import { writeDb$ } from "../external/db";
+import { publishChatThreadDetailChangedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
+import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
+import { releaseRunSlots } from "./agent-run-terminal-transition.service";
 
 const log = logger("api:run-activity");
 
@@ -93,7 +96,8 @@ export const captureRunActivity$ = command(
  * A run that reached `running` keeps its active row after it turns terminal
  * until the runner reports completion. When the runner never does, release the
  * row once the run has been terminal and its sandbox silent for the
- * cancellation-recovery grace. Two bounded statements, no transaction.
+ * cancellation-recovery grace. A bounded read, then the release in its own
+ * transaction; the freed organizations are picked after it commits.
  */
 export const releaseStaleTerminalActiveAgentRuns$ = command(
   async (
@@ -115,7 +119,11 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
         // starve a leaked thread slot indefinitely. The correlated PK lookup
         // avoids a JOIN or CTE and excludes terminal rows with a recent heartbeat.
         const silent = await db
-          .select({ runId: activeAgentRuns.runId })
+          .select({
+            runId: activeAgentRuns.runId,
+            userId: activeAgentRuns.userId,
+            chatThreadId: activeAgentRuns.chatThreadId,
+          })
           .from(activeAgentRuns)
           .where(
             and(
@@ -147,25 +155,41 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
           .limit(STALE_RELEASE_LIMIT);
         signal.throwIfAborted();
         if (silent.length === 0) {
-          return;
+          return { released: [], silent };
         }
         // Recheck the silence: a sandbox that resumed heartbeating since the
         // candidate read still has a runner and keeps its row.
-        await db.delete(activeAgentRuns).where(
-          and(
-            inArray(
-              activeAgentRuns.runId,
-              silent.map((row) => {
-                return row.runId;
-              }),
-            ),
+        const released = await db.transaction(async (tx) => {
+          return await releaseRunSlots(
+            tx,
+            silent.map((row) => {
+              return row.runId;
+            }),
             lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
-          ),
-        );
+          );
+        });
+        return { released, silent };
       })(),
     );
     signal.throwIfAborted();
     if (outcome.ok) {
+      set(scheduleReleasedSlotPicks$, outcome.value.released);
+      // The released run's cancellation recovery barrier is over; open chat
+      // threads re-read their detail.
+      const releasedRunIds = new Set(
+        outcome.value.released.map((slot) => {
+          return slot.runId;
+        }),
+      );
+      for (const row of outcome.value.silent) {
+        if (row.chatThreadId !== null && releasedRunIds.has(row.runId)) {
+          await publishChatThreadDetailChangedSafely(
+            row.userId,
+            row.chatThreadId,
+          );
+          signal.throwIfAborted();
+        }
+      }
       return;
     }
     const errorCode = safeSqlStateCode(outcome.error);

@@ -1,5 +1,36 @@
 # Deployment Compatibility
 
+## Chat send diagnostics and model admission (release 5)
+
+Migration `1277_chat_network_body_captures` adds a sparse table keyed by the
+input chat-event ID. Only sends requesting `captureNetworkBodies` write a row,
+in the same transaction as the input. The table also records the owning thread
+for cascade cleanup and a creation timestamp; it does not store model choices
+or general send options. Pick reads the marker and passes the existing capture
+flag to run creation, which retains the production staff-organization gate.
+
+The migration runs before API promotion. Older APIs ignore the additive table,
+and existing inputs without a marker keep capture disabled. During mixed API
+operation or rollback, an older picker does not read the marker, so a capture
+request it consumes may launch without network-body capture. The marker grants
+no permission and changes no Runner protocol. Once a new API creates the run,
+capture uses the existing persisted run configuration. No new rollback floor
+is required.
+
+Chat sends no longer accept structured `runOptions.video`. The nested request
+schema strips this unknown key from older clients; the other run options remain
+supported. New clients omit the key and work with older APIs. The Create
+composer still includes its video instructions in the message's agent-only
+additional information, but there is no structured video-options persistence.
+
+Model admission happens when an input is picked. A thread's selected model
+that is unavailable in its workspace rejects the input as `bad_request`; a
+configured route that the plan does not cover rejects it as
+`insufficient_credits`. The picker no longer switches a persisted selection to
+another model. This also applies to inputs queued before the policy changed.
+Older pickers retain their previous fallback behavior during API rollout or
+rollback; the event and thread data shapes are unchanged.
+
 ## Retired preference and occurrence columns dropped (2026-09-28)
 
 Migration `1274_drop_retired_voice_reasoning_collection_columns` drops

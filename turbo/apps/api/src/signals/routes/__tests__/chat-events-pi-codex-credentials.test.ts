@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  assistantMessages,
+  createChatEventsFixture,
+  userMessages,
+} from "./helpers/chat-events-fixture";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -10,6 +14,7 @@ const {
   entitledChatActor,
   configureSubscriptionPiModel,
   authDeviceSupport,
+  waitForThreadMessages,
 } = createChatEventsFixture(context);
 
 async function fixture(expiresAt = Math.floor(now() / 1000) + 7200) {
@@ -30,18 +35,52 @@ describe("Pi Codex subscription admission", () => {
       f.actor,
       f.connected.accountSourceId,
     );
+    const clientEventId = randomUUID();
     const response = await chat.requestSendEvent(
       f.actor,
       {
         agentId: f.agentId,
         model: "gpt-5.6-terra",
         prompt: "do not reuse the deleted codex account",
-        clientEventId: randomUUID(),
+        clientEventId,
       },
-      [409],
+      [201],
     );
-    expect(response.status).toBe(409);
-    expect(response.body).toMatchObject({ error: { code: "CONFLICT" } });
-    expect(JSON.stringify(response.body)).not.toContain(f.identity);
+    if (response.status !== 201) {
+      throw new Error("Expected the send to be accepted");
+    }
+    expect(response.body.runId).toBeNull();
+    // The pick refuses the input in the thread instead of launching a run.
+    const messages = await waitForThreadMessages(
+      f.actor,
+      response.body.threadId,
+      (items) => {
+        return assistantMessages(items).some((message) => {
+          return message.eventType === "output.error";
+        });
+      },
+    );
+    expect(
+      userMessages(messages.events).filter((message) => {
+        return message.revokesEventId === clientEventId;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        eventType: "input.rejected",
+        error: "conflict",
+      }),
+    ]);
+    expect(
+      assistantMessages(messages.events).filter((message) => {
+        return message.eventType === "output.error";
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        error: "conflict",
+        content:
+          "The selected subscription account is unavailable. Reconnect it before starting another run.",
+      }),
+    ]);
+    expect(JSON.stringify(messages.events)).not.toContain(f.identity);
   }, 30_000);
 });

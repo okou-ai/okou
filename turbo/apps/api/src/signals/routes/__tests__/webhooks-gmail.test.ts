@@ -697,7 +697,7 @@ async function readAutomation(
 async function runAutomationNow(
   actor: ApiTestUser,
   automationId: string,
-): Promise<{ readonly chatThreadId: string; readonly runId: string }> {
+): Promise<void> {
   const response = await createApp({
     signal: context.signal,
     routes: TEST_APP_ROUTES,
@@ -714,7 +714,6 @@ async function runAutomationNow(
       )}`,
     );
   }
-  return body as { readonly chatThreadId: string; readonly runId: string };
 }
 
 function requireAutomationChatThreadId(
@@ -1360,6 +1359,7 @@ describe("POST /api/webhooks/gmail", () => {
       dispatched: 1,
       duplicates: 0,
     });
+    await flushWaitUntilForTest();
     const expectedDisplayMessage =
       'A new email arrived from Customer Example <customer@example.com> with subject "Invoice needs a reply".';
 
@@ -1825,6 +1825,7 @@ describe("POST /api/webhooks/gmail", () => {
       dispatched: 1,
       duplicates: 0,
     });
+    await flushWaitUntilForTest();
     await expect(
       workflowAutomationDisplayTexts(actor, chatThreadId),
     ).resolves.toContain(
@@ -1880,7 +1881,12 @@ describe("POST /api/webhooks/gmail", () => {
     it("preserves metadata-only context through the workflow queue", async () => {
       const { actor, created, gmailEmail, chatThreadId, runnerGroup } =
         preparedScenario;
-      const activeRun = await runAutomationNow(actor, created.body.id);
+      await runAutomationNow(actor, created.body.id);
+      await flushWaitUntilForTest();
+      const [activeRunId] = await workflowRunIds(actor, chatThreadId);
+      if (!activeRunId) {
+        throw new Error("Expected the manual run to start");
+      }
 
       const response = await postGmailWebhook(
         gmailPushBody({
@@ -1892,15 +1898,16 @@ describe("POST /api/webhooks/gmail", () => {
 
       expectResponseStatus(response, 200);
       expect(response.body).toMatchObject({ dispatched: 1, duplicates: 0 });
+      await flushWaitUntilForTest();
       await expect(workflowRunIds(actor, chatThreadId)).resolves.toStrictEqual([
-        activeRun.runId,
+        activeRunId,
       ]);
 
-      await completeRunThroughSandbox(runnerGroup, activeRun.runId);
+      await completeRunThroughSandbox(runnerGroup, activeRunId);
       const runIds = await workflowRunIds(actor, chatThreadId);
       expect(runIds).toHaveLength(2);
       const queuedRunId = runIds.find((runId) => {
-        return runId !== activeRun.runId;
+        return runId !== activeRunId;
       });
       if (!queuedRunId) {
         throw new Error("Expected the queued Gmail event to start a run");

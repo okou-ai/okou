@@ -4,8 +4,9 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import {
-  releaseActiveAgentRuns,
+  releaseRunSlots,
   transitionAgentRunsToTerminal,
+  type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -33,9 +34,12 @@ import {
 } from "../external/realtime";
 import { deleteS3Objects } from "../external/s3";
 import { settle, settleIncludingAbort, tapError } from "../utils";
-import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { drainStaleChatThreadQueues$ } from "./chat-thread-queue-drain.service";
+import {
+  dispatchCompleteSideEffects$,
+  scheduleReleasedSlotPicks$,
+} from "./agent-run-lifecycle.service";
+import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
+import { listQueuedChatThreadOrgIdsFor } from "./queued-chat-thread.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
@@ -112,7 +116,6 @@ interface MaintenanceTerminalSideEffectsInput {
   readonly runId: string;
   readonly orgId: string;
   readonly error: string;
-  readonly slotReleased: boolean;
   readonly deliveryNotification?: {
     readonly userId: string;
     readonly chatThreadId: string;
@@ -137,7 +140,7 @@ interface CommittedTimeout {
   readonly sandboxId: string | null;
   readonly runnerGroup: string | null;
   readonly chatThreadId: string | null;
-  readonly slotReleased: boolean;
+  readonly releasedSlots: readonly ReleasedRunSlot[];
 }
 
 type TimeoutTransactionResult =
@@ -291,7 +294,6 @@ const dispatchMaintenanceTerminalSideEffects$ = command(
         orgId: input.orgId,
         status: "failed",
         error: input.error,
-        ...(input.slotReleased ? { slotReleased: true as const } : {}),
         ...(input.deliveryNotification
           ? { deliveryNotification: input.deliveryNotification }
           : {}),
@@ -362,7 +364,7 @@ async function commitStaleRunTimeout(
 
         // The runner is considered dead and will not report completion, so
         // release the active row whether or not the run started.
-        const released = await releaseActiveAgentRuns(tx, [run.id]);
+        const releasedSlots = await releaseRunSlots(tx, [run.id]);
         signal.throwIfAborted();
 
         return {
@@ -374,7 +376,7 @@ async function commitStaleRunTimeout(
             sandboxId: lockedRun.sandboxId,
             runnerGroup: lockedRun.runnerGroup,
             chatThreadId: lockedRun.chatThreadId,
-            slotReleased: released.length > 0,
+            releasedSlots,
           },
         };
       },
@@ -414,6 +416,7 @@ const cleanupSingleRun$ = command(
       L.debug("Run already transitioned, skipping timeout", { runId: run.id });
       return undefined;
     }
+    set(scheduleReleasedSlotPicks$, committed.releasedSlots);
     const budgetExpired =
       committed.previousStatus === "running" && committed.chatThreadId !== null
         ? await expireRunTimeBudgetInput(
@@ -446,7 +449,6 @@ const cleanupSingleRun$ = command(
         runId: run.id,
         orgId: committed.orgId,
         error: timeoutReason,
-        slotReleased: committed.slotReleased,
         ...(committed.chatThreadId !== null
           ? {
               deliveryNotification: {
@@ -590,15 +592,11 @@ async function cleanupConnectorDiagnosticRegistrations(
 
 const cleanupGlobalMaintenance$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
-    // Release silent terminal runs first so the stale drain can admit the
+    // Release silent terminal runs first so the org pick can admit the
     // threads they held in the same pass.
     await set(releaseStaleTerminalActiveAgentRuns$, null, signal);
     signal.throwIfAborted();
-    await set(
-      drainStaleChatThreadQueues$,
-      { dispatchFailedCallbacks: dispatchFailedRunCallbacks },
-      signal,
-    );
+    await set(pickAllQueuedOrgs$, {}, signal);
     signal.throwIfAborted();
     await tapError(set(drainStaleCanonicalSlackIngress$, signal), (error) => {
       L.error("Failed to drain stale canonical Slack ingress", { error });
@@ -633,14 +631,12 @@ const cleanupFixtureMaintenance$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await set(
-      drainStaleChatThreadQueues$,
-      {
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-        chatThreadIds: scope.chatThreadIds,
-      },
-      signal,
+    const orgIds = await listQueuedChatThreadOrgIdsFor(
+      set(writeDb$),
+      scope.chatThreadIds,
     );
+    signal.throwIfAborted();
+    await set(pickAllQueuedOrgs$, { orgIds }, signal);
   },
 );
 

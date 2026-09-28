@@ -11,7 +11,6 @@ import { env, mockEnv } from "../../../lib/env";
 import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { withStableAgentPromptBuildCountFixture } from "../../../test-fixtures/pi-stable-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settleIncludingAbort } from "../../utils";
 import {
   createChatEventsFixture,
   requireOrgId,
@@ -28,7 +27,6 @@ const {
   sendWaitingChatInput,
   claimChatRun,
   cancelChatRun,
-  requestSendEventRaw,
   mockPiCheckpointObjectStore,
   expectPiSandboxHandoff,
 } = createChatEventsFixture(context);
@@ -40,35 +38,6 @@ function jsonHttpException(status: 409 | 422, message: string) {
       headers: { "content-type": "application/json" },
     }),
   });
-}
-
-function observePendingSend<T>(send: Promise<T>) {
-  const result = settleIncludingAbort(send);
-  const phases: Promise<unknown>[] = [];
-
-  async function beforeSettlement(phase: PromiseLike<unknown>) {
-    // Vitest polls are lazy thenables. Normalize once and retain each started
-    // poll so an early request failure cannot leave it running after cleanup.
-    const work = Promise.resolve(phase);
-    phases.push(work);
-    await Promise.race([
-      work,
-      result.then((settled) => {
-        if (!settled.ok) {
-          throw settled.error;
-        }
-        throw new Error(
-          "Chat send completed before its held preparation phase",
-        );
-      }),
-    ]);
-  }
-
-  async function joinPhases() {
-    await Promise.allSettled(phases);
-  }
-
-  return { result, beforeSettlement, joinPhases };
 }
 
 describe("CHAT-02: model-first provider policies", () => {
@@ -138,7 +107,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   }, 30_000);
 
-  it("settles simultaneous legacy preparation failures in dependency order without post-admission effects", async () => {
+  it("settles simultaneous legacy preparation failures in the background pick without post-admission effects", async () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
@@ -152,21 +121,24 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     const clientEventId = randomUUID();
     const prompt = "reject simultaneous legacy preparation failures";
-    const send = requestSendEventRaw(
+    // The send only enqueues; preparation runs in the background pick.
+    const sent = await chat.requestSendEvent(
       actor,
       {
         agentId,
         threadId: thread.id,
         prompt,
         clientEventId,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-        hasTextContent: true,
         model: "gpt-5.6-terra",
       },
-      context.signal,
-      usagePricingResolution,
+      [201],
+      { usagePricingResolution },
     );
-    const observed = observePendingSend(send);
+    expect(sent.body).toStrictEqual({
+      runId: null,
+      threadId: thread.id,
+      createdAt: expect.any(String),
+    });
 
     await Promise.all([
       preparation.arrival("post-authorization-context"),
@@ -176,83 +148,36 @@ describe("CHAT-02: model-first provider policies", () => {
       "thread-session",
       jsonHttpException(422, "session preparation failed"),
     );
-    await observed.beforeSettlement(preparation.departure("thread-session"));
+    await preparation.departure("thread-session");
     preparation.reject(
       "post-authorization-context",
       jsonHttpException(409, "authorization preparation failed"),
     );
-
-    const response = await send;
-    expect(response).toStrictEqual({
-      status: 409,
-      body: { error: { message: "authorization preparation failed" } },
-    });
-    await observed.joinPhases();
     await preparation.departure("post-authorization-context");
+    await flushWaitUntilForTest();
     preparation.releaseAll();
     const events = await chat.listThreadEvents(actor, thread.id);
+    // An unexpected pick failure rejects the input without launching a run.
     expect(events.events).toStrictEqual([
       expect.objectContaining({
         eventType: "input.prompt",
         id: clientEventId,
       }),
-    ]);
-  });
-
-  it("settles held legacy preparation branches before surfacing cancellation without post-admission effects", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    const orgId = requireOrgId(actor);
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-
-    const usagePricingResolution = await createGptUsagePricingResolution();
-    const thread = await chat.createThread(actor, { agentId });
-    const controller = new AbortController();
-    const requestSignal = AbortSignal.any([controller.signal, context.signal]);
-    const preparation = holdPiContextPreparationStagesFixture({
-      userId: actor.userId,
-      orgId,
-      signal: requestSignal,
-      gateSignal: context.signal,
-    });
-    const clientEventId = randomUUID();
-    const prompt = "cancel held legacy preparation";
-    const send = requestSendEventRaw(
-      actor,
-      {
-        agentId,
-        threadId: thread.id,
-        prompt,
-        clientEventId,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-        hasTextContent: true,
-        model: "gpt-5.6-terra",
-      },
-      requestSignal,
-      usagePricingResolution,
-    );
-    const observed = observePendingSend(send);
-
-    await Promise.all([
-      preparation.arrival("post-authorization-context"),
-      preparation.arrival("thread-session"),
-    ]);
-    controller.abort(new DOMException("cancelled by route test", "AbortError"));
-    preparation.release("thread-session");
-    await observed.beforeSettlement(preparation.departure("thread-session"));
-    preparation.release("post-authorization-context");
-
-    const response = await send;
-    expect(response.status).toBe(500);
-    await observed.joinPhases();
-    await preparation.departure("post-authorization-context");
-    preparation.releaseAll();
-    const events = await chat.listThreadEvents(actor, thread.id);
-    expect(events.events).toStrictEqual([
       expect.objectContaining({
-        eventType: "input.prompt",
-        id: clientEventId,
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "internal_error",
+      }),
+      expect.objectContaining({
+        eventType: "output.error",
+        error: "internal_error",
       }),
     ]);
+    expect(
+      events.events.filter((event) => {
+        return event.runId !== undefined;
+      }),
+    ).toStrictEqual([]);
   });
 
   it("defers the Pi launch handoff of an at-capacity send until a slot frees", async () => {

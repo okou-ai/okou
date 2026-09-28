@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { and, asc, eq, gt, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
@@ -13,7 +13,7 @@ import type { Db } from "../external/db";
  */
 const QUEUED_CHAT_THREAD_CLAIM_TTL_MS = 60 * 1000;
 
-type ReadDb = Pick<Db, "select">;
+type ReadDb = Pick<Db, "select" | "selectDistinct">;
 
 function leaseFree(at: Date) {
   return or(
@@ -147,6 +147,46 @@ export async function listPickableQueuedChatThreads(
       asc(queuedChatThreads.chatThreadId),
     )
     .limit(args.limit);
+}
+
+/**
+ * Organizations that have queued threads, by org id keyset. The cron walks
+ * every page; each organization is then picked to its concurrency limit.
+ */
+export async function listQueuedChatThreadOrgIds(
+  db: ReadDb,
+  args: { readonly after?: string; readonly limit: number },
+): Promise<readonly string[]> {
+  const rows = await db
+    .selectDistinct({ orgId: queuedChatThreads.orgId })
+    .from(queuedChatThreads)
+    .where(
+      args.after === undefined
+        ? undefined
+        : gt(queuedChatThreads.orgId, args.after),
+    )
+    .orderBy(asc(queuedChatThreads.orgId))
+    .limit(args.limit);
+  return rows.map(({ orgId }) => {
+    return orgId;
+  });
+}
+
+/** Organizations of the given threads' queued rows, for fixture-scoped passes. */
+export async function listQueuedChatThreadOrgIdsFor(
+  db: ReadDb,
+  chatThreadIds: readonly string[],
+): Promise<readonly string[]> {
+  if (chatThreadIds.length === 0) {
+    return [];
+  }
+  const rows = await db
+    .selectDistinct({ orgId: queuedChatThreads.orgId })
+    .from(queuedChatThreads)
+    .where(inArray(queuedChatThreads.chatThreadId, [...chatThreadIds]));
+  return rows.map(({ orgId }) => {
+    return orgId;
+  });
 }
 
 /** Whether the thread's active-run slot is taken. */

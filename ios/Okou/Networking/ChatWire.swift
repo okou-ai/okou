@@ -245,7 +245,8 @@ struct ConnectorSelections: Decodable, Sendable {
   }
 }
 
+/// The send route never returns a run: the input is queued and its run (or
+/// `input.rejected`) arrives later through the thread's event rows.
 struct ChatSendResponse: Decodable, Sendable {
-  let runId: String?
   let threadId: String
 }

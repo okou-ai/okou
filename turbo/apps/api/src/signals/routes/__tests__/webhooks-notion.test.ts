@@ -10,6 +10,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockNow } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -655,6 +656,7 @@ describe("POST /api/webhooks/notion", () => {
       executed: 1,
       skipped: 0,
     });
+    await flushWaitUntilForTest();
     if (!created.body.chatThreadId) {
       throw new Error("Expected the Notion automation to bind a chat thread");
     }
@@ -768,6 +770,7 @@ describe("POST /api/webhooks/notion", () => {
       executed: 1,
       skipped: 0,
     });
+    await flushWaitUntilForTest();
     if (!created.body.chatThreadId) {
       throw new Error("Expected the Notion automation to bind a chat thread");
     }
@@ -956,6 +959,7 @@ describe("POST /api/webhooks/notion", () => {
       executed: 1,
       skipped: 0,
     });
+    await flushWaitUntilForTest();
 
     // The run landed in the automation's bound chat thread with the public
     // user-facing message, linked to the created run.
@@ -1664,6 +1668,7 @@ describe("POST /api/webhooks/notion", () => {
       executed: 1,
       skipped: 0,
     });
+    await flushWaitUntilForTest();
 
     const messages = await wf.readThreadEvents(threadId);
     const workflowMessage = messages.find((message) => {

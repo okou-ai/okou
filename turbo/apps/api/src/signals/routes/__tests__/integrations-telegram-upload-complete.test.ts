@@ -93,18 +93,11 @@ async function createRunScopedChat(args: {
   const agent = await bdd.createAgent(actor, {
     displayName: `Telegram upload ${randomUUID().slice(0, 8)}`,
   });
-  const sent = await chatApi.requestSendEvent(
-    actor,
-    {
-      agentId: agent.agentId,
-      prompt: "Create a run for Telegram upload completion",
-    },
-    [201],
-  );
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected chat send to create a run for Telegram upload");
-  }
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
+  const sent = await chatApi.sendAndLaunch(actor, {
+    agentId: agent.agentId,
+    prompt: "Create a run for Telegram upload completion",
+  });
+  return { runId: sent.runId, threadId: sent.threadId };
 }
 
 async function visibleUploadedFiles(args: {

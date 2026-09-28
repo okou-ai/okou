@@ -5,14 +5,10 @@ import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reas
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { command } from "ccstate";
 import { eq } from "drizzle-orm";
-import { writeDb$, type Db } from "../external/db";
+import type { Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
-import {
-  isQueueFirstRunClaimLost,
-  type DispatchFailedRunCallbacks,
-} from "./agent-run-create.service";
+import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
 import type {
   PersistWorkflowQueueSourceTransition,
   WorkflowScheduleClaimPlan,
@@ -30,7 +26,7 @@ import {
   ApiDispatchTimingCollector,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
-import { createQueueFirstAgentRun$ } from "./agent-runs-create.service";
+import type { CreateQueueFirstAgentRunCommandArgs } from "./agent-runs-create.service";
 import {
   bindMorningBriefScheduleClaimRun,
   morningBriefScheduleClaimBound,
@@ -67,27 +63,16 @@ type RunErrorResponse = {
   };
 };
 
-export type RunWorkflowAutomationResult =
-  | { readonly kind: "ok"; readonly runId: string }
-  // The event was accepted into the chat thread queue instead of starting a run.
-  | { readonly kind: "enqueued" }
+/**
+ * A fired automation is enqueued as `input.automation`; the pick launches or
+ * rejects it later, and a rejection appears in the thread as `input.rejected`.
+ */
+export type RunWorkflowAutomationResult = { readonly kind: "enqueued" };
+
+/** Why a queued automation head cannot launch. */
+type RunFailure =
   | { readonly kind: "conflict"; readonly message: string }
   | { readonly kind: "run_error"; readonly response: RunErrorResponse };
-
-export type RunFailure = Exclude<
-  RunWorkflowAutomationResult,
-  { kind: "ok" } | { kind: "enqueued" }
->;
-
-/**
- * How launching a queued automation event ended. Only `org-full` keeps the
- * event waiting; a `lost` claim means another picker consumed the head.
- */
-export type QueuedWorkflowAutomationLaunchResult =
-  | { readonly kind: "ok"; readonly runId: string }
-  | { readonly kind: "org-full" }
-  | { readonly kind: "lost" }
-  | RunFailure;
 type ActivePreviousRunPolicy = "block" | "allow";
 
 interface InternalRunCallbackInput {
@@ -143,7 +128,6 @@ export interface RunWorkflowAutomationNowArgs {
    * event. Only journaled legacy Morning Brief ticks pass one.
    */
   readonly scheduleClaim?: WorkflowScheduleClaimPlan;
-  readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
   readonly timing?: ApiDispatchTimingCollector;
 }
 
@@ -164,8 +148,14 @@ interface WorkflowAutomationLaunchArgs {
   readonly timing?: ApiDispatchTimingCollector;
 }
 
-interface LaunchQueuedWorkflowAutomationArgs extends WorkflowAutomationLaunchArgs {
+interface AssembleWorkflowAutomationRunArgs extends WorkflowAutomationLaunchArgs {
   readonly queueEventId: string;
+}
+
+interface AssembledWorkflowAutomationRun {
+  readonly kind: "assembled";
+  readonly run: CreateQueueFirstAgentRunCommandArgs;
+  readonly launched: (runId: string, signal: AbortSignal) => Promise<void>;
 }
 
 interface WorkflowAutomationRunInput {
@@ -408,7 +398,7 @@ function workflowThreadSessionRoute(
 }
 
 function workflowAutomationTiming(
-  args: LaunchQueuedWorkflowAutomationArgs,
+  args: AssembleWorkflowAutomationRunArgs,
 ): ApiDispatchTimingCollector {
   const timing = args.timing ?? new ApiDispatchTimingCollector();
   if (!args.timing) {
@@ -553,12 +543,11 @@ async function recordWorkflowAutomationRunStart(
   input: {
     readonly db: Db;
     readonly args: WorkflowAutomationLaunchArgs;
-    readonly run: { readonly body: { readonly runId: string } };
+    readonly runId: string;
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const { db, args } = input;
-  const runId = input.run.body.runId;
+  const { db, args, runId } = input;
   const { automation, chatThreadId } = args.due;
   await finalizeClaimedRunUserMessage({
     orgId: automation.orgId,
@@ -641,7 +630,7 @@ export async function recordWorkflowAutomationLastRun(
 async function checkQueuedWorkflowLaunchReadiness(
   input: {
     readonly db: Db;
-    readonly args: LaunchQueuedWorkflowAutomationArgs;
+    readonly args: AssembleWorkflowAutomationRunArgs;
     readonly timing: ReturnType<typeof workflowAutomationTiming>;
   },
   signal: AbortSignal,
@@ -701,138 +690,125 @@ function recordQueuedWorkflowReward(
   });
 }
 
-export const launchQueuedWorkflowAutomation$ = command(
-  async (
-    { set },
-    args: LaunchQueuedWorkflowAutomationArgs,
-    signal: AbortSignal,
-  ): Promise<QueuedWorkflowAutomationLaunchResult> => {
-    const db = set(writeDb$);
-    const { automation, agentId, chatThreadId } = args.due;
-    const timing = workflowAutomationTiming(args);
-    const readinessFailure = await checkQueuedWorkflowLaunchReadiness(
-      { db, args, timing },
-      signal,
-    );
-    if (readinessFailure) {
-      return readinessFailure;
-    }
-    const modelContext = await resolveTimedWorkflowModelContext(
-      {
-        db,
-        automation,
-        chatThreadId,
-        timing,
+/**
+ * The automation assembler's run parameters for a queued automation head:
+ * readiness (previous run, target access), model admission, and the Computer
+ * Use grant. `launched` records the run on the automation once it exists.
+ */
+export async function assembleWorkflowAutomationRun(
+  db: Db,
+  args: AssembleWorkflowAutomationRunArgs,
+  signal: AbortSignal,
+): Promise<AssembledWorkflowAutomationRun | RunFailure> {
+  const { automation, agentId, chatThreadId } = args.due;
+  const timing = workflowAutomationTiming(args);
+  const readinessFailure = await checkQueuedWorkflowLaunchReadiness(
+    { db, args, timing },
+    signal,
+  );
+  if (readinessFailure) {
+    return readinessFailure;
+  }
+  const modelContext = await resolveTimedWorkflowModelContext(
+    {
+      db,
+      automation,
+      chatThreadId,
+      timing,
+    },
+    signal,
+  );
+  if (!modelContext.ok) {
+    return modelContext.failure;
+  }
+  const {
+    modelPin,
+    effectiveModelProvider,
+    builtInModelRuntimeRoute,
+    codexServiceTier,
+    reasoningEffort,
+  } = modelContext;
+
+  const computerUseHostGrant = await loadComputerUseHostGrantForAutoSend({
+    db,
+    threadId: chatThreadId,
+    orgId: automation.orgId,
+    userId: automation.ownerUserId,
+  });
+  signal.throwIfAborted();
+
+  const runInput = await buildTimedWorkflowAutomationRunInput({
+    command: args,
+    automation,
+    computerUseHostGrant,
+    timing,
+  });
+  signal.throwIfAborted();
+  timing.recordElapsed(
+    "api_dispatch_pre_create_agent_workflow_automation_create_run",
+    "nested",
+    now(),
+  );
+  await recordQueuedWorkflowReward(db, automation, args.queueEventId);
+  signal.throwIfAborted();
+  return {
+    kind: "assembled",
+    run: {
+      auth: workflowAutomationAgentRunAuth(automation),
+      body: {
+        prompt: runInput.prompt,
+        agentId,
+        ...workflowModelProviderBody(effectiveModelProvider),
       },
-      signal,
-    );
-    if (!modelContext.ok) {
-      return modelContext.failure;
-    }
-    const {
-      modelPin,
-      effectiveModelProvider,
-      builtInModelRuntimeRoute,
+      apiStartTime: args.apiStartTime,
+      triggerSource: args.triggerSource ?? "automation-schedule",
+      chatThreadId,
+      ...(args.connectorSourceId
+        ? { connectorSourceId: args.connectorSourceId }
+        : {}),
+      computerUseHostId: computerUseHostGrant?.hostId,
+      modelProviderId: modelPin.modelProviderId ?? undefined,
+      modelProviderCredentialScope:
+        modelPin.modelProviderCredentialScope ?? undefined,
+      selectedModelOverride: modelPin.selectedModel ?? undefined,
+      ...(builtInModelRuntimeRoute ? { builtInModelRuntimeRoute } : {}),
+      threadSessionRoute: workflowThreadSessionRoute(modelContext),
       codexServiceTier,
       reasoningEffort,
-    } = modelContext;
-
-    const computerUseHostGrant = await loadComputerUseHostGrantForAutoSend({
-      db,
-      threadId: chatThreadId,
-      orgId: automation.orgId,
-      userId: automation.ownerUserId,
-    });
-    signal.throwIfAborted();
-
-    const runInput = await buildTimedWorkflowAutomationRunInput({
-      command: args,
-      automation,
-      computerUseHostGrant,
-      timing,
-    });
-    signal.throwIfAborted();
-    timing.recordElapsed(
-      "api_dispatch_pre_create_agent_workflow_automation_create_run",
-      "nested",
-      now(),
-    );
-    await recordQueuedWorkflowReward(db, automation, args.queueEventId);
-    signal.throwIfAborted();
-    const result = await set(
-      createQueueFirstAgentRun$,
-      {
-        auth: workflowAutomationAgentRunAuth(automation),
-        body: {
-          prompt: runInput.prompt,
-          agentId,
-          ...workflowModelProviderBody(effectiveModelProvider),
-        },
-        apiStartTime: args.apiStartTime,
-        triggerSource: args.triggerSource ?? "automation-schedule",
-        chatThreadId,
-        ...(args.connectorSourceId
-          ? { connectorSourceId: args.connectorSourceId }
-          : {}),
-        computerUseHostId: computerUseHostGrant?.hostId,
-        modelProviderId: modelPin.modelProviderId ?? undefined,
-        modelProviderCredentialScope:
-          modelPin.modelProviderCredentialScope ?? undefined,
-        selectedModelOverride: modelPin.selectedModel ?? undefined,
-        ...(builtInModelRuntimeRoute ? { builtInModelRuntimeRoute } : {}),
-        threadSessionRoute: workflowThreadSessionRoute(modelContext),
-        codexServiceTier,
-        reasoningEffort,
-        appendSystemPrompt: runInput.appendSystemPrompt,
-        callbacks: runInput.callbacks,
-        agentRunMetadata: runInput.agentRunMetadata,
-        ...(automation.officialBlueprintKey === null
-          ? {}
-          : { requiredOfficialWorkflowIds: [automation.workflowId] }),
-        queueFirstAssociation: {
-          threadId: chatThreadId,
-          eventId: args.queueEventId,
-        },
-        agentRunModelPin: {
-          modelProvider: effectiveModelProvider ?? null,
-          modelProviderId: modelPin.modelProviderId,
-          modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
-          selectedModel: modelPin.selectedModel,
-        },
-        piExecution: modelContext.piExecution,
-        dispatchFailedCallbacks: args.dispatchFailedCallbacks,
-        // A journaled Morning Brief occurrence records its Run in the same
-        // transaction that inserts it, before any Run callback can look the
-        // claim up; other automations match no journal row.
-        persistProducerRunBinding: (tx, run) => {
-          return bindMorningBriefScheduleClaimRun(tx, {
-            queueEventId: args.queueEventId,
-            runId: run.runId,
-          });
-        },
-        timing,
+      appendSystemPrompt: runInput.appendSystemPrompt,
+      callbacks: runInput.callbacks,
+      agentRunMetadata: runInput.agentRunMetadata,
+      ...(automation.officialBlueprintKey === null
+        ? {}
+        : { requiredOfficialWorkflowIds: [automation.workflowId] }),
+      queueFirstAssociation: {
+        threadId: chatThreadId,
+        eventId: args.queueEventId,
       },
-      signal,
-    );
-
-    if (isQueueFirstRunClaimLost(result)) {
-      signal.throwIfAborted();
-      return { kind: "lost" };
-    }
-    if (result.status !== 201) {
-      signal.throwIfAborted();
-      // At organization capacity the event stays queued for a later pick.
-      if (result.body.error.code === "CONCURRENT_RUN_LIMIT") {
-        return { kind: "org-full" };
-      }
-      return { kind: "run_error", response: result };
-    }
-    signal.throwIfAborted();
-    await recordWorkflowAutomationRunStart({ db, args, run: result }, signal);
-
-    return {
-      kind: "ok",
-      runId: result.body.runId,
-    };
-  },
-);
+      agentRunModelPin: {
+        modelProvider: effectiveModelProvider ?? null,
+        modelProviderId: modelPin.modelProviderId,
+        modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
+        selectedModel: modelPin.selectedModel,
+      },
+      piExecution: modelContext.piExecution,
+      dispatchFailedCallbacks: args.dispatchFailedCallbacks,
+      // A journaled Morning Brief occurrence records its Run in the same
+      // transaction that inserts it, before any Run callback can look the
+      // claim up; other automations match no journal row.
+      persistProducerRunBinding: (tx, run) => {
+        return bindMorningBriefScheduleClaimRun(tx, {
+          queueEventId: args.queueEventId,
+          runId: run.runId,
+        });
+      },
+      timing,
+    },
+    launched: async (runId, launchedSignal) => {
+      await recordWorkflowAutomationRunStart(
+        { db, args, runId },
+        launchedSignal,
+      );
+    },
+  };
+}

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
@@ -7,8 +7,6 @@ import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
-import { withModelRoutingQueryReceipt } from "../../../test-fixtures/model-routing-query-receipt";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
@@ -34,10 +32,8 @@ const {
   entitledChatActor,
   entitledNativeChatActor,
   configureSubscriptionPiModel,
-  seedBuiltInModelKey,
   sendChatRun,
   expectThreadCreatedModelEvent,
-  expectNoThreadModelUpdateEvent,
   claimChatRun,
   waitForThreadMessages,
   waitForRunStatus,
@@ -106,7 +102,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   }, 60_000);
 
-  it("uses send model overrides without mutating the thread model while preserving same-family sessions", async () => {
+  it("persists a send model selection on the thread while preserving same-family sessions", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     // Claude subscription credentials stay on the native Claude Code harness
@@ -161,9 +157,9 @@ describe("CHAT-02: run-level model overrides", () => {
       (await api.readRun(actor, first.runId)).result?.agentSessionId,
     ).toMatch(/[0-9a-f-]{36}/);
 
-    // A run-level override of another model in the same family resumes the CLI
-    // session, which already carries the prior web round, so the prompt does
-    // not replay it.
+    // Selecting another model in the same family resumes the CLI session,
+    // which already carries the prior web round, so the prompt does not
+    // replay it.
     const second = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
@@ -184,18 +180,29 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(claimEnvironment(secondClaim.claim).ANTHROPIC_MODEL).toBe(
       "claude-sonnet-5",
     );
-    await expectNoThreadModelUpdateEvent(
-      actor,
-      first.threadId,
-      "claude-sonnet-5",
-    );
+    // The send persists its model selection on the thread.
+    await expect(
+      chat.requestThreadEvents(actor, {}, [200]),
+    ).resolves.toMatchObject({
+      body: {
+        events: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "model_selection_updated",
+            chatThreadId: first.threadId,
+            selectedModel: "claude-sonnet-5",
+          }),
+        ]),
+      },
+    });
+    await expect(
+      chat.readThreadMetadata(actor, first.threadId),
+    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5" });
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
     await flushWaitUntilForTest();
 
-    // Follow-ups without a send model override go back to the thread's stored
-    // model. Both models remain in the Claude family, so session continuity is
-    // preserved.
+    // Follow-ups without a model selection run on the thread's stored model,
+    // which is now the last selection. The session continues in the family.
     const third = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
@@ -206,12 +213,12 @@ describe("CHAT-02: run-level model overrides", () => {
       `bdd-cli-${second.runId}`,
     );
     expect(claimEnvironment(thirdClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-opus-5",
+      "claude-sonnet-5",
     );
     await cancelChatRun(actor, third.runId);
   }, 90_000);
 
-  it("loads a personal default after the persisted model becomes invalid", async () => {
+  it("rejects input when the persisted model's route is removed", async () => {
     const { actor, agentId, providerId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await chatCallbacks.updateOrgModelPolicies(actor, [
@@ -228,56 +235,34 @@ describe("CHAT-02: run-level model overrides", () => {
       agentId,
       model: "claude-sonnet-5",
     });
-
-    const { accountSourceId } = await configureSubscriptionPiModel(actor, {
-      accountId: "personal-default-fallback-account",
-    });
-    // Astra keeps the fallback run on the native Codex harness, so the receipt
-    // observes only send admission.
-    await seedBuiltInModelKey("gpt-6-astra");
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        isDefault: false,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
     await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
 
-    const captured = await withModelRoutingQueryReceipt(() => {
-      return sendChatRun(actor, {
+    // The thread keeps the user's model; with its route gone the pick rejects
+    // the input instead of moving it to another model.
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
         agentId,
         threadId: thread.id,
-        prompt: "continue through the personal workspace default",
-      });
-    });
-    const followUp = captured.result;
-    // The optimistic read and transactional revalidation each load metadata
-    // once; selected-route failure and default fallback share it within both.
-    expect(captured.receipt.personalMetadataReads).toBe(2);
-    await expect(
-      readRunModelSourceFixture(followUp.runId),
-    ).resolves.toMatchObject({
-      modelProvider: "codex-oauth-token",
-      modelProviderCredentialScope: "member",
-      modelProviderId: accountSourceId,
-      selectedModel: "gpt-6-astra",
-      creditAdmitted: false,
-      builtInModelKeyId: null,
-    });
+        prompt: "do not continue through another model",
+        clientEventId,
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the send to be accepted");
+    }
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, thread.id);
+    expect(
+      events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      }),
+    ).toMatchObject({ eventType: "input.rejected", error: "bad_request" });
     await expect(
       chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
-    await cancelChatRun(actor, followUp.runId);
+    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5" });
   }, 90_000);
 
   it.each(

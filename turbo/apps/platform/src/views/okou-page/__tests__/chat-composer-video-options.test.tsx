@@ -267,18 +267,7 @@ test.each([false, true])(
           }
         : undefined,
     );
-    expect(submissions[0]?.runOptions).toStrictEqual(
-      enabled
-        ? undefined
-        : {
-            video: {
-              aspectRatio: "9:16",
-              duration: "8s",
-              resolution: "720p",
-              generateAudio: true,
-            },
-          },
-    );
+    expect(submissions[0]?.runOptions).toBeUndefined();
     await expect(screen.findByText(prompt)).resolves.toBeVisible();
   },
 );

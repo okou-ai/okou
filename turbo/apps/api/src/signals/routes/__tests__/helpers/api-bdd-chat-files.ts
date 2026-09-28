@@ -71,6 +71,7 @@ import {
 } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import {
@@ -1355,6 +1356,49 @@ export function createChatFilesBddApi(context: TestContext) {
         }),
         statuses,
       );
+    },
+
+    /**
+     * Send a prompt and return the run its background pick launched. A send
+     * only enqueues; the launched run is read from the input's run-bound
+     * replacement once background work has finished.
+     */
+    async sendAndLaunch(
+      actor: ApiTestUser,
+      body: Extract<BddSendEventBody, { readonly prompt: string }>,
+      options: RequestSendEventOptions = {},
+    ): Promise<{
+      readonly runId: string;
+      readonly threadId: string;
+      readonly clientEventId: string;
+    }> {
+      const clientEventId = body.clientEventId ?? randomUUID();
+      const sent = await this.requestSendEvent(
+        actor,
+        { ...body, clientEventId },
+        [201],
+        options,
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the chat send to be accepted");
+      }
+      await flushWaitUntilForTest();
+      const { events } = await this.listThreadEvents(actor, sent.body.threadId);
+      const launched = events.find((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === clientEventId &&
+          event.runId !== undefined
+        );
+      });
+      if (launched?.runId === undefined) {
+        throw new Error("Expected the chat send to launch a run");
+      }
+      return {
+        runId: launched.runId,
+        threadId: sent.body.threadId,
+        clientEventId,
+      };
     },
 
     async listThreadEvents(

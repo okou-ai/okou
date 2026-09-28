@@ -217,11 +217,8 @@ async function sendChatRun(
     readonly model?: SupportedRunModel;
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
-  const sent = await chat.requestSendEvent(actor, body, [201]);
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected the entitled chat send to create a run");
-  }
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
+  const { runId, threadId } = await chat.sendAndLaunch(actor, body);
+  return { runId, threadId };
 }
 
 async function claimChatRun(
@@ -464,6 +461,8 @@ async function sendNoCreditMessageResult(
   if (!Number.isFinite(createdAt)) {
     throw new Error("Expected the no-credit send to return a timestamp");
   }
+  // The background pick rejects the input for insufficient credits.
+  await flushWaitUntilForTest();
   return { threadId: sent.body.threadId, createdAt };
 }
 
@@ -3764,6 +3763,8 @@ describe("CHAT-03 run usage events", () => {
 const CHAT_EVENT_SEARCH_CRON_SECRET = "chat-event-search-cron-secret";
 
 async function projectChatEventSearch() {
+  // Sends only enqueue; let their background picks settle the inputs first.
+  await flushWaitUntilForTest();
   mockEnv("CRON_SECRET", CHAT_EVENT_SEARCH_CRON_SECRET);
   const client = setupApp({
     context,

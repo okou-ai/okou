@@ -149,11 +149,22 @@ async function startRun(
     }),
     [201],
   );
-  if (!response.body.runId) {
+  // Run now only enqueues; the background pick launches the run.
+  expect(response.body.runId).toBeNull();
+  return await launchedRunId(response.body.chatThreadId);
+}
+
+/** Flush background picks and read the newest launched run in a thread. */
+async function launchedRunId(chatThreadId: string): Promise<string> {
+  await flushWaitUntilForTest();
+  const events = await workflows.readThreadEvents(chatThreadId);
+  const runId = [...events].reverse().find((event) => {
+    return event.eventType === "input.prompt" && event.runId;
+  })?.runId;
+  if (!runId) {
     throw new Error("Expected an idle Automation run to start");
   }
-  await flushWaitUntilForTest();
-  return response.body.runId;
+  return runId;
 }
 
 async function seedResultCallback(args: {
@@ -281,17 +292,13 @@ describe("Official Automation result email callbacks", () => {
       }),
       [200],
     );
-    if (!directRun.body.runId) {
-      throw new Error("Expected the direct Workflow run to start");
-    }
+    const directRunId = await launchedRunId(directRun.body.chatThreadId);
     expect(
-      (await runCallbackState(scenario, directRun.body.runId)).some(
-        (callback) => {
-          return callback.internalKind === RESULT_CALLBACK_KIND;
-        },
-      ),
+      (await runCallbackState(scenario, directRunId)).some((callback) => {
+        return callback.internalKind === RESULT_CALLBACK_KIND;
+      }),
     ).toBeFalsy();
-    await runs.requestCancelRun(scenario.actor, directRun.body.runId, [200]);
+    await runs.requestCancelRun(scenario.actor, directRunId, [200]);
     await flushWaitUntilForTest();
   });
 

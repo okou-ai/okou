@@ -286,9 +286,6 @@ function createAgentSubmitMessage(
           // live default.
           ...(imageModelPin !== null ? { imageModel: imageModelPin } : {}),
           ...(videoModelPin !== null ? { videoModel: videoModelPin } : {}),
-          ...(submission.videoRunOptions === undefined
-            ? {}
-            : { videoRunOptions: submission.videoRunOptions }),
           // A forward stays on this page, so only a send that opens the new
           // thread hands the selection over to it.
           ...(options.forward

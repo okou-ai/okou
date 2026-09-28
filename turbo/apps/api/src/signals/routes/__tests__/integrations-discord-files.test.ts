@@ -1256,23 +1256,16 @@ describe("Canonical Discord file publication and delivery", () => {
     const agent = await bdd.createAgent(fixture.actor, {
       displayName: "Discord file source test",
     });
-    const sent = await chatFiles.requestSendEvent(
-      fixture.actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Create a report for Discord",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected the chat request to create an owned Run");
-    }
+    const sent = await chatFiles.sendAndLaunch(fixture.actor, {
+      agentId: agent.agentId,
+      prompt: "Create a report for Discord",
+    });
     const seconds = Math.floor(now() / 1000);
     const token = signSandboxJwtForTests({
       scope: "okou",
       userId: fixture.actor.userId,
       orgId: fixture.actor.orgId,
-      runId: sent.body.runId,
+      runId: sent.runId,
       capabilities: ["discord:write"],
       iat: seconds,
       exp: seconds + 60,
@@ -1285,11 +1278,11 @@ describe("Canonical Discord file publication and delivery", () => {
     );
     const artifacts = await chatFiles.listThreadArtifacts(
       fixture.actor,
-      sent.body.threadId,
+      sent.threadId,
     );
 
     expect(artifacts.runs).toContainEqual({
-      runId: sent.body.runId,
+      runId: sent.runId,
       files: [
         expect.objectContaining({
           id: upload.operation.assetId,

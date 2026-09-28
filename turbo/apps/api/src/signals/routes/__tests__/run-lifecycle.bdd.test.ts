@@ -835,11 +835,8 @@ async function sendChatRunMessage(
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
   const chat = createChatFilesBddApi(context);
-  const sent = await chat.requestSendEvent(actor, body, [201]);
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected the entitled chat send to create a run");
-  }
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
+  const { runId, threadId } = await chat.sendAndLaunch(actor, body);
+  return { runId, threadId };
 }
 
 interface SameThreadReuseHeartbeatArgs {
@@ -5380,53 +5377,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
-  it("rejects runs over the concurrency limit until a slot frees", async () => {
-    // Two admitted runs fill the organization, independent of the plan.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-    const api = createRunsApi(context);
-    const { actor, agentId } = await entitledRunActor();
-
-    const first = await api.createRun(actor, {
-      agentId,
-      prompt: "active run one",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(first.status).toBe("pending");
-    const second = await api.createRun(actor, {
-      agentId,
-      prompt: "active run two",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(second.status).toBe("pending");
-
-    const rejected = await api.requestCreateRun(
-      actor,
-      {
-        agentId,
-        prompt: "run over the concurrency limit",
-        modelProvider: "anthropic-api-key",
-      },
-      [429],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("CONCURRENT_RUN_LIMIT");
-
-    const atLimit = await api.readRunQueue(actor);
-    expect(atLimit.body.concurrency.active).toBe(2);
-
-    // Cancelling an active run frees the slot for the next direct create.
-    await api.requestCancelRun(actor, first.runId, [200]);
-    const third = await api.createRun(actor, {
-      agentId,
-      prompt: "run after a slot frees",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(third.status).toBe("pending");
-
-    await api.requestCancelRun(actor, second.runId, [200]);
-    await api.requestCancelRun(actor, third.runId, [200]);
-  });
-
   it("records a failed queued launch when queue payload encryption fails", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
@@ -5760,61 +5710,56 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     // Luna is Pi-eligible, so the limited-free default chat run is claimed as
     // a sandbox Pi turn rather than a Codex Runner job.
     preparePiSandboxClaim();
-    const sent = await chat.requestSendEvent(
-      actor,
-      { agentId, prompt: "limited-free default model run" },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected the default Luna model to create a run");
-    }
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId,
+      prompt: "limited-free default model run",
+    });
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(sent.body.runId);
+    const claim = await api.claimRunnerJob(sent.runId);
     expect(claim.cliAgentType).toBe("pi");
     expect(claim.piModelConfig).toMatchObject({
       provider: "openai",
       model: "gpt-6-luna",
     });
     expect(claim.modelUsageProvider).toBe("gpt-6-luna");
-    await api.requestCancelRun(actor, sent.body.runId, [200]);
-    await finishCancelledRun(sent.body.runId, claim.sandboxToken);
+    await api.requestCancelRun(actor, sent.runId, [200]);
+    await finishCancelledRun(sent.runId, claim.sandboxToken);
 
-    // Model access follows the configured route. A seeded Built-in route the
-    // plan does not cover reports the upgrade, while a model the workspace
-    // never configured reports that it is unavailable.
-    for (const model of ["gpt-6-astra", "claude-fable-5-1"] as const) {
-      const rejectedThreadId = randomUUID();
-      const rejected = await chat.requestSendEvent(
+    // Model access follows the configured route and is decided when the
+    // input is picked: a seeded Built-in route the plan does not cover
+    // rejects the input for credits, while a model the workspace never
+    // configured rejects it as unavailable.
+    const expectRejectedAtPick = async (
+      model: SupportedRunModel,
+      error: string,
+    ) => {
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
         actor,
         {
           agentId,
-          clientThreadId: rejectedThreadId,
+          clientThreadId: randomUUID(),
+          clientEventId,
           prompt: `limited-free rejected ${model} run`,
           model,
         },
-        [402],
+        [201],
       );
-      expectApiError(rejected.body);
-      expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
-      await chat.requestReadThread(actor, rejectedThreadId, [404]);
+      if (sent.status !== 201) {
+        throw new Error("Expected the send to be accepted");
+      }
+      await flushWaitUntilForTest();
+      const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+      expect(
+        events.find((event) => {
+          return event.revokesEventId === clientEventId;
+        }),
+      ).toMatchObject({ eventType: "input.rejected", error });
+    };
+    for (const model of ["gpt-6-astra", "claude-fable-5-1"] as const) {
+      await expectRejectedAtPick(model, "insufficient_credits");
     }
-    const unconfiguredThreadId = randomUUID();
-    const unconfigured = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        clientThreadId: unconfiguredThreadId,
-        prompt: "limited-free rejected gpt-5.6-sol run",
-        model: "gpt-5.6-sol",
-      },
-      [400],
-    );
-    expectApiError(unconfigured.body);
-    expect(unconfigured.body.error).toStrictEqual({
-      message: "The selected model is not available in this workspace",
-      code: "BAD_REQUEST",
-    });
-    await chat.requestReadThread(actor, unconfiguredThreadId, [404]);
+    await expectRejectedAtPick("gpt-5.6-sol", "bad_request");
     const queue = await api.readRunQueue(actor);
     expect(queue.body.concurrency.active).toBe(0);
   });
@@ -5875,32 +5820,25 @@ describe("RUN-02: model provider selection and built-in admission", () => {
 
     preparePiSandboxClaim();
 
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "built-in GPT 5.6 model provider",
-        model: selectedModel,
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected the GPT 5.6 chat send to create a run");
-    }
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId,
+      prompt: "built-in GPT 5.6 model provider",
+      model: selectedModel,
+    });
 
     await api.heartbeatRunner(runnerGroup);
     const poll = await api.pollRunner(runnerGroup);
     expect(poll.body.job).toMatchObject({
-      runId: sent.body.runId,
+      runId: sent.runId,
       experimentalProfile: DEFAULT_PROFILE,
     });
-    const claim = await api.claimRunnerJob(sent.body.runId);
-    await expectBuiltInModelRunRuntimeRoute(sent.body.runId, selectedModel);
+    const claim = await api.claimRunnerJob(sent.runId);
+    await expectBuiltInModelRunRuntimeRoute(sent.runId, selectedModel);
 
     // GPT 5.6 is Pi-eligible: chat runs launch a Pi turn, not a Codex job.
     expect(claim.cliAgentType).toBe("pi");
     await expect(
-      readRunLaunchSnapshotFixture(context, sent.body.runId),
+      readRunLaunchSnapshotFixture(context, sent.runId),
     ).resolves.toStrictEqual({
       exists: true,
       launch_snapshot: {
@@ -5921,7 +5859,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(claim.billableFirewalls).toContain("model-provider:openai-api-key");
     expect(claim.modelUsageProvider).toBe(selectedModel);
 
-    await api.requestCancelRun(actor, sent.body.runId, [200]);
+    await api.requestCancelRun(actor, sent.runId, [200]);
   });
 
   it("keeps built-in DeepSeek admission after a Slack fixture releases its shared key", async () => {
@@ -5970,21 +5908,16 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     // Admission, not provider execution, is under test.
     preparePiSandboxClaim();
 
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "built-in DeepSeek admission after shared fixture release",
-        model: selectedModel,
-      },
-      [201],
-    );
-    expect(sent.status).toBe(201);
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected the DeepSeek chat send to create a run");
-    }
-    expect(sent.body.runId).not.toBeNull();
-    await api.requestCancelRun(actor, sent.body.runId, [200]);
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId,
+      prompt: "built-in DeepSeek admission after shared fixture release",
+      model: selectedModel,
+    });
+    // The pick admitted the built-in route and created the run.
+    await expect(api.readRun(actor, sent.runId)).resolves.toMatchObject({
+      status: "pending",
+    });
+    await api.requestCancelRun(actor, sent.runId, [200]);
   });
 
   it.each([undefined, "deepseek-flash", "deepseek-v4-flash"] as const)(
@@ -6079,22 +6012,15 @@ describe("RUN-02: model provider selection and built-in admission", () => {
 
       preparePiSandboxClaim();
 
-      const sent = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          prompt: "built-in DeepSeek Responses model provider",
-          model: selectedModel,
-        },
-        [201],
-      );
-      if (sent.status !== 201 || sent.body.runId === null) {
-        throw new Error("Expected the DeepSeek chat send to create a run");
-      }
+      const sent = await chat.sendAndLaunch(actor, {
+        agentId,
+        prompt: "built-in DeepSeek Responses model provider",
+        model: selectedModel,
+      });
 
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(sent.body.runId);
-      await expectBuiltInModelRunRuntimeRoute(sent.body.runId, selectedModel);
+      const claim = await api.claimRunnerJob(sent.runId);
+      await expectBuiltInModelRunRuntimeRoute(sent.runId, selectedModel);
 
       // DeepSeek is Pi-eligible: chat runs use Pi's Responses dialect rather
       // than the native Codex Responses adapter.
@@ -6124,7 +6050,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         "image-recognition:write",
       );
 
-      await api.requestCancelRun(actor, sent.body.runId, [200]);
+      await api.requestCancelRun(actor, sent.runId, [200]);
     },
   );
 
@@ -6150,20 +6076,13 @@ describe("RUN-02: model provider selection and built-in admission", () => {
 
       preparePiSandboxClaim();
 
-      const sent = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          prompt: "use DeepSeek Flash through OpenRouter",
-          model: selectedModel,
-        },
-        [201],
-      );
-      if (sent.status !== 201 || sent.body.runId === null) {
-        throw new Error("Expected DeepSeek Flash to create a run");
-      }
+      const sent = await chat.sendAndLaunch(actor, {
+        agentId,
+        prompt: "use DeepSeek Flash through OpenRouter",
+        model: selectedModel,
+      });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(sent.body.runId);
+      const claim = await api.claimRunnerJob(sent.runId);
 
       // DeepSeek is Pi-eligible: the OpenRouter workspace key is projected
       // into Pi's Responses route instead of a Codex model catalog.
@@ -6189,7 +6108,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         ),
       ).toBe(selectedModel === "deepseek-v4-flash");
 
-      await api.requestCancelRun(actor, sent.body.runId, [200]);
+      await api.requestCancelRun(actor, sent.runId, [200]);
     },
   );
 
@@ -6245,22 +6164,15 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     preparePiSandboxClaim();
 
     async function claimModel(model: SupportedRunModel) {
-      const sent = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          prompt: `recognition eligibility for ${model}`,
-          model,
-        },
-        [201],
-      );
-      if (sent.status !== 201 || sent.body.runId === null) {
-        throw new Error(`Expected ${model} to create a run`);
-      }
+      const sent = await chat.sendAndLaunch(actor, {
+        agentId,
+        prompt: `recognition eligibility for ${model}`,
+        model,
+      });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(sent.body.runId);
+      const claim = await api.claimRunnerJob(sent.runId);
       expect(claim.cliAgentType).toBe("pi");
-      return { claim, runId: sent.body.runId };
+      return { claim, runId: sent.runId };
     }
 
     const unsupported = await claimModel(unsupportedModel);
@@ -6543,22 +6455,15 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       agentId: agent.agentId,
       model: "claude-sonnet-5",
     });
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        threadId: thread.id,
-        prompt: "run on the pinned member provider",
-        model: "gpt-6-astra",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected the pinned chat send to create a run");
-    }
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      threadId: thread.id,
+      prompt: "run on the pinned member provider",
+      model: "gpt-6-astra",
+    });
 
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(sent.body.runId);
+    const claim = await api.claimRunnerJob(sent.runId);
     expect(claim.cliAgentType).toBe("codex");
     expect(claim.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
     expect(claim.environment?.CHATGPT_ACCESS_TOKEN).toBe(
@@ -6595,8 +6500,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       }),
     ).toBeFalsy();
 
-    await api.requestCancelRun(actor, sent.body.runId, [200]);
-    const cancelled = await api.readRun(actor, sent.body.runId);
+    await api.requestCancelRun(actor, sent.runId, [200]);
+    const cancelled = await api.readRun(actor, sent.runId);
     expect(cancelled.status).toBe("cancelled");
   });
 });
@@ -14595,9 +14500,6 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
   });
 
   it("returns null claim secretValues for direct compose runs without stored secrets", async () => {
-    // Two active direct runs keep the concurrency rejection below reachable,
-    // independent of the plan's own limit.
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
@@ -14691,28 +14593,6 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     );
     expectApiError(failedClaim.body);
     expect(failedClaim.body.error.message).toBe("Job not found in queue");
-
-    const firstActive = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "active direct run one",
-    });
-    const secondActive = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "active direct run two",
-    });
-    const rejected = await api.requestDirectRun(
-      actor,
-      {
-        agentId: foreignCompose.agentId,
-        prompt: "concurrency should win before runner payload validation",
-      },
-      [429],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.code).toBe("CONCURRENT_RUN_LIMIT");
-
-    await api.requestCancelRun(actor, firstActive.runId, [200]);
-    await api.requestCancelRun(actor, secondActive.runId, [200]);
   });
 });
 

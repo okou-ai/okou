@@ -1,30 +1,30 @@
+import { randomUUID } from "node:crypto";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 
-import { logger } from "../../lib/log";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
-import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
-import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   childAutonomyBudget,
   loadRunAutonomyBudget,
 } from "./autonomy-budget.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { listPendingChatInputs } from "./chat-event-queue.service";
 import {
   insertChatEvent,
-  replaceChatEvent,
+  insertChatEventContext,
   revokeChatEvent,
 } from "./chat-event.service";
+import type {
+  ChatQueueHeadContext,
+  ChatQueueHeadRejection,
+  ChatQueueRunAssembly,
+} from "./chat-queue-run-assembly";
 import {
   createUserMessageDocument,
   withAgentRunSourceAnnotation,
@@ -38,14 +38,9 @@ import type {
   WorkflowAutomationEventPayload,
   WorkflowAutomationEventType,
 } from "./workflow-automation-context.service";
-import {
-  launchQueuedWorkflowAutomation$,
-  type RunFailure,
-} from "./workflow-automation-launch.service";
+import { assembleWorkflowAutomationRun } from "./workflow-automation-launch.service";
 import { buildWorkflowAutomationQueuedLaunchMaterial } from "./workflow-automation-queued-launch-context.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
-
-const log = logger("WorkflowChatEventQueue");
 
 export type WorkflowQueueAdmissionTransaction = Tx;
 
@@ -133,22 +128,26 @@ export async function workflowAutomationQueueEventWriter(
     ? withAgentRunSourceAnnotation(automationUserMessage, args.agentRunSource)
     : automationUserMessage;
   return async (tx) => {
+    // The entry owns its context row; it commits with the event that points
+    // at it, under the same id.
+    const values = {
+      id: args.queueEventId ?? randomUUID(),
+      chatThreadId: args.chatThreadId,
+      eventType: "input.automation" as const,
+      content: null,
+      userMessage,
+      runId: null,
+      automationId: automation.id,
+      workflowName: args.workflowName,
+      workflowAutomationEventType: args.workflowAutomationEventType,
+      workflowAutomationEventPayload: args.workflowAutomationEventPayload,
+      connectorSourceId: args.connectorSourceId,
+      triggerBrief: args.triggerBrief ?? null,
+    };
+    await insertChatEventContext(tx, values);
     const inserted = await insertChatEvent(
       tx,
-      {
-        id: args.queueEventId,
-        chatThreadId: args.chatThreadId,
-        eventType: "input.automation",
-        content: null,
-        userMessage,
-        runId: null,
-        automationId: automation.id,
-        workflowName: args.workflowName,
-        workflowAutomationEventType: args.workflowAutomationEventType,
-        workflowAutomationEventPayload: args.workflowAutomationEventPayload,
-        connectorSourceId: args.connectorSourceId,
-        triggerBrief: args.triggerBrief ?? null,
-      },
+      values,
       args.queueEventId === undefined ? "none" : "id",
     );
     if (!inserted && args.queueEventId === undefined) {
@@ -265,58 +264,6 @@ export async function revokePendingScheduleTicks(
   }
 }
 
-/**
- * Consume an unfireable automation event as `input.rejected`. The rejected
- * replacement conflicts on the event's revoke edge with any concurrent claim,
- * recall or rejection, so it is written at most once.
- */
-export async function rejectWorkflowQueueEvent(
-  db: Db,
-  args: {
-    readonly chatThreadId: string;
-    readonly eventId: string;
-    readonly reason: string;
-  },
-): Promise<boolean> {
-  const [event] = await db
-    .select({
-      userMessage: canonicalChatEventUserMessage(),
-      contextId: chatEvents.contextId,
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-      ),
-    )
-    .limit(1);
-  if (!event?.userMessage) {
-    return false;
-  }
-  const [context] =
-    event.contextId === null
-      ? []
-      : await db
-          .select({
-            automationId: chatAutomationContext.automationId,
-            triggerBrief: chatAutomationContext.triggerBrief,
-          })
-          .from(chatAutomationContext)
-          .where(eq(chatAutomationContext.id, event.contextId))
-          .limit(1);
-  const rejected = await replaceChatEvent(db, args.eventId, {
-    chatThreadId: args.chatThreadId,
-    eventType: "input.rejected",
-    userMessage: event.userMessage,
-    runId: null,
-    error: args.reason,
-    ...(context ? { automationId: context.automationId } : {}),
-    triggerBrief: context?.triggerBrief ?? null,
-  });
-  return rejected !== null;
-}
-
 interface QueuedAutomationEvent {
   readonly id: string;
   readonly chatThreadId: string;
@@ -328,23 +275,12 @@ interface QueuedAutomationEvent {
   readonly connectorSourceId: string | null;
 }
 
-/** The head's automation context, by primary keys only. */
+/** The head's automation context, by its primary key. */
 async function loadQueuedAutomationEvent(
   db: Db,
-  args: { readonly chatThreadId: string; readonly eventId: string },
+  head: ChatQueueHeadContext,
 ): Promise<QueuedAutomationEvent | null> {
-  const [event] = await db
-    .select({ contextId: chatEvents.contextId })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.id, args.eventId),
-        eq(chatEvents.chatThreadId, args.chatThreadId),
-        eq(chatEvents.contextType, "automation"),
-      ),
-    )
-    .limit(1);
-  if (!event?.contextId) {
+  if (head.contextId === null) {
     return null;
   }
   const [context] = await db
@@ -357,10 +293,10 @@ async function loadQueuedAutomationEvent(
       connectorSourceId: chatAutomationContext.connectorSourceId,
     })
     .from(chatAutomationContext)
-    .where(eq(chatAutomationContext.id, event.contextId))
+    .where(eq(chatAutomationContext.id, head.contextId))
     .limit(1);
   return context
-    ? { id: args.eventId, chatThreadId: args.chatThreadId, ...context }
+    ? { id: head.id, chatThreadId: head.chatThreadId, ...context }
     : null;
 }
 
@@ -391,7 +327,10 @@ async function resolveAutonomyBudget(
   automation: typeof workflowAutomations.$inferSelect,
 ): Promise<
   | { readonly kind: "ok"; readonly autonomyBudget: number }
-  | { readonly kind: "invalid"; readonly message: string }
+  | {
+      readonly kind: "invalid";
+      readonly error: { readonly code: string; readonly message: string };
+    }
 > {
   const label =
     event.eventType === "manual" ? "Manual automation" : "Chat run finished";
@@ -407,148 +346,182 @@ async function resolveAutonomyBudget(
   if (typeof sourceRunId !== "string") {
     return {
       kind: "invalid",
-      message: `${label} event is missing its source run`,
+      error: {
+        code: "AUTONOMY_SOURCE_UNAVAILABLE",
+        message: `${label} event is missing its source run`,
+      },
     };
   }
   const sourceAutonomyBudget = await loadRunAutonomyBudget(db, sourceRunId);
   if (sourceAutonomyBudget === null) {
     return {
       kind: "invalid",
-      message: `${label} source run no longer exists`,
+      error: {
+        code: "AUTONOMY_SOURCE_UNAVAILABLE",
+        message: `${label} source run no longer exists`,
+      },
     };
   }
   const derived = childAutonomyBudget(sourceAutonomyBudget);
   return derived.kind === "exhausted"
-    ? { kind: "invalid", message: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE }
+    ? {
+        kind: "invalid",
+        error: {
+          code: "AUTONOMY_BUDGET_EXHAUSTED",
+          message: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
+        },
+      }
     : { kind: "ok", autonomyBudget: derived.autonomyBudget };
 }
 
 function reconciliationConflictMessage(
   reconciled: OfficialWorkflowReconciliationResult,
 ): string {
-  return reconciled.kind === "needs-reconfiguration"
+  // A `retry` result (a superseded reconciliation, or an event preparation or
+  // watch registration failure) rejects the head like any other failure; the
+  // next trigger reconciles again.
+  return reconciled.kind === "needs-reconfiguration" ||
+    reconciled.kind === "retry"
     ? reconciled.message
     : "Official Workflow automation no longer exists";
 }
 
-/**
- * How launching an automation queue head ended. `rejected` has already
- * consumed the head as `input.rejected`.
- */
-export type QueuedAutomationEventLaunch =
-  | { readonly kind: "launched"; readonly runId: string }
-  | { readonly kind: "org-full" }
-  | { readonly kind: "lost" }
-  | { readonly kind: "rejected"; readonly failure: RunFailure };
-
-interface QueuedAutomationHead {
-  readonly chatThreadId: string;
-  readonly orgId: string;
-  readonly eventId: string;
-}
-
-/**
- * Tell the thread's viewers its queue head was consumed. Whichever pick
- * launched or rejected the head publishes, not only the one that enqueued it;
- * a duplicate publish by the enqueuer is harmless.
- */
-async function publishQueuedAutomationHeadConsumed(
+/** Build the run for a readable automation target, or reject the head. */
+async function assembleAutomationRunForTarget(
   db: Db,
-  head: QueuedAutomationHead,
+  args: {
+    readonly head: ChatQueueHeadContext;
+    readonly event: QueuedAutomationEvent;
+    readonly target: LaunchTarget;
+    readonly rejection: (error: {
+      readonly code: string;
+      readonly message: string;
+    }) => ChatQueueHeadRejection;
+  },
   signal: AbortSignal,
-): Promise<void> {
-  const [thread] = await db
-    .select({ userId: chatThreads.userId })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, head.chatThreadId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!thread) {
-    return;
-  }
-  await publishChatThreadMessageCreatedSafely({
-    userId: thread.userId,
-    orgId: head.orgId,
-    threadId: head.chatThreadId,
+): Promise<ChatQueueRunAssembly> {
+  const { head, event, target, rejection } = args;
+  const conflict = (message: string): ChatQueueRunAssembly => {
+    return {
+      kind: "rejected",
+      rejection: rejection({ code: "CONFLICT", message }),
+    };
+  };
+  const material = buildWorkflowAutomationQueuedLaunchMaterial({
+    workflowName: event.workflowName,
+    eventType: event.eventType,
+    eventPayload: event.eventPayload,
+    automation: target.automation,
+    agentId: target.agentId,
+    chatThreadId: event.chatThreadId,
   });
+  if (!material) {
+    return conflict("Workflow queue event payload is unreadable");
+  }
+  const autonomyBudget = await resolveAutonomyBudget(
+    db,
+    event,
+    target.automation,
+  );
   signal.throwIfAborted();
+  if (autonomyBudget.kind === "invalid") {
+    return { kind: "rejected", rejection: rejection(autonomyBudget.error) };
+  }
+  const triggerSource: TriggerSource = manualTriggerSource(target.automation);
+  const assembled = await assembleWorkflowAutomationRun(
+    db,
+    {
+      due: {
+        automation: target.automation,
+        agentId: target.agentId,
+        chatThreadId: event.chatThreadId,
+        allowClaimedOnceScheduleAutomation:
+          material.allowClaimedOnceScheduleAutomation,
+      },
+      queueEventId: event.id,
+      apiStartTime: head.apiStartTime,
+      prompt: material.prompt,
+      triggerBrief: event.triggerBrief ?? undefined,
+      triggerSource,
+      ...(event.connectorSourceId
+        ? { connectorSourceId: event.connectorSourceId }
+        : {}),
+      appendSystemPrompt: material.appendSystemPrompt,
+      callbacks: material.callbacks,
+      autonomyBudget: autonomyBudget.autonomyBudget,
+      activePreviousRunPolicy: material.activePreviousRunPolicy,
+      recordLastRunId: material.recordLastRunId,
+      recordLastRunAt: material.recordLastRunAt,
+      dispatchFailedCallbacks: head.dispatchFailedCallbacks,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (assembled.kind === "conflict") {
+    return conflict(assembled.message);
+  }
+  if (assembled.kind === "run_error") {
+    return {
+      kind: "rejected",
+      rejection: rejection(assembled.response.body.error),
+    };
+  }
+  return {
+    kind: "assembled",
+    run: assembled.run,
+    rejection,
+    launched: assembled.launched,
+  };
 }
 
 /**
- * Consume a queued automation head as `input.rejected`. A head another writer
- * already consumed reports `lost`.
+ * The automation assembler: build run parameters from the head's automation
+ * context, reconciling an Official Workflow first. A reconciliation busy
+ * elsewhere leaves the head waiting; every other failure rejects it.
  */
-async function rejectQueuedAutomationEvent(
-  db: Db,
-  head: QueuedAutomationHead,
-  failure: RunFailure,
-  signal: AbortSignal,
-): Promise<QueuedAutomationEventLaunch> {
-  const reason =
-    failure.kind === "conflict"
-      ? failure.message
-      : failure.response.body.error.message;
-  const consumed = await rejectWorkflowQueueEvent(db, {
-    chatThreadId: head.chatThreadId,
-    eventId: head.eventId,
-    reason,
-  });
-  signal.throwIfAborted();
-  if (!consumed) {
-    return { kind: "lost" };
-  }
-  const logRejection =
-    failure.kind === "run_error" &&
-    failure.response.body.error.code !== "INSUFFICIENT_CREDITS"
-      ? log.warn
-      : log.debug;
-  logRejection("Rejected queued automation event", {
-    eventId: head.eventId,
-    chatThreadId: head.chatThreadId,
-    reason,
-  });
-  await publishQueuedAutomationHeadConsumed(db, head, signal);
-  return { kind: "rejected", failure };
-}
-
-/**
- * The automation branch of the pick's launch: build launch params from the
- * head's automation context (reconciling an Official Workflow first) and
- * launch it. Every failure other than organization capacity consumes the
- * head as `input.rejected`.
- */
-export const launchQueuedAutomationEvent$ = command(
+export const assembleQueuedAutomationRun$ = command(
   async (
     { set },
-    args: {
-      readonly chatThreadId: string;
-      /** The thread's organization, known to the pick; no thread lookup. */
-      readonly orgId: string;
-      readonly eventId: string;
-      readonly apiStartTime: number;
-      readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
-      readonly timing?: ApiDispatchTimingCollector;
-    },
+    head: ChatQueueHeadContext,
     signal: AbortSignal,
-  ): Promise<QueuedAutomationEventLaunch> => {
+  ): Promise<ChatQueueRunAssembly> => {
     const db = set(writeDb$);
-    const reject = (failure: RunFailure) => {
-      return rejectQueuedAutomationEvent(db, args, failure, signal);
-    };
-    const conflict = (message: string) => {
-      return reject({ kind: "conflict", message });
+    const unreadable = (message: string): ChatQueueRunAssembly => {
+      return {
+        kind: "rejected",
+        rejection: {
+          error: { code: "CONFLICT", message },
+          userId: head.userId,
+        },
+      };
     };
 
-    const event = await loadQueuedAutomationEvent(db, args);
+    const event = await loadQueuedAutomationEvent(db, head);
     signal.throwIfAborted();
     if (!event) {
-      return await conflict("Workflow queue event payload is unreadable");
+      return unreadable("Workflow queue event payload is unreadable");
     }
-    let target = await loadLaunchTarget(db, event.automationId);
+    const loadedTarget = await loadLaunchTarget(db, event.automationId);
     signal.throwIfAborted();
-    if (!target) {
-      return await conflict("Workflow automation no longer exists");
+    if (!loadedTarget) {
+      return unreadable("Workflow automation no longer exists");
     }
+    let target = loadedTarget;
+    const rejection = (error: {
+      readonly code: string;
+      readonly message: string;
+    }): ChatQueueHeadRejection => {
+      return {
+        error,
+        userId: target.automation.ownerUserId ?? head.userId,
+      };
+    };
+    const conflict = (message: string): ChatQueueRunAssembly => {
+      return {
+        kind: "rejected",
+        rejection: rejection({ code: "CONFLICT", message }),
+      };
+    };
     if (target.automation.officialBlueprintKey !== null) {
       const reconciled = await set(
         dispatchConfiguredOfficialWorkflowReconciliation$,
@@ -561,80 +534,20 @@ export const launchQueuedAutomationEvent$ = command(
         signal,
       );
       signal.throwIfAborted();
-      if (reconciled.kind === "retry") {
-        // Reconciliation is busy elsewhere; the head keeps waiting.
-        return { kind: "lost" };
-      }
       if (reconciled.kind !== "current") {
-        return await conflict(reconciliationConflictMessage(reconciled));
+        return conflict(reconciliationConflictMessage(reconciled));
       }
-      target = await loadLaunchTarget(db, event.automationId);
+      const reconciledTarget = await loadLaunchTarget(db, event.automationId);
       signal.throwIfAborted();
-      if (!target) {
-        return await conflict("Official Workflow automation no longer exists");
+      if (!reconciledTarget) {
+        return conflict("Official Workflow automation no longer exists");
       }
+      target = reconciledTarget;
     }
-    const material = buildWorkflowAutomationQueuedLaunchMaterial({
-      workflowName: event.workflowName,
-      eventType: event.eventType,
-      eventPayload: event.eventPayload,
-      automation: target.automation,
-      agentId: target.agentId,
-      chatThreadId: event.chatThreadId,
-    });
-    if (!material) {
-      return await conflict("Workflow queue event payload is unreadable");
-    }
-    const autonomyBudget = await resolveAutonomyBudget(
+    return await assembleAutomationRunForTarget(
       db,
-      event,
-      target.automation,
-    );
-    signal.throwIfAborted();
-    if (autonomyBudget.kind === "invalid") {
-      return await conflict(autonomyBudget.message);
-    }
-    const triggerSource: TriggerSource = manualTriggerSource(target.automation);
-    const result = await set(
-      launchQueuedWorkflowAutomation$,
-      {
-        due: {
-          automation: target.automation,
-          agentId: target.agentId,
-          chatThreadId: event.chatThreadId,
-          allowClaimedOnceScheduleAutomation:
-            material.allowClaimedOnceScheduleAutomation,
-        },
-        queueEventId: event.id,
-        apiStartTime: args.apiStartTime,
-        prompt: material.prompt,
-        triggerBrief: event.triggerBrief ?? undefined,
-        triggerSource,
-        ...(event.connectorSourceId
-          ? { connectorSourceId: event.connectorSourceId }
-          : {}),
-        appendSystemPrompt: material.appendSystemPrompt,
-        callbacks: material.callbacks,
-        autonomyBudget: autonomyBudget.autonomyBudget,
-        activePreviousRunPolicy: material.activePreviousRunPolicy,
-        recordLastRunId: material.recordLastRunId,
-        recordLastRunAt: material.recordLastRunAt,
-        dispatchFailedCallbacks: args.dispatchFailedCallbacks,
-        timing: args.timing,
-      },
+      { head, event, target, rejection },
       signal,
     );
-    signal.throwIfAborted();
-    if (result.kind === "ok") {
-      await publishQueuedAutomationHeadConsumed(db, args, signal);
-      return { kind: "launched", runId: result.runId };
-    }
-    if (result.kind === "org-full") {
-      return { kind: "org-full" };
-    }
-    if (result.kind === "lost") {
-      return { kind: "lost" };
-    }
-    return await reject(result);
   },
 );

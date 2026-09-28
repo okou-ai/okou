@@ -78,7 +78,6 @@ import {
   safeSync,
   settle,
 } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import {
@@ -147,7 +146,6 @@ import {
 } from "./workflow-automation-account-classification.service";
 import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import type { RunWorkflowAutomationResult } from "./workflow-automation-launch.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import {
@@ -270,19 +268,10 @@ type AutomationActionFailure = Exclude<
 >;
 type WorkflowAutomationRunNowResult =
   | {
-      readonly kind: "ok";
-      readonly runId: string;
-      readonly chatThreadId: string;
-    }
-  | {
       readonly kind: "enqueued";
       readonly chatThreadId: string;
     }
-  | AutomationActionFailure
-  | Exclude<
-      RunWorkflowAutomationResult,
-      { readonly kind: "ok" } | { readonly kind: "enqueued" }
-    >;
+  | AutomationActionFailure;
 
 interface CreateEventAutomationWorkflowContext {
   readonly db: Db;
@@ -4917,7 +4906,7 @@ export const runOwnedWorkflowAutomationNow$ = command(
         ? {}
         : { sourceRunId: args.sourceRunId }),
     });
-    const result = await set(
+    await set(
       runWorkflowAutomationNow$,
       {
         due: {
@@ -4939,22 +4928,11 @@ export const runOwnedWorkflowAutomationNow$ = command(
             userTimezone: ownerTimezone,
           }) ?? undefined,
         replacePendingScheduleTick: false,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
       },
       signal,
     );
     signal.throwIfAborted();
-    if (result.kind === "enqueued") {
-      return { kind: "enqueued", chatThreadId };
-    }
-    if (result.kind !== "ok") {
-      return result;
-    }
-    return {
-      kind: "ok",
-      runId: result.runId,
-      chatThreadId,
-    };
+    return { kind: "enqueued", chatThreadId };
   },
 );
 

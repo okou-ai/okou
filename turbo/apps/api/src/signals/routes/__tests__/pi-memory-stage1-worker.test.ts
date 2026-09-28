@@ -2763,19 +2763,14 @@ describe("Stage 1 background credential availability", () => {
       displayName: "Retained source account",
       visibility: "private",
     });
-    const sent = await createChatFilesBddApi(context).requestSendEvent(
+    const { runId } = await createChatFilesBddApi(context).sendAndLaunch(
       actor,
       {
         agentId: agent.agentId,
         prompt: "active foreground source",
         model: "gpt-6-astra",
       },
-      [201],
     );
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected admitted foreground run");
-    }
-    const runId = sent.body.runId;
     onTestFinished(async () => {
       await runs.requestCancelRun(actor, runId, [200]);
       // Cancellation schedules chat writes that must settle before fixture deletion.

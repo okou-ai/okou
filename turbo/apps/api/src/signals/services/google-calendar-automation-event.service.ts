@@ -26,7 +26,6 @@ import { webUrl } from "../../lib/web-url";
 import { writeDb$, type Db } from "../external/db";
 import { onRejection, settle, tapError } from "../utils";
 import { nowDate } from "../../lib/time";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
@@ -3665,7 +3664,6 @@ const startGoogleCalendarAutomationRun$ = command(
               signal,
             );
           },
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
           timing: args.timing.collectorForRunStart(),
         },
         signal,
@@ -3678,9 +3676,7 @@ const startGoogleCalendarAutomationRun$ = command(
       }
       throw started.error;
     }
-    return started.value.kind === "ok" || started.value.kind === "enqueued"
-      ? "ok"
-      : "error";
+    return "ok";
   },
 );
 

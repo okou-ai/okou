@@ -20,6 +20,7 @@ import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -555,6 +556,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
       duplicates: 0,
     });
 
+    await flushWaitUntilForTest();
     const events = await workflows.readThreadEvents(created.body.chatThreadId);
     const visibleEvent = events.find((event) => {
       return (
@@ -744,6 +746,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
       watchStates: 1,
       dispatched: 1,
     });
+    await flushWaitUntilForTest();
     const primaryRunIds = new Set(
       (
         await runs.listAgentRuns(fixture.actor, {
@@ -760,6 +763,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
       watchStates: 1,
       dispatched: 1,
     });
+    await flushWaitUntilForTest();
     const secondaryRunId = (
       await runs.listAgentRuns(fixture.actor, {
         agent: fixture.agentId,

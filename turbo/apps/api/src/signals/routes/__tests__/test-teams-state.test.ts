@@ -222,6 +222,9 @@ async function dispatchTeamsMessage(args: {
   await expect(
     readJson<{ readonly ok: boolean }>(response),
   ).resolves.toStrictEqual({ ok: true });
+  // The dispatch only enqueues the Teams input; the pick that launches the
+  // run happens in background work.
+  await flushWaitUntilForTest();
 }
 
 describe("GET /api/test/teams-state", () => {
@@ -410,7 +413,6 @@ describe("POST /api/test/teams-dispatch-probe", () => {
       fixture,
       text: "dispatch despite realtime failure",
     });
-    await flushWaitUntilForTest();
 
     expect((await readTeamsState(fixture.tenantId)).recent_runs).toStrictEqual(
       expect.arrayContaining([

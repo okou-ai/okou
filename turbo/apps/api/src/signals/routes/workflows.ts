@@ -2009,9 +2009,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       body,
       userId: auth.userId,
       orgId: auth.orgId,
-      apiStartTime,
       preloadedAgent: agent,
-      timing,
       agentRunPreCreateSource: "workflow_slash_command",
       getStartedWorkflowId: workflow.id,
       ...(workflow.officialDefinitionName === null

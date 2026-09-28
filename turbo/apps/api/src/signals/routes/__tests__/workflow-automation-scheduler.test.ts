@@ -30,6 +30,7 @@ import { readWorkflowScheduleSkipsFixture } from "../../../test-fixtures/workflo
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -216,6 +217,8 @@ async function executeDueWorkflowAutomations(
     [200],
   );
   expect(response.body.success).toBeTruthy();
+  // The tick only enqueues; its background pick finishes before this returns.
+  await flushWaitUntilForTest();
   const automation = await wf.readAutomation(automationId);
   if (!automation.chatThreadId) {
     throw new Error("Expected execution to bind a chat thread");
@@ -686,6 +689,7 @@ describe("okou workflow automation scheduler", () => {
       [200],
     );
     expect(tick.body).toMatchObject({ executed: 1, skipped: 35 });
+    await flushWaitUntilForTest();
     const after = await wf.readAutomation(fresh.automationId);
     if (!after.chatThreadId) {
       throw new Error("Fresh automation did not start");
@@ -832,10 +836,20 @@ describe("okou workflow automation scheduler", () => {
             },
             [201],
           );
-          if (started.status !== 201 || !started.body.runId) {
+          if (started.status !== 201) {
+            throw new Error("Expected an accepted concurrency blocker");
+          }
+          // The send only enqueues; its background pick launches the run.
+          await flushWaitUntilForTest();
+          const blocker = (
+            await wf.readThreadEvents(started.body.threadId)
+          ).find((event) => {
+            return event.eventType === "input.prompt" && event.runId;
+          })?.runId;
+          if (!blocker) {
             throw new Error("Expected an admitted concurrency blocker");
           }
-          blockers.push(started.body.runId);
+          blockers.push(blocker);
         }
       }
       const member = wf.user({
@@ -1295,6 +1309,16 @@ describe("okou workflow automation scheduler", () => {
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const threadId = await executeDueWorkflowAutomations(created.body.id);
         await expect(workflowRunMessages(threadId)).resolves.toHaveLength(0);
+        // The pick rejects each tick in the thread instead of the poll.
+        const rejections = (await wf.readThreadEvents(threadId)).filter(
+          (event) => {
+            return (
+              event.eventType === "input.rejected" &&
+              event.error === "insufficient_credits"
+            );
+          },
+        );
+        expect(rejections).toHaveLength(attempt + 1);
         const automation = await wf.readAutomation(created.body.id);
         expect(automation.enabled).toBeTruthy();
         if (!automation.nextRunAt) {

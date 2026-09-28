@@ -211,7 +211,7 @@ interface CreateAgentRunCommandArgs {
   readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
 }
 
-interface CreateQueueFirstAgentRunCommandArgs extends Omit<
+export interface CreateQueueFirstAgentRunCommandArgs extends Omit<
   CreateAgentRunCommandArgs,
   "chatThreadId" | "agentRunModelPin"
 > {

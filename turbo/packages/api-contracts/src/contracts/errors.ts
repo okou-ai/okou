@@ -644,6 +644,8 @@ function isClaudeCodeTermsAcceptanceRequiredError(
 
 export function isActionableRunError(errorMessage: string): boolean {
   return (
+    errorMessage === "Presentation template not found" ||
+    errorMessage === "Custom template not found" ||
     isAgentExecutionTimeoutRunError(errorMessage) ||
     isCodexOAuthReconnectRequiredRunError(errorMessage) ||
     isCodexChatGptAccountUnsupportedModelRunError(errorMessage) ||

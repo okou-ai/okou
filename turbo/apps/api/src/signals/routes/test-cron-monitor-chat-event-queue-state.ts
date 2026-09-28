@@ -21,6 +21,7 @@ import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   insertChatEvent,
+  insertChatEventContext,
   replaceChatEvent,
 } from "../services/chat-event.service";
 import { normalizeRunMetadata } from "../services/agent-run-metadata-write.service";
@@ -279,13 +280,18 @@ async function seedFixtureEvents(
       .returning({ id: chatEvents.id });
   }
   if (fixtureKind === "orphaned-automation") {
-    const automation = await insertChatEvent(tx, {
+    // Like the workflow entry, write the context row before the event that
+    // points at it under the same id.
+    const values = {
       ...baseEvent,
-      eventType: "input.automation",
+      id: randomUUID(),
+      eventType: "input.automation" as const,
       createdAt: recentStaleEventCreatedAt(),
       automationId: randomUUID(),
       triggerBrief: null,
-    });
+    };
+    await insertChatEventContext(tx, values);
+    const automation = await insertChatEvent(tx, values);
     return [automation];
   }
   if (fixtureKind === "queued-integration") {

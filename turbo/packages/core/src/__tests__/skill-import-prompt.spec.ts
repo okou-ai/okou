@@ -106,9 +106,24 @@ describe("skill import prompt", () => {
     const claude = prompt("claudeCode");
     const codex = prompt("codex");
 
-    expect(claude).toContain("stored in your Claude account");
-    expect(claude).toContain("~/.claude/skills/<skill-name>/");
-    expect(codex).not.toContain("stored in your Claude account");
+    expect(claude).toContain("signed in to the same\nclaude.ai account");
+    expect(codex).not.toContain("signed in to the same");
+  });
+
+  it("imports Claude account skills from wherever the session loads them", () => {
+    const claude = prompt("claudeCode");
+    const codex = prompt("codex");
+
+    expect(claude).toContain("label them Personal (account)");
+    expect(claude).toContain(
+      "Compare the skills available to you in this session",
+    );
+    expect(claude).toContain("through this session's own skill loading");
+    expect(claude).toContain("3. Personal (account) skills");
+    expect(claude).toContain("local-agent-mode-sessions/");
+    expect(codex).not.toContain("local-agent-mode-sessions/");
+    expect(codex).not.toContain("Personal (account)");
+    expect(codex).not.toContain("content was not readable");
   });
 
   it("renders the session limits rather than fixed defaults", () => {

@@ -536,6 +536,7 @@ describe("CHAT effort: automation launches", () => {
       cliAgentType: "claude-code",
     });
     await flushWaitUntilForTest();
+    let previousRunId = runId;
     for (const route of [
       {
         model: "claude-fable-5-1",
@@ -578,13 +579,11 @@ describe("CHAT effort: automation launches", () => {
         }),
         [201],
       );
-      if (!started.body.runId) {
-        throw new Error("Expected an automation run");
-      }
-      if (route.pi) {
-        await flushWaitUntilForTest();
-      }
-      const next = await claimChatRun(runnerGroup, started.body.runId);
+      expect(started.body.runId).toBeNull();
+      const startedRunId = await lastThreadPiAutomationRun(actor, threadId);
+      expect(startedRunId).not.toBe(previousRunId);
+      previousRunId = startedRunId;
+      const next = await claimChatRun(runnerGroup, startedRunId);
       expect(next.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
         route.effectiveEffort,
       );
@@ -598,7 +597,7 @@ describe("CHAT effort: automation launches", () => {
       ).resolves.toMatchObject({
         modelSettings: { [route.model]: { effort: route.effort } },
       });
-      await cancelChatRun(actor, started.body.runId, next.sandboxHeaders);
+      await cancelChatRun(actor, startedRunId, next.sandboxHeaders);
     }
   }, 90_000);
 });

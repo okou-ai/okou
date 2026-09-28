@@ -118,12 +118,29 @@ describe("CHAT-02: web chat send and client ids", () => {
       }),
       [201],
     );
-    if (first.status !== 201 || first.body.runId === null) {
-      throw new Error("Expected the first chat send to create a run");
+    expect(first.body).toStrictEqual({
+      runId: null,
+      threadId: clientThreadId,
+      createdAt: expect.any(String),
+    });
+    const launched = await waitForThreadMessages(
+      actor,
+      clientThreadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === clientEventId &&
+            message.runId !== undefined
+          );
+        });
+      },
+    );
+    const runId = userMessages(launched.events).find((message) => {
+      return message.revokesEventId === clientEventId;
+    })?.runId;
+    if (runId === undefined) {
+      throw new Error("Expected the picked input to launch a run");
     }
-    expect(first.body.threadId).toBe(clientThreadId);
-    expect(first.body.status).toBe("pending");
-    const runId = first.body.runId;
     const pendingBinding = await readThreadSessionBinding(
       context,
       clientThreadId,
@@ -242,28 +259,6 @@ describe("CHAT-02: web chat send and client ids", () => {
       "Only the private agent owner can run this agent",
     );
   }, 30_000);
-
-  it("passes request-scoped network body capture into the runner claim", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const captured = await sendChatRun(actor, {
-      agentId,
-      prompt: "capture this run's network bodies",
-      captureNetworkBodies: true,
-    });
-    const capturedClaim = await claimChatRun(runnerGroup, captured.runId);
-    expect(capturedClaim.claim.captureNetworkBodies).toBeTruthy();
-    await cancelChatRun(actor, captured.runId);
-
-    const ordinary = await sendChatRun(actor, {
-      agentId,
-      prompt: "keep ordinary network logging metadata-only",
-    });
-    const ordinaryClaim = await claimChatRun(runnerGroup, ordinary.runId);
-    expect(ordinaryClaim.claim.captureNetworkBodies).toBeUndefined();
-    await cancelChatRun(actor, ordinary.runId);
-  });
 });
 
 describe("CHAT-02: interrupting active chat runs", () => {
@@ -485,41 +480,49 @@ describe("CHAT-02: dispatch failure", () => {
       },
       [201],
     );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected the failed dispatch to still create a run");
+    if (sent.status !== 201) {
+      throw new Error("Expected the send to be accepted");
     }
-    expect(sent.body.status).toBe("failed");
+    expect(sent.body).toStrictEqual({
+      runId: null,
+      threadId: sent.body.threadId,
+      createdAt: expect.any(String),
+    });
+    const threadId = sent.body.threadId;
+
+    // The pick creates the run and fails it when dispatch cannot start.
+    const messages = await waitForThreadMessages(actor, threadId, (items) => {
+      return assistantMessages(items).some((message) => {
+        return (
+          message.eventType === "run.failed" &&
+          message.runLifecycleEvent === "failed"
+        );
+      });
+    });
+    const runId = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === messageId;
+    })?.runId;
+    if (runId === undefined) {
+      throw new Error("Expected the picked input to carry the failed run");
+    }
     await flushWaitUntilForTest();
 
-    const run = await api.readRun(actor, sent.body.runId);
+    const run = await api.readRun(actor, runId);
     expect(run.status).toBe("failed");
     expect(run.error).toContain("RUNNER_DEFAULT_GROUP");
     await expect(
-      readThreadSessionBinding(context, sent.body.threadId),
+      readThreadSessionBinding(context, threadId),
     ).resolves.toMatchObject({
       agent_session_id: null,
       agent_session_run_id: null,
       run_session_id: null,
     });
 
-    const messages = await waitForThreadMessages(
-      actor,
-      sent.body.threadId,
-      (items) => {
-        return assistantMessages(items).some((message) => {
-          return (
-            message.eventType === "run.failed" &&
-            message.runId === sent.body.runId &&
-            message.runLifecycleEvent === "failed"
-          );
-        });
-      },
-    );
     const failedMarker = assistantMessages(messages.events).find(
       (message): message is FailedMessage => {
         return (
           message.eventType === "run.failed" &&
-          message.runId === sent.body.runId &&
+          message.runId === runId &&
           message.runLifecycleEvent === "failed"
         );
       },
@@ -532,7 +535,7 @@ describe("CHAT-02: dispatch failure", () => {
       expect.objectContaining({
         content: null,
         revokesEventId: messageId,
-        runId: sent.body.runId,
+        runId: runId,
       }),
     );
     expect(
@@ -547,19 +550,15 @@ describe("CHAT-02: dispatch failure", () => {
       actor,
       {
         agentId,
-        threadId: sent.body.threadId,
+        threadId,
         prompt: "fail before worker start",
         clientEventId: messageId,
       },
       [201],
     );
-    expect(replay.body).toMatchObject({
-      runId: sent.body.runId,
-      threadId: sent.body.threadId,
-      status: "failed",
-    });
+    expect(replay.body).toStrictEqual(sent.body);
     await flushWaitUntilForTest();
-    await api.requestClaimRunnerJob(true, sent.body.runId, [404]);
+    await api.requestClaimRunnerJob(true, runId, [404]);
     expect(routeRequests()).toBe(0);
   }, 60_000);
 });
@@ -608,9 +607,22 @@ describe("CHAT-02: admission without spendable credits", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the blocked send to return 201 without a run");
     }
-    expect(sent.body.runId).toBeNull();
+    expect(sent.body).toStrictEqual({
+      runId: null,
+      threadId: sent.body.threadId,
+      createdAt: expect.any(String),
+    });
 
-    const messages = await chat.listThreadEvents(actor, sent.body.threadId);
+    // The pick rejects the input in the background.
+    const messages = await waitForThreadMessages(
+      actor,
+      sent.body.threadId,
+      (items) => {
+        return assistantMessages(items).some((message) => {
+          return message.eventType === "output.error";
+        });
+      },
+    );
     const blockedUsers = userMessages(messages.events);
     expect(blockedUsers).toHaveLength(2);
     const queuedUser = blockedUsers.find((message) => {
@@ -697,8 +709,8 @@ describe("CHAT-02: admission without spendable credits", () => {
       supportByok: true,
       restrictedBuiltInModels: false,
     });
-    // The cancel's slot hand-off is left running: it may reject the next
-    // send's input before the send rejects it itself.
+    // The cancel's slot hand-off is left running: it may pick and reject the
+    // next send's input before the send's own background pick does.
     await cancelChatRun(actor, pending.runId);
 
     const clientEventId = randomUUID();
@@ -716,11 +728,19 @@ describe("CHAT-02: admission without spendable credits", () => {
       throw new Error("Expected the send to settle as a rejection");
     }
     expect(sent.body.runId).toBeNull();
-    await flushWaitUntilForTest();
 
-    const messages = await chat.listThreadEvents(actor, pending.threadId);
+    await waitForThreadMessages(actor, pending.threadId, (items) => {
+      return userMessages(items).some((message) => {
+        return (
+          message.eventType === "input.rejected" &&
+          message.revokesEventId === clientEventId
+        );
+      });
+    });
+    await flushWaitUntilForTest();
+    const settled = await chat.listThreadEvents(actor, pending.threadId);
     expect(
-      userMessages(messages.events).filter((message) => {
+      userMessages(settled.events).filter((message) => {
         return (
           message.eventType === "input.rejected" &&
           message.revokesEventId === clientEventId
@@ -837,5 +857,28 @@ describe("CHAT-02: Okou Mail link delivery", () => {
         runId: run.runId,
       }),
     ]);
+  });
+});
+
+describe("CHAT-02: network body capture", () => {
+  it("carries a send's network body capture into the run the pick launches", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+
+    const captured = await sendChatRun(actor, {
+      agentId,
+      prompt: "capture this run's network bodies",
+      captureNetworkBodies: true,
+    });
+    const capturedClaim = await claimChatRun(runnerGroup, captured.runId);
+    expect(capturedClaim.claim.captureNetworkBodies).toBeTruthy();
+    await cancelChatRun(actor, captured.runId, capturedClaim.sandboxHeaders);
+
+    const plain = await sendChatRun(actor, {
+      agentId,
+      prompt: "do not capture network bodies",
+    });
+    const plainClaim = await claimChatRun(runnerGroup, plain.runId);
+    expect(plainClaim.claim.captureNetworkBodies).toBeFalsy();
+    await cancelChatRun(actor, plain.runId, plainClaim.sandboxHeaders);
   });
 });

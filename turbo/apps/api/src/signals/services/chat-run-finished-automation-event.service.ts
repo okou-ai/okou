@@ -22,10 +22,9 @@ import { now, nowDate } from "../../lib/time";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
 import { loadRunAutonomyBudget } from "./autonomy-budget.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import type { ChatRunFinishedEvent } from "./chat-run-finished-event";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
+import { scheduleEnqueuedChatThreadPick$ } from "./chat-thread-queue-drain.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import { insertChatEvent } from "./chat-event.service";
@@ -275,7 +274,6 @@ const admitChatRunFinishedAutomation$ = command(
           },
           triggerSource: "automation-event",
           triggerBrief: `Chat run ${event.runStatus} in watched thread`,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
         },
         signal,
       ),
@@ -291,15 +289,8 @@ const admitChatRunFinishedAutomation$ = command(
       ) {
         throw admission.error;
       }
-      await set(
-        pickEnqueuedChatThread$,
-        {
-          chatThreadId,
-          orgId: automation.orgId,
-          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-        },
-        signal,
-      );
+      // A competing callback committed this input; wake the thread anyway.
+      set(scheduleEnqueuedChatThreadPick$, { chatThreadId });
     }
   },
 );
@@ -373,16 +364,9 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         // Queue admission is durable independently of its launch. A source retry
         // also retries the target wakeup, including after hot-event retention.
         if (row.chatThreadId !== null) {
-          await set(
-            pickEnqueuedChatThread$,
-            {
-              chatThreadId: row.chatThreadId,
-              orgId: row.automation.orgId,
-              dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-            },
-            signal,
-          );
-          signal.throwIfAborted();
+          set(scheduleEnqueuedChatThreadPick$, {
+            chatThreadId: row.chatThreadId,
+          });
         }
         continue;
       }

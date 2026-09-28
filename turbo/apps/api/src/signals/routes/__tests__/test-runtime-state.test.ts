@@ -1,11 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+  type SupportedRunModel,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { ALL_RUN_STATUSES } from "@okouai/api-contracts/contracts/runs";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockNow, withMockNowForTest } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -33,6 +37,42 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const reads = createRunReadsApi(context);
+
+/**
+ * Sends a prompt whose background pick finds no built-in route, and returns
+ * the thread events the rejected pick appended.
+ */
+async function sendRejectedByUnavailableModel(
+  actor: ReturnType<typeof bdd.user>,
+  body: {
+    readonly agentId: string;
+    readonly prompt: string;
+    readonly model: SupportedRunModel;
+  },
+) {
+  const clientEventId = randomUUID();
+  const sent = await chat.requestSendEvent(
+    actor,
+    { ...body, clientEventId },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected the chat send to be queued");
+  }
+  await flushWaitUntilForTest();
+  const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+  return {
+    rejected: events.find((event) => {
+      return (
+        event.eventType === "input.rejected" &&
+        event.revokesEventId === clientEventId
+      );
+    }),
+    guidance: events.find((event) => {
+      return event.eventType === "output.error";
+    }),
+  };
+}
 
 interface ClaimedBuiltInRun {
   readonly actor: ReturnType<typeof bdd.user>;
@@ -191,21 +231,13 @@ describe("POST /api/test/runtime-state/action", () => {
           modelProviderId: null,
         },
       ]);
-      const sent = await withMockNowForTest(startedAt, async () => {
-        return await chat.requestSendEvent(
-          actor,
-          {
-            agentId: agent.agentId,
-            prompt: `use the ${selectedModel} OpenRouter fallback`,
-            model: selectedModel,
-          },
-          [201],
-        );
+      const { runId } = await withMockNowForTest(startedAt, async () => {
+        return await chat.sendAndLaunch(actor, {
+          agentId: agent.agentId,
+          prompt: `use the ${selectedModel} OpenRouter fallback`,
+          model: selectedModel,
+        });
       });
-      if (sent.status !== 201 || sent.body.runId === null) {
-        throw new Error(`Expected a ${selectedModel} run`);
-      }
-      const runId = sent.body.runId;
       // Verify the committed route on the run itself rather than asserting a
       // retired Codex-specific claim shape.
       onTestFinished(async () => {
@@ -225,18 +257,18 @@ describe("POST /api/test/runtime-state/action", () => {
         fallback,
         primaryCooldownUntil,
       );
-      await withMockNowForTest(startedAt, async () => {
-        const rejected = await chat.requestSendEvent(
-          actor,
-          {
-            agentId: agent.agentId,
-            prompt: "reject while both built-in routes are cooling down",
-            model: selectedModel,
-          },
-          [503],
-        );
-        expectApiError(rejected.body);
-        expect(rejected.body.error.code).toBe("MODEL_PROVIDER_UNAVAILABLE");
+      const unavailable = await withMockNowForTest(startedAt, async () => {
+        return await sendRejectedByUnavailableModel(actor, {
+          agentId: agent.agentId,
+          prompt: "reject while both built-in routes are cooling down",
+          model: selectedModel,
+        });
+      });
+      expect(unavailable.rejected).toMatchObject({
+        error: "model_provider_unavailable",
+      });
+      expect(unavailable.guidance).toMatchObject({
+        error: "model_provider_unavailable",
       });
 
       await withMockNowForTest(primaryCooldownUntil.getTime(), async () => {
@@ -360,24 +392,18 @@ describe("POST /api/test/runtime-state/action", () => {
     if (!actor.orgId) {
       throw new Error("Expected built-in fallback actor to have an org");
     }
-    const rejected = await withMockNowForTest(startedAt, async () => {
-      return await chat.requestSendEvent(
-        actor,
-        {
-          agentId: agent.agentId,
-          prompt: "reject before constructing a built-in-model run",
-          model: "gpt-5.6-sol",
-          clientEventId: randomUUID(),
-        },
-        [503],
-      );
+    const unavailable = await withMockNowForTest(startedAt, async () => {
+      return await sendRejectedByUnavailableModel(actor, {
+        agentId: agent.agentId,
+        prompt: "reject before constructing a built-in-model run",
+        model: "gpt-5.6-sol",
+      });
     });
-    expect(rejected.body).toStrictEqual({
-      error: {
-        code: "MODEL_PROVIDER_UNAVAILABLE",
-        message:
-          "Every built-in model route for this model is temporarily unavailable",
-      },
+    expect(unavailable.rejected).toMatchObject({
+      error: "model_provider_unavailable",
+    });
+    expect(unavailable.guidance).toMatchObject({
+      error: "model_provider_unavailable",
     });
     await expect(
       runs.listAgentRuns(actor, {

@@ -1,5 +1,5 @@
 import type { Tx } from "../../lib/db-types";
-import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
+import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
@@ -58,13 +58,13 @@ import {
   resolveIntegrationModelRouteForUser$,
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
-import { markChatThreadQueued } from "./queued-chat-thread.service";
+import {
+  enqueueChatInput,
+  scheduleEnqueuedChatThreadPick$,
+} from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { insertChatEvent } from "./chat-event.service";
+import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { InputFileImportError } from "./canonical-asset.service";
 import {
@@ -145,10 +145,6 @@ interface WorkspaceAgent {
   readonly name: string;
   readonly displayName: string | null;
 }
-
-type AgentPhoneMessageDispatchResult =
-  | { readonly kind: "ignored" }
-  | { readonly kind: "picked"; readonly reason: ChatQueueWaitReason };
 
 type ModelRoutePin = IntegrationModelRoutePin;
 
@@ -1574,68 +1570,57 @@ const persistAgentPhoneChatMessage$ = command(
           .filter(Boolean)
           .join("\n\n")
       : args.prompt;
-    // Queue row before the input event, so input is never left unqueued.
-    await markChatThreadQueued(args.db, {
+    const values = {
+      id: chatEventId,
+      chatThreadId: route.chatThreadId,
+      eventType: "input.prompt",
+      userMessage: createUserMessageDocument({
+        text: canonicalAsset ? args.event.body.trim() : args.prompt,
+        files: integrationInputMessageFiles(assets),
+        nonContentPart: createChatEventSourcePart({
+          kind: "agentphone",
+          toNumber: normalizeAgentPhoneHandle(args.event.toNumber, "sms"),
+          isGroup: args.event.isGroup,
+        }),
+      }),
+      runId: null,
+      agentphoneContext: {
+        messageText: prompt,
+        threadContext: args.threadContext,
+        messageId: args.event.messageId,
+        rootMessageId: args.rootMessageId,
+        conversationId: args.event.conversationId,
+        groupId: args.event.groupId,
+        channel: args.event.channel,
+        isGroup: isAgentPhoneGroupEvent(args.event),
+        phoneHandle: args.event.fromNumber,
+        fromNumber: args.event.fromNumber,
+        toNumber: args.event.toNumber,
+        userLinkId: args.userLink.id,
+        agentphoneAgentId: args.event.agentphoneAgentId,
+      },
+      createdAt: currentTime,
+    } as const;
+    await insertChatEventContext(args.db, values);
+    signal.throwIfAborted();
+    const eventId = await enqueueChatInput(args.db, {
       chatThreadId: route.chatThreadId,
       orgId: args.userLink.orgId,
+      appendInput: async (tx) => {
+        return (await insertChatEvent(tx, values, "id"))?.id ?? null;
+      },
     });
     signal.throwIfAborted();
-    const persist = async (tx: Db, touchThread: () => Promise<void>) => {
-      const event = await insertChatEvent(
-        tx,
-        {
-          id: chatEventId,
-          chatThreadId: route.chatThreadId,
-          eventType: "input.prompt",
-          userMessage: createUserMessageDocument({
-            text: canonicalAsset ? args.event.body.trim() : args.prompt,
-            files: integrationInputMessageFiles(assets),
-            nonContentPart: createChatEventSourcePart({
-              kind: "agentphone",
-              toNumber: normalizeAgentPhoneHandle(args.event.toNumber, "sms"),
-              isGroup: args.event.isGroup,
-            }),
-          }),
-          runId: null,
-          agentphoneContext: {
-            messageText: prompt,
-            threadContext: args.threadContext,
-            messageId: args.event.messageId,
-            rootMessageId: args.rootMessageId,
-            conversationId: args.event.conversationId,
-            groupId: args.event.groupId,
-            channel: args.event.channel,
-            isGroup: isAgentPhoneGroupEvent(args.event),
-            phoneHandle: args.event.fromNumber,
-            fromNumber: args.event.fromNumber,
-            toNumber: args.event.toNumber,
-            userLinkId: args.userLink.id,
-            agentphoneAgentId: args.event.agentphoneAgentId,
-          },
-          createdAt: currentTime,
-        },
-        "id",
-      );
-      signal.throwIfAborted();
-      if (!event) {
-        return false;
-      }
-      await touchThread();
-      return true;
-    };
-    const inserted = await withNativeChatEventThreadTouch(
-      args.db,
-      {
-        chatThreadId: route.chatThreadId,
-        createdAt: currentTime,
-        eventId: chatEventId,
-      },
-      persist,
-    );
+    if (eventId === null) {
+      return { inserted: false };
+    }
+    await touchNativeChatThread(args.db, {
+      chatThreadId: route.chatThreadId,
+      createdAt: currentTime,
+      eventId: chatEventId,
+    });
     signal.throwIfAborted();
-    return inserted
-      ? { inserted: true, chatThreadId: route.chatThreadId, chatEventId }
-      : { inserted: false };
+    return { inserted: true, chatThreadId: route.chatThreadId, chatEventId };
   },
 );
 
@@ -1654,7 +1639,7 @@ const runAgentForAgentPhone$ = command(
       readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
-  ): Promise<AgentPhoneMessageDispatchResult> => {
+  ): Promise<void> => {
     const persisted = await set(
       persistAgentPhoneChatMessage$,
       {
@@ -1664,7 +1649,7 @@ const runAgentForAgentPhone$ = command(
     );
     signal.throwIfAborted();
     if (!persisted.inserted) {
-      return { kind: "ignored" };
+      return;
     }
 
     await publishThreadListChangedSafely({
@@ -1672,42 +1657,24 @@ const runAgentForAgentPhone$ = command(
       orgId: args.userLink.orgId,
     });
     signal.throwIfAborted();
-    const picked = await set(
-      pickEnqueuedChatThread$,
-      {
-        chatThreadId: persisted.chatThreadId,
-        orgId: args.userLink.orgId,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+    set(scheduleEnqueuedChatThreadPick$, {
+      chatThreadId: persisted.chatThreadId,
+      afterPick: async (pick, pickSignal) => {
+        const notice = chatQueueWaitNotice(pick.reason);
+        if (notice) {
+          await sendAgentPhoneText(args.event, notice, pickSignal);
+        }
       },
-      signal,
-    );
-    signal.throwIfAborted();
-    // A launch publishes this input together with its run. Publishing
-    // it before the pick would show it as queued until the launch lands.
-    if (picked.reason !== "launched") {
-      await publishChatThreadMessageCreatedSafely({
-        userId: args.userLink.userId,
-        orgId: args.userLink.orgId,
-        threadId: persisted.chatThreadId,
-      });
-      signal.throwIfAborted();
-    }
-    return { kind: "picked", reason: picked.reason };
+      publish: async () => {
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.userLink.userId,
+          orgId: args.userLink.orgId,
+          threadId: persisted.chatThreadId,
+        });
+      },
+    });
   },
 );
-
-async function handleAgentPhoneRunResult(
-  event: AgentPhoneMessageEvent,
-  result: AgentPhoneMessageDispatchResult,
-  signal: AbortSignal,
-): Promise<void> {
-  const notice =
-    result.kind === "picked" ? chatQueueWaitNotice(result.reason) : null;
-  if (!notice) {
-    return;
-  }
-  await sendAgentPhoneText(event, notice, signal);
-}
 
 export const handleAgentPhoneMessage$ = command(
   async (
@@ -1807,7 +1774,7 @@ export const handleAgentPhoneMessage$ = command(
       mediaUrl: params.event.mediaUrl,
     });
 
-    const result = await set(
+    await set(
       runAgentForAgentPhone$,
       {
         db,
@@ -1823,7 +1790,6 @@ export const handleAgentPhoneMessage$ = command(
       signal,
     );
     signal.throwIfAborted();
-    await handleAgentPhoneRunResult(params.event, result, signal);
   },
 );
 

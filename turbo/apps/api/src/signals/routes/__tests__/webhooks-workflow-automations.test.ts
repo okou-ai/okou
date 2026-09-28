@@ -7,6 +7,7 @@ import { createApp } from "../../../app-factory";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -86,6 +87,7 @@ async function setupFixture(): Promise<{
 
 async function createWebhookAutomation(workflowId: string): Promise<{
   readonly id: string;
+  readonly threadId: string;
   readonly token: string;
   readonly webhookUrl: string;
   readonly secret: string;
@@ -110,8 +112,12 @@ async function createWebhookAutomation(workflowId: string): Promise<{
   if (!token) {
     throw new Error("Expected webhook URL token");
   }
+  if (!created.body.chatThreadId) {
+    throw new Error("Expected a thread-bound webhook automation");
+  }
   return {
     id: created.body.id,
+    threadId: created.body.chatThreadId,
     token,
     webhookUrl: created.body.webhookUrl,
     secret: created.body.webhookSecret,
@@ -140,10 +146,10 @@ async function postWorkflowWebhook(args: {
     },
     body: args.rawBody,
   });
-  return {
-    status: response.status,
-    body: await response.json(),
-  };
+  const body: unknown = await response.json();
+  // The webhook enqueues and returns; the pick runs in the background.
+  await flushWaitUntilForTest();
+  return { status: response.status, body };
 }
 
 describe("POST /api/webhooks/workflow-automations/:token", () => {
@@ -168,23 +174,17 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       timestamp,
     });
 
-    expect(first.status).toBe(200);
-    expect(first.body).toStrictEqual({
-      success: true,
-      duplicate: false,
-      runId: expect.any(String),
+    expect(first).toStrictEqual({
+      status: 200,
+      body: { success: true, duplicate: false },
     });
-    if (
-      typeof first.body !== "object" ||
-      first.body === null ||
-      !("runId" in first.body) ||
-      typeof first.body.runId !== "string"
-    ) {
-      throw new Error("Expected webhook dispatch response to include runId");
-    }
 
     await runsApi.heartbeatRunner(runnerGroup);
-    const workflowClaim = await runsApi.claimRunnerJob(first.body.runId);
+    const job = (await runsApi.pollRunner(runnerGroup)).body.job;
+    if (!job) {
+      throw new Error("Expected the accepted delivery to launch a run");
+    }
+    const workflowClaim = await runsApi.claimRunnerJob(job.runId);
     const workflowPrompt = workflowClaim.appendSystemPrompt ?? "";
     expect(workflowPrompt).toContain("okou slack message send --help");
     expect(workflowPrompt).not.toContain(
@@ -241,11 +241,10 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     expect(concurrent).toHaveLength(2);
   });
 
-  it("deletes a failed delivery so an identical request can retry", async () => {
-    const { actor, fixture, workflowId } = await setupFixture();
-    const runsApi = createRunsApi(context);
+  it("accepts a delivery whose launch is rejected and de-duplicates its retry", async () => {
+    const { fixture, workflowId } = await setupFixture();
     const webhook = await createWebhookAutomation(workflowId);
-    const rawBody = JSON.stringify({ event: "retry-after-dispatch-failure" });
+    const rawBody = JSON.stringify({ event: "launch-rejected" });
     const timestamp = Math.floor(now() / 1000);
 
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
@@ -256,32 +255,20 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       }),
       [204],
     );
-    const failed = await postWorkflowWebhook({
+    const accepted = await postWorkflowWebhook({
       token: webhook.token,
       rawBody,
       secret: webhook.secret,
       timestamp,
     });
-    expect(failed).toStrictEqual({
-      status: 500,
-      body: { error: "Failed to start webhook workflow run" },
-    });
-
-    await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
-    const retried = await postWorkflowWebhook({
-      token: webhook.token,
-      rawBody,
-      secret: webhook.secret,
-      timestamp,
-    });
-    expect(retried).toStrictEqual({
+    expect(accepted).toStrictEqual({
       status: 200,
-      body: {
-        success: true,
-        duplicate: false,
-        runId: expect.any(String),
-      },
+      body: { success: true, duplicate: false },
     });
+    // The launch rejection appears in the automation's thread instead.
+    await expect(wf.readThreadEvents(webhook.threadId)).resolves.toContainEqual(
+      expect.objectContaining({ eventType: "input.rejected" }),
+    );
 
     const duplicate = await postWorkflowWebhook({
       token: webhook.token,

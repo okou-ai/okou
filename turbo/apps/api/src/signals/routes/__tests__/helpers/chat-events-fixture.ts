@@ -1329,15 +1329,20 @@ export function createChatEventsFixture(context: TestContext) {
       body: rawBody,
     });
     expect(response.status).toBe(200);
-    return z
+    const body = z
       .object({ success: z.literal(true), duplicate: z.boolean() })
       .parse(await response.json());
+    // The webhook enqueues and returns; the pick runs in the background.
+    await flushWaitUntilForTest();
+    return body;
   }
 
   async function lastThreadPiAutomationRun(
     actor: ApiTestUser,
     threadId: string,
   ) {
+    // Automation triggers only enqueue; their picks run in the background.
+    await flushWaitUntilForTest();
     const page = await chat.listThreadEvents(actor, threadId);
     const event = [...page.events].reverse().find((item) => {
       return (

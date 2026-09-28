@@ -625,6 +625,7 @@ describe("POST /api/webhooks/google-calendar", () => {
         dispatched: 1,
         duplicates: 0,
       });
+      await flushWaitUntilForTest();
       if (!created.body.chatThreadId) {
         throw new Error("Expected the automation to have a chat thread");
       }
@@ -788,6 +789,7 @@ describe("POST /api/webhooks/google-calendar", () => {
           duplicates: 0,
         },
       });
+      await flushWaitUntilForTest();
       expect(calendar.incrementalAccessTokens).toStrictEqual([
         secondAccessToken,
       ]);
@@ -1354,6 +1356,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       dispatched: 1,
       duplicates: 0,
     });
+    await flushWaitUntilForTest();
     if (!created.body.chatThreadId) {
       throw new Error("Expected the automation to have a chat thread");
     }
@@ -1395,6 +1398,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       dispatched: 1,
       duplicates: 0,
     });
+    await flushWaitUntilForTest();
     const thirdJob = await runsApi.pollRunner(runnerGroup);
     expect(thirdJob.body.job?.runId).toStrictEqual(expect.any(String));
     expect(thirdJob.body.job?.runId).not.toBe(firstJob.body.job?.runId);
@@ -1477,6 +1481,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       dispatched: 1,
       duplicates: 0,
     });
+    await flushWaitUntilForTest();
     if (!cancelled.body.chatThreadId) {
       throw new Error("Expected the automation to have a chat thread");
     }

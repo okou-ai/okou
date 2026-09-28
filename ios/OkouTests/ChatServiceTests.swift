@@ -330,7 +330,7 @@ final class ChatServiceTests: XCTestCase {
     let receipt = try await ChatService(client: fixture.client).send(
       thread: sampleThread(), text: "Steer this task", clientEventID: fixtureRun)
     XCTAssertEqual(receipt.clientEventID, fixtureRun)
-    XCTAssertNil(receipt.runID)
+    XCTAssertEqual(receipt.threadID, fixtureThread)
     let sent = try XCTUnwrap(state.withLock { $0.sends.first })
     XCTAssertEqual(sent.agentId, fixtureAgent)
     XCTAssertEqual(sent.prompt, "Steer this task")
@@ -357,7 +357,7 @@ final class ChatServiceTests: XCTestCase {
         }
         if count == 1 { throw URLError(.networkConnectionLost) }
         return ChatHTTPResponse(
-          status: 201, body: "{\"threadId\":\"\(fixtureThread)\",\"runId\":\"\(fixtureRun)\"}")
+          status: 201, body: "{\"threadId\":\"\(fixtureThread)\",\"runId\":null}")
       }
       throw URLError(.unsupportedURL)
     }
