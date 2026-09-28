@@ -4,7 +4,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";

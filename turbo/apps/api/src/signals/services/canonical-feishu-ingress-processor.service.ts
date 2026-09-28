@@ -4,7 +4,7 @@ import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";

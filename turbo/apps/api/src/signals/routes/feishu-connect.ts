@@ -8,7 +8,7 @@ import {
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";

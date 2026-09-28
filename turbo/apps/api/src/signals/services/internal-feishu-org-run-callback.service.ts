@@ -5,7 +5,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { buildFeishuAgentResponseMessage } from "../../lib/feishu-message-card";

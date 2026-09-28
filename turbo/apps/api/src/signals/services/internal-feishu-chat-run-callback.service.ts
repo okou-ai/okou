@@ -5,7 +5,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { feishuChatThreadRoutes } from "@okouai/db/schema/feishu-chat-thread-route";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, countDistinct, eq, inArray, isNotNull } from "drizzle-orm";
 import { buildFeishuAgentResponseMessage } from "../../lib/feishu-message-card";

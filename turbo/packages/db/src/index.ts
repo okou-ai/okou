@@ -82,7 +82,7 @@ import * as teamsOrgInstallationSchema from "./schema/teams-org-installation";
 import * as teamsOrgConnectionSchema from "./schema/teams-org-connection";
 import * as teamsChatThreadRouteSchema from "./schema/teams-chat-thread-route";
 import * as teamsUserAgentPreferenceSchema from "./schema/teams-user-agent-preference";
-import * as feishuOrgInstallationSchema from "./schema/feishu-org-installation";
+import * as feishuOrgInstallationSchema from "./runtime/feishu-org-installation";
 import * as feishuOrgConnectionSchema from "./schema/feishu-org-connection";
 import * as feishuOrgEventSchema from "./schema/feishu-org-event";
 import * as feishuChatThreadRouteSchema from "./schema/feishu-chat-thread-route";

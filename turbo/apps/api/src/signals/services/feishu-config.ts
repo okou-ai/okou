@@ -5,7 +5,7 @@ import {
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
 import { eq } from "drizzle-orm";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";

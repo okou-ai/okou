@@ -4,7 +4,7 @@ import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { feishuEventsContract } from "@okouai/api-contracts/contracts/feishu-events";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
 
 import { logger } from "../../lib/log";
 import { request$ } from "../context/hono";
