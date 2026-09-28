@@ -2227,7 +2227,7 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Jalankan dengan paket Claude atau ChatGPT yang sudah Anda punya",
+        "description": "Pakai paket Claude atau ChatGPT Anda",
         "openSettingsAria": "Buka pengaturan model",
         "title": "Pakai langganan Anda"
       },

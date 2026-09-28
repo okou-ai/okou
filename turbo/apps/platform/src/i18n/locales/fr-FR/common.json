@@ -2283,7 +2283,7 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Utilisez votre forfait Claude ou ChatGPT existant",
+        "description": "Utilisez votre forfait Claude ou ChatGPT",
         "openSettingsAria": "Ouvrir les paramètres des modèles",
         "title": "Utilisez votre abonnement"
       },

@@ -2236,7 +2236,7 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Run on the Claude or ChatGPT plan you already have",
+        "description": "Run tasks on your Claude or ChatGPT plan",
         "openSettingsAria": "Open model settings",
         "title": "Bring your subscription"
       },

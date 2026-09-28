@@ -2227,7 +2227,7 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "お持ちの Claude や ChatGPT のプランで実行する",
+        "description": "Claude や ChatGPT のプランでタスクを実行",
         "openSettingsAria": "モデル設定を開く",
         "title": "サブスクリプションを使う"
       },

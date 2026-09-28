@@ -2283,7 +2283,7 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Lavora con il tuo piano Claude o ChatGPT attuale",
+        "description": "Usa il tuo piano Claude o ChatGPT",
         "openSettingsAria": "Apri le impostazioni dei modelli",
         "title": "Usa il tuo abbonamento"
       },

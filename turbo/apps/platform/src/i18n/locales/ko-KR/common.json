@@ -2227,7 +2227,7 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "이미 사용 중인 Claude 또는 ChatGPT 요금제로 실행",
+        "description": "Claude 또는 ChatGPT 요금제로 작업 실행",
         "openSettingsAria": "모델 설정 열기",
         "title": "내 구독 연결하기"
       },

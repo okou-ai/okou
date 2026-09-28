@@ -2227,7 +2227,7 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "用你已有的 Claude 或 ChatGPT 方案來執行",
+        "description": "用你的 Claude 或 ChatGPT 方案執行任務",
         "openSettingsAria": "開啟模型設定",
         "title": "接入你的訂閱"
       },
