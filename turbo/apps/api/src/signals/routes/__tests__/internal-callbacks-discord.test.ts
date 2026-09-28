@@ -1,17 +1,13 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
-import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockNow, now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { integrationsDiscordRoutes } from "../integrations-discord";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -25,13 +21,12 @@ import {
   setupConnectedDiscordActor,
   type ConnectedDiscordActor,
 } from "./helpers/discord-fixture";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { createFixtureTracker } from "./helpers/route-test";
 
 const context = testContext();
 const runs = createRunsApi(context);
 const misc = createMiscRoutesApi(context);
 const webhooks = createWebhookCallbackApi(context);
-const authOrg = createAuthOrgAgentsBddApi(context);
 const trackDiscordFixture = createFixtureTracker(
   async (fixture: { actor: ConnectedDiscordActor; deleted: boolean }) => {
     if (!fixture.deleted) {
@@ -161,26 +156,6 @@ async function completeRun(args: {
   await flushWaitUntilForTest();
 }
 
-async function selectSupportAgent(actor: ConnectedDiscordActor) {
-  const agent = await authOrg.createAgent(actor.actor, {
-    displayName: "Discord support agent",
-  });
-  createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    "org:admin",
-  );
-  await accept(
-    setupApp({ context, routes: integrationsDiscordRoutes })(
-      integrationsDiscordContract,
-    ).setAgentPreference({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { agentId: agent.agentId },
-    }),
-    [200],
-  );
-}
-
 function sentContents(started: Awaited<ReturnType<typeof startDiscordRun>>) {
   return started.provider.sentMessages.map((message) => {
     return message.content;
@@ -275,19 +250,10 @@ describe("canonical Discord terminal replies", () => {
     );
   });
 
-  it.each([
-    { agent: "the org default agent", footer: "" },
-    {
-      agent: "a selected agent",
-      footer: "\n\n_Sent via Discord support agent_",
-    },
-  ])(
+  it.each([{ agent: "the org default agent", footer: "" }])(
     "delivers a queued admission failure once for $agent without launching another run",
     async ({ agent, footer }) => {
-      const started = await startDiscordRun({
-        beforeMessage:
-          agent === "a selected agent" ? selectSupportAgent : undefined,
-      });
+      const started = await startDiscordRun({});
       const claim = await claimRun(started.actor, started.runId);
       const followup = discordMessageForTest(started.actor, {
         channelId: started.channelId,

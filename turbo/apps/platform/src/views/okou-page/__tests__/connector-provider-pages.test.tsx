@@ -4,10 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
-import {
-  integrationsTelegramContract,
-  type TelegramBotStatus,
-} from "@okouai/api-contracts/contracts/integrations-telegram";
+import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -18,6 +15,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { MockTelegramBotStatus } from "../../../mocks/handlers/api-integrations-telegram.ts";
 
 const context = testContext();
 const TELEGRAM_BOT_ID = "bot_connect_test";
@@ -47,7 +45,7 @@ function githubConnectPath(): string {
   return `/github/connect?${params.toString()}`;
 }
 
-function telegramStatus(): TelegramBotStatus {
+function telegramStatus(): MockTelegramBotStatus {
   return {
     id: TELEGRAM_BOT_ID,
     username: "agent_bot",

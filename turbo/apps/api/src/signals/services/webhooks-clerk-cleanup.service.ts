@@ -32,8 +32,6 @@ import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { storages } from "@okouai/db/schema/storage";
-import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
-import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
@@ -65,14 +63,11 @@ import {
 } from "../external/s3";
 import { nowDate } from "../../lib/time";
 import { publishCancelToRunnerGroup } from "../external/realtime";
-import { deleteWebhook } from "../external/telegram-client";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
 } from "../external/stripe-client";
 import { settle, tapError } from "../utils";
-import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
@@ -407,62 +402,6 @@ async function cancelStripeSubscriptionsForDeletedOrg(
   }
 }
 
-async function deregisterOrgTelegramWebhooks(
-  db: Db,
-  orgId: string,
-  required: boolean,
-): Promise<void> {
-  const installations = await db
-    .select({
-      telegramBotId: telegramInstallations.telegramBotId,
-      encryptedBotToken: telegramInstallations.encryptedBotToken,
-      ownerUserId: telegramInstallations.ownerUserId,
-    })
-    .from(telegramInstallations)
-    .where(eq(telegramInstallations.orgId, orgId));
-
-  for (const installation of installations) {
-    const removal = deleteWebhook(
-      await decryptPersistentSecretValue(
-        installation.encryptedBotToken,
-        await loadUserFeatureSwitchContext(db, orgId, installation.ownerUserId),
-      ),
-    );
-    if (required) {
-      await removal;
-    } else {
-      await tapError(removal, (error) => {
-        L.warn("failed to deregister telegram webhook", {
-          telegramBotId: installation.telegramBotId,
-          error,
-        });
-      });
-    }
-  }
-}
-
-async function deregisterOwnedTelegramWebhooks(
-  db: Db,
-  userId: string,
-): Promise<void> {
-  const installations = await db
-    .select({
-      encryptedBotToken: telegramInstallations.encryptedBotToken,
-      orgId: telegramInstallations.orgId,
-    })
-    .from(telegramInstallations)
-    .where(eq(telegramInstallations.ownerUserId, userId));
-
-  for (const installation of installations) {
-    await deleteWebhook(
-      await decryptPersistentSecretValue(
-        installation.encryptedBotToken,
-        await loadUserFeatureSwitchContext(db, installation.orgId, userId),
-      ),
-    );
-  }
-}
-
 const revokeOrgConnectorTokens$ = command(
   async (
     { set },
@@ -554,12 +493,6 @@ const cleanupOrgExternalServices$ = command(
       readonly run: () => Promise<void>;
     }[] = [
       {
-        name: "telegram webhooks",
-        run: () => {
-          return deregisterOrgTelegramWebhooks(db, orgId, required);
-        },
-      },
-      {
         name: "connector tokens",
         run: () => {
           return set(revokeOrgConnectorTokens$, db, orgId, signal);
@@ -588,8 +521,6 @@ const cleanupUserExternalServices$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     await set(revokeUserConnectorTokens$, db, userId, signal);
-    signal.throwIfAborted();
-    await deregisterOwnedTelegramWebhooks(db, userId);
     signal.throwIfAborted();
   },
 );
@@ -906,12 +837,6 @@ async function deleteUserData(
     .delete(slackOrgConnections)
     .where(eq(slackOrgConnections.userId, userId));
   await db.delete(githubUserLinks).where(eq(githubUserLinks.userId, userId));
-  await db
-    .delete(telegramUserLinks)
-    .where(eq(telegramUserLinks.userId, userId));
-  await db
-    .delete(telegramInstallations)
-    .where(eq(telegramInstallations.ownerUserId, userId));
   await db
     .delete(artifacts)
     .where(

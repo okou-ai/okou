@@ -1,21 +1,15 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
 
 import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { decryptPersistentSecretValue } from "./crypto.utils";
-import { userFeatureSwitchContext } from "./feature-switches.service";
 
-const PENDING_TELEGRAM_USER_ID = "pending";
 const MAX_AUTH_AGE_SECONDS = 300;
 const MAX_CONNECT_AGE_SECONDS = 600;
 
-type TelegramUserLink = typeof telegramUserLinks.$inferSelect;
 type OfficialTelegramUserLink = typeof telegramOfficialUserLinks.$inferSelect;
 
 interface TelegramAuthData {
@@ -28,14 +22,6 @@ interface TelegramAuthData {
   readonly hash: string;
 }
 
-export type LinkTelegramUserResult =
-  | { readonly ok: true; readonly userLink: TelegramUserLink }
-  | {
-      readonly ok: false;
-      readonly reason: "telegram-user-linked" | "user-linked" | "conflict";
-      readonly userLink?: TelegramUserLink;
-    };
-
 export type LinkOfficialTelegramUserResult =
   | { readonly ok: true; readonly userLink: OfficialTelegramUserLink }
   | {
@@ -43,36 +29,6 @@ export type LinkOfficialTelegramUserResult =
       readonly reason: "telegram-user-linked" | "org-linked" | "conflict";
       readonly userLink?: OfficialTelegramUserLink;
     };
-
-export interface TelegramInstallationForLink {
-  readonly telegramBotId: string;
-  readonly botUsername: string | null;
-  readonly botToken: string;
-  readonly orgId: string;
-}
-
-function telegramUserProfileUpdate(
-  params: {
-    readonly telegramUsername?: string | null;
-    readonly telegramDisplayName?: string | null;
-  },
-  existing: {
-    readonly telegramUsername: string | null;
-    readonly telegramDisplayName: string | null;
-  },
-) {
-  return {
-    telegramUsername:
-      params.telegramUsername === undefined
-        ? existing.telegramUsername
-        : normalizeTelegramUsername(params.telegramUsername),
-    telegramDisplayName:
-      params.telegramDisplayName === undefined
-        ? existing.telegramDisplayName
-        : normalizeTelegramDisplayName(params.telegramDisplayName),
-    updatedAt: nowDate(),
-  };
-}
 
 function normalizeTelegramUsername(
   telegramUsername: string | null | undefined,
@@ -188,168 +144,6 @@ export function verifyConnectSignature(args: {
 async function publishTelegramUserChanged(userId: string): Promise<void> {
   await publishUserSignal([userId], "telegram:changed");
 }
-
-export function telegramInstallationForLink(args: {
-  readonly botId: string;
-}): Computed<Promise<TelegramInstallationForLink | null>> {
-  return computed(async (get): Promise<TelegramInstallationForLink | null> => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        telegramBotId: telegramInstallations.telegramBotId,
-        botUsername: telegramInstallations.botUsername,
-        encryptedBotToken: telegramInstallations.encryptedBotToken,
-        orgId: telegramInstallations.orgId,
-        ownerUserId: telegramInstallations.ownerUserId,
-      })
-      .from(telegramInstallations)
-      .where(eq(telegramInstallations.telegramBotId, args.botId))
-      .limit(1);
-
-    if (!row) {
-      return null;
-    }
-
-    return {
-      telegramBotId: row.telegramBotId,
-      botUsername: row.botUsername ?? null,
-      botToken: await decryptPersistentSecretValue(
-        row.encryptedBotToken,
-        await get(userFeatureSwitchContext(row.orgId, row.ownerUserId)),
-      ),
-      orgId: row.orgId,
-    };
-  });
-}
-
-export const linkTelegramUser$ = command(
-  async (
-    { set },
-    params: {
-      readonly installationId: string;
-      readonly telegramUserId: string;
-      readonly telegramUsername?: string | null;
-      readonly telegramDisplayName?: string | null;
-      readonly userId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<LinkTelegramUserResult> => {
-    const writeDb = set(writeDb$);
-    const [existingTelegramLink] = await writeDb
-      .select()
-      .from(telegramUserLinks)
-      .where(
-        and(
-          eq(telegramUserLinks.installationId, params.installationId),
-          eq(telegramUserLinks.telegramUserId, params.telegramUserId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (existingTelegramLink) {
-      if (existingTelegramLink.userId !== params.userId) {
-        return {
-          ok: false,
-          reason: "telegram-user-linked",
-          userLink: existingTelegramLink,
-        };
-      }
-
-      const [updated] = await writeDb
-        .update(telegramUserLinks)
-        .set(telegramUserProfileUpdate(params, existingTelegramLink))
-        .where(eq(telegramUserLinks.id, existingTelegramLink.id))
-        .returning();
-      signal.throwIfAborted();
-
-      await publishTelegramUserChanged(params.userId);
-      signal.throwIfAborted();
-      return { ok: true, userLink: updated ?? existingTelegramLink };
-    }
-
-    const [existingUserLink] = await writeDb
-      .select()
-      .from(telegramUserLinks)
-      .where(
-        and(
-          eq(telegramUserLinks.installationId, params.installationId),
-          eq(telegramUserLinks.userId, params.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (existingUserLink) {
-      if (existingUserLink.telegramUserId === params.telegramUserId) {
-        const [updated] = await writeDb
-          .update(telegramUserLinks)
-          .set(telegramUserProfileUpdate(params, existingUserLink))
-          .where(eq(telegramUserLinks.id, existingUserLink.id))
-          .returning();
-        signal.throwIfAborted();
-
-        await publishTelegramUserChanged(params.userId);
-        signal.throwIfAborted();
-        return { ok: true, userLink: updated ?? existingUserLink };
-      }
-
-      if (
-        existingUserLink.telegramUserId === PENDING_TELEGRAM_USER_ID &&
-        params.telegramUserId !== PENDING_TELEGRAM_USER_ID
-      ) {
-        const [updated] = await writeDb
-          .update(telegramUserLinks)
-          .set({
-            telegramUserId: params.telegramUserId,
-            telegramUsername: normalizeTelegramUsername(
-              params.telegramUsername,
-            ),
-            telegramDisplayName: normalizeTelegramDisplayName(
-              params.telegramDisplayName,
-            ),
-            updatedAt: nowDate(),
-          })
-          .where(eq(telegramUserLinks.id, existingUserLink.id))
-          .returning();
-        signal.throwIfAborted();
-
-        await publishTelegramUserChanged(params.userId);
-        signal.throwIfAborted();
-        return { ok: true, userLink: updated ?? existingUserLink };
-      }
-
-      return {
-        ok: false,
-        reason: "user-linked",
-        userLink: existingUserLink,
-      };
-    }
-
-    const [inserted] = await writeDb
-      .insert(telegramUserLinks)
-      .values({
-        telegramUserId: params.telegramUserId,
-        telegramUsername: normalizeTelegramUsername(params.telegramUsername),
-        telegramDisplayName: normalizeTelegramDisplayName(
-          params.telegramDisplayName,
-        ),
-        installationId: params.installationId,
-        userId: params.userId,
-      })
-      .onConflictDoNothing()
-      .returning();
-    signal.throwIfAborted();
-
-    if (inserted) {
-      await publishTelegramUserChanged(params.userId);
-      signal.throwIfAborted();
-      return { ok: true, userLink: inserted };
-    }
-
-    return { ok: false, reason: "conflict" };
-  },
-);
 
 export const linkOfficialTelegramUser$ = command(
   async (

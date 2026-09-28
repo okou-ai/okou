@@ -12,7 +12,7 @@ import { appendChatThreadEvent } from "./chat-thread-event.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import {
-  integrationDmSessionKey,
+  INTEGRATION_DM_SESSION_KEY,
   isIntegrationDmSessionKey,
 } from "../../lib/integration-dm-session";
 
@@ -37,7 +37,7 @@ export function slackSessionThreadTs(args: {
   readonly serviceTier?: ChatThreadServiceTier | null;
 }): string {
   if (args.channelType === "dm" && !args.threadTs && args.agentId) {
-    return integrationDmSessionKey({ ...args, agentId: args.agentId });
+    return INTEGRATION_DM_SESSION_KEY;
   }
   return args.threadTs ?? args.messageTs;
 }

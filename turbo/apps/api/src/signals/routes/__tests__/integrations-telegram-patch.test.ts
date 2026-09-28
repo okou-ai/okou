@@ -13,7 +13,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import {
   deleteTelegramFixture$,
-  seedTelegramInstallation$,
   type TelegramFixture,
 } from "./helpers/telegram";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -30,16 +29,7 @@ const AUTH_HEADERS = { authorization: "Bearer clerk-session" } as const;
 interface MutableTelegramFixture {
   readonly orgId: string;
   readonly composeIds: string[];
-  readonly telegramBotIds: string[];
   readonly userIds: string[];
-}
-
-interface SeededBot {
-  readonly botId: string;
-  readonly orgId: string;
-  readonly ownerUserId: string;
-  readonly composeId: string;
-  readonly fixture: MutableTelegramFixture;
 }
 
 describe("PATCH /api/integrations/telegram/:botId", () => {
@@ -86,37 +76,6 @@ describe("PATCH /api/integrations/telegram/:botId", () => {
     return String(Math.floor(Math.random() * 9_000_000_000) + 1_000_000_000);
   }
 
-  async function seedBot(
-    args: {
-      readonly orgId?: string;
-      readonly ownerUserId?: string;
-      readonly botId?: string;
-    } = {},
-  ): Promise<SeededBot> {
-    const orgId = args.orgId ?? newId("org");
-    const ownerUserId = args.ownerUserId ?? newId("user");
-    const botId = args.botId ?? newTelegramBotId();
-    const installation = await store.set(
-      seedTelegramInstallation$,
-      { orgId, ownerUserId, telegramBotId: botId },
-      context.signal,
-    );
-    const fixture: MutableTelegramFixture = {
-      orgId,
-      composeIds: [installation.composeId],
-      telegramBotIds: [botId],
-      userIds: [ownerUserId],
-    };
-    fixtures.push(fixture);
-    return {
-      botId,
-      orgId,
-      ownerUserId,
-      composeId: installation.composeId,
-      fixture,
-    };
-  }
-
   async function seedCompose(args: {
     readonly orgId: string;
     readonly userId: string;
@@ -140,7 +99,6 @@ describe("PATCH /api/integrations/telegram/:botId", () => {
       fixtures.push({
         orgId: args.orgId,
         composeIds: [agent.agentId],
-        telegramBotIds: [],
         userIds: [args.userId],
       });
     }
@@ -174,18 +132,6 @@ describe("PATCH /api/integrations/telegram/:botId", () => {
     return bot;
   }
 
-  async function expectBotAgent(args: {
-    readonly botId: string;
-    readonly agentId: string;
-    readonly agentName: string;
-  }): Promise<void> {
-    const bot = await readBot(args.botId);
-    expect(bot.agent).toStrictEqual({
-      id: args.agentId,
-      name: args.agentName,
-    });
-  }
-
   it("returns 401 when unauthenticated", async () => {
     const response = await accept(
       client().updateBot({
@@ -198,155 +144,6 @@ describe("PATCH /api/integrations/telegram/:botId", () => {
 
     expect(response.body).toStrictEqual({
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
-    });
-  });
-
-  it("returns 400 when defaultAgentId is missing for a custom bot", async () => {
-    const bot = await seedBot();
-    mocks.clerk.session(bot.ownerUserId, bot.orgId, "org:member");
-
-    const response = await accept(
-      client().updateBot({
-        params: { botId: bot.botId },
-        headers: AUTH_HEADERS,
-        body: {},
-      }),
-      [400],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: { message: "defaultAgentId is required", code: "BAD_REQUEST" },
-    });
-  });
-
-  it("updates the default agent for an org admin", async () => {
-    const bot = await seedBot({ ownerUserId: newId("owner") });
-    const adminUserId = newId("admin");
-    const nextAgent = await seedCompose({
-      orgId: bot.orgId,
-      userId: adminUserId,
-      trackWith: bot.fixture,
-    });
-    mocks.clerk.session(adminUserId, bot.orgId, "org:admin");
-
-    const response = await accept(
-      client().updateBot({
-        params: { botId: bot.botId },
-        headers: AUTH_HEADERS,
-        body: { defaultAgentId: nextAgent.composeId },
-      }),
-      [200],
-    );
-
-    const agent = expectAgentSummary(response.body.agent, nextAgent.composeId);
-    expect(response.body.id).toBe(bot.botId);
-    expect(response.body.isOwner).toBeFalsy();
-    await expectBotAgent({
-      botId: bot.botId,
-      agentId: nextAgent.composeId,
-      agentName: agent.name,
-    });
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "telegram:changed",
-      null,
-    );
-  });
-
-  it("updates the default agent for the owner", async () => {
-    const bot = await seedBot();
-    const nextAgent = await seedCompose({
-      orgId: bot.orgId,
-      userId: bot.ownerUserId,
-      trackWith: bot.fixture,
-    });
-    mocks.clerk.session(bot.ownerUserId, bot.orgId, "org:member");
-
-    const response = await accept(
-      client().updateBot({
-        params: { botId: bot.botId },
-        headers: AUTH_HEADERS,
-        body: { defaultAgentId: nextAgent.composeId },
-      }),
-      [200],
-    );
-
-    const agent = expectAgentSummary(response.body.agent, nextAgent.composeId);
-    expect(response.body.isOwner).toBeTruthy();
-    await expectBotAgent({
-      botId: bot.botId,
-      agentId: nextAgent.composeId,
-      agentName: agent.name,
-    });
-  });
-
-  it("returns 403 when defaultAgentId belongs to another org", async () => {
-    const bot = await seedBot();
-    const otherOrgAgent = await seedCompose({
-      orgId: newId("org"),
-      userId: bot.ownerUserId,
-    });
-    mocks.clerk.session(bot.ownerUserId, bot.orgId, "org:member");
-
-    const response = await accept(
-      client().updateBot({
-        params: { botId: bot.botId },
-        headers: AUTH_HEADERS,
-        body: { defaultAgentId: otherOrgAgent.composeId },
-      }),
-      [403],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: {
-        message:
-          "Telegram bots can only be connected to agents in the bot's organization",
-        code: "FORBIDDEN",
-      },
-    });
-  });
-
-  it("returns 404 when the custom bot is not visible in the active org", async () => {
-    const bot = await seedBot();
-    const otherOrgId = newId("org");
-    const otherOrgAgent = await seedCompose({
-      orgId: otherOrgId,
-      userId: bot.ownerUserId,
-    });
-    mocks.clerk.session(bot.ownerUserId, otherOrgId, "org:admin");
-
-    const response = await accept(
-      client().updateBot({
-        params: { botId: bot.botId },
-        headers: AUTH_HEADERS,
-        body: { defaultAgentId: otherOrgAgent.composeId },
-      }),
-      [404],
-    );
-
-    expect(response.body.error.code).toBe("NOT_FOUND");
-    mocks.clerk.session(bot.ownerUserId, bot.orgId, "org:member");
-    await expectBotAgent({
-      botId: bot.botId,
-      agentId: bot.composeId,
-      agentName: `agent-${bot.composeId.slice(0, 8)}`,
-    });
-  });
-
-  it("returns 404 when the custom bot default agent is missing", async () => {
-    const bot = await seedBot();
-    mocks.clerk.session(bot.ownerUserId, bot.orgId, "org:member");
-
-    const response = await accept(
-      client().updateBot({
-        params: { botId: bot.botId },
-        headers: AUTH_HEADERS,
-        body: { defaultAgentId: randomUUID() },
-      }),
-      [404],
-    );
-
-    expect(response.body).toStrictEqual({
-      error: { message: "Agent not found", code: "NOT_FOUND" },
     });
   });
 

@@ -4,13 +4,14 @@ import {
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
 import { command } from "ccstate";
-import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { connectors } from "@okouai/db/schema/connector";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -391,7 +392,6 @@ async function loadInstallationForConnector(args: {
   const conditions = [
     eq(feishuOrgInstallations.orgId, args.orgId),
     eq(feishuOrgInstallations.appId, args.appId),
-    isNotNull(feishuOrgInstallations.defaultAgentId),
   ];
   if (args.installationId) {
     conditions.push(eq(feishuOrgInstallations.id, args.installationId));
@@ -404,9 +404,10 @@ async function loadInstallationForConnector(args: {
       tenantKey: feishuOrgInstallations.feishuTenantKey,
       setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
       ownerUserId: feishuOrgInstallations.ownerUserId,
-      defaultAgentId: feishuOrgInstallations.defaultAgentId,
+      defaultAgentId: orgMetadata.defaultAgentId,
     })
     .from(feishuOrgInstallations)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
     .where(and(...conditions))
     .limit(1);
   if (!installation?.defaultAgentId) {

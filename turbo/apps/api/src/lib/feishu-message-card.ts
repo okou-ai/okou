@@ -104,7 +104,7 @@ export function buildFeishuWelcomeMessage(args: {
       {
         tag: "markdown",
         content:
-          "Send me a direct message or mention me in a group chat to get started.\n\nCommands: `/help`, `/connect`, `/disconnect`, `/switch`, `/model`.",
+          "Send me a direct message or mention me in a group chat to get started.\n\nCommands: `/help`, `/connect`, `/disconnect`, `/model`.",
       },
     ],
   });
@@ -127,7 +127,6 @@ export function buildFeishuHelpMessage(args: {
         "/help — Show this help",
         `/connect — Connect your ${brandName} account`,
         `/disconnect — Disconnect your ${brandName} account`,
-        "/switch — Choose which agent responds",
         "/model — Choose your model",
         "",
         "Send a task in a direct message, or mention the bot with a task in a group chat.",

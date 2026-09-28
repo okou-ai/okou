@@ -1,4 +1,4 @@
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import {
   integrationsTelegramUploadCompleteContract,
   type TelegramUploadCompleteBody,
@@ -20,7 +20,6 @@ import {
   uploadedArtifactFetchUrl$,
 } from "../services/uploaded-artifact.service";
 import { recordTelegramUploadedFile$ } from "../services/run-uploaded-files.service";
-import { telegramInstallation } from "../services/telegram-data.service";
 import type { RouteEntry } from "../route-entry";
 
 const botNotFound = Object.freeze({
@@ -76,19 +75,6 @@ function buildMetadata(args: {
   };
 }
 
-function resolveBotToken(args: {
-  readonly orgId: string;
-  readonly botId: string;
-}): Computed<Promise<string | undefined>> {
-  return computed(async (get): Promise<string | undefined> => {
-    if (isOfficialTelegramBotId(args.botId)) {
-      return getOfficialTelegramBotConfig().botToken ?? undefined;
-    }
-    const installation = await get(telegramInstallation(args));
-    return installation?.botToken;
-  });
-}
-
 function telegramErrorResponse(
   result: Extract<SendTelegramDocumentResult, { kind: "telegram-error" }>,
 ) {
@@ -121,8 +107,9 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const botToken = await get(resolveBotToken({ orgId, botId: body.botId }));
-  signal.throwIfAborted();
+  const botToken = isOfficialTelegramBotId(body.botId)
+    ? getOfficialTelegramBotConfig().botToken
+    : null;
   if (!botToken) {
     return botNotFound;
   }

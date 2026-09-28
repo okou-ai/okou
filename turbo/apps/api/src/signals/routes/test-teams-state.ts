@@ -18,7 +18,6 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsChatThreadRoutes } from "@okouai/db/schema/teams-chat-thread-route";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { teamsUserAgentPreferences } from "@okouai/db/schema/teams-user-agent-preference";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 
@@ -900,10 +899,6 @@ async function deleteTeamsOrgState(
   orgId: string,
   signal: AbortSignal,
 ): Promise<void> {
-  await db
-    .delete(teamsUserAgentPreferences)
-    .where(eq(teamsUserAgentPreferences.orgId, orgId));
-  signal.throwIfAborted();
   await deleteTeamsAgentsForOrg(db, orgId, signal);
   await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
   signal.throwIfAborted();

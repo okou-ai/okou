@@ -11,11 +11,7 @@ import {
   openTelegramLoginTab,
   requestTelegramAuth,
 } from "./telegram-login-popup.ts";
-import {
-  closeTelegramAddDialogAfterRegistration$,
-  registerTelegramBot$,
-  reloadTelegramBots$,
-} from "./telegram.ts";
+import { reloadTelegramBots$ } from "./telegram.ts";
 
 export const linkTelegramAccount$ = command(
   async (
@@ -102,27 +98,6 @@ export const authorizeTelegramBot$ = command(
     const tab = openTelegramLoginTab();
     return await withCleanup(
       set(connectTelegramInTab$, botId, tab, signal),
-      () => {
-        tab.close();
-      },
-    );
-  },
-);
-
-export const registerAndConnectTelegramBot$ = command(
-  async (
-    { set },
-    input: { botToken: string; defaultAgentId?: string },
-    signal: AbortSignal,
-  ) => {
-    signal.throwIfAborted();
-    const tab = openTelegramLoginTab();
-    await withCleanup(
-      (async () => {
-        const bot = await set(registerTelegramBot$, input, signal);
-        set(closeTelegramAddDialogAfterRegistration$);
-        await set(connectTelegramInTab$, bot.id, tab, signal);
-      })(),
       () => {
         tab.close();
       },

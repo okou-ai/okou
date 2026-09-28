@@ -4,7 +4,6 @@ import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrati
 import { agents } from "@okouai/db/schema/agent";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
-import { discordUserAgentPreferences } from "@okouai/db/schema/discord-user-agent-preference";
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import type { ApiOrgRole } from "../../types/auth";
@@ -404,20 +403,11 @@ export function discordEffectiveAgent(args: {
 }) {
   return computed(async (get) => {
     const db = get(db$);
-    const [preference] = await db
-      .select()
-      .from(discordUserAgentPreferences)
-      .where(
-        and(
-          eq(discordUserAgentPreferences.orgId, args.orgId),
-          eq(discordUserAgentPreferences.userId, args.userId),
-        ),
-      );
     const [metadata] = await db
       .select({ defaultAgentId: orgMetadata.defaultAgentId })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, args.orgId));
-    const agentId = preference?.selectedAgentId ?? metadata?.defaultAgentId;
+    const agentId = metadata?.defaultAgentId;
     if (!agentId) {
       return null;
     }
@@ -438,108 +428,6 @@ export function discordEffectiveAgent(args: {
     return agent ?? null;
   });
 }
-
-async function updateDiscordAgentPreference(
-  db: Db,
-  binding: DiscordVerifiedBinding,
-  agentId: string | null,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const result = await db.transaction(async (tx) => {
-    const [connection] = await tx
-      .select()
-      .from(discordOrgConnections)
-      .where(eq(discordOrgConnections.id, binding.connectionId))
-      .for("share");
-    signal.throwIfAborted();
-    if (!connection) {
-      return false;
-    }
-    const enabled = await discordIntegrationEnabledForOwnerInDb(
-      tx,
-      binding.orgId,
-      binding.userId,
-    );
-    signal.throwIfAborted();
-    if (!enabled) {
-      return false;
-    }
-    if (agentId) {
-      const [agent] = await tx
-        .select({ id: agents.id })
-        .from(agents)
-        .where(
-          and(
-            eq(agents.id, agentId),
-            eq(agents.orgId, binding.orgId),
-            or(
-              eq(agents.visibility, "public"),
-              eq(agents.owner, binding.userId),
-            ),
-          ),
-        );
-      signal.throwIfAborted();
-      if (!agent) {
-        return false;
-      }
-    }
-    await tx
-      .insert(discordUserAgentPreferences)
-      .values({
-        userId: binding.userId,
-        orgId: binding.orgId,
-        connectionId: binding.connectionId,
-        selectedAgentId: agentId,
-        createdAt: nowDate(),
-        updatedAt: nowDate(),
-      })
-      .onConflictDoUpdate({
-        target: [
-          discordUserAgentPreferences.userId,
-          discordUserAgentPreferences.orgId,
-        ],
-        set: {
-          connectionId: binding.connectionId,
-          selectedAgentId: agentId,
-          updatedAt: nowDate(),
-        },
-      });
-    signal.throwIfAborted();
-    return true;
-  });
-  if (result) {
-    await publishDiscordChanged([binding.userId]);
-  }
-  signal.throwIfAborted();
-  return result;
-}
-
-export const setDiscordAgentPreference$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly connectionId: string;
-      readonly discordUserId: string;
-      readonly agentId: string | null;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const bindings = await get(discordSenderBindings(args.discordUserId));
-    signal.throwIfAborted();
-    const binding = bindings.find((candidate) => {
-      return candidate.connectionId === args.connectionId;
-    });
-    if (!binding) {
-      return false;
-    }
-    return await updateDiscordAgentPreference(
-      set(writeDb$),
-      binding,
-      args.agentId,
-      signal,
-    );
-  },
-);
 
 function discordContextMode(
   config: DiscordAppConfig | null,

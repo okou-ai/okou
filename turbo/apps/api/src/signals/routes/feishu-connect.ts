@@ -146,9 +146,6 @@ const setup$ = command(async ({ get, set }, signal: AbortSignal) => {
     throw configured.error;
   }
   const result: ConfigureFeishuResult = configured.value;
-  if (result.kind === "agent_not_found") {
-    return badRequestMessage("Select an agent from this organization");
-  }
   if (result.kind === "installation_not_found") {
     return notFound(`${get(feishuPlatformName$)} integration not found`);
   }
@@ -237,14 +234,10 @@ const updateInstallation$ = command(
         platform: get(feishuPlatform$),
         userId: auth.userId,
         installationId: params.installationId,
-        defaultAgentId: bodyResult.data.defaultAgentId,
         setupCompleted: bodyResult.data.setupCompleted,
       },
       signal,
     );
-    if (updated.kind === "agent_not_found") {
-      return badRequestMessage("Select an agent from this organization");
-    }
     if (updated.kind === "installation_not_found") {
       return notFound(`${get(feishuPlatformName$)} integration not found`);
     }

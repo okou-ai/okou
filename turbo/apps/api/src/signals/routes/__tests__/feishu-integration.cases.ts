@@ -105,6 +105,7 @@ import { customConnectorsUpdateRoutes } from "../custom-connectors-update";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { logsRoutes } from "../logs";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 
 const customConnectorByIdTestRoutes = Object.freeze([
   ...customConnectorsDeleteRoutes,
@@ -1004,7 +1005,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
 
   async function configureTestInstallation(args: {
     readonly appId: string;
-    readonly defaultAgentId: string;
   }): Promise<
     Pick<FeishuInstallationFixture, "callbackUrl" | "installationId">
   > {
@@ -1020,7 +1020,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
           appSecret: APP_SECRET,
           verificationToken: VERIFICATION_TOKEN,
           encryptKey: ENCRYPT_KEY,
-          defaultAgentId: args.defaultAgentId,
         },
       }),
       [200],
@@ -1038,7 +1037,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         headers: { authorization: "Bearer clerk-session" },
         params: { installationId },
         body: {
-          defaultAgentId: args.defaultAgentId,
           setupCompleted: true,
         },
       }),
@@ -1079,10 +1077,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     );
     await runsApi.grantProEntitlement(actor);
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-    const configured = await configureTestInstallation({
-      appId,
-      defaultAgentId: defaultAgent.agentId,
-    });
+    const configured = await configureTestInstallation({ appId });
     return {
       actor,
       appId,
@@ -1139,10 +1134,15 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       : alternateAgent;
     await runsApi.grantProEntitlement(actor);
     await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+    if (options.useAlternateInstallationDefault) {
+      await setOrgDefaultAgentFixture({
+        orgId: actor.orgId,
+        agentId: installationDefaultAgent.agentId,
+      });
+    }
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const { callbackUrl, installationId } = await configureTestInstallation({
       appId,
-      defaultAgentId: installationDefaultAgent.agentId,
     });
     return {
       actor,
@@ -1663,7 +1663,6 @@ export function registerFeishuIntegrationTests(
               appId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
             },
           }),
           [200],
@@ -1728,7 +1727,6 @@ export function registerFeishuIntegrationTests(
               appId: firstAppId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -1741,7 +1739,6 @@ export function registerFeishuIntegrationTests(
               appId: firstAppId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
             },
           }),
           [200],
@@ -1753,7 +1750,6 @@ export function registerFeishuIntegrationTests(
               appId: secondAppId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -1829,7 +1825,6 @@ export function registerFeishuIntegrationTests(
                 appId,
                 appSecret: APP_SECRET,
                 verificationToken: VERIFICATION_TOKEN,
-                defaultAgentId: agent.agentId,
                 createNew: true,
               },
             });
@@ -1891,7 +1886,6 @@ export function registerFeishuIntegrationTests(
           appId: `cli_${randomUUID()}`,
           appSecret: APP_SECRET,
           verificationToken: VERIFICATION_TOKEN,
-          defaultAgentId: agent.agentId,
         };
         const responses = await Promise.all([
           accept(client.setup({ headers, body }), [200]),
@@ -2002,7 +1996,6 @@ export function registerFeishuIntegrationTests(
                   appId,
                   appSecret: APP_SECRET,
                   verificationToken: VERIFICATION_TOKEN,
-                  defaultAgentId: agent.agentId,
                   createNew: true,
                 },
               }),
@@ -2084,7 +2077,6 @@ export function registerFeishuIntegrationTests(
             appId: `cli_${randomUUID()}`,
             appSecret: APP_SECRET,
             verificationToken: VERIFICATION_TOKEN,
-            defaultAgentId: agent.agentId,
             createNew: true,
           },
         });
@@ -2138,12 +2130,12 @@ export function registerFeishuIntegrationTests(
           client.updateInstallation({
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId: installation.id },
-            body: { defaultAgentId: agent.agentId, setupCompleted: true },
+            body: { setupCompleted: true },
           }),
           client.updateInstallation({
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId: installation.id },
-            body: { defaultAgentId: agent.agentId, setupCompleted: true },
+            body: { setupCompleted: true },
           }),
         ]);
         await bothSkillUploadsStarted.promise;
@@ -2206,7 +2198,6 @@ export function registerFeishuIntegrationTests(
               appId: `cli_${randomUUID()}`,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2282,7 +2273,6 @@ export function registerFeishuIntegrationTests(
               appId: `cli_${randomUUID()}`,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2323,7 +2313,7 @@ export function registerFeishuIntegrationTests(
             ":installationId",
             installationId,
           ),
-          body: { defaultAgentId: agent.agentId, setupCompleted: true },
+          body: { setupCompleted: true },
         });
 
         expect(failedRepair.status).toBe(500);
@@ -2381,7 +2371,6 @@ export function registerFeishuIntegrationTests(
               appId: `cli_${randomUUID()}`,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2414,7 +2403,6 @@ export function registerFeishuIntegrationTests(
               appId: `cli_${randomUUID()}`,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2424,7 +2412,7 @@ export function registerFeishuIntegrationTests(
           client.updateInstallation({
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId },
-            body: { defaultAgentId: agent.agentId, setupCompleted: true },
+            body: { setupCompleted: true },
           }),
           [403],
         );
@@ -2442,7 +2430,6 @@ export function registerFeishuIntegrationTests(
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId },
             body: {
-              defaultAgentId: agent.agentId,
               setupCompleted: true,
             },
           }),
@@ -2497,7 +2484,6 @@ export function registerFeishuIntegrationTests(
               appId,
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
-              defaultAgentId: agent.agentId,
               createNew: true,
             },
           }),
@@ -2514,7 +2500,6 @@ export function registerFeishuIntegrationTests(
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId },
             body: {
-              defaultAgentId: agent.agentId,
               setupCompleted: true,
             },
           }),
@@ -3228,7 +3213,6 @@ export function registerFeishuIntegrationTests(
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
               encryptKey: ENCRYPT_KEY,
-              defaultAgentId: agent.agentId,
             },
           }),
           [200],
@@ -3313,7 +3297,6 @@ export function registerFeishuIntegrationTests(
               appSecret: APP_SECRET,
               verificationToken: VERIFICATION_TOKEN,
               encryptKey: ENCRYPT_KEY,
-              defaultAgentId: agent.agentId,
             },
           }),
           [200],
@@ -3607,7 +3590,6 @@ export function registerFeishuIntegrationTests(
                 appSecret: APP_SECRET,
                 verificationToken: rotatedVerificationToken,
                 encryptKey: ENCRYPT_KEY,
-                defaultAgentId: fixture.defaultAgentId,
               },
             }),
             [200],
@@ -3700,7 +3682,6 @@ export function registerFeishuIntegrationTests(
                 appSecret: "replacement-app-secret",
                 verificationToken: "replacement-verification-token",
                 encryptKey: "replacement-encrypt-key",
-                defaultAgentId: fixture.alternateAgentId,
               },
             }),
             [409],
@@ -3787,7 +3768,6 @@ export function registerFeishuIntegrationTests(
             headers: { authorization: "Bearer clerk-session" },
             params: { installationId: fixture.installationId },
             body: {
-              defaultAgentId: fixture.defaultAgentId,
               setupCompleted: true,
             },
           }),
@@ -4167,13 +4147,7 @@ export function registerFeishuIntegrationTests(
         const client = setupApp({ context, routes: feishuConnectRoutes })(
           connectContract,
         );
-        for (const command of [
-          "/help",
-          "/connect",
-          "/switch",
-          "/model",
-          "/unknown",
-        ]) {
+        for (const command of ["/help", "/connect", "/model", "/unknown"]) {
           await postEvent(callbackUrl, directMessage(appId, command), {
             encrypted: true,
           });
@@ -4199,11 +4173,6 @@ export function registerFeishuIntegrationTests(
         expect(
           commandReplies.some((content) => {
             return content.includes("Already connected");
-          }),
-        ).toBeTruthy();
-        expect(
-          commandReplies.some((content) => {
-            return content.includes("Choose an agent");
           }),
         ).toBeTruthy();
         expect(
@@ -5513,12 +5482,6 @@ export function registerFeishuIntegrationTests(
         const { actor, runnerGroup, appId, callbackUrl, alternateAgentId } =
           fixture;
         await connectFixtureUser(fixture);
-        await postEvent(
-          callbackUrl,
-          directMessage(appId, `/switch ${alternateAgentId}`),
-          { encrypted: true },
-        );
-        await flushWaitUntilForTest();
         fixtureState.outboundMessages = [];
         context.mocks.ably.publish.mockClear();
         const historyFileKey = `file_v2_${"b".repeat(200)}`;
@@ -6538,51 +6501,6 @@ export function registerSharedFeishuConversationTests(): void {
         });
       expect(completedQuotedReply?.replyInThread).toBeTruthy();
       expect(completedQuotedReply?.target).toBe(quotedReplyMessageId);
-
-      const client = setupApp({ context, routes: feishuConnectRoutes })(
-        connectContract,
-      );
-      await accept(
-        client.removeInstallation({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { installationId: fixture.installationId },
-        }),
-        [200],
-      );
-    });
-
-    it("resets Feishu DM sessions when switching agents", async () => {
-      const fixture = await setupFeishuRunFixture();
-      const { actor, runnerGroup, appId, callbackUrl, alternateAgentId } =
-        fixture;
-      await startFeishuDmSession(fixture);
-
-      await postEvent(
-        callbackUrl,
-        directMessage(appId, `/switch ${alternateAgentId}`),
-        { encrypted: true },
-      );
-      await flushWaitUntilForTest();
-      await postEvent(
-        callbackUrl,
-        directMessage(appId, "use the switched Feishu agent"),
-        { encrypted: true },
-      );
-      await flushWaitUntilForTest();
-      const switchedAgentRun = await findRun(
-        actor,
-        "use the switched Feishu agent",
-      );
-      await runsApi.heartbeatRunner(runnerGroup);
-      const switchedAgentClaim = await runsApi.claimRunnerJob(
-        switchedAgentRun.id,
-      );
-      expect(switchedAgentClaim.platformEnvironment.OKOU_AGENT_ID).toBe(
-        alternateAgentId,
-      );
-      expect(switchedAgentClaim.resumeSession).toBeNull();
-      await runsApi.requestCancelRun(actor, switchedAgentRun.id, [200]);
-      await flushWaitUntilForTest();
 
       const client = setupApp({ context, routes: feishuConnectRoutes })(
         connectContract,

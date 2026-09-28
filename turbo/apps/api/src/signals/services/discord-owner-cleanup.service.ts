@@ -1,6 +1,5 @@
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
-import { discordUserAgentPreferences } from "@okouai/db/schema/discord-user-agent-preference";
 import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -25,14 +24,6 @@ export async function deleteDiscordOrgMemberData(
           ),
         ),
       );
-    await tx
-      .delete(discordUserAgentPreferences)
-      .where(
-        and(
-          eq(discordUserAgentPreferences.userId, args.userId),
-          eq(discordUserAgentPreferences.orgId, args.orgId),
-        ),
-      );
   });
 }
 
@@ -44,9 +35,6 @@ export async function deleteDiscordOrgData(
     await tx
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.orgId, orgId));
-    await tx
-      .delete(discordUserAgentPreferences)
-      .where(eq(discordUserAgentPreferences.orgId, orgId));
   });
 }
 
@@ -67,8 +55,5 @@ export async function deleteDiscordUserData(
     await tx
       .delete(discordOrgConnections)
       .where(eq(discordOrgConnections.userId, userId));
-    await tx
-      .delete(discordUserAgentPreferences)
-      .where(eq(discordUserAgentPreferences.userId, userId));
   });
 }

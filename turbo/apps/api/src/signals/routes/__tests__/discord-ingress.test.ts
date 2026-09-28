@@ -24,7 +24,6 @@ import { integrationsDiscordRoutes } from "../integrations-discord";
 import { testDiscordIngressRoutes } from "../test-discord-ingress";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webDownloadRoutes } from "../web-download";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
@@ -1172,28 +1171,6 @@ describe("canonical Discord ingress", () => {
       { userId: owner.userId, orgId: owner.orgId, orgRole: "org:admin" },
       { userId: member.userId, orgId: member.orgId, orgRole: "org:admin" },
     ]);
-    // The member chose a shared agent that its owner later makes private.
-    const agents = createAuthOrgAgentsBddApi(context);
-    const shared = await agents.createAgent(owner.actor, {
-      displayName: "Shared research agent",
-    });
-    createRouteMocks(context).clerk.session(
-      member.userId,
-      member.orgId,
-      "org:admin",
-    );
-    await accept(
-      setupApp({ context, routes: integrationsDiscordRoutes })(
-        integrationsDiscordContract,
-      ).setAgentPreference({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { agentId: shared.agentId },
-      }),
-      [200],
-    );
-    await agents.updateAgentMetadata(owner.actor, shared.agentId, {
-      visibility: "private",
-    });
     const message = discordMessageForTest(member, {
       channelId: provider.guildChannelId,
       content: `<@${member.botUserId}> summarize this channel`,
@@ -1208,7 +1185,7 @@ describe("canonical Discord ingress", () => {
     expect(provider.sentMessages[0]).toMatchObject({
       channel_id: provider.guildChannelId,
       content:
-        "No accessible agent is configured. Use /okou switch to choose an agent.",
+        "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
     });
     await expect(discordChatThreads(context, member)).resolves.toHaveLength(0);
   });

@@ -163,17 +163,6 @@ interface TelegramLinkBody {
   readonly connectSignature?: TelegramConnectSignaturePayload;
 }
 
-interface TelegramRegisterBody {
-  readonly botToken: string;
-  readonly defaultAgentId?: string;
-  readonly reinstallBotId?: string;
-}
-
-interface TelegramSetupStatusBody {
-  readonly botToken: string;
-  readonly origin?: string;
-}
-
 interface TelegramUpdateBody {
   readonly defaultAgentId?: string;
   readonly selectedAgentId?: string | null;
@@ -1208,17 +1197,6 @@ export function createBddIntegrationApi(context: TestContext) {
       return response.body;
     },
 
-    agentPickerSubmission(
-      args: SlackPickerSubmissionArgs,
-    ): Record<string, unknown> {
-      return slackPickerSubmission(
-        "switch_agent_modal",
-        "agent_select_block",
-        "agent_select",
-        args,
-      );
-    },
-
     modelPickerSubmission(
       args: SlackPickerSubmissionArgs,
     ): Record<string, unknown> {
@@ -1546,70 +1524,6 @@ export function createBddIntegrationApi(context: TestContext) {
         client.updateBot({
           headers: authenticate(context, routeMocks, actor),
           params: { botId },
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestDisconnectTelegramBot(
-      actor: ApiTestUser | null,
-      botId: string,
-      statuses: readonly (204 | 401 | 403 | 404)[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-      return await accept(
-        client.disconnect({
-          headers: authenticate(context, routeMocks, actor),
-          params: { botId },
-        }),
-        statuses,
-      );
-    },
-
-    async requestRegisterTelegramBot(
-      actor: ApiTestUser | null,
-      body: TelegramRegisterBody,
-      statuses: readonly (
-        | 200
-        | 201
-        | 400
-        | 401
-        | 403
-        | 404
-        | 409
-        | 500
-        | 502
-      )[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-      return await accept(
-        client.register({
-          headers: authenticate(context, routeMocks, actor),
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestTelegramSetupStatus(
-      actor: ApiTestUser | null,
-      body: TelegramSetupStatusBody,
-      statuses: readonly (200 | 400 | 401 | 409)[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-      return await accept(
-        client.setupStatus({
-          headers: authenticate(context, routeMocks, actor),
           body,
         }),
         statuses,

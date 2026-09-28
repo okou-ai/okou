@@ -4,9 +4,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
-import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { delay } from "signal-timers";
 import { logger } from "../../lib/log";
@@ -25,8 +23,6 @@ import {
 } from "../external/telegram-official";
 import { now, nowDate } from "../../lib/time";
 import { bestEffort, settleIncludingAbort } from "../utils";
-import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   telegramChatCallbackPayloadSchema,
   type TelegramDeliveryTarget,
@@ -131,69 +127,33 @@ async function loadTelegramOwnerBinding(
   },
   signal: AbortSignal,
 ): Promise<TelegramOwnerBinding | undefined> {
-  if (args.target.userLinkKind === "official") {
-    if (!isOfficialTelegramBotId(args.target.installationId)) {
-      return undefined;
-    }
-    const [link] = await args.db
-      .select({ id: telegramOfficialUserLinks.id })
-      .from(telegramOfficialUserLinks)
-      .where(
-        and(
-          eq(telegramOfficialUserLinks.id, args.target.userLinkId),
-          eq(telegramOfficialUserLinks.userId, args.userId),
-          eq(telegramOfficialUserLinks.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    const botToken = getOfficialTelegramBotConfig().botToken;
-    return link && botToken
-      ? {
-          botToken,
-          ownerLink: { kind: "official", id: link.id },
-        }
-      : undefined;
-  }
-
-  if (isOfficialTelegramBotId(args.target.installationId)) {
+  // Self-hosted (custom) Telegram bots are retired; only the official shared
+  // bot can deliver run callbacks.
+  if (
+    args.target.userLinkKind !== "official" ||
+    !isOfficialTelegramBotId(args.target.installationId)
+  ) {
     return undefined;
   }
-  const [binding] = await args.db
-    .select({
-      id: telegramUserLinks.id,
-      encryptedBotToken: telegramInstallations.encryptedBotToken,
-      ownerUserId: telegramInstallations.ownerUserId,
-    })
-    .from(telegramUserLinks)
-    .innerJoin(
-      telegramInstallations,
-      eq(telegramInstallations.telegramBotId, telegramUserLinks.installationId),
-    )
+  const [link] = await args.db
+    .select({ id: telegramOfficialUserLinks.id })
+    .from(telegramOfficialUserLinks)
     .where(
       and(
-        eq(telegramUserLinks.id, args.target.userLinkId),
-        eq(telegramUserLinks.userId, args.userId),
-        eq(telegramUserLinks.installationId, args.target.installationId),
-        eq(telegramInstallations.orgId, args.orgId),
+        eq(telegramOfficialUserLinks.id, args.target.userLinkId),
+        eq(telegramOfficialUserLinks.userId, args.userId),
+        eq(telegramOfficialUserLinks.orgId, args.orgId),
       ),
     )
     .limit(1);
   signal.throwIfAborted();
-  if (!binding) {
-    return undefined;
-  }
-  return {
-    botToken: await decryptPersistentSecretValue(
-      binding.encryptedBotToken,
-      await loadUserFeatureSwitchContext(
-        args.db,
-        args.orgId,
-        binding.ownerUserId,
-      ),
-    ),
-    ownerLink: { kind: "custom", id: binding.id },
-  };
+  const botToken = getOfficialTelegramBotConfig().botToken;
+  return link && botToken
+    ? {
+        botToken,
+        ownerLink: { kind: "official", id: link.id },
+      }
+    : undefined;
 }
 
 async function routeStillBindsRun(args: {
@@ -446,17 +406,10 @@ async function persistTelegramChatDelivery(args: {
   }
   await storeTelegramBotMessage({
     db: args.db,
-    scope:
-      args.target.userLinkKind === "official"
-        ? {
-            kind: "official",
-            orgId: args.run.orgId,
-            userLinkId: args.target.userLinkId,
-          }
-        : {
-            kind: "custom",
-            installationId: args.target.installationId,
-          },
+    scope: {
+      orgId: args.run.orgId,
+      userLinkId: args.target.userLinkId,
+    },
     chatId: args.target.chatId,
     messageId: firstMessageId,
     text: args.responseText,
@@ -656,17 +609,10 @@ export async function deliverTelegramChatAdmissionFailure(
   }
   await storeTelegramBotMessage({
     db: args.db,
-    scope:
-      args.target.userLinkKind === "official"
-        ? {
-            kind: "official",
-            orgId: args.orgId,
-            userLinkId: args.target.userLinkId,
-          }
-        : {
-            kind: "custom",
-            installationId: args.target.installationId,
-          },
+    scope: {
+      orgId: args.orgId,
+      userLinkId: args.target.userLinkId,
+    },
     chatId: args.target.chatId,
     messageId: firstMessageId,
     text: undefined,

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence";
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
@@ -474,38 +474,6 @@ function acceptGithubGrantRevocations(): void {
       return new HttpResponse(null, { status: 204 });
     }),
   );
-}
-
-function acceptTelegramDomainProbes(): void {
-  server.use(
-    http.head("https://oauth.telegram.org/auth", () => {
-      return new HttpResponse(null, {
-        status: 200,
-        headers: { "content-length": "2001" },
-      });
-    }),
-  );
-}
-
-async function registerTelegramBot(
-  actor: ApiTestUser,
-  defaultAgentId: string,
-): Promise<string> {
-  const integrations = createBddIntegrationApi(context);
-  const telegramBotId = randomInt(1_000_000_000, 9_999_999_999);
-  const botToken = `${telegramBotId}:bdd-token-${randomUUID().slice(0, 8)}`;
-  acceptTelegramDomainProbes();
-  context.mocks.telegram.getMe.mockResolvedValue({
-    id: telegramBotId,
-    username: `bdd_bot_${telegramBotId}`,
-    can_read_all_group_messages: true,
-  });
-  await integrations.requestRegisterTelegramBot(
-    actor,
-    { botToken, defaultAgentId },
-    [201],
-  );
-  return botToken;
 }
 
 describe("WHCB-01: third-party webhook verification boundaries", () => {
@@ -6527,7 +6495,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         githubUserId: newGithubUserId(),
       },
     });
-    const botToken = await registerTelegramBot(actor, agent.agentId);
     await runs.applyUserPermissionGrant(actor, {
       agentId: agent.agentId,
       connectorSlug: "slack",
@@ -6600,9 +6567,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         {
           idempotencyKey: `org-delete:${orgOf(actor)}:${granted.subscriptionId}:cancel`,
         },
-      );
-      expect(context.mocks.telegram.deleteWebhook).toHaveBeenCalledWith(
-        botToken,
       );
     });
     const survivingRun = await runs.requestReadRun(actor, run.runId, [200]);
@@ -7219,7 +7183,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
     it("removes deleted-user integration links while preserving the shared organization", async () => {
       const fixture = await prepareUserDeletion();
-      const { doomed, sharedAgent, doomedAgent } = fixture;
+      const { doomed, sharedAgent } = fixture;
       const gh = createGithubBddApi(context);
       acceptGithubGrantRevocations();
       // The peer's compose remains the installation's default agent; only the
@@ -7231,15 +7195,9 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         },
       });
       expect((await gh.readInstallation(doomed)).isConnected).toBeTruthy();
-      const botToken = await registerTelegramBot(doomed, doomedAgent.agentId);
 
       await startUserDeletion(fixture);
       await flushWaitUntilForTest();
-      await waitForExpectation(() => {
-        expect(context.mocks.telegram.deleteWebhook).toHaveBeenCalledWith(
-          botToken,
-        );
-      });
       expect((await gh.readInstallation(doomed)).isConnected).toBeFalsy();
       await expectSurvivingOrganization(fixture);
     });

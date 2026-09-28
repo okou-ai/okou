@@ -12,7 +12,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
-import { discordUserAgentPreferences } from "@okouai/db/schema/discord-user-agent-preference";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
@@ -101,17 +100,6 @@ async function seedDiscordHistory(
     destinationChannelId: args.history.channelId,
     createdAt,
   });
-  signal.throwIfAborted();
-  await tx
-    .insert(discordUserAgentPreferences)
-    .values({
-      userId: args.userId,
-      orgId: args.orgId,
-      connectionId: args.connectionId,
-      createdAt,
-      updatedAt: createdAt,
-    })
-    .onConflictDoNothing();
   signal.throwIfAborted();
 }
 

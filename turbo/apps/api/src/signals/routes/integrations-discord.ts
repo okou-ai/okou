@@ -14,7 +14,6 @@ import {
   selectDiscordDmBinding$,
   discordMemberRole,
   disconnectDiscordBinding$,
-  setDiscordAgentPreference$,
 } from "../services/discord-data.service";
 import {
   discordOrgChangedUserIds,
@@ -171,37 +170,6 @@ const setDmSelection$ = command(async ({ get, set }, signal: AbortSignal) => {
     : unavailable();
 });
 
-const setAgentPreference$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const bodyResult = await get(
-      bodyResultOf(integrationsDiscordContract.setAgentPreference),
-    );
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-    const body = bodyResult.data;
-    const binding = await get(discordUserBinding(auth));
-    signal.throwIfAborted();
-    if (!binding) {
-      return unavailable();
-    }
-    const selected = await set(
-      setDiscordAgentPreference$,
-      {
-        connectionId: binding.connectionId,
-        discordUserId: binding.discordUserId,
-        agentId: body.agentId,
-      },
-      signal,
-    );
-    return selected
-      ? { status: 200 as const, body: { ok: true as const } }
-      : unavailable();
-  },
-);
-
 const discordAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
@@ -224,13 +192,6 @@ export const integrationsDiscordRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       { ...discordAuth, accept: ["session", "pat", "oauth"] },
       setDmSelection$,
-    ),
-  },
-  {
-    route: integrationsDiscordContract.setAgentPreference,
-    handler: authRoute(
-      { ...discordAuth, accept: ["session", "pat", "oauth"] },
-      setAgentPreference$,
     ),
   },
 ];

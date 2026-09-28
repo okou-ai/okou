@@ -18,13 +18,12 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { teamsUserAgentPreferences } from "@okouai/db/schema/teams-user-agent-preference";
 import { agents } from "@okouai/db/schema/agent";
 import type {
   TeamsInboundActivity,
   TeamsInboundAttachment,
 } from "@okouai/api-contracts/contracts/teams-bot";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { convert } from "html-to-text";
 
 import { env } from "../../lib/env";
@@ -66,7 +65,7 @@ import {
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { ensureTeamsChatThreadRoute } from "./teams-chat-ingress.service";
-import { integrationDmSessionKey } from "../../lib/integration-dm-session";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { formatTeamsFileForContext } from "./teams-prompt";
 import { InputFileImportError } from "./canonical-asset.service";
 import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
@@ -93,15 +92,12 @@ import { createUserMessageDocument } from "./chat-user-message.service";
 
 const L = logger("TeamsDispatch");
 const TEAMS_SUPPORTED_COMMANDS_TEXT =
-  "`help`, `connect`, `disconnect`, `switch`, `model`";
-const TEAMS_AGENT_PICKER_MAX_OPTIONS = 100;
+  "`help`, `connect`, `disconnect`, `model`";
 const TEAMS_MODEL_PICKER_MAX_OPTIONS = 100;
 const TEAMS_CARD_ACTION_KEY = "okouTeamsAction";
 const TEAMS_AGENT_PICKER_ACTION = "switch_agent";
 const TEAMS_MODEL_PICKER_ACTION = "switch_model";
-const TEAMS_AGENT_PICKER_INPUT_ID = "selectedAgentId";
 const TEAMS_MODEL_PICKER_INPUT_ID = "selectedModel";
-const TEAMS_AGENT_PICKER_ORG_DEFAULT_VALUE = "__org_default__";
 const TEAMS_THINKING_REACTION_TYPE = "1f4ad_thoughtballoon";
 const TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE =
   "application/vnd.microsoft.teams.file.download.info";
@@ -153,12 +149,6 @@ interface TeamsContextMessage {
 
 interface TeamsAgent {
   readonly id: string;
-  readonly name: string;
-  readonly displayName: string | null;
-}
-
-interface TeamsAgentPickerOption {
-  readonly composeId: string;
   readonly name: string;
   readonly displayName: string | null;
 }
@@ -241,10 +231,6 @@ function teamsCardAction(
 
 function choiceLabel(value: string): string {
   return value.slice(0, 80);
-}
-
-function agentLabel(agent: TeamsAgent | TeamsAgentPickerOption): string {
-  return agent.displayName ?? agent.name;
 }
 
 function modelLabel(option: TeamsModelPickerOption): string {
@@ -334,72 +320,19 @@ function notInstalledNotice(
   };
 }
 
+function orgDefaultAgentNotice(): TeamsMessageDispatchResult {
+  return {
+    kind: "notice",
+    replyText:
+      "Teams always uses your workspace's default agent. Agent switching is not available.",
+  };
+}
+
 function disconnectedNotice(): TeamsMessageDispatchResult {
   return {
     kind: "notice",
     replyText:
       "You have been disconnected and your agent access has been revoked.",
-  };
-}
-
-function buildTeamsAgentPickerCard(args: {
-  readonly options: readonly TeamsAgentPickerOption[];
-  readonly currentSelectedId: string | null;
-  readonly includeOrgDefault: boolean;
-  readonly orgDefaultName: string | null;
-}): TeamsAdaptiveCard {
-  const orgDefaultLabel = args.orgDefaultName
-    ? `Use org default (${args.orgDefaultName})`
-    : "Use org default";
-  const choices = [
-    ...(args.includeOrgDefault
-      ? [
-          {
-            title: choiceLabel(orgDefaultLabel),
-            value: TEAMS_AGENT_PICKER_ORG_DEFAULT_VALUE,
-          },
-        ]
-      : []),
-    ...args.options.map((option) => {
-      return {
-        title: choiceLabel(agentLabel(option)),
-        value: option.composeId,
-      };
-    }),
-  ];
-  const currentChoice = args.currentSelectedId
-    ? choices.find((choice) => {
-        return choice.value === args.currentSelectedId;
-      })
-    : undefined;
-  const initialValue = currentChoice?.value ?? choices[0]?.value;
-
-  return {
-    type: "AdaptiveCard",
-    version: "1.4",
-    body: [
-      {
-        type: "TextBlock",
-        text: "Choose which agent should respond to your mentions and DMs. Only affects your own messages.",
-        wrap: true,
-      },
-      {
-        type: "Input.ChoiceSet",
-        id: TEAMS_AGENT_PICKER_INPUT_ID,
-        label: "Agent",
-        style: "compact",
-        isMultiSelect: false,
-        ...(initialValue ? { value: initialValue } : {}),
-        choices,
-      },
-    ],
-    actions: [
-      {
-        type: "Action.Submit",
-        title: "Switch",
-        data: { [TEAMS_CARD_ACTION_KEY]: TEAMS_AGENT_PICKER_ACTION },
-      },
-    ],
   };
 }
 
@@ -778,49 +711,6 @@ async function sendTeamsRunStartIndicator(
   await bestEffort(indicator, signal);
 }
 
-async function getUserAgentPreference(
-  db: Db,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const [preference] = await db
-    .select({ selectedAgentId: teamsUserAgentPreferences.selectedAgentId })
-    .from(teamsUserAgentPreferences)
-    .where(
-      and(
-        eq(teamsUserAgentPreferences.userId, userId),
-        eq(teamsUserAgentPreferences.orgId, orgId),
-      ),
-    )
-    .limit(1);
-  return preference?.selectedAgentId ?? null;
-}
-
-async function setUserAgentPreference(args: {
-  readonly db: Db;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly composeId: string | null;
-}): Promise<void> {
-  await args.db
-    .insert(teamsUserAgentPreferences)
-    .values({
-      userId: args.userId,
-      orgId: args.orgId,
-      selectedAgentId: args.composeId,
-    })
-    .onConflictDoUpdate({
-      target: [
-        teamsUserAgentPreferences.userId,
-        teamsUserAgentPreferences.orgId,
-      ],
-      set: {
-        selectedAgentId: args.composeId,
-        updatedAt: nowDate(),
-      },
-    });
-}
-
 async function getWorkspaceAgent(
   db: Db,
   composeId: string,
@@ -862,56 +752,11 @@ async function getVisibleWorkspaceAgent(args: {
   return agent;
 }
 
-async function getVisibleAgentPickerOptions(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly defaultAgentId: string | null;
-}): Promise<readonly TeamsAgentPickerOption[]> {
-  const rows = await args.db
-    .select({
-      composeId: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, args.orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-      ),
-    )
-    .orderBy(desc(agents.updatedAt));
-
-  return rows
-    .filter((agent) => {
-      return agent.composeId !== args.defaultAgentId;
-    })
-    .slice(0, TEAMS_AGENT_PICKER_MAX_OPTIONS);
-}
-
 async function resolveEffectiveCompose(args: {
   readonly db: Db;
   readonly userId: string;
   readonly orgId: string;
 }): Promise<EffectiveComposeResolution> {
-  const override = await getUserAgentPreference(
-    args.db,
-    args.userId,
-    args.orgId,
-  );
-  if (override) {
-    const agent = await getVisibleWorkspaceAgent({
-      db: args.db,
-      composeId: override,
-      orgId: args.orgId,
-      userId: args.userId,
-    });
-    if (agent) {
-      return { status: "resolved", composeId: override, agent };
-    }
-  }
-
   const defaultAgentId = await resolveDefaultComposeId(args.db, args.orgId);
   if (!defaultAgentId) {
     return { status: "not_configured" };
@@ -1253,7 +1098,7 @@ function teamsSessionThreadId(args: {
     activity.conversationType === "personal" &&
     !isTeamsThreadReply(activity)
   ) {
-    return integrationDmSessionKey(args);
+    return INTEGRATION_DM_SESSION_KEY;
   }
   return activity.threadId;
 }
@@ -1808,12 +1653,12 @@ const persistTeamsChatMessage$ = command(
       teamsContext: launchContext,
       createdAt: currentTime,
     } as const;
-    await insertChatEventContext(args.db, values);
-    signal.throwIfAborted();
     const eventId = await enqueueChatInput(args.db, {
       chatThreadId: route.chatThreadId,
       orgId: args.installation.orgId,
       appendInput: async (tx) => {
+        // The entry's context row commits with the input it describes.
+        await insertChatEventContext(tx, values);
         return (await insertChatEvent(tx, values, "id"))?.id ?? null;
       },
     });
@@ -2060,52 +1905,7 @@ const connectedCommandBeforeCompose$ = command(
         return disconnectedNotice();
       }
       case "switch": {
-        const defaultAgentId = await resolveDefaultComposeId(
-          args.db,
-          args.installation.orgId,
-        );
-        signal.throwIfAborted();
-        const options = await getVisibleAgentPickerOptions({
-          db: args.db,
-          orgId: args.installation.orgId,
-          userId: args.connection.userId,
-          defaultAgentId,
-        });
-        signal.throwIfAborted();
-        const visibleDefaultAgent = defaultAgentId
-          ? await getVisibleWorkspaceAgent({
-              db: args.db,
-              composeId: defaultAgentId,
-              orgId: args.installation.orgId,
-              userId: args.connection.userId,
-            })
-          : undefined;
-        signal.throwIfAborted();
-        if (!visibleDefaultAgent && options.length === 0) {
-          return {
-            kind: "notice",
-            replyText: "No agents are available to your Teams account.",
-          };
-        }
-        const currentOverride = await getUserAgentPreference(
-          args.db,
-          args.connection.userId,
-          args.installation.orgId,
-        );
-        signal.throwIfAborted();
-        return {
-          kind: "notice",
-          replyText:
-            "Choose which agent should respond to your Teams messages.",
-          card: buildTeamsAgentPickerCard({
-            options,
-            currentSelectedId: currentOverride,
-            includeOrgDefault: Boolean(visibleDefaultAgent),
-            orgDefaultName: visibleDefaultAgent
-              ? agentLabel(visibleDefaultAgent)
-              : null,
-          }),
-        };
+        return orgDefaultAgentNotice();
       }
       case "model": {
         const picker = await set(
@@ -2156,75 +1956,7 @@ const connectedTeamsCardAction$ = command(
     signal: AbortSignal,
   ): Promise<TeamsMessageDispatchResult> => {
     if (args.action === "switch_agent") {
-      const selected = stringValue(
-        args.activity.value,
-        TEAMS_AGENT_PICKER_INPUT_ID,
-      );
-      if (!selected) {
-        return {
-          kind: "notice",
-          replyText: "Please choose an agent.",
-        };
-      }
-
-      if (selected === TEAMS_AGENT_PICKER_ORG_DEFAULT_VALUE) {
-        const defaultAgentId = await resolveDefaultComposeId(
-          args.db,
-          args.installation.orgId,
-        );
-        signal.throwIfAborted();
-        const visibleDefaultAgent = defaultAgentId
-          ? await getVisibleWorkspaceAgent({
-              db: args.db,
-              composeId: defaultAgentId,
-              orgId: args.installation.orgId,
-              userId: args.connection.userId,
-            })
-          : undefined;
-        signal.throwIfAborted();
-        if (!visibleDefaultAgent) {
-          return {
-            kind: "notice",
-            replyText: "You don't have access to that agent.",
-          };
-        }
-        await setUserAgentPreference({
-          db: args.db,
-          userId: args.connection.userId,
-          orgId: args.installation.orgId,
-          composeId: null,
-        });
-        signal.throwIfAborted();
-        return {
-          kind: "notice",
-          replyText: `Switched to **${agentLabel(visibleDefaultAgent)}**.`,
-        };
-      }
-
-      const agent = await getVisibleWorkspaceAgent({
-        db: args.db,
-        composeId: selected,
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-      });
-      signal.throwIfAborted();
-      if (!agent || agent.id !== selected) {
-        return {
-          kind: "notice",
-          replyText: "You don't have access to that agent.",
-        };
-      }
-      await setUserAgentPreference({
-        db: args.db,
-        userId: args.connection.userId,
-        orgId: args.installation.orgId,
-        composeId: agent.id,
-      });
-      signal.throwIfAborted();
-      return {
-        kind: "notice",
-        replyText: `Switched to **${agentLabel(agent)}**.`,
-      };
+      return orgDefaultAgentNotice();
     }
 
     const selected = stringValue(

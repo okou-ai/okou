@@ -206,6 +206,31 @@ the Runners are rolled back as well. Earlier APIs also require the slot when
 they decode contexts queued by this release. The release 4 floor for the steer
 endpoints is subsumed.
 
+### Integration DM threads and org default agent
+
+- **DM routes (migration 1278).** The main direct-message conversation of each
+  integration identity now maps to one chat thread through the fixed route key
+  `direct-message:main` (Slack `thread_ts`, Feishu and Teams `thread_id`,
+  Discord `session_key`, official Telegram and AgentPhone `root_message_id`).
+  The migration keeps the most recently used `direct-message:%` route per
+  identity, rewrites its key to the constant and deletes the other DM route
+  rows; their chat threads remain as history. New DM threads store no model;
+  pick resolves the user's web default, then the org default. Deploy window:
+  the migration runs before the new API, so an old API instance that receives a
+  DM in that window no longer finds its `direct-message:<agentId>:<model>` key,
+  creates a new thread and inserts an old-style route. After promotion the new
+  API uses the `direct-message:main` thread; the window thread stays as
+  history and its old-style route is unused. Rollback to an earlier API has the
+  same effect: each DM opens one new old-style thread, and replaying the
+  migration later folds it back in by recency.
+- **Org default agent only.** Integrations no longer read or write the
+  `*_user_agent_preferences` tables or installation-level `default_agent_id`;
+  every integration message runs the org default agent. The tables and columns
+  are not dropped in this release because the migration runs before the new
+  code and earlier APIs still read them; a later release or the daily
+  compatibility cleanup drops them. Rolling back restores the old per-user
+  selections, which were left untouched.
+
 ## Unified chat queue (release 6): Runner, Guest and Sandbox CLI
 
 The Runner reads steerable input from

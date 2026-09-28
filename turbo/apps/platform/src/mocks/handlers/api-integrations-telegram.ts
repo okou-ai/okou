@@ -1,12 +1,16 @@
 import {
   integrationsTelegramContract,
   type TelegramBot,
-  type TelegramBotStatus,
   type TelegramLinkStatusResponse,
   type TelegramListResponse,
-  type TelegramSetupStatus,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
+import type { z } from "zod";
 import { mockApi } from "../msw-contract.ts";
+
+export type MockTelegramBotStatus = z.infer<
+  (typeof integrationsTelegramContract.updateBot.responses)[200]
+>;
+type TelegramBotStatus = MockTelegramBotStatus;
 
 type TelegramConnectedUser = NonNullable<TelegramBot["connectedUser"]>;
 
@@ -40,18 +44,11 @@ const defaultTelegramStatus: TelegramBotStatus = {
   },
 };
 
-let mockRegisterCounter = 0;
 let mockTelegramList: TelegramListResponse = {
   bots: structuredClone(defaultTelegramBots),
 };
 let mockTelegramStatuses: Record<string, TelegramBotStatus> = {
   [defaultTelegramStatus.id]: structuredClone(defaultTelegramStatus),
-};
-let mockTelegramSetupStatus: TelegramSetupStatus = {
-  id: "bot_registered",
-  username: "registered_bot",
-  domainConfigured: false,
-  privacyDisabled: false,
 };
 
 // Default link-status: unlinked with no installation. Tests that need the
@@ -126,30 +123,19 @@ function updateMockBotConnection(
 }
 
 export function resetMockTelegramIntegration(): void {
-  mockRegisterCounter = 0;
   setMockTelegramStatuses([defaultTelegramStatus]);
-  mockTelegramSetupStatus = {
-    id: "bot_registered",
-    username: "registered_bot",
-    domainConfigured: false,
-    privacyDisabled: false,
-  };
   mockLinkStatus = { linked: false };
 }
 
 export function setMockTelegramIntegration(input: {
   statuses?: TelegramBotStatus[];
   linkStatus?: TelegramLinkStatusResponse;
-  setupStatus?: TelegramSetupStatus;
 }): void {
   if (input.statuses) {
     setMockTelegramStatuses(input.statuses);
   }
   if (input.linkStatus) {
     mockLinkStatus = structuredClone(input.linkStatus);
-  }
-  if (input.setupStatus) {
-    mockTelegramSetupStatus = structuredClone(input.setupStatus);
   }
 }
 
@@ -265,74 +251,5 @@ export const apiIntegrationsTelegramHandlers = [
     }
     mockLinkStatus = { linked: false };
     return respond(204);
-  }),
-
-  mockApi(integrationsTelegramContract.disconnect, ({ params, respond }) => {
-    delete mockTelegramStatuses[params.botId];
-    mockTelegramList.bots = mockTelegramList.bots.filter((bot) => {
-      return bot.id !== params.botId;
-    });
-    return respond(204);
-  }),
-
-  mockApi(integrationsTelegramContract.setupStatus, ({ respond }) => {
-    return respond(200, mockTelegramSetupStatus);
-  }),
-
-  mockApi(integrationsTelegramContract.register, ({ body, respond }) => {
-    if (body.reinstallBotId) {
-      const existing = mockTelegramStatuses[body.reinstallBotId];
-      if (!existing) {
-        return respond(404, {
-          error: { message: "Telegram bot not found", code: "NOT_FOUND" },
-        });
-      }
-      const status: TelegramBotStatus = {
-        ...existing,
-        tokenStatus: "valid",
-        avatarUrl:
-          existing.avatarUrl ??
-          `/api/integrations/telegram/${encodeURIComponent(existing.id)}/avatar`,
-      };
-      mockTelegramStatuses[status.id] = structuredClone(status);
-      mockTelegramList.bots = mockTelegramList.bots.map((bot) => {
-        return bot.id === status.id
-          ? structuredClone(statusToBot(status))
-          : bot;
-      });
-      return respond(200, status);
-    }
-
-    mockRegisterCounter += 1;
-    const id =
-      mockRegisterCounter === 1
-        ? mockTelegramSetupStatus.id
-        : `bot_registered_${mockRegisterCounter}`;
-    const agentId = body.defaultAgentId ?? "compose_1";
-    const status: TelegramBotStatus = {
-      id,
-      username:
-        mockRegisterCounter === 1
-          ? mockTelegramSetupStatus.username
-          : `registered_bot_${mockRegisterCounter}`,
-      agent: { id: agentId, name: "default-agent" },
-      avatarUrl: `/api/integrations/telegram/${encodeURIComponent(id)}/avatar`,
-      isOwner: true,
-      isConnected: false,
-      tokenStatus: "valid",
-      domainConfigured: mockTelegramSetupStatus.domainConfigured,
-      environment: {
-        requiredSecrets: ["ANTHROPIC_API_KEY"],
-        requiredVars: [],
-        missingSecrets: [],
-        missingVars: [],
-      },
-    };
-    mockTelegramStatuses[status.id] = structuredClone(status);
-    mockTelegramList.bots = [
-      ...mockTelegramList.bots,
-      structuredClone(statusToBot(status)),
-    ];
-    return respond(201, status);
   }),
 ];

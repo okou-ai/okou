@@ -6,7 +6,6 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { teamsUserAgentPreferences } from "@okouai/db/schema/teams-user-agent-preference";
 import type { TeamsInboundActivity } from "@okouai/api-contracts/contracts/teams-bot";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
@@ -337,43 +336,6 @@ async function resolveDefaultComposeId(
   return metadata?.defaultAgentId ?? null;
 }
 
-async function getUserAgentPreference(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const [preference] = await db
-    .select({ selectedAgentId: teamsUserAgentPreferences.selectedAgentId })
-    .from(teamsUserAgentPreferences)
-    .where(
-      and(
-        eq(teamsUserAgentPreferences.userId, userId),
-        eq(teamsUserAgentPreferences.orgId, orgId),
-      ),
-    )
-    .limit(1);
-  return preference?.selectedAgentId ?? null;
-}
-
-async function resolveEffectiveComposeId(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const override = await getUserAgentPreference(db, userId, orgId);
-  if (override) {
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, override), eq(agents.orgId, orgId)))
-      .limit(1);
-    if (agent?.id) {
-      return override;
-    }
-  }
-  return resolveDefaultComposeId(db, orgId);
-}
-
 async function getTeamsAgentName(
   db: ReadonlyDb,
   composeId: string,
@@ -499,11 +461,7 @@ async function resolveConnectedStatusFields(args: {
   readonly loadUserVarNames: () => Promise<readonly string[]>;
   readonly loadConnectorBindings: () => Promise<ConnectorProvidedBindings>;
 }): Promise<ConnectedTeamsStatusFields> {
-  const composeId = await resolveEffectiveComposeId(
-    args.db,
-    args.userId,
-    args.orgId,
-  );
+  const composeId = await resolveDefaultComposeId(args.db, args.orgId);
   const environment = await resolveTeamsEnvironment(args);
   return {
     defaultAgentName: composeId
@@ -1181,11 +1139,6 @@ export const uninstallTeamsInstallation$ = command(
     signal.throwIfAborted();
 
     await writeDb
-      .delete(teamsUserAgentPreferences)
-      .where(eq(teamsUserAgentPreferences.orgId, args.orgId));
-    signal.throwIfAborted();
-
-    await writeDb
       .delete(teamsOrgInstallations)
       .where(
         eq(teamsOrgInstallations.teamsTenantId, installation.teamsTenantId),
@@ -1298,13 +1251,6 @@ export const recordTeamsInstallationActivity$ = command(
         .delete(teamsOrgConnections)
         .where(eq(teamsOrgConnections.teamsTenantId, activity.tenantId));
       signal.throwIfAborted();
-
-      if (installation.orgId) {
-        await writeDb
-          .delete(teamsUserAgentPreferences)
-          .where(eq(teamsUserAgentPreferences.orgId, installation.orgId));
-        signal.throwIfAborted();
-      }
 
       await writeDb
         .delete(teamsOrgInstallations)

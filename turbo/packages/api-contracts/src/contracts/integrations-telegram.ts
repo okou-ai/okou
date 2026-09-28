@@ -102,24 +102,6 @@ const telegramLinkResponseSchema = z.object({
   telegramUserId: z.string(),
 });
 
-const telegramRegisterBodySchema = z.object({
-  botToken: z.string().min(1),
-  defaultAgentId: z.string().trim().min(1).optional(),
-  reinstallBotId: z.string().min(1).optional(),
-});
-
-const telegramSetupStatusBodySchema = z.object({
-  botToken: z.string().min(1),
-  origin: z.string().optional(),
-});
-
-const telegramSetupStatusSchema = z.object({
-  id: z.string(),
-  username: z.string().nullable(),
-  domainConfigured: z.boolean(),
-  privacyDisabled: z.boolean(),
-});
-
 const telegramWebhookPathParamsSchema = z.object({
   telegramBotId: z.string().min(1),
 });
@@ -155,20 +137,6 @@ export const integrationsTelegramContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Update the default agent for the Telegram bot",
-  },
-  disconnect: {
-    method: "DELETE",
-    path: "/api/integrations/telegram/:botId",
-    headers: authHeadersSchema,
-    pathParams: z.object({ botId: z.string().min(1) }),
-    body: c.noBody(),
-    responses: {
-      204: c.noBody(),
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Uninstall the Telegram bot",
   },
   unlink: {
     method: "DELETE",
@@ -250,37 +218,6 @@ export const integrationsTelegramContract = c.router({
     },
     summary: "Link the authenticated product user to a Telegram user",
   },
-  register: {
-    method: "POST",
-    path: "/api/telegram/register",
-    headers: authHeadersSchema,
-    body: telegramRegisterBodySchema,
-    responses: {
-      200: telegramBotStatusSchema,
-      201: telegramBotStatusSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-      409: apiErrorSchema,
-      500: apiErrorSchema,
-      502: apiErrorSchema,
-    },
-    summary: "Register a Telegram bot integration",
-  },
-  setupStatus: {
-    method: "POST",
-    path: "/api/telegram/setup-status",
-    headers: authHeadersSchema,
-    body: telegramSetupStatusBodySchema,
-    responses: {
-      200: telegramSetupStatusSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      409: apiErrorSchema,
-    },
-    summary: "Check Telegram bot setup state before registration",
-  },
   webhook: {
     method: "POST",
     path: "/api/telegram/webhook/:telegramBotId",
@@ -315,4 +252,3 @@ export type TelegramListResponse = z.infer<typeof telegramListResponseSchema>;
 export type TelegramLinkStatusResponse = z.infer<
   typeof telegramLinkStatusResponseSchema
 >;
-export type TelegramSetupStatus = z.infer<typeof telegramSetupStatusSchema>;

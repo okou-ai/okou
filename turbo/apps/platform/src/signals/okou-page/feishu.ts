@@ -36,7 +36,6 @@ const internalSetupForm$ = state<FeishuSetupInput>({
   appSecret: "",
   verificationToken: "",
   encryptKey: "",
-  defaultAgentId: "",
 });
 const FEISHU_SETUP_STEP_ORDER = [
   "create",
@@ -63,9 +62,10 @@ export const feishuOrgData$ = computed(
 
 export interface FeishuBotInstallation extends Omit<
   FeishuInstallationStatus,
-  "connectUrl" | "id" | "oauthRedirectUrl" | "setupCompleted"
+  "connectUrl" | "id" | "oauthRedirectUrl" | "setupCompleted" | "defaultAgentId"
 > {
   readonly id: string | null;
+  readonly defaultAgentId: string | null;
   readonly connectUrl: string | null;
   readonly oauthRedirectUrl: string | null;
   readonly setupCompleted: boolean;
@@ -87,12 +87,7 @@ export const feishuInstallations$ = computed(
         };
       });
     }
-    if (
-      !data.isInstalled ||
-      !data.appId ||
-      !data.callbackUrl ||
-      !data.defaultAgentId
-    ) {
+    if (!data.isInstalled || !data.appId || !data.callbackUrl) {
       return [];
     }
     return [
@@ -157,7 +152,6 @@ export interface FeishuSetupInput {
   readonly appSecret: string;
   readonly verificationToken: string;
   readonly encryptKey: string;
-  readonly defaultAgentId: string;
 }
 
 export type FeishuSetupStep =
@@ -196,7 +190,7 @@ export const feishuSetupForm$ = computed((get) => {
 export const openFeishuDialog$ = command(
   (
     { set },
-    initial: Pick<FeishuSetupInput, "appId" | "defaultAgentId"> & {
+    initial: Pick<FeishuSetupInput, "appId"> & {
       readonly step: FeishuSetupStep;
       readonly installationId?: string | null;
     },
@@ -307,40 +301,8 @@ export const checkFeishuAppIdAvailable$ = command(
   },
 );
 
-export const updateFeishuInstallationAgent$ = command(
-  async (
-    { get, set },
-    installationId: string,
-    defaultAgentId: string,
-    signal: AbortSignal,
-  ) => {
-    const client = get(apiClient$)(
-      get(feishuPlatform$) === "lark"
-        ? larkConnectContract
-        : feishuConnectContract,
-    );
-    await accept(
-      client.updateInstallation({
-        params: { installationId },
-        body: { defaultAgentId },
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
-    set(reload$, (value) => {
-      return value + 1;
-    });
-  },
-);
-
 export const completeFeishuInstallationSetup$ = command(
-  async (
-    { get, set },
-    installationId: string,
-    defaultAgentId: string,
-    signal: AbortSignal,
-  ) => {
+  async ({ get, set }, installationId: string, signal: AbortSignal) => {
     const client = get(apiClient$)(
       get(feishuPlatform$) === "lark"
         ? larkConnectContract
@@ -349,7 +311,7 @@ export const completeFeishuInstallationSetup$ = command(
     const result = await accept(
       client.updateInstallation({
         params: { installationId },
-        body: { defaultAgentId, setupCompleted: true },
+        body: { setupCompleted: true },
         fetchOptions: { signal },
       }),
       [200],
@@ -487,6 +449,5 @@ export const resetFeishuSettingsUi$ = command(({ set }) => {
     appSecret: "",
     verificationToken: "",
     encryptKey: "",
-    defaultAgentId: "",
   });
 });

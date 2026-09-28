@@ -15,7 +15,6 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
-import { agentphoneUserAgentPreferences } from "@okouai/db/schema/agentphone-user-agent-preference";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { and, desc, eq, like, or } from "drizzle-orm";
@@ -23,7 +22,7 @@ import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
 import {
   INTEGRATION_DM_SESSION_PREFIX,
-  integrationDmSessionKey,
+  INTEGRATION_DM_SESSION_KEY,
 } from "../../lib/integration-dm-session";
 import { now } from "../../lib/time";
 import {
@@ -546,48 +545,6 @@ export async function storeInboundAgentPhoneMessage(
   return { inserted: inserted.length > 0 };
 }
 
-async function getAgentPhoneUserAgentPreference(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({
-      selectedAgentId: agentphoneUserAgentPreferences.selectedAgentId,
-    })
-    .from(agentphoneUserAgentPreferences)
-    .where(
-      and(
-        eq(agentphoneUserAgentPreferences.userId, userId),
-        eq(agentphoneUserAgentPreferences.orgId, orgId),
-      ),
-    )
-    .limit(1);
-
-  return row?.selectedAgentId ?? null;
-}
-
-async function resolveEffectiveAgentPhoneComposeId(
-  db: ReadonlyDb,
-  userId: string,
-  orgId: string,
-): Promise<string | null> {
-  const preference = await getAgentPhoneUserAgentPreference(db, userId, orgId);
-  if (preference) {
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(and(eq(agents.id, preference), eq(agents.orgId, orgId)))
-      .limit(1);
-
-    if (agent?.id) {
-      return preference;
-    }
-  }
-
-  return resolveOrgDefaultComposeId(db, orgId);
-}
-
 async function getWorkspaceAgent(
   db: ReadonlyDb,
   composeId: string,
@@ -618,11 +575,7 @@ async function resolveAgentPhoneAgent(
   db: ReadonlyDb,
   userLink: AgentPhoneUserLink,
 ): Promise<WorkspaceAgent | undefined> {
-  const composeId = await resolveEffectiveAgentPhoneComposeId(
-    db,
-    userLink.userId,
-    userLink.orgId,
-  );
+  const composeId = await resolveOrgDefaultComposeId(db, userLink.orgId);
   if (!composeId) {
     return undefined;
   }
@@ -1601,12 +1554,12 @@ const persistAgentPhoneChatMessage$ = command(
       },
       createdAt: currentTime,
     } as const;
-    await insertChatEventContext(args.db, values);
-    signal.throwIfAborted();
     const eventId = await enqueueChatInput(args.db, {
       chatThreadId: route.chatThreadId,
       orgId: args.userLink.orgId,
       appendInput: async (tx) => {
+        // The entry's context row commits with the input it describes.
+        await insertChatEventContext(tx, values);
         return (await insertChatEvent(tx, values, "id"))?.id ?? null;
       },
     });
@@ -1742,11 +1695,7 @@ export const handleAgentPhoneMessage$ = command(
     const isGroup = isAgentPhoneGroupEvent(params.event);
     const rootMessageId = isGroup
       ? agentPhoneThreadRootMessageId(params.event)
-      : integrationDmSessionKey({
-          agentId: agent.composeId,
-          selectedModel: modelRoute?.selectedModel ?? null,
-          serviceTier: modelRoute?.serviceTier ?? null,
-        });
+      : INTEGRATION_DM_SESSION_KEY;
     const userLinkId = params.userLink.id;
     const { executionContext } = await loadOptionalChatEnrichment(
       "agentphone",

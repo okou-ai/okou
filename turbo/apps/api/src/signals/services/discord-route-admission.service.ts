@@ -9,7 +9,7 @@ import {
   type DiscordMessageCreate,
 } from "../../lib/discord-gateway-event";
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
-import { integrationDmSessionKey } from "../../lib/integration-dm-session";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
@@ -290,7 +290,7 @@ async function terminalAgentUnavailable(
         connectionId: binding.connectionId,
         channelId: message.channel_id,
         content:
-          "No accessible agent is configured. Use /okou switch to choose an agent.",
+          "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
       },
       signal,
     );
@@ -391,11 +391,7 @@ const resolveCanonicalDiscordRoute$ = command(
       userId: binding.userId,
       channelId: routeChannelId,
       sessionKey: effectiveAgent
-        ? integrationDmSessionKey({
-            agentId: effectiveAgent.id,
-            selectedModel: modelRoute?.selectedModel ?? null,
-            serviceTier: modelRoute?.serviceTier ?? null,
-          })
+        ? INTEGRATION_DM_SESSION_KEY
         : isThread
           ? channel.id
           : message.id,

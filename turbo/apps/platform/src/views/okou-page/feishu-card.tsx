@@ -20,7 +20,6 @@ import {
   FEISHU_OAUTH_SCOPES,
   FEISHU_TENANT_SCOPES,
 } from "@okouai/api-contracts/contracts/feishu-connect";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import {
   Dialog,
@@ -36,13 +35,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@okouai/ui/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@okouai/ui/components/ui/select";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { useTranslation } from "react-i18next";
@@ -64,11 +56,6 @@ import {
   platformLarkAddBotFeatureImg,
   platformLarkCreateAppForAgentImg,
 } from "../../lib/static-assets.ts";
-import {
-  defaultAgentId$,
-  defaultAgentName$,
-  sortedAgents$,
-} from "../../signals/agent.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { brandName$ } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -94,7 +81,6 @@ import {
   openFeishuDialog$,
   setFeishuUninstallInstallationId$,
   setupFeishuOrg$,
-  updateFeishuInstallationAgent$,
   updateFeishuSetupForm$,
   uninstallFeishuInstallation$,
   type FeishuBotInstallation,
@@ -132,17 +118,6 @@ const FEISHU_GUIDE_IMAGE_SOURCES = [
 ] as const;
 
 type FeishuDialogData = FeishuBotInstallation;
-
-function agentLabel(
-  agent: AgentResponse,
-  defaultAgentId: string | null,
-  defaultAgentName: string | null,
-): string {
-  if (agent.agentId === defaultAgentId && defaultAgentName) {
-    return defaultAgentName;
-  }
-  return agent.displayName ?? agent.agentId;
-}
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   const { t } = useTranslation();
@@ -251,7 +226,7 @@ function FeishuGuideImages({
   );
 }
 
-type FeishuCredentialField = Exclude<keyof FeishuSetupInput, "defaultAgentId">;
+type FeishuCredentialField = keyof FeishuSetupInput;
 
 const FEISHU_SETUP_STEPS = [
   "create",
@@ -423,82 +398,6 @@ function FeishuEventCredentialFields({
   );
 }
 
-function FeishuAgentSelect({
-  form,
-  agents,
-  orgDefaultAgentId,
-  orgDefaultAgentName,
-  saving,
-  readOnly,
-  onAgentChange,
-}: {
-  form: FeishuSetupInput;
-  agents: AgentResponse[];
-  orgDefaultAgentId: string | null;
-  orgDefaultAgentName: string | null;
-  saving: boolean;
-  readOnly: boolean;
-  onAgentChange?: (defaultAgentId: string) => void;
-}) {
-  const { t } = useTranslation();
-  const platform = useGet(feishuPlatform$);
-  const updateForm = useSet(updateFeishuSetupForm$);
-  const agentItems = agents.map((agent) => {
-    return {
-      value: agent.agentId,
-      label: agentLabel(agent, orgDefaultAgentId, orgDefaultAgentName),
-    };
-  });
-  return (
-    <div className="flex flex-col gap-2">
-      <label htmlFor="feishu-default-agent" className="text-sm font-medium">
-        {t(($) => {
-          return $.connectors.providerSettings[platform].defaultAgent;
-        })}
-      </label>
-      <Select
-        items={agentItems}
-        value={form.defaultAgentId}
-        disabled={saving || readOnly}
-        onValueChange={(defaultAgentId, details) => {
-          if (
-            defaultAgentId === null ||
-            saving ||
-            readOnly ||
-            !agentItems.some((item) => {
-              return item.value === defaultAgentId;
-            })
-          ) {
-            details.cancel();
-            return;
-          }
-          if (defaultAgentId !== form.defaultAgentId) {
-            updateForm({ defaultAgentId });
-          }
-          onAgentChange?.(defaultAgentId);
-        }}
-      >
-        <SelectTrigger id="feishu-default-agent">
-          <SelectValue
-            placeholder={t(($) => {
-              return $.connectors.providerSettings[platform].selectAgent;
-            })}
-          />
-        </SelectTrigger>
-        <SelectContent>
-          {agentItems.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
 function canSubmitFeishuSetup(
   form: FeishuSetupInput,
   saving: boolean,
@@ -508,8 +407,7 @@ function canSubmitFeishuSetup(
     form.appId.trim().length > 0 &&
     form.appSecret.trim().length > 0 &&
     form.verificationToken.trim().length > 0 &&
-    form.encryptKey.trim().length > 0 &&
-    form.defaultAgentId.length > 0
+    form.encryptKey.trim().length > 0
   );
 }
 
@@ -988,27 +886,9 @@ function FeishuPermissionsStep({ data }: { data: FeishuDialogData | null }) {
   );
 }
 
-function FeishuPublishStep({
-  data,
-  form,
-  agents,
-  orgDefaultAgentId,
-  orgDefaultAgentName,
-  readOnly,
-}: {
-  data: FeishuDialogData | null;
-  form: FeishuSetupInput;
-  agents: AgentResponse[];
-  orgDefaultAgentId: string | null;
-  orgDefaultAgentName: string | null;
-  readOnly: boolean;
-}) {
+function FeishuPublishStep() {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
-  const [updateLoadable, updateAgent] = useLoadableSet(
-    updateFeishuInstallationAgent$,
-  );
-  const signal = useGet(pageSignal$);
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
@@ -1068,41 +948,6 @@ function FeishuPublishStep({
           />
         </div>
       </div>
-      <div className="space-y-3 rounded-lg border border-border p-4">
-        <div>
-          <div className="text-sm font-medium text-foreground">
-            {t(($) => {
-              return $.connectors.providerSettings[platform].defaultAgent;
-            })}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.connectors.providerSettings[platform].agentDescription;
-            })}
-          </p>
-        </div>
-        <FeishuAgentSelect
-          form={form}
-          agents={agents}
-          orgDefaultAgentId={orgDefaultAgentId}
-          orgDefaultAgentName={orgDefaultAgentName}
-          saving={!data?.id || updateLoadable.state === "loading"}
-          readOnly={readOnly}
-          onAgentChange={(defaultAgentId) => {
-            if (
-              !data?.id ||
-              defaultAgentId === data.defaultAgentId ||
-              updateLoadable.state === "loading"
-            ) {
-              return;
-            }
-            detach(
-              updateAgent(data.id, defaultAgentId, signal),
-              Reason.DomCallback,
-            );
-          }}
-        />
-      </div>
     </div>
   );
 }
@@ -1111,18 +956,12 @@ function FeishuSetupStepContent({
   step,
   data,
   form,
-  agents,
-  orgDefaultAgentId,
-  orgDefaultAgentName,
   saving,
   readOnly,
 }: {
   step: FeishuSetupStep;
   data: FeishuDialogData | null;
   form: FeishuSetupInput;
-  agents: AgentResponse[];
-  orgDefaultAgentId: string | null;
-  orgDefaultAgentName: string | null;
   saving: boolean;
   readOnly: boolean;
 }) {
@@ -1154,16 +993,7 @@ function FeishuSetupStepContent({
       return <FeishuEventsStep data={data} />;
     }
     case "publish": {
-      return (
-        <FeishuPublishStep
-          data={data}
-          form={form}
-          agents={agents}
-          orgDefaultAgentId={orgDefaultAgentId}
-          orgDefaultAgentName={orgDefaultAgentName}
-          readOnly={readOnly}
-        />
-      );
+      return <FeishuPublishStep />;
     }
   }
 }
@@ -1182,7 +1012,6 @@ function feishuSetupRequest(
     appSecret: form.appSecret.trim(),
     verificationToken: form.verificationToken.trim(),
     encryptKey: form.encryptKey.trim(),
-    defaultAgentId: form.defaultAgentId,
   };
   if (!data) {
     return { ...input, createNew: true };
@@ -1345,16 +1174,10 @@ function FeishuSetupWizardFooter({
 
 function FeishuSetupWizard({
   data,
-  agents,
-  orgDefaultAgentId,
-  orgDefaultAgentName,
   readOnly,
   onClose,
 }: {
   data: FeishuDialogData | null;
-  agents: AgentResponse[];
-  orgDefaultAgentId: string | null;
-  orgDefaultAgentName: string | null;
   readOnly: boolean;
   onClose: () => void;
 }) {
@@ -1407,7 +1230,7 @@ function FeishuSetupWizard({
       }
       detach(
         (async () => {
-          await completeSetup(installationId, form.defaultAgentId, signal);
+          await completeSetup(installationId, signal);
           onClose();
         })(),
         Reason.DomCallback,
@@ -1437,9 +1260,6 @@ function FeishuSetupWizard({
           step={step}
           data={data}
           form={form}
-          agents={agents}
-          orgDefaultAgentId={orgDefaultAgentId}
-          orgDefaultAgentName={orgDefaultAgentName}
           saving={saving}
           readOnly={readOnly}
         />
@@ -1535,77 +1355,6 @@ function FeishuStatusBadge({ bot }: { bot: FeishuBotInstallation }) {
   return null;
 }
 
-function FeishuBotAgentSelect({
-  bot,
-  agents,
-  disabled,
-}: {
-  bot: FeishuBotInstallation;
-  agents: AgentResponse[];
-  disabled: boolean;
-}) {
-  const { t } = useTranslation();
-  const platform = useGet(feishuPlatform$);
-  const [updateLoadable, updateAgent] = useLoadableSet(
-    updateFeishuInstallationAgent$,
-  );
-  const signal = useGet(pageSignal$);
-  const agentItems = agents.map((agent) => {
-    return { value: agent.agentId, label: agent.displayName ?? agent.agentId };
-  });
-  return (
-    <Select
-      items={agentItems}
-      value={bot.defaultAgentId}
-      disabled={disabled || !bot.id || updateLoadable.state === "loading"}
-      onValueChange={(defaultAgentId, details) => {
-        if (
-          defaultAgentId === null ||
-          !agentItems.some((item) => {
-            return item.value === defaultAgentId;
-          })
-        ) {
-          details.cancel();
-          return;
-        }
-        if (
-          !bot.id ||
-          disabled ||
-          updateLoadable.state === "loading" ||
-          defaultAgentId === bot.defaultAgentId
-        ) {
-          return;
-        }
-        detach(updateAgent(bot.id, defaultAgentId, signal), Reason.DomCallback);
-      }}
-    >
-      <SelectTrigger
-        aria-label={t(
-          ($) => {
-            return $.connectors.providerSettings[platform].defaultAgentAria;
-          },
-          { appId: bot.appId },
-        )}
-      >
-        <SelectValue
-          placeholder={t(($) => {
-            return $.connectors.providerSettings[platform].selectAgent;
-          })}
-        />
-      </SelectTrigger>
-      <SelectContent>
-        {agentItems.map((item) => {
-          return (
-            <SelectItem key={item.value} value={item.value}>
-              {item.label}
-            </SelectItem>
-          );
-        })}
-      </SelectContent>
-    </Select>
-  );
-}
-
 function FeishuBotMenu({
   bot,
   title,
@@ -1655,7 +1404,6 @@ function FeishuBotMenu({
             onClick={() => {
               open({
                 appId: bot.appId,
-                defaultAgentId: bot.defaultAgentId,
                 step: bot.setupCompleted ? "create" : "redirect",
                 installationId: bot.id,
               });
@@ -1709,13 +1457,9 @@ function FeishuBotMenu({
 
 function FeishuBotRow({
   bot,
-  agents,
-  agentsLoading,
   isAdmin,
 }: {
   bot: FeishuBotInstallation;
-  agents: AgentResponse[];
-  agentsLoading: boolean;
   isAdmin: boolean;
 }) {
   const { t } = useTranslation();
@@ -1762,15 +1506,7 @@ function FeishuBotRow({
         </div>
       </div>
       <div className="flex items-center justify-end gap-1.5 sm:w-[420px]">
-        {isAdmin ? (
-          <div className="min-w-0 flex-1">
-            <FeishuBotAgentSelect
-              bot={bot}
-              agents={agents}
-              disabled={agentsLoading}
-            />
-          </div>
-        ) : null}
+        {isAdmin ? <div className="min-w-0 flex-1" /> : null}
         {!bot.isConnected && canConnect ? (
           <Button
             type="button"
@@ -1799,13 +1535,9 @@ function FeishuBotRow({
 
 function FeishuBotList({
   bots,
-  agents,
-  agentsLoading,
   isAdmin,
 }: {
   bots: FeishuBotInstallation[];
-  agents: AgentResponse[];
-  agentsLoading: boolean;
   isAdmin: boolean;
 }) {
   const { t } = useTranslation();
@@ -1838,12 +1570,7 @@ function FeishuBotList({
       {bots.map((bot, index) => {
         return (
           <div key={bot.id ?? bot.appId}>
-            <FeishuBotRow
-              bot={bot}
-              agents={agents}
-              agentsLoading={agentsLoading}
-              isAdmin={isAdmin}
-            />
+            <FeishuBotRow bot={bot} isAdmin={isAdmin} />
             {index < bots.length - 1 ? (
               <div className="mx-5 border-b border-border/50" />
             ) : null}
@@ -1856,14 +1583,10 @@ function FeishuBotList({
 
 function FeishuBotsCard({
   bots,
-  agents,
-  agentsLoading,
   isAdmin,
   onAdd,
 }: {
   bots: FeishuBotInstallation[];
-  agents: AgentResponse[];
-  agentsLoading: boolean;
   isAdmin: boolean;
   onAdd: () => void;
 }) {
@@ -1878,12 +1601,7 @@ function FeishuBotsCard({
           })}
         </h2>
         {isAdmin && bots.length === 0 ? (
-          <Button
-            type="button"
-            size="sm"
-            disabled={agentsLoading}
-            onClick={onAdd}
-          >
+          <Button type="button" size="sm" onClick={onAdd}>
             <Plus size={16} />
             {t(($) => {
               return $.connectors.providerSettings[platform].addBot;
@@ -1891,12 +1609,7 @@ function FeishuBotsCard({
           </Button>
         ) : null}
       </div>
-      <FeishuBotList
-        bots={bots}
-        agents={agents}
-        agentsLoading={agentsLoading}
-        isAdmin={isAdmin}
-      />
+      <FeishuBotList bots={bots} isAdmin={isAdmin} />
     </section>
   );
 }
@@ -2037,16 +1750,10 @@ function FeishuSettingsSkeleton() {
 function FeishuDialogBody({
   data,
   isAdmin,
-  agents,
-  orgDefaultAgentId,
-  orgDefaultAgentName,
   onClose,
 }: {
   data: FeishuDialogData | null;
   isAdmin: boolean;
-  agents: AgentResponse[];
-  orgDefaultAgentId: string | null;
-  orgDefaultAgentName: string | null;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -2062,29 +1769,16 @@ function FeishuDialogBody({
   }
   const readOnly = data?.setupCompleted ?? false;
   return (
-    <FeishuSetupWizard
-      data={data}
-      agents={agents}
-      orgDefaultAgentId={orgDefaultAgentId}
-      orgDefaultAgentName={orgDefaultAgentName}
-      readOnly={readOnly}
-      onClose={onClose}
-    />
+    <FeishuSetupWizard data={data} readOnly={readOnly} onClose={onClose} />
   );
 }
 
 function FeishuSetupDialog({
   data,
   isAdmin,
-  agents,
-  orgDefaultAgentId,
-  orgDefaultAgentName,
 }: {
   data: FeishuDialogData | null;
   isAdmin: boolean;
-  agents: AgentResponse[];
-  orgDefaultAgentId: string | null;
-  orgDefaultAgentName: string | null;
 }) {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
@@ -2153,14 +1847,7 @@ function FeishuSetupDialog({
             </p>
           ) : null}
         </DialogHeader>
-        <FeishuDialogBody
-          data={data}
-          isAdmin={isAdmin}
-          agents={agents}
-          orgDefaultAgentId={orgDefaultAgentId}
-          orgDefaultAgentName={orgDefaultAgentName}
-          onClose={close}
-        />
+        <FeishuDialogBody data={data} isAdmin={isAdmin} onClose={close} />
       </DialogContent>
     </Dialog>
   );
@@ -2293,13 +1980,6 @@ function dialogFeishuBot(args: {
     : (args.bots[0] ?? null);
 }
 
-function initialFeishuAgentId(
-  orgDefaultAgentId: string | null,
-  agents: readonly AgentResponse[],
-): string {
-  return orgDefaultAgentId ?? agents[0]?.agentId ?? "";
-}
-
 function feishuSettingsLoading(args: {
   readonly dataState: string;
   readonly botsState: string;
@@ -2320,19 +2000,13 @@ export function FeishuSettingsPage() {
   const platform = useGet(feishuPlatform$);
   const dataLoadable = useLastLoadable(feishuOrgData$);
   const botsLoadable = useLastLoadable(feishuInstallations$);
-  const agentsLoadable = useLastLoadable(sortedAgents$);
-  const defaultAgentIdLoadable = useLastLoadable(defaultAgentId$);
-  const defaultAgentNameLoadable = useLastLoadable(defaultAgentName$);
   const dialogExisting = useGet(feishuDialogExisting$);
   const dialogInstallationId = useGet(feishuDialogInstallationId$);
   const uninstallInstallationId = useGet(feishuUninstallInstallationId$);
   const open = useSet(openFeishuDialog$);
   const data = loadableData(dataLoadable) ?? null;
   const bots = loadableData(botsLoadable) ?? [];
-  const agents = loadableData(agentsLoadable) ?? [];
   const isAdmin = data?.isAdmin ?? false;
-  const orgDefaultAgentId = loadableData(defaultAgentIdLoadable) ?? null;
-  const orgDefaultAgentName = loadableData(defaultAgentNameLoadable) ?? null;
   const dialogData = dialogFeishuBot({
     bots,
     existing: dialogExisting,
@@ -2347,10 +2021,7 @@ export function FeishuSettingsPage() {
   const hasError = feishuSettingsHasError(
     dataLoadable.state,
     botsLoadable.state,
-    agentsLoadable.state,
   );
-  const agentsLoading = agentsLoadable.state === "loading";
-  const newBotAgentId = initialFeishuAgentId(orgDefaultAgentId, agents);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -2412,24 +2083,15 @@ export function FeishuSettingsPage() {
             <>
               <FeishuBotsCard
                 bots={bots}
-                agents={agents}
-                agentsLoading={agentsLoading}
                 isAdmin={isAdmin}
                 onAdd={() => {
                   open({
                     appId: "",
-                    defaultAgentId: newBotAgentId,
                     step: "create",
                   });
                 }}
               />
-              <FeishuSetupDialog
-                data={dialogData}
-                isAdmin={isAdmin}
-                agents={agents}
-                orgDefaultAgentId={orgDefaultAgentId}
-                orgDefaultAgentName={orgDefaultAgentName}
-              />
+              <FeishuSetupDialog data={dialogData} isAdmin={isAdmin} />
               <FeishuUninstallDialog bot={uninstallBot} />
             </>
           )}

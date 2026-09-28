@@ -4,6 +4,7 @@ import { command } from "ccstate";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
@@ -64,7 +65,7 @@ import {
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
 } from "./feishu-dispatch.service";
-import { integrationDmSessionKey } from "../../lib/integration-dm-session";
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 
 const L = logger("CanonicalFeishuIngressProcessor");
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
@@ -112,7 +113,7 @@ function canonicalThreadId(args: {
     if (message.threadId) {
       return `thread:${message.threadId}`;
     }
-    return integrationDmSessionKey(args);
+    return INTEGRATION_DM_SESSION_KEY;
   }
   return replyThreadId ?? message.messageId;
 }
@@ -160,7 +161,7 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       ownerUserId: feishuOrgInstallations.ownerUserId,
       appId: feishuOrgInstallations.appId,
       platform: feishuOrgInstallations.platform,
-      defaultAgentId: feishuOrgInstallations.defaultAgentId,
+      defaultAgentId: orgMetadata.defaultAgentId,
       botName: feishuOrgInstallations.botName,
       messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
     })
@@ -169,6 +170,7 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       feishuOrgInstallations,
       eq(feishuOrgInstallations.id, feishuChatIngress.installationId),
     )
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
     .where(
       and(
         eq(feishuChatIngress.id, ingressId),
@@ -460,12 +462,12 @@ const persistCanonicalFeishuIngress$ = command(
       },
       createdAt: args.ingress.createdAt,
     } as const;
-    await insertChatEventContext(args.db, values);
-    signal.throwIfAborted();
     await enqueueChatInput(args.db, {
       chatThreadId: route.chatThreadId,
       orgId: args.installation.orgId,
       appendInput: async (tx) => {
+        // The entry's context row commits with the input it describes.
+        await insertChatEventContext(tx, values);
         const inserted = await insertChatEvent(tx, values, "id");
         await tx
           .update(feishuChatIngress)
