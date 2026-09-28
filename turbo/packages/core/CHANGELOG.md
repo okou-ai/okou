@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.716.0](https://github.com/okou-ai/okou/compare/core-v8.715.0...core-v8.716.0) (2026-09-28)
+
+
+### Features
+
+* **core:** enable get started quests for all users ([#37198](https://github.com/okou-ai/okou/issues/37198)) ([73e172c](https://github.com/okou-ai/okou/commit/73e172cdbbb5a149284f8a534a3de9e3fb447887))
+* **core:** open lark integration switch as staff-org beta ([#37204](https://github.com/okou-ai/okou/issues/37204)) ([8336316](https://github.com/okou-ai/okou/commit/833631624c2578e26e90126a81ba0a5838d9275a))
+
+
+### Bug Fixes
+
+* **platform:** import claude account skills loaded into the session ([#37202](https://github.com/okou-ai/okou/issues/37202)) ([5d726a0](https://github.com/okou-ai/okou/commit/5d726a0fded02627c2bab4ee202a09674e1ffe08))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.520.0
+
 ## [8.715.0](https://github.com/okou-ai/okou/compare/core-v8.714.0...core-v8.715.0) (2026-09-28)
 
 
