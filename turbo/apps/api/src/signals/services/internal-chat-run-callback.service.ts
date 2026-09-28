@@ -2473,6 +2473,7 @@ type QueuedMessageModelRouteResolution =
 async function resolveQueuedMessageModelRoute(args: {
   readonly db: Db;
   readonly threadId: string;
+  readonly eventId: string;
   readonly userId: string;
   readonly orgId: string;
   readonly contextType: QueuedUserMessageContextType;
@@ -2488,6 +2489,7 @@ async function resolveQueuedMessageModelRoute(args: {
         orgId: args.orgId,
         userId: args.userId,
         threadId: args.threadId,
+        eventId: args.eventId,
       });
     },
   );
@@ -3088,6 +3090,7 @@ async function loadQueuedChatRunContext(
     args.userId,
   );
   const modelRouteResolution = await resolveQueuedMessageModelRoute({
+    eventId: args.queuedMessage.id,
     db: args.db,
     threadId: args.threadId,
     userId: args.userId,

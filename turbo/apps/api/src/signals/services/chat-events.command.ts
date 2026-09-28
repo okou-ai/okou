@@ -1,4 +1,7 @@
 /** Canonical ChatEvent write commands. */
+import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
+import { resolveChatInputModelSelection } from "./chat-input-model.service";
+import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
 import { randomUUID } from "node:crypto";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import { command } from "ccstate";
@@ -55,7 +58,6 @@ import {
   type CancelRunResult,
 } from "./run-cancel.service";
 import { isCodexFastServiceTierSupported } from "./model-selection.service";
-import { isIntegrationDirectMessageThread } from "./integration-dm-thread.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
@@ -564,9 +566,8 @@ async function loadAuthorizedAgent(
 }
 
 /**
- * The send's requested settings. Main integration DMs store model selections
- * as member defaults; other threads keep their selection. The pick resolves
- * the model route, provider admission, and credits when it launches the input.
+ * The thread's requested settings. The input captures its effective model at
+ * enqueue; provider availability and credits are rechecked when pick launches it.
  */
 interface ThreadRunSettings {
   readonly selectedModel: string | null;
@@ -767,17 +768,18 @@ async function resolveNewSendThread(
   db: Db,
   args: NormalSendArgs,
 ): Promise<NewSendThread | NormalSendFailure> {
-  if (args.body.model === undefined) {
-    return badRequestMessage("A model selection is required");
-  }
   if (args.body.revokesEventId !== undefined) {
     return badRequestMessage("Recommended follow-up is no longer available");
   }
   const member = { orgId: args.orgId, userId: args.userId };
+  const initialModel =
+    args.body.model === undefined
+      ? await resolveRequiredDefaultChatThreadModelPin(db, member)
+      : null;
   const runSettings = requestedThreadRunSettings(args.body, {
-    selectedModel: null,
+    selectedModel: initialModel?.selectedModel ?? null,
     modelSettings: await loadNewChatThreadModelSettings(db, member),
-    codexServiceTier: null,
+    codexServiceTier: initialModel?.serviceTier === "priority" ? "fast" : null,
   });
   if ("status" in runSettings) {
     return runSettings;
@@ -861,14 +863,8 @@ async function updateExistingSendThread(
   thread: ExistingSendThread,
 ): Promise<void> {
   const { runSettings, computerAccess, current } = thread;
-  const followsUserDefault = await isIntegrationDirectMessageThread(
-    tx,
-    thread.threadId,
-  );
-  const selectedModel = followsUserDefault ? null : runSettings.selectedModel;
-  const codexServiceTier = followsUserDefault
-    ? null
-    : runSettings.codexServiceTier;
+  const selectedModel = runSettings.selectedModel;
+  const codexServiceTier = runSettings.codexServiceTier;
   const patch = runSettings.modelSettingsPatch;
   const modelChanged =
     selectedModel !== current.selectedModel ||
@@ -1004,6 +1000,7 @@ function assertOfficialSourceClaim(
 }
 
 function normalSendEvent(params: {
+  readonly modelSelection: ChatInputModelSelection;
   readonly id: string;
   readonly threadId: string;
   readonly userMessage: UserMessageDocument;
@@ -1017,6 +1014,7 @@ function normalSendEvent(params: {
     id: params.id,
     chatThreadId: params.threadId,
     eventType: "input.prompt",
+    modelSelection: params.modelSelection,
     userMessage: params.userMessage,
     runId: null,
     ...(params.requiredOfficialWorkflowIds === undefined
@@ -1310,7 +1308,7 @@ async function touchNormalSendThread(
  * thread, settle a retried client event id, validate a follow-up revocation,
  * record attachment references, then enqueue the input (creating a new
  * thread's minimal row in the same transaction) and schedule its pick without
- * waiting for it. Model routing, provider and credit admission, the autonomy
+ * waiting for it. The model is captured at enqueue. Provider and credit admission, the autonomy
  * budget, templates, session, and context are resolved by the pick; a
  * rejection appears in the thread as `input.rejected`.
  */
@@ -1335,7 +1333,16 @@ export const sendNormalEvent$ = command(
       },
       signal,
     );
+    const modelSelection = await resolveChatInputModelSelection(db, {
+      orgId: args.orgId,
+      userId: args.userId,
+      ...thread.runSettings,
+      reasoningEffort: args.body.runOptions?.reasoningEffort,
+    });
+    signal.throwIfAborted();
+    if ("status" in modelSelection) return modelSelection;
     const event = normalSendEvent({
+      modelSelection,
       id: args.body.clientEventId ?? randomUUID(),
       threadId: thread.threadId,
       userMessage:

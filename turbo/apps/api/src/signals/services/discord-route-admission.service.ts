@@ -329,8 +329,6 @@ const createDiscordAdmissionRoute$ = command(
       ...routeKey,
       orgId: binding.orgId,
       agentId: agent.id,
-      selectedModel: null,
-      serviceTier: null,
       currentTime: context.ingress.createdAt,
       ...context.claim,
     });

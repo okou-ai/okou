@@ -1464,9 +1464,9 @@ describe("MCP chat discovery and creation", () => {
       agentId: f.defaultAgentId,
       title: null,
       model: {
-        selectedModel: null,
+        selectedModel: "claude-sonnet-5",
         effectiveModel: "claude-sonnet-5",
-        source: "org_default",
+        source: "thread",
         admission: "checked_on_send",
       },
       replayed: false,
@@ -1496,9 +1496,9 @@ describe("MCP chat discovery and creation", () => {
       agentId: f.defaultAgentId,
       title: null,
       model: {
-        selectedModel: null,
+        selectedModel: "claude-sonnet-5",
         effectiveModel: "claude-sonnet-5",
-        source: "org_default",
+        source: "thread",
         admission: "checked_on_send",
       },
       replayed: false,
@@ -6487,7 +6487,7 @@ describe("external MCP entry", () => {
                   {
                     name: "create_chat_thread",
                     description: expect.stringContaining(
-                      "omitted model pins the then-current default at first run admission",
+                      "omitted model stores the current member or organization default at creation",
                     ),
                     inputSchema: {
                       properties: {
@@ -7480,7 +7480,7 @@ describe("external MCP entry", () => {
       effectiveModel: "claude-sonnet-5",
       admission: "checked_on_send",
     });
-    expect(["member_default", "org_default"]).toContain(model.source);
+    expect(model.source).toBe("org_default");
     await expect(
       f.chat.readThreadMetadata(f.actor, created.id),
     ).resolves.toStrictEqual(before);

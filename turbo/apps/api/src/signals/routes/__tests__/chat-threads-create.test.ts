@@ -133,7 +133,7 @@ function okouToken(args: {
     userId: args.userId,
     orgId: args.orgId,
     // Run tokens always carry a real run id, and thread creation reads that
-    // run's model, so an unrelated id still has to be a uuid.
+    // run's media settings, so an unrelated id still has to be a uuid.
     runId: args.runId ?? randomUUID(),
     capabilities: [...args.capabilities],
     iat: seconds,
@@ -1240,7 +1240,7 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
-  it("inherits the model of the run that owns the token when model is omitted", async () => {
+  it("uses the workspace default for a new thread instead of the caller run model", async () => {
     const fixture = await seedAgent();
     const { runId } = await store.set(
       seedRun$,
@@ -1267,7 +1267,7 @@ describe("POST /api/chat-threads", () => {
       }),
       [201],
     );
-    expect(response.body.selectedModel).toBe(OTHER_WORKSPACE_MODEL);
+    expect(response.body.selectedModel).toBe(WORKSPACE_DEFAULT_MODEL);
 
     const metadataResponse = await accept(
       metadataClient().get({
@@ -1276,7 +1276,7 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    expect(metadataResponse.body.selectedModel).toBe(OTHER_WORKSPACE_MODEL);
+    expect(metadataResponse.body.selectedModel).toBe(WORKSPACE_DEFAULT_MODEL);
     expect(metadataResponse.body.serviceTier).toBeNull();
   });
 
@@ -1367,8 +1367,16 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
-  it("inherits priority from the run's chat thread and allows an explicit standard override", async () => {
+  it("uses the member model and priority default and allows an explicit standard override", async () => {
     const fixture = await seedAgent();
+    createRouteMocks(context).clerk.session(fixture.userId, fixture.orgId);
+    await accept(
+      preferenceClient().update({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { selectedModel: PRIORITY_MODEL, serviceTier: "priority" },
+      }),
+      [200],
+    );
     const sourceToken = okouToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
@@ -1444,7 +1452,7 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
-  it("rejects an omitted model when the token has no run model to inherit", async () => {
+  it("uses the workspace default when the request omits a model", async () => {
     const fixture = await seedAgent();
     const token = okouToken({
       userId: fixture.userId,
@@ -1457,13 +1465,11 @@ describe("POST /api/chat-threads", () => {
         headers: { authorization: `Bearer ${token}` },
         body: { agentId: fixture.agentId, title: "No model anywhere" },
       }),
-      [400],
+      [201],
     );
-    expect(response.body).toStrictEqual({
-      error: {
-        code: "BAD_REQUEST",
-        message: "A model selection is required",
-      },
+    expect(response.body).toMatchObject({
+      selectedModel: WORKSPACE_DEFAULT_MODEL,
+      serviceTier: null,
     });
   });
 

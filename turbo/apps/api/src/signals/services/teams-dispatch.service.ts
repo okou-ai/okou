@@ -1,3 +1,4 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHash, randomBytes } from "node:crypto";
@@ -1572,15 +1573,12 @@ const persistTeamsChatMessage$ = command(
       activity: args.activity,
     });
     const route = await ensureTeamsChatThreadRoute(args.db, {
-      isDirectMessage: args.activity.conversationType === "personal",
       connectionId: args.connection.id,
       conversationId: args.activity.conversationId,
       threadId,
       userId: args.connection.userId,
       orgId: args.installation.orgId,
       agentId: args.composeId,
-      selectedModel: null,
-      serviceTier: null,
       currentTime,
     });
     signal.throwIfAborted();
@@ -1616,6 +1614,11 @@ const persistTeamsChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
+      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
+        threadId: route.chatThreadId,
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+      }),
       userMessage: createUserMessageDocument({
         text: [
           args.activity.text,

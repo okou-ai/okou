@@ -22,7 +22,10 @@ import {
   projectUserMessage,
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
-import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventUserMessage,
+  canonicalChatInputModelSelection,
+} from "./canonical-chat-event-read.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 type ChatEventContextType = NonNullable<
@@ -94,6 +97,7 @@ export function activeInputRowsByIds(
       contextType: chatEvents.contextType,
       contextId: chatEvents.contextId,
       userMessage: canonicalChatEventUserMessage(),
+      modelSelection: canonicalChatInputModelSelection(),
     })
     .from(chatEvents)
     .where(

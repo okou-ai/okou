@@ -1,4 +1,4 @@
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
@@ -389,8 +389,6 @@ const persistCanonicalFeishuIngress$ = command(
       readonly connection: FeishuDispatchConnection;
       readonly message: CanonicalFeishuInboundMessage;
       readonly agentId: string;
-      readonly selectedModel: string | null;
-      readonly serviceTier: ChatThreadServiceTier | null;
       readonly reactionId: string | undefined;
       readonly launchContext: CanonicalFeishuLaunchContext;
     },
@@ -406,8 +404,6 @@ const persistCanonicalFeishuIngress$ = command(
       userId: args.connection.userId,
       orgId: args.installation.orgId,
       agentId: args.agentId,
-      selectedModel: args.selectedModel,
-      serviceTier: args.serviceTier,
       currentTime: args.ingress.createdAt,
     });
     signal.throwIfAborted();
@@ -445,6 +441,11 @@ const persistCanonicalFeishuIngress$ = command(
       id: args.ingress.ingressId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
+      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
+        threadId: route.chatThreadId,
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+      }),
       userMessage: feishuInboundUserMessage(args.message, chatOpenUrl, assets),
       runId: null,
       feishuContext: {
@@ -691,8 +692,6 @@ const processClaimedIngress$ = command(
       connection,
       message,
       agentId: effectiveAgent.agent.id,
-      selectedModel: null,
-      serviceTier: null,
       reactionId,
       launchContext: canonicalFeishuLaunchContext({
         message,

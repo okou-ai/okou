@@ -1,5 +1,5 @@
+import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   slackChatIngress,
   type SlackChatIngressStatus,
@@ -116,8 +116,6 @@ export async function ensureCanonicalSlackChatThreadRoute(
   args: SlackChatThreadRouteKey & {
     readonly orgId: string;
     readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
     readonly currentTime: Date;
   },
 ): Promise<SlackChatThreadRouteBinding> {
@@ -127,6 +125,10 @@ export async function ensureCanonicalSlackChatThreadRoute(
       return existing;
     }
 
+    const initialModel = await resolveRequiredDefaultChatThreadModelPin(
+      tx,
+      args,
+    );
     const mediaModels = await loadNewChatThreadMediaModels(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -140,9 +142,10 @@ export async function ensureCanonicalSlackChatThreadRoute(
       .values({
         userId: args.userId,
         agentId: args.agentId,
-        selectedModel: args.selectedModel,
+        selectedModel: initialModel.selectedModel,
         modelSettings,
-        codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
+        codexServiceTier:
+          initialModel.serviceTier === "priority" ? "fast" : null,
         title: null,
         lastReadAt: args.currentTime,
         lastMessageAt: args.currentTime,
@@ -195,9 +198,9 @@ export async function ensureCanonicalSlackChatThreadRoute(
       chatThreadId: thread.id,
       agentId: args.agentId,
       title: null,
-      selectedModel: args.selectedModel,
+      selectedModel: initialModel.selectedModel,
       modelSettings,
-      serviceTier: args.serviceTier,
+      serviceTier: initialModel.serviceTier,
       ...mediaModels,
       createdAt: thread.createdAt,
     });

@@ -35,6 +35,7 @@ import {
 import { agentExistsInOrg } from "../services/agent-deletion.service";
 import { loadNewChatThreadMediaModels } from "../services/chat-thread-media-model.service";
 import {
+  resolveDefaultModelFirstPin,
   resolveModelSelectionPin,
   validateCodexServiceTier,
 } from "../services/model-selection.service";
@@ -101,24 +102,16 @@ function chatThreadCreateResponse(
   });
 }
 
-/**
- * Model, priority, and media models a caller inherits when it omits them. The
- * model belongs to the run that owns its token; the other settings belong to
- * that run's chat thread.
- */
+/** Media models inherited from the caller run's chat thread. */
 async function inheritedRunChatSettings(
   db: Db,
   runId: string | undefined,
 ): Promise<{
-  readonly selectedModel: string | null;
-  readonly codexServiceTier: CodexServiceTier | null;
   readonly selectedVideoModel: string | null;
   readonly selectedImageModel: ImageModelId | null;
 }> {
   if (!runId) {
     return {
-      selectedModel: null,
-      codexServiceTier: null,
       selectedVideoModel: null,
       selectedImageModel: null,
     };
@@ -126,8 +119,6 @@ async function inheritedRunChatSettings(
 
   const [run] = await db
     .select({
-      selectedModel: agentRuns.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
       selectedVideoModel: chatThreads.selectedVideoModel,
       selectedImageModel: chatThreads.selectedImageModel,
     })
@@ -136,8 +127,6 @@ async function inheritedRunChatSettings(
     .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
     .limit(1);
   return {
-    selectedModel: run?.selectedModel ?? null,
-    codexServiceTier: run?.codexServiceTier ?? null,
     selectedVideoModel: run?.selectedVideoModel ?? null,
     selectedImageModel: isImageModelId(run?.selectedImageModel)
       ? run.selectedImageModel
@@ -240,13 +229,18 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     inheritedRunId(auth),
   );
   signal.throwIfAborted();
-  const selectedModel = body.data.model ?? inherited.selectedModel;
+  const initialModel =
+    body.data.model === undefined
+      ? await resolveDefaultModelFirstPin(writeDb, auth.orgId, auth.userId)
+      : null;
+  signal.throwIfAborted();
+  const selectedModel = body.data.model ?? initialModel?.selectedModel;
   if (!selectedModel) {
     return badRequestMessage("A model selection is required");
   }
   const codexServiceTier = selectedCodexServiceTier(
     body.data.serviceTier,
-    inherited.codexServiceTier,
+    initialModel?.serviceTier === "priority" ? "fast" : null,
   );
   // Explicit request, then what the caller's own thread pinned, then the
   // member and catalog defaults. The last step is what keeps a thread from

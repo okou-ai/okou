@@ -1,6 +1,6 @@
+import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
@@ -13,7 +13,6 @@ import {
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { Tx } from "../../lib/db-types";
-import { isIntegrationDmSessionKey } from "../../lib/integration-dm-session";
 
 interface AgentPhoneChatThreadRouteKey {
   readonly agentphoneUserLinkId: string;
@@ -27,18 +26,12 @@ interface AgentPhoneChatThreadBinding {
 interface LoadedAgentPhoneChatThreadRoute extends AgentPhoneChatThreadBinding {
   readonly id: string;
   readonly conversationId: string | null;
-  readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly codexServiceTier: "fast" | null;
-  readonly computerUseHostId: string | null;
 }
 
 interface AgentPhoneChatThreadCreateArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly serviceTier: ChatThreadServiceTier | null;
   readonly conversationId: string | null;
   readonly currentTime: Date;
 }
@@ -64,17 +57,12 @@ async function loadRoute(
       id: agentphoneChatThreadRoutes.id,
       conversationId: agentphoneChatThreadRoutes.conversationId,
       chatThreadId: agentphoneChatThreadRoutes.chatThreadId,
-      agentId: agents.id,
-      selectedModel: chatThreads.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
-      computerUseHostId: chatThreads.computerUseHostId,
     })
     .from(agentphoneChatThreadRoutes)
     .innerJoin(
       chatThreads,
       eq(chatThreads.id, agentphoneChatThreadRoutes.chatThreadId),
     )
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(routeWhere(key))
     .limit(1)
     .for("update");
@@ -82,6 +70,8 @@ async function loadRoute(
 }
 
 interface CreatedAgentPhoneChatThread {
+  readonly selectedModel: string | null;
+  readonly serviceTier: ChatThreadServiceTier | null;
   readonly id: string;
   readonly createdAt: Date;
   readonly mediaModels: NewChatThreadMediaModels;
@@ -91,8 +81,8 @@ interface CreatedAgentPhoneChatThread {
 async function createCanonicalAgentPhoneChatThread(
   tx: AgentPhoneChatThreadTransaction,
   args: AgentPhoneChatThreadCreateArgs,
-  computerUseHostId: string | null = null,
 ): Promise<CreatedAgentPhoneChatThread> {
+  const initialModel = await resolveRequiredDefaultChatThreadModelPin(tx, args);
   const mediaModels = await loadNewChatThreadMediaModels(tx, {
     orgId: args.orgId,
     userId: args.userId,
@@ -106,11 +96,11 @@ async function createCanonicalAgentPhoneChatThread(
     .values({
       userId: args.userId,
       agentId: args.agentId,
-      computerUseHostId,
+      computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedModel: args.selectedModel,
+      selectedModel: initialModel.selectedModel,
       modelSettings,
-      codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
+      codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
       title: null,
       lastReadAt: args.currentTime,
       lastMessageAt: args.currentTime,
@@ -123,14 +113,19 @@ async function createCanonicalAgentPhoneChatThread(
   if (!thread) {
     throw new Error("Failed to create canonical AgentPhone chat thread");
   }
-  return { ...thread, mediaModels, modelSettings };
+  return {
+    ...thread,
+    mediaModels,
+    modelSettings,
+    selectedModel: initialModel.selectedModel,
+    serviceTier: initialModel.serviceTier,
+  };
 }
 
 async function appendCanonicalAgentPhoneChatThreadCreatedEvent(
   tx: AgentPhoneChatThreadTransaction,
   args: AgentPhoneChatThreadCreateArgs,
   thread: CreatedAgentPhoneChatThread,
-  computerUseHostId: string | null | undefined,
 ): Promise<void> {
   await appendChatThreadEvent(tx, {
     kind: "created",
@@ -139,10 +134,10 @@ async function appendCanonicalAgentPhoneChatThreadCreatedEvent(
     chatThreadId: thread.id,
     agentId: args.agentId,
     title: null,
-    selectedModel: args.selectedModel,
+    selectedModel: thread.selectedModel,
     modelSettings: thread.modelSettings,
-    serviceTier: args.serviceTier,
-    computerUseHostId,
+    serviceTier: thread.serviceTier,
+    computerUseHostId: null,
     ...thread.mediaModels,
     createdAt: thread.createdAt,
   });
@@ -162,46 +157,6 @@ async function updateRouteConversationContext(
     .where(eq(agentphoneChatThreadRoutes.id, route.id));
 }
 
-async function reconcileExistingRoute(
-  tx: AgentPhoneChatThreadTransaction,
-  args: AgentPhoneChatThreadRouteKey & AgentPhoneChatThreadCreateArgs,
-  existing: LoadedAgentPhoneChatThreadRoute,
-): Promise<AgentPhoneChatThreadBinding> {
-  if (existing.agentId !== args.agentId) {
-    const thread = await createCanonicalAgentPhoneChatThread(
-      tx,
-      args,
-      existing.computerUseHostId,
-    );
-    const [route] = await tx
-      .update(agentphoneChatThreadRoutes)
-      .set({
-        chatThreadId: thread.id,
-        conversationId: args.conversationId,
-      })
-      .where(
-        and(
-          eq(agentphoneChatThreadRoutes.id, existing.id),
-          eq(agentphoneChatThreadRoutes.chatThreadId, existing.chatThreadId),
-        ),
-      )
-      .returning({ chatThreadId: agentphoneChatThreadRoutes.chatThreadId });
-    if (!route) {
-      throw new Error("Failed to rebind AgentPhone chat thread route");
-    }
-    await appendCanonicalAgentPhoneChatThreadCreatedEvent(
-      tx,
-      args,
-      thread,
-      existing.computerUseHostId,
-    );
-    return route;
-  }
-
-  await updateRouteConversationContext(tx, existing, args.conversationId);
-  return existing;
-}
-
 export async function ensureAgentPhoneChatThreadRoute(
   db: Db,
   args: AgentPhoneChatThreadRouteKey & AgentPhoneChatThreadCreateArgs,
@@ -209,11 +164,8 @@ export async function ensureAgentPhoneChatThreadRoute(
   return await db.transaction(async (tx) => {
     const existing = await loadRoute(tx, args);
     if (existing) {
-      if (isIntegrationDmSessionKey(args.rootMessageId)) {
-        await updateRouteConversationContext(tx, existing, args.conversationId);
-        return existing;
-      }
-      return await reconcileExistingRoute(tx, args, existing);
+      await updateRouteConversationContext(tx, existing, args.conversationId);
+      return existing;
     }
 
     const thread = await createCanonicalAgentPhoneChatThread(tx, args);
@@ -241,23 +193,11 @@ export async function ensureAgentPhoneChatThreadRoute(
           "Failed to resolve AgentPhone chat thread route after conflict",
         );
       }
-      if (isIntegrationDmSessionKey(args.rootMessageId)) {
-        await updateRouteConversationContext(
-          tx,
-          conflicted,
-          args.conversationId,
-        );
-        return conflicted;
-      }
-      return await reconcileExistingRoute(tx, args, conflicted);
+      await updateRouteConversationContext(tx, conflicted, args.conversationId);
+      return conflicted;
     }
 
-    await appendCanonicalAgentPhoneChatThreadCreatedEvent(
-      tx,
-      args,
-      thread,
-      null,
-    );
+    await appendCanonicalAgentPhoneChatThreadCreatedEvent(tx, args, thread);
     return route;
   });
 }

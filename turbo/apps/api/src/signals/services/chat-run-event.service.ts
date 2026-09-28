@@ -1,5 +1,5 @@
-import type { FeatureSwitchContext } from "@okouai/core";
-
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { and, eq } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
 import type { Db } from "../external/db";
 import {
@@ -7,47 +7,65 @@ import {
   publishThreadListChanged,
 } from "../external/realtime";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { canonicalChatInputModelSelection } from "./canonical-chat-event-read.service";
 import {
-  resolvePersistedChatThreadModel,
-  type ChatThreadModelError,
-  type ResolvedPersistedChatThreadModel,
-} from "./chat-thread-model.service";
+  MODEL_FIRST_SELECTION_PROVIDER_ID,
+  resolveModelSelectionPin,
+  resolveModelFirstProviderAdmission,
+} from "./model-selection.service";
 
-/**
- * Resolve a chat-derived run against the current canonical model policy.
- * Unpinned main integration DMs follow the current member/workspace default on
- * every pick. Other threads pin their initial default before creating the run.
- */
+/** Revalidate only the immutable enqueue choice; pick never selects a default. */
 export async function resolveRunChatThreadModelContext(params: {
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly threadId: string;
-}): Promise<
-  | (ResolvedPersistedChatThreadModel & {
-      readonly featureSwitchContext: FeatureSwitchContext;
-    })
-  | ChatThreadModelError
-> {
+  readonly eventId: string;
+}) {
+  const [event] = await params.db
+    .select({ modelSelection: canonicalChatInputModelSelection() })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.id, params.eventId),
+        eq(chatEvents.chatThreadId, params.threadId),
+      ),
+    )
+    .limit(1);
+  if (!event?.modelSelection) {
+    return badRequestMessage("Queued input is missing its model selection");
+  }
+  const selection = event.modelSelection;
+  const pin = await resolveModelSelectionPin({
+    db: params.db,
+    orgId: params.orgId,
+    userId: params.userId,
+    modelSelection: {
+      modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+      selectedModel: selection.selectedModel,
+    },
+  });
+  if ("status" in pin) return pin;
+  const providerAdmission = await resolveModelFirstProviderAdmission({
+    db: params.db,
+    orgId: params.orgId,
+    userId: params.userId,
+    modelPin: pin,
+    requestedModelProvider: undefined,
+    externalPlanCapabilities: { kind: "load-current" },
+  });
   const featureSwitchContext = await loadUserFeatureSwitchContext(
     params.db,
     params.orgId,
     params.userId,
   );
-  const resolved = await resolvePersistedChatThreadModel({
-    db: params.db,
-    orgId: params.orgId,
-    userId: params.userId,
-    threadId: params.threadId,
-    persistRequestedCodexServiceTier: false,
-  });
-  if (!resolved) {
-    return badRequestMessage("Chat thread not found");
-  }
-  if ("status" in resolved) {
-    return resolved;
-  }
-  return { ...resolved, featureSwitchContext };
+  return {
+    pin,
+    providerAdmission,
+    featureSwitchContext,
+    runCodexServiceTier: selection.codexServiceTier ?? undefined,
+    reasoningEffort: selection.reasoningEffort ?? undefined,
+  };
 }
 
 async function publishRunUserMessageSignals(

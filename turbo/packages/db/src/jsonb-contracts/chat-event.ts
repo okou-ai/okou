@@ -1,7 +1,10 @@
+import type { ChatInputModelSelection as ChatInputModelSelectionContract } from "@okouai/api-contracts/contracts/chat-input-model";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import type { LinkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 
 export type ChatEventUserMessage = UserMessageDocument;
+
+export type ChatInputModelSelection = ChatInputModelSelectionContract;
 
 export interface ChatEventUsageProviderBreakdown {
   readonly provider: string;

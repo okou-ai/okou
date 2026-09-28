@@ -1,4 +1,5 @@
 /** Typed append-only commands for the canonical ChatEvent stream. */
+import type { ChatInputModelSelection } from "@okouai/api-contracts/contracts/chat-input-model";
 import { randomUUID } from "node:crypto";
 import { isValidChatEventRevocation } from "@okouai/api-contracts/contracts/chat-events";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
@@ -33,6 +34,8 @@ import {
   appendCanonicalChatEvents,
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
+
+import { canonicalChatInputModelSelection } from "./canonical-chat-event-read.service";
 
 const log = logger("chat-event-context");
 
@@ -209,6 +212,7 @@ type InputPromptEvent = ChatEventIdentity &
   ChatAgentRunDisplayContext &
   ChatEventInputPayload & {
     readonly eventType: "input.prompt";
+    readonly modelSelection?: ChatInputModelSelection;
     readonly content?: null;
     readonly contextType?: "web" | "agent_run";
     readonly contextId?: string;
@@ -218,6 +222,7 @@ type InputPromptEvent = ChatEventIdentity &
 type InputAutomationEvent = ChatEventIdentity &
   Pick<ChatEventInputPayload, "userMessage"> & {
     readonly eventType: "input.automation";
+    readonly modelSelection?: ChatInputModelSelection;
     readonly content?: null;
     readonly automationId: string;
     readonly workflowName?: string;
@@ -368,6 +373,7 @@ interface StoredChatEventContextPointer {
 }
 
 export interface LoadedChatEventReplacementTarget extends StoredChatEventContextPointer {
+  readonly modelSelection?: ChatInputModelSelection | null;
   readonly id: string;
   readonly chatThreadId: string;
   readonly createdAt: Date;
@@ -923,6 +929,8 @@ function canonicalChatEventValues(
           : undefined,
     eventType: values.eventType,
     payload: canonicalChatEventPayload(values),
+    modelSelection:
+      "modelSelection" in values ? values.modelSelection : undefined,
     failureReason:
       values.eventType === "run.failed" ? values.failureReason : undefined,
     requiredOfficialWorkflowIds:
@@ -1059,6 +1067,7 @@ export async function replaceChatEvent(
       eventType: chatEvents.eventType,
       contextType: chatEvents.contextType,
       contextId: chatEvents.contextId,
+      modelSelection: canonicalChatInputModelSelection(),
     })
     .from(chatEvents)
     .where(eq(chatEvents.id, eventId))
@@ -1109,6 +1118,14 @@ export async function replaceLoadedChatEvent(
           ...contextPointer,
         },
       ),
+      modelSelection:
+        "modelSelection" in replacement &&
+        replacement.modelSelection !== undefined
+          ? replacement.modelSelection
+          : replacement.eventType === "input.prompt" ||
+              replacement.eventType === "input.automation"
+            ? target.modelSelection
+            : undefined,
       id: replacementId,
       createdAt,
       revokesEventId: target.id,

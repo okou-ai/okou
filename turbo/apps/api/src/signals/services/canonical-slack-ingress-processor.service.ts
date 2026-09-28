@@ -1,3 +1,4 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
@@ -564,6 +565,11 @@ async function enqueueCanonicalSlackMessage(
     id: args.ingress.ingressId,
     chatThreadId: args.chatThreadId,
     eventType: "input.prompt",
+    modelSelection: await resolveEnqueuedChatInputModel(db, {
+      threadId: args.chatThreadId,
+      orgId: args.orgId,
+      userId: args.ingress.userId,
+    }),
     userMessage: createUserMessageDocument({
       text: args.displayContent,
       files: canonicalInputMessageFiles(args.canonicalAssets),

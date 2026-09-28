@@ -132,6 +132,7 @@ function replacementTarget(source: ActiveInputSourceRow) {
     eventType: source.eventType,
     contextType: source.contextType,
     contextId: source.contextId,
+    modelSelection: source.modelSelection,
   };
 }
 
@@ -170,6 +171,9 @@ async function consumeActiveInputSource(
         eventType: source.eventType,
         runId: scope.runId,
         userMessage: source.userMessage,
+        ...(source.modelSelection === null
+          ? {}
+          : { modelSelection: source.modelSelection }),
       },
     );
     if (replacement) {

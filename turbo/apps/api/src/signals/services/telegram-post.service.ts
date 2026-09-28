@@ -1,3 +1,4 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -1182,15 +1183,12 @@ async function resolveTelegramChatMessageThread(
     userId: args.source.userLink.userId,
     orgId: args.source.orgId,
     agentId: args.source.composeId,
-    selectedModel: null,
-    serviceTier: null,
     currentTime,
   };
   return args.rootMessageId === undefined
     ? await createTelegramChatThread(args.source.db, threadArgs)
     : await ensureTelegramChatThreadRoute(args.source.db, {
         ...threadArgs,
-        preserveThreadSettings: args.source.isDM,
         ownerLink: telegramOwnerLink(args.source),
         chatId: args.chatId,
         rootMessageId: args.rootMessageId,
@@ -1264,6 +1262,11 @@ const persistTelegramChatMessage$ = command(
       id: chatEventId,
       chatThreadId: binding.chatThreadId,
       eventType: "input.prompt",
+      modelSelection: await resolveEnqueuedChatInputModel(args.source.db, {
+        threadId: binding.chatThreadId,
+        orgId: args.source.orgId,
+        userId: args.source.userLink.userId,
+      }),
       content: null,
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? runPrompt.text : args.prompt,

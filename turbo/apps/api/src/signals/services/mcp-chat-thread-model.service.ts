@@ -1,5 +1,4 @@
 import type { McpChatThread } from "@okouai/api-contracts/contracts/mcp-chat-threads";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { and, eq, inArray, or } from "drizzle-orm";
 
@@ -13,23 +12,15 @@ import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 function modelProjection(
   selectedModel: string | null,
   resolved: ReadonlyMap<string, string | null>,
-  memberDefault: string | null,
   orgDefault: string | null,
 ): McpChatThread["model"] {
   const pinnedModel = selectedModel
     ? (resolved.get(selectedModel) ?? null)
     : null;
-  const preferredModel = selectedModel === null ? memberDefault : null;
   return {
     selectedModel,
-    effectiveModel: pinnedModel ?? preferredModel ?? orgDefault,
-    source: pinnedModel
-      ? "thread"
-      : preferredModel
-        ? "member_default"
-        : orgDefault
-          ? "org_default"
-          : null,
+    effectiveModel: pinnedModel ?? orgDefault,
+    source: pinnedModel ? "thread" : orgDefault ? "org_default" : null,
     admission: "checked_on_send",
   };
 }
@@ -46,24 +37,9 @@ export async function mcpChatThreadModels(
     return result;
   }
 
-  const [preference] = models.has(null)
-    ? await db
-        .select({ selectedModel: orgMembersMetadata.selectedModel })
-        .from(orgMembersMetadata)
-        .where(
-          and(
-            eq(orgMembersMetadata.orgId, principal.orgId),
-            eq(orgMembersMetadata.userId, principal.userId),
-          ),
-        )
-        .limit(1)
-    : [];
   const candidateModels = [...models].filter((model) => {
     return model !== null;
   });
-  if (preference?.selectedModel) {
-    candidateModels.push(preference.selectedModel);
-  }
   const policies = await db
     .select({
       model: orgModelPolicies.model,
@@ -117,14 +93,11 @@ export async function mcpChatThreadModels(
   const orgDefault = defaultPolicy
     ? (resolved.get(defaultPolicy.model) ?? null)
     : null;
-  const memberDefault = preference?.selectedModel
-    ? (resolved.get(preference.selectedModel) ?? null)
-    : null;
 
   for (const selectedModel of models) {
     result.set(
       selectedModel,
-      modelProjection(selectedModel, resolved, memberDefault, orgDefault),
+      modelProjection(selectedModel, resolved, orgDefault),
     );
   }
   return result;

@@ -1,3 +1,4 @@
+import { resolveEnqueuedChatInputModel } from "./chat-input-model.service";
 import type { Tx } from "../../lib/db-types";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
@@ -1445,8 +1446,6 @@ const persistAgentPhoneChatMessage$ = command(
       userId: args.userLink.userId,
       orgId: args.userLink.orgId,
       agentId: args.agent.composeId,
-      selectedModel: null,
-      serviceTier: null,
       currentTime,
     });
     signal.throwIfAborted();
@@ -1479,6 +1478,11 @@ const persistAgentPhoneChatMessage$ = command(
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
+      modelSelection: await resolveEnqueuedChatInputModel(args.db, {
+        threadId: route.chatThreadId,
+        orgId: args.userLink.orgId,
+        userId: args.userLink.userId,
+      }),
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? args.event.body.trim() : args.prompt,
         files: integrationInputMessageFiles(assets),

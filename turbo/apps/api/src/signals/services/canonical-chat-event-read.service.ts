@@ -1,3 +1,4 @@
+import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/chat-input-model";
 import { userMessageDocumentSchema } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -133,4 +134,13 @@ export function canonicalArchivedChatEventGoalId(
   row: ChatEventRow,
 ): string | null {
   return row.contextType === "goal" ? row.contextId : null;
+}
+
+/** Private immutable model decision; NULL identifies an older queued input. */
+export function canonicalChatInputModelSelection() {
+  return sql`${chatEvents.modelSelection}`.mapWith(
+    nullableDriverValueDecoder(
+      zodDriverValueDecoder(chatInputModelSelectionSchema),
+    ),
+  );
 }

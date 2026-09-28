@@ -150,7 +150,8 @@ and then `get_chat_messages` to observe output.
 Both modes return `threadId` (the normalized `requestId`), the concrete Agent,
 current title, selected/effective model, service tier, creation time in `createdAt`,
 authenticated App URL, `replayed`, and `retryUntil`. Existing media/reasoning
-defaults apply and service tier starts unset. Credentials, quota, and execution
+defaults apply; a new thread captures the member model and service tier, or the
+organization default when the member preference is unavailable. Credentials, quota, and execution
 policy are checked when the initial or later input is dispatched, as indicated
 by `admission: "checked_on_send"`.
 
@@ -160,9 +161,9 @@ the same derived input reference. Concurrent identical requests converge on one
 thread and, when present, one input. Switching between empty and combined modes,
 changing a message, or changing omitted-versus-explicit Agent/title/model intent
 is a conflict. Replay returns current stored thread settings without undoing
-later edits. An originally omitted model follows current defaults only while the
-thread remains unpinned before first run admission; after admission persists the
-resolved model, replay reports that thread pin. Deleted conversations, expired
+later edits. An originally omitted model is resolved and stored when the thread is created.
+Each input captures the thread model at enqueue, using the organization default
+if the thread model is unavailable. Later settings changes do not reroute queued inputs. Deleted conversations, expired
 retries, or missing canonical evidence return an error while either half of the
 retained identity remains. Thread events become eligible for snapshot-backed
 pruning after seven days. If the thread remains after its creation event is

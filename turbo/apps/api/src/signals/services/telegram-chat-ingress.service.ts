@@ -1,6 +1,6 @@
+import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { agents } from "@okouai/db/schema/agent";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
 import { and, eq } from "drizzle-orm";
 
@@ -36,18 +36,12 @@ interface TelegramChatThreadBinding {
 interface LoadedTelegramChatThreadRoute extends TelegramChatThreadBinding {
   readonly id: string;
   readonly chatId: string;
-  readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly codexServiceTier: "fast" | null;
-  readonly computerUseHostId: string | null;
 }
 
 interface TelegramChatThreadCreateArgs {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly serviceTier: ChatThreadServiceTier | null;
   readonly currentTime: Date;
 }
 
@@ -76,17 +70,12 @@ async function loadRoute(
       id: telegramChatThreadRoutes.id,
       chatId: telegramChatThreadRoutes.chatId,
       chatThreadId: telegramChatThreadRoutes.chatThreadId,
-      agentId: agents.id,
-      selectedModel: chatThreads.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
-      computerUseHostId: chatThreads.computerUseHostId,
     })
     .from(telegramChatThreadRoutes)
     .innerJoin(
       chatThreads,
       eq(chatThreads.id, telegramChatThreadRoutes.chatThreadId),
     )
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(routeWhere(key))
     .limit(1)
     .for("update");
@@ -109,6 +98,8 @@ async function loadRoute(
 }
 
 interface CreatedTelegramChatThread {
+  readonly selectedModel: string | null;
+  readonly serviceTier: ChatThreadServiceTier | null;
   readonly id: string;
   readonly createdAt: Date;
   readonly mediaModels: NewChatThreadMediaModels;
@@ -118,8 +109,8 @@ interface CreatedTelegramChatThread {
 async function createCanonicalTelegramChatThread(
   tx: TelegramChatThreadTransaction,
   args: TelegramChatThreadCreateArgs,
-  computerUseHostId: string | null = null,
 ): Promise<CreatedTelegramChatThread> {
+  const initialModel = await resolveRequiredDefaultChatThreadModelPin(tx, args);
   const mediaModels = await loadNewChatThreadMediaModels(tx, {
     orgId: args.orgId,
     userId: args.userId,
@@ -133,11 +124,11 @@ async function createCanonicalTelegramChatThread(
     .values({
       userId: args.userId,
       agentId: args.agentId,
-      computerUseHostId,
+      computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedModel: args.selectedModel,
+      selectedModel: initialModel.selectedModel,
       modelSettings,
-      codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
+      codexServiceTier: initialModel.serviceTier === "priority" ? "fast" : null,
       title: null,
       lastReadAt: args.currentTime,
       lastMessageAt: args.currentTime,
@@ -150,14 +141,19 @@ async function createCanonicalTelegramChatThread(
   if (!thread) {
     throw new Error("Failed to create canonical Telegram chat thread");
   }
-  return { ...thread, mediaModels, modelSettings };
+  return {
+    ...thread,
+    mediaModels,
+    modelSettings,
+    selectedModel: initialModel.selectedModel,
+    serviceTier: initialModel.serviceTier,
+  };
 }
 
 async function appendCanonicalTelegramChatThreadCreatedEvent(
   tx: TelegramChatThreadTransaction,
   args: TelegramChatThreadCreateArgs,
   thread: CreatedTelegramChatThread,
-  computerUseHostId: string | null | undefined,
 ): Promise<void> {
   await appendChatThreadEvent(tx, {
     kind: "created",
@@ -166,65 +162,13 @@ async function appendCanonicalTelegramChatThreadCreatedEvent(
     chatThreadId: thread.id,
     agentId: args.agentId,
     title: null,
-    selectedModel: args.selectedModel,
+    selectedModel: thread.selectedModel,
     modelSettings: thread.modelSettings,
-    serviceTier: args.serviceTier,
-    computerUseHostId,
+    serviceTier: thread.serviceTier,
+    computerUseHostId: null,
     ...thread.mediaModels,
     createdAt: thread.createdAt,
   });
-}
-
-async function reconcileExistingRoute(
-  tx: TelegramChatThreadTransaction,
-  args: TelegramChatThreadRouteKey & TelegramChatThreadCreateArgs,
-  existing: LoadedTelegramChatThreadRoute,
-): Promise<TelegramChatThreadBinding> {
-  if (existing.agentId !== args.agentId) {
-    const thread = await createCanonicalTelegramChatThread(
-      tx,
-      args,
-      existing.computerUseHostId,
-    );
-    const [route] = await tx
-      .update(telegramChatThreadRoutes)
-      .set({ chatThreadId: thread.id })
-      .where(
-        and(
-          eq(telegramChatThreadRoutes.id, existing.id),
-          eq(telegramChatThreadRoutes.chatThreadId, existing.chatThreadId),
-        ),
-      )
-      .returning({ chatThreadId: telegramChatThreadRoutes.chatThreadId });
-    if (!route) {
-      throw new Error("Failed to rebind Telegram chat thread route");
-    }
-    await appendCanonicalTelegramChatThreadCreatedEvent(
-      tx,
-      args,
-      thread,
-      existing.computerUseHostId,
-    );
-    return route;
-  }
-
-  if (
-    isIntegrationDmSessionKey(args.rootMessageId) &&
-    (existing.selectedModel !== null || existing.codexServiceTier !== null)
-  ) {
-    await tx
-      .update(chatThreads)
-      .set({
-        selectedModel: null,
-        modelProviderId: null,
-        modelProviderType: null,
-        modelProviderCredentialScope: null,
-        codexServiceTier: null,
-        updatedAt: args.currentTime,
-      })
-      .where(eq(chatThreads.id, existing.chatThreadId));
-  }
-  return existing;
 }
 
 export async function createTelegramChatThread(
@@ -233,22 +177,19 @@ export async function createTelegramChatThread(
 ): Promise<TelegramChatThreadBinding> {
   return await db.transaction(async (tx) => {
     const thread = await createCanonicalTelegramChatThread(tx, args);
-    await appendCanonicalTelegramChatThreadCreatedEvent(tx, args, thread, null);
+    await appendCanonicalTelegramChatThreadCreatedEvent(tx, args, thread);
     return { chatThreadId: thread.id };
   });
 }
 
 export async function ensureTelegramChatThreadRoute(
   db: Db,
-  args: TelegramChatThreadRouteKey &
-    TelegramChatThreadCreateArgs & { readonly preserveThreadSettings: boolean },
+  args: TelegramChatThreadRouteKey & TelegramChatThreadCreateArgs,
 ): Promise<TelegramChatThreadBinding> {
   return await db.transaction(async (tx) => {
     const existing = await loadRoute(tx, args);
     if (existing) {
-      return args.preserveThreadSettings
-        ? existing
-        : await reconcileExistingRoute(tx, args, existing);
+      return existing;
     }
 
     const thread = await createCanonicalTelegramChatThread(tx, args);
@@ -271,12 +212,10 @@ export async function ensureTelegramChatThreadRoute(
           "Failed to resolve Telegram chat thread route after conflict",
         );
       }
-      return args.preserveThreadSettings
-        ? conflicted
-        : await reconcileExistingRoute(tx, args, conflicted);
+      return conflicted;
     }
 
-    await appendCanonicalTelegramChatThreadCreatedEvent(tx, args, thread, null);
+    await appendCanonicalTelegramChatThreadCreatedEvent(tx, args, thread);
     return route;
   });
 }

@@ -732,8 +732,6 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
       ...routeKey,
       orgId: args.orgId,
       agentId: effectiveCompose.composeId,
-      selectedModel: null,
-      serviceTier: null,
       currentTime: nowDate(),
     });
     signal.throwIfAborted();
