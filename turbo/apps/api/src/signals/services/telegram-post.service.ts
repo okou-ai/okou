@@ -1435,6 +1435,27 @@ const handleTelegramAgentMessage$ = command(
   },
 );
 
+/** The routed chat thread of the conversation a `/model` command is sent in. */
+async function findModelCommandChatThreadId(args: {
+  readonly db: Db;
+  readonly message: TelegramMessage;
+  readonly ownerLink: TelegramOwnerLink;
+}): Promise<string | undefined> {
+  const rootMessageId = rootMessageIdForAgentMessage({
+    isDM: args.message.chat.type === "private",
+    message: args.message,
+    botId: OFFICIAL_TELEGRAM_BOT_ID,
+  });
+  if (rootMessageId === undefined) {
+    return undefined;
+  }
+  return await findTelegramRoutedChatThreadId(args.db, {
+    ownerLink: args.ownerLink,
+    chatId: String(args.message.chat.id),
+    rootMessageId,
+  });
+}
+
 const handleModelCommand$ = command(
   async (
     { get, set },
@@ -1521,19 +1542,7 @@ const handleModelCommand$ = command(
       return;
     }
 
-    const rootMessageId = rootMessageIdForAgentMessage({
-      isDM: args.message.chat.type === "private",
-      message: args.message,
-      botId: OFFICIAL_TELEGRAM_BOT_ID,
-    });
-    const chatThreadId =
-      rootMessageId === undefined
-        ? undefined
-        : await findTelegramRoutedChatThreadId(args.db, {
-            ownerLink: args.ownerLink,
-            chatId,
-            rootMessageId,
-          });
+    const chatThreadId = await findModelCommandChatThreadId(args);
     signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,

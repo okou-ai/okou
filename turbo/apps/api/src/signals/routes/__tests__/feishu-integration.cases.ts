@@ -6538,7 +6538,7 @@ export function registerSharedFeishuConversationTests(): void {
         }),
       ).toBeTruthy();
       await expect(readFeishuMemberModel(actor)).resolves.toBe("gpt-6-astra");
-      expect(await readFeishuThreadEvents(actor)).toContainEqual(
+      await expect(readFeishuThreadEvents(actor)).resolves.toContainEqual(
         expect.objectContaining({
           kind: "model_selection_updated",
           chatThreadId: thread.chatThreadId,
@@ -6560,7 +6560,7 @@ export function registerSharedFeishuConversationTests(): void {
       await flushWaitUntilForTest();
 
       await expect(readFeishuMemberModel(actor)).resolves.toBe("gpt-6-astra");
-      expect(await readFeishuThreadEvents(actor)).not.toContainEqual(
+      await expect(readFeishuThreadEvents(actor)).resolves.not.toContainEqual(
         expect.objectContaining({ kind: "model_selection_updated" }),
       );
       await removeFeishuInstallation(fixture);
