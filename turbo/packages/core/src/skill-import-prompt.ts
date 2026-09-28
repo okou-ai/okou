@@ -192,6 +192,10 @@ export function buildSkillImportPrompt(input: SkillImportPromptInput): string {
   const discovery =
     input.provider === "codex" ? CODEX_DISCOVERY : CLAUDE_DISCOVERY;
   const noSkillsNote = input.provider === "codex" ? "" : CLAUDE_NO_SKILLS_NOTE;
+  const noLocalFileLine =
+    input.provider === "codex"
+      ? ""
+      : "   - Skills visible in this session with no local file found.\n";
   const sourceTypes =
     input.provider === "codex"
       ? "Project / Personal / Personal plugin"
@@ -566,8 +570,7 @@ Produce one consolidated summary containing:
 5. Skills not imported
    - Skills left unprocessed because of the ${String(limits.maxSkillsPerSession)}-skill limit,
      429, or 401.
-   - Skills visible in this session with no local file found.
-   - The reason for each.
+${noLocalFileLine}   - The reason for each.
 
 6. Omitted attachments
    - Skill name, attachment-relative path, and reason.
