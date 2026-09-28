@@ -19,6 +19,7 @@ import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { activityRevision, mergeActivity } from "../../lib/run-activity";
 import { writeDb$ } from "../external/db";
+import { publishChatThreadDetailChangedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
@@ -118,7 +119,11 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
         // starve a leaked thread slot indefinitely. The correlated PK lookup
         // avoids a JOIN or CTE and excludes terminal rows with a recent heartbeat.
         const silent = await db
-          .select({ runId: activeAgentRuns.runId })
+          .select({
+            runId: activeAgentRuns.runId,
+            userId: activeAgentRuns.userId,
+            chatThreadId: activeAgentRuns.chatThreadId,
+          })
           .from(activeAgentRuns)
           .where(
             and(
@@ -150,11 +155,11 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
           .limit(STALE_RELEASE_LIMIT);
         signal.throwIfAborted();
         if (silent.length === 0) {
-          return [];
+          return { released: [], silent };
         }
         // Recheck the silence: a sandbox that resumed heartbeating since the
         // candidate read still has a runner and keeps its row.
-        return await db.transaction(async (tx) => {
+        const released = await db.transaction(async (tx) => {
           return await releaseRunSlots(
             tx,
             silent.map((row) => {
@@ -163,11 +168,28 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
             lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
           );
         });
+        return { released, silent };
       })(),
     );
     signal.throwIfAborted();
     if (outcome.ok) {
-      set(scheduleReleasedSlotPicks$, outcome.value);
+      set(scheduleReleasedSlotPicks$, outcome.value.released);
+      // The released run's cancellation recovery barrier is over; open chat
+      // threads re-read their detail.
+      const releasedRunIds = new Set(
+        outcome.value.released.map((slot) => {
+          return slot.runId;
+        }),
+      );
+      for (const row of outcome.value.silent) {
+        if (row.chatThreadId !== null && releasedRunIds.has(row.runId)) {
+          await publishChatThreadDetailChangedSafely(
+            row.userId,
+            row.chatThreadId,
+          );
+          signal.throwIfAborted();
+        }
+      }
       return;
     }
     const errorCode = safeSqlStateCode(outcome.error);
