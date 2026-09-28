@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.720.0](https://github.com/okou-ai/okou/compare/core-v8.719.0...core-v8.720.0) (2026-09-28)
+
+
+### Features
+
+* drop retired video model columns and ignore retired templates ([#37266](https://github.com/okou-ai/okou/issues/37266)) ([66d0134](https://github.com/okou-ai/okou/commit/66d0134b4253a716f00a1e6662c1c1484599f3d6))
+* make the image model a member setting in built-in tools ([#37246](https://github.com/okou-ai/okou/issues/37246)) ([e6ba7f7](https://github.com/okou-ai/okou/commit/e6ba7f7a1a2a6b96e2017d00c5e199dbbf0eec0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.526.0
+
 ## [8.719.0](https://github.com/okou-ai/okou/compare/core-v8.718.0...core-v8.719.0) (2026-09-28)
 
 

@@ -8,6 +8,36 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.694.0](https://github.com/okou-ai/okou/compare/api-v1.693.0...api-v1.694.0) (2026-09-28)
+
+
+### Features
+
+* drop retired video model columns and ignore retired templates ([#37266](https://github.com/okou-ai/okou/issues/37266)) ([66d0134](https://github.com/okou-ai/okou/commit/66d0134b4253a716f00a1e6662c1c1484599f3d6))
+* finish the unified chat queue cleanup after release 7 ([#37260](https://github.com/okou-ai/okou/issues/37260)) ([48e84d6](https://github.com/okou-ai/okou/commit/48e84d6e1d0dbf8705002069f23f91d8f346ac70))
+* make the image model a member setting in built-in tools ([#37246](https://github.com/okou-ai/okou/issues/37246)) ([e6ba7f7](https://github.com/okou-ai/okou/commit/e6ba7f7a1a2a6b96e2017d00c5e199dbbf0eec0b))
+
+
+### Bug Fixes
+
+* **storage:** remove sha256 put requirement and simplify browser file uploads ([#37267](https://github.com/okou-ai/okou/issues/37267)) ([f56aae3](https://github.com/okou-ai/okou/commit/f56aae3e55661496c584121e28827ca780f5dd61))
+
+
+### Performance Improvements
+
+* **api:** cut synchronous sql on chat event send ([#37269](https://github.com/okou-ai/okou/issues/37269)) ([34ad26c](https://github.com/okou-ai/okou/commit/34ad26c6b04931290ff7309e82c95124109ece20))
+* **api:** reduce runner heartbeat jsonb and index churn ([#37265](https://github.com/okou-ai/okou/issues/37265)) ([1a267fc](https://github.com/okou-ai/okou/commit/1a267fc8c76fe74a941eb0c58e7a640f479f44a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.526.0
+    * @okouai/core bumped to 8.720.0
+    * @okouai/db bumped to 1.312.0
+    * @okouai/pi-agent-runtime bumped to 1.41.3
+
 ## [1.693.0](https://github.com/okou-ai/okou/compare/api-v1.692.0...api-v1.693.0) (2026-09-28)
 
 

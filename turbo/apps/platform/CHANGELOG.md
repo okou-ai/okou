@@ -11,6 +11,29 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.983.0](https://github.com/okou-ai/okou/compare/app-v0.982.0...app-v0.983.0) (2026-09-28)
+
+
+### Features
+
+* drop retired video model columns and ignore retired templates ([#37266](https://github.com/okou-ai/okou/issues/37266)) ([66d0134](https://github.com/okou-ai/okou/commit/66d0134b4253a716f00a1e6662c1c1484599f3d6))
+* finish the unified chat queue cleanup after release 7 ([#37260](https://github.com/okou-ai/okou/issues/37260)) ([48e84d6](https://github.com/okou-ai/okou/commit/48e84d6e1d0dbf8705002069f23f91d8f346ac70))
+* make the image model a member setting in built-in tools ([#37246](https://github.com/okou-ai/okou/issues/37246)) ([e6ba7f7](https://github.com/okou-ai/okou/commit/e6ba7f7a1a2a6b96e2017d00c5e199dbbf0eec0b))
+
+
+### Bug Fixes
+
+* **platform:** render exact-account reconnect actions in chat ([#37226](https://github.com/okou-ai/okou/issues/37226)) ([0314bac](https://github.com/okou-ai/okou/commit/0314bac377d592efe7a14a4a25cdcd6502e9abe8))
+* **storage:** remove sha256 put requirement and simplify browser file uploads ([#37267](https://github.com/okou-ai/okou/issues/37267)) ([f56aae3](https://github.com/okou-ai/okou/commit/f56aae3e55661496c584121e28827ca780f5dd61))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.526.0
+    * @okouai/core bumped to 8.720.0
+
 ## [0.982.0](https://github.com/okou-ai/okou/compare/app-v0.981.0...app-v0.982.0) (2026-09-28)
 
 

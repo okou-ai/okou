@@ -1,5 +1,23 @@
 # Changelog
 
+## [9.373.0](https://github.com/okou-ai/okou/compare/cli-v9.372.1...cli-v9.373.0) (2026-09-28)
+
+
+### Features
+
+* drop retired video model columns and ignore retired templates ([#37266](https://github.com/okou-ai/okou/issues/37266)) ([66d0134](https://github.com/okou-ai/okou/commit/66d0134b4253a716f00a1e6662c1c1484599f3d6))
+* finish the unified chat queue cleanup after release 7 ([#37260](https://github.com/okou-ai/okou/issues/37260)) ([48e84d6](https://github.com/okou-ai/okou/commit/48e84d6e1d0dbf8705002069f23f91d8f346ac70))
+* make the image model a member setting in built-in tools ([#37246](https://github.com/okou-ai/okou/issues/37246)) ([e6ba7f7](https://github.com/okou-ai/okou/commit/e6ba7f7a1a2a6b96e2017d00c5e199dbbf0eec0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.526.0
+    * @okouai/core bumped to 8.720.0
+    * @okouai/pi-agent-runtime bumped to 1.41.3
+
 ## [9.372.1](https://github.com/okou-ai/okou/compare/cli-v9.372.0...cli-v9.372.1) (2026-09-28)
 
 
