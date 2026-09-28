@@ -3953,7 +3953,6 @@
         "addDescription": "각 BotFather 단계를 완료한 후 워크스페이스 봇을 생성하세요.",
         "adding": "추가 중...",
         "addTitle": "Telegram 봇 추가",
-        "agentAria": "{{bot}}의 기본 에이전트",
         "backToIntegrations": "통합으로 돌아가기",
         "botFallback": "Telegram 봇",
         "bots": "Telegram 봇들",
@@ -4001,7 +4000,6 @@
         "reinstalling": "다시 설치 중...",
         "reinstallTargetFallback": "이 봇",
         "reinstallTitle": "Telegram 봇 다시 설치",
-        "selectAgent": "에이전트 선택",
         "steps": {
           "back": "뒤로",
           "create": "생성",
@@ -4037,12 +4035,10 @@
         "teamsInstalled": "Microsoft Teams가 성공적으로 설치되었습니다",
         "teamsUninstalled": "Microsoft Teams 통합이 제거되었습니다",
         "teamsUpdated": "Microsoft Teams가 업데이트되었습니다",
-        "telegramAgentUpdated": "기본 에이전트가 업데이트되었습니다",
         "telegramBotAdded": "Telegram 봇이 추가되었습니다",
         "telegramBotReinstalled": "Telegram 봇이 다시 설치되었습니다",
         "telegramBotUninstalled": "Telegram 봇이 제거되었습니다",
-        "telegramDisconnected": "Telegram 계정 연결이 해제되었습니다",
-        "telegramUpdatingAgent": "기본 에이전트를 업데이트하는 중입니다..."
+        "telegramDisconnected": "Telegram 계정 연결이 해제되었습니다"
       },
       "works": {
         "connected": "연결됨",

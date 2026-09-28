@@ -3095,7 +3095,7 @@
       "disconnectDescriptionWithCount_one": "",
       "disconnectDescriptionWithCount_many": "",
       "disconnectDescriptionWithCount_other": "",
-      "disconnectTitle": "Déconnecter {{account}} ?",
+      "disconnectTitle": "Déconnecter {{account}}\u00a0?",
       "fallbackByMethod": {
         "api": "Clé d'API",
         "api-token": "Jeton d'API",
@@ -4029,7 +4029,6 @@
         "addDescription": "Complétez chaque étape de BotFather, puis créez le bot de l'espace de travail.",
         "adding": "Ajout en cours...",
         "addTitle": "Ajouter un bot Telegram",
-        "agentAria": "Agent par défaut pour {{bot}}",
         "backToIntegrations": "Retour aux intégrations",
         "botFallback": "Bot Telegram",
         "bots": "Bots Telegram",
@@ -4077,7 +4076,6 @@
         "reinstalling": "Réinstallation...",
         "reinstallTargetFallback": "cet bot",
         "reinstallTitle": "Réinstaller le bot Telegram",
-        "selectAgent": "Sélectionner un agent",
         "steps": {
           "back": "Retour",
           "create": "Créer",
@@ -4113,12 +4111,10 @@
         "teamsInstalled": "Microsoft Teams installé avec succès",
         "teamsUninstalled": "Intégration Microsoft Teams désinstallée",
         "teamsUpdated": "Microsoft Teams mis à jour",
-        "telegramAgentUpdated": "Agent par défaut mis à jour",
         "telegramBotAdded": "Bot Telegram ajouté",
         "telegramBotReinstalled": "Bot Telegram réinstallé",
         "telegramBotUninstalled": "Bot Telegram désinstallé",
-        "telegramDisconnected": "Compte Telegram déconnecté",
-        "telegramUpdatingAgent": "Mise à jour de l'agent par défaut..."
+        "telegramDisconnected": "Compte Telegram déconnecté"
       },
       "works": {
         "connected": "Connecté",

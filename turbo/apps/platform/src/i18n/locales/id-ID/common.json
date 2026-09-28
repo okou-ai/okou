@@ -3953,7 +3953,6 @@
         "addDescription": "Selesaikan setiap langkah BotFather, lalu buat bot ruang kerja.",
         "adding": "Menambahkan...",
         "addTitle": "Tambahkan bot Telegram",
-        "agentAria": "Agen default untuk {{bot}}",
         "backToIntegrations": "Kembali ke integrasi",
         "botFallback": "Bot Telegram",
         "bots": "Bot Telegram",
@@ -4001,7 +4000,6 @@
         "reinstalling": "Memasang ulang...",
         "reinstallTargetFallback": "bot ini",
         "reinstallTitle": "Pasang ulang bot Telegram",
-        "selectAgent": "Pilih agen",
         "steps": {
           "back": "Kembali",
           "create": "Buat",
@@ -4037,12 +4035,10 @@
         "teamsInstalled": "Microsoft Teams berhasil diinstal",
         "teamsUninstalled": "Integrasi Microsoft Teams dihapus",
         "teamsUpdated": "Microsoft Teams diperbarui",
-        "telegramAgentUpdated": "Agen default diperbarui",
         "telegramBotAdded": "Bot Telegram ditambahkan",
         "telegramBotReinstalled": "Bot Telegram dipasang ulang",
         "telegramBotUninstalled": "Bot Telegram dihapus",
-        "telegramDisconnected": "Akun Telegram terputus",
-        "telegramUpdatingAgent": "Memperbarui agen default..."
+        "telegramDisconnected": "Akun Telegram terputus"
       },
       "works": {
         "connected": "Terhubung",

@@ -1,15 +1,13 @@
 import {
   integrationsTelegramContract,
   type TelegramBot,
+  type TelegramBotStatus as TelegramBotStatusResponse,
   type TelegramLinkStatusResponse,
   type TelegramListResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import type { z } from "zod";
 import { mockApi } from "../msw-contract.ts";
 
-export type MockTelegramBotStatus = z.infer<
-  (typeof integrationsTelegramContract.updateBot.responses)[200]
->;
+export type MockTelegramBotStatus = TelegramBotStatusResponse;
 type TelegramBotStatus = MockTelegramBotStatus;
 
 type TelegramConnectedUser = NonNullable<TelegramBot["connectedUser"]>;
@@ -143,39 +141,6 @@ export const apiIntegrationsTelegramHandlers = [
   mockApi(integrationsTelegramContract.list, ({ respond }) => {
     return respond(200, mockTelegramList);
   }),
-
-  mockApi(
-    integrationsTelegramContract.updateBot,
-    ({ params, body, respond }) => {
-      const status = mockTelegramStatuses[params.botId];
-      if (!status) {
-        return respond(404, {
-          error: { message: "Telegram bot not found", code: "NOT_FOUND" },
-        });
-      }
-      const nextAgentId =
-        body.defaultAgentId ?? body.selectedAgentId ?? status.agent?.id;
-      const agent = nextAgentId
-        ? { id: nextAgentId, name: "default-agent" }
-        : status.agent;
-      mockTelegramStatuses[status.id] = {
-        ...status,
-        agent,
-        official: status.official
-          ? {
-              ...status.official,
-              usesDefaultAgent: body.selectedAgentId === null,
-            }
-          : status.official,
-      };
-      mockTelegramList.bots = mockTelegramList.bots.map((bot) => {
-        return bot.id === status.id
-          ? statusToBot(mockTelegramStatuses[status.id]!)
-          : bot;
-      });
-      return respond(200, mockTelegramStatuses[status.id]!);
-    },
-  ),
 
   mockApi(integrationsTelegramContract.getLinkStatus, ({ query, respond }) => {
     if (query.botId) {

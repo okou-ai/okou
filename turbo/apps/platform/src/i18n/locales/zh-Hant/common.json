@@ -3953,7 +3953,6 @@
         "addDescription": "完成BotFather中的每個步驟，然後建立工作區機器人。",
         "adding": "新增中…",
         "addTitle": "新增Telegram機器人",
-        "agentAria": "{{bot}}的預設智能體",
         "backToIntegrations": "返回整合",
         "botFallback": "Telegram機器人",
         "bots": "Telegram機器人",
@@ -4001,7 +4000,6 @@
         "reinstalling": "重新安裝中…",
         "reinstallTargetFallback": "此機器人",
         "reinstallTitle": "重新安裝Telegram機器人",
-        "selectAgent": "選擇智能體",
         "steps": {
           "back": "上一步",
           "create": "建立",
@@ -4037,12 +4035,10 @@
         "teamsInstalled": "Microsoft Teams安裝成功",
         "teamsUninstalled": "Microsoft Teams整合已解除安裝",
         "teamsUpdated": "Microsoft Teams已更新",
-        "telegramAgentUpdated": "預設智能體已更新",
         "telegramBotAdded": "已新增Telegram機器人",
         "telegramBotReinstalled": "已重新安裝Telegram機器人",
         "telegramBotUninstalled": "已解除安裝Telegram機器人",
-        "telegramDisconnected": "Telegram帳號已斷開連線",
-        "telegramUpdatingAgent": "正在更新預設智能體…"
+        "telegramDisconnected": "Telegram帳號已斷開連線"
       },
       "works": {
         "connected": "已連線",

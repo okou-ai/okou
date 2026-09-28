@@ -18,15 +18,7 @@ import {
   type TelegramBot,
   OFFICIAL_TELEGRAM_BOT_ID,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
-import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@okouai/ui/components/ui/select";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import {
   Popover,
@@ -38,21 +30,12 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { apiBase$ } from "../../signals/fetch.ts";
 import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import {
-  defaultAgentId$,
-  defaultAgentName$,
-  sortedAgents$,
-} from "../../signals/agent.ts";
-import { isOrgAdmin$ } from "../../signals/org.ts";
-import {
   disconnectTelegramAccount$,
   markTelegramAvatarFailed$,
-  setTelegramSavingBotId$,
   setTelegramUnlinkingBotId$,
   telegramBots$,
   telegramFailedAvatarKeys$,
-  telegramSavingBotId$,
   telegramUnlinkingBotId$,
-  updateTelegramBotAgent$,
 } from "../../signals/okou-page/telegram.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import {
@@ -67,51 +50,8 @@ import { useTranslation } from "react-i18next";
 
 const telegramIconImg = settingsIconAssetUrl("telegram");
 
-interface DefaultAgentLabel {
-  agentId: string | null;
-  displayName: string | null;
-}
-
-type TelegramAgentOption = Pick<AgentResponse, "agentId" | "displayName">;
-
 function isOfficialTelegramBot(bot: TelegramBot): boolean {
   return bot.kind === "official" || bot.id === OFFICIAL_TELEGRAM_BOT_ID;
-}
-
-function agentLabel(
-  agent: TelegramAgentOption,
-  defaultAgent: DefaultAgentLabel,
-) {
-  if (agent.agentId === defaultAgent.agentId && defaultAgent.displayName) {
-    return defaultAgent.displayName;
-  }
-  return agent.displayName ?? agent.agentId;
-}
-
-function buildBotAgentOptions(
-  bot: TelegramBot,
-  agents: AgentResponse[],
-  defaultAgent: DefaultAgentLabel,
-) {
-  if (
-    !bot.agent ||
-    agents.some((agent) => {
-      return agent.agentId === bot.agent?.id;
-    })
-  ) {
-    return agents;
-  }
-
-  return [
-    ...agents,
-    {
-      agentId: bot.agent.id,
-      displayName:
-        bot.agent.id === defaultAgent.agentId && defaultAgent.displayName
-          ? defaultAgent.displayName
-          : bot.agent.name,
-    },
-  ];
 }
 
 function TelegramSettingsSkeleton() {
@@ -278,94 +218,6 @@ function resolveTelegramBotAvatarUrl(
   return `${base}${path}`;
 }
 
-function TelegramBotAgentSelect({
-  bot,
-  options,
-  defaultAgent,
-  disabled,
-}: {
-  bot: TelegramBot;
-  options: TelegramAgentOption[];
-  defaultAgent: DefaultAgentLabel;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation();
-  const setSavingBotId = useSet(setTelegramSavingBotId$);
-  const pageSignal = useGet(pageSignal$);
-  const [updateLoadable, updateBotAgent] = useLoadableSet(
-    updateTelegramBotAgent$,
-  );
-  const isOfficial = isOfficialTelegramBot(bot);
-  const selectedValue = bot.agent?.id ?? "";
-  const agentItems = options.map((agent) => {
-    return { value: agent.agentId, label: agentLabel(agent, defaultAgent) };
-  });
-  const changeAgent = onDomEventFn(async (nextAgentId: string) => {
-    if (
-      nextAgentId === selectedValue ||
-      disabled ||
-      updateLoadable.state === "loading"
-    ) {
-      return;
-    }
-    setSavingBotId(bot.id);
-    await bestEffort(
-      updateBotAgent(
-        isOfficial
-          ? { botId: bot.id, selectedAgentId: nextAgentId }
-          : { botId: bot.id, defaultAgentId: nextAgentId },
-        pageSignal,
-      ),
-    );
-    setSavingBotId(null);
-  });
-
-  return (
-    <Select
-      items={agentItems}
-      value={selectedValue}
-      disabled={disabled || options.length === 0}
-      onValueChange={(nextAgentId, details) => {
-        if (
-          nextAgentId === null ||
-          !agentItems.some((item) => {
-            return item.value === nextAgentId;
-          })
-        ) {
-          details.cancel();
-          return;
-        }
-        changeAgent(nextAgentId);
-      }}
-    >
-      <SelectTrigger
-        aria-label={t(
-          ($) => {
-            return $.connectors.providerSettings.telegram.agentAria;
-          },
-          { bot: bot.username ?? bot.id },
-        )}
-        className="h-9"
-      >
-        <SelectValue
-          placeholder={t(($) => {
-            return $.connectors.providerSettings.telegram.selectAgent;
-          })}
-        />
-      </SelectTrigger>
-      <SelectContent>
-        {agentItems.map((item) => {
-          return (
-            <SelectItem key={item.value} value={item.value}>
-              {item.label}
-            </SelectItem>
-          );
-        })}
-      </SelectContent>
-    </Select>
-  );
-}
-
 function TelegramConnectAction({
   bot,
   disabled,
@@ -499,28 +351,13 @@ function TelegramBotActions({
   );
 }
 
-function TelegramBotRow({
-  bot,
-  agents,
-  defaultAgent,
-  canManage,
-  disabled,
-}: {
-  bot: TelegramBot;
-  agents: AgentResponse[];
-  defaultAgent: DefaultAgentLabel;
-  canManage: boolean;
-  disabled: boolean;
-}) {
+function TelegramBotRow({ bot }: { bot: TelegramBot }) {
   const brandName = useGet(brandName$);
   const { t } = useTranslation();
-  const savingBotId = useGet(telegramSavingBotId$);
   const unlinkingBotId = useGet(telegramUnlinkingBotId$);
   const apiBase = useLastResolved(apiBase$);
-  const saving = savingBotId === bot.id;
   const unlinking = unlinkingBotId === bot.id;
-  const actionDisabled = disabled || saving || unlinking;
-  const options = buildBotAgentOptions(bot, agents, defaultAgent);
+  const actionDisabled = unlinking;
   const avatarUrl = resolveTelegramBotAvatarUrl(bot.avatarUrl, apiBase ?? "");
   const isOfficial = isOfficialTelegramBot(bot);
   const botTitle = isOfficial
@@ -567,21 +404,7 @@ function TelegramBotRow({
         </div>
       </div>
 
-      <div
-        className={
-          canManage
-            ? "grid gap-2 sm:w-[360px] sm:grid-cols-[1fr_auto]"
-            : "flex justify-end"
-        }
-      >
-        {canManage ? (
-          <TelegramBotAgentSelect
-            bot={bot}
-            options={options}
-            defaultAgent={defaultAgent}
-            disabled={actionDisabled}
-          />
-        ) : null}
+      <div className="flex justify-end">
         <TelegramBotActions
           bot={bot}
           disabled={actionDisabled}
@@ -592,19 +415,7 @@ function TelegramBotRow({
   );
 }
 
-function TelegramBotList({
-  bots,
-  agents,
-  defaultAgent,
-  isAdmin,
-  agentsLoading,
-}: {
-  bots: TelegramBot[];
-  agents: AgentResponse[];
-  defaultAgent: DefaultAgentLabel;
-  isAdmin: boolean;
-  agentsLoading: boolean;
-}) {
+function TelegramBotList({ bots }: { bots: TelegramBot[] }) {
   const { t } = useTranslation();
   if (bots.length === 0) {
     return (
@@ -629,16 +440,9 @@ function TelegramBotList({
   return (
     <div>
       {bots.map((bot, index) => {
-        const isOfficial = isOfficialTelegramBot(bot);
         return (
           <div key={bot.id}>
-            <TelegramBotRow
-              bot={bot}
-              agents={agents}
-              defaultAgent={defaultAgent}
-              canManage={isOfficial || bot.isOwner || isAdmin}
-              disabled={agentsLoading}
-            />
+            <TelegramBotRow bot={bot} />
             {index < bots.length - 1 ? (
               <div className="mx-5 border-b border-border/50" />
             ) : null}
@@ -649,19 +453,7 @@ function TelegramBotList({
   );
 }
 
-function TelegramBotsCard({
-  bots,
-  agents,
-  defaultAgent,
-  isAdmin,
-  agentsLoading,
-}: {
-  bots: TelegramBot[];
-  agents: AgentResponse[];
-  defaultAgent: DefaultAgentLabel;
-  isAdmin: boolean;
-  agentsLoading: boolean;
-}) {
+function TelegramBotsCard({ bots }: { bots: TelegramBot[] }) {
   const { t } = useTranslation();
   return (
     <section className={surfaceVariants({ className: "overflow-hidden" })}>
@@ -672,13 +464,7 @@ function TelegramBotsCard({
           })}
         </h2>
       </div>
-      <TelegramBotList
-        bots={bots}
-        agents={agents}
-        defaultAgent={defaultAgent}
-        isAdmin={isAdmin}
-        agentsLoading={agentsLoading}
-      />
+      <TelegramBotList bots={bots} />
     </section>
   );
 }
@@ -686,28 +472,9 @@ function TelegramBotsCard({
 export function TelegramSettingsPage() {
   const { t } = useTranslation();
   const botsLoadable = useLastLoadable(telegramBots$);
-  const agentsLoadable = useLastLoadable(sortedAgents$);
-  const defaultAgentIdLoadable = useLastLoadable(defaultAgentId$);
-  const defaultAgentNameLoadable = useLastLoadable(defaultAgentName$);
-  const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const bots = botsLoadable.state === "hasData" ? botsLoadable.data : [];
-  const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
-  const isAdmin =
-    isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
-  const defaultAgent: DefaultAgentLabel = {
-    agentId:
-      defaultAgentIdLoadable.state === "hasData"
-        ? defaultAgentIdLoadable.data
-        : (agents[0]?.agentId ?? null),
-    displayName:
-      defaultAgentNameLoadable.state === "hasData"
-        ? defaultAgentNameLoadable.data
-        : null,
-  };
   const loading = botsLoadable.state === "loading" && bots.length === 0;
-  const hasError =
-    botsLoadable.state === "hasError" || agentsLoadable.state === "hasError";
-  const agentsLoading = agentsLoadable.state === "loading";
+  const hasError = botsLoadable.state === "hasError";
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
@@ -774,13 +541,7 @@ export function TelegramSettingsPage() {
             <TelegramSettingsSkeleton />
           ) : (
             <>
-              <TelegramBotsCard
-                bots={bots}
-                agents={agents}
-                defaultAgent={defaultAgent}
-                isAdmin={isAdmin}
-                agentsLoading={agentsLoading}
-              />
+              <TelegramBotsCard bots={bots} />
             </>
           )}
         </div>

@@ -3970,7 +3970,6 @@
         "addDescription": "प्रत्येक बोटफादर चरण को पूरा करें, फिर वर्कस्पेस बॉट बनाएं।",
         "adding": "जोड़ा जा रहा है...",
         "addTitle": "Telegram बॉट जोड़ें",
-        "agentAria": "{{bot}} के लिए डिफ़ॉल्ट एजेंट",
         "backToIntegrations": "एकीकरण पर वापस जाएँ",
         "botFallback": "Telegram बॉट",
         "bots": "Telegram बॉट",
@@ -4018,7 +4017,6 @@
         "reinstalling": "पुनः स्थापित किया जा रहा है...",
         "reinstallTargetFallback": "यह बॉट",
         "reinstallTitle": "Telegram बॉट को पुनर्स्थापित करें",
-        "selectAgent": "एजेंट का चयन करें",
         "steps": {
           "back": "पीछे",
           "create": "बनाएं",
@@ -4054,12 +4052,10 @@
         "teamsInstalled": "Microsoft Teams सफलतापूर्वक स्थापित हुआ",
         "teamsUninstalled": "Microsoft Teams एकीकरण अनइंस्टॉल किया गया",
         "teamsUpdated": "Microsoft Teams अद्यतन किया गया",
-        "telegramAgentUpdated": "डिफ़ॉल्ट एजेंट अद्यतन किया गया",
         "telegramBotAdded": "Telegram बॉट जोड़ा गया",
         "telegramBotReinstalled": "Telegram बॉट पुनः स्थापित किया गया",
         "telegramBotUninstalled": "Telegram बॉट अनइंस्टॉल किया गया",
-        "telegramDisconnected": "Telegram खाता डिस्कनेक्ट किया गया",
-        "telegramUpdatingAgent": "डिफ़ॉल्ट एजेंट अपडेट किया जा रहा है..."
+        "telegramDisconnected": "Telegram खाता डिस्कनेक्ट किया गया"
       },
       "works": {
         "connected": "कनेक्टेड",

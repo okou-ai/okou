@@ -24,7 +24,6 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
 import { telegramMessages } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserAgentPreferences } from "@okouai/db/schema/telegram-user-agent-preference";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
@@ -239,37 +238,6 @@ async function seedOfficialUserLinkForAction(
   return actionOk({ user_link_id: row?.id ?? null });
 }
 
-async function seedUserAgentPreferenceForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const required = requiredActionStrings(body, [
-    "org_id",
-    "user_id",
-    "compose_id",
-  ]);
-  if (!required) {
-    return actionBadRequest("org_id, user_id, and compose_id are required");
-  }
-  await db
-    .insert(telegramUserAgentPreferences)
-    .values({
-      orgId: required.org_id!,
-      userId: required.user_id!,
-      selectedAgentId: required.compose_id!,
-    })
-    .onConflictDoUpdate({
-      target: [
-        telegramUserAgentPreferences.userId,
-        telegramUserAgentPreferences.orgId,
-      ],
-      set: { selectedAgentId: required.compose_id! },
-    });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 async function seedAgentRunCallbackForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -378,10 +346,6 @@ async function deleteTelegramFixtureForAction(
     await db
       .delete(telegramOfficialUserLinks)
       .where(eq(telegramOfficialUserLinks.orgId, orgId));
-    signal.throwIfAborted();
-    await db
-      .delete(telegramUserAgentPreferences)
-      .where(eq(telegramUserAgentPreferences.orgId, orgId));
     signal.throwIfAborted();
     await db.delete(modelProviders).where(eq(modelProviders.orgId, orgId));
     signal.throwIfAborted();
@@ -983,7 +947,6 @@ type TelegramStateActionHandler = (
 const telegramStateActionHandlers = {
   "seed-org-default-agent": seedOrgDefaultAgentForAction,
   "seed-official-user-link": seedOfficialUserLinkForAction,
-  "seed-user-agent-preference": seedUserAgentPreferenceForAction,
   "seed-agent-run-callback": seedAgentRunCallbackForAction,
   "seed-post-fixture": seedTelegramPostFixtureForAction,
   "delete-post-fixture": deleteTelegramPostFixtureForAction,

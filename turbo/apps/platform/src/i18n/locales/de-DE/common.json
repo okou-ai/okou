@@ -3970,7 +3970,6 @@
         "addDescription": "Führen Sie jeden BotFather-Schritt aus und erstellen Sie dann den Arbeitsbereichs-Bot.",
         "adding": "Hinzufügen...",
         "addTitle": "Telegram-Bot hinzufügen",
-        "agentAria": "Standardagent für {{bot}}",
         "backToIntegrations": "Zurück zu Integrationen",
         "botFallback": "Telegram-Bot",
         "bots": "Telegram-Bots",
@@ -4018,7 +4017,6 @@
         "reinstalling": "Neuinstallation...",
         "reinstallTargetFallback": "dieser Bot",
         "reinstallTitle": "Installieren Sie den Telegram-Bot neu",
-        "selectAgent": "Wählen Sie einen Agenten aus",
         "steps": {
           "back": "Zurück",
           "create": "Erstellen",
@@ -4054,12 +4052,10 @@
         "teamsInstalled": "Microsoft Teams erfolgreich installiert",
         "teamsUninstalled": "Microsoft Teams-Integration deinstalliert",
         "teamsUpdated": "Microsoft Teams aktualisiert",
-        "telegramAgentUpdated": "Standardagent aktualisiert",
         "telegramBotAdded": "Telegram-Bot hinzugefügt",
         "telegramBotReinstalled": "Telegram-Bot neu installiert",
         "telegramBotUninstalled": "Telegram-Bot deinstalliert",
-        "telegramDisconnected": "Telegram-Konto getrennt",
-        "telegramUpdatingAgent": "Standardagent wird aktualisiert..."
+        "telegramDisconnected": "Telegram-Konto getrennt"
       },
       "works": {
         "connected": "Verbunden",

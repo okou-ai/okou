@@ -14,7 +14,6 @@ import {
 } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
-import { integrationsTelegramBotIdRoutes } from "./integrations-telegram-bot-id";
 import { integrationsTelegramLinkRoutes } from "./integrations-telegram-link";
 import {
   buildFileDownloadUrl,
@@ -438,7 +437,6 @@ const getIntegrationTelegramAuthCallback$ = computed((get): Response => {
 
 export const integrationsTelegramRoutes: readonly RouteEntry[] = [
   ...integrationsTelegramLinkRoutes,
-  ...integrationsTelegramBotIdRoutes,
   {
     route: integrationsTelegramContract.list,
     handler: authRoute(telegramReadAuth, getIntegrationTelegramListInner$),

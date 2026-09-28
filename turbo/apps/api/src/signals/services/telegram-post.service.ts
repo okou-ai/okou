@@ -24,7 +24,6 @@ import {
 } from "@okouai/db/schema/telegram-message";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserAgentPreferences } from "@okouai/db/schema/telegram-user-agent-preference";
 import { and, desc, eq, like, or } from "drizzle-orm";
 import {
   INTEGRATION_DM_SESSION_PREFIX,
@@ -1655,33 +1654,6 @@ async function resolveOfficialComposeId(
   db: Db,
   userLink: OfficialTelegramUserLink,
 ): Promise<string | null> {
-  const [preference] = await db
-    .select({
-      selectedAgentId: telegramUserAgentPreferences.selectedAgentId,
-    })
-    .from(telegramUserAgentPreferences)
-    .where(
-      and(
-        eq(telegramUserAgentPreferences.userId, userLink.userId),
-        eq(telegramUserAgentPreferences.orgId, userLink.orgId),
-      ),
-    )
-    .limit(1);
-  if (preference?.selectedAgentId) {
-    const [agent] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, preference.selectedAgentId),
-          eq(agents.orgId, userLink.orgId),
-        ),
-      )
-      .limit(1);
-    if (agent) {
-      return agent.id;
-    }
-  }
   const [metadata] = await db
     .select({ defaultAgentId: orgMetadata.defaultAgentId })
     .from(orgMetadata)

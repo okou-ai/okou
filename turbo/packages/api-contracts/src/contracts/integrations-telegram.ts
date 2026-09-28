@@ -49,11 +49,6 @@ const telegramListResponseSchema = z.object({
   bots: z.array(telegramBotSchema),
 });
 
-const telegramUpdateBodySchema = z.object({
-  defaultAgentId: z.string().trim().min(1).optional(),
-  selectedAgentId: z.string().trim().min(1).nullable().optional(),
-});
-
 const telegramLinkStatusResponseSchema = z.discriminatedUnion("linked", [
   z.object({
     linked: z.literal(true),
@@ -122,21 +117,6 @@ export const integrationsTelegramContract = c.router({
       401: apiErrorSchema,
     },
     summary: "List Telegram bot integrations in the authenticated user's org",
-  },
-  updateBot: {
-    method: "PATCH",
-    path: "/api/integrations/telegram/:botId",
-    headers: authHeadersSchema,
-    pathParams: z.object({ botId: z.string().min(1) }),
-    body: telegramUpdateBodySchema,
-    responses: {
-      200: telegramBotStatusSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Update the default agent for the Telegram bot",
   },
   unlink: {
     method: "DELETE",

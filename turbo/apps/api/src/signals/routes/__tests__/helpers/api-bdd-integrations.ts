@@ -163,11 +163,6 @@ interface TelegramLinkBody {
   readonly connectSignature?: TelegramConnectSignaturePayload;
 }
 
-interface TelegramUpdateBody {
-  readonly defaultAgentId?: string;
-  readonly selectedAgentId?: string | null;
-}
-
 interface SlackConnectBody {
   readonly workspaceId: string;
   readonly slackUserId: string;
@@ -1505,26 +1500,6 @@ export function createBddIntegrationApi(context: TestContext) {
         client.unlink({
           headers: authenticate(context, routeMocks, actor),
           query: { botId },
-        }),
-        statuses,
-      );
-    },
-
-    async requestUpdateTelegramBot(
-      actor: ApiTestUser | null,
-      botId: string,
-      body: TelegramUpdateBody,
-      statuses: readonly (200 | 400 | 401 | 403 | 404)[],
-    ) {
-      const client = setupApp({
-        context,
-        routes: integrationsTelegramRoutes,
-      })(integrationsTelegramContract);
-      return await accept(
-        client.updateBot({
-          headers: authenticate(context, routeMocks, actor),
-          params: { botId },
-          body,
         }),
         statuses,
       );

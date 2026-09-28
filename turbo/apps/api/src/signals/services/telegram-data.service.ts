@@ -8,7 +8,6 @@ import type {
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserAgentPreferences } from "@okouai/db/schema/telegram-user-agent-preference";
 import { and, eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
@@ -77,28 +76,6 @@ function getOrgAgent(args: {
   });
 }
 
-function userAgentPreference(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<string | null>> {
-  return computed(async (get) => {
-    const db = get(db$);
-    const [row] = await db
-      .select({
-        selectedAgentId: telegramUserAgentPreferences.selectedAgentId,
-      })
-      .from(telegramUserAgentPreferences)
-      .where(
-        and(
-          eq(telegramUserAgentPreferences.userId, args.userId),
-          eq(telegramUserAgentPreferences.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-    return row?.selectedAgentId ?? null;
-  });
-}
-
 function defaultAgentId(args: {
   readonly orgId: string;
 }): Computed<Promise<string | null>> {
@@ -123,15 +100,6 @@ function officialCompose(args: {
   }>
 > {
   return computed(async (get) => {
-    const selectedId = await get(userAgentPreference(args));
-    if (selectedId) {
-      const selected = await get(
-        getOrgAgent({ agentId: selectedId, orgId: args.orgId }),
-      );
-      if (selected) {
-        return { agent: selected, usesDefaultAgent: false };
-      }
-    }
     const defaultId = await get(defaultAgentId({ orgId: args.orgId }));
     if (!defaultId) {
       return { agent: null, usesDefaultAgent: true };

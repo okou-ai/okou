@@ -4029,7 +4029,6 @@
         "addDescription": "Completa cada paso de BotFather y luego crea el bot de espacio de trabajo.",
         "adding": "Añadiendo...",
         "addTitle": "Añadir bot de Telegram",
-        "agentAria": "Agente predeterminado para {{bot}}",
         "backToIntegrations": "Volver a las integraciones",
         "botFallback": "Bot de Telegram",
         "bots": "Bots de Telegram",
@@ -4077,7 +4076,6 @@
         "reinstalling": "Reinstalando...",
         "reinstallTargetFallback": "Este bot",
         "reinstallTitle": "Reinstalar Telegram bot",
-        "selectAgent": "Seleccionar agente",
         "steps": {
           "back": "Volver",
           "create": "Crear",
@@ -4113,12 +4111,10 @@
         "teamsInstalled": "Microsoft Teams instalado con éxito",
         "teamsUninstalled": "Integración de Microsoft Teams desinstalada",
         "teamsUpdated": "Microsoft Teams actualizado",
-        "telegramAgentUpdated": "Agente predeterminado actualizado",
         "telegramBotAdded": "Bot de Telegram añadido",
         "telegramBotReinstalled": "Bot de Telegram reinstalado",
         "telegramBotUninstalled": "Bot de Telegram desinstalado",
-        "telegramDisconnected": "Cuenta de Telegram desconectada",
-        "telegramUpdatingAgent": "Actualizando agente por defecto..."
+        "telegramDisconnected": "Cuenta de Telegram desconectada"
       },
       "works": {
         "connected": "Conectado",

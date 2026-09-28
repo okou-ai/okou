@@ -13,7 +13,6 @@ export const testTelegramStateActionBodySchema = z
     action: z.enum([
       "seed-org-default-agent",
       "seed-official-user-link",
-      "seed-user-agent-preference",
       "seed-agent-run-callback",
       "seed-post-fixture",
       "delete-post-fixture",

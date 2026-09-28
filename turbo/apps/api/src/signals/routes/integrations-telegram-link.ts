@@ -8,7 +8,6 @@ import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserAgentPreferences } from "@okouai/db/schema/telegram-user-agent-preference";
 import type { z } from "zod";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -177,33 +176,6 @@ async function resolveOfficialConnectComposeId(
   db: Db,
   auth: OrganizationAuth,
 ): Promise<string | null> {
-  const [preference] = await db
-    .select({
-      selectedAgentId: telegramUserAgentPreferences.selectedAgentId,
-    })
-    .from(telegramUserAgentPreferences)
-    .where(
-      and(
-        eq(telegramUserAgentPreferences.userId, auth.userId),
-        eq(telegramUserAgentPreferences.orgId, auth.orgId),
-      ),
-    )
-    .limit(1);
-
-  const preferredComposeId = preference?.selectedAgentId ?? null;
-  if (preferredComposeId) {
-    const [compose] = await db
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(eq(agents.id, preferredComposeId), eq(agents.orgId, auth.orgId)),
-      )
-      .limit(1);
-    if (compose) {
-      return compose.id;
-    }
-  }
-
   const [metadata] = await db
     .select({ defaultAgentId: orgMetadata.defaultAgentId })
     .from(orgMetadata)

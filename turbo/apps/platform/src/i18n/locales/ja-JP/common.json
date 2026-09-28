@@ -3953,7 +3953,6 @@
         "addDescription": "BotFather の各手順を完了してから、ワークスペース ボットを作成します。",
         "adding": "追加中...",
         "addTitle": "Telegram ボットを追加",
-        "agentAria": "{{bot}} のデフォルト エージェント",
         "backToIntegrations": "統合に戻る",
         "botFallback": "Telegram ボット",
         "bots": "Telegram ボット",
@@ -4001,7 +4000,6 @@
         "reinstalling": "再インストール中...",
         "reinstallTargetFallback": "このボット",
         "reinstallTitle": "Telegram ボットを再インストールします",
-        "selectAgent": "エージェントの選択",
         "steps": {
           "back": "戻る",
           "create": "作成",
@@ -4037,12 +4035,10 @@
         "teamsInstalled": "Microsoft Teams は正常にインストールされました",
         "teamsUninstalled": "Microsoft Teams 統合がアンインストールされました",
         "teamsUpdated": "Microsoft Teams が更新されました",
-        "telegramAgentUpdated": "デフォルトエージェントが更新されました",
         "telegramBotAdded": "Telegram ボットが追加されました",
         "telegramBotReinstalled": "Telegram ボットが再インストールされました",
         "telegramBotUninstalled": "Telegram ボットがアンインストールされました",
-        "telegramDisconnected": "Telegram アカウントが切断されました",
-        "telegramUpdatingAgent": "デフォルトのエージェントを更新しています..."
+        "telegramDisconnected": "Telegram アカウントが切断されました"
       },
       "works": {
         "connected": "接続済み",
