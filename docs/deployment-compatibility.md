@@ -5,8 +5,10 @@
 The API already presigns hosted-site and Browser PUTs with a required
 `x-amz-checksum-sha256` request header. The Browser sends it; the current CLI
 fix also sends the Base64 encoding of each scanned file's SHA-256, including
-synthetic `robots.txt`. The host API does not download and rehash published
-files: R2 must reject a PUT whose body differs from its signed checksum header.
+synthetic `robots.txt`. For checksum-bound PUTs, the API also signs the declared
+`Content-Type`: a previously valid URL cannot change that media type on replay.
+The host API does not download and rehash published files: R2 must reject a
+PUT whose body differs from its signed checksum header.
 Verify that property against real development R2 with matching and altered
 synthetic bytes before treating the fix as release-ready. The previous
 query-only workaround failed this integrity check and must not be used.
@@ -14,7 +16,9 @@ query-only workaround failed this integrity check and must not be used.
 An old `okou host` binary that omits the header will continue to receive a
 signature error from the header-bound API. This release assumes workflows use
 the newest CLI; confirm the CLI version in each publishing environment before
-expecting hosted-site uploads to recover. The change does not alter Browser's
+expecting hosted-site uploads to recover. These signed headers constrain bytes
+and media type, not every possible object metadata header or same-byte replay;
+full object immutability is not claimed. The change does not alter Browser's
 prepare response, apply-time R2 readback, feature switch, or production CORS.
 
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)

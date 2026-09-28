@@ -1009,6 +1009,10 @@ function generatePresignedPutUrlWithClient(
     });
     return getSignedUrl(client, command, {
       expiresIn: options.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
+      // A replay with identical bytes must not replace the declared media type.
+      ...(options.checksumSha256
+        ? { signableHeaders: new Set(["content-type"]) }
+        : {}),
       ...(metadataHeaders || options.checksumSha256
         ? {
             unhoistableHeaders: new Set([
@@ -1034,8 +1038,8 @@ export function generateHostedSitesPresignedPutUrl(
       bucket,
       key,
       contentType,
-      // The checksum is signed as a required PUT header, binding retries to
-      // the declared bytes when R2 validates the received body checksum.
+      // The checksum and media type are signed as required PUT headers;
+      // R2 rejects a body that does not match its signed checksum.
       checksumSha256: Buffer.from(sha256, "hex").toString("base64"),
     },
   );

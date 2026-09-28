@@ -64,9 +64,11 @@ test.each([true, false])(
       });
       const signed = await realSignedPutUrl(signing);
       expect(signed.searchParams.has("x-amz-checksum-sha256")).toBeFalsy();
-      expect(
-        signed.searchParams.get("X-Amz-SignedHeaders")?.split(";"),
-      ).toContain("x-amz-checksum-sha256");
+      const signedHeaders = signed.searchParams
+        .get("X-Amz-SignedHeaders")
+        ?.split(";");
+      expect(signedHeaders).toContain("x-amz-checksum-sha256");
+      expect(signedHeaders).toContain("content-type");
     }
 
     await api.completeHostedSite(actor, draft.deploymentId);
