@@ -1918,11 +1918,22 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await runs.heartbeatRunner(runnerGroup);
     const borrowIdle = await runs.pollRunner(runnerGroup);
     expect(borrowIdle.body.job).toBeNull();
-    const borrowedEvent = await findAgentphoneChatEventByPromptFixture({
-      userId: actor.userId,
-      prompt: "@Okou run this on the owner's account",
-    });
-    expect(borrowedEvent).toBeNull();
+    const ownerGroupEvents = await createChatFilesBddApi(
+      context,
+    ).listThreadEvents(actor, groupThreadId);
+    expect(
+      ownerGroupEvents.events.some((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.userMessage.parts.some((part) => {
+            return (
+              part.type === "text" &&
+              part.text === "@Okou run this on the owner's account"
+            );
+          })
+        );
+      }),
+    ).toBeFalsy();
 
     // The linked sender can still run account commands in the group.
     const beforeSessionReset = sends.messages.length;
