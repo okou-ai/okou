@@ -6,6 +6,7 @@ import {
   browserUserActionApplyRequestSchema,
   browserUserActionCreateRequestSchema,
   browserUserActionResponseSchema,
+  browserUserActionsContract,
 } from "./browser-user-actions";
 
 const uuid = (digit: string) => {
@@ -219,6 +220,29 @@ describe("Browser user-action contracts", () => {
           .success,
       ).toBe(false);
     }
+  });
+
+  it("accepts checksum-free Browser file prepare and only the legacy signed header", () => {
+    const endpoint = browserUserActionsContract.prepareFileUpload;
+    const input = { key: "document", index: 0, size: 4 };
+    expect(endpoint.body.safeParse(input).success).toBe(true);
+    expect(
+      endpoint.body.safeParse({ ...input, sha256: "a".repeat(64) }).success,
+    ).toBe(true);
+    const output = { uploadUrl: "https://uploads.example.test/file" };
+    expect(endpoint.responses[200].safeParse(output).success).toBe(true);
+    expect(
+      endpoint.responses[200].safeParse({
+        ...output,
+        uploadHeaders: { "x-amz-checksum-sha256": "legacy" },
+      }).success,
+    ).toBe(true);
+    expect(
+      endpoint.responses[200].safeParse({
+        ...output,
+        uploadHeaders: { "x-unexpected": "extra" },
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts a bounded radio index including explicit clear and rejects ambiguous scalar values", () => {

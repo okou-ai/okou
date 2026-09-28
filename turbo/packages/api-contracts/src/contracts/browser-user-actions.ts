@@ -525,8 +525,11 @@ export const browserUserActionsContract = c.router({
       200: z
         .object({
           uploadUrl: z.url(),
-          // Mixed-version APIs may still return headers; the new API does not.
-          uploadHeaders: z.record(z.string(), z.string()).optional(),
+          // Mixed-version APIs may still return the old required header.
+          uploadHeaders: z
+            .object({ "x-amz-checksum-sha256": z.string() })
+            .strict()
+            .optional(),
         })
         .strict(),
       ...commonErrors,

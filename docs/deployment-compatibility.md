@@ -153,8 +153,10 @@ original `Content-Type` header; no host prepare/complete workflow changes. The
 same removal also applies to Discord canonical PUTs. This deliberately drops
 R2 enforcement of the client-declared byte hash. A holder of a hosted or
 Discord PUT URL can replace its object with different bytes while that URL is
-valid (the host URL expires after 48 hours). The client-provided SHA-256 and
-host manifest are not trusted proof of the originally intended bytes. Host
+valid (the host URL expires after 48 hours). The request's `Content-Type` is
+also not signed, so a replay can change the object's media type. The
+client-provided SHA-256 and host manifest are not trusted proof of the
+originally intended bytes. Host
 manifests still carry `immutableContent: true` for their existing serving and
 cache policy; that marker must **not** be interpreted as an R2 overwrite
 barrier. Treat replay-versus-cache consistency as an accepted limitation until

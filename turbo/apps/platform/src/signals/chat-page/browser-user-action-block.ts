@@ -1131,7 +1131,7 @@ async function uploadBrowserInputFile(
   index: number,
   prepare: (body: BrowserUserActionPrepareFileUploadRequest) => Promise<{
     readonly uploadUrl: string;
-    readonly uploadHeaders?: Readonly<Record<string, string>>;
+    readonly uploadHeaders?: { readonly "x-amz-checksum-sha256": string };
   }>,
   signal: AbortSignal,
 ): Promise<void> {
