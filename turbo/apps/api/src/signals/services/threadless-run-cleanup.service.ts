@@ -2,7 +2,6 @@ import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/cont
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
@@ -12,12 +11,10 @@ import {
   eq,
   exists,
   gte,
-  gt,
   inArray,
   isNotNull,
   isNull,
   ne,
-  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -29,16 +26,8 @@ import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread } from "./agent-
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
 import { cancelRun$, dispatchCancelSideEffects$ } from "./run-cancel.service";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
-import {
-  activePiMemoryPhase2MaintenanceRunCondition,
-  lockPiMemoryPhase2MaintenanceCleanupProtection,
-} from "./pi-memory-phase2-maintenance.service";
-import {
-  loadPiMemoryPhase2UsageBinding,
-  piMemoryPhase2ProviderCondition,
-  PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
-  PI_MEMORY_PHASE2_MODELS,
-} from "./pi-memory-phase2-usage.service";
+import { lockDeletionProtection } from "./threadless-run-protection.service";
+import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 
 import {
   deleteLockedRuns,
@@ -123,9 +112,6 @@ async function loadThreadlessRunCandidates(
   currentTime: Date,
 ): Promise<readonly ThreadlessRunCandidate[]> {
   const forwardCutoff = new Date(THREADLESS_RUN_FORWARD_CUTOFF_ISO);
-  const usageQuietBefore = new Date(
-    currentTime.getTime() - PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
-  );
   return await db
     .select({
       runId: agentRuns.id,
@@ -146,45 +132,9 @@ async function loadThreadlessRunCandidates(
           ...ACTIVE_RUN_STATUSES,
           ...TERMINAL_RUN_STATUSES,
         ]),
-        notExists(
-          db
-            .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
-            .from(piMemoryPhase2Jobs)
-            .where(
-              activePiMemoryPhase2MaintenanceRunCondition(db, {
-                runId: agentRuns.id,
-                orgId: agentRuns.orgId,
-                userId: agentRuns.userId,
-                currentTime,
-              }),
-            ),
-        ),
-        // Do not let retained private billing contexts occupy the bounded
-        // sweep and starve ordinary threadless cleanup. Revalidate under lock.
-        notExists(
-          db
-            .select({ id: agentRunCallbacks.id })
-            .from(agentRunCallbacks)
-            .where(
-              and(
-                eq(agentRunCallbacks.runId, agentRuns.id),
-                eq(agentRunCallbacks.internalKind, "pi-memory:phase2"),
-                eq(
-                  sql`${agentRunCallbacks.payload}->>'orgId'`,
-                  agentRuns.orgId,
-                ),
-                eq(
-                  sql`${agentRunCallbacks.payload}->>'userId'`,
-                  agentRuns.userId,
-                ),
-                eq(agentRuns.triggerSource, "agent"),
-                piMemoryPhase2ProviderCondition(),
-                inArray(agentRuns.selectedModel, [...PI_MEMORY_PHASE2_MODELS]),
-                eq(sql`${agentRuns.launchSnapshot}->>'framework'`, "pi"),
-                gt(agentRuns.completedAt, usageQuietBefore),
-              ),
-            ),
-        ),
+        ...THREADLESS_RUN_PROTECTIONS.flatMap((protection) => {
+          return protection.sweepEligibility(db, { currentTime });
+        }),
         runIds === null ? undefined : inArray(agentRuns.id, runIds),
         or(
           gte(agentRuns.createdAt, forwardCutoff),
@@ -307,19 +257,12 @@ async function deleteIfStillEligible(
     }
 
     if (
-      await lockPiMemoryPhase2MaintenanceCleanupProtection(tx, {
+      await lockDeletionProtection(THREADLESS_RUN_PROTECTIONS, tx, {
         runId: candidate.runId,
         orgId: candidate.orgId,
         userId: candidate.userId,
+        completedAt: current.completedAt,
       })
-    ) {
-      return null;
-    }
-
-    if (
-      current.completedAt.getTime() >
-        nowDate().getTime() - PI_MEMORY_PHASE2_USAGE_DRAIN_MS &&
-      (await loadPiMemoryPhase2UsageBinding(tx, candidate))
     ) {
       return null;
     }
@@ -422,7 +365,7 @@ export const cleanupThreadlessRuns$ = command(
                 orgId: candidate.orgId,
                 runnerCancellationMode: "hard",
                 preserveExistingCancellation: true,
-                protectActivePiMemoryPhase2Maintenance: true,
+                protectThreadlessRuns: true,
               },
               signal,
             );

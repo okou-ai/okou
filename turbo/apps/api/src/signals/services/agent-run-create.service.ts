@@ -14,7 +14,6 @@ import {
   type StorageManifestSource,
   resolveCapturedAgentRunStorage,
 } from "./agent-run-storage.service";
-import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import { observePreparedLaunchPersistenceForTest } from "./prepared-launch-persistence-observer.service";
 import {
@@ -7505,6 +7504,8 @@ interface PreparePiLaunchResourcesArgs {
   readonly piSandbox: PiModelConfig | undefined;
   readonly chatThreadId: string | undefined;
   readonly timing: ApiDispatchTimingCollector;
+  /** Continue a thread: resolve its resume session and memory recall. */
+  readonly continueThreadContext: boolean;
   readonly maintenance: PiMemoryPhase2Maintenance | undefined;
 }
 
@@ -7516,10 +7517,11 @@ function preparePiLaunchResources(
     if (args.piSandbox === undefined) {
       return undefined;
     }
-    if (args.chatThreadId === undefined && args.maintenance === undefined) {
+    if (args.chatThreadId === undefined && args.continueThreadContext) {
       throw new Error("Pi sandbox execution requires a chat thread");
     }
     const piSandbox = args.piSandbox;
+    const threadless = !args.continueThreadContext;
     const sessionId = args.chatThreadId ?? args.runId;
     const observe = piPreparationObserver(args.runId);
     const finish = startPiPreparationObservation(observe, "launch", signal);
@@ -7529,7 +7531,7 @@ function preparePiLaunchResources(
         "api_dispatch_prepare_pi_launch_resources",
         "nested",
         async () => {
-          const resumeSessionPromise = args.maintenance
+          const resumeSessionPromise = threadless
             ? Promise.resolve(undefined)
             : measureApiDispatchTiming(
                 args.timing,
@@ -7555,7 +7557,7 @@ function preparePiLaunchResources(
             // overlay order are final before recall can observe this attempt.
             const { metadata } = await args.storagePlan;
             signal.throwIfAborted();
-            const memoryRecall = args.maintenance
+            const memoryRecall = threadless
               ? undefined
               : await measurePiPreparation(
                   observe,
@@ -7871,6 +7873,8 @@ function buildRunnerJobPayload(
               previousRunStorageMounts: args.resolved.previousRunStorageMounts,
               piSandbox: args.piSandbox,
               chatThreadId: args.chatThreadId,
+              continueThreadContext:
+                args.piMemoryPhase2Maintenance === undefined,
               maintenance: args.piMemoryPhase2Maintenance,
               timing: args.timing,
             },
@@ -8901,17 +8905,6 @@ async function finishAdmittedLaunch(
   args: PreparedCommitPreparedLaunchArgs,
   run: RunRecord,
 ): Promise<void> {
-  await args.admissionTiming.measureLeaf("pi_memory_schedule", () => {
-    return requestPiMemoryStage1Day(tx, {
-      ...run,
-      userId: args.createArgs.userId,
-      orgId: args.createArgs.orgId,
-      chatThreadId: args.createArgs.chatThreadId ?? null,
-      triggerSource: args.context.body.triggerSource,
-      launchSnapshot: args.context.launchSnapshot,
-      completedAt: null,
-    });
-  });
   // The unique chat_thread_id row is the thread's active-run lock. A conflict
   // means another run owns the thread, so this launch loses its queue claim.
   const inserted = await tx

@@ -41,6 +41,7 @@ import {
   type AgentRunModelPin,
 } from "./agent-run-create.service";
 import { buildAgentExecutionConfig } from "./agent-execution-config";
+import { requestPiMemoryStage1DayForAdmittedRun } from "./pi-memory-stage1-schedule.service";
 import {
   resolveChatThreadSession,
   type ChatThreadSessionResolution,
@@ -1094,7 +1095,13 @@ function buildCreateAgentRunArgs(
       reasoningEffort: command.reasoningEffort,
     },
     dispatchFailedCallbacks: command.dispatchFailedCallbacks,
-    persistProducerRunBinding: command.persistProducerRunBinding,
+    persistProducerRunBinding: async (tx, run) => {
+      await command.persistProducerRunBinding?.(tx, run);
+      // Pi memory Stage 1 is owned by chat-thread launches, not the run core.
+      if (run.status === "pending" && command.chatThreadId) {
+        await requestPiMemoryStage1DayForAdmittedRun(tx, run.runId);
+      }
+    },
     ...(command.agentRunModelPin
       ? { agentRunModelPin: command.agentRunModelPin }
       : {}),

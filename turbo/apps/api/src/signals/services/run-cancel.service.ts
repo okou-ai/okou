@@ -24,7 +24,8 @@ import {
   releaseRunSlots,
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
-import { lockPiMemoryPhase2MaintenanceCleanupProtection } from "./pi-memory-phase2-maintenance.service";
+import { lockCancellationProtection } from "./threadless-run-protection.service";
+import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 
 const L = logger("RunCancel");
 
@@ -78,8 +79,8 @@ export const cancelRun$ = command(
       /** Cleanup retries must not turn an already-cancelled Run into a new hard request. */
       readonly preserveExistingCancellation?: true;
       readonly apiStartTime?: number;
-      /** Keep exact live Phase 2 maintenance leases out of generic cleanup. */
-      readonly protectActivePiMemoryPhase2Maintenance?: true;
+      /** Keep Runs claimed by a registered threadless-run protection out of generic cleanup. */
+      readonly protectThreadlessRuns?: true;
     },
     signal: AbortSignal,
   ): Promise<
@@ -152,18 +153,17 @@ export const cancelRun$ = command(
         );
       }
 
-      if (args.protectActivePiMemoryPhase2Maintenance) {
-        const protectedByMaintenance =
-          await lockPiMemoryPhase2MaintenanceCleanupProtection(tx, {
-            runId: run.id,
-            orgId: run.orgId,
-            userId: run.userId,
-          });
-        if (protectedByMaintenance) {
-          return runNotCancellable(
-            "Run cannot be cancelled while Phase 2 maintenance is active",
-          );
-        }
+      if (
+        args.protectThreadlessRuns &&
+        (await lockCancellationProtection(THREADLESS_RUN_PROTECTIONS, tx, {
+          runId: run.id,
+          orgId: run.orgId,
+          userId: run.userId,
+        }))
+      ) {
+        return runNotCancellable(
+          "Run cannot be cancelled while its owner protects it",
+        );
       }
 
       // Persist exactly the effective mode that the Runner notification carries.
