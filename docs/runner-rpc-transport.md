@@ -6,6 +6,11 @@ consumer is the [Runner SSH dispatcher](runner-ssh-execution.md), installed by
 `crates/runner-remote/src/guest_rpc`; SSH owns only its business handlers and run-local
 authority/session state. The generic transport itself has no API
 calls or business validators. Local/mock sandbox providers expose no capability.
+The private [run-scoped Guest duplex](runner-guest-duplex.md) now shares the
+**physical 52001 ingress** but not this one-shot RPC protocol: a reserved `0xff`
+connection preface selects the separate logical duplex consumer. A valid legacy
+RPC frame is forwarded byte-for-byte; neither consumer can claim the other's
+connections. Idle duplex candidates hold no park reservation.
 The [SSH CLI and owner/Agent UI](ssh-access.md) are delivered. SSH is generally
 available but still requires current API authority; the transport itself does
 not grant SSH access.

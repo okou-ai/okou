@@ -7,8 +7,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use guest_contracts::private_duplex::{ACTIVATE, MAX_FRAME_BYTES, MAX_STREAMS_PER_RUN, VSOCK_PORT};
+use guest_contracts::private_duplex::{
+    ACTIVATE, MAX_FRAME_BYTES, MAX_STREAMS_PER_RUN, PREFACE, READY, VSOCK_PORT,
+};
 const RETRY: Duration = Duration::from_millis(100);
+// An older Runner may bind 52001 without a Guest RPC consumer. Never leave
+// the only pending Guest worker waiting indefinitely for its activation.
+const INGRESS_WAIT: Duration = Duration::from_secs(5);
 
 struct WorkerCount(Arc<AtomicUsize>);
 impl Drop for WorkerCount {
@@ -28,8 +33,7 @@ pub(crate) fn run() {
         }
         match super::connection::connect_vsock_port(VSOCK_PORT) {
             Ok(mut stream) => {
-                let mut activation = [0u8; 1];
-                if stream.read_exact(&mut activation).is_err() || activation[0] != ACTIVATE {
+                if await_activation(&mut stream, INGRESS_WAIT).is_err() {
                     std::thread::sleep(RETRY);
                     continue;
                 }
@@ -50,6 +54,30 @@ pub(crate) fn run() {
             Err(_) => std::thread::sleep(RETRY),
         }
     }
+}
+
+fn await_activation(stream: &mut UnixStream, ingress_wait: Duration) -> io::Result<()> {
+    stream.set_read_timeout(Some(ingress_wait))?;
+    stream.write_all(&[PREFACE])?;
+    let mut marker = [0];
+    stream.read_exact(&mut marker)?;
+    if marker != [READY] {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "duplex ingress not recognized",
+        ));
+    }
+    // READY is not authority. The acknowledged idle connection waits for
+    // exact-run activation without churning through the single pending slot.
+    stream.set_read_timeout(None)?;
+    stream.read_exact(&mut marker)?;
+    if marker != [ACTIVATE] {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "duplex not activated",
+        ));
+    }
+    Ok(())
 }
 
 /// Finite frame buffer and per-direction ordered, backpressured echo. EOF of
@@ -81,6 +109,35 @@ pub(crate) fn serve_echo(mut stream: UnixStream) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_ingress_acknowledges_before_assignment_activation() {
+        let (mut guest, mut host) = UnixStream::pair().unwrap();
+        let worker = std::thread::spawn(move || {
+            await_activation(&mut guest, Duration::from_millis(100)).unwrap();
+            guest
+        });
+        let mut preface = [0];
+        host.read_exact(&mut preface).unwrap();
+        assert_eq!(preface, [PREFACE]);
+        host.write_all(&[READY]).unwrap();
+        host.write_all(&[ACTIVATE]).unwrap();
+        let _activated = worker.join().unwrap();
+    }
+
+    #[test]
+    fn old_host_without_ingress_ack_times_out_without_activation() {
+        let (mut guest, mut old_host) = UnixStream::pair().unwrap();
+        let worker =
+            std::thread::spawn(move || await_activation(&mut guest, Duration::from_millis(20)));
+        let mut preface = [0];
+        old_host.read_exact(&mut preface).unwrap();
+        assert_eq!(preface, [PREFACE]);
+        assert!(matches!(
+            worker.join().unwrap().unwrap_err().kind(),
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+        ));
+    }
+
     #[test]
     fn echo_preserves_order_and_half_close() {
         let (mut host, guest) = UnixStream::pair().unwrap();

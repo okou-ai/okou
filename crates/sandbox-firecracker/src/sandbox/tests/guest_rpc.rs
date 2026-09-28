@@ -96,9 +96,10 @@ async fn sandbox_park_and_final_exec_park_cannot_cross_an_accepted_guest_rpc_req
         sandbox.guest = guest;
         sandbox.park_coordinator.bind_run_control("run-a").unwrap();
         sandbox.guest_rpc_endpoint = Some(sandbox.bind_guest_rpc_endpoint().unwrap());
-        let _rpc_peer = UnixStream::connect(sandbox.sock_paths.guest_rpc())
+        let mut rpc_peer = UnixStream::connect(sandbox.sock_paths.guest_rpc())
             .await
             .unwrap();
+        rpc_peer.write_all(&[0]).await.unwrap();
         let accepted = sandbox.guest_rpc("run-a").unwrap().accept().await.unwrap();
         let result = if final_exec {
             sandbox

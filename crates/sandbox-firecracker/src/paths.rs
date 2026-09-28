@@ -193,14 +193,6 @@ impl SockPaths {
             .join(format!("vsock.sock_{}", runner_rpc_proto::VSOCK_PORT))
     }
 
-    /// Dedicated private Guest duplex transport (no public sandbox port).
-    pub(crate) fn guest_duplex(&self) -> PathBuf {
-        self.vsock_dir().join(format!(
-            "vsock.sock_{}",
-            guest_contracts::private_duplex::VSOCK_PORT
-        ))
-    }
-
     /// Okou control server Unix-domain socket, `control.sock`.
     pub fn control_sock(&self) -> PathBuf {
         self.dir.join("control.sock")

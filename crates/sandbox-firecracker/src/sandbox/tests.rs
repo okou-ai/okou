@@ -200,7 +200,6 @@ fn test_sandbox_with_state(state: SandboxState) -> FirecrackerSandbox {
         park_outcome: None,
         park_fence: None,
         guest_rpc_endpoint: None,
-        guest_duplex_endpoint: None,
         runtime_cancel: CancellationToken::new(),
         host_cpu_cgroup: None,
     }

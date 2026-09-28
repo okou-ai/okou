@@ -7,7 +7,7 @@ struct Fixture {
     path: PathBuf,
     host: Arc<GuestControlClient>,
     _control_peer: UnixStream,
-    endpoint: Option<Endpoint>,
+    endpoint: Option<GuestRpcEndpoint>,
     state: Arc<AtomicU8>,
     guest: Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>,
     coordinator: ParkCoordinator,
@@ -77,8 +77,8 @@ impl Fixture {
         fixture.bind();
         fixture
     }
-    fn context(&self) -> ContextData {
-        ContextData {
+    fn context(&self) -> GuestRpcContext {
+        GuestRpcContext {
             sandbox_id: "sandbox-a".into(),
             state: Arc::clone(&self.state),
             guest: Arc::clone(&self.guest),
@@ -87,7 +87,7 @@ impl Fixture {
     }
     fn bind(&mut self) {
         self.endpoint = Some(
-            Endpoint::bind(
+            GuestRpcEndpoint::bind(
                 self.path.clone(),
                 self.context(),
                 self.runtime_cancel.clone(),
@@ -96,7 +96,15 @@ impl Fixture {
         );
     }
     fn acceptor(&self, run: &str) -> Arc<dyn GuestDuplexAcceptor> {
-        self.endpoint.as_ref().unwrap().acceptor(run)
+        self.endpoint.as_ref().unwrap().duplex_acceptor(run)
+    }
+    async fn connect(&self) -> UnixStream {
+        let mut stream = UnixStream::connect(&self.path).await.unwrap();
+        stream.write_all(&[PREFACE]).await.unwrap();
+        let mut ready = [0];
+        stream.read_exact(&mut ready).await.unwrap();
+        assert_eq!(ready, [READY]);
+        stream
     }
 }
 
@@ -112,7 +120,7 @@ async fn only_current_assignment_activates_private_guest_stream_and_reserves_par
         0o600
     );
     assert!(fixture.acceptor("other").accept().await.is_err());
-    let mut guest = UnixStream::connect(&fixture.path).await.unwrap();
+    let mut guest = fixture.connect().await;
     let mut accepted = fixture.acceptor("run-a").accept().await.unwrap();
     let mut marker = [0];
     guest.read_exact(&mut marker).await.unwrap();
@@ -137,13 +145,13 @@ async fn only_current_assignment_activates_private_guest_stream_and_reserves_par
 async fn attach_waiting_on_guest_control_is_bounded_without_activating_socket() {
     let fixture = Fixture::new().await;
     let locked = fixture.guest.lock().await;
-    let mut guest = UnixStream::connect(&fixture.path).await.unwrap();
+    let mut guest = fixture.connect().await;
     let error = fixture.acceptor("run-a").accept().await.err().unwrap();
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
     let mut activation = [0];
     assert_eq!(guest.read(&mut activation).await.unwrap(), 0);
     drop(locked);
-    let mut next = UnixStream::connect(&fixture.path).await.unwrap();
+    let mut next = fixture.connect().await;
     let accepted = fixture.acceptor("run-a").accept().await.unwrap();
     next.read_exact(&mut activation).await.unwrap();
     assert_eq!(activation, [1]);
@@ -154,7 +162,7 @@ async fn attach_waiting_on_guest_control_is_bounded_without_activating_socket() 
 async fn bind_collision_preserves_original_and_runtime_exit_unlinks() {
     let fixture = Fixture::new().await;
     assert!(
-        Endpoint::bind(
+        GuestRpcEndpoint::bind(
             fixture.path.clone(),
             fixture.context(),
             CancellationToken::new()
@@ -162,7 +170,7 @@ async fn bind_collision_preserves_original_and_runtime_exit_unlinks() {
         .is_err()
     );
     assert!(fixture.path.exists());
-    let mut guest = UnixStream::connect(&fixture.path).await.unwrap();
+    let mut guest = fixture.connect().await;
     let mut accepted = fixture.acceptor("run-a").accept().await.unwrap();
     guest.read_exact(&mut [0]).await.unwrap();
     let mut byte = [0];
@@ -214,7 +222,7 @@ async fn old_capability_cannot_follow_reused_sandbox_and_cancel_interrupts_io() 
     fixture.coordinator.reopen_after_unpark().unwrap();
     drop(fence);
     assert!(old.accept().await.is_err());
-    let mut guest = UnixStream::connect(&fixture.path).await.unwrap();
+    let mut guest = fixture.connect().await;
     let mut accepted = fixture.acceptor("run-b").accept().await.unwrap();
     guest.read_exact(&mut [0]).await.unwrap();
     let mut buffer = [0];
