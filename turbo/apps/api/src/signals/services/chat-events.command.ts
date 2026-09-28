@@ -93,6 +93,7 @@ import {
   canonicalChatEventError,
 } from "./canonical-chat-event-read.service";
 import { bestEffort, settle } from "../utils";
+import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
 
 type SendBody = z.infer<typeof chatEventsContract.send.body>;
 
@@ -115,6 +116,8 @@ interface NormalSendBody {
   readonly cloudBrowserEnabled?: boolean;
   readonly clientEventId?: string;
   readonly revokesEventId?: string;
+  /** Ask the input's run to capture network bodies; gated at run creation. */
+  readonly captureNetworkBodies?: boolean;
 }
 
 interface RecallSendBody {
@@ -1143,6 +1146,12 @@ async function appendNormalSendInput(
   }
   if (thread.kind === "existing") {
     await updateExistingSendThread(tx, args, thread);
+  }
+  if (args.body.captureNetworkBodies) {
+    await recordChatNetworkBodyCapture(tx, {
+      chatEventId: inserted.id,
+      chatThreadId: thread.threadId,
+    });
   }
   await updateUserModelPreference(tx, args, thread.runSettings);
   await registerCanonicalWebInputAssets(tx, {

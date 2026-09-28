@@ -239,6 +239,7 @@ import {
   userTemplateVolumes,
   type MountedUserTemplate,
 } from "./user-template-data.service";
+import { chatNetworkBodyCaptureRequested } from "./chat-network-body-capture.service";
 
 const log = logger("callback:chat");
 const RECENT_CHAT_RUN_LIMIT = 10;
@@ -641,6 +642,8 @@ interface CreateQueuedChatRunInput {
   } | null;
   readonly triggerSource: QueuedUserMessageTriggerSource;
   readonly realAgentInPreview?: boolean;
+  /** The send asked this input's run to capture network bodies. */
+  readonly captureNetworkBodies: boolean;
   readonly slackDelivery?: {
     readonly channelId: string;
     readonly threadTs: string;
@@ -908,6 +911,7 @@ function buildQueuedCreateAgentRunArgs(
           }
         : {}),
       ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
+      ...(input.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
       ...additionalVolumesForRun(input.presentationTemplateVolumes),
     },
   };
@@ -3223,6 +3227,10 @@ async function buildCreateQueuedChatRunInput(
     realAgentInPreview: isFeatureEnabled(
       FeatureSwitchKey.RealAgentInPreview,
       featureSwitchContext,
+    ),
+    captureNetworkBodies: await chatNetworkBodyCaptureRequested(
+      args.db,
+      args.queuedMessage.id,
     ),
     ...queuedIntegrationLaunchFields(launchMaterial),
     autonomyBudget: args.queuedMessage.autonomyBudget.autonomyBudget,

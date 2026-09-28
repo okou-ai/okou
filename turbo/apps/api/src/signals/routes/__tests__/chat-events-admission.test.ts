@@ -859,3 +859,26 @@ describe("CHAT-02: Okou Mail link delivery", () => {
     ]);
   });
 });
+
+describe("CHAT-02: network body capture", () => {
+  it("carries a send's network body capture into the run the pick launches", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+
+    const captured = await sendChatRun(actor, {
+      agentId,
+      prompt: "capture this run's network bodies",
+      captureNetworkBodies: true,
+    });
+    const capturedClaim = await claimChatRun(runnerGroup, captured.runId);
+    expect(capturedClaim.claim.captureNetworkBodies).toBeTruthy();
+    await cancelChatRun(actor, captured.runId, capturedClaim.sandboxHeaders);
+
+    const plain = await sendChatRun(actor, {
+      agentId,
+      prompt: "do not capture network bodies",
+    });
+    const plainClaim = await claimChatRun(runnerGroup, plain.runId);
+    expect(plainClaim.claim.captureNetworkBodies).toBeFalsy();
+    await cancelChatRun(actor, plain.runId, plainClaim.sandboxHeaders);
+  });
+});
