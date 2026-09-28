@@ -4214,7 +4214,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(continuationRun.result?.agentSessionId).toBe(gptSessionId);
   });
 
-  it("resolves a NULL Slack thread from canonical defaults without replaying its first run", async () => {
+  it("captures the organization default for a NULL Slack thread without changing its pin", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -4282,21 +4282,21 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const resolvedRunId = await pollSlackRun(runnerGroup);
     const resolvedClaim = await runs.claimRunnerJob(resolvedRunId);
-    expect(resolvedClaim.cliAgentType).toBe("codex");
+    expect(resolvedClaim.cliAgentType).toBe("claude-code");
     expect(resolvedClaim.environment).toMatchObject({
-      OPENAI_API_KEY: expect.stringMatching(/.+/),
-      OPENAI_MODEL: "gpt-6-astra",
+      ANTHROPIC_API_KEY: expect.stringMatching(/.+/),
+      ANTHROPIC_MODEL: "claude-fable-5-1",
     });
-    expect(resolvedClaim.environment).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(resolvedClaim.environment).not.toHaveProperty("OPENAI_API_KEY");
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
-    ).toBe("gpt-6-astra");
+    ).toBeNull();
 
     const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
     if (threadEvents.status !== 200) {
       throw new Error("Expected canonical Slack thread events to load");
     }
-    expect(threadEvents.body.events).toContainEqual(
+    expect(threadEvents.body.events).not.toContainEqual(
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId,

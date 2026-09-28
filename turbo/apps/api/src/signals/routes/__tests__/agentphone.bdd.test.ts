@@ -199,11 +199,12 @@ async function modelSessionScenario({
     expect(events.events).toContainEqual(
       expect.objectContaining({ eventType: "input.prompt", runId: run.runId }),
     );
-    expect(
-      (await chat.readThreadMetadata(actor, thread.chatThreadId)).selectedModel,
-    ).toBeNull();
+    const metadata = await chat.readThreadMetadata(actor, thread.chatThreadId);
     return {
       sessionId,
+      cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(run.runId),
+      resumedSessionId: run.resumedSessionId,
+      selectedModel: metadata.selectedModel,
       threadId: thread.chatThreadId,
       threadCount: threads.length,
       serviceTier: run.serviceTier,
@@ -1213,7 +1214,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   });
 
   describe.each(modelResumeScenarios)(
-    "switches $model within one $channel DM thread (conversation: $withConversation)",
+    "keeps the initial $model in one $channel DM thread (conversation: $withConversation)",
     (scenario) => {
       async function prepareScenario() {
         const { send, complete, sends } = await modelSessionScenario(scenario);
@@ -1223,7 +1224,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       beforeEach(async () => {
         preparedScenario = await prepareScenario();
       });
-      it("rotates native sessions while preserving the DM thread", async () => {
+      it("resumes the existing DM model when the user changes the default", async () => {
         const { send, sends, complete } = preparedScenario;
         if (scenario.model !== "claude-fable-5-1") {
           await send(`/model ${scenario.model}`);
@@ -1237,10 +1238,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         await send(`/model ${scenario.otherModel}`);
         expect(lastSend(sends).body).toContain("Switched to");
         const alternate = await complete(
-          "start the other model session",
-          scenario.otherModel,
+          "keep the existing model session",
+          scenario.model,
         );
-        expect(alternate.sessionId).not.toBe(original.sessionId);
+        expect(alternate.resumedSessionId).toBe(original.cliAgentSessionId);
+        expect(alternate.selectedModel).toBe(scenario.model);
         expect(alternate.threadId).toBe(original.threadId);
         expect(alternate.threadCount).toBe(1);
 
@@ -1249,8 +1251,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           "return to the selected model session",
           scenario.model,
         );
-        expect(returned.sessionId).not.toBe(original.sessionId);
-        expect(returned.sessionId).not.toBe(alternate.sessionId);
+        expect(returned.resumedSessionId).toBe(alternate.cliAgentSessionId);
+        expect(returned.selectedModel).toBe(scenario.model);
         expect(returned.threadId).toBe(original.threadId);
         expect(returned.threadCount).toBe(1);
       });
@@ -1276,10 +1278,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         await send("/model gpt-6-astra");
         expect(lastSend(sends).body).toContain("Switched to");
         const alternate = await complete(
-          "start the alternate model session",
-          "gpt-6-astra",
+          "keep the existing model after changing the default",
+          "claude-fable-5-1",
         );
-        expect(alternate.sessionId).not.toBe(original.sessionId);
+        expect(alternate.resumedSessionId).toBe(original.cliAgentSessionId);
+        expect(alternate.selectedModel).toBe("claude-fable-5-1");
         expect(alternate.threadId).toBe(original.threadId);
         expect(alternate.threadCount).toBe(1);
 
@@ -1289,7 +1292,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           "start again after resetting the DM",
           "gpt-6-astra",
         );
-        expect(reset.sessionId).not.toBe(alternate.sessionId);
+        expect(reset.resumedSessionId).toBeUndefined();
+        expect(reset.selectedModel).toBe("gpt-6-astra");
         expect(reset.threadId).not.toBe(alternate.threadId);
         expect(reset.threadCount).toBe(2);
         const history = await createChatFilesBddApi(context).listThreadEvents(
@@ -1310,9 +1314,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
-  it("uses the organization default when the saved web default becomes unavailable", async () => {
+  it("uses the organization default for input when the stored DM model becomes unavailable", async () => {
     const integrations = createBddIntegrationApi(context);
-    const { actor, complete } = await modelSessionScenario({
+    const { actor, complete, send } = await modelSessionScenario({
       channel: "sms",
       withConversation: false,
     });
@@ -1334,12 +1338,21 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       "claude-fable-5-1",
     );
     expect(available.threadId).toBe(preferred.threadId);
+    expect(available.selectedModel).toBe("gpt-6-astra");
     expect(available.threadCount).toBe(1);
+    await send("/new_session");
+    const fresh = await complete(
+      "start with the available workspace default",
+      "claude-fable-5-1",
+    );
+    expect(fresh.selectedModel).toBe("claude-fable-5-1");
+    expect(fresh.threadId).not.toBe(preferred.threadId);
+    expect(fresh.threadCount).toBe(2);
   });
 
-  it("reads the latest web service tier on each DM pick", async () => {
+  it("keeps the DM service tier captured when its thread was created", async () => {
     const integrations = createBddIntegrationApi(context);
-    const { actor, complete } = await modelSessionScenario({
+    const { actor, complete, send } = await modelSessionScenario({
       channel: "sms",
       withConversation: false,
     });
@@ -1352,10 +1365,18 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(fast.serviceTier).toBe("fast");
 
     await integrations.updateUserModelPreference(actor, "gpt-6-astra", null);
-    const standard = await complete("use standard service now", "gpt-6-astra");
-    expect(standard.serviceTier).toBeUndefined();
+    const standard = await complete(
+      "retain this thread's fast service",
+      "gpt-6-astra",
+    );
+    expect(standard.serviceTier).toBe("fast");
     expect(standard.threadId).toBe(fast.threadId);
     expect(standard.threadCount).toBe(1);
+    await send("/new_session");
+    const fresh = await complete("start with standard service", "gpt-6-astra");
+    expect(fresh.serviceTier).toBeUndefined();
+    expect(fresh.threadId).not.toBe(fast.threadId);
+    expect(fresh.threadCount).toBe(2);
   });
 
   it("shares one canonical session across AgentPhone and web messages on the same thread", async () => {

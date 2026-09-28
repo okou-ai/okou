@@ -502,6 +502,78 @@ describe("CHAT-02: queued chat thread picks", () => {
     await cancelChatRun(actor, launched.runId);
   }, 90_000);
 
+  it("keeps the queued model, service tier, and effort after thread and user settings change", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, agentId, runnerGroup, providerId } =
+      await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const { providerId: openaiProviderId } = await api.createOrgModelProvider(
+      actor,
+      {
+        type: "openai-api-key",
+        secret: "queued-model-selection-key",
+      },
+    );
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model: "gpt-6-astra",
+        isDefault: false,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: openaiProviderId,
+      },
+    ]);
+    const blocker = await sendChatRun(actor, {
+      agentId,
+      prompt: "occupy the only organization slot",
+    });
+    const waiting = await sendWaitingChatInput(actor, {
+      agentId,
+      prompt: "retain the model selection from enqueue",
+      model: "gpt-6-astra",
+      runOptions: { codexServiceTier: "fast", reasoningEffort: "low" },
+    });
+    await chat.updateThreadModelSelection(
+      actor,
+      waiting.threadId,
+      "gpt-6-astra",
+      {
+        codexServiceTier: null,
+        reasoningEffort: "ultra",
+      },
+    );
+    await chat.updateThreadModelSelection(
+      actor,
+      waiting.threadId,
+      "claude-fable-5-1",
+    );
+    await chat.updateUserModelPreference(actor, "claude-fable-5-1");
+
+    await finishRun(runnerGroup, blocker.runId);
+    const launched = await waiting.launchedRun();
+    const claimed = await claimChatRun(runnerGroup, launched.runId);
+    expect(claimed.claim.modelUsageProvider).toBe("gpt-6-astra");
+    expect(claimed.claim.platformEnvironment).toMatchObject({
+      OKOU_CODEX_SERVICE_TIER: "fast",
+      OKOU_REASONING_EFFORT: "low",
+    });
+    await expect(
+      chat.readThreadMetadata(actor, waiting.threadId),
+    ).resolves.toMatchObject({
+      selectedModel: "claude-fable-5-1",
+      serviceTier: null,
+      modelSettings: { "gpt-6-astra": { effort: "ultra" } },
+    });
+    await cancelChatRun(actor, launched.runId, claimed.sandboxHeaders);
+  }, 90_000);
+
   it("rejects an unavailable model and continues picking the organization's next thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup, providerId } =
@@ -529,6 +601,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       clientEventId,
       model: "claude-opus-5",
     });
+    await chat.updateUserModelPreference(actor, "claude-fable-5-1");
     const later = await sendWaiting(actor, agentId, "uses the remaining model");
     await api.updateOrgModelPolicies(actor, [nativePolicy]);
 

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
@@ -218,51 +218,52 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, third.runId);
   }, 90_000);
 
-  it("rejects input when the persisted model's route is removed", async () => {
-    const { actor, agentId, providerId } = await entitledChatActor();
+  it("captures the organization default when the stored model's provider is removed", async () => {
+    const { actor, agentId, providerId, runnerGroup } =
+      await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const { providerId: openaiProviderId } = await api.createOrgModelProvider(
+      actor,
+      {
+        type: "openai-api-key",
+        secret: "fallback-default-openai-key",
+      },
+    );
     await chatCallbacks.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
-        isDefault: true,
+        isDefault: false,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
         modelProviderId: providerId,
       },
+      {
+        model: "gpt-6-astra",
+        isDefault: true,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: openaiProviderId,
+      },
     ]);
-
     const thread = await chat.createThread(actor, {
       agentId,
       model: "claude-sonnet-5",
     });
     await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
 
-    // The thread keeps the user's model; with its route gone the pick rejects
-    // the input instead of moving it to another model.
-    const clientEventId = randomUUID();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: thread.id,
-        prompt: "do not continue through another model",
-        clientEventId,
-      },
-      [201],
-    );
-    if (sent.status !== 201) {
-      throw new Error("Expected the send to be accepted");
-    }
-    await flushWaitUntilForTest();
-    const { events } = await chat.listThreadEvents(actor, thread.id);
-    expect(
-      events.find((event) => {
-        return event.revokesEventId === clientEventId;
-      }),
-    ).toMatchObject({ eventType: "input.rejected", error: "bad_request" });
+    const fallback = await sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "use the available organization default",
+    });
+    const claimed = await claimChatRun(runnerGroup, fallback.runId);
+    expect(claimEnvironment(claimed.claim).OPENAI_MODEL).toBe("gpt-6-astra");
     await expect(
       chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5" });
+    ).resolves.toMatchObject({
+      selectedModel: "claude-sonnet-5",
+    });
+    await cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
   }, 90_000);
 
   it.each(

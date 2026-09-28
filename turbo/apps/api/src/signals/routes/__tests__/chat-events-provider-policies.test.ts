@@ -965,7 +965,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, second.runId);
   });
 
-  it("rejects input on a thread whose model the workspace removed", async () => {
+  it("captures the workspace default without changing a thread whose model was removed", async () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -1004,20 +1004,24 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     ]);
 
-    // The thread keeps its removed model, so the pick rejects the input
-    // rather than moving it to the current workspace default.
-    const rejected = await sendUntilPicked(actor, {
+    const fallback = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
-      prompt: "do not continue through the current workspace default",
+      prompt: "continue through the current workspace default",
     });
-    expect(rejected.picked).toMatchObject({
-      eventType: "input.rejected",
-      error: "bad_request",
+    const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
+    expect(claimEnvironment(fallbackClaim.claim).OPENAI_MODEL).toBe(
+      "gpt-6-astra",
+    );
+    await expect(
+      chat.readThreadMetadata(actor, first.threadId),
+    ).resolves.toMatchObject({
+      selectedModel: "claude-fable-5-1",
     });
+    await cancelChatRun(actor, fallback.runId, fallbackClaim.sandboxHeaders);
   }, 90_000);
 
-  it("resolves a NULL legacy thread from current defaults without replaying its first run", async () => {
+  it("keeps the enqueued model after thread and member defaults change", async () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -1050,7 +1054,7 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         agentId,
         threadId: first.threadId,
-        prompt: "continue after canonical default resolution",
+        prompt: "continue using the model captured before defaults change",
         clientEventId: queuedEventId,
       },
       [201],
@@ -1117,19 +1121,19 @@ describe("CHAT-02: model-first provider policies", () => {
     }
 
     const promotedClaim = await claimChatRun(runnerGroup, promotedRunId);
-    expect(promotedClaim.claim.cliAgentType).toBe("codex");
-    expect(claimEnvironment(promotedClaim.claim).OPENAI_MODEL).toBe(
-      "gpt-6-astra",
+    expect(promotedClaim.claim.cliAgentType).toBe("claude-code");
+    expect(claimEnvironment(promotedClaim.claim).ANTHROPIC_MODEL).toBe(
+      "claude-fable-5-1",
     );
     expect(
       (await chat.readThreadMetadata(actor, first.threadId)).selectedModel,
-    ).toBe("gpt-6-astra");
+    ).toBeNull();
 
     const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
     if (threadEvents.status !== 200) {
       throw new Error("Expected chat thread events to load");
     }
-    expect(threadEvents.body.events).toContainEqual(
+    expect(threadEvents.body.events).not.toContainEqual(
       expect.objectContaining({
         kind: "model_selection_updated",
         chatThreadId: first.threadId,

@@ -1115,20 +1115,20 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const followUp = await completeDm("continue the main DM", 3502);
       expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
       expect(followUp.chatThread.id).toBe(main.chatThread.id);
-      expect(followUp.chatThread.selectedModel).toBeNull();
+      expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
 
       await sendDm("/model gpt-6-astra", 3506);
-      const alternate = await completeDm("use the alternate DM model", 3507);
-      expect(alternate.claim.modelUsageProvider).toBe("gpt-6-astra");
-      expect(alternate.claim.resumeSession).toBeNull();
+      const alternate = await completeDm("keep the existing DM model", 3507);
+      expect(alternate.claim.modelUsageProvider).toBe("claude-fable-5-1");
+      expect(alternate.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
       expect(alternate.chatThread.id).toBe(main.chatThread.id);
-      expect(alternate.chatThread.selectedModel).toBeNull();
+      expect(alternate.chatThread.selectedModel).toBe("claude-fable-5-1");
       await sendDm("/model claude-fable-5-1", 3509);
       const returned = await completeDm("return to the main model", 3510);
-      expect(returned.claim.resumeSession).toBeNull();
+      expect(returned.claim.resumeSession?.sessionId).toBe(alternate.sessionId);
       expect(returned.claim.modelUsageProvider).toBe("claude-fable-5-1");
       expect(returned.chatThread.id).toBe(main.chatThread.id);
-      expect(returned.chatThread.selectedModel).toBeNull();
+      expect(returned.chatThread.selectedModel).toBe("claude-fable-5-1");
     });
   });
 

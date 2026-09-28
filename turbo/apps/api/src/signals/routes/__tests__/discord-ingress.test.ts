@@ -809,7 +809,7 @@ describe("canonical Discord ingress", () => {
     );
   });
 
-  it("keeps native guild routes pinned while one DM thread follows the current user model", async () => {
+  it("pins guild and DM models when each thread is created", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const first = discordMessageForTest(actor, {
@@ -925,7 +925,7 @@ describe("canonical Discord ingress", () => {
       },
     );
     expect(dmThreads).toMatchObject([
-      { id: originalDm.id, selectedModel: null },
+      { id: originalDm.id, selectedModel: "claude-opus-5" },
     ]);
     const inputs = currentInputs(await events(actor, originalDm.id));
     expect(inputs).toHaveLength(2);
@@ -940,7 +940,7 @@ describe("canonical Discord ingress", () => {
     await runsApi.heartbeatRunner(actor.runnerGroup);
     const claim = await runsApi.claimRunnerJob(nextInput.runId);
     expect(claim.prompt).toBe(nextDm.content);
-    expect(claim.modelUsageProvider).toBe("claude-fable-5-1");
+    expect(claim.modelUsageProvider).toBe("claude-opus-5");
     expect(claim.appendSystemPrompt).not.toContain("ship on Friday");
     await runsApi.requestCancelRun(actor.actor, nextInput.runId, [200]);
   });
@@ -981,7 +981,7 @@ describe("canonical Discord ingress", () => {
     await flushWaitUntilForTest();
 
     await expect(discordChatThreads(context, actor)).resolves.toMatchObject([
-      { id: thread.id, selectedModel: null },
+      { id: thread.id, selectedModel: "claude-fable-5-1" },
     ]);
     const inputs = currentInputs(await events(actor, thread.id));
     expect(inputs).toHaveLength(2);
@@ -1004,7 +1004,7 @@ describe("canonical Discord ingress", () => {
     await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
   });
 
-  it("updates the member default when the web selects a main DM model without pinning its thread", async () => {
+  it("updates the main DM thread model without changing the member default", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const chatApi = createChatFilesBddApi(context);
@@ -1044,9 +1044,12 @@ describe("canonical Discord ingress", () => {
     );
     await expect(
       chatApi.readThreadMetadata(actor.actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: null, serviceTier: null });
+    ).resolves.toMatchObject({
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+    });
     await expect(discordChatThreads(context, actor)).resolves.toMatchObject([
-      { id: thread.id, selectedModel: null, serviceTier: null },
+      { id: thread.id, selectedModel: "gpt-6-astra", serviceTier: "priority" },
     ]);
     const preference = await accept(
       setupApp({ context, routes: userModelPreferenceRoutes })(
@@ -1055,14 +1058,14 @@ describe("canonical Discord ingress", () => {
       [200],
     );
     expect(preference.body).toMatchObject({
-      selectedModel: "gpt-6-astra",
-      serviceTier: "priority",
+      selectedModel: null,
+      serviceTier: null,
     });
 
     const next = discordMessageForTest(actor, {
       channelId: provider.dmChannelId,
       guild: false,
-      content: "use the current member default",
+      content: "use the stored DM model",
     });
     provider.messages.set(next.id, next);
     await postDiscordMessage(context, next);
@@ -1075,9 +1078,7 @@ describe("canonical Discord ingress", () => {
       },
     );
     if (!input?.runId) {
-      throw new Error(
-        "Expected the DM input to launch with the member default",
-      );
+      throw new Error("Expected the DM input to launch with its stored model");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
     const claim = await runsApi.claimRunnerJob(input.runId);
@@ -1086,7 +1087,7 @@ describe("canonical Discord ingress", () => {
     await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
   });
 
-  it("keeps a busy main DM unpinned when a web send selects its next model", async () => {
+  it("pins a busy main DM and captures a web send model before the next pick", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const chatApi = createChatFilesBddApi(context);
@@ -1134,9 +1135,12 @@ describe("canonical Discord ingress", () => {
     expect(queued[1]?.runId).toBeUndefined();
     await expect(
       chatApi.readThreadMetadata(actor.actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: null, serviceTier: null });
+    ).resolves.toMatchObject({
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+    });
     await expect(discordChatThreads(context, actor)).resolves.toMatchObject([
-      { id: thread.id, selectedModel: null, serviceTier: null },
+      { id: thread.id, selectedModel: "gpt-6-astra", serviceTier: "priority" },
     ]);
     const preference = await accept(
       setupApp({ context, routes: userModelPreferenceRoutes })(
