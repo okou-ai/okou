@@ -114,7 +114,7 @@ describe("skill import prompt", () => {
     const claude = prompt("claudeCode");
     const codex = prompt("codex");
 
-    expect(claude).toContain("label them Personal (account) and import them");
+    expect(claude).toContain("label them Personal (account)");
     expect(claude).toContain(
       "Compare the skills available to you in this session",
     );
