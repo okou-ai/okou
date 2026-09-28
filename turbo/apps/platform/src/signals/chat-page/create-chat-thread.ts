@@ -200,7 +200,7 @@ import type {
   QueueMessageOptions,
   RecommendedFollowupSource,
   SendMessageOptions,
-  ThinkingIndicatorMode,
+  ThinkingIndicators,
 } from "./chat-panel-signals.ts";
 import { reloadMountedComposerWorkflows$ } from "../okou-page/tiptap-workflow-composer.ts";
 import {
@@ -212,7 +212,10 @@ import {
   type BrowserLifecycleOptimisticEvents,
 } from "./browser-session-block.ts";
 import { createChatThreadContainerSignals } from "./chat-thread-container.ts";
-import { createThreadActivitySummarySignals } from "./thread-activity-summary.ts";
+import {
+  createThreadActivitySummarySignals,
+  type ThinkingSummaries,
+} from "./thread-activity-summary.ts";
 import { createAssistantErrorRecoverySignals } from "./assistant-error-recovery.ts";
 import {
   messageDocumentToPrompt,
@@ -959,12 +962,53 @@ function groupEventsForDisplay(events: EnrichedChatEvent[]): ChatEventGroup[] {
   });
 }
 
+// While a run is active or a prompt is being sent, a conversation that ends
+// with the user turn gets an empty assistant turn whose status row shows the
+// thinking indicator. Queued automation groups trail the active groups.
+function withPendingAssistantGroup(
+  groups: ChatEventGroup[],
+  runActive: boolean,
+): ChatEventGroup[] {
+  if (!runActive) {
+    return groups;
+  }
+  let lastActiveIndex = groups.length - 1;
+  while (
+    lastActiveIndex >= 0 &&
+    groups[lastActiveIndex]!.events.every((event) => {
+      return event.isQueued;
+    })
+  ) {
+    lastActiveIndex--;
+  }
+  // With only queued automation, the empty turn opens the conversation.
+  const lastActive = groups[lastActiveIndex];
+  if (lastActive !== undefined && lastActive.role !== "user") {
+    return groups;
+  }
+  const lastUserEventId =
+    lastActive?.events.at(-1)?.id ?? lastActive?.beginEventId ?? "thread";
+  return [
+    ...groups.slice(0, lastActiveIndex + 1),
+    {
+      beginEventId: `pending-assistant:${lastUserEventId}`,
+      role: "assistant",
+      events: [],
+    },
+    ...groups.slice(lastActiveIndex + 1),
+  ];
+}
+
 function createRenderedChatGroups(
   semanticEvents$: Computed<SemanticChatEvent[]>,
+  runActive$: Computed<boolean>,
 ) {
   const allChatGroups$ = computed((get): ChatEventGroup[] => {
-    return groupEventsForDisplay(
-      enrichedChatEventsFromSemantic(get(semanticEvents$)),
+    return withPendingAssistantGroup(
+      groupEventsForDisplay(
+        enrichedChatEventsFromSemantic(get(semanticEvents$)),
+      ),
+      get(runActive$),
     );
   });
 
@@ -1270,10 +1314,6 @@ function lastRunThinkingEvent(
   return runHasAssistantText ? undefined : lastEvent;
 }
 
-interface ThinkingIndicatorProjection {
-  readonly mode: ThinkingIndicatorMode;
-}
-
 function assistantGroupOnlyHasThinking(
   group: SemanticChatEventGroup,
   thinkingEvent: SemanticChatEvent | undefined,
@@ -1286,89 +1326,26 @@ function assistantGroupOnlyHasThinking(
   });
 }
 
-function shouldHideThinkingIndicator({
-  lastIsAssistant,
-  lastAssistantCancelled,
-  lastAssistantOnlyThinking,
-  running,
-}: {
-  lastIsAssistant: boolean;
-  lastAssistantCancelled: boolean;
-  lastAssistantOnlyThinking: boolean;
-  running: boolean;
-}): boolean {
-  if (running) {
-    return false;
-  }
-  return (
-    lastAssistantCancelled || lastAssistantOnlyThinking || !lastIsAssistant
-  );
-}
-
-function resolveThinkingIndicatorMode({
-  lastIsAssistant,
-  lastAssistantOnlyThinking,
-  queued,
-  running,
-}: {
-  lastIsAssistant: boolean;
-  lastAssistantOnlyThinking: boolean;
-  queued: boolean;
-  running: boolean;
-}): ThinkingIndicatorMode {
-  if (!running) {
-    return "finished";
-  }
-  if (lastIsAssistant && !lastAssistantOnlyThinking) {
-    return queued ? "running-queued" : "running";
-  }
-  return queued ? "waiting-queued" : "waiting";
-}
-
-function thinkingIndicatorProjectionFromGroups(
-  groups: SemanticChatGroups,
-  runState: RunIndicatorState,
-): ThinkingIndicatorProjection {
+// After the thread goes idle, the last assistant turn of a run shows the
+// finished row with its completion time and recommended followups.
+function runFinishedFromGroups(groups: SemanticChatGroups): boolean {
   const { activeGroups } = groups;
   const lastGroup = activeGroups.at(-1);
-  if (!lastGroup) {
-    // Automation input waiting in the queue bar is the only content.
-    return { mode: runState === "queued" ? "waiting-queued" : null };
+  if (lastGroup?.role !== "assistant") {
+    return false;
   }
-  const lastIsAssistant = lastGroup.role === "assistant";
-  const lastAssistantEvent = lastIsAssistant
-    ? lastGroup.events.at(-1)?.event
-    : undefined;
-  const rawThinkingEvent = lastRunThinkingEvent(activeGroups);
-  const lastAssistantOnlyThinking = assistantGroupOnlyHasThinking(
+  const lastAssistantEvent = lastGroup.events.at(-1)?.event;
+  if (!lastAssistantEvent?.runId || isCancelledRunEvent(lastAssistantEvent)) {
+    return false;
+  }
+  return !assistantGroupOnlyHasThinking(
     lastGroup,
-    rawThinkingEvent,
+    lastRunThinkingEvent(activeGroups),
   );
-  const lastAssistantCancelled = lastAssistantEvent
-    ? isCancelledRunEvent(lastAssistantEvent)
-    : false;
-  const queued = runState === "queued";
-  const running = runState !== null && !lastAssistantCancelled;
+}
 
-  if (
-    (!running && !lastAssistantEvent?.runId) ||
-    shouldHideThinkingIndicator({
-      lastIsAssistant,
-      lastAssistantCancelled,
-      lastAssistantOnlyThinking,
-      running,
-    })
-  ) {
-    return { mode: null };
-  }
-
-  const mode = resolveThinkingIndicatorMode({
-    lastIsAssistant,
-    lastAssistantOnlyThinking,
-    queued,
-    running,
-  });
-  return { mode };
+function defaultThinkingIndicators(): ThinkingIndicators {
+  return { kind: "thinking", runId: null, messages: [] };
 }
 
 function latestRecommendedFollowupsFromGroups(
@@ -1419,20 +1396,43 @@ function latestRecommendedFollowupsFromGroups(
 
 function createEventSemanticSignals(
   semanticEvents$: Computed<SemanticChatEvent[]>,
-  eventRunIndicatorState$: Computed<Promise<RunIndicatorState>>,
+  {
+    serverRunState$,
+    hasOptimisticUserMessage$,
+    thinkingSummaries$,
+    runActive$,
+  }: ThinkingIndicatorSources & { runActive$: Computed<boolean> },
 ) {
   const semanticGroups$ = computed((get): SemanticChatGroups => {
     return groupSemanticChatEvents(get(semanticEvents$));
   });
-  const thinkingIndicatorProjection$ = computed(
-    async (get): Promise<ThinkingIndicatorProjection> => {
-      const runState = await get(eventRunIndicatorState$);
-      return thinkingIndicatorProjectionFromGroups(
-        get(semanticGroups$),
-        runState,
-      );
+  const thinkingIndicators$ = computed(
+    async (get): Promise<ThinkingIndicators | null> => {
+      const serverRunState = get(serverRunState$);
+      if (serverRunState === "running") {
+        const summaries = await get(thinkingSummaries$);
+        return summaries
+          ? {
+              kind: "thinking",
+              runId: summaries.runId,
+              messages: summaries.messages,
+            }
+          : defaultThinkingIndicators();
+      }
+      if (serverRunState === "queued") {
+        return { kind: "queued" };
+      }
+      // A prompt still being sent is about to start or steer a run.
+      return get(hasOptimisticUserMessage$)
+        ? defaultThinkingIndicators()
+        : null;
     },
   );
+  const runFinished$ = computed((get): Promise<boolean> => {
+    return Promise.resolve(
+      !get(runActive$) && runFinishedFromGroups(get(semanticGroups$)),
+    );
+  });
   const hasEvents$ = computed((get): Promise<boolean> => {
     return Promise.resolve(
       get(semanticEvents$).some((entry) => {
@@ -1440,11 +1440,6 @@ function createEventSemanticSignals(
       }),
     );
   });
-  const thinkingIndicatorMode$ = computed(
-    async (get): Promise<ThinkingIndicatorMode> => {
-      return (await get(thinkingIndicatorProjection$)).mode;
-    },
-  );
   const recommendedFollowupSource$ = computed(
     (get): Promise<RecommendedFollowupSource | null> => {
       return Promise.resolve(
@@ -1461,7 +1456,8 @@ function createEventSemanticSignals(
   });
   return {
     hasEvents$,
-    thinkingIndicatorMode$,
+    thinkingIndicators$,
+    runFinished$,
     recommendedFollowupSource$,
     donePhrase$,
   };
@@ -2197,17 +2193,21 @@ interface BrowserLifecycleOptimisticEvent {
   readonly eventType: "browser.open" | "browser.close";
 }
 
+interface ThinkingIndicatorSources {
+  readonly serverRunState$: Computed<RunIndicatorState>;
+  readonly hasOptimisticUserMessage$: Computed<boolean>;
+  readonly thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
+}
+
 function createPagedEventProjections({
   chatEvents$,
-  serverRunState$,
-  hasOptimisticUserMessage$,
+  thinkingSources,
   registeredEvents$,
   eventTrees$,
   eventTreeErrors$,
 }: {
   chatEvents$: Computed<ChatEvent[]>;
-  serverRunState$: Computed<RunIndicatorState>;
-  hasOptimisticUserMessage$: Computed<boolean>;
+  thinkingSources: ThinkingIndicatorSources;
   registeredEvents$: State<RegisteredChatEvent[]>;
   eventTrees$: Computed<ReadonlyMap<string, Root>>;
   eventTreeErrors$: Computed<ReadonlySet<string>>;
@@ -2221,17 +2221,19 @@ function createPagedEventProjections({
       get(eventTreeErrors$),
     );
   });
-  const eventRunIndicatorState$ = createEventRunIndicatorState({
-    serverRunState$,
-    hasOptimisticUserMessage$,
+  const { serverRunState$, hasOptimisticUserMessage$ } = thinkingSources;
+  const runActive$ = computed((get): boolean => {
+    return get(serverRunState$) !== null || get(hasOptimisticUserMessage$);
   });
   return {
     rawEvents$,
     chatEvents$,
-    eventRunIndicatorState$,
     ...createLatestEventSignals(rawEvents$),
-    ...createEventSemanticSignals(semanticEvents$, eventRunIndicatorState$),
-    ...createRenderedChatGroups(semanticEvents$),
+    ...createEventSemanticSignals(semanticEvents$, {
+      ...thinkingSources,
+      runActive$,
+    }),
+    ...createRenderedChatGroups(semanticEvents$, runActive$),
   };
 }
 
@@ -2517,6 +2519,7 @@ interface ChatThreadMessagePipelineOptions {
   previewRefreshRevision$: Computed<number>;
   previewCatalogReady$: Computed<boolean>;
   connector: ComposerConnectorSignals;
+  thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
 }
 
 function createChatThreadMessagePipeline({
@@ -2526,6 +2529,7 @@ function createChatThreadMessagePipeline({
   previewRefreshRevision$,
   previewCatalogReady$,
   connector,
+  thinkingSummaries$,
 }: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
   const browserLifecycleOptimisticEvents =
@@ -2543,8 +2547,11 @@ function createChatThreadMessagePipeline({
   });
   const projections = createPagedEventProjections({
     chatEvents$: chatEvents.chatEvents$,
-    serverRunState$: chatEvents.serverRunState$,
-    hasOptimisticUserMessage$: chatEvents.hasOptimisticUserMessage$,
+    thinkingSources: {
+      serverRunState$: chatEvents.serverRunState$,
+      hasOptimisticUserMessage$: chatEvents.hasOptimisticUserMessage$,
+      thinkingSummaries$,
+    },
     registeredEvents$: resources.registeredEvents$,
     eventTrees$: resources.eventTrees$,
     eventTreeErrors$: resources.eventTreeErrors$,
@@ -2663,22 +2670,6 @@ export const ensureDraft$ = command(
     return draft;
   },
 );
-
-function createEventRunIndicatorState({
-  serverRunState$,
-  hasOptimisticUserMessage$,
-}: {
-  serverRunState$: Computed<RunIndicatorState>;
-  hasOptimisticUserMessage$: Computed<boolean>;
-}) {
-  return computed((get): Promise<RunIndicatorState> => {
-    // A prompt still being sent is about to start or steer a run, so it shows
-    // Thinking before the server has persisted anything.
-    return Promise.resolve(
-      get(hasOptimisticUserMessage$) ? "running" : get(serverRunState$),
-    );
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Factory: createRunTracking
@@ -3639,20 +3630,14 @@ function createInterruptLiveRuns({
 // Sub-factory: thinking indicator
 // ---------------------------------------------------------------------------
 
-function createThinkingIndicatorSignals(
-  activity: ReturnType<typeof createThreadActivitySummarySignals>,
-) {
+function createThinkingIndicatorSignals() {
   const thinkingPhrase$ = computed((get) => {
     get(locale$);
     return i18n.t(($) => {
       return $.chat.run.thinking.default;
     });
   });
-  return {
-    thinkingPhrase$,
-    thinkingSummaries$: activity.thinkingSummaries$,
-    thinkingRunId$: activity.thinkingRunId$,
-  };
+  return { thinkingPhrase$ };
 }
 
 // ---------------------------------------------------------------------------
@@ -3675,7 +3660,8 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     eventImageGroups$: events.eventImageGroups$,
     browserSessionSignals: events.browserSessionSignals,
     hasEvents$: events.hasEvents$,
-    thinkingIndicatorMode$: events.thinkingIndicatorMode$,
+    thinkingIndicators$: events.thinkingIndicators$,
+    runFinished$: events.runFinished$,
     recommendedFollowupSource$: events.recommendedFollowupSource$,
     donePhrase$: events.donePhrase$,
     loadMoreRenderedChatGroups$: events.loadMoreRenderedChatGroups$,
@@ -3995,6 +3981,7 @@ export function createChatPanelSignals(
     previewRefreshRevision$: artifact.previewRefreshRevision$,
     previewCatalogReady$,
     connector: composer.connector,
+    thinkingSummaries$: activity.thinkingSummaries$,
   });
   const messages: MessageListSignals = {
     ...messagePipeline,
@@ -4064,7 +4051,7 @@ export function createChatPanelSignals(
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),
     subscribeChatThread$: runTracking.subscribeChatThread$,
-    ...createThinkingIndicatorSignals(activity),
+    ...createThinkingIndicatorSignals(),
     artifacts$: messages.artifacts$,
     reloadArtifacts$: messages.reloadArtifacts$,
   };

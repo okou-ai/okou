@@ -85,6 +85,7 @@ interface RunGroupVisualWindowItem {
 }
 
 function appendIndividualGroupWindowItems(
+  groups: readonly ChatEventGroup[],
   items: RunGroupVisualWindowItem[],
   startGroupIndex: number,
   endGroupIndex: number,
@@ -92,6 +93,16 @@ function appendIndividualGroupWindowItems(
 ): number {
   const start = Math.max(startGroupIndex, coveredGroupIndex);
   for (let groupIndex = start; groupIndex < endGroupIndex; groupIndex++) {
+    const previous = items.at(-1);
+    // A turn without events (the pending assistant turn) takes no window
+    // slot of its own; it stays with the turn before it.
+    if (groups[groupIndex]?.events.length === 0 && previous !== undefined) {
+      items[items.length - 1] = {
+        startGroupIndex: previous.startGroupIndex,
+        endGroupIndex: groupIndex + 1,
+      };
+      continue;
+    }
     items.push({
       startGroupIndex: groupIndex,
       endGroupIndex: groupIndex + 1,
@@ -116,6 +127,7 @@ function runGroupVisualWindowItems(
 
     if (coveredGroupIndex < segment.startGroupIndex) {
       coveredGroupIndex = appendIndividualGroupWindowItems(
+        groups,
         items,
         coveredGroupIndex,
         segment.startGroupIndex,
@@ -148,6 +160,7 @@ function runGroupVisualWindowItems(
     }
 
     coveredGroupIndex = appendIndividualGroupWindowItems(
+      groups,
       items,
       segment.startGroupIndex,
       segment.endGroupIndex,
@@ -157,6 +170,7 @@ function runGroupVisualWindowItems(
   }
 
   appendIndividualGroupWindowItems(
+    groups,
     items,
     coveredGroupIndex,
     groups.length,
