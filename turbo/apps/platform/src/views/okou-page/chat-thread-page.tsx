@@ -3092,6 +3092,32 @@ const DEFAULT_THINKING_INDICATORS: ThinkingIndicators = Object.freeze({
   messages: [],
 });
 
+function equalThinkingMessages(
+  previous: ThinkingMessage,
+  next: ThinkingMessage,
+): boolean {
+  return previous.id === next.id && previous.text === next.text;
+}
+
+// Every summary refresh resolves a new object, even when nothing changed. This
+// component renders the whole message list, so only a changed indicator should
+// render it again.
+function equalThinkingIndicators(
+  previous: ThinkingIndicators | null,
+  next: ThinkingIndicators | null,
+): boolean {
+  if (previous === null || next === null) {
+    return previous === next;
+  }
+  if (previous.kind === "queued" || next.kind === "queued") {
+    return previous.kind === next.kind;
+  }
+  return (
+    previous.runId === next.runId &&
+    equalArrays(previous.messages, next.messages, equalThinkingMessages)
+  );
+}
+
 type RunStatusRow =
   | {
       readonly kind: "thinking-indicators";
@@ -3163,6 +3189,7 @@ function ChatThreadRenderedEventGroups({
   // default thinking label. A resolved null means the thread is idle.
   const resolvedThinkingIndicators = useLastResolved(
     thread.thinkingIndicators$,
+    { equalityFn: equalThinkingIndicators },
   );
   const thinkingIndicators =
     resolvedThinkingIndicators === undefined
