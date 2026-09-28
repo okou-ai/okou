@@ -1030,18 +1030,13 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
         size: 4,
         sha256: digest,
       });
-      return respond(200, {
-        uploadUrl,
-        uploadHeaders: {
-          "x-amz-checksum-sha256":
-            "n4bQgYhMfWWaL+qgxVrQFaO/Txs7C4Is0V1sFbDwCgg=",
-        },
-      });
+      return respond(200, { uploadUrl });
     },
   );
   let directlyUploaded = false;
   context.mocks.http.put(uploadUrl, ({ request }) => {
     expect(request.credentials).toBe("omit");
+    expect(request.headers.has("x-amz-checksum-sha256")).toBe(false);
     directlyUploaded = true;
     return new HttpResponse(null, { status: 200 });
   });

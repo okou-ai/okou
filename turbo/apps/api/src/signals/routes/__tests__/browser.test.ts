@@ -53,6 +53,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { setBrowserTabSnapshotAsPreviousApi } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
+import { realSignedPutUrl } from "./helpers/real-signed-put-url";
 import { testBrowserReconcileRoutes } from "../test-browser-reconcile";
 import { browserRoutes } from "../browser";
 import { browserAuthorizationRoutes } from "../browser-authorization";
@@ -1172,9 +1173,19 @@ describe("Browser user-action route", () => {
         ContentType: "application/octet-stream",
       });
       expect(signing?.[2]).toMatchObject({ expiresIn: 60 });
-      expect(prepared.body.uploadHeaders["x-amz-checksum-sha256"]).toBe(
+      expect(signedCommand.input.ChecksumSHA256).toBe(
         createHash("sha256").update(bytes).digest("base64"),
       );
+      const signed = await realSignedPutUrl(signing);
+      expect(signed.searchParams.get("x-amz-checksum-sha256")).toBe(
+        createHash("sha256").update(bytes).digest("base64"),
+      );
+      expect(
+        signed.searchParams.get("X-Amz-SignedHeaders")?.split(";"),
+      ).not.toContain("x-amz-checksum-sha256");
+      expect(prepared.body).toStrictEqual({
+        uploadUrl: prepared.body.uploadUrl,
+      });
       expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
       const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
       temporaryObjects.set(key, bytes);

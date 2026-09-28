@@ -157,12 +157,7 @@ export const prepareBrowserUserFileUpload$ = command(
       readonly input: BrowserUserActionPrepareFileUploadRequest;
     },
     signal: AbortSignal,
-  ): Promise<
-    ServiceResult<{
-      readonly uploadUrl: string;
-      readonly uploadHeaders: { readonly "x-amz-checksum-sha256": string };
-    }>
-  > => {
+  ): Promise<ServiceResult<{ readonly uploadUrl: string }>> => {
     const row = await loadOwnedRequest(set(writeDb$), args);
     signal.throwIfAborted();
     if (!row) {
@@ -201,10 +196,7 @@ export const prepareBrowserUserFileUpload$ = command(
     signal.throwIfAborted();
     return {
       kind: "ok",
-      value: {
-        uploadUrl,
-        uploadHeaders: { "x-amz-checksum-sha256": checksumSha256 },
-      },
+      value: { uploadUrl },
     };
   },
 );

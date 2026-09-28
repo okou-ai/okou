@@ -518,9 +518,6 @@ export const browserUserActionsContract = c.router({
       200: z
         .object({
           uploadUrl: z.url(),
-          uploadHeaders: z
-            .object({ "x-amz-checksum-sha256": z.string() })
-            .strict(),
         })
         .strict(),
       ...commonErrors,

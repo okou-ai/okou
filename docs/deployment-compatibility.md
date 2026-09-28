@@ -1,5 +1,25 @@
 # Deployment Compatibility
 
+## Direct PUT checksum transport (#37241)
+
+Hosted-site and Browser temporary-file PUTs use one SHA-256 transport contract:
+`ChecksumSHA256` is bound into the presigned URL query, and the client does not
+need to send an `x-amz-checksum-sha256` request header. This restores compatibility
+with already-running `okou host` CLIs; no CLI upgrade is required. The Browser
+still computes SHA-256 before prepare, and the API rehashes bounded temporary
+object bytes before applying a file selection.
+
+The Browser prepare response no longer contains `uploadHeaders`. A still-open
+old App build expects that field, while a new App sending no checksum header
+cannot use an old API's header-bound upload URL. API and App must therefore be
+coordinated: do not offer native file actions to staff across the mixed-version
+window; allow existing pending actions to finish or expire, deploy both sides,
+then validate a fresh synthetic file action before resuming staff use. This
+code change neither expands the `BrowserNativeInput` switch nor modifies
+production R2 CORS. Before release, verify on a dev R2 bucket that a URL with
+the query-bound checksum accepts matching bytes and rejects different bytes;
+a URL-shape test alone cannot establish the storage integrity property.
+
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)
 
 This is step 1 of the Chat Event V8 plan. It changes no wire protocol: the row

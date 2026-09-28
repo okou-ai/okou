@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import { realSignedPutUrl } from "./helpers/real-signed-put-url";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
@@ -53,6 +55,20 @@ test.each([true, false])(
         }),
         expect.objectContaining({ expiresIn: 172_800 }),
       );
+      const signing = context.mocks.s3.getSignedUrl.mock.calls.find((call) => {
+        const command = call[1];
+        return (
+          command instanceof PutObjectCommand &&
+          command.input.Key?.endsWith(file.path)
+        );
+      });
+      const signed = await realSignedPutUrl(signing);
+      expect(signed.searchParams.get("x-amz-checksum-sha256")).toBe(
+        Buffer.from(file.sha256, "hex").toString("base64"),
+      );
+      expect(
+        signed.searchParams.get("X-Amz-SignedHeaders")?.split(";"),
+      ).not.toContain("x-amz-checksum-sha256");
     }
 
     await api.completeHostedSite(actor, draft.deploymentId);

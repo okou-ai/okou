@@ -1009,13 +1009,8 @@ function generatePresignedPutUrlWithClient(
     });
     return getSignedUrl(client, command, {
       expiresIn: options.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
-      ...(metadataHeaders || options.checksumSha256
-        ? {
-            unhoistableHeaders: new Set([
-              ...Object.keys(metadataHeaders ?? {}),
-              ...(options.checksumSha256 ? ["x-amz-checksum-sha256"] : []),
-            ]),
-          }
+      ...(metadataHeaders
+        ? { unhoistableHeaders: new Set(Object.keys(metadataHeaders)) }
         : {}),
     });
   });

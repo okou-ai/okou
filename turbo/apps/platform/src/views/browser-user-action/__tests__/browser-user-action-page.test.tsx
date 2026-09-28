@@ -722,13 +722,7 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
         size: 4,
         sha256: digest,
       });
-      return respond(200, {
-        uploadUrl,
-        uploadHeaders: {
-          "x-amz-checksum-sha256":
-            "n4bQgYhMfWWaL+qgxVrQFaO/Txs7C4Is0V1sFbDwCgg=",
-        },
-      });
+      return respond(200, { uploadUrl });
     },
   );
   context.mocks.http.put(uploadUrl, ({ request }) => {
@@ -736,7 +730,7 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
     expect(request.headers.get("content-type")).toBe(
       "application/octet-stream",
     );
-    expect(request.headers.get("x-amz-checksum-sha256")).not.toBeNull();
+    expect(request.headers.has("x-amz-checksum-sha256")).toBe(false);
     directPut = true;
     return new HttpResponse(null, { status: 200 });
   });
@@ -880,13 +874,7 @@ test("A rejected Browser file authorization and PUT leave the selection retryabl
           },
         });
       }
-      return respond(200, {
-        uploadUrl,
-        uploadHeaders: {
-          "x-amz-checksum-sha256":
-            "n4bQgYhMfWWaL+qgxVrQFaO/Txs7C4Is0V1sFbDwCgg=",
-        },
-      });
+      return respond(200, { uploadUrl });
     },
   );
   context.mocks.http.put(uploadUrl, () => {
