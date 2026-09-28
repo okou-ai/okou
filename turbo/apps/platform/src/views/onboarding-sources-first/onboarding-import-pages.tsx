@@ -63,7 +63,7 @@ export function OnboardingSkillsPage() {
           })
         : null;
 
-  if (providerName === null) {
+  if (provider === null || providerName === null) {
     return null;
   }
   const imported = skillImport.imported.length > 0;
@@ -102,6 +102,7 @@ export function OnboardingSkillsPage() {
       <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6">
         <SkillImportPanel
           signals={sourcesFirstSkillImportSignals}
+          provider={provider}
           providerName={providerName}
           retry$={enterSkillImport$}
         />

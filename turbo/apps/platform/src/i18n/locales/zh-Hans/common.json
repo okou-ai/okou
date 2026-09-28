@@ -4346,6 +4346,34 @@
         "copy": "在 {{provider}} 中运行这段提示词，导入你已经写好的技能，Okou 马上就能用上。",
         "copyError": "无法复制提示词。",
         "copyPrompt": "复制提示词",
+        "guide": {
+          "claudeCode": {
+            "openApp": "打开 Claude 应用，切换到 {{control}} 标签页",
+            "openAppNote": "Code 在你的电脑上运行，所以能读取你的技能文件夹。",
+            "stayLocal": "保持会话为 {{control}}",
+            "stayLocalNote": "Chat 和云端会话看不到你电脑上的文件。"
+          },
+          "codex": {
+            "keepOpen": "保持打开，直到技能出现在下方",
+            "openApp": "打开 Codex 应用，点击 {{control}}",
+            "openAppNote": "请使用你电脑上的应用，这样它才能读取你的技能文件夹。"
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "label": "在哪里运行提示词",
+          "paste": "粘贴提示词并发送",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
         "importedCopy": "已导入为Okou工作流。",
         "importedLabel": "已导入的技能",
         "importedTitle": "你的工作流已就绪",

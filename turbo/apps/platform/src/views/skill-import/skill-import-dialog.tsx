@@ -77,6 +77,7 @@ function SkillImportPromptSection() {
       </SegmentControl>
       <SkillImportPanel
         signals={skillImportDialogSignals}
+        provider={provider}
         providerName={providerName}
         retry$={startSkillImport$}
       />

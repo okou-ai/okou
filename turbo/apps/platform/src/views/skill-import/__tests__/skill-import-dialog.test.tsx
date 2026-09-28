@@ -165,6 +165,9 @@ test("Import skills opens a Claude Code prompt by default", async () => {
     name: PROMPT_LABEL,
   });
   expect(within(dialog).getByText("Run this in Claude Code")).toBeVisible();
+  expect(
+    within(dialog).getByRole("list", { name: "Where to run the prompt" }),
+  ).toHaveTextContent("Open the Claude app and switch to the Code tab");
   expect(prompt.textContent).toContain(
     "vm0_skillimport_claudeCode-session-token",
   );
@@ -191,6 +194,11 @@ test("Switching the dialog to Codex writes the prompt for Codex", async () => {
       within(dialog).getByRole("region", { name: PROMPT_LABEL }).textContent,
     ).toContain("vm0_skillimport_codex-session-token");
   });
+  const guide = within(dialog).getByRole("list", {
+    name: "Where to run the prompt",
+  });
+  expect(guide).toHaveTextContent("Open the Codex app and start a New chat");
+  expect(guide).not.toHaveTextContent("Code tab");
   const prompt = within(dialog).getByRole("region", { name: PROMPT_LABEL });
   expect(prompt.textContent).toContain("~/.codex/skills/");
   expect(prompt.textContent).not.toContain("~/.claude/skills/");

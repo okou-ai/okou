@@ -8,9 +8,13 @@ import { Button } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import type { SkillImportSignals } from "../../signals/skill-import/skill-import.ts";
+import type {
+  SkillImportProvider,
+  SkillImportSignals,
+} from "../../signals/skill-import/skill-import.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { OnboardingIllustration } from "../onboarding-sources-first/onboarding-step-parts.tsx";
+import { SkillImportGuide } from "./skill-import-guide.tsx";
 
 /** The prompt itself: long, read in full, and selectable where it stands. */
 function SkillImportPromptBody({ prompt }: { readonly prompt: string }) {
@@ -203,15 +207,17 @@ export function ImportedSkillList({
 }
 
 /**
- * The prompt for one tool, with its copy button, or where it will be while the
- * session opens or after it could not.
+ * The prompt for one tool, with its copy button and where in the tool to run
+ * it, or where it will be while the session opens or after it could not.
  */
 export function SkillImportPanel({
   signals,
+  provider,
   providerName,
   retry$,
 }: {
   readonly signals: SkillImportSignals;
+  readonly provider: SkillImportProvider;
   readonly providerName: string;
   /** Opens the session again, under whatever owns this import's lifetime. */
   readonly retry$: Command<Promise<void>, [AbortSignal]>;
@@ -244,6 +250,7 @@ export function SkillImportPanel({
           />
         )}
       </div>
+      <SkillImportGuide provider={provider} />
       {state.prompt === null ? (
         state.status === "failed" ? (
           <SkillImportPromptFailed retry$={retry$} />

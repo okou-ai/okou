@@ -4346,6 +4346,34 @@
         "copy": "Jalankan prompt ini di {{provider}} untuk mengimpor skill yang sudah Anda buat, agar Okou dapat langsung menggunakannya.",
         "copyError": "Prompt tidak dapat disalin.",
         "copyPrompt": "Salin prompt",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Buka aplikasi Claude dan beralih ke tab {{control}}",
+            "openAppNote": "Code berjalan di komputer Anda, jadi bisa membaca folder skill Anda.",
+            "stayLocal": "Tetap gunakan sesi {{control}}",
+            "stayLocalNote": "Chat dan sesi cloud tidak bisa melihat file di komputer Anda."
+          },
+          "codex": {
+            "keepOpen": "Biarkan terbuka sampai skill Anda muncul di bawah",
+            "openApp": "Buka aplikasi Codex dan mulai {{control}}",
+            "openAppNote": "Gunakan aplikasi di komputer Anda agar bisa membaca folder skill Anda."
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "label": "Tempat menjalankan prompt",
+          "paste": "Tempel prompt lalu kirim",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
         "importedCopy": "Diimpor sebagai workflow Okou.",
         "importedLabel": "Skill yang diimpor",
         "importedTitle": "Skill Anda sudah ada di Okou",

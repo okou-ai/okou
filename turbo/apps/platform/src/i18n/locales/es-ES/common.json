@@ -4422,6 +4422,34 @@
         "copy": "Ejecuta este prompt en {{provider}} para importar las skills que ya has creado y que Okou pueda usarlas desde el primer día.",
         "copyError": "No se pudo copiar el prompt.",
         "copyPrompt": "Copiar prompt",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Abre la app de Claude y cambia a la pestaña {{control}}",
+            "openAppNote": "Code se ejecuta en tu ordenador, así que puede leer tus carpetas de skills.",
+            "stayLocal": "Mantén la sesión en {{control}}",
+            "stayLocalNote": "El chat y las sesiones en la nube no ven los archivos de tu ordenador."
+          },
+          "codex": {
+            "keepOpen": "Déjala abierta hasta que tus skills aparezcan abajo",
+            "openApp": "Abre la app de Codex e inicia un {{control}}",
+            "openAppNote": "Usa la app en tu ordenador para que pueda leer tus carpetas de skills."
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "label": "Dónde ejecutar el prompt",
+          "paste": "Pega el prompt y envíalo",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
         "importedCopy": "Importado como workflow de Okou.",
         "importedLabel": "Skills importadas",
         "importedTitle": "Tus skills ya están en Okou",
