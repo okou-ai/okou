@@ -151,9 +151,11 @@ function applyEvent(
   // Additive payload on the existing ordering event keeps older readers able
   // to parse the stream. Manual moves do not change pin time or activity time.
   if (event.kind === "sort_touched" && event.pinOrder != null) {
-    if (thread.pinnedAt !== null) {
-      threads.set(event.chatThreadId, { ...thread, pinOrder: event.pinOrder });
-    }
+    threads.set(event.chatThreadId, {
+      ...thread,
+      agentId: event.agentId,
+      ...(thread.pinnedAt !== null ? { pinOrder: event.pinOrder } : {}),
+    });
     return;
   }
 
@@ -161,6 +163,9 @@ function applyEvent(
   if (fields === null) {
     threads.set(event.chatThreadId, {
       ...thread,
+      // Activity touches also carry the canonical agent after an integration
+      // moves to its organization's current default agent.
+      agentId: event.kind === "sort_touched" ? event.agentId : thread.agentId,
       sortAt: event.createdAt > thread.sortAt ? event.createdAt : thread.sortAt,
     });
     return;

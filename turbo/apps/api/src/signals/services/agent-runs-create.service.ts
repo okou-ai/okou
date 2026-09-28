@@ -191,6 +191,8 @@ interface CreateAgentRunCommandArgs {
   readonly chatThreadId?: string;
   readonly connectorSourceId?: string;
   readonly threadSessionRoute?: ChatThreadSessionRoute;
+  /** A producer may atomically move an integration thread to this run's agent. */
+  readonly expectedThreadAgentId?: string;
   readonly webChatSessionPromptContext?: WebChatSessionPromptContext;
   readonly computerUseHostId?: string;
   readonly modelProviderId?: string;
@@ -1213,6 +1215,7 @@ async function resolveThreadSessionForAgentRun(
         userId: input.command.auth.userId,
         orgId: input.command.auth.orgId,
         agentId: input.agent.id,
+        expectedThreadAgentId: input.command.expectedThreadAgentId,
         route: threadSessionRoute,
       });
     },

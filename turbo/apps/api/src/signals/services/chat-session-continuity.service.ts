@@ -46,10 +46,13 @@ export async function resolveChatThreadSession(args: {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
+  /** The stored agent when a producer atomically rebinds this thread. */
+  readonly expectedThreadAgentId?: string;
   readonly route: ChatThreadSessionRoute;
 }): Promise<ChatThreadSessionResolution> {
   const [thread] = await args.db
     .select({
+      threadAgentId: chatThreads.agentId,
       agentSessionId: chatThreads.agentSessionId,
       agentSessionRunId: chatThreads.agentSessionRunId,
       sessionId: agentSessions.id,
@@ -75,7 +78,7 @@ export async function resolveChatThreadSession(args: {
       and(
         eq(chatThreads.id, args.threadId),
         eq(chatThreads.userId, args.userId),
-        eq(chatThreads.agentId, args.agentId),
+        eq(chatThreads.agentId, args.expectedThreadAgentId ?? args.agentId),
       ),
     )
     .limit(1);
@@ -91,7 +94,9 @@ export async function resolveChatThreadSession(args: {
       conversationId: thread.conversationId,
     };
     const rotate =
-      thread.historylessConversation || !canReuseSession(thread, args.route);
+      thread.threadAgentId !== args.agentId ||
+      thread.historylessConversation ||
+      !canReuseSession(thread, args.route);
     return {
       sessionId: rotate ? undefined : thread.sessionId,
       action: rotate ? "rotated" : "reused",
@@ -102,7 +107,7 @@ export async function resolveChatThreadSession(args: {
 
   return {
     sessionId: undefined,
-    action: "initialized",
+    action: thread.threadAgentId === args.agentId ? "initialized" : "rotated",
     expected: {
       agentSessionId: thread.agentSessionId,
       agentSessionRunId: thread.agentSessionRunId,

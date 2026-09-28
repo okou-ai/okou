@@ -1,4 +1,5 @@
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
+import { resolveIntegrationChatThreadAgent } from "./integration-chat-thread-agent.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { randomBytes } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
@@ -611,6 +612,7 @@ interface ChatRunInfo {
 }
 
 interface CreateQueuedChatRunInput {
+  readonly expectedThreadAgentId?: string;
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
@@ -827,6 +829,7 @@ function buildQueuedCreateAgentRunArgs(
     // The time spent waiting in the chat queue is recorded separately.
     apiStartTime: admissionTime,
     chatThreadId: input.threadId,
+    expectedThreadAgentId: input.expectedThreadAgentId,
     ...(input.connectorSourceId
       ? { connectorSourceId: input.connectorSourceId }
       : {}),
@@ -2530,6 +2533,7 @@ async function resolveQueuedMessageModelRoute(args: {
 }
 
 interface CreateQueuedChatRunInputArgs {
+  readonly expectedThreadAgentId?: string;
   readonly db: Db;
   readonly threadId: string;
   readonly userId: string;
@@ -2555,6 +2559,7 @@ async function loadQueuedMessageSessionContext(
           userId: args.userId,
           orgId: args.agent.orgId,
           agentId: args.agent.id,
+          expectedThreadAgentId: args.expectedThreadAgentId,
           route: {
             selectedModel: modelRoute.modelPin.selectedModel,
             cliAgentType: modelRoute.cliAgentType,
@@ -3118,9 +3123,19 @@ function queuedUserMessageProjection(
   return projectUserMessage(queuedUserMessage);
 }
 
-function queuedIntegrationLaunchFields(launchMaterial: QueuedLaunchMaterial) {
+function queuedIntegrationLaunchFields(
+  launchMaterial: QueuedLaunchMaterial,
+  agentId: string,
+) {
+  const delivery = queuedIntegrationDeliveries(launchMaterial);
   return {
-    ...queuedIntegrationDeliveries(launchMaterial),
+    ...delivery,
+    ...(delivery.telegramDelivery
+      ? { telegramDelivery: { ...delivery.telegramDelivery, agentId } }
+      : {}),
+    ...(delivery.agentphoneDelivery
+      ? { agentphoneDelivery: { ...delivery.agentphoneDelivery, agentId } }
+      : {}),
     userInfoExtras: launchMaterial.userInfoExtras,
     ...(launchMaterial.connectorSourceId
       ? { connectorSourceId: launchMaterial.connectorSourceId }
@@ -3226,6 +3241,7 @@ async function buildCreateQueuedChatRunInput(
     orgId: args.agent.orgId,
     userId: args.userId,
     agentId: args.agent.id,
+    expectedThreadAgentId: args.expectedThreadAgentId,
     prompt,
     appendSystemPrompt: buildAppendSystemPrompt(
       queuedIntegrationPrompt({
@@ -3263,7 +3279,7 @@ async function buildCreateQueuedChatRunInput(
       args.db,
       args.queuedMessage.id,
     ),
-    ...queuedIntegrationLaunchFields(launchMaterial),
+    ...queuedIntegrationLaunchFields(launchMaterial, args.agent.id),
     autonomyBudget: args.queuedMessage.autonomyBudget.autonomyBudget,
   };
 }
@@ -4825,6 +4841,27 @@ export const assembleQueuedPromptRun$ = command(
       startedAt: queuedMessage.createdAt.getTime(),
       finishedAt: head.apiStartTime,
     });
+    const agent = await resolveIntegrationChatThreadAgent(db, head);
+    signal.throwIfAborted();
+    if (!agent) {
+      return {
+        kind: "rejected",
+        rejection: {
+          userId: head.userId,
+          error: {
+            code: "BAD_REQUEST",
+            message: "The organization default agent is unavailable",
+          },
+          deliver: (assistantEventId, deliverySignal) => {
+            return set(
+              deliverUnexpectedQueuedPromptRejection$,
+              { head, assistantEventId },
+              deliverySignal,
+            );
+          },
+        },
+      };
+    }
     const dependencies = set(buildChatCallbackDependencies$, { db });
     const prepared = await settle(
       measureChatCallbackPreCreateTiming(
@@ -4837,7 +4874,8 @@ export const assembleQueuedPromptRun$ = command(
               db,
               threadId: head.chatThreadId,
               userId: head.userId,
-              agent: { id: head.agentId, orgId: head.orgId },
+              agent: { id: agent.agentId, orgId: head.orgId },
+              expectedThreadAgentId: agent.expectedThreadAgentId,
               queuedMessage,
               timing,
             },
@@ -4871,11 +4909,14 @@ export const assembleQueuedPromptRun$ = command(
     }
     return {
       kind: "assembled",
-      run: buildQueuedCreateAgentRunArgs(
-        runInput,
-        head.apiStartTime,
-        queuedChatDispatchFailedCallbacks(dependencies, runInput, signal),
-      ),
+      run: {
+        ...buildQueuedCreateAgentRunArgs(
+          runInput,
+          head.apiStartTime,
+          queuedChatDispatchFailedCallbacks(dependencies, runInput, signal),
+        ),
+        persistProducerRunBinding: agent.persistProducerRunBinding,
+      },
       rejection: (error) => {
         return queuedMessageRejection(
           dependencies,

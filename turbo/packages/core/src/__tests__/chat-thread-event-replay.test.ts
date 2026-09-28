@@ -90,6 +90,75 @@ describe("archive event replay", () => {
   });
 });
 
+describe("integration thread agent changes", () => {
+  it("rebinds an existing thread without resetting its conversation metadata", () => {
+    const renamed = {
+      ...created,
+      kind: "renamed" as const,
+      title: "An existing conversation",
+      createdAt: "2026-09-09T00:00:01.000Z",
+    };
+    const pinned = {
+      ...created,
+      kind: "pinned" as const,
+      pinOrder: "a",
+      createdAt: "2026-09-09T00:00:02.000Z",
+    };
+    const archived = {
+      ...created,
+      kind: "archived" as const,
+      createdAt: "2026-09-09T00:00:03.000Z",
+    };
+    const snapshot = replayChatThreadEvents(
+      [],
+      [created, renamed, pinned, archived],
+    );
+    const rebound = {
+      ...created,
+      kind: "sort_touched" as const,
+      agentId: "00000000-0000-4000-8000-000000000099",
+      createdAt: "2026-09-09T00:00:04.000Z",
+    };
+
+    const expected = {
+      agentId: rebound.agentId,
+      title: renamed.title,
+      createdAt: created.createdAt,
+      renamedAt: renamed.createdAt,
+      pinnedAt: pinned.createdAt,
+      pinOrder: pinned.pinOrder,
+      archived: true,
+      selectedModel: created.selectedModel,
+      modelSettings: created.modelSettings,
+      sortAt: rebound.createdAt,
+    };
+    expect(replayChatThreadEvents(snapshot, [rebound])[0]).toMatchObject(
+      expected,
+    );
+    expect(
+      replayChatThreadEvents(
+        [],
+        [created, renamed, pinned, archived, rebound],
+      )[0],
+    ).toMatchObject(expected);
+  });
+
+  it("keeps the new agent when later non-identity events carry the former agent", () => {
+    const rebound = {
+      ...created,
+      kind: "sort_touched" as const,
+      agentId: "00000000-0000-4000-8000-000000000099",
+      createdAt: "2026-09-09T00:00:04.000Z",
+    };
+    expect(
+      replayChatThreadEvents([], [created, rebound, selected])[0],
+    ).toMatchObject({
+      agentId: rebound.agentId,
+      selectedModel: selected.selectedModel,
+    });
+  });
+});
+
 describe("independently committed activity touches", () => {
   it("keeps maximum activity time when sequence order differs from commit time", () => {
     const later = {
