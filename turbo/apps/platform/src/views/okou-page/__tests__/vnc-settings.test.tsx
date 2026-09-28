@@ -492,6 +492,33 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
   ]);
 });
 
+test("Direct route explains canonical IPv6 loopback and private mapped literals", async () => {
+  mockSettings({ connections: [], credentials: [credential] });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  const destination = within(dialog).getByLabelText("RFB destination host");
+  for (const address of [
+    "0:0:0:0:0:0:0:1",
+    "::ffff:127.0.0.1",
+    "::ffff:10.2.3.4",
+    "fc00::1",
+    "febf::1",
+  ]) {
+    await fill(destination, address);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Private and loopback IP addresses require a saved SSH host",
+    );
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+  }
+  await fill(destination, "::ffff:8.8.8.8");
+  expect(within(dialog).queryByRole("alert")).toBeNull();
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+});
+
 test("Inline password creation preserves spaces and sends the selected custom certificate trust", async () => {
   mockSettings({ connections: [] });
   const requests: unknown[] = [];

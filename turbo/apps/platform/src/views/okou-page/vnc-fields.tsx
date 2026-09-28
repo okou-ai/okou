@@ -50,32 +50,59 @@ import { invalidateSsh$, sshConnections$ } from "../../signals/ssh.ts";
 
 // Fast feedback for literal destinations; the API remains authoritative for
 // canonicalization and all other host / route validation.
-export function isPrivateVncLiteral(host: string): boolean {
+function isPrivateIpv4Literal(host: string): boolean {
   const parts = host.split(".");
   if (
-    parts.length === 4 &&
-    parts.every((part) => {
+    parts.length !== 4 ||
+    !parts.every((part) => {
       return /^\d{1,3}$/u.test(part) && Number(part) <= 255;
     })
   ) {
-    const first = Number(parts[0]);
-    const second = Number(parts[1]);
-    return (
-      first === 0 ||
-      first === 10 ||
-      first === 127 ||
-      (first === 100 && second >= 64 && second <= 127) ||
-      (first === 169 && second === 254) ||
-      (first === 172 && second >= 16 && second <= 31) ||
-      (first === 192 && second === 168)
-    );
+    return false;
   }
-  const lower = host.toLowerCase();
+  const first = Number(parts[0]);
+  const second = Number(parts[1]);
   return (
-    lower === "::" ||
-    lower === "::1" ||
-    /^f[cd][0-9a-f]*:/u.test(lower) ||
-    /^fe[89ab][0-9a-f]*:/u.test(lower)
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168)
+  );
+}
+
+export function isPrivateVncLiteral(host: string): boolean {
+  if (isPrivateIpv4Literal(host)) {
+    return true;
+  }
+  if (!host.includes(":")) {
+    return false;
+  }
+  let address: string;
+  try {
+    // Match the API's canonical IPv6 interpretation, including expanded and
+    // IPv4-mapped forms; an invalid literal is left to form/API validation.
+    address = new URL(`http://[${host}]`).hostname.slice(1, -1);
+  } catch {
+    return false;
+  }
+  if (address === "::" || address === "::1") {
+    return true;
+  }
+  const first = Number.parseInt(address.split(":", 1)[0] ?? "", 16);
+  if ((first & 0xfe_00) === 0xfc_00 || (first & 0xff_c0) === 0xfe_80) {
+    return true;
+  }
+  const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/u.exec(address);
+  if (!mapped?.[1] || !mapped[2]) {
+    return false;
+  }
+  const high = Number.parseInt(mapped[1], 16);
+  const low = Number.parseInt(mapped[2], 16);
+  return isPrivateIpv4Literal(
+    `${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`,
   );
 }
 
