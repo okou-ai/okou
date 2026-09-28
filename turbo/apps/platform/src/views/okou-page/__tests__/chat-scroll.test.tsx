@@ -222,13 +222,33 @@ function mockMutableConversation(
     chatEvents: [...initialEvents],
     activeRunIds: [...activeRunIds],
   });
+  const rowsSince = (sinceSeqId: number) => {
+    return mockChatEventRows(normalizeMockChatEvents(events, threadId)).filter(
+      (row) => {
+        return row.seqId > sinceSeqId;
+      },
+    );
+  };
   context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    const rows = mockChatEventRows(normalizeMockChatEvents(events, threadId))
-      .filter((row) => {
-        return row.seqId > query.sinceSeqId;
-      })
-      .slice(0, query.limit ?? 50);
-    return respond(200, chatEventRowsResponse(rows, query));
+    return respond(
+      200,
+      chatEventRowsResponse(
+        rowsSince(query.sinceSeqId).slice(0, query.limit ?? 50),
+        query,
+      ),
+    );
+  });
+  // The Worker may warm its cache through the batched endpoint before the
+  // page fetches rows. Both endpoints must describe the same persisted events.
+  context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
+    return respond(200, {
+      events: Object.fromEntries(
+        body.map(([id, sinceSeqId]) => {
+          return [id, id === threadId ? rowsSince(sinceSeqId) : []];
+        }),
+      ),
+      notFoundThreads: [],
+    });
   });
   return {
     publish: (nextEvents) => {
