@@ -1,4 +1,7 @@
-import { chatEvents } from "@okouai/db/schema/chat-event";
+import {
+  chatEventRunlessInputPredicate,
+  chatEvents,
+} from "@okouai/db/schema/chat-event";
 import {
   and,
   asc,
@@ -194,7 +197,7 @@ export interface PendingChatInput {
 /**
  * One thread's pending (run-less, unrevoked) input in sequence order, read in
  * two bounded steps scoped to the thread: its run-less input rows through the
- * (chat_thread_id, seq_id) index, then the revocations of exactly those rows
+ * run-less input partial index, then the revocations of exactly those rows
  * through the revokes_event_id index. The revoked rows are dropped here, so
  * the read needs no transaction, CTE or subquery. `budgetForRunId` adds the
  * budget input that targets that run; `afterSeqId` keeps only input positioned
@@ -225,7 +228,7 @@ export async function listPendingChatInputs(
         args.afterSeqId === undefined
           ? undefined
           : gt(chatEvents.seqId, args.afterSeqId),
-        isNull(chatEvents.runId),
+        chatEventRunlessInputPredicate(chatEvents.runId, chatEvents.eventType),
         or(
           inArray(chatEvents.eventType, [...args.eventTypes]),
           args.budgetForRunId === undefined
