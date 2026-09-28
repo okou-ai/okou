@@ -133,14 +133,14 @@ retired. Configure each saved host's chat default in Remote control; choose
 Creating the first host may still populate legacy Agent-grant records for
 compatibility, but these records do not authorize Run access. **Add connectors**
 continues to offer zero-host SSH setup.
-Both the legacy dialog and the Discover directory include this entry when
-no hosts are configured. In Discover, it appears after
-built-in shelves and under **Remote access**, participates in search, and stays
-out of the Custom tab. Its link also supports normal keyboard activation.
-Opening the popover refreshes SSH reads without dropping the last confirmed
-display for the same user/workspace. Its switch waits for the refreshed result.
-Changing owner discards that retained display, and each composer selects only
-its own Agent's grant.
+The Connectors dialog and Discover directory include this setup entry when
+no hosts are configured. In Discover, it appears after built-in shelves and
+under **Remote access**, participates in search, and stays out of the Custom
+tab. Its link also supports normal keyboard activation. Opening the chat's
+Remote access menu refreshes the host choices without dropping the last
+confirmed display for the same user/workspace. Changing owner discards that
+retained display; draft choices belong to the new-chat composer, and saved
+choices belong to the exact chat thread.
 
 Owner API business errors use stable `SSH_*` codes. Platform translates them,
 including recovery guidance for invalid input, stale generations and unavailable
@@ -149,14 +149,14 @@ from unavailability returned by an older API during deployment. There is no
 persistent Refresh button and background
 failures do not show raw server-message toasts.
 
-Successful host and grant changes publish best-effort `ssh:changed` on the owner's
-user channel with only `{ orgId }`. Learning a new host key also refreshes the
-browser. Platform checks the workspace and invalidates host, summary and grant
-reads. Initial subscription also refreshes them; reconnect and foreground events
-do not trigger extra reads. These refreshes do not close dialogs, clear unsaved
-keys or automatically grant access. Browser notifications are separate from
-Runner authority invalidation and do not tighten
-the accepted Run-lifetime cache window.
+Successful host and legacy grant changes publish best-effort `ssh:changed` on
+the owner's user channel with only `{ orgId }`. Learning a new host key also
+refreshes the browser. Platform checks the workspace and invalidates host and
+summary reads. Initial subscription also refreshes them; reconnect and
+foreground events do not trigger extra reads. These refreshes do not close
+dialogs, clear unsaved keys or change chat host permissions. Browser
+notifications are separate from Runner authority invalidation and do not
+tighten the accepted Run-lifetime cache window.
 
 ## Cloudflare Access for SSH
 
@@ -191,18 +191,19 @@ updates/deletion require the expected edit revision, and referenced deletion is
 rejected. Names may change without invalidating Runs. Token replacement advances
 a separate authority generation and all referencing SSH host generations.
 Configurations have no separate enabled state; the saved host binding selects
-Access, and the existing SSH Agent grant authorizes use. Switching to Direct is
-not a way to disable a protected host.
+Access, and the Run's current chat permission for that host authorizes use.
+Switching to Direct is not a way to disable a protected host.
 
 An SSH host explicitly selects a same-owner configuration, published DNS hostname
 and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
 a configuration across hosts does not share it across users or workspaces.
-Protected execution uses the existing SSH Agent grant; there is no separate
-Access grant. Creating or changing an Access configuration does not create a
-host, grant SSH or restore a manual denial. Existing first-SSH-host onboarding
-remains unchanged, and later Agents can use bound configurations once authorized
-for SSH. SSH username/key/password and server host-key trust remain independent
-of the Service Token.
+Protected execution uses the same chat SSH host permission as Direct; there is
+no separate Access grant. Creating or changing an Access configuration does
+not create a host or change chat permissions. First-SSH-host onboarding may
+still write legacy Agent grants, but these do not authorize execution. Any
+visible Agent with a Run in an authorized chat can use the bound host owned by
+that Run's user. SSH username/key/password and server host-key trust remain
+independent of the Service Token.
 
 Cloudflare Access also has a Connector card that opens
 `/connectors?scope=private-network`; see [Cloudflare Access](cloudflare-access.md).
@@ -278,10 +279,9 @@ does not promise immediate revocation.
 After an actual SSH attempt, the host card can show the last reported connection
 failure, its observation time, and localized recovery guidance. The directory
 card uses the same status-dot and attention-ratio presentation as Connector
-cards. Chat service rows and compact icons do not add SSH-only warning badges,
-matching Connector presentation. Multiple hosts retain independent observations;
-a healthy sibling cannot clear another host's warning. Grants, service order
-and the compact icon limit are unchanged.
+cards. The chat Remote access menu does not add SSH-only warning badges. Multiple
+hosts retain independent observations; a healthy sibling cannot clear another
+host's warning.
 
 Only credential parsing, destination, network, host identity, authentication and
 pre-authentication handshake/timeout failures are connection failures. A verified
@@ -430,7 +430,8 @@ okou ssh upload <connection-id> <local-file> <remote-file> --json
 okou ssh download <connection-id> <remote-file> <local-file> --json
 ```
 
-Both commands require the existing SSH grant and `ssh:write` Run capability.
+Both commands require the Run's current chat permission for the exact SSH host
+and `ssh:write` Run capability.
 Credentials remain outside the sandbox. They transfer one regular file via the
 Runner's verified SFTP connection, without shell/scp fallback. Paths are literal:
 no expansion, recursion, resume, final symlinks or automatic creation of missing
@@ -477,17 +478,20 @@ independently verify the new identity before using **Reset host key**; that
 explicit confirmation allows a later connection to trust and learn a new key.
 Never reset automatically. For credential failures, ask the owner to review the
 supported key format and replace credentials. For `unavailable`, check the
-feature, owner grant, host and Run lifetime. For `unsafe_destination` or
-`network_failure`, check the public endpoint and reachability. Capacity or
+Run's chat-thread host selection, owner, host and Run lifetime. For
+`unsafe_destination` or `network_failure`, check the public endpoint and
+reachability. Capacity or
 timeout failures do not justify replay when effects are unknown.
 
 Inventory and owner configuration are live reads. Execution authority uses the
-existing Run-lifetime Runner cache while notifications are connected. Host edits,
-rotation, deletion, reset and Agent grant changes publish invalidation notices.
-Grant notices use `{ runId, connectionId: null }` for active Runs of that exact
-owner/Agent, including after deleting the grant. Notification failure does not
-roll back a committed edit. A missed notice can leave cached authority until the
-Run ends. End affected active Runs when immediate revocation is necessary.
+existing Run-lifetime Runner cache while notifications are connected. Host
+edits, rotation, deletion, reset and chat default or override changes publish
+invalidation notices. Legacy Agent-grant edits also send Run-wide notices with
+`{ runId, connectionId: null }` for active Runs of that owner/Agent, including
+after deleting the grant, but the grant no longer governs authority.
+Notification failure does not roll back a committed edit. A missed notice can
+leave cached authority until the Run ends. End affected active Runs when
+immediate revocation is necessary.
 
 See [Runner authority](runner-ssh-authority.md) for authorization and cache
 semantics, [SSH execution](runner-ssh-execution.md) for supported keys, network

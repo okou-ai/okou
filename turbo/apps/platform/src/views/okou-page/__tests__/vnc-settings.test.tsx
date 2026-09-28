@@ -172,7 +172,7 @@ async function openAddHostPage() {
   );
 }
 
-test("VNC host settings update the chat default in thread remote access mode", async () => {
+test("VNC host settings update the chat remote access default", async () => {
   mockSettings();
   let enabled = false;
   context.mocks.api(

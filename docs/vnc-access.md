@@ -2,8 +2,9 @@
 
 VNC is an independent remote-access capability alongside SSH. The
 `VncAccess` (`vncAccess`) feature switch is disabled by default, including for
-staff. Explicit owner/Agent grants, metadata inventory and private Runner
-authority are described in [Runner VNC authority](runner-vnc-authority.md).
+staff. Owner configuration, legacy Agent-grant records, chat host selection,
+metadata inventory and private Runner authority are described in
+[Runner VNC authority](runner-vnc-authority.md).
 The Runner, owner configuration and Agent inventory support the exact X509Vnc,
 X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct SRP
 and Apple RSA/SRP profiles.
@@ -131,8 +132,8 @@ after every VNC reference is reassigned or removed. Direct metadata retains its
 legacy response shape; SSH metadata includes the typed reference. Private and
 loopback literal VNC destinations require SSH transport. Current Runners
 advertise exact authentication/security/transport tuples and execute an SSH row
-only when the Agent independently holds both VNC and SSH grants. Older Runners
-omit transport, which means direct-only; an SSH row returns
+only when the Run's chat allows that VNC host and its exact SSH host. Older
+Runners omit transport, which means direct-only; an authorized SSH row returns
 `unsupported_profile` before VNC credential decryption and never falls back to
 public TCP.
 
@@ -199,8 +200,8 @@ certificate identity** is separate from the RFB destination: leave it blank to
 verify the certificate against the RFB destination host, or set the DNS/IP name
 actually covered by the server certificate. It never changes where the socket
 connects. Saved cards show the route, selected SSH host, RFB destination and
-effective certificate identity before Agent access is granted. Saving records
-configuration; it does not test reachability or authenticate a session.
+effective certificate identity before chat host permission is selected. Saving
+records configuration; it does not test reachability or authenticate a session.
 
 An SSH host referenced by a VNC route cannot be deleted. Rebind every dependent
 VNC route, switch it explicitly to Direct where that destination is valid, or
@@ -220,23 +221,23 @@ not automatically rerouted. The app hides X.509 trust fields for Apple and
 offers only profile-matching credentials. SSH protects the entire VNC session;
 neither Apple DH nor SRP server proof replaces this transport protection.
 Saving does not verify Mac VNC settings or prove the SSH server has no
-downstream proxy. A real product session must separately validate saved-host creation,
-Agent grant, screenshot and bounded input before activation.
+downstream proxy. A real product session must separately validate saved-host
+creation, chat host permission, screenshot and bounded input before activation.
 
-Adding the first VNC host automatically grants access to every Agent currently
-visible to the owner, including another workspace member's public Agents. The
-host and grants commit atomically. Adding later hosts preserves manual revocations
-and does not grant Agents created afterward. After every host is deleted, adding
-one again repeats this onboarding default for the Agents visible at that time.
+Adding the first VNC host still populates legacy grants for every Agent
+currently visible to the owner, including another workspace member's public
+Agents. The host and grants commit atomically. Adding later hosts preserves
+those records; after every host is deleted, adding one again repeats the legacy
+auto-grant. These records do not authorize Run access, and the Agent-wide access
+controls are no longer shown in the app.
 
-Manage VNC access explicitly using the card's Agent access control or the Agent's
-authorization tab. This grant is independent of SSH and permits access to the
-owner's current and future configured VNC hosts. Direct rows appear in the live
-Agent inventory with VNC access alone. An SSH-backed row appears only while that
-same Agent independently holds both VNC and SSH access; revoking SSH immediately
-removes only the SSH-backed rows from later inventory reads and authorization
-checks. The inventory remains secret-free and does not expose the route, SSH
-reference, trust material, certificate identity or generations. Like SSH, it
+Manage VNC access with each saved host's chat default and the chat's `On`, `Off`,
+or `Use default` choice. Direct rows appear in live Run inventory when the Run's
+chat permits their exact VNC hosts. An SSH-backed row also requires the chat to
+permit the referenced SSH host; revoking that SSH permission removes only the
+SSH-backed rows from subsequent inventory reads and authorization checks. The
+inventory remains secret-free and does not expose the route, SSH reference,
+trust material, certificate identity or generations. Like SSH, it
 includes `availability: { status: "ready" }` for configured hosts and
 `{ status: "blocked", reason: "needs_rebind" }` for authorized VNC hosts whose
 underlying SSH host needs Cloudflare Access rebinding. Blocked IDs are diagnostic
@@ -437,14 +438,15 @@ evidence.
 ## Verification
 
 Route integration tests exercise auth, current membership, owner isolation,
-rejoined owner access, secret-free output, validation, zero-to-one Agent grants,
-concurrent first-host creation, live-resource retries, recreation after deletion,
-optimistic concurrency, rotation, inline rollback and scoped cleanup through
-production HTTP boundaries.
-Focused inventory coverage also creates direct and SSH-backed rows for one
-Agent, proves that VNC access alone exposes only the direct row, proves that both
-grants expose both rows, and proves that SSH revocation removes the tunneled row
-without broadening the response shape. Platform Router tests exercise direct and
+rejoined owner access, secret-free output, validation, retained zero-to-one
+legacy Agent grants, concurrent first-host creation, live-resource retries,
+recreation after deletion, optimistic concurrency, rotation, inline rollback
+and scoped cleanup through production HTTP boundaries.
+Focused inventory coverage also creates direct and SSH-backed rows for a chat,
+proves that chat permission for the VNC host alone exposes only the direct row,
+proves that permission for the exact SSH host exposes the tunneled row, and
+proves that revoking that SSH permission removes the tunneled row without
+broadening the response shape. Platform Router tests exercise direct and
 SSH editing, route switching without draft loss, separate destination and
 certificate identity, stale SSH references, topology summaries and actionable
 restrictive-deletion errors.

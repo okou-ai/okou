@@ -103,11 +103,11 @@ eviction, exact Run replacement and Run/sandbox teardown retain their cleanup be
 Cache-overflow operations remain tracked for invalidation without owning cache cells.
 
 There is no fixed TTL or periodic authorization poll. Missed publication or a
-dropped subscriber message, including during an observed outage, may leave previous
-configuration/credentials/grants
-usable for the remainder of the Run, including after deletion/revocation. This
-Run-lifetime stale-authority window is explicitly accepted; Ably is not a reliable
-revocation protocol. Reconnection neither requires reauthorization nor revives
+dropped subscriber message, including during an observed outage, may leave
+previously authorized host access and configuration/credentials usable for the
+remainder of the Run, including after a chat permission is revoked or a host is
+deleted. This Run-lifetime stale-authority window is explicitly accepted; Ably
+is not a reliable revocation protocol. Reconnection neither requires reauthorization nor revives
 invalidated authority. Cached parsed keys remain bounded in process memory and are
 retired on invalidation or Run teardown. Per-connection public-destination and
 cryptographic proof/pin checks remain mandatory, and invalidation never authorizes

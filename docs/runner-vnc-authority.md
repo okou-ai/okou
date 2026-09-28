@@ -142,9 +142,9 @@ disconnection does not trigger an automatic reconnect, mode retry or input repla
 
 The Runner checks current authority before status/list/screenshot/input and
 stops fresh work on authority/API failure. Detected VNC or SSH generation,
-reference, transport or grant changes require closing
-the old session rather than adopting new credentials into its socket. Run
-cancellation and explicit session close own socket/operation teardown; resource
+reference, transport or chat-host permission changes require closing the old
+session rather than adopting new credentials into its socket. Run cancellation
+and explicit session close own socket/operation teardown; resource
 permits remain held until work actually ends. Input is serialized within each
 session; independent sessions remain subject to server sharing policy.
 

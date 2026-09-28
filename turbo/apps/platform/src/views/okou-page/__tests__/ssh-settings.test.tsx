@@ -433,7 +433,7 @@ async function openAddHostPage() {
   );
 }
 
-test("SSH host settings update the chat default in thread remote access mode", async () => {
+test("SSH host settings update the chat remote access default", async () => {
   let enabled = false;
   let updatedParams: { protocol: string; connectionId: string } | undefined;
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {

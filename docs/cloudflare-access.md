@@ -8,10 +8,10 @@ network tab.
 
 Cloudflare Access is not a directly usable Agent service. It has no Agent grant,
 account picker, connector authorization, chat trigger, or direct command. A
-consumer owns its own authorization. SSH is the first consumer and continues to
-use the existing SSH Agent grant when a host selects a Cloudflare Access
-configuration. Future consumers can reuse the same owner configuration without
-making Cloudflare Access itself an Agent capability.
+consumer owns its own authorization. SSH is the first consumer and requires
+the Run's current chat permission for the exact SSH host when it selects a
+Cloudflare Access configuration. Future consumers can reuse the same owner
+configuration without making Cloudflare Access itself an Agent capability.
 
 Configurations are either **Personal**, available only to their owner, or
 **Organization**, available to every member of the current organization. Only
@@ -82,8 +82,8 @@ visible to its owner with a rebind warning; authorized fresh VNC Run inventories
 show it as `availability: { status: "blocked", reason: "needs_rebind" }` for
 diagnosis, matching SSH. Only ready VNC host IDs should be used for new sessions.
 Fresh VNC Runner checks return unavailable; a resolve advertising the saved
-SSH profile also returns unavailable before releasing VNC credentials. With
-Agent grants, a profile mismatch can still return unsupported; thread-scoped
-access rejects the blocked SSH transport as unavailable first. The VNC route
-is never switched to Direct automatically. Already-running Runs may retain
-previously cached SSH authority until completion as described above.
+SSH profile also returns unavailable before releasing VNC credentials. Chat
+host authorization and the SSH rebind check precede profile negotiation, so
+an unauthorized or blocked SSH transport cannot return `unsupported_profile`.
+The VNC route is never switched to Direct automatically. Already-running Runs
+may retain previously cached SSH authority until completion as described above.
