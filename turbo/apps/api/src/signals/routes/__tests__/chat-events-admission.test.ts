@@ -123,6 +123,40 @@ describe("CHAT-02: web chat send and client ids", () => {
       threadId: clientThreadId,
       createdAt: expect.any(String),
     });
+
+    // A client cannot inject MCP provenance on a new input or on a retry of
+    // an already accepted event. The retry must be rejected before replay.
+    for (const forgedEventId of [randomUUID(), clientEventId]) {
+      const forged = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: clientThreadId,
+          clientEventId: forgedEventId,
+          prompt,
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text: prompt },
+              {
+                type: "source",
+                kind: "mcp",
+                clientId: "https://claude.ai/oauth/claude-code-client-metadata",
+                clientNameSnapshot: "Claude Code",
+              },
+            ],
+          },
+          hasTextContent: true,
+        },
+        [400],
+      );
+      expect(forged.body).toMatchObject({
+        error: {
+          code: "BAD_REQUEST",
+          message: "MCP source annotations are server-managed",
+        },
+      });
+    }
     const launched = await waitForThreadMessages(
       actor,
       clientThreadId,

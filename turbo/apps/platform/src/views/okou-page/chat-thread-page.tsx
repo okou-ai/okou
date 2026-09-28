@@ -165,6 +165,7 @@ import {
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
 import { DiscordMark } from "./components/discord-mark.tsx";
+import { McpMark } from "./components/mcp-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
@@ -6746,9 +6747,12 @@ const DISCORD_MESSAGE_URL =
 function sourceMessageHref(
   part: Extract<
     UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "external" }
+    { type: "source"; kind: "external" | "mcp" }
   >["part"],
 ): string | undefined {
+  if (part.kind === "mcp") {
+    return undefined;
+  }
   if (part.kind === "discord" && !DISCORD_MESSAGE_URL.test(part.href ?? "")) {
     return undefined;
   }
@@ -6759,7 +6763,7 @@ function sourceMessageLinkText(
   t: TFunction<"common">,
   part: Extract<
     UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "external" }
+    { type: "source"; kind: "external" | "mcp" }
   >["part"],
 ) {
   const opensChat =
@@ -6788,10 +6792,13 @@ function sourceMessageLabel(
   t: TFunction<"common">,
   kind: Extract<
     UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "external" }
+    { type: "source"; kind: "external" | "mcp" }
   >["part"]["kind"],
 ): string {
   switch (kind) {
+    case "mcp": {
+      return "MCP";
+    }
     case "discord": {
       return t(($) => {
         return $.chat.origins.discord;
@@ -6860,7 +6867,10 @@ function SourceMessageAnnotation({
     part.href?.startsWith("https://applink.larksuite.com/") === true
       ? "lark"
       : part.kind;
-  const sourceLabel = sourceMessageLabel(t, sourceKind);
+  const sourceLabel =
+    part.kind === "mcp"
+      ? (part.clientNameSnapshot ?? "MCP")
+      : sourceMessageLabel(t, sourceKind);
   const href = sourceMessageHref(part);
   const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
@@ -6900,7 +6910,9 @@ function SourceMessageAnnotation({
                   : openLabel;
   const content = (
     <>
-      {sourceKind === "slack" ? (
+      {sourceKind === "mcp" ? (
+        <McpMark size={15} />
+      ) : sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
       ) : sourceKind === "discord" ? (
         <DiscordMark size={15} />

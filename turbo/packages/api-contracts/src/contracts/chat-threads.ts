@@ -613,6 +613,21 @@ const userMessageExternalSourcePartSchema = z
   })
   .strict();
 
+const userMessageMcpSourcePartSchema = z
+  .object({
+    type: z.literal("source"),
+    kind: z.literal("mcp"),
+    /** OAuth client ID, assigned only by the MCP server, never by a caller. */
+    clientId: z
+      .string()
+      .min(1)
+      .max(2048)
+      .refine((value) => value.trim().length > 0),
+    /** Display-only snapshot; absent when client metadata was unavailable. */
+    clientNameSnapshot: z.string().trim().min(1).max(120).optional(),
+  })
+  .strict();
+
 const userMessageAgentSourcePartSchema = z
   .object({
     type: z.literal("source"),
@@ -627,6 +642,7 @@ const userMessageAgentSourcePartSchema = z
 
 const userMessageSourcePartSchema = z.discriminatedUnion("kind", [
   userMessageExternalSourcePartSchema,
+  userMessageMcpSourcePartSchema,
   userMessageAgentSourcePartSchema,
 ]);
 

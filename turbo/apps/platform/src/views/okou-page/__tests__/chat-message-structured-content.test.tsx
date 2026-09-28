@@ -85,6 +85,60 @@ test("Agent mentions are recognizable links in messages and feedback", async () 
   expect(message).not.toHaveTextContent(ADA_AGENT_ID);
 });
 
+test("MCP messages show the saved client name or generic marker with a local icon", async () => {
+  const named = {
+    version: 1,
+    parts: [
+      { type: "text", text: "Review the MCP launch notes." },
+      {
+        type: "source",
+        kind: "mcp",
+        clientId: "https://claude.ai/oauth/claude-code-client-metadata",
+        clientNameSnapshot: "Claude Code",
+      },
+    ],
+  } satisfies UserMessageDocument;
+  const unnamed = {
+    version: 1,
+    parts: [
+      { type: "text", text: "Review the fallback source." },
+      { type: "source", kind: "mcp", clientId: "client_public" },
+    ],
+  } satisfies UserMessageDocument;
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [
+      userEventWith(named),
+      userEventWith(unnamed, "d0000000-0000-4000-a000-000000000054"),
+    ],
+  });
+
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+
+  const namedMessage = (
+    await screen.findByText("Review the MCP launch notes.")
+  ).closest('[data-role="user"]');
+  expect(namedMessage).not.toBeNull();
+  const namedLabel = within(namedMessage as HTMLElement).getByText(
+    "Claude Code",
+  );
+  expect(namedLabel.parentElement?.querySelector("svg")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
+  expect(namedLabel.parentElement?.querySelector("a")).toBeNull();
+  expect(namedMessage).not.toHaveTextContent(
+    "https://claude.ai/oauth/claude-code-client-metadata",
+  );
+
+  const unnamedMessage = (
+    await screen.findByText("Review the fallback source.")
+  ).closest('[data-role="user"]');
+  expect(unnamedMessage).not.toBeNull();
+  const fallback = within(unnamedMessage as HTMLElement).getByText("MCP");
+  expect(fallback.parentElement?.querySelector("svg")).toBeInTheDocument();
+});
+
 test("Delegated work links back to its source run", async () => {
   const userMessage = {
     version: 1,
