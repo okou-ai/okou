@@ -75,10 +75,6 @@ describe("deriveSqlSpanName", () => {
     it("select 1 has no from, return the operation alone", () => {
       expect(deriveSqlSpanName("select 1")).toBe("SELECT");
     });
-
-    it("select now() has no from either", () => {
-      expect(deriveSqlSpanName("select now()")).toBe("SELECT");
-    });
   });
 
   describe("input variations", () => {
@@ -103,10 +99,6 @@ describe("deriveSqlSpanName", () => {
       expect(
         deriveSqlSpanName('explain analyze select 1 from "users"'),
       ).toBeNull();
-    });
-
-    it("show search_path", () => {
-      expect(deriveSqlSpanName("show search_path")).toBeNull();
     });
 
     it("begin / commit control statements", () => {

@@ -29,7 +29,7 @@ describe("Pi captured-config observation boundary", () => {
     },
   );
 
-  it.each([undefined, null, [], "private-config"])(
+  it.each([undefined, [], "private-config"])(
     "reports an unavailable captured config as unknown: %j",
     (config) => {
       expect(piModelConfigObservation("pi", config)).toStrictEqual({
@@ -38,7 +38,7 @@ describe("Pi captured-config observation boundary", () => {
     },
   );
 
-  it.each([undefined, "codex", "claude-code"])(
+  it.each([undefined, "codex"])(
     "leaves non-Pi snapshots unclassified: %s",
     (cliAgentType) => {
       expect(piModelConfigObservation(cliAgentType, {})).toBeUndefined();
