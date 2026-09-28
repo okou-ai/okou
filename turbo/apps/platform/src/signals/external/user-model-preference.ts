@@ -70,28 +70,6 @@ export const updateUserModelPreference$ = command(
   },
 );
 
-/** Makes an image model the member default without disturbing sibling fields. */
-export const updateDefaultImageModel$ = command(
-  async (
-    { get, set },
-    imageModel: ImageModel,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    set(reloadUserModelPreference$);
-    const preference = await get(userModelPreference$);
-    signal.throwIfAborted();
-    await set(
-      updateUserModelPreference$,
-      {
-        selectedModel: preference.selectedModel,
-        serviceTier: preference.serviceTier,
-        selectedImageModel: imageModel,
-      },
-      signal,
-    );
-  },
-);
-
 function payloadRequestsKindsReloadFor(
   payload: unknown,
   kinds: UserPreferenceChangedPayload["kinds"],

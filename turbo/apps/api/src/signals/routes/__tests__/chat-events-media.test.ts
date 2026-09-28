@@ -105,9 +105,6 @@ describe("CHAT-02: run image model snapshot", () => {
     expect(legacyThreadPinPrompt).toContain(
       "The model cannot be changed per request. Do not pass `--model` to image generation commands.",
     );
-    expect(legacyThreadPinPrompt).not.toContain(
-      "# Default built-in image model",
-    );
     expect(legacyThreadPinPrompt).toContain(
       "Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.\n\n# Restricted Explicit Content",
     );

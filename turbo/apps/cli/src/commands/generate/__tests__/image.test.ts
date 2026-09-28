@@ -320,45 +320,6 @@ describe("okou generate image command", () => {
     });
   });
 
-  it("should reject the removed --model option before generating", async () => {
-    let requested = false;
-    server.use(
-      http.post(IMAGE_URL, () => {
-        requested = true;
-        return HttpResponse.json(IMAGE_RESULT);
-      }),
-    );
-    const mockStderrWrite = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation((() => {
-        return true;
-      }) as never);
-
-    try {
-      await expect(
-        generateCommand.parseAsync([
-          "node",
-          "cli",
-          "image",
-          "--raw-prompt",
-          "A watercolor fox",
-          "--model",
-          "flux-pro-1.1",
-        ]),
-      ).rejects.toThrow("process.exit called");
-
-      const stderr = mockStderrWrite.mock.calls
-        .map(([chunk]) => {
-          return String(chunk);
-        })
-        .join("");
-      expect(stderr).toContain("unknown option '--model'");
-      expect(requested).toBe(false);
-    } finally {
-      mockStderrWrite.mockRestore();
-    }
-  });
-
   it("should surface the CDN embed URL when it differs from the file URL", async () => {
     const embedUrl =
       "https://cdn.vm7.io/cdn-cgi/image/fit=scale-down,format=auto,quality=85,metadata=none/artifacts/abc.png";

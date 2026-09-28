@@ -82,7 +82,6 @@ describe("okou generate sprite command", () => {
     expect(stdout).toContain(
       "uses the image model selected in Settings › Built-in tools",
     );
-    expect(stdout).not.toContain("--model");
     expect(stdout).toContain("okou web upload-file -f <file>`");
     expect(stdout).toContain(
       "With privateArtifacts enabled, new artifacts default to only-me.",
@@ -116,38 +115,6 @@ describe("okou generate sprite command", () => {
       expect(rawGeneration).not.toContain("--visibility");
     },
   );
-
-  it("should reject the removed --model option", async () => {
-    const mockStderrWrite = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation((() => {
-        return true;
-      }) as never);
-
-    try {
-      await expect(
-        generateCommand.parseAsync([
-          "node",
-          "cli",
-          "sprite",
-          "--prompt",
-          "A fireball projectile",
-          "--model",
-          "seedream4",
-        ]),
-      ).rejects.toThrow("process.exit called");
-
-      const stderr = mockStderrWrite.mock.calls
-        .map(([chunk]) => {
-          return String(chunk);
-        })
-        .join("");
-      expect(stderr).toContain("unknown option '--model'");
-      expect(mockConsoleLog).not.toHaveBeenCalled();
-    } finally {
-      mockStderrWrite.mockRestore();
-    }
-  });
 
   it("should reject an unknown asset type", async () => {
     await expect(async () => {

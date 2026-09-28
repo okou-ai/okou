@@ -156,21 +156,17 @@ function ImageModelRow({
   const { t } = useTranslation();
   const selected = useLastLoadable(imageModel.selected$);
   const enabled = useLoadable(toolEnabled);
-  const requested = useGet(imageModel.requested$);
+  const draft = useGet(imageModel.draft$);
   const [save, update] = useLoadableSet(imageModel.update$);
   const signal = useGet(settingsActionSignal$);
   const label = t(($) => {
     return $.settings.paidTools.imageModel.label;
   });
   const pending = save.state === "loading";
-  // A running save shows its model so the control does not snap back to the
-  // stored one before the refreshed preference arrives.
+  // The unsaved choice stays visible independently of the request lifecycle.
+  // A successful save reconciles it with the stored preference.
   const current =
-    pending && requested
-      ? requested
-      : selected.state === "hasData"
-        ? selected.data
-        : null;
+    draft ?? (selected.state === "hasData" ? selected.data : null);
   const options = imageModelOptions(current);
   const submit = (model: ImageModel) => {
     if (signal) {
@@ -206,26 +202,24 @@ function ImageModelRow({
               return $.settings.paidTools.saving;
             })}
           </p>
-        ) : save.state === "hasError" ? (
+        ) : save.state === "hasError" && draft ? (
           <div className="flex flex-wrap items-center gap-2">
             <p role="alert" className="text-sm text-destructive">
               {t(($) => {
                 return $.settings.paidTools.imageModel.saveError;
               })}
             </p>
-            {requested && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  submit(requested);
-                }}
-              >
-                {t(($) => {
-                  return $.settings.paidTools.retry;
-                })}
-              </Button>
-            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                submit(draft);
+              }}
+            >
+              {t(($) => {
+                return $.settings.paidTools.retry;
+              })}
+            </Button>
           </div>
         ) : null}
       </div>

@@ -283,7 +283,7 @@ test("Choosing an image model saves it with the stored run model", async () => {
   ]);
 });
 
-test("A failed image model save keeps the stored model and can be retried", async () => {
+test("A failed image model save retains the unsaved choice and can be retried", async () => {
   let failing = true;
   const updates: UpdateUserModelPreferenceRequest[] = [];
   context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
@@ -313,15 +313,77 @@ test("A failed image model save keeps the stored model and can be retried", asyn
     await screen.findByRole("option", { name: /^Nano Banana 2 Lite/ }),
   );
   await within(dialog).findByText("Your image model was not saved.");
-  expect(select).toHaveTextContent("GPT Image 2.5 Flare");
+  expect(select).toHaveTextContent("Nano Banana 2 Lite");
   failing = false;
   click(button("Retry", dialog));
   await waitFor(() => {
-    return expect(select).toHaveTextContent("Nano Banana 2 Lite");
+    expect(
+      within(dialog).queryByText("Your image model was not saved."),
+    ).not.toBeInTheDocument();
+    expect(select).not.toBeDisabled();
   });
+  expect(select).toHaveTextContent("Nano Banana 2 Lite");
   expect(updates).toHaveLength(2);
   expect(updates[1]?.selectedImageModel).toBe("google/nano-banana-2-lite");
+  context.mocks.data.userModelPreference(
+    modelPreference({ selectedImageModel: "gpt-image-2" }),
+  );
+  act(() => {
+    context.mocks.ably.trigger("userPreferenceChanged", {
+      kinds: ["defaultImageModel"],
+    });
+  });
+  await waitFor(() => {
+    expect(select).toHaveTextContent("GPT Image 2");
+  });
 });
+
+test.each(["disable image generation", "leave Tools"] as const)(
+  "An unsaved image model is discarded when you %s",
+  async (action) => {
+    context.mocks.api(userModelPreferenceContract.update, ({ respond }) => {
+      return respond(500, {
+        error: {
+          message: "Preferences temporarily unavailable",
+          code: "INTERNAL_SERVER_ERROR",
+        },
+      });
+    });
+    context.mocks.api(paidToolsContract.update, ({ params, body, respond }) => {
+      return respond(200, { toolId: params.toolId, disabled: body.disabled });
+    });
+    const dialog = await openPaidTools();
+    const select = await imageModelSelect();
+    await waitFor(() => {
+      expect(select).not.toBeDisabled();
+    });
+    const user = userEvent.setup();
+    await user.click(select);
+    await user.click(
+      await screen.findByRole("option", { name: /^Ideogram 4/ }),
+    );
+    await within(dialog).findByText("Your image model was not saved.");
+    expect(select).toHaveTextContent("Ideogram 4");
+    if (action === "disable image generation") {
+      click(await readySwitch("Image generation"));
+    } else {
+      click(button("Preference", dialog));
+      await within(dialog).findByRole("heading", { name: "Preference" });
+      click(button("Tools", dialog));
+    }
+    const storedSelect = await imageModelSelect();
+    await waitFor(() => {
+      expect(storedSelect).toHaveTextContent("GPT Image 2.5 Flare");
+    });
+    expect(storedSelect).toHaveProperty(
+      "disabled",
+      action === "disable image generation",
+    );
+    expect(
+      within(dialog).queryByText("Your image model was not saved."),
+    ).not.toBeInTheDocument();
+  },
+);
 
 test("An image model change from another session refreshes the displayed model", async () => {
   await openPaidTools();
@@ -347,3 +409,73 @@ test("An image model change from another session refreshes the displayed model",
   });
   expect(select).not.toHaveTextContent("GPT Image 2.5 Flare");
 });
+
+test.each(["preference read", "write token"] as const)(
+  "An image model save cannot cross workspaces while awaiting its %s",
+  async (boundary) => {
+    const waiting = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    const updates: UpdateUserModelPreferenceRequest[] = [];
+    let holdSave = false;
+    let preference = modelPreference();
+    context.mocks.api(userModelPreferenceContract.get, async ({ respond }) => {
+      const requestedPreference = preference;
+      if (holdSave) {
+        holdSave = false;
+        if (boundary === "preference read") {
+          waiting.resolve();
+          await release.promise;
+        } else {
+          mockedClerk.sessionGetToken.mockImplementationOnce(async () => {
+            waiting.resolve();
+            await release.promise;
+            return "new-workspace-token";
+          });
+        }
+      }
+      return respond(200, requestedPreference);
+    });
+    context.mocks.api(
+      userModelPreferenceContract.update,
+      ({ body, respond }) => {
+        updates.push(body);
+        preference = modelPreference({
+          selectedModel: body.selectedModel,
+          serviceTier: body.serviceTier,
+          selectedImageModel: body.selectedImageModel ?? null,
+        });
+        return respond(200, preference);
+      },
+    );
+    await openPaidTools();
+    const select = await imageModelSelect();
+    await waitFor(() => {
+      expect(select).not.toBeDisabled();
+    });
+    holdSave = true;
+    const user = userEvent.setup();
+    await user.click(select);
+    await user.click(
+      await screen.findByRole("option", { name: /^Ideogram 4/ }),
+    );
+    await waiting.promise;
+    await act(() => {
+      preference = modelPreference({ selectedImageModel: "fal-ai/flux-2-pro" });
+      context.mocks.clerk().organization({
+        activeOrg: { id: "org_second", name: "Second workspace" },
+        memberships: [{ id: "org_second" }],
+      });
+      context.mocks.clerk().stateChanged();
+      release.resolve();
+      return release.promise;
+    });
+    await screen.findByText(
+      "These settings apply only to you in Second workspace.",
+    );
+    const nextSelect = await imageModelSelect();
+    await waitFor(() => {
+      expect(nextSelect).not.toBeDisabled();
+    });
+    expect(updates).toStrictEqual([]);
+  },
+);
