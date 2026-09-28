@@ -1370,8 +1370,15 @@
     {
       "idx": 1273,
       "version": "7",
-      "when": 1790553611430,
-      "tag": "1273_drop_retired_voice_reasoning_collection_columns",
+      "when": 1790517814920,
+      "tag": "1273_drop_active_input_delivery_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 1274,
+      "version": "7",
+      "when": 1790554702266,
+      "tag": "1274_drop_retired_voice_reasoning_collection_columns",
       "breakpoints": true
     }
   ]

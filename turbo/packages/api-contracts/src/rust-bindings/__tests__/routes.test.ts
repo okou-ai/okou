@@ -73,6 +73,31 @@ const expectedBindings = [
     rustConstName: "RECEIPT",
   },
   {
+    method: "GET",
+    path: "/api/runners/runs/:runId/steerable-inputs/next",
+    rustModulePath: [
+      "runners",
+      "runs",
+      "by_run_id",
+      "steerable_inputs",
+      "next",
+    ],
+    rustConstName: "NEXT",
+  },
+  {
+    method: "POST",
+    path: "/api/runners/runs/:runId/steerable-inputs/:eventId/steered",
+    rustModulePath: [
+      "runners",
+      "runs",
+      "by_run_id",
+      "steerable_inputs",
+      "by_event_id",
+      "steered",
+    ],
+    rustConstName: "STEERED",
+  },
+  {
     method: "POST",
     path: "/api/runners/runs/:runId/model-provider-failures",
     rustModulePath: ["runners", "runs", "by_run_id", "model_provider_failures"],

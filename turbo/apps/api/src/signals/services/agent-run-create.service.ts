@@ -312,10 +312,10 @@ import {
 } from "./pi-resource-snapshot.service";
 import { readMemorySummaryProjection } from "./memory-summary-projection.service";
 import {
-  PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
-  piApiFirstTurnObjectKey,
-  requirePiApiFirstTurnExecutionContext,
-} from "./pi-api-first-turn-config";
+  PI_SANDBOX_HANDOFF_DEADLINE_MS,
+  piSandboxHandoffObjectKey,
+  publishPiSandboxHandoff$,
+} from "./pi-sandbox-handoff.service";
 import {
   activePersonalModelProviderAccount,
   readPersonalSubscriptionAccount,
@@ -401,9 +401,6 @@ import {
   type CompressedSessionHistoryBlobEncoding,
 } from "./session-history-blobs";
 import type { Tx } from "../../lib/db-types";
-import type { PiPreparationDiscardReason } from "./pi-api-first-turn-preparation";
-import { waitUntil } from "../context/wait-until";
-import { prepareConfiguredPiApiFirstTurn$ } from "./pi-api-first-turn-dispatch.service";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
@@ -7552,8 +7549,7 @@ function assemblePiLaunchResources(args: {
         ),
         manifestUrl: args.manifestUrl,
         sessionUrl: args.sessionUrl,
-        deadlineAt:
-          args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
+        deadlineAt: args.apiStartTime + PI_SANDBOX_HANDOFF_DEADLINE_MS,
         baseSession: piBaseSession(resumeSession, sessionId),
         sandboxEventSequenceStart: 1,
         // The installed CLI must have this session construction and meet the
@@ -7608,7 +7604,7 @@ function signPiLaunchObjectUrls(
           return get(
             generatePresignedGetUrl(
               bucket,
-              piApiFirstTurnObjectKey(runId, "manifest"),
+              piSandboxHandoffObjectKey(runId, "manifest"),
               undefined,
               true,
             ),
@@ -7623,7 +7619,7 @@ function signPiLaunchObjectUrls(
           return get(
             generatePresignedGetUrl(
               bucket,
-              piApiFirstTurnObjectKey(runId, "session"),
+              piSandboxHandoffObjectKey(runId, "session"),
               undefined,
               true,
             ),
@@ -11108,22 +11104,6 @@ function committedAtomicLaunchResponse(args: {
       runContextRegisteredAt,
       dispatchTimingsRegisteredAt,
     },
-    ...(args.committed.runnerJobPayload.executionContext.piLaunchConfig &&
-    !args.committed.runnerJobPayload.executionContext.piLaunchConfig.maintenance
-      ? {
-          piApiFirstTurn: {
-            runId: args.committed.run.id,
-            runnerGroup: args.committed.runnerJobPayload.runnerGroup,
-            userId: args.createArgs.userId,
-            orgId: args.createArgs.orgId,
-            prompt: args.createArgs.body.prompt,
-            appendSystemPrompt: args.createArgs.body.appendSystemPrompt ?? null,
-            executionContext: requirePiApiFirstTurnExecutionContext(
-              args.committed.runnerJobPayload.executionContext,
-            ),
-          },
-        }
-      : {}),
   };
   const response = createdRunResponse(args.committed.run, {
     status: "pending",
@@ -11158,15 +11138,6 @@ function flushQueueFirstClaimLostTiming(args: {
       ? { triggerSource: args.createArgs.body.triggerSource }
       : {}),
   });
-}
-
-const piPreparationAuthority = Symbol("creator-authorized-pi-preparation");
-
-/** Issued only after authorization and finalized launch payload construction. */
-export interface CreatorAuthorizedPiPreparation {
-  readonly [piPreparationAuthority]: true;
-  readonly activation: NonNullable<PendingRunActivation["piApiFirstTurn"]>;
-  readonly triggerSource: CreateRunBody["triggerSource"];
 }
 
 interface AtomicLaunchRunInput {
@@ -11229,6 +11200,38 @@ function finalizeAtomicLaunchCommit(
   });
 }
 
+async function commitAtomicLaunch(
+  args: {
+    readonly input: AtomicLaunchRunInput;
+    readonly identity: LaunchRunIdentity;
+    readonly callbackRows: readonly AgentRunCallbackInsert[];
+    readonly launch: PreparedRunnerLaunch;
+  },
+  signal: AbortSignal,
+): Promise<QueueFirstAgentRunResult> {
+  const { input, identity, callbackRows, launch } = args;
+  const committed = await input.timing.measure(
+    "api_dispatch_insert_run_with_concurrency",
+    "top_level",
+    async () => {
+      return await commitPreparedLaunch({
+        db: input.db,
+        createArgs: input.args,
+        enforceBuiltInCredits: input.enforceBuiltInCredits,
+        context: input.context,
+        identity,
+        callbackRows,
+        launch,
+        timing: input.timing,
+      });
+    },
+  );
+  return finalizeAtomicLaunchCommit(
+    { input, identity, launch, committed },
+    signal,
+  );
+}
+
 const commitAndActivateAtomicLaunch$ = command(
   async (
     { set },
@@ -11240,87 +11243,19 @@ const commitAndActivateAtomicLaunch$ = command(
     },
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
-    const { input, identity, callbackRows, launch } = args;
-    const executionContext = launch.runnerJobPayload.executionContext;
-    const preparation =
-      executionContext.piLaunchConfig &&
-      !executionContext.piLaunchConfig.maintenance
-        ? set(prepareConfiguredPiApiFirstTurn$, {
-            [piPreparationAuthority]: true,
-            triggerSource: input.context.body.triggerSource,
-            activation: {
-              runId: identity.runId,
-              runnerGroup: launch.runnerJobPayload.runnerGroup,
-              userId: input.args.userId,
-              orgId: input.args.orgId,
-              prompt: input.context.body.prompt,
-              appendSystemPrompt: input.context.body.appendSystemPrompt ?? null,
-              executionContext:
-                requirePiApiFirstTurnExecutionContext(executionContext),
-            },
-          })
-        : undefined;
-    let transferred = false;
-    let discardReason: PiPreparationDiscardReason = "admission-failed";
-    return await (async () => {
-      const committed = await input.timing.measure(
-        "api_dispatch_insert_run_with_concurrency",
-        "top_level",
-        async () => {
-          return await commitPreparedLaunch({
-            db: input.db,
-            createArgs: input.args,
-            enforceBuiltInCredits: input.enforceBuiltInCredits,
-            context: input.context,
-            identity,
-            callbackRows,
-            launch,
-            timing: input.timing,
-          });
-        },
-      );
-      const result = finalizeAtomicLaunchCommit(
-        {
-          input,
-          identity,
-          launch,
-          committed,
-        },
-        signal,
-      );
-      if (
-        "status" in result &&
-        result.status === 201 &&
-        result.pendingActivation
-      ) {
-        // Commit determines ownership even if the initiating request disconnected.
-        // The API branch is owned by waitUntil; Runner notification never joins it.
-        transferred = true;
-
-        await set(activatePendingRun$, {
-          activation: result.pendingActivation,
-          activationScheduledAt: now(),
-          preparation,
-        });
-        const { pendingActivation: _pendingActivation, ...activated } = result;
-        return activated;
-      }
-      if ("kind" in result) {
-        if (result.kind === "queue-first-claim-lost") {
-          discardReason = "claim-lost";
-        }
-        if (result.kind === "thread-session-snapshot-stale") {
-          discardReason = "stale";
-        }
-      }
+    const result = await commitAtomicLaunch(args, signal);
+    if (!("status" in result) || result.status !== 201) {
       return result;
-    })().finally(() => {
-      if (!transferred && preparation) {
-        // Discard immediately; waitUntil joins late SDK initialization without
-        // delaying the response or making another attempt reuse this one.
-        waitUntil(preparation.dispose(discardReason));
-      }
-    });
+    }
+    const { pendingActivation, ...activated } = result;
+    if (pendingActivation) {
+      // Commit determines ownership even if the initiating request disconnected.
+      await set(activatePendingRun$, {
+        activation: pendingActivation,
+        activationScheduledAt: now(),
+      });
+    }
+    return activated;
   },
 );
 
@@ -11400,6 +11335,32 @@ const createAtomicLaunchRun$ = command(
     }
 
     const launch = launchResult.value;
+    // The Pi CLI polls this handoff as soon as a runner claims the job, so it
+    // is published before the run and its job become claimable.
+    const handoff = await settle(
+      set(
+        publishPiSandboxHandoff$,
+        {
+          db: input.db,
+          runId: identity.runId,
+          apiStartTime: input.args.apiStartTime,
+          executionContext: launch.runnerJobPayload.executionContext,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!handoff.ok) {
+      return await commitFailedLaunch({
+        db: input.db,
+        createArgs: input.args,
+        context: input.context,
+        identity,
+        callbackRows,
+        error: handoff.error,
+        timing: input.timing,
+      });
+    }
     input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
 
     return await set(
@@ -11580,9 +11541,8 @@ export const completeAgentRun$ = command(
 
     let launchContext = context;
     if (args.piExecution && args.piStableContext) {
-      // API-first Pi can still take the established legacy launch when durable
-      // preparation is disabled or unavailable. Its eager body intentionally
-      // omitted the stable prefix, so bind the canonical prompt before launch.
+      // The eager body intentionally omitted the stable prefix, so bind the
+      // canonical prompt before launch.
       launchContext = finalizePreparedRunContext(
         input.prepared,
         bindStableAppendSystemPrompt(

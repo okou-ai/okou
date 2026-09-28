@@ -1,21 +1,16 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
-import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
-import { env, mockOptionalEnv } from "../../../lib/env";
+import { env } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import { withModelRoutingQueryReceipt } from "../../../test-fixtures/model-routing-query-receipt";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import { expectApiError } from "./helpers/api-bdd";
-import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
@@ -27,11 +22,6 @@ import {
   eventBackedContents,
   assistantEvent,
 } from "./helpers/chat-events-fixture";
-import {
-  piResponsesContentSse,
-  nativeCodexSseResponse,
-  readCodexRequestJson,
-} from "./helpers/pi-responses";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -40,11 +30,9 @@ const {
   misc,
   webhooks,
   chatCallbacks,
-  authDevice,
   authDeviceSupport,
   entitledChatActor,
   entitledNativeChatActor,
-  configureOrganizationGptModel,
   configureSubscriptionPiModel,
   seedBuiltInModelKey,
   sendChatRun,
@@ -54,70 +42,25 @@ const {
   waitForThreadMessages,
   waitForRunStatus,
   completeChatRunOk,
-  failChatRun,
   cancelChatRun,
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
+  expectPiSandboxHandoff,
 } = createChatEventsFixture(context);
 
-function expectNativeSubscriptionRequest(
-  request: unknown,
-  accessToken: string,
-  tier: "fast" | undefined,
-  selectedModel: PiGptBddModel = "gpt-5.6-terra",
-): void {
-  expect(request).toMatchObject({
-    accountMatches: true,
-    authorization: `Bearer ${accessToken}`,
-    body: {
-      model: selectedModel,
-      stream: true,
-      store: false,
-      reasoning: { effort: "max" },
-    },
-  });
-  const { body } = z
-    .object({ body: z.record(z.string(), z.unknown()) })
-    .parse(request);
-  expect(body.service_tier).toBe(tier === undefined ? undefined : "priority");
-  expect(body).not.toHaveProperty("previous_response_id");
-}
-
-function settledSubscriptionToolHistory(h1: string): string {
-  const h2Session = MemoryPiSession.fromJsonl(h1);
-  const pendingAssistant = [...h2Session.buildSessionContext().messages]
-    .reverse()
-    .find((message) => {
-      return message.role === "assistant";
-    });
-  const pendingTool =
-    pendingAssistant?.role === "assistant"
-      ? pendingAssistant.content.find((content) => {
-          return content.type === "toolCall";
-        })
-      : undefined;
-  if (
-    pendingAssistant?.role !== "assistant" ||
-    !pendingTool ||
-    pendingTool.type !== "toolCall"
-  ) {
-    throw new Error("Expected native Codex tool call in H1");
-  }
-  h2Session.appendMessage({
-    role: "toolResult",
-    toolCallId: pendingTool.id,
-    toolName: pendingTool.name,
-    content: [{ type: "text", text: "Okou CLI help output" }],
-    details: {},
-    isError: false,
-    timestamp: 2,
-  });
+function completedSubscriptionHistory(
+  h0: string,
+  prompt: string,
+  selectedModel: PiGptBddModel,
+): string {
+  const h2Session = MemoryPiSession.fromJsonl(h0);
+  h2Session.appendMessage({ role: "user", content: prompt, timestamp: 1 });
   h2Session.appendMessage({
     role: "assistant",
     content: [{ type: "text", text: "Subscription Sandbox complete" }],
     api: "openai-codex-responses",
     provider: "openai-codex",
-    model: pendingAssistant.model,
+    model: selectedModel,
     usage: {
       input: 5,
       output: 3,
@@ -133,15 +76,15 @@ function settledSubscriptionToolHistory(h1: string): string {
       },
     },
     stopReason: "stop",
-    timestamp: 3,
+    timestamp: 2,
   });
   return h2Session.toJsonl();
 }
 
 describe("CHAT-02: run-level model overrides", () => {
   it("describes raw chat history sync by default", async () => {
-    // This checks the appended prompt, not API-first model execution. Keep the
-    // run claimable by the native Runner until the test cancels it.
+    // This checks the appended prompt, not Pi execution. Keep the run
+    // claimable by the native Runner until the test cancels it.
     const { actor, agentId } = await entitledNativeChatActor();
 
     const run = await sendChatRun(actor, {
@@ -290,7 +233,7 @@ describe("CHAT-02: run-level model overrides", () => {
       accountId: "personal-default-fallback-account",
     });
     // Astra keeps the fallback run on the native Codex harness, so the receipt
-    // observes only send admission rather than a concurrent Pi API-first turn.
+    // observes only send admission.
     await seedBuiltInModelKey("gpt-6-astra");
     await api.updateOrgModelPolicies(actor, [
       {
@@ -377,7 +320,7 @@ describe("CHAT-02: run-level model overrides", () => {
       });
     }),
   )(
-    "hands native $name subscription $selectedModel tools to a generation-$generation Sandbox with $outcome outcome and no built-in billing (organization API: $organizationApi)",
+    "hands native $name subscription $selectedModel runs to a generation-$generation Sandbox with $outcome outcome and no built-in billing (organization API: $organizationApi)",
     async ({ tier, generation, outcome, selectedModel, organizationApi }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const firewall = createFirewallApi(context);
@@ -412,81 +355,21 @@ describe("CHAT-02: run-level model overrides", () => {
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const providerRequests: {
-        readonly accountMatches: boolean;
-        readonly authorization: string | null;
-        readonly body: unknown;
-      }[] = [];
-      server.use(
-        http.post(
-          "https://chatgpt.com/backend-api/codex/responses",
-          async ({ request }) => {
-            const authorization = request.headers.get("authorization");
-            const body = await readCodexRequestJson(request);
-            providerRequests.push({
-              accountMatches:
-                request.headers.get("chatgpt-account-id") === externalAccountId,
-              authorization,
-              body,
-            });
-            const responseBody = piResponsesContentSse({
-              blocks:
-                providerRequests.length === 1
-                  ? [
-                      {
-                        type: "toolCall",
-                        callId: "call_subscription_tool",
-                        name: "bash",
-                        arguments: {
-                          command: `npx --yes --package="\${CLI_PKG_URL}" okou --help`,
-                        },
-                      },
-                    ]
-                  : [
-                      {
-                        type: "text",
-                        text: "Subscription API-first continuation complete",
-                      },
-                    ],
-              sequence: providerRequests.length,
-            });
-            return nativeCodexSseResponse(responseBody);
-          },
-        ),
-      );
 
+      const prompt = "use the Okou CLI through native subscription Terra";
       const run = await sendChatRun(actor, {
         agentId,
-        prompt: "use the Okou CLI through native subscription Terra",
+        prompt,
         model: selectedModel,
         runOptions: { codexServiceTier: tier },
       });
-      await expect
-        .poll(() => {
-          return providerRequests.length;
-        })
-        .toBe(1);
-      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-      const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`;
-      await expect
-        .poll(() => {
-          return checkpointObjects.has(manifestKey);
-        })
-        .toBe(true);
-      await flushWaitUntilForTest();
-
-      expect(providerRequests).toHaveLength(1);
-      const refreshedAccessToken = z
-        .string()
-        .parse(oauth.oauthTokenResponses[1]?.access_token);
-      expectNativeSubscriptionRequest(
-        providerRequests[0],
-        refreshedAccessToken,
-        tier,
-        selectedModel,
+      const { session: h0 } = expectPiSandboxHandoff(
+        run.runId,
+        checkpointObjects,
       );
-      expect(oauth.oauthToken).toHaveLength(2);
-      expect(oauth.oauthToken[1]?.get("grant_type")).toBe("refresh_token");
+      if (!h0) {
+        throw new Error("Expected the synthesized first-turn Pi session");
+      }
       await expectNoBuiltInModelUsage(run.runId);
 
       await api.heartbeatRunner(runnerGroup);
@@ -574,22 +457,24 @@ describe("CHAT-02: run-level model overrides", () => {
       expect(sandboxCredential.body.headers["ChatGPT-Account-ID"]).toBe(
         externalAccountId,
       );
+      // The expired access token is refreshed once for the Sandbox request.
+      expect(oauth.oauthToken).toHaveLength(2);
+      expect(oauth.oauthToken[1]?.get("grant_type")).toBe("refresh_token");
+      const refreshedAccessToken = z
+        .string()
+        .parse(oauth.oauthTokenResponses[1]?.access_token);
       expect(sandboxCredential.body.headers.Authorization).toBe(
         `Bearer ${refreshedAccessToken}`,
       );
-      expect(oauth.oauthToken).toHaveLength(2);
 
-      const h1 = z
-        .instanceof(Buffer)
-        .parse(checkpointObjects.get(sessionKey))
-        .toString("utf8");
-      expect(h1).not.toMatch(/serviceTier|service_tier/);
-      expect(h1).not.toContain(externalAccountId);
-      expect(h1).not.toContain(refreshToken);
-      expect(h1).not.toContain(
+      const h0Text = h0.toString("utf8");
+      expect(h0Text).not.toMatch(/serviceTier|service_tier/);
+      expect(h0Text).not.toContain(externalAccountId);
+      expect(h0Text).not.toContain(refreshToken);
+      expect(h0Text).not.toContain(
         MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_ACCESS_TOKEN,
       );
-      const h2 = settledSubscriptionToolHistory(h1);
+      const h2 = completedSubscriptionHistory(h0Text, prompt, selectedModel);
       expect(h2).not.toMatch(/serviceTier|service_tier/);
       const h2Hash = createHash("sha256").update(h2).digest("hex");
       await webhooks.requestAgentCheckpointPrepareHistory(
@@ -635,7 +520,6 @@ describe("CHAT-02: run-level model overrides", () => {
         [200],
       );
       await flushWaitUntilForTest();
-      expect(providerRequests).toHaveLength(1);
       await expectNoBuiltInModelUsage(run.runId);
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: outcome,
@@ -656,20 +540,10 @@ describe("CHAT-02: run-level model overrides", () => {
         runOptions: { codexServiceTier: tier },
       });
       await flushWaitUntilForTest();
-      expect(providerRequests).toHaveLength(1);
-      const continuedManifestBytes = checkpointObjects.get(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${continued.runId}/manifest.json`,
-      );
-      if (!continuedManifestBytes) {
-        throw new Error("Expected resumed subscription manifest");
-      }
       expect(
-        piApiFirstTurnManifestSchema.parse(
-          JSON.parse(continuedManifestBytes.toString("utf8")),
-        ),
+        expectPiSandboxHandoff(continued.runId, checkpointObjects).manifest,
       ).toMatchObject({
         schemaVersion: 4,
-        mode: "sandbox-first",
         baseSession: { sessionId: run.threadId, sha256: h2Hash },
       });
       const continuedClaim = await claimChatRun(runnerGroup, continued.runId);
@@ -691,349 +565,6 @@ describe("CHAT-02: run-level model overrides", () => {
         continued.runId,
         continuedClaim.sandboxHeaders,
       );
-    },
-    90_000,
-  );
-
-  it.each(
-    [
-      ...[
-        "refresh_token_reused",
-        "refresh_token_expired",
-        "refresh_token_invalidated",
-      ].map((refreshErrorCode) => {
-        return {
-          name: refreshErrorCode,
-          failureReason: "reconnect_required" as const,
-          errorCode: "PI_API_MODEL_CREDENTIAL_INVALID",
-          refreshErrorCode,
-          expectedReconnect: true,
-          expired: true,
-          providerCalls: 0,
-        };
-      }),
-      {
-        name: "unknown refresh failure",
-        failureReason: "reconnect_required" as const,
-        errorCode: "PI_API_MODEL_CREDENTIAL_INVALID",
-        refreshErrorCode: "new_provider_error",
-        expectedReconnect: false,
-        expired: true,
-        providerCalls: 0,
-      },
-      {
-        name: "transient refresh failure",
-        failureReason: undefined,
-        errorCode: "PI_API_MODEL_CREDENTIAL_INVALID",
-        refreshErrorCode: null,
-        expectedReconnect: false,
-        expired: true,
-        providerCalls: 0,
-      },
-      {
-        name: "transient provider failure",
-        failureReason: undefined,
-        errorCode: "PI_API_MODEL_FAILED",
-        refreshErrorCode: null,
-        expectedReconnect: false,
-        expired: false,
-        providerCalls: 1,
-      },
-      {
-        name: "subscription usage limit",
-        failureReason: "usage_limit" as const,
-        errorCode: "PI_API_MODEL_FAILED",
-        refreshErrorCode: null,
-        expectedReconnect: false,
-        expired: false,
-        providerCalls: 1,
-      },
-    ].flatMap((scenario) => {
-      return ([undefined, "fast"] as const).flatMap((tier) => {
-        return [false, true]
-          .map((organizationApi) => {
-            return {
-              ...scenario,
-              tier,
-              organizationApi,
-            };
-          })
-          .filter(({ organizationApi }) => {
-            return (
-              scenario.name === "transient provider failure" ||
-              (scenario.name === "refresh_token_reused" &&
-                (tier !== "fast" || !organizationApi)) ||
-              (tier === undefined && !organizationApi)
-            );
-          });
-      });
-    }),
-  )(
-    "classifies a $name with tier $tier without replay, billing, or private diagnostics (organization API: $organizationApi)",
-    async (scenario) => {
-      mockOptionalEnv("OKOU_DEBUG", "webhook:firewall-auth,pi-api-first-turn");
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const privateMarker = `private-${scenario.failureReason}-diagnostic`;
-      const externalAccountId = `chat-${scenario.failureReason}-account`;
-      const refreshToken = `rt_${scenario.failureReason}_high_entropy`;
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      });
-      if (scenario.organizationApi) {
-        mockCodexDeviceAuthProvider({
-          tokenScope: "personal",
-          accountId: `sibling-${randomUUID()}`,
-          accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
-        });
-        const siblingStart = await authDevice.requestCodexStart(
-          actor,
-          "personal",
-          [200],
-          { mode: "add" },
-        );
-        if (siblingStart.status !== 200) {
-          throw new Error("Expected sibling authorization");
-        }
-        await authDevice.requestCodexComplete(
-          actor,
-          siblingStart.body.sessionToken,
-          [200],
-        );
-      }
-      const oauth = mockCodexDeviceAuthProvider({
-        tokenScope: "personal",
-        accountId: externalAccountId,
-        refreshToken,
-        accessTokenExpiresAt: scenario.expired
-          ? Math.floor(now() / 1000) - 60
-          : Math.floor(now() / 1000) + 7200,
-        workspaceName: "Pi Failure Account",
-      });
-      const started = await authDevice.requestCodexStart(
-        actor,
-        "personal",
-        [200],
-        { mode: "add" },
-      );
-      if (started.status !== 200) {
-        throw new Error("Expected subscription auth to start");
-      }
-      const completed = await authDevice.requestCodexComplete(
-        actor,
-        started.body.sessionToken,
-        [200],
-      );
-      if (
-        !("status" in completed.body) ||
-        completed.body.status !== "complete"
-      ) {
-        throw new Error("Expected subscription auth to complete");
-      }
-      if (scenario.organizationApi) {
-        await authDeviceSupport.activatePersonalModelProviderAccount(
-          actor,
-          completed.body.provider.id,
-        );
-      }
-      let refreshAttempts = 0;
-      let releaseRefreshFailure: (() => void) | undefined;
-      if (scenario.expired) {
-        const refreshFailureGate = createDeferredPromise<void>(context.signal);
-        onTestFinished(() => {
-          if (!refreshFailureGate.settled()) {
-            refreshFailureGate.resolve(undefined);
-          }
-        });
-        releaseRefreshFailure = () => {
-          refreshFailureGate.resolve(undefined);
-        };
-        server.use(
-          http.post("https://auth.openai.com/oauth/token", async () => {
-            refreshAttempts += 1;
-            // Let run admission commit before refresh marks the account disconnected.
-            await refreshFailureGate.promise;
-            return HttpResponse.json(
-              {
-                error: {
-                  code: scenario.refreshErrorCode ?? "server_error",
-                  message: privateMarker,
-                },
-              },
-              { status: scenario.refreshErrorCode === null ? 503 : 401 },
-            );
-          }),
-        );
-      }
-
-      if (scenario.organizationApi) {
-        await configureOrganizationGptModel(actor);
-      } else {
-        await chatCallbacks.updateOrgModelPolicies(actor, [
-          {
-            model: "gpt-5.6-terra",
-            isDefault: true,
-            defaultProviderType: "codex-oauth-token",
-            credentialScope: "member",
-            modelProviderId: null,
-          },
-        ]);
-      }
-      mockPiResourceArchiveDownloads();
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      let modelCalls = 0;
-      const providerAttempted = createDeferredPromise<void>(context.signal);
-      const alternateRequests: string[] = [];
-      server.use(
-        http.post(
-          /^https:\/\/(api\.openai\.com|openrouter\.ai|api\.anthropic\.com)\//,
-          ({ request }) => {
-            alternateRequests.push(request.url);
-            return HttpResponse.json(
-              { error: "unexpected alternate API" },
-              { status: 500 },
-            );
-          },
-        ),
-      );
-      server.use(
-        http.post(
-          "https://chatgpt.com/backend-api/codex/responses",
-          async ({ request }) => {
-            modelCalls += 1;
-            expect(request.headers.get("authorization")).toBe(
-              `Bearer ${oauth.oauthTokenResponses[0]?.access_token}`,
-            );
-            expect(request.headers.get("chatgpt-account-id")).toBe(
-              externalAccountId,
-            );
-            await expect(readCodexRequestJson(request)).resolves.toMatchObject({
-              model: "gpt-5.6-terra",
-            });
-            providerAttempted.resolve(undefined);
-            return HttpResponse.json(
-              {
-                error: {
-                  code:
-                    scenario.name === "transient provider failure"
-                      ? "server_error"
-                      : "usage_limit_reached",
-                  message: privateMarker,
-                },
-              },
-              {
-                status:
-                  scenario.name === "transient provider failure" ? 503 : 429,
-              },
-            );
-          },
-        ),
-      );
-
-      const run = await sendChatRun(actor, {
-        agentId,
-        prompt: `classify ${scenario.failureReason}`,
-        model: "gpt-5.6-terra",
-        runOptions: { codexServiceTier: scenario.tier },
-      });
-      releaseRefreshFailure?.();
-      if (scenario.name === "transient provider failure") {
-        // Existing Pi recovery hands the same personal source to Sandbox. This
-        // is not an organization API/model/account retry or a paid model route.
-        await providerAttempted.promise;
-        await flushWaitUntilForTest();
-        await waitForRunStatus(actor, run.runId, "pending", 10_000);
-        const { claim, sandboxHeaders } = await claimChatRun(
-          runnerGroup,
-          run.runId,
-        );
-        expect(claim.billableFirewalls).toStrictEqual([]);
-        expect(
-          claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
-        ).toBe(completed.body.provider.id);
-        await failChatRun(
-          run.runId,
-          sandboxHeaders,
-          "[PI_API_MODEL_FAILED] Upstream provider temporarily unavailable",
-        );
-      }
-      await waitForRunStatus(actor, run.runId, "failed", 10_000);
-      await flushWaitUntilForTest();
-
-      const failed = await api.readRun(actor, run.runId);
-      expect(failed).toMatchObject({
-        status: "failed",
-        error: expect.stringContaining(`[${scenario.errorCode}]`),
-      });
-      expect(modelCalls).toBe(scenario.providerCalls);
-      expect(alternateRequests).toStrictEqual([]);
-      await expect(readRunModelSourceFixture(run.runId)).resolves.toMatchObject(
-        {
-          modelProvider: "codex-oauth-token",
-          modelProviderCredentialScope: "member",
-          modelProviderId: completed.body.provider.id,
-          selectedModel: "gpt-5.6-terra",
-          creditAdmitted: false,
-          builtInModelKeyId: null,
-        },
-      );
-      expect(refreshAttempts).toBe(scenario.expired ? 1 : 0);
-      expect(oauth.oauthToken).toHaveLength(1);
-      if (scenario.expectedReconnect) {
-        expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-      }
-      const events = (await chat.listThreadEvents(actor, run.threadId)).events;
-      const failureEvent = events.find((event) => {
-        return event.eventType === "run.failed" && event.runId === run.runId;
-      });
-      if (failureEvent?.eventType !== "run.failed") {
-        throw new Error("Expected the subscription run failure event");
-      }
-      expect(failureEvent.failureReason).toBe(scenario.failureReason);
-      const publicState = JSON.stringify({
-        failed,
-        events,
-        checkpointObjects: [...checkpointObjects.entries()].map(
-          ([key, value]) => {
-            return [key, value.toString("utf8")];
-          },
-        ),
-      });
-      expect(publicState).not.toContain(privateMarker);
-      expect(publicState).not.toContain(externalAccountId);
-      expect(publicState).not.toContain(refreshToken);
-      expect(
-        checkpointObjects.has(
-          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`,
-        ),
-      ).toBeFalsy();
-      await expectNoBuiltInModelUsage(run.runId);
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.requestClaimRunnerJob(true, run.runId, [404], {
-        capabilities: { piModelConfigGenerations: [1, 2, 3] },
-      });
-      expectApiError(claim.body);
-      if (scenario.expectedReconnect) {
-        const repeated = await sendChatRun(actor, {
-          agentId,
-          prompt: "retry the terminal subscription account",
-          model: "gpt-5.6-terra",
-          runOptions: { codexServiceTier: scenario.tier },
-        });
-        await waitForRunStatus(actor, repeated.runId, "failed", 10_000);
-        await flushWaitUntilForTest();
-        expect(refreshAttempts).toBe(1);
-        expect(modelCalls).toBe(0);
-        expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-        expect(
-          (await chat.listThreadEvents(actor, repeated.threadId)).events,
-        ).toContainEqual(
-          expect.objectContaining({
-            eventType: "run.failed",
-            runId: repeated.runId,
-            failureReason: "reconnect_required",
-          }),
-        );
-      }
     },
     90_000,
   );

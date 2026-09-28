@@ -457,31 +457,6 @@ export default [
     },
   },
   {
-    files: ["src/signals/services/pi-api-first-turn.service.ts"],
-    rules: {
-      // Recovery, discarded late results and attempt timeouts are the only
-      // evidence that an API-owned first turn kept single execution and
-      // truthful usage after handing off, and they must survive Axiom's info
-      // default. They stay non-error because a successful recovery is not a
-      // failure; ordinary API completion keeps using debug.
-      "api/no-logger-info": [
-        "error",
-        { allowedMessages: ["Pi API first-turn outcome"] },
-      ],
-    },
-  },
-  {
-    files: ["src/signals/services/pi-api-first-turn-failure-log.service.ts"],
-    rules: {
-      // Classified provider outcomes mirror Runner's bounded execution
-      // diagnostic at INFO; unclassified structural failures remain ERROR.
-      "api/no-logger-info": [
-        "error",
-        { allowedMessages: ["Pi API first-turn execution failed"] },
-      ],
-    },
-  },
-  {
     files: ["src/signals/services/cron-snapshot-chat-events.service.ts"],
     rules: {
       // An expected per-head deadline is bounded backpressure, not a warning,

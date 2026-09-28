@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
@@ -77,10 +77,50 @@ type RecordActiveInputDeliveryReceiptResult =
   | { readonly outcome: "rejected"; readonly replacementsAppended: false }
   | { readonly outcome: "forbidden"; readonly replacementsAppended: false };
 
+type SteeredInputDeclarationResult =
+  | {
+      readonly outcome: "steered";
+      readonly replacementsAppended: boolean;
+      readonly chatThreadId: string;
+    }
+  | {
+      readonly outcome: "conflict";
+      readonly reason: "input_already_consumed" | "run_not_running";
+    }
+  | { readonly outcome: "not_found" }
+  | { readonly outcome: "forbidden" };
+
+interface NextSteerableInput {
+  readonly eventId: string;
+  readonly prompt: string;
+}
+
+type NextSteerableInputResult =
+  | { readonly outcome: "found"; readonly input: NextSteerableInput | null }
+  | { readonly outcome: "forbidden" };
+
+type SteerableEventType = "input.prompt" | "input.budget";
+
+const RECEIPT_EVENT_TYPES: readonly SteerableEventType[] = [
+  "input.prompt",
+  "input.budget",
+];
+
+/**
+ * Queue inputs a run consumes in thread order. Budget input is excluded: it is
+ * appended whenever the run nears its time limit, so its position says nothing
+ * about which queued prompts the run has already taken.
+ */
+const RUN_QUEUE_INPUT_EVENT_TYPES = [
+  "input.prompt",
+  "input.automation",
+] as const;
+
 type ActiveInputConsumption =
   | { readonly outcome: "appended"; readonly source: ActiveInputSourceRow }
   | { readonly outcome: "delivered" }
-  | { readonly outcome: "rejected" };
+  | { readonly outcome: "rejected" }
+  | { readonly outcome: "invalid" };
 
 function isTerminalRunStatus(status: RunStatus): boolean {
   return (
@@ -220,22 +260,26 @@ export async function reserveActiveInputDelivery(
  * On a revoke-edge conflict the revoker decides: this run's replacement means
  * the source was already delivered, anything else means another consumer won.
  * Without `append` (the run is no longer running) only the revoker is read, so
- * a repeated receipt stays idempotent.
+ * a repeated receipt stays idempotent. A source outside the run's thread or of
+ * another event type is `invalid`.
  */
 async function consumeActiveInputSource(
   db: Db,
   scope: ActiveInputRunThread,
   sourceEventId: string,
   append: boolean,
+  eventTypes: readonly SteerableEventType[] = RECEIPT_EVENT_TYPES,
 ): Promise<ActiveInputConsumption> {
   const [source] = await activeInputRowsByIds(db, scope.chatThreadId, [
     sourceEventId,
   ]);
   if (
     !source?.userMessage ||
-    (source.eventType !== "input.prompt" && source.eventType !== "input.budget")
+    !eventTypes.some((eventType) => {
+      return eventType === source.eventType;
+    })
   ) {
-    return { outcome: "rejected" };
+    return { outcome: "invalid" };
   }
   if (append && sourceIsPendingForRun(source, scope.runId)) {
     const target = replacementTarget(source);
@@ -308,7 +352,7 @@ export async function recordActiveInputDeliveryReceipt(
     scope.status === "running",
   );
   signal.throwIfAborted();
-  if (consumed.outcome === "rejected") {
+  if (consumed.outcome === "rejected" || consumed.outcome === "invalid") {
     return { outcome: "rejected", replacementsAppended: false };
   }
   if (consumed.outcome === "appended") {
@@ -316,6 +360,161 @@ export async function recordActiveInputDeliveryReceipt(
   }
   return {
     outcome: "delivered",
+    replacementsAppended: consumed.outcome === "appended",
+    chatThreadId: scope.chatThreadId,
+  };
+}
+
+/**
+ * The thread position of the queue input the run consumed last. Its latest
+ * replacement is appended when it consumes the input, after prompts queued in
+ * the meantime, so the anchor is the position of the input it revoked. Two
+ * bounded reads: the run's latest replacement, then its source by primary key.
+ */
+async function steeringAnchorSeqId(
+  db: Db,
+  scope: ActiveInputRunThread,
+): Promise<number> {
+  const [ownInput] = await db
+    .select({
+      seqId: chatEvents.seqId,
+      revokesEventId: chatEvents.revokesEventId,
+    })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, scope.chatThreadId),
+        eq(chatEvents.runId, scope.runId),
+        inArray(chatEvents.eventType, [...RUN_QUEUE_INPUT_EVENT_TYPES]),
+      ),
+    )
+    .orderBy(desc(chatEvents.seqId))
+    .limit(1);
+  if (!ownInput) {
+    return 0;
+  }
+  if (ownInput.revokesEventId === null) {
+    return ownInput.seqId;
+  }
+  const [source] = await db
+    .select({ seqId: chatEvents.seqId })
+    .from(chatEvents)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, scope.chatThreadId),
+        eq(chatEvents.id, ownInput.revokesEventId),
+      ),
+    )
+    .limit(1);
+  if (!source) {
+    throw new Error("Consumed run input source is missing from its thread");
+  }
+  return source.seqId;
+}
+
+/**
+ * The next `input.prompt` a running sandbox run may steer: the first run-less,
+ * unrevoked prompt positioned after the queue input the run consumed last.
+ * Read-only.
+ * A prompt that cannot be steered as is (its Discord binding is gone, or it
+ * exceeds the control payload) yields `null` and stays queued for the next
+ * pick, which rejects or launches it; later prompts do not overtake it.
+ */
+export async function loadNextSteerableInput(
+  db: Db,
+  args: {
+    readonly runId: string;
+    readonly userId: string;
+    readonly orgId: string;
+  },
+  signal: AbortSignal,
+): Promise<NextSteerableInputResult> {
+  const scope = await loadActiveInputDeliveryScope(db, args, signal);
+  if (!scope) {
+    return { outcome: "forbidden" };
+  }
+  if (scope.status !== "running") {
+    return { outcome: "found", input: null };
+  }
+  const afterSeqId = await steeringAnchorSeqId(db, scope);
+  signal.throwIfAborted();
+  const [next] = await listPendingChatInputs(db, {
+    chatThreadId: scope.chatThreadId,
+    eventTypes: ["input.prompt"],
+    afterSeqId,
+  });
+  signal.throwIfAborted();
+  if (!next) {
+    return { outcome: "found", input: null };
+  }
+  const [source] = await activeInputRowsByIds(db, scope.chatThreadId, [
+    next.id,
+  ]);
+  signal.throwIfAborted();
+  if (!source) {
+    throw new Error("Pending steerable input disappeared from its thread");
+  }
+  const prompt = await settle(
+    materializeActiveInputSource(db, source, scope, signal),
+    signal,
+  );
+  if (!prompt.ok) {
+    if (!(prompt.error instanceof DiscordQueuedLaunchUnavailableError)) {
+      throw prompt.error;
+    }
+    return { outcome: "found", input: null };
+  }
+  if (!activeInputDeliveryPromptFitsControlPayload(source.id, prompt.value)) {
+    return { outcome: "found", input: null };
+  }
+  return {
+    outcome: "found",
+    input: { eventId: source.id, prompt: prompt.value },
+  };
+}
+
+/**
+ * The runner handed an `input.prompt` to the model of the run. Consume it with
+ * the same replacement as a receipt; a replacement by this run makes a repeat
+ * idempotent, and any other revoker is a conflict the runner ignores.
+ */
+export async function declareSteeredInput(
+  db: Db,
+  args: {
+    readonly runId: string;
+    readonly eventId: string;
+    readonly userId: string;
+    readonly orgId: string;
+  },
+  signal: AbortSignal,
+): Promise<SteeredInputDeclarationResult> {
+  const scope = await loadActiveInputDeliveryScope(db, args, signal);
+  if (!scope) {
+    return { outcome: "forbidden" };
+  }
+  const running = scope.status === "running";
+  const consumed = await consumeActiveInputSource(
+    db,
+    scope,
+    args.eventId,
+    running,
+    ["input.prompt"],
+  );
+  signal.throwIfAborted();
+  if (consumed.outcome === "invalid") {
+    return { outcome: "not_found" };
+  }
+  if (consumed.outcome === "rejected") {
+    return {
+      outcome: "conflict",
+      reason: running ? "input_already_consumed" : "run_not_running",
+    };
+  }
+  if (consumed.outcome === "appended") {
+    logSteeredTemplateUsage(scope, consumed.source);
+  }
+  return {
+    outcome: "steered",
     replacementsAppended: consumed.outcome === "appended",
     chatThreadId: scope.chatThreadId,
   };

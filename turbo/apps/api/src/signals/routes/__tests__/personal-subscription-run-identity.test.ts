@@ -78,30 +78,6 @@ async function configureOrganizationApi(
   return provider;
 }
 
-function holdAnthropicInference() {
-  const entered = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  const release = () => {
-    if (!released.settled()) {
-      released.resolve();
-    }
-  };
-  onTestFinished(async () => {
-    release();
-    await flushWaitUntilForTest();
-  });
-  server.use(
-    http.post("https://api.anthropic.com/v1/messages", async () => {
-      entered.resolve();
-      await released.promise;
-      return new HttpResponse(null, {
-        headers: { "content-type": "text/event-stream" },
-      });
-    }),
-  );
-  return { entered: entered.promise, release };
-}
-
 type Claim = Awaited<ReturnType<typeof runs.claimRunnerJob>>;
 
 async function connect(
@@ -1356,9 +1332,7 @@ describe("member-effective model policy contract", () => {
       displayName: "Other member",
       visibility: "private",
     });
-    // Keep the API-first provider pending while inspecting route attribution;
-    // explicit cancellation owns the run's terminal state in this case.
-    const inference = holdAnthropicInference();
+    // Explicit cancellation owns the run's terminal state in this case.
     const sent = await createChatFilesBddApi(context).requestSendEvent(
       member,
       {
@@ -1371,7 +1345,6 @@ describe("member-effective model policy contract", () => {
     if (sent.status !== 201 || !sent.body.runId) {
       throw new Error("Expected a member run");
     }
-    await inference.entered;
     await expect(
       readRunModelSourceFixture(sent.body.runId),
     ).resolves.toMatchObject({
@@ -1380,7 +1353,6 @@ describe("member-effective model policy contract", () => {
       selectedModel: f.model,
     });
     await runs.requestCancelRun(member, sent.body.runId, [200]);
-    inference.release();
     await flushWaitUntilForTest();
     await expect(runs.readRun(member, sent.body.runId)).resolves.toMatchObject({
       status: "cancelled",

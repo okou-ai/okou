@@ -3,7 +3,9 @@
 This runbook covers the instrumentation from [#33730](https://github.com/vm0-ai/vm0/issues/33730)
 and the launch-preparation overlap in [#33764](https://github.com/vm0-ai/vm0/issues/33764),
 the first two slices of [#33703](https://github.com/vm0-ai/vm0/issues/33703).
-These measurements are not a production acceptance result. The historical English DeepSeek V4 Flash cohort averaged
+The API no longer executes Pi turns, so the API-first phases, `activation_authorize`
+and `pi_admission_preparation` below are historical; launch-preparation phases
+remain. These measurements are not a production acceptance result. The historical English DeepSeek V4 Flash cohort averaged
 639.6 ms before transport, including an unattributed 63.8 ms between KMS and
 the ownership transaction. Neither interval is established as SDK CPU time.
 

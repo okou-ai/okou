@@ -29,7 +29,6 @@ interface LogAgentRunFailureInput {
   readonly exitCode: number;
   readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
-  readonly executionOwner: "api-first" | "sandbox";
   readonly run: AgentRunFailureLogSnapshot;
 }
 
@@ -135,7 +134,7 @@ function projectFailureEvidence(input: LogAgentRunFailureInput) {
       : {};
   return {
     framework: input.run.launchSnapshot?.framework ?? "unknown",
-    executionOwner: input.executionOwner,
+    executionOwner: "sandbox",
     modelProvider: modelProvider ?? "unknown",
     selectedModel: parsedSelectedModel(input.run) ?? "unknown",
     modelCredentialOwner: credentialOwner,

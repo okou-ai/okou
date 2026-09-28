@@ -38,7 +38,6 @@ import {
 import type { RouteEntry } from "./signals/route-entry";
 import { configureChatRunFinishedEventDispatcher } from "./signals/services/chat-run-finished-event-registration.service";
 import { configureOfficialWorkflowReconciliationDispatcher } from "./signals/services/official-workflow-reconciliation-registration.service";
-import { configurePiApiFirstTurnDispatcher } from "./signals/services/pi-api-first-turn-registration.service";
 import type { UsagePricingResolution } from "./signals/context/usage-pricing-resolution";
 import type { SystemSkillStorageResolution } from "./signals/context/system-skill-storage-resolution";
 import {
@@ -557,7 +556,6 @@ export function createAppWithRoutes({
 }: CreateAppWithRoutesOptions): Hono {
   configureChatRunFinishedEventDispatcher();
   configureOfficialWorkflowReconciliationDispatcher();
-  configurePiApiFirstTurnDispatcher();
   const app = new Hono();
   app.onError(handleError);
 

@@ -25,18 +25,8 @@ import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
-import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  inArray,
-  isNull,
-  sql,
-  type SQL,
-} from "drizzle-orm";
+import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { Pool } from "pg";
 
@@ -1939,17 +1929,6 @@ export async function holdRunOutputMaterializationRowFixture(args: {
   };
 }
 
-export async function readRunOutputMemoryCitationsFixture(runId: string) {
-  return await db()
-    .select({
-      sequenceNumber: runOutputMemoryCitations.sequenceNumber,
-      citation: runOutputMemoryCitations.citation,
-    })
-    .from(runOutputMemoryCitations)
-    .where(eq(runOutputMemoryCitations.runId, runId))
-    .orderBy(asc(runOutputMemoryCitations.sequenceNumber));
-}
-
 /** Starts one event insert with reservation and persistence in one transaction. */
 export async function startChatEventInsertTransactionFixture(args: {
   readonly threadId: string;
@@ -2295,47 +2274,6 @@ export async function readRunUsageEventsFixture(runId: string): Promise<
     .from(usageEvent)
     .where(eq(usageEvent.runId, runId))
     .orderBy(usageEvent.category);
-}
-
-/**
- * Seed immutable first-turn billing identities that production APIs cannot
- * create before the model response, for route-level retry and collision tests.
- */
-export async function insertPiApiFirstTurnUsageEventsFixture(args: {
-  readonly runId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly provider: string;
-  readonly events: readonly {
-    readonly idempotencyKey: string;
-    readonly category: string;
-    readonly quantity: number;
-  }[];
-}): Promise<void> {
-  await db()
-    .insert(usageEvent)
-    .values(
-      args.events.map((event) => {
-        return {
-          runId: args.runId,
-          idempotencyKey: event.idempotencyKey,
-          orgId: args.orgId,
-          userId: args.userId,
-          kind: "model",
-          provider: args.provider,
-          category: event.category,
-          quantity: event.quantity,
-        };
-      }),
-    );
-}
-
-export async function deletePiApiFirstTurnUsageEventsFixture(
-  idempotencyKeys: readonly string[],
-): Promise<void> {
-  await db()
-    .delete(usageEvent)
-    .where(inArray(usageEvent.idempotencyKey, [...idempotencyKeys]));
 }
 
 /**

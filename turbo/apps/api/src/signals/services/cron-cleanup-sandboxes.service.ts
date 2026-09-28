@@ -44,7 +44,7 @@ import {
   cleanupThreadlessRuns$,
   type ThreadlessRunCleanupResult,
 } from "./threadless-run-cleanup.service";
-import { cleanupExpiredPiApiFirstTurnData$ } from "./pi-api-first-turn-cleanup.service";
+import { cleanupExpiredPiLaunchArtifacts$ } from "./pi-launch-artifacts-cleanup.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
 import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 
@@ -616,7 +616,7 @@ const cleanupGlobalMaintenance$ = command(
       L.error("Failed to retry Feishu connect welcomes", { error });
     });
     signal.throwIfAborted();
-    await set(cleanupExpiredPiApiFirstTurnData$, signal);
+    await set(cleanupExpiredPiLaunchArtifacts$, signal);
     signal.throwIfAborted();
   },
 );

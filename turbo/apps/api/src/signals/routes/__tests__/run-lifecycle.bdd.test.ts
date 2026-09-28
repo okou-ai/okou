@@ -753,16 +753,11 @@ const NATIVE_RUNNER_ROUTE = { model: "claude-fable-5-1" } as const;
 const piClaimFixture = createChatEventsFixture(context);
 
 /**
- * Pi-eligible chat models execute API-first. An unavailable pending resource
- * archive hands the turn to a sandbox Pi claim, so route tests can inspect the
- * frozen claim without executing a provider request.
+ * Pi-eligible chat models run in the sandbox. Run creation publishes the Pi
+ * launch handoff to object storage, so route tests capture it before sending
+ * and then inspect the frozen claim.
  */
-async function preparePiSandboxClaim(
-  actor: ApiTestUser,
-  agentId: string,
-): Promise<void> {
-  await piClaimFixture.publishPendingPiInstructions(actor, agentId);
-  piClaimFixture.mockPiResourceArchiveDownloads(true);
+function preparePiSandboxClaim(): void {
   piClaimFixture.mockPiCheckpointObjectStore();
 }
 
@@ -5764,7 +5759,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await seedBuiltInModelKey("gpt-6-luna");
     // Luna is Pi-eligible, so the limited-free default chat run is claimed as
     // a sandbox Pi turn rather than a Codex Runner job.
-    await preparePiSandboxClaim(actor, agentId);
+    preparePiSandboxClaim();
     const sent = await chat.requestSendEvent(
       actor,
       { agentId, prompt: "limited-free default model run" },
@@ -5878,7 +5873,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       },
     ]);
 
-    await preparePiSandboxClaim(actor, agentId);
+    preparePiSandboxClaim();
 
     const sent = await chat.requestSendEvent(
       actor,
@@ -5972,10 +5967,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       },
     ]);
 
-    // Admission, not provider execution, is under test. Keep the Pi turn
-    // claimable in the sandbox so it cannot race cancellation with an
-    // unhandled DeepSeek request.
-    await preparePiSandboxClaim(actor, agentId);
+    // Admission, not provider execution, is under test.
+    preparePiSandboxClaim();
 
     const sent = await chat.requestSendEvent(
       actor,
@@ -6084,7 +6077,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         },
       ]);
 
-      await preparePiSandboxClaim(actor, agentId);
+      preparePiSandboxClaim();
 
       const sent = await chat.requestSendEvent(
         actor,
@@ -6155,7 +6148,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         },
       ]);
 
-      await preparePiSandboxClaim(actor, agentId);
+      preparePiSandboxClaim();
 
       const sent = await chat.requestSendEvent(
         actor,
@@ -6248,8 +6241,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     ]);
 
     // Every model here is Pi-eligible in a chat thread; inspect the frozen
-    // sandbox Pi claim rather than executing a provider request.
-    await preparePiSandboxClaim(actor, agentId);
+    // sandbox Pi claim.
+    preparePiSandboxClaim();
 
     async function claimModel(model: SupportedRunModel) {
       const sent = await chat.requestSendEvent(
@@ -6510,7 +6503,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     );
 
     // A member-scoped policy routes the gpt-6-astra model (native Codex
-    // Runner; Pi-eligible GPT models would run API-first) through the
+    // Runner; Pi-eligible GPT models would launch Pi instead) through the
     // personal provider; the org default stays on the anthropic provider.
     const orgProvider = await api.ensureOrgModelProvider(actor);
     await api.updateOrgModelPolicies(actor, [
@@ -14730,61 +14723,8 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     const { actor, agentId } = await entitledRunActor();
     mockOptionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "bdd-bypass");
 
-    const firstProviderEntered = createDeferredPromise<void>(context.signal);
-    let releaseProvider = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!releaseProvider.settled()) {
-        releaseProvider.resolve(undefined);
-      }
-    });
     let routeRequests = 0;
     server.use(
-      http.post("https://api.anthropic.com/v1/messages", async () => {
-        const release = releaseProvider;
-        if (!firstProviderEntered.settled()) {
-          firstProviderEntered.resolve(undefined);
-        }
-        await release.promise;
-        const events = [
-          {
-            type: "message_start",
-            message: {
-              id: randomUUID(),
-              type: "message",
-              role: "assistant",
-              model: "claude-sonnet-5",
-              content: [],
-              stop_reason: null,
-              usage: { input_tokens: 1, output_tokens: 0 },
-            },
-          },
-          {
-            type: "content_block_start",
-            index: 0,
-            content_block: { type: "text", text: "" },
-          },
-          {
-            type: "content_block_delta",
-            index: 0,
-            delta: { type: "text_delta", text: "late provider answer" },
-          },
-          { type: "content_block_stop", index: 0 },
-          {
-            type: "message_delta",
-            delta: { stop_reason: "end_turn" },
-            usage: { output_tokens: 3 },
-          },
-          { type: "message_stop" },
-        ];
-        return new HttpResponse(
-          events
-            .map((event) => {
-              return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
-            })
-            .join(""),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
       http.post(CHAT_CALLBACK_URL, () => {
         routeRequests += 1;
         return HttpResponse.json({ error: "boom" }, { status: 500 });
@@ -14795,9 +14735,7 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
       agentId,
       prompt: "first cancellable chat run",
     });
-    await firstProviderEntered.promise;
     await api.requestCancelRun(actor, first.runId, [200]);
-    releaseProvider.resolve(undefined);
     // Cancellation delivers its chat callback from the route's `waitUntil`
     // work, so drain that work instead of polling for the appended event.
     await flushWaitUntilForTest();
@@ -14814,14 +14752,12 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     );
     expect(routeRequests).toBe(0);
 
-    releaseProvider = createDeferredPromise<void>(context.signal);
     const second = await sendChatRunMessage(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "second cancellable chat run",
     });
     await api.requestCancelRun(actor, second.runId, [200]);
-    releaseProvider.resolve(undefined);
     await flushWaitUntilForTest();
 
     const secondCancelled = await api.readRun(actor, second.runId);
@@ -14836,14 +14772,12 @@ describe("HOOK-01/RUN-03: terminal run callbacks dispatch on cancellation", () =
     );
     expect(routeRequests).toBe(0);
 
-    releaseProvider = createDeferredPromise<void>(context.signal);
     const third = await sendChatRunMessage(actor, {
       agentId,
       threadId: first.threadId,
       prompt: "third cancellable chat run",
     });
     await api.requestCancelRun(actor, third.runId, [200]);
-    releaseProvider.resolve(undefined);
     await flushWaitUntilForTest();
 
     const thirdCancelled = await api.readRun(actor, third.runId);
@@ -15837,7 +15771,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     // Astra stays on the native Codex Runner; Pi-eligible GPT models would
-    // execute API-first instead of reporting Codex items.
+    // launch Pi instead of reporting Codex items.
     const { providerId: openAiProviderId } = await api.createOrgModelProvider(
       actor,
       { type: "openai-api-key", secret: "bdd-codex-first-output-key" },

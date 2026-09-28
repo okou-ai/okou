@@ -36,9 +36,9 @@ import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.se
 import { GATEWAY_RUNTIME_SECRET_NAME } from "./model-provider-gateway-runtime";
 
 /**
- * Resolve non-secret model metadata shared by the sandbox Pi runtime and the
- * required API first-turn slot. Credentials remain in the ordinary encrypted
- * run context and are never embedded in this launch metadata.
+ * Resolve non-secret model metadata for the sandbox Pi runtime. Credentials
+ * remain in the ordinary encrypted run context and are never embedded in this
+ * launch metadata.
  */
 
 function normalizedBaseUrl(url: string): string {

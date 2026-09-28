@@ -46,7 +46,8 @@ reloads the authoritative persistent state, restoring eventual consistency.
 
 ## Session Output Streaming
 
-API-first Pi turns can publish sanitized text deltas on a separate
+Sandbox runs can publish sanitized text deltas through the session-output
+webhook on a separate
 `run-output:<userId>:<orgId>:<runId>` Ably channel. Thinking and private memory
 citation markup are excluded. Pi runtime admission follows the route policy.
 A visible chat panel subscribes while it has a pending or running run; queued
@@ -54,12 +55,10 @@ runs do not subscribe. Run changes and page cancellation reset that subscription
 The SharedWorker shares the transport across tabs and releases the channel
 attachment when its final subscriber leaves.
 
-Each API attempt assigns `api-first:<attemptId>:<nativeContentIndex>` as the
-text block's `runEventId`. Streaming and final event insertion derive the same
-chat event UUID from the run ID and that source ID. The independent public
-event sequence still determines ordering and the sandbox handoff boundary.
-Filtering thinking or empty text therefore cannot shift a streamed block's
-identity, and sandbox fallback cannot reuse an abandoned attempt's identity.
+Streaming and final event insertion derive the same chat event UUID from the
+run ID and the delta's `runEventId`. The independent public event sequence
+still determines ordering. The retired API-first producer used
+`api-first:<attemptId>:<nativeContentIndex>` source IDs.
 
 Chunk zero creates an optimistic `output.message`. Later chunks append only
 when that optimistic event exists. A persistent event with the same ID always

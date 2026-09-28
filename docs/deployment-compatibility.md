@@ -2,7 +2,7 @@
 
 ## Retired preference and occurrence columns dropped (2026-09-28)
 
-Migration `1273_drop_retired_voice_reasoning_collection_columns` drops
+Migration `1274_drop_retired_voice_reasoning_collection_columns` drops
 `org_members_metadata.voice_input_model`,
 `morning_brief_native_occurrences.collection_facts` and
 `chat_threads.reasoning_effort`, and removes their Drizzle declarations. This
@@ -27,7 +27,7 @@ accepted; release this change at low traffic.
 
 Rollback promotes artifacts without restoring schema, so
 `resolve-production-rollback-target.sh` rejects API targets that predate the
-canonical main commit that added `1273`. Recovering past that commit requires a
+canonical main commit that added `1274`. Recovering past that commit requires a
 forward-fix migration that restores the columns.
 
 The migration replay tests for `1156` (GPT 5.5 retirement) and `1213` clone the
@@ -109,6 +109,61 @@ Old and new versions during deploy:
 
 No API rollback floor is needed.
 
+## Unified chat queue (release 4)
+
+Migration `1273_drop_active_input_delivery_tables` drops
+`active_input_delivery_items`, then `active_input_deliveries`, and their schema.
+Release 3 (#37082) removed every read and write of both tables. Dropping them
+removes their foreign keys to `chat_events`, `agent_runs` and `chat_threads`,
+which takes a brief `ACCESS EXCLUSIVE` lock on each referenced table under the
+default 1 s `lock_timeout`.
+
+**Merge gate:** merge only after release 3 (#37082) is released to production
+and every earlier API instance has drained (no Axiom output from an earlier API
+commit).
+
+**API rollback floor: release 3**, main commit
+`553fc566b7e9be2cd4a8c1de314d55939b99490a`, pinned in
+`resolve-production-rollback-target.sh`. Release 2 APIs reserve steered input by
+writing the dropped tables. Rolling back to release 3 is safe: it never names
+the dropped tables and understands every replacement event this release writes.
+
+Release 4 also adds two runner steer endpoints next to the unchanged reserve
+and receipt endpoints: `GET /api/runners/runs/:runId/steerable-inputs/next`
+returns the next run-less, unrevoked `input.prompt` after the queue input the
+run consumed last, without writing, and
+`POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered` consumes it
+with the same replacement event as receipt. No Runner calls them yet; the
+current Runner keeps using reserve, receipt and `activeInputDeliveryIds`, so the
+additive endpoints need no deploy order. A later Runner that calls them
+requires an API at or above this release.
+
+## Pi API-first retirement (release 4, API side)
+
+The API no longer runs Pi first turns in-process. Every Pi run goes to the
+Sandbox. Run creation publishes the no-inference `sandbox-first` handoff under
+`pi-api-first-turn/<runId>/` (v3 manifest plus session object, or a v4 manifest
+referencing blob-backed history) before the run and its runner job commit.
+`piLaunchConfig.apiFirstTurn` stays populated because the Runner validator and
+the CLI handoff resolver still require it; the contract, Runner, Guest and CLI
+are unchanged and are cleaned up in a later release. The `pi_api_first_turn`
+advisory lock is gone. No database migration.
+
+Old and new instances during deploy:
+
+- An old API instance still runs its in-flight API-first attempts in its own
+  process and completes, fails or hands them off itself; new instances need no
+  state from it. Cancellation handled by a new instance no longer takes the
+  lock or aborts the old process's provider call; the status-guarded terminal
+  transition still decides the winner, and a losing attempt stops at its own
+  deadline.
+- Completion deletes the handoff objects of every Pi run, and the sandbox
+  cleanup cron still sweeps the unchanged `pi-api-first-turn/` prefix after the
+  presigned URL TTL, so objects written by old instances are not orphaned.
+
+**Rollback:** safe down to the release 3 floor; an earlier API resumes API-first
+for new runs and reads nothing this release writes differently.
+
 ## Unified chat queue (release 3)
 
 Every input, from web sends and MCP to integrations and automations, enters
@@ -127,7 +182,7 @@ an input waiting; every other launch failure appends `input.rejected`.
 Steering no longer reads or writes `active_input_deliveries` or
 `active_input_delivery_items`. Reserve returns the source `chat_events` id as
 the delivery ID without writing; receipt and completion insert the run's
-replacement on the revoke edge. The tables stay until release 4 drops them. See
+replacement on the revoke edge. Release 4 drops the tables. See
 [active input delivery](./active-input-delivery.md). Runner and Guest do not
 change: they treat the delivery ID as an opaque UUID.
 
@@ -2159,7 +2214,7 @@ Two-release Contract": first remove the Drizzle declaration in its own release,
 then drop the column in a later migration once every API that declares it has
 drained.
 
-Migration `1273` later dropped the column; see
+Migration `1274` later dropped the column; see
 [Retired preference and occurrence columns dropped](#retired-preference-and-occurrence-columns-dropped-2026-09-28).
 
 ## Discord verified foundation (2026-09-24)
@@ -2299,7 +2354,7 @@ update that carries nothing but this field is rejected as empty. The
 `org_members_metadata.voice_input_model` column is left in place: the new API
 neither reads nor writes it while an older API may still do so. Drop it in a
 separate migration after older API deployments drain.
-Migration `1273` later dropped it; see
+Migration `1274` later dropped it; see
 [Retired preference and occurrence columns dropped](#retired-preference-and-occurrence-columns-dropped-2026-09-28).
 
 ## Guest storage batch timing attribution (2026-09-24)

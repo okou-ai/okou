@@ -19,10 +19,6 @@ import {
 } from "./agent-run-callback.service";
 import { handOffReleasedSlot$ } from "./agent-run-lifecycle.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
-import {
-  abortPiApiFirstTurnAfterCanonicalCancellation,
-  lockPiApiFirstTurnLifecycle,
-} from "./pi-api-first-turn-lifecycle.service";
 import { cancelLockedRun } from "./agent-run-cancellation-transition.service";
 import { releaseActiveAgentRuns } from "./agent-run-terminal-transition.service";
 import { lockPiMemoryPhase2MaintenanceCleanupProtection } from "./pi-memory-phase2-maintenance.service";
@@ -48,22 +44,6 @@ export interface CancelRunResult {
 
 type NotFoundResponse = ReturnType<typeof notFound>;
 type RunNotCancellableResponse = ReturnType<typeof runNotCancellable>;
-
-async function abortAfterCanonicalCancellation<T>(
-  transition: Promise<T>,
-): Promise<T> {
-  const result = await transition;
-  if (
-    typeof result === "object" &&
-    result !== null &&
-    "alreadyCancelled" in result &&
-    "runId" in result &&
-    typeof result.runId === "string"
-  ) {
-    abortPiApiFirstTurnAfterCanonicalCancellation(result.runId);
-  }
-  return result;
-}
 
 const ACTIVE_STATUSES = ["pending", "running"] as const;
 type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
@@ -109,7 +89,6 @@ export const cancelRun$ = command(
     const writeDb = set(writeDb$);
 
     const transition = writeDb.transaction(async (tx) => {
-      await lockPiApiFirstTurnLifecycle(tx, runId);
       const [run] = await tx
         .select({
           id: agentRuns.id,
@@ -216,7 +195,7 @@ export const cancelRun$ = command(
         slotReleased: released.length > 0,
       };
     });
-    const result = await abortAfterCanonicalCancellation(transition);
+    const result = await transition;
     signal.throwIfAborted();
 
     return result;

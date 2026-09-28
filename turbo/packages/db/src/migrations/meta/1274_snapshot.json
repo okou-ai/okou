@@ -1,6 +1,6 @@
 {
-  "id": "332d8c59-e1bc-443a-989f-a5ec2459f39a",
-  "prevId": "fd99827c-4717-4917-9745-40829f7dae41",
+  "id": "7dcfe069-d786-4853-97fb-8fa368f5ec4d",
+  "prevId": "332d8c59-e1bc-443a-989f-a5ec2459f39a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8563,12 +8563,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
-        },
-        "reasoning_effort": {
-          "name": "reasoning_effort",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
         },
         "codex_service_tier": {
           "name": "codex_service_tier",
@@ -20586,12 +20580,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "collection_facts": {
-          "name": "collection_facts",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "claimed_at": {
           "name": "claimed_at",
           "type": "timestamp",
@@ -23002,12 +22990,6 @@
         },
         "selected_image_model": {
           "name": "selected_image_model",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "voice_input_model": {
-          "name": "voice_input_model",
           "type": "varchar(255)",
           "primaryKey": false,
           "notNull": false

@@ -1225,6 +1225,41 @@ pub mod runners {
                 UpstreamTransport,
             }
         }
+
+        /// DTOs for steering input prompts into a running run.
+        pub mod steerable_inputs {
+            /// DTOs for reading the next steerable input prompt.
+            pub mod next {
+                /// Input prompt the run may steer.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct ResponseInput {
+                    /// Source chat-event identity to declare steered.
+                    pub event_id: String,
+                    /// Materialized prompt sent to the active Guest.
+                    pub prompt: String,
+                }
+
+                /// Next input prompt a running run may steer.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct Response {
+                    /// Steerable input, or absent when nothing can be steered.
+                    pub input: Option<ResponseInput>,
+                }
+            }
+
+            /// DTOs for declaring an input prompt steered.
+            pub mod steered {
+                /// API outcome after declaring an input prompt steered.
+                #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                pub struct Response {
+                    /// The input is consumed by this run, idempotently.
+                    pub outcome: String,
+                }
+            }
+        }
     }
 
     /// Private Runner SSH authority DTOs.

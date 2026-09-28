@@ -55,7 +55,7 @@ export async function validateGpt55Retirement(
       );
     }
     // Migration 1156 ran while chat_threads still had reasoning_effort, which
-    // 1273 later dropped. Restore that historical column for the replay.
+    // 1274 later dropped. Restore that historical column for the replay.
     await client.query(
       "ALTER TABLE chat_threads ADD COLUMN reasoning_effort varchar(20)",
     );

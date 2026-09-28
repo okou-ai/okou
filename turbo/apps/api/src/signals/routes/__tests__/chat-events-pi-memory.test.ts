@@ -12,17 +12,14 @@ import {
   DEFAULT_PROFILE,
   PI_AGENT_DIR,
   PI_MEMORY_ROOT,
-  piApiFirstTurnManifestSchema,
 } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { env } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import {
   readSessionHistoryBlobRefCountFixture,
   setRunLaunchSnapshotFixture,
@@ -59,10 +56,7 @@ import {
   okouTokenFromClaim,
   type ChatRunCompletionOptions,
   userMessages,
-  occurrences,
-  piResponsesDeveloperPrompt,
 } from "./helpers/chat-events-fixture";
-import { piResponsesTextSse, piResponsesToolSse } from "./helpers/pi-responses";
 
 const context = testContext();
 const {
@@ -85,6 +79,7 @@ const {
   completeSandboxFirstPiRun,
   publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
+  expectPiSandboxHandoff,
 } = createChatEventsFixture(context);
 
 // Completion-webhook carriers are claimed through the native Runner protocol
@@ -294,7 +289,7 @@ async function uploadLaunchMemoryNote(
 }
 
 describe("CHAT-02: model-first provider policies", () => {
-  it("pins recall-enabled Pi memory through API completion and Sandbox handoff", async () => {
+  it("pins recall-enabled Pi memory across Sandbox turns of one session", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const frozenSummary =
@@ -302,7 +297,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const initialMemory = await commitMemoryVersion(context, actor, [
       {
         path: "MEMORY.md",
-        content: "Pi memory version pinned before the API-first completion.",
+        content: "Pi memory version pinned before the first completion.",
       },
       { path: "memory_summary.md", content: frozenSummary },
     ]);
@@ -323,51 +318,41 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
-    let modelCalls = 0;
-    const modelRequestBodies: string[] = [];
-    server.use(
-      http.post("https://api.openai.com/v1/responses", async ({ request }) => {
-        modelCalls += 1;
-        modelRequestBodies.push(await request.text());
-        return new HttpResponse(
-          piResponsesTextSse("API-first memory checkpoint", modelCalls),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
-    );
 
-    const first = await sendChatRun(
-      actor,
-      {
-        agentId,
-        prompt: "complete through the Pi API-first slot",
-        model: "gpt-5.6-terra",
+    const firstPrompt = "complete the first Pi turn in the Sandbox";
+    const first = await sendChatRun(actor, {
+      agentId,
+      prompt: firstPrompt,
+      model: "gpt-5.6-terra",
+    });
+    // The first turn is a no-inference Sandbox handoff of a fresh session.
+    const firstHandoff = expectPiSandboxHandoff(first.runId, checkpointObjects);
+    expect(firstHandoff.manifest.schemaVersion).toBe(3);
+    expect(firstHandoff.session).toBeDefined();
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    expect(firstClaim.claim.piLaunchConfig).toMatchObject({
+      memoryRecall: {
+        status: "ready",
+        memoryStorageId: initialMemory.storageId,
+        storageVersionId: initialMemory.versionId,
+        content: frozenSummary,
       },
+    });
+    await completeSandboxFirstPiRun({
+      actor,
+      answer: "Sandbox memory checkpoint",
+      checkpointObjects,
+      claim: firstClaim,
+      prompt: firstPrompt,
+      run: first,
       usagePricingResolution,
-    );
-    await waitForRunStatus(actor, first.runId, "completed", 10_000);
-    await flushWaitUntilForTest();
-    await expect(
-      api.readRunnerCancellation(
-        api.sandboxTokenForRun(actor, first.runId),
-        first.runId,
-        runnerGroup,
-      ),
-    ).resolves.toMatchObject({ state: "present", mode: "hard" });
-    expect(modelCalls).toBe(1);
+    });
     await expect(
       readPiMemoryStage1CandidateFixture({
         orgId,
         userId: actor.userId,
       }),
     ).resolves.toBeNull();
-    const firstDeveloperPrompt = piResponsesDeveloperPrompt(
-      modelRequestBodies[0],
-    );
-    expect(occurrences(firstDeveloperPrompt, frozenSummary)).toBe(1);
-    expect(firstDeveloperPrompt).toContain(
-      `${PI_MEMORY_ROOT}/memory_summary.md`,
-    );
 
     const newerMemory = await commitMemoryVersion(context, actor, [
       {
@@ -387,26 +372,10 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       usagePricingResolution,
     );
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(manifestKey);
-      })
-      .toBe(true);
-    expect(modelCalls).toBe(1);
-    const manifestBytes = checkpointObjects.get(manifestKey);
-    if (!manifestBytes) {
-      throw new Error("Expected the Pi memory ownership-transfer manifest");
-    }
+    // The resumed turn references the stored history blob.
     expect(
-      piApiFirstTurnManifestSchema.parse(
-        JSON.parse(manifestBytes.toString("utf8")),
-      ),
-    ).toMatchObject({
-      schemaVersion: 4,
-      outcome: "ownership-transfer",
-      mode: "sandbox-first",
-    });
+      expectPiSandboxHandoff(second.runId, checkpointObjects).manifest,
+    ).toMatchObject({ schemaVersion: 4 });
     const claimed = await claimChatRun(runnerGroup, second.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piLaunchConfig).toMatchObject({
@@ -470,22 +439,6 @@ describe("CHAT-02: model-first provider policies", () => {
       );
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const usagePricingResolution = await createGptUsagePricingResolution();
-      let providerCalls = 0;
-      server.use(
-        http.post("https://api.openai.com/v1/responses", () => {
-          providerCalls += 1;
-          return new HttpResponse(
-            piResponsesToolSse({
-              callId: "call_launch_overlap",
-              name: "read",
-              arguments: { path: "/home/user/workspace/AGENTS.md" },
-              sequence: 1,
-            }),
-            { headers: { "content-type": "text/event-stream" } },
-          );
-        }),
-      );
       await api.heartbeatRunner(runnerGroup);
       const archiveEntered = createDeferredPromise<void>(context.signal);
       const manifestEntered = createDeferredPromise<string>(context.signal);
@@ -530,15 +483,11 @@ describe("CHAT-02: model-first provider policies", () => {
           return apiTestS3PresignedUrl(command);
         },
       );
-      const sending = sendChatRun(
-        actor,
-        {
-          agentId,
-          prompt: "prepare a complete Pi launch",
-          model: "gpt-5.6-terra",
-        },
-        usagePricingResolution,
-      );
+      const sending = sendChatRun(actor, {
+        agentId,
+        prompt: "prepare a complete Pi launch",
+        model: "gpt-5.6-terra",
+      });
       const [runId] = await Promise.all([
         manifestEntered.promise,
         archiveEntered.promise,
@@ -548,7 +497,6 @@ describe("CHAT-02: model-first provider policies", () => {
       // The production read and Runner poll surfaces must expose no partial run.
       await api.requestReadRun(actor, runId, [404]);
       expect((await api.pollRunner(runnerGroup)).body.job).toBeNull();
-      expect(providerCalls).toBe(0);
       // Publish a new instruction HEAD after capture. This attempt must still
       // launch the version whose archive signature is already in progress.
       if (heldBranch === "archive") {
@@ -567,7 +515,6 @@ describe("CHAT-02: model-first provider policies", () => {
           return checkpointObjects.has(manifestKey);
         })
         .toBe(true);
-      expect(providerCalls).toBe(1);
       const claimed = await claimChatRun(runnerGroup, runId);
       const mounts = expectCanonicalStorageManifest(
         claimed.claim.storageManifest,
@@ -748,21 +695,6 @@ describe("CHAT-02: model-first provider policies", () => {
       return originalSend(command);
     });
     const pricing = await createGptUsagePricingResolution();
-    let providerCalls = 0;
-    server.use(
-      http.post("https://api.openai.com/v1/responses", () => {
-        providerCalls += 1;
-        return new HttpResponse(
-          piResponsesToolSse({
-            callId: `call_canonical_launch_${providerCalls}`,
-            name: "read",
-            arguments: { path: "/home/user/workspace/AGENTS.md" },
-            sequence: providerCalls,
-          }),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
-    );
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const seed = await sendChatRun(
       actor,
@@ -930,7 +862,6 @@ describe("CHAT-02: model-first provider policies", () => {
         return apiTestS3PresignedUrl(command);
       },
     );
-    const callsBeforeResume = providerCalls;
     const sending = sendChatRun(
       actor,
       {
@@ -946,7 +877,6 @@ describe("CHAT-02: model-first provider policies", () => {
       archiveEntered.promise,
     ]);
     await api.requestReadRun(actor, runId, [404]);
-    expect(providerCalls).toBe(callsBeforeResume);
     const newerVersion = await uploadLaunchMemoryNote(
       writer.runId,
       writerClaim,
@@ -1059,7 +989,6 @@ describe("CHAT-02: model-first provider policies", () => {
     const memory = await commitMemoryVersion(context, actor, [
       { path: "memory_summary.md", content: summary },
     ]);
-    const usagePricingResolution = await createGptUsagePricingResolution();
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     await updateFeatureSwitchesForUser(
       context,
@@ -1069,39 +998,13 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     );
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const requestBodies: string[] = [];
-    server.use(
-      http.post("https://api.openai.com/v1/responses", async ({ request }) => {
-        requestBodies.push(await request.text());
-        return new HttpResponse(
-          piResponsesToolSse({
-            callId: `call_projection_epoch_${requestBodies.length}`,
-            name: "read",
-            arguments: { path: "/home/user/workspace/AGENTS.md" },
-            sequence: requestBodies.length,
-          }),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
-    );
+    mockPiCheckpointObjectStore();
 
-    const frozenMiss = await sendChatRun(
-      actor,
-      {
-        agentId,
-        prompt: "freeze the projection miss",
-        model: "gpt-5.6-terra",
-      },
-      usagePricingResolution,
-    );
-    const frozenMissManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${frozenMiss.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(frozenMissManifestKey);
-      })
-      .toBe(true);
-    expect(piResponsesDeveloperPrompt(requestBodies[0])).not.toContain(summary);
+    const frozenMiss = await sendChatRun(actor, {
+      agentId,
+      prompt: "freeze the projection miss",
+      model: "gpt-5.6-terra",
+    });
 
     await seedReadyMemorySummaryProjection(context, actor, memory, summary);
     const frozenMissClaim = await claimChatRun(runnerGroup, frozenMiss.runId);
@@ -1113,24 +1016,11 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     });
 
-    const newSession = await sendChatRun(
-      actor,
-      {
-        agentId,
-        prompt: "capture the now-ready projection in a new session",
-        model: "gpt-5.6-terra",
-      },
-      usagePricingResolution,
-    );
-    const newSessionManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${newSession.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(newSessionManifestKey);
-      })
-      .toBe(true);
-    expect(
-      occurrences(piResponsesDeveloperPrompt(requestBodies[1]), summary),
-    ).toBe(1);
+    const newSession = await sendChatRun(actor, {
+      agentId,
+      prompt: "capture the now-ready projection in a new session",
+      model: "gpt-5.6-terra",
+    });
     const newSessionClaim = await claimChatRun(runnerGroup, newSession.runId);
     expect(newSessionClaim.claim.piLaunchConfig).toMatchObject({
       memoryRecall: {
@@ -1156,44 +1046,20 @@ describe("CHAT-02: model-first provider policies", () => {
       { path: "memory_summary.md", content: summary },
     ]);
     await seedReadyMemorySummaryProjection(context, actor, memory, summary);
-    const usagePricingResolution = await createGptUsagePricingResolution();
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
 
     mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const requestBodies: string[] = [];
-    server.use(
-      http.post("https://api.openai.com/v1/responses", async ({ request }) => {
-        requestBodies.push(await request.text());
-        return new HttpResponse(
-          piResponsesToolSse({
-            callId: `call_pi_memory_gate_${requestBodies.length}`,
-            name: "read",
-            arguments: { path: "/home/user/workspace/AGENTS.md" },
-            sequence: requestBodies.length,
-          }),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
-    );
+    mockPiCheckpointObjectStore();
     async function launchPiRun(prompt: string) {
-      const run = await sendChatRun(
-        actor,
-        { agentId, prompt, model: "gpt-5.6-terra" },
-        usagePricingResolution,
-      );
-      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-      await expect
-        .poll(() => {
-          return checkpointObjects.has(manifestKey);
-        })
-        .toBe(true);
-      return run;
+      return await sendChatRun(actor, {
+        agentId,
+        prompt,
+        model: "gpt-5.6-terra",
+      });
     }
 
     // Off: the ready projection is never read, and the mount stays pinned.
     const gated = await launchPiRun("launch Pi with PiMemory off");
-    expect(piResponsesDeveloperPrompt(requestBodies[0])).not.toContain(summary);
     const gatedClaim = await claimChatRun(runnerGroup, gated.runId);
     expect(gatedClaim.claim.piLaunchConfig).toMatchObject({
       memoryRecall: {
@@ -1226,9 +1092,6 @@ describe("CHAT-02: model-first provider policies", () => {
       { [FeatureSwitchKey.PiMemory]: true },
     );
     const enabled = await launchPiRun("launch Pi with PiMemory on");
-    expect(
-      occurrences(piResponsesDeveloperPrompt(requestBodies[1]), summary),
-    ).toBe(1);
     const enabledClaim = await claimChatRun(runnerGroup, enabled.runId);
     expect(enabledClaim.claim.piLaunchConfig).toMatchObject({
       memoryRecall: {
@@ -1590,32 +1453,17 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     );
     mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
-    server.use(
-      http.post("https://api.openai.com/v1/responses", () => {
-        return new HttpResponse(
-          piResponsesTextSse("delegated memory admission answer", 0, {
-            input_tokens: 10,
-            output_tokens: 3,
-            total_tokens: 13,
-            input_tokens_details: {
-              cached_tokens: 3,
-              cache_write_tokens: 2,
-            },
-          }),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
-    );
+    const checkpointObjects = mockPiCheckpointObjectStore();
 
     const delegatedEventId = randomUUID();
+    const delegatedPrompt = "learn this stable preference from delegated work";
     const delegated = await requestSendEventWithBearer(
       sourceToken,
       {
         agentId,
         clientEventId: delegatedEventId,
         threadId: targetThread.id,
-        prompt: "learn this stable preference from delegated work",
+        prompt: delegatedPrompt,
         model: "gpt-5.6-terra",
       },
       [201],
@@ -1626,8 +1474,16 @@ describe("CHAT-02: model-first provider policies", () => {
       throw new Error("Expected the delegated Pi prompt to launch a run");
     }
     const delegatedRunId = delegated.body.runId;
-    await waitForRunStatus(actor, delegatedRunId, "completed", 10_000);
-    await flushWaitUntilForTest();
+    const delegatedRun = { runId: delegatedRunId, threadId: targetThread.id };
+    await completeSandboxFirstPiRun({
+      actor,
+      answer: "delegated memory admission answer",
+      checkpointObjects,
+      claim: await claimChatRun(runnerGroup, delegatedRunId),
+      prompt: delegatedPrompt,
+      run: delegatedRun,
+      usagePricingResolution,
+    });
     await expectAgentChatProvenance({
       actor,
       agentId,
@@ -1763,56 +1619,18 @@ describe("CHAT-02: model-first provider policies", () => {
       "first memory admission answer",
       "replacement memory admission answer",
       "selection watermark replacement answer",
-      "generation-disabled answer",
     ] as const;
-    let modelCalls = 0;
-    const firstProviderEntered = createDeferredPromise<void>(context.signal);
-    const releaseFirstProvider = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!releaseFirstProvider.settled()) {
-        releaseFirstProvider.resolve(undefined);
-      }
-    });
-    server.use(
-      http.post("https://api.openai.com/v1/responses", async () => {
-        const answer = answers[modelCalls];
-        if (!answer) {
-          return HttpResponse.json(
-            { error: "unexpected duplicate Pi memory model request" },
-            { status: 500 },
-          );
-        }
-        if (modelCalls === 0) {
-          firstProviderEntered.resolve(undefined);
-          await releaseFirstProvider.promise;
-        }
-        const response = new HttpResponse(
-          piResponsesTextSse(answer, modelCalls, {
-            input_tokens: 10,
-            output_tokens: 3,
-            total_tokens: 13,
-            input_tokens_details: {
-              cached_tokens: 3,
-              cache_write_tokens: 2,
-            },
-          }),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-        modelCalls += 1;
-        return response;
-      }),
-    );
 
+    const firstPrompt = "capture memory generation at launch";
     const first = await sendChatRun(
       actor,
       {
         agentId,
-        prompt: "capture memory generation at launch",
+        prompt: firstPrompt,
         model: "gpt-5.6-terra",
       },
       usagePricingResolution,
     );
-    await firstProviderEntered.promise;
     await expect(
       readPiMemoryStage1DayFixture(actor.userId),
     ).resolves.toMatchObject({
@@ -1830,9 +1648,15 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     });
 
-    releaseFirstProvider.resolve(undefined);
-    await waitForRunStatus(actor, first.runId, "completed", 10_000);
-    await flushWaitUntilForTest();
+    await completeSandboxFirstPiRun({
+      actor,
+      answer: answers[0],
+      checkpointObjects,
+      claim: await claimChatRun(runnerGroup, first.runId),
+      prompt: firstPrompt,
+      run: first,
+      usagePricingResolution,
+    });
     await expect(
       readRunLaunchSnapshotFixture(context, first.runId),
     ).resolves.toMatchObject({
@@ -1906,9 +1730,6 @@ describe("CHAT-02: model-first provider policies", () => {
       run: second,
       usagePricingResolution,
     });
-    await waitForRunStatus(actor, second.runId, "completed", 10_000);
-    await flushWaitUntilForTest();
-    expect(modelCalls).toBe(1);
 
     await expect(
       readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
@@ -2047,9 +1868,6 @@ describe("CHAT-02: model-first provider policies", () => {
       run: third,
       usagePricingResolution,
     });
-    await waitForRunStatus(actor, third.runId, "completed", 10_000);
-    await flushWaitUntilForTest();
-    expect(modelCalls).toBe(1);
 
     await expect(
       readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
