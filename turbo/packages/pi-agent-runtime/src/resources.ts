@@ -1,7 +1,5 @@
 import {
-  createExtensionRuntime,
   createSyntheticSourceInfo,
-  type ResourceLoader,
   type Skill,
 } from "@earendil-works/pi-coding-agent";
 
@@ -58,84 +56,6 @@ export function piPreheatedResourceLoaderOptions(args: {
     },
     skillsOverride() {
       return { skills: resources.skills, diagnostics: [] };
-    },
-  };
-}
-
-/**
- * One immutable API-preparation resource view.
- *
- * Unlike DefaultResourceLoader, this loader has no package manager, filesystem
- * discovery, or reload work. It still supplies the public ResourceLoader seam
- * consumed by the official AgentSession prompt and extension runtime.
- */
-export function createPiPreheatedResourceLoader(args: {
-  readonly snapshot: PiPreheatedResourceSnapshot;
-  readonly appendSystemPrompt: readonly string[];
-  readonly systemPrompt: string;
-}): ResourceLoader {
-  const resources = preheatedResources(args.snapshot);
-  const extensions: ReturnType<ResourceLoader["getExtensions"]> = {
-    extensions: [],
-    errors: [],
-    runtime: createExtensionRuntime(),
-  };
-  const skills: ReturnType<ResourceLoader["getSkills"]> = {
-    skills: resources.skills,
-    diagnostics: [],
-  };
-  const prompts: ReturnType<ResourceLoader["getPrompts"]> = {
-    prompts: [],
-    diagnostics: [],
-  };
-  const themes: ReturnType<ResourceLoader["getThemes"]> = {
-    themes: [],
-    diagnostics: [],
-  };
-  const agentsFiles: ReturnType<ResourceLoader["getAgentsFiles"]> = {
-    agentsFiles: resources.agentsFiles,
-  };
-  const appendSystemPrompt = [...args.appendSystemPrompt];
-
-  return {
-    getExtensions() {
-      return extensions;
-    },
-    getSkills() {
-      return skills;
-    },
-    getPrompts() {
-      return prompts;
-    },
-    getThemes() {
-      return themes;
-    },
-    getAgentsFiles() {
-      return agentsFiles;
-    },
-    getSystemPrompt() {
-      return args.systemPrompt;
-    },
-    getSystemPromptSource() {
-      return undefined;
-    },
-    getAppendSystemPrompt() {
-      return appendSystemPrompt;
-    },
-    getAppendSystemPromptSources() {
-      return [];
-    },
-    extendResources(paths) {
-      if (
-        (paths.skillPaths?.length ?? 0) > 0 ||
-        (paths.promptPaths?.length ?? 0) > 0 ||
-        (paths.themePaths?.length ?? 0) > 0
-      ) {
-        throw new Error("Pi API resource snapshots cannot be extended");
-      }
-    },
-    async reload() {
-      // The admitted snapshot is already complete and immutable.
     },
   };
 }

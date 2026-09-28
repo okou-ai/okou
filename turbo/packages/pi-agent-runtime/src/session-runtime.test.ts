@@ -7,25 +7,15 @@ import { zstdDecompressSync } from "node:zlib";
 
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
-import {
-  DefaultPackageManager,
-  DefaultResourceLoader,
-  ModelRuntime,
-  SessionManager,
-} from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { piMemorySummaryTokenCount } from "./memory-recall";
-import {
-  createPiAgentSessionForRuntime,
-  createPiApiFirstAgentSessionForRuntime,
-} from "./session-runtime";
+import { createPiAgentSessionForRuntime } from "./session-runtime";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
 import type { PiPreparationObservation } from "./preparation-timing";
 import type { PiAgentModelConfig, PiAgentRequestHeaders } from "./types";
 import { materializePiAgentModelConfig } from "./credential";
-import { resumePiApiFirstTurn } from "./rpc";
-import { createPiApiFirstTurnOwnership, runPiApiFirstTurn } from "./api";
 
 const GPT_MODELS = ["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"] as const;
 
@@ -454,188 +444,7 @@ async function startResponsesProvider(
 }
 
 describe("official Pi AgentSession runtime", () => {
-  it("omits generic discovery and the redundant refresh only for the explicit API entry", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-api-services-"));
-    onTestFinished(async () => {
-      await rm(root, { recursive: true, force: true });
-    });
-    const reload = vi.spyOn(DefaultResourceLoader.prototype, "reload");
-    const resolvePackages = vi.spyOn(
-      DefaultPackageManager.prototype,
-      "resolve",
-    );
-    const refresh = vi.spyOn(ModelRuntime.prototype, "refresh");
-    const args = {
-      cwd: join(root, "workspace"),
-      agentDir: join(root, "agent"),
-      model: TERRA_MODEL,
-      appendSystemPrompt: null,
-      resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
-    } as const;
-
-    try {
-      const api = await createPiApiFirstAgentSessionForRuntime({
-        ...args,
-        sessionManager: SessionManager.inMemory(args.cwd, {
-          id: randomUUID(),
-        }),
-      });
-      api.session.dispose();
-      expect(reload).not.toHaveBeenCalled();
-      expect(resolvePackages).not.toHaveBeenCalled();
-      // Provider registration retains its required local refresh. The second
-      // services refresh is the redundant operation removed by this path.
-      expect(refresh).toHaveBeenCalledTimes(1);
-
-      reload.mockClear();
-      resolvePackages.mockClear();
-      refresh.mockClear();
-      const generic = await createPiAgentSessionForRuntime({
-        ...args,
-        sessionManager: SessionManager.inMemory(args.cwd, {
-          id: randomUUID(),
-        }),
-      });
-      generic.session.dispose();
-      expect(reload).toHaveBeenCalledTimes(1);
-      expect(resolvePackages).toHaveBeenCalledTimes(1);
-      expect(refresh).toHaveBeenCalledTimes(2);
-    } finally {
-      reload.mockRestore();
-      resolvePackages.mockRestore();
-      refresh.mockRestore();
-    }
-  });
-
-  it("matches the generic official request at the provider boundary", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-api-services-parity-"));
-    onTestFinished(async () => {
-      await rm(root, { recursive: true, force: true });
-    });
-    const provider = await startResponsesProvider(
-      (_response, requestNumber) => {
-        responsesTextSse(_response, `parity answer ${requestNumber}`);
-      },
-    );
-    onTestFinished(async () => {
-      await provider.close();
-    });
-    const cwd = join(root, "workspace");
-    const agentDir = join(root, "agent");
-    const sessionId = randomUUID();
-    const snapshot = {
-      schemaVersion: 2 as const,
-      agentsFiles: [
-        {
-          path: join(cwd, "AGENTS.md"),
-          content: "Preserve the captured parity instruction.",
-        },
-      ],
-      skills: [
-        {
-          name: "parity-skill",
-          description: "Exercise the canonical skill prompt.",
-          filePath: join(agentDir, "skills", "parity-skill", "SKILL.md"),
-          baseDir: join(agentDir, "skills", "parity-skill"),
-          scope: "user" as const,
-          disableModelInvocation: false,
-        },
-        {
-          name: "manual-parity-skill",
-          description: "Remain available only for manual invocation.",
-          filePath: join(agentDir, "skills", "manual-parity-skill", "SKILL.md"),
-          baseDir: join(agentDir, "skills", "manual-parity-skill"),
-          scope: "user" as const,
-          disableModelInvocation: true,
-        },
-      ],
-      memoryRecall: {
-        status: "no-content" as const,
-        memoryStorageId: "memory-parity",
-        storageVersionId: "memory-parity-version",
-      },
-    };
-    const model = {
-      ...TERRA_MODEL,
-      baseUrl: provider.baseUrl,
-      model: "company-terra-production",
-      catalogModel: "gpt-5.6-terra",
-      thinkingLevel: "high" as const,
-      serviceTier: "priority" as const,
-    };
-    const createSessionManager = () => {
-      const sessionManager = SessionManager.inMemory(cwd, { id: sessionId });
-      sessionManager.appendMessage({
-        role: "user",
-        content: "Earlier parity question",
-        timestamp: 1,
-      });
-      sessionManager.appendMessage(
-        fauxAssistantMessage("Earlier parity answer", { timestamp: 2 }),
-      );
-      return sessionManager;
-    };
-    const systemPrompts: string[] = [];
-    const generic = await createPiAgentSessionForRuntime({
-      cwd,
-      agentDir,
-      sessionManager: createSessionManager(),
-      model,
-      appendSystemPrompt: "Caller parity instruction.",
-      resourceSnapshot: snapshot,
-    });
-    try {
-      systemPrompts.push(generic.session.systemPrompt);
-      await generic.session.prompt("Current parity question");
-    } finally {
-      generic.session.dispose();
-    }
-    const api = await createPiApiFirstAgentSessionForRuntime({
-      cwd,
-      agentDir,
-      sessionManager: createSessionManager(),
-      model,
-      appendSystemPrompt: "Caller parity instruction.",
-      resourceSnapshot: snapshot,
-    });
-    try {
-      systemPrompts.push(api.session.systemPrompt);
-      await api.session.prompt("Current parity question");
-    } finally {
-      api.session.dispose();
-    }
-
-    expect(provider.requests).toHaveLength(2);
-    expect(systemPrompts[1]).toBe(systemPrompts[0]);
-    expect(provider.requests[1]).toMatchObject({
-      url: provider.requests[0]?.url,
-      authorization: provider.requests[0]?.authorization,
-      apiKey: provider.requests[0]?.apiKey,
-      userAgent: provider.requests[0]?.userAgent,
-      accountId: provider.requests[0]?.accountId,
-    });
-    const requestDigest = (body: unknown) => {
-      return createHash("sha256").update(JSON.stringify(body)).digest("hex");
-    };
-    expect(requestDigest(provider.requests[1]?.body)).toBe(
-      requestDigest(provider.requests[0]?.body),
-    );
-    expect(JSON.stringify(provider.requests[0]?.body)).toContain(
-      "Earlier parity question",
-    );
-    expect(JSON.stringify(provider.requests[0]?.body)).toContain(
-      "Preserve the captured parity instruction.",
-    );
-    expect(provider.requests[0]?.body).toMatchObject({
-      model: "company-terra-production",
-      reasoning: { effort: "high" },
-      service_tier: "priority",
-    });
-    expect(systemPrompts[0]).toContain("parity-skill");
-    expect(systemPrompts[0]).not.toContain("manual-parity-skill");
-  });
-
-  it.each(["api-first", "sandbox"] as const)(
+  it.each(["preheated", "sandbox"] as const)(
     "appends intermediate commentary guidance in %s sessions",
     async (mode) => {
       const root = await mkdtemp(join(tmpdir(), "pi-commentary-prompt-"));
@@ -648,7 +457,7 @@ describe("official Pi AgentSession runtime", () => {
         await writeFile(join(root, "APPEND_SYSTEM.md"), discoveredPrompt);
       }
       const appendedPrompt =
-        mode === "api-first" ? callerPrompt : discoveredPrompt;
+        mode === "preheated" ? callerPrompt : discoveredPrompt;
       const created = await createPiAgentSessionForRuntime({
         cwd: join(root, "workspace"),
         agentDir: root,
@@ -656,9 +465,9 @@ describe("official Pi AgentSession runtime", () => {
           id: randomUUID(),
         }),
         model: TERRA_MODEL,
-        appendSystemPrompt: mode === "api-first" ? callerPrompt : null,
+        appendSystemPrompt: mode === "preheated" ? callerPrompt : null,
         resourceSnapshot:
-          mode === "api-first" ? EMPTY_RESOURCE_SNAPSHOT : undefined,
+          mode === "preheated" ? EMPTY_RESOURCE_SNAPSHOT : undefined,
       });
 
       try {
@@ -727,7 +536,7 @@ describe("official Pi AgentSession runtime", () => {
       });
     }),
   )(
-    "preserves $name $model $tier request policy on every Sandbox turn after pending tools",
+    "preserves $name $model $tier request policy on every Sandbox turn including tool execution",
     async (route) => {
       const cwd = await mkdtemp(join(tmpdir(), "pi-user-owned-fast-"));
       onTestFinished(async () => {
@@ -802,21 +611,7 @@ describe("official Pi AgentSession runtime", () => {
         },
       });
       expect(model.serviceTier).toBe(route.tier);
-      const firstTurn = await runPiApiFirstTurn({
-        ownership: createPiApiFirstTurnOwnership(),
-        cwd,
-        agentDir: join(cwd, ".pi"),
-        sessionId: randomUUID(),
-        prompt: "read the tool file and answer",
-        appendSystemPrompt: null,
-        model,
-        resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
-      });
-      expect(firstTurn.handoffRequired).toBe(true);
-      expect(provider.requests).toHaveLength(1);
-      const sessionFile = join(cwd, "session.jsonl");
-      await writeFile(sessionFile, firstTurn.sessionJsonl, "utf8");
-      const sessionManager = SessionManager.open(sessionFile);
+      const sessionManager = SessionManager.inMemory(cwd);
       const created = await createPiAgentSessionForRuntime({
         cwd,
         agentDir: join(cwd, ".pi"),
@@ -826,7 +621,7 @@ describe("official Pi AgentSession runtime", () => {
         resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
       });
       try {
-        await resumePiApiFirstTurn(created.session);
+        await created.session.prompt("read the tool file and answer");
         await created.session.prompt("continue the same Sandbox session");
         expect(provider.requests).toHaveLength(3);
         for (const request of provider.requests) {
@@ -888,7 +683,7 @@ describe("official Pi AgentSession runtime", () => {
       });
     }),
   )(
-    "preserves custom $selectedModel $headerName across standard, Fast, standard API and real Sandbox handoffs",
+    "preserves custom $selectedModel $headerName across standard, Fast, standard Sandbox turns",
     async ({ selectedModel, headerName }) => {
       const cwd = await mkdtemp(join(tmpdir(), "pi-custom-fast-"));
       onTestFinished(async () => {
@@ -924,9 +719,10 @@ describe("official Pi AgentSession runtime", () => {
         await provider.close();
       });
       const sessionId = randomUUID();
-      const sessionFile = join(cwd, "session.jsonl");
+      const sessionManager = SessionManager.create(cwd, cwd, { id: sessionId });
+      const sessionFile = sessionManager.getSessionFile();
+      if (!sessionFile) throw new Error("Missing sandbox session file");
       const upstreamModel = `company-${selectedModel}-production`;
-      let sessionJsonl: string | undefined;
       let turns = 0;
       for (const tier of [undefined, "priority", undefined] as const) {
         const config = {
@@ -943,13 +739,6 @@ describe("official Pi AgentSession runtime", () => {
             valueTemplate: "Key {{secret}}",
           },
         };
-        const direct = await materializePiAgentModelConfig({
-          target: "direct",
-          config,
-          resolveCredential() {
-            return "custom-secret";
-          },
-        });
         const sandbox = await materializePiAgentModelConfig({
           target: "sandbox-firewall",
           config,
@@ -957,24 +746,8 @@ describe("official Pi AgentSession runtime", () => {
             return "opaque-custom-credential";
           },
         });
-        expect(direct.catalogModel).toBe(selectedModel);
         expect(sandbox.catalogModel).toBe(selectedModel);
         const start = provider.requests.length;
-        const firstTurn = await runPiApiFirstTurn({
-          ownership: createPiApiFirstTurnOwnership(),
-          cwd,
-          agentDir: join(cwd, ".pi"),
-          sessionId,
-          sessionJsonl,
-          prompt: `run custom turn ${turns}`,
-          appendSystemPrompt: null,
-          model: direct,
-          resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
-        });
-        expect(firstTurn.handoffRequired).toBe(true);
-        expect(provider.requests).toHaveLength(start + 1);
-        await writeFile(sessionFile, firstTurn.sessionJsonl, "utf8");
-        const sessionManager = SessionManager.open(sessionFile);
         const created = await createPiAgentSessionForRuntime({
           cwd,
           agentDir: join(cwd, ".pi"),
@@ -984,7 +757,7 @@ describe("official Pi AgentSession runtime", () => {
           resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
         });
         try {
-          await resumePiApiFirstTurn(created.session);
+          await created.session.prompt(`run custom turn ${turns}`);
           await created.session.prompt(
             "continue the same custom Sandbox session",
           );
@@ -1001,8 +774,7 @@ describe("official Pi AgentSession runtime", () => {
           for (const [index, request] of provider.requests
             .slice(start)
             .entries()) {
-            const header =
-              index === 0 ? "Key custom-secret" : "opaque-custom-credential";
+            const header = "opaque-custom-credential";
             expect(request).toMatchObject({
               url: "/custom/v1/responses",
               authorization:
@@ -1041,7 +813,7 @@ describe("official Pi AgentSession runtime", () => {
         } finally {
           created.session.dispose();
         }
-        sessionJsonl = await readFile(sessionFile, "utf8");
+        const sessionJsonl = await readFile(sessionFile, "utf8");
         expect(sessionJsonl).not.toMatch(
           /serviceTier|service_tier|custom-secret|opaque-custom/,
         );
@@ -1116,29 +888,18 @@ describe("official Pi AgentSession runtime", () => {
           return "opaque-custom-credential";
         },
       });
-      const firstTurn = await runPiApiFirstTurn({
-        ownership: createPiApiFirstTurnOwnership(),
-        cwd,
-        agentDir: join(cwd, ".pi"),
-        sessionId: randomUUID(),
-        prompt: "execute once and surface gateway rejection",
-        appendSystemPrompt: null,
-        model,
-        resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
-      });
-      expect(firstTurn.handoffRequired).toBe(true);
-      const sessionFile = join(cwd, "session.jsonl");
-      await writeFile(sessionFile, firstTurn.sessionJsonl, "utf8");
       const created = await createPiAgentSessionForRuntime({
         cwd,
         agentDir: join(cwd, ".pi"),
-        sessionManager: SessionManager.open(sessionFile),
+        sessionManager: SessionManager.inMemory(cwd),
         model,
         appendSystemPrompt: null,
         resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
       });
       try {
-        await resumePiApiFirstTurn(created.session);
+        await created.session.prompt(
+          "execute once and surface gateway rejection",
+        );
         expect(created.session.messages.at(-1)).toMatchObject({
           role: "assistant",
           stopReason: "error",
@@ -1508,7 +1269,7 @@ describe("official Pi AgentSession runtime", () => {
       });
 
       try {
-        await resumePiApiFirstTurn(created.session);
+        await created.session.continuePendingTools();
 
         expect(provider.requests).toStrictEqual([
           expect.objectContaining({
@@ -1579,7 +1340,7 @@ describe("official Pi AgentSession runtime", () => {
       expect(created.session.systemPrompt).toContain(content);
       expect(outcomes).toEqual([
         expect.objectContaining({
-          mode: "api-first",
+          mode: "preheated",
           status: "hit",
           parity: "frozen-match",
         }),
@@ -1784,7 +1545,7 @@ describe("Pi session credential storage", () => {
 describe("Okou Harness base system prompt", () => {
   it.each([
     { mode: "sandbox" as const, snapshot: undefined },
-    { mode: "api-first" as const, snapshot: EMPTY_RESOURCE_SNAPSHOT },
+    { mode: "preheated" as const, snapshot: EMPTY_RESOURCE_SNAPSHOT },
   ])("replaces the upstream base prompt for $mode", async ({ snapshot }) => {
     const root = await mkdtemp(join(tmpdir(), "pi-harness-prompt-"));
     onTestFinished(async () => {
@@ -1915,7 +1676,7 @@ describe("Pi session preparation observability", () => {
     "session_finalize",
   ] as const;
 
-  it.each(["sandbox", "api-first"] as const)(
+  it.each(["sandbox", "preheated"] as const)(
     "reports every preparation phase exactly once on the %s path",
     async (mode) => {
       const root = await mkdtemp(join(tmpdir(), `pi-preparation-${mode}-`));
@@ -1937,8 +1698,8 @@ describe("Pi session preparation observability", () => {
       } as const;
 
       const created =
-        mode === "api-first"
-          ? await createPiApiFirstAgentSessionForRuntime({
+        mode === "preheated"
+          ? await createPiAgentSessionForRuntime({
               ...args,
               resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
             })

@@ -16,7 +16,6 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { resumePiApiFirstTurn } from "./rpc";
 import type { PiMemoryToolSourceUse } from "./api-types";
 import { createPiMemoryTools } from "./memory-tools-node";
 import { MemoryPiSession } from "./session-memory";
@@ -33,7 +32,7 @@ afterEach(async () => {
   );
 });
 
-describe("Pi API first-turn sandbox resume", () => {
+describe("Pi native pending-tool continuation", () => {
   it("executes one pending memory call once and never repeats it on follow-up", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-memory-resume-"));
     temporaryDirectories.push(directory);
@@ -112,7 +111,6 @@ describe("Pi API first-turn sandbox resume", () => {
       sessionManager: SessionManager.open(sessionFile),
       tools: ["memories_read"],
       customTools: createPiMemoryTools({
-        mode: "sandbox",
         selection: {
           status: "no-content",
           memoryStorageId: "memory-storage-a",
@@ -125,7 +123,7 @@ describe("Pi API first-turn sandbox resume", () => {
       }),
     });
 
-    await resumePiApiFirstTurn(session);
+    await session.continuePendingTools();
     expect(sourceUses).toHaveLength(1);
     expect(faux.state.callCount).toBe(1);
     await session.prompt("ordinary follow-up");
@@ -143,14 +141,15 @@ describe("Pi API first-turn sandbox resume", () => {
     ).toHaveLength(1);
   });
 
-  it("stages one API-first ad-hoc note exactly once after sandbox ownership", async () => {
+  it("stages one pending ad-hoc note exactly once after sandbox ownership", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-memory-write-resume-"));
     temporaryDirectories.push(directory);
     const memoryRoot = join(directory, "memory");
     await mkdir(memoryRoot);
     const sessionFile = join(directory, "handoff.jsonl");
     const filename = "2026-09-05T16-10-00-api-sandbox-handoff.md";
-    const note = "# API-first handoff\n\nWrite these bytes exactly once.\n";
+    const note =
+      "# Pending tool continuation\n\nWrite these bytes exactly once.\n";
     const memory = MemoryPiSession.create({
       cwd: "/home/user/workspace",
       id: SESSION_ID,
@@ -222,7 +221,6 @@ describe("Pi API first-turn sandbox resume", () => {
       sessionManager: SessionManager.open(sessionFile),
       tools: ["add_ad_hoc_note"],
       customTools: createPiMemoryTools({
-        mode: "sandbox",
         selection: {
           status: "no-content",
           memoryStorageId: "memory-storage-a",
@@ -232,14 +230,14 @@ describe("Pi API first-turn sandbox resume", () => {
       }),
     });
 
-    await resumePiApiFirstTurn(session);
+    await session.continuePendingTools();
     expect(
       await readFile(
         join(memoryRoot, "extensions", "ad_hoc", "notes", filename),
       ),
     ).toStrictEqual(Buffer.from(note, "utf8"));
     expect(faux.state.callCount).toBe(1);
-    await expect(resumePiApiFirstTurn(session)).rejects.toThrow(
+    await expect(session.continuePendingTools()).rejects.toThrow(
       "no pending tool calls",
     );
     expect(
@@ -342,7 +340,7 @@ describe("Pi API first-turn sandbox resume", () => {
       ],
     });
 
-    await resumePiApiFirstTurn(session);
+    await session.continuePendingTools();
 
     expect(execute).toHaveBeenCalledExactlyOnceWith(
       TOOL_CALL_ID,
@@ -452,7 +450,7 @@ describe("Pi API first-turn sandbox resume", () => {
       ],
     });
 
-    await resumePiApiFirstTurn(session);
+    await session.continuePendingTools();
 
     expect(execute).toHaveBeenCalledExactlyOnceWith(
       TOOL_CALL_ID,

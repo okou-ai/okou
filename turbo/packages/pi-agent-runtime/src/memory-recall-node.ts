@@ -186,21 +186,21 @@ function resolveSelectionWithoutBytes(
   return undefined;
 }
 
-export function resolvePiApiMemoryRecall(
+export function resolvePiPreheatedMemoryRecall(
   snapshot: PiPreheatedResourceSnapshot,
 ): PiMemoryRecallResolution {
   if (snapshot.schemaVersion === 1) {
-    return noBlock("api-first", undefined, "miss", "not-applicable", "v1");
+    return noBlock("preheated", undefined, "miss", "not-applicable", "v1");
   }
   const withoutBytes = resolveSelectionWithoutBytes(
-    "api-first",
+    "preheated",
     snapshot.memoryRecall,
   );
   if (withoutBytes !== undefined) {
     return withoutBytes;
   }
   return authenticateReadyBytes(
-    "api-first",
+    "preheated",
     snapshot.memoryRecall as ReadyPiMemoryRecall,
     Buffer.from((snapshot.memoryRecall as ReadyPiMemoryRecall).content, "utf8"),
   );

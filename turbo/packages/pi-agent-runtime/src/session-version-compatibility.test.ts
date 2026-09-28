@@ -17,7 +17,6 @@ import {
 import { expect, it, onTestFinished } from "vitest";
 
 import { inspectPiSessionJsonl } from "./api";
-import { resumePiApiFirstTurn } from "./rpc";
 import { MemoryPiSession } from "./session-memory";
 
 it("continues the official 0.84.1 branch and compaction fixture without replay or a JSONL rewrite", async () => {
@@ -118,7 +117,7 @@ it("continues the official 0.84.1 branch and compaction fixture without replay o
     if (event.type === "message_start") started.push(event.message.role);
     if (event.type === "agent_settled") settled += 1;
   });
-  await resumePiApiFirstTurn(session);
+  await session.continuePendingTools();
   expect(executed).toEqual(["pending-call"]);
   expect(await readFile(join(root, "effect.txt"), "utf8")).toBe(
     "continued once",

@@ -123,7 +123,6 @@ describe("Pi Langfuse debug configuration", () => {
       LANGFUSE_USER_ID: piLangfuseDebugUserId(USER_ID),
       PI_LANGFUSE_MAX_CHARS: "20000",
     });
-    expect(platformEnvironment).not.toHaveProperty("PI_LANGFUSE_CONTINUATION");
     expect(platformEnvironment).not.toHaveProperty("LANGFUSE_PUBLIC_KEY");
     expect(platformEnvironment).not.toHaveProperty("LANGFUSE_SECRET_KEY");
     expect(platformEnvironment).not.toHaveProperty("LANGFUSE_BASE_URL");

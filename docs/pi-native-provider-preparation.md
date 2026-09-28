@@ -2,6 +2,12 @@
 
 This records the reader/runtime/accounting preparation release for [#32803](https://github.com/vm0-ai/vm0/issues/32803), part of [#32795](https://github.com/vm0-ai/vm0/issues/32795). That preparation release did not admit a new production route or emit native model configs; the later writer is described under Shared route activation below. The controller owns independent acceptance, authorized publication and the subsequent activation child.
 
+Release 7 retires the API-first foreground consumer, usage writer and handoff
+mentioned in this dated preparation/activation ledger. Current foreground Pi
+requests and usage belong to Sandbox/Runner; Stage 1 maintenance retains its
+separate API worker. The receipts below describe the original rollout, not a
+requirement to retain an API-first reader.
+
 ## Two independent version axes
 
 `PiModelConfig` generation 4 adds native Messages/SSE and Bedrock Converse/AWS event-stream readers. Generations 1, 2 and 3 keep their vocabulary, producers and behavior. Launch snapshot V3, Pi JSONL, memory admission, canonical owned-thread identity and source fencing are unchanged. An unknown model generation is left unclaimed; it is never coerced into a supported dialect.

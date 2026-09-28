@@ -6,22 +6,12 @@ export type PiPreparationPhase =
   | "launch_manifest_sign"
   | "launch_session_sign"
   | "launch_identity"
-  | "activation_authorize"
-  | "h0_metadata_preflight"
-  | "resource_snapshot"
-  | "credentials_route"
-  | "runtime_initialize"
-  | "history"
   | "resources_prompt"
   | "model_runtime"
   | "session_services"
   | "resource_loader"
   | "session_create"
-  | "session_finalize"
-  | "compaction_preflight"
-  | "credentials_revalidate"
-  | "model_context"
-  | "provider_boundary";
+  | "session_finalize";
 
 export interface PiPreparationObservation {
   readonly phase: PiPreparationPhase;

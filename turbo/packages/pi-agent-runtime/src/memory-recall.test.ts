@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PiMemoryRecallSelection } from "./api-types";
 import {
   loadPiSandboxMemoryRecall,
-  resolvePiApiMemoryRecall,
+  resolvePiPreheatedMemoryRecall,
 } from "./memory-recall-node";
 import { createPiMemoryTools } from "./memory-tools-node";
 import {
@@ -111,13 +111,13 @@ describe("Pi memory recall compatibility", () => {
     );
   });
 
-  it("renders identical frozen bytes for API-first and sandbox", async () => {
+  it("renders identical frozen bytes for preheated resources and sandbox", async () => {
     const root = await memoryRoot();
     const content = "# Working memory\n\nUse the repository-native checks.";
     const selection = readySelection(content);
     await writeFile(join(root, "memory_summary.md"), content, "utf8");
 
-    const api = resolvePiApiMemoryRecall({
+    const api = resolvePiPreheatedMemoryRecall({
       schemaVersion: 2,
       agentsFiles: [],
       skills: [],
@@ -127,7 +127,7 @@ describe("Pi memory recall compatibility", () => {
 
     expect(api.block).toBe(sandbox.block);
     expect(api.outcome).toMatchObject({
-      mode: "api-first",
+      mode: "preheated",
       status: "hit",
       parity: "frozen-match",
     });
@@ -145,7 +145,7 @@ describe("Pi memory recall compatibility", () => {
 
   it("preserves V1 and frozen no-content as no-byte paths", async () => {
     expect(
-      resolvePiApiMemoryRecall({
+      resolvePiPreheatedMemoryRecall({
         schemaVersion: 1,
         agentsFiles: [],
         skills: [],
@@ -364,7 +364,7 @@ describe("Pi memory recall bounded injection", () => {
 
     const selection = readySelection(content);
     await writeFile(join(root, "memory_summary.md"), content, "utf8");
-    const api = resolvePiApiMemoryRecall({
+    const api = resolvePiPreheatedMemoryRecall({
       schemaVersion: 2,
       agentsFiles: [],
       skills: [],
@@ -373,7 +373,7 @@ describe("Pi memory recall bounded injection", () => {
     const sandbox = await loadPiSandboxMemoryRecall(selection, root);
 
     expect(api.outcome).toMatchObject({
-      mode: "api-first",
+      mode: "preheated",
       status: "hit",
       parity: "frozen-match",
       reason: "matched",
@@ -384,7 +384,7 @@ describe("Pi memory recall bounded injection", () => {
       parity: "frozen-match",
       reason: "matched",
     });
-    // API-first and sandbox inject the same excerpt of the same frozen source.
+    // preheated resources and sandbox inject the same excerpt of the same frozen source.
     expect(api.block).toBe(sandbox.block);
     expect(api.outcome.injectedTokenCount).toBe(
       sandbox.outcome.injectedTokenCount,

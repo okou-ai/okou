@@ -18,7 +18,7 @@ import {
   onTestFinished,
 } from "vitest";
 
-import { projectPiApiAssistantMessage } from "./api-turn";
+import { piModelFailureReason } from "./model-request-diagnostics";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 
@@ -174,9 +174,7 @@ describe("Codex structured retry classification", () => {
         },
       ],
     });
-    expect(projectPiApiAssistantMessage(final).failureReason).toBe(
-      "provider_server_error",
-    );
+    expect(piModelFailureReason(final)).toBe("provider_server_error");
   });
 
   // A terminal condition in the provider body outranks the transport status, so

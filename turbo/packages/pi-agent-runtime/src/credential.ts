@@ -188,7 +188,7 @@ async function materializeNative(args: {
 
 /**
  * Materialize one validated route at an execution edge. Callers control where
- * values come from: API-first supplies decrypted secrets, while Sandbox launch
+ * values come from: maintenance workers supply decrypted secrets, while Sandbox launch
  * supplies only its existing opaque environment placeholders.
  */
 export async function materializePiAgentModelConfig(args: {

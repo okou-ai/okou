@@ -51,10 +51,6 @@ import {
 } from "../runner-primitives";
 import { runRunnerContract } from "../run-routes";
 import {
-  piApiHandoffUsageSchema,
-  piSandboxContinuationSchema,
-} from "../pi-inference-lifecycle";
-import {
   sandboxReuseResultSchema as webhookSandboxReuseResultSchema,
   workspaceReuseResultSchema as webhookWorkspaceReuseResultSchema,
 } from "../webhooks";
@@ -537,73 +533,6 @@ describe("Pi sandbox execution contract", () => {
       }
     },
   );
-
-  it("bounds Sandbox continuation usage without requiring strict readers", () => {
-    const apiUsage = {
-      schemaVersion: 1,
-      state: "observed",
-      sampledAt: 1_000,
-      coverage: "partial",
-      tokens: { input: 3, cacheRead: 0, cacheCreation: null, output: 2 },
-    } as const;
-    expect(
-      piApiHandoffUsageSchema.parse({ ...apiUsage, futureField: true }),
-    ).toStrictEqual(apiUsage);
-    expect(
-      piSandboxContinuationSchema.parse({
-        mode: "untouched-h0",
-        apiUsage: {
-          schemaVersion: 1,
-          state: "no-inference",
-          sampledAt: 1_001,
-        },
-        futureContinuationField: true,
-      }),
-    ).toStrictEqual({
-      mode: "untouched-h0",
-      apiUsage: {
-        schemaVersion: 1,
-        state: "no-inference",
-        sampledAt: 1_001,
-      },
-    });
-
-    for (const invalidTokens of [
-      { ...apiUsage.tokens, input: -1 },
-      { ...apiUsage.tokens, output: Number.MAX_SAFE_INTEGER + 1 },
-    ]) {
-      expect(
-        piApiHandoffUsageSchema.safeParse({
-          ...apiUsage,
-          tokens: invalidTokens,
-        }).success,
-      ).toBe(false);
-    }
-    for (const invalidCoverage of [
-      {
-        ...apiUsage,
-        coverage: "complete",
-      },
-      {
-        ...apiUsage,
-        coverage: "partial",
-        tokens: {
-          input: null,
-          cacheRead: null,
-          cacheCreation: null,
-          output: null,
-        },
-      },
-      {
-        ...apiUsage,
-        coverage: "unavailable",
-      },
-    ]) {
-      expect(piApiHandoffUsageSchema.safeParse(invalidCoverage).success).toBe(
-        false,
-      );
-    }
-  });
 
   it("accepts one strict sampled Langfuse parent", () => {
     const langfuseParent = {

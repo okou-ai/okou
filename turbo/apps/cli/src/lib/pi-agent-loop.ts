@@ -333,7 +333,6 @@ export async function runPiSandboxAgentLoop(args: {
         }
       : {}),
     sessionFile,
-    ownershipTransferMode: "sandbox-first",
     ...(args.config.langfuseConfig
       ? { langfuseConfig: args.config.langfuseConfig }
       : {}),

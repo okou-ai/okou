@@ -121,7 +121,7 @@ it("exports real Pi spans through the authenticated relay without connector cred
     throw new Error("Expected TCP test address");
   const origin = `http://127.0.0.1:${address.port}`;
   const endpoint = `${origin}/traces`;
-  const restore = installLangfuseRuntimeEnvironment(parent, "sandbox-first", {
+  const restore = installLangfuseRuntimeEnvironment(parent, {
     relay: { endpoint, token },
     userId: "anonymous-user",
     environment: "internal-debug",

@@ -11,9 +11,9 @@ rollout rules.
 > run, including the first turn of a new thread, executes in the Sandbox. The
 > Sandbox CLI starts a fresh session on a first turn or opens the session the
 > Runner restored from `resumeSession`; no handoff manifest or startup record
-> exists any more. Sections below that describe API-first preparation, H1,
-> recovery, billing, durable producer mode, handoff manifests, or API-first
-> telemetry are historical.
+> exists any more. The API-first executor, compaction preflight, usage observer,
+> runtime ownership modes and continuation-only tracing have been removed.
+> Dated rollout receipts below remain historical evidence.
 
 ## Authorities and dependencies
 
@@ -36,8 +36,8 @@ rollout rules.
 flowchart TD
     Launch[API admission and captured launch] --> First[Sandbox-first H0 handoff]
     Launch --> Platform[Runner and Guest preheat]
-    First -->|H0 ownership transfer| Platform
-    Platform --> CLI[CLI validates handoff and opens official RPC]
+    First --> Platform
+    Platform --> CLI[CLI validates launch and opens official RPC]
     CLI --> Session[Foreground SDK session]
     Session --> Model[Shared model bootstrap and stream adapters]
     Session -->|native settlement| Platform
@@ -61,8 +61,8 @@ services or a command accessor.
 | Route normalization and credentials | [execution-route.ts](../turbo/packages/pi-agent-runtime/src/execution-route.ts) normalizes supported carriers into the in-process `PiExecutionRoute`; [credential.ts](../turbo/packages/pi-agent-runtime/src/credential.ts) snapshots it before asynchronous materialization. The original wire remains authoritative for claim capability and telemetry. Credential references are captured; secrets are materialized only at the API or firewall execution edge.                                                                                                                                                                                                                           |
 | SDK model boundary                  | [session-model.ts](../turbo/packages/pi-agent-runtime/src/session-model.ts) owns explicit resource-registry initialization, registered model description, and fixed `ModelRuntime` bootstrap. [model.ts](../turbo/packages/pi-agent-runtime/src/model.ts), [native-stream.ts](../turbo/packages/pi-agent-runtime/src/native-stream.ts), and [native-http.ts](../turbo/packages/pi-agent-runtime/src/native-http.ts) own catalog/transport adaptation and request guards.                                                                                                                                                                                                                     |
 | Session shells                      | [session-runtime.ts](../turbo/packages/pi-agent-runtime/src/session-runtime.ts) owns foreground settings, resources, tools, harness prompt, and captured run effort precedence. [phase2-memory.ts](../turbo/packages/pi-agent-runtime/src/phase2-memory.ts) owns the separate restricted session, caller/model arbitration, validation, and cleanup.                                                                                                                                                                                                                                                                                                                                         |
-| API history and one response        | [session-memory.ts](../turbo/packages/pi-agent-runtime/src/session-memory.ts) adapts byte-backed history through official parser/context helpers. [api-turn.ts](../turbo/packages/pi-agent-runtime/src/api-turn.ts) borrows the foreground shell's prompt/tool schemas, makes one model response, and disposes the shell. It never executes the returned tools.                                                                                                                                                                                                                                                                                                                              |
-| Sandbox execution                   | [Guest handoff transport](../crates/guest-agent/src/cli/pi_deferred_handoff.rs) uses the private Sandbox control credential and gives the child only a 0600 file path. The [CLI loop](../turbo/apps/cli/src/lib/pi-agent-loop.ts) consumes private launch data, validates the [handoff](../turbo/apps/cli/src/lib/pi-api-first-turn-handoff.ts), then enters [rpc.ts](../turbo/packages/pi-agent-runtime/src/rpc.ts). [Guest Pi RPC](../crates/guest-agent/src/cli/pi_rpc.rs) owns the process/transport adapter and public settlement projection; the official SDK owns tools and its native input queues.                                                                                  |
+| API history inspection and export   | [session-memory.ts](../turbo/packages/pi-agent-runtime/src/session-memory.ts) adapts byte-backed history through official parsing, context and public-export helpers. It does not execute a provider turn.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Sandbox execution                   | The [CLI loop](../turbo/apps/cli/src/lib/pi-agent-loop.ts) reads the captured launch, opens fresh or restored history and enters [rpc.ts](../turbo/packages/pi-agent-runtime/src/rpc.ts). [Guest Pi RPC](../crates/guest-agent/src/cli/pi_rpc.rs) owns transport and public settlement projection; the SDK owns tools and native input queues.                                                                                                                                                                                                                                                                                                                                               |
 | Memory work and publication         | [Stage 1 worker](../turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts) owns extraction claims; [Phase 2 worker](../turbo/apps/api/src/signals/services/pi-memory-phase2-worker.service.ts) and [jobs](../turbo/apps/api/src/signals/services/pi-memory-phase2-job.service.ts) own durable leases. [Local filesystem boundary](../turbo/packages/pi-agent-runtime/src/phase2-memory-filesystem.ts) prepares/applies validated bytes; ordinary checkpoint publication owns durable Storage changes. [Maintenance completion](../turbo/apps/api/src/signals/services/pi-memory-phase2-maintenance.service.ts) observes the exact run/checkpoint, not a new Storage writer. |
 | Public projection and accounting    | Guest projects public content/usage. [Stage 1 usage](../turbo/apps/api/src/signals/services/pi-memory-stage1-usage.service.ts), and Runner/proxy ingestion retain their separate request owners. Public token counters are not the billing journal.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
@@ -174,69 +174,23 @@ be identified by any later measurement.
 
 ## Launch through settlement
 
-1. The API admits and freezes the run's route, source, session, resources, and
-   CLI artifact. Legacy API-first may prepare Runner/Guest concurrently. The
-   durable default-off branch does not allocate or notify a Sandbox: it captures
-   narrow immutable inputs and starts full Runner materialization only after
-   accepted demand. H0 is the authenticated base history; H1 includes the single
-   API response; H2 is the subsequent sandbox checkpoint. These labels describe
-   ownership, not additional session formats.
-2. API-first authenticates history and the immutable resource snapshot. Blob
-   metadata selects large-history sandbox transfer before materializing H0 or
-   loading API resources. The API response budget and later coordination cap
-   remain separate deadlines. Existing raw/encoded limits and compaction
-   preflight remain unchanged; detailed limits belong to deployment/SDK notes.
-3. Immediately before provider transport, the shared lifecycle lock rechecks
-   durable status, launch identity, active delivery, owner epoch and stable
-   provider-attempt ID. Durable mode commits `provider/may-have-started` before
-   the runtime marker can permit HTTP. Active input can instead publish explicit
-   untouched-H0 demand while the attempt is still `not-started`. The API makes
-   one response, collecting native history and projected content without running
-   local tools.
-4. A valid response first retains H1 plus its producer receipt and advances to
-   `publishing/settled`; usage is then written under its existing response-derived
-   idempotency identity before `usageSettled`. This order lets recovery repair a
-   missing ledger write from H1 without another provider request. Pending tools
-   take precedence; settled H1 with accepted active input transfers as a new
-   prompt; otherwise normal public events, checkpoint and completion commit once.
-   Direct completion creates no intent, lease or Runner job. Once transport may
-   have started, recovery cannot replay H0, including when the response or local
-   publication result was lost.
-5. Eligible pre-commit API/model failures retain the specified **same-route**
-   sandbox recovery. Failure classification precedes private attempt abort;
-   cleanup cancellation cannot manufacture deadline eligibility. Canonical
-   cancellation and terminal status are reread under the lock. Prepared-sandbox
-   cleanup stays with its existing owner.
-6. CLI validates the immutable manifest, session identity/hash, and transfer
-   mode, then writes the private boundary control before any official RPC event.
-   `sandbox-first` executes the prompt; `pending-tool-continuation` continues
-   only unresolved native calls; `settled-session-continuation` acknowledges the
-   installed H1 before ordinary queued input. Neither continuation re-appends
-   the API assistant or replays its original user prompt.
-7. Native Agent and AgentSession ownership precede the pending-tool startup ACK.
-   Tools, steering/follow-up queues, retry/compaction, and awaited extension
-   settlement remain SDK responsibilities. Accepted input is reconciled before
-   the sole public `agent_settled`; cancellation persists accepted input without
-   starting a new turn. Guest keeps stdin open through terminal handling and
-   active-input quiescence, and owns its existing abort-ACK deadline and process
-   termination/reaping. Cooperative cancellation cannot roll back external tool
-   effects or force an uncooperative tool to finish instantly.
-8. Guest/Runner deliver public events and the ordinary checkpoint; API durable
-   terminal guards arbitrate completion. A raw `agent_end`, callback delivery,
-   usage receipt, or local prepared result is not another terminal/publication
-   authority. An owned late-result observer may record actual API usage under
-   the original response/category idempotency, but cannot publish output,
-   checkpoint, or a second terminal event.
+1. The API freezes the admitted route, source, session, resources and CLI artifact.
+   Every Pi provider request runs in the Sandbox. Ordinary Runner capacity and
+   the existing run/session transaction own admission.
+2. Runner restores the selected native session when `resumeSession` exists.
+   Otherwise the CLI creates empty canonical history. The CLI validates the
+   captured launch and installed runtime contract before opening official RPC.
+3. The SDK owns model requests, tools, compaction/retry, steering and follow-up
+   queues, and awaited extension settlement. Guest owns stdin, cancellation ACK
+   deadlines and process termination/reaping. Cooperative cancellation cannot
+   undo external tool effects.
+4. Guest/Runner deliver public events, proxy usage and the ordinary checkpoint.
+   API terminal guards arbitrate completion and memory publication. Neither a
+   callback nor a usage receipt creates a second terminal authority.
 
-Maintenance recovery runs before deferred-Sandbox recovery. An expired
-`ready/not-started` row decrypts the narrow retained API activation snapshot,
-revalidates its exact credential source, and may make exactly one request under a
-newer epoch without building a Runner payload. An expired `publishing/settled`
-row reconstructs only from retained H1, idempotently repairs missing usage, and
-resumes canonical local effects. An expired `provider/may-have-started` row fails
-truthfully, preserves accounting responsibility, and never retries H0. Terminal
-transition increments the common owner epoch again, fencing both the displaced
-owner and any late provider result.
+The former API provider-attempt/H1/recovery state machine is retired. Historical
+sessions remain readable through the native session and export contracts; they
+are not replayed by an API executor.
 
 ## Model failure diagnostics
 
@@ -250,8 +204,8 @@ diagnostic. Bedrock records actual HTTP status and attempts through its native
 Smithy handler. Its event-stream deserializer classifies only successfully
 decoded, consumed modeled error events or exceptions thrown by the SDK. Unknown
 normal events remain ignored. A later buffered error frame cannot replace an
-earlier protocol or adapter failure. Usage observation retains its separate
-bounded reader and forwards original bytes.
+earlier protocol or adapter failure. The shared handler continues forwarding original bytes and propagating source
+errors and SDK cancellation; sandbox usage is recorded by the Runner proxy.
 
 Request rejection and response-body read failure also retain optional
 `transportFailure` before the SDK reduces the exception to display text. It
@@ -267,8 +221,8 @@ result still cannot establish the original cause.
 The response observer uses one demand-driven reader, forwards original bytes
 and errors, propagates cancellation, and releases its reader on termination.
 Evidence resets on every fetch attempt and is published only on a failed
-assistant message; success and abort retain their existing lifecycle. API-first
-failure telemetry and Runner terminal logs carry the same reduced evidence.
+assistant message; success and abort retain their existing lifecycle. Runner
+terminal logs carry the same reduced evidence.
 Semantic errors and non-fetch transports can legitimately omit it. Older Guest
 readers ignore the additive field and current readers accept its absence; no
 public reason token or database migration changes. Verify both the deployed CLI
@@ -300,7 +254,7 @@ credential error. Shared fixtures keep these rules aligned with Codex and
 Claude Code terminal classification; framework-specific states retain their
 native classifiers.
 
-API-first and Guest use the allowlisted reason from the selected terminal
+Guest uses the allowlisted reason from the selected terminal
 message before its display text. The Guest's public result carries it separately
 from `modelRequest`, whose shape is unchanged. Older Guests ignore the additive
 runtime field; newer Guests still accept messages without it. The open reason
@@ -308,9 +262,8 @@ token contract accepts additive API/Runner taxonomy entries without a database
 migration.
 
 A settled final Pi `length` response fails with `output_token_limit`; partial
-assistant text stays in its event. API-first still transfers a pending tool
-continuation instead of treating it as a final truncated answer. Transient
-API-first failures retain the existing sandbox recovery and ownership guards.
+assistant text stays in its event. Native tools and subsequent responses remain
+owned by the same sandbox session.
 Retry budgets, cancellation, Runner logging rules and user-owned-provider
 warning suppression are unchanged.
 
@@ -323,8 +276,7 @@ credential, billing, usage and context reasons keep precedence. Actual HTTP
 status is retained, including a failed stream delivered with HTTP 200.
 
 The pinned pi-ai patch vetoes further transport, native assistant and summary
-retries for this result, including an upstream retry hint. API-first also keeps
-it outside the Sandbox recovery allowlist. Completed tools, failed history,
+retries for this result, including an upstream retry hint. Completed tools, failed history,
 cancellation and independently accepted input retain native ownership. This
 does not shorten the first provider wait or introduce a total run timer.
 Presentation stays a generic failed run without a replay or model-switch action;
@@ -341,71 +293,21 @@ registers that model. This disables model catalog networking/file discovery and
 startup refresh; it does not disable the intended inference request or change
 SDK registration's existing local refresh behavior.
 
-| Entry                                               | Credential and cancellation policy                                                                                                    | Session policy                                                                                                                                                                                    |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API with preheated snapshot                         | Explicit `InMemoryCredentialStore`; the API attempt still owns its transport signal. Bootstrap adds no foreground cancellation owner. | Trusted in-memory settings and frozen resources; one response; no local pending-tool execution.                                                                                                   |
-| Native foreground Messages/Bedrock without snapshot | Explicit in-memory credentials; captured native materialization remains authoritative.                                                | Existing foreground settings, resource behavior, and lifecycle.                                                                                                                                   |
-| Other foreground Sandbox without snapshot           | Omit explicit credentials, preserving the SDK's existing default store.                                                               | File-backed production history, normal discovery, and captured run effort precedence.                                                                                                             |
-| Restricted Phase 2                                  | Explicit in-memory credentials; the exact input signal goes to ModelRuntime and `services.modelRuntimeSignal`.                        | In-memory session at fixed private cwd, restricted tools, no discovered extensions/skills/prompts/themes/context files, disabled retry/compaction, fixed reasoning, exact system-prompt equality. |
+| Entry                                               | Credential and cancellation policy                                                                             | Session policy                                                                                                                                                                                    |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fixed resource construction                         | Explicit in-memory credentials and trusted settings.                                                           | Frozen resources feed the shared session constructor for the canonical prompt/tool digest; no API provider execution or separate session owner.                                                   |
+| Native foreground Messages/Bedrock without snapshot | Explicit in-memory credentials; captured native materialization remains authoritative.                         | Existing foreground settings, resource behavior, and lifecycle.                                                                                                                                   |
+| Other foreground Sandbox without snapshot           | Omit explicit credentials, preserving the SDK's existing default store.                                        | File-backed production history, normal discovery, and captured run effort precedence.                                                                                                             |
+| Restricted Phase 2                                  | Explicit in-memory credentials; the exact input signal goes to ModelRuntime and `services.modelRuntimeSignal`. | In-memory session at fixed private cwd, restricted tools, no discovered extensions/skills/prompts/themes/context files, disabled retry/compaction, fixed reasoning, exact system-prompt equality. |
 
-### API-first minimal services
+### Session construction digest
 
-The API foreground path selects
-`createPiApiFirstAgentSessionForRuntime` explicitly. A resource snapshot is not
-the selector: Sandbox/RPC can also receive V1/V2 snapshots and continues through
-`createPiAgentSessionForRuntime`, preserving generic extensions, observability,
-package handling, and execution services. Both entries reuse the same model,
-Okou Harness, memory, skill, tool, history, effort, and session-construction
-preparation.
-
-| Construction operation                                 | Generic foreground/Sandbox entry                                                                                                  | Explicit API-first entry                                                                                                                                             |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Registered `ModelRuntime` and provider stream adapters | Retained, including registration's required local refresh                                                                         | Retained identically                                                                                                                                                 |
-| Settings                                               | Existing file-backed behavior, or trusted in-memory settings for a snapshot                                                       | One trusted in-memory manager owned by the preparation                                                                                                               |
-| Resources                                              | `DefaultResourceLoader`, package resolution, full reload, extension-source work, then the services-level `ModelRuntime.refresh()` | One typed snapshot `ResourceLoader` and one empty extension runtime owned by the preparation; package resolution, generic reload, and the second refresh are omitted |
-| Prompt and tools                                       | Official `createAgentSessionFromServices` construction                                                                            | The same official construction; no private SDK import or copied prompt template                                                                                      |
-| Cleanup                                                | `AgentSession.dispose()` owns session/provider cleanup                                                                            | Identical; the shell remains alive through transport and is disposed by the existing prepared-turn lifecycle                                                         |
-
-The snapshot adapter's `reload()` is intentionally a no-op and rejects attempts
-to extend the admitted resource set. Tests compare the old and new complete
-provider request (including prompt, ordered tool schemas, history, model,
-deployment, effort, and tier) at intercepted local HTTP. Preparation itself
-does not prompt the model or execute a tool. The existing one-response owner
-still performs final source/credential validation and durable
-`may-have-started` admission before allowing transport.
-
-### Finite local construction measurement
-
-On 2026-09-17, the fixed V2 fixture in
-[`measure-api-first-services.mjs`](../turbo/packages/pi-agent-runtime/scripts/measure-api-first-services.mjs)
-used `@earendil-works/pi-coding-agent` 0.86.1, one `AGENTS.md`, one automatic
-skill, frozen no-content memory, and 11 fresh sessions per entry (the first
-invocation plus 10 warm repetitions). The commands ran each entry in a separate
-local process. All 22 constructions succeeded; they made zero provider requests
-and executed zero tools.
-
-| Local construction                            |                  Generic entry |            API-first entry |
-| --------------------------------------------- | -----------------------------: | -------------------------: |
-| First invocation wall time                    |                   9,900.006 ms |                 319.496 ms |
-| Warm wall time, min / median / max            | 5.464 / 10.770 / 16,045.422 ms | 5.398 / 8.728 / 868.606 ms |
-| Warm `resources_prompt` median                |                       0.284 ms |                   0.353 ms |
-| Warm `model_runtime` median                   |                       2.109 ms |                   2.950 ms |
-| Warm `resource_loader` adapter/options median |                       0.036 ms |                   0.058 ms |
-| Warm `session_services`, min / median / max   |  3.835 / 7.981 / 14,371.067 ms | 0.101 / 0.196 / 277.268 ms |
-| Warm `session_create` median                  |                       0.666 ms |                   1.728 ms |
-| Warm `session_finalize` median                |                       0.018 ms |                   0.025 ms |
-| Warm runs at or below the 40-ms allocation    |                         7 / 10 |                     9 / 10 |
-| Errors                                        |                              0 |                          0 |
-
-The host was under severe page-reclaim and CPU contention, visible in the large
-first/max outliers, so these are finite operation-level observations rather than
-a stable benchmark. The API-first warm median is within the 40-ms construction
-allocation, but the fixture did not meet it on every repetition and the cold
-sample did not meet it. Removed discovery, package resolution, and redundant
-refresh are reported as omitted operations, not fabricated zero-duration spans.
-This fixture starts after module loading and ends at session construction; it
-does not measure original API start, overlap with durable admission, or actual
-provider HTTP. It therefore makes no production or end-to-end sub-300-ms claim.
+The shared session constructor supplies fixed frozen-resource profiles for the
+committed prompt/tool digest. Frozen profiles disable extension, skill, prompt,
+theme and context-file discovery and use trusted in-memory settings. The same
+constructor serves sandbox sessions; there is no API-only preparation entry.
+The former API-first construction benchmark and measurement script are retired.
+Its earlier measurements are historical and do not establish current latency.
 
 Model lookup and error classification stay with each caller. Phase 2 applies
 [#33567](https://github.com/vm0-ai/vm0/issues/33567)'s existing maintenance-only
@@ -469,7 +371,7 @@ reader/producer contract is in deployment compatibility. Memory tools retain
 the frozen epoch and explicit ad-hoc-note request boundary. Local note staging
 is not a durable checkpoint.
 
-API attempts and Stage 1 retain their own usage writers. Sandbox foreground and
+Stage 1 retains its own usage writer. Sandbox foreground and
 Phase 2 inference use Runner/proxy accounting; runtime Phase 2 usage in a result
 is evidence, not a second journal. [Phase 2 usage binding](../turbo/apps/api/src/signals/services/pi-memory-phase2-usage.service.ts)
 survives the existing execution/finalization drain for late proxy usage, including
@@ -488,8 +390,8 @@ retire an older launch, resource, manifest, session, or persisted reader.
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Model carriers Gen1–Gen4: [runners.ts](../turbo/packages/api-contracts/src/contracts/runners.ts), native schema, route normalizer, [claim capability](../turbo/apps/api/src/signals/services/pi-model-config-claim-capability.ts), CLI and Runner readers | Gen1 remains the canonical field-absent public Responses carrier. Gen2/3 dialect/tier and Gen4 native ownership are active contracts.           | [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional Gen1 wire `api` after the [September 14 readiness acceptance](https://github.com/vm0-ai/vm0/issues/31085#issuecomment-5660026283). Strict TypeScript readers reject the key; generated Rust DTOs no longer represent or retain it. Gen1, the active Codex dialect and SDK `Model.api` remain supported. |
 | Launch snapshot V3, Pi launch config V2, private payload V1, maintenance input V1; API creation, Runner serialization and CLI parsing                                                                                                                     | Run identity and private inputs have their own strict schemas and captured lifetimes.                                                           | Audit each writer/reader and all supported old/new pairs before changing its shape; [deployment compatibility](./deployment-compatibility.md) governs release, queue, process and rollback evidence. D changes none.                                                                                                                                                                   |
-| Resource snapshots V1/V2; [snapshot service](../turbo/apps/api/src/signals/services/pi-resource-snapshot.service.ts), [resources.ts](../turbo/packages/pi-agent-runtime/src/resources.ts), API foreground shell                                           | V2 adds frozen recall; both snapshots still describe admitted immutable resources. B derives runtime types from these contracts.                | Retire only with proof all captured contexts and supported readers/rollback paths use the replacement; schema numbering or absent sampled traffic is insufficient.                                                                                                                                                                                                                     |
-| Handoff manifests V3/V4, API-first config V1, Guest boundary control V2; API publisher, CLI resolver, Guest                                                                                                                                               | V3 carries small H0 or API H1; V4 references larger H0 for sandbox-only download. Three ownership modes remain explicit.                        | Preserve until producer, captured-context, pinned CLI and Guest/rollback evidence proves replacement compatibility. Detailed history limits and rollback behavior remain in deployment compatibility.                                                                                                                                                                                  |
+| Resource snapshots V1/V2; [snapshot service](../turbo/apps/api/src/signals/services/pi-resource-snapshot.service.ts), [resources.ts](../turbo/packages/pi-agent-runtime/src/resources.ts), shared session construction                                    | V2 adds frozen recall; both snapshots still describe admitted immutable resources. B derives runtime types from these contracts.                | Retire only with proof all captured contexts and supported readers/rollback paths use the replacement; schema numbering or absent sampled traffic is insufficient.                                                                                                                                                                                                                     |
+| Retired API-first handoff and producer contracts                                                                                                                                                                                                          | Removed in Release 7; no current runtime reader.                                                                                                | Historical rollout receipts and the explicit Release 7 rollback floor remain in [deployment compatibility](./deployment-compatibility.md).                                                                                                                                                                                                                                             |
 | Commit-addressed CLI and queued/active contexts; API context writer, Runner launcher, CLI package                                                                                                                                                         | A current Runner can launch an older package frozen when a context was created. Semantic package version alone is not an artifact floor.        | Maximum queue plus claimed execution/finalization lifetime, complete old-context drain and supported external-caller audit, separately from Runner/Sandbox and rollback-target retirement. No blanket elapsed-time gate.                                                                                                                                                               |
 | Session v3; byte-backed API adapter, SDK file reader, checkpoint/Stage 1/export readers                                                                                                                                                                   | Branches, compaction and pending tools must retain native meaning and source identity.                                                          | [0.84.1/0.85.1 session fixtures](../turbo/packages/pi-agent-runtime/src/session-version-compatibility.test.ts) prove representative compatibility, not fleet drain or historical replay. Any replacement needs supported-reader and retained-history evidence, not just a newer SDK.                                                                                                   |
 | Old-Guest raw citation bridge in [pi-memory-citation-events.ts](../turbo/apps/api/src/signals/services/pi-memory-citation-events.ts), called by [agent-webhook-events.service.ts](../turbo/apps/api/src/signals/services/agent-webhook-events.service.ts) | Older Guest events can need raw-envelope projection before structured provenance persistence.                                                   | [#31964](https://github.com/vm0-ai/vm0/issues/31964) alone owns bridge removal: successful #31959 API/Runner release, pre-release process drain through the two-hour budget plus bounded finalization, and sanitized structured output from retained rollback Runners.                                                                                                                 |
@@ -508,9 +410,8 @@ field-only `piModelConfigLegacyApi` classifier is retired. Historical Axiom
 snapshots remain non-executable evidence: the existing unknown-record reader in
 [run-context-snapshot.service.ts](../turbo/apps/api/src/signals/services/run-context-snapshot.service.ts)
 continues projecting them into the public context response without exposing
-internal classifications. Missing old observations remain unobserved. API-first
-outcome telemetry uses public Responses for Gen1 and the captured dialect for
-versioned carriers. No configuration, credential or additional content is logged.
+internal classifications. Missing old observations remain unobserved. Retired
+API-first outcome rows are historical records, not a current telemetry producer.
 
 ### Pinned patch inventory
 
@@ -532,7 +433,7 @@ with native awaited settlement/cancellation and explicit provider/account
 configuration matching these fixtures. No upstream issue or SDK release is a
 prerequisite for this internal bootstrap consolidation.
 
-## Disposition of the A–D recommendations
+## Historical disposition of the A–D recommendations
 
 | Recommendation from #33519                                                    | Disposition and evidence                                                                                                                                                                                                                                                                                                                          |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -559,18 +460,17 @@ code-only slices.
 
 ## Verification boundary
 
-Use the real runtime session/model/API/Phase 2 tests, externally controlled
-provider requests, temporary files, native RPC/cancellation tests, and session
-compatibility fixtures. Durable-producer tests use the chat boundary, real
-PostgreSQL lifecycle state and intercepted HTTP—including a held real
-Sandbox-capacity advisory lock—to cover direct completion, protection, narrow
-activation recovery, H1/usage publication recovery, uncertainty and accepted
-consumer handoff without treating them as production performance evidence.
+Use the real runtime session/model/Phase 2 tests, externally controlled provider
+requests, temporary files, native RPC/cancellation tests, and session compatibility
+fixtures. Retired API-only executor, preparation, projection, preflight and usage
+observation tests are removed with their producers. Shared provider policies,
+transport errors, sandbox tools and cancellation remain covered at their native
+entry points.
 Existing Phase 2 tests observe restricted tools/prompt,
 abort/cleanup, and the corrected context's serialized output ceiling; they must
 continue to catch re-resolution to the stale catalog. Foreground tests preserve
-captured route/headers/account/tier and run effort. CLI handoff/loop and
-API/Guest common-event consumers cover the neighboring edges.
+captured route/headers/account/tier and run effort. CLI loop and
+API/Guest event consumers cover the neighboring edges.
 
 Run affected formatting, types, lint, Knip, build/public declarations and required
 CI. A bundle change also requires the actual packed CLI/Photon path. Keep one
@@ -591,7 +491,7 @@ remain distinct. Claude's `extra` product label maps to Pi's `xhigh` level.
 
 The effective preference is captured in `agent_runs.reasoning_effort` and applied
 to the existing `piModelConfig.thinkingLevel` field before the execution context
-is persisted. API-first and Sandbox consume the same captured configuration.
+is persisted. The Sandbox consumes the captured configuration.
 When starting a new run from prior JSONL, both session owners append a thinking
 change if the captured level differs. Historical entries remain intact, and a
 handoff within one run keeps the same level. Launches without a configured level

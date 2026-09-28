@@ -68,7 +68,6 @@ interface PiMemoryToolTestHooks {
 }
 
 interface CreatePiMemoryToolsArgs {
-  readonly mode: "api-first" | "sandbox";
   readonly selection: PiMemoryRecallSelection;
   readonly memoryRoot?: string;
   readonly onSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
@@ -1574,11 +1573,6 @@ async function executeMemoryTool(
   args: CreatePiMemoryToolsArgs,
   execute: (context: MemoryToolContext) => Promise<string>,
 ) {
-  if (args.mode === "api-first") {
-    throw new Error(
-      "Memory tools execute only after sandbox ownership transfer.",
-    );
-  }
   const context = newMemoryToolContext(
     operation,
     signal,
@@ -1608,11 +1602,6 @@ async function executeAddAdHocNoteTool(
   signal: AbortSignal | undefined,
   args: CreatePiMemoryToolsArgs,
 ) {
-  if (args.mode === "api-first") {
-    throw new Error(
-      "Memory tools execute only after sandbox ownership transfer.",
-    );
-  }
   const context = newMemoryToolContext(
     "add-ad-hoc-note",
     signal,

@@ -6,7 +6,6 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { MemoryPiSession } from "./session-memory";
@@ -77,17 +76,6 @@ async function rpcFixture(boundary: string) {
   await mkdir(extensions, { recursive: true });
   await writeFile(join(extensions, "controlled.js"), EXTENSION);
   const memory = MemoryPiSession.create({ cwd: root, id: SESSION_ID });
-  memory.appendMessage({
-    role: "user",
-    content: "original handoff",
-    timestamp: 1,
-  });
-  memory.appendMessage(
-    fauxAssistantMessage(
-      fauxToolCall("controlled", { path: effect }, { id: "call-0" }),
-      { stopReason: "toolUse", timestamp: 2 },
-    ),
-  );
   await writeFile(join(root, "session.jsonl"), memory.toJsonl());
   const child = spawn(
     process.execPath,
@@ -189,7 +177,11 @@ async function rpcFixture(boundary: string) {
 
 async function heldSettlement(boundary = "tool") {
   const rpc = await rpcFixture(boundary);
-  rpc.send({ id: "startup", type: "prompt", message: "original handoff" });
+  rpc.send({
+    id: "startup",
+    type: "prompt",
+    message: "execute the controlled tool",
+  });
   expect(await rpc.response("startup")).toMatchObject({ success: true });
   await rpc.notification("tool-start");
   rpc.child.send("release-tool");
@@ -242,7 +234,7 @@ function assertSettlement(
   }
 }
 
-describe("official pending-tool RPC cancellation", () => {
+describe("official sandbox RPC cancellation", () => {
   it("reconciles the first abort and duplicate abort inside successful settlement", async () => {
     const rpc = await heldSettlement();
     rpc.send({ id: "abort", type: "abort" });
@@ -446,7 +438,7 @@ describe("official pending-tool RPC cancellation", () => {
         return message.content;
       }),
     ).toEqual([
-      "original handoff",
+      "execute the controlled tool",
       [{ type: "text", text: "steering one" }],
       [{ type: "text", text: "steering two" }],
       [{ type: "text", text: "follow-up one" }],
@@ -477,7 +469,11 @@ describe("official pending-tool RPC cancellation", () => {
         data: { sessionId: SESSION_ID },
       });
       const started = once(child, "message");
-      send({ id: "startup", type: "prompt", message: "original handoff" });
+      send({
+        id: "startup",
+        type: "prompt",
+        message: "execute the controlled tool",
+      });
       expect(await response("startup")).toMatchObject({
         command: "prompt",
         success: true,

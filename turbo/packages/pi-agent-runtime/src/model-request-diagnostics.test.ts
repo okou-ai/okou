@@ -18,7 +18,7 @@ import {
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import rateLimitMessage from "./test/fixtures/codex-rate-limit.json";
-import { projectPiApiAssistantMessage } from "./api-turn";
+import { piModelFailureReason } from "./model-request-diagnostics";
 import { normalizeContext } from "@earendil-works/pi-ai";
 
 const route = {
@@ -97,9 +97,7 @@ describe("Codex model request diagnostics", () => {
     );
     const result = await stream().result();
     expect(result.stopReason).toBe("error");
-    expect(projectPiApiAssistantMessage(result, 503).failureReason).toBe(
-      "provider_overloaded",
-    );
+    expect(piModelFailureReason(result)).toBe("provider_overloaded");
   });
 
   it.each([
@@ -190,9 +188,7 @@ describe("Codex model request diagnostics", () => {
           },
         },
       ]);
-      expect(projectPiApiAssistantMessage(result, status).failureReason).toBe(
-        reason,
-      );
+      expect(piModelFailureReason(result)).toBe(reason);
       expect(JSON.stringify(result.diagnostics)).not.toContain(
         body.error.message,
       );
@@ -211,7 +207,7 @@ describe("Codex model request diagnostics", () => {
         }),
       );
       const result = await stream().result();
-      expect(projectPiApiAssistantMessage(result, status).failureReason).toBe(
+      expect(piModelFailureReason(result)).toBe(
         status === 529 ? "provider_overloaded" : "provider_server_error",
       );
     },
@@ -258,9 +254,7 @@ describe("Codex model request diagnostics", () => {
           },
         },
       ]);
-      const projected = projectPiApiAssistantMessage(result, 200);
-      expect(projected.stopReason).toBe("error");
-      expect(projected.failureReason).toBe(reason);
+      expect(piModelFailureReason(result)).toBe(reason);
       expect(requests).toBe(1);
     },
   );

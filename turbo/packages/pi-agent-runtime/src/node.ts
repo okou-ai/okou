@@ -1,4 +1,4 @@
-export { resumePiApiFirstTurn, runPiOfficialRpcMode } from "./rpc";
+export { runPiOfficialRpcMode } from "./rpc";
 export {
   computePiSessionConstructionDigest,
   computePiSessionConstructionDocument,
@@ -7,18 +7,10 @@ export type {
   PiSessionConstructionDocument,
   PiSessionConstructionProfileDocument,
 } from "./session-construction-digest-node";
-export type {
-  PiLangfuseRuntimeConfig,
-  PiSandboxOwnershipTransferMode,
-} from "./rpc";
+export type { PiLangfuseRuntimeConfig } from "./rpc";
 export { runPiMemoryPhase2MountedConsolidation } from "./phase2-memory";
 export type { PiMemoryPhase2MountedConsolidationArgs } from "./phase2-memory";
-export {
-  createPiApiFirstTurnOwnership,
-  createPiSessionJsonl,
-  projectPiSessionJsonlForExport,
-  runPiApiFirstTurn,
-} from "./api";
+export { createPiSessionJsonl, projectPiSessionJsonlForExport } from "./api";
 export { MemoryPiSession } from "./session-memory";
 export {
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
@@ -39,15 +31,8 @@ export {
   renderPiMemoryStage1Input,
 } from "./stage1-prompts";
 export { PiMemoryPhase2EngineError } from "./phase2-memory-types";
-export {
-  PiApiFirstTurnCompactionRequiredError,
-  UnsupportedPiResourceSnapshotError,
-  UnsupportedPiSessionVersionError,
-} from "./errors";
+export { UnsupportedPiSessionVersionError } from "./errors";
 export type {
-  PiApiFirstTurnResult,
-  PiApiUsageObservation,
-  PiObservedServiceTier,
   PiMemoryRecallOutcome,
   PiMemoryRecallOutcomeStatus,
   PiMemoryRecallParity,
@@ -64,8 +49,4 @@ export type {
   PiPreparationObserver,
   PiPreparationPhase,
 } from "./preparation-timing";
-export type {
-  PiApiFirstTurnOwnership,
-  PiApiFirstTurnOwnershipStage,
-} from "./provider-ownership";
 export * from "./index";

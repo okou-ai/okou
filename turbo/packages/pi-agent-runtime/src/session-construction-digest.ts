@@ -6,8 +6,8 @@ import sessionConstruction from "../session-construction-digest.json";
  * for fixed synthetic inputs, hashed over a fixed set of profiles.
  *
  * The API records it in every Pi launch config and the sandbox compares it
- * before continuing an API-first pending-tool handoff, because prompt and
- * tool-schema parity between the two owners is a byte-equality contract.
+ * before starting a session, so installed and captured builds agree on
+ * the code-defined prompt and tool schemas.
  * Unlike `PI_AGENT_RUNTIME_VERSION` it moves only when code that feeds the
  * constructed session changes, in whichever package that code lives, so a
  * dependency-only release bump keeps the rootfs-installed CLI usable.

@@ -43,7 +43,7 @@ delimiters, bounds untrusted fields and counts, and never exposes citation
 metadata through public text, logs, metrics, Stage 1 input, or exported Pi
 JSONL derivatives.
 
-Canonical Pi session JSONL remains immutable. API-first and Sandbox normalize
+Canonical Pi session JSONL remains immutable. Sandbox runtime and shared projections normalize
 only derived assistant/result events. The common API defensively normalizes old
 Guest output and transactionally stores private provenance in the additive
 `run_output_memory_citations` table, keyed by run and event sequence. Historical

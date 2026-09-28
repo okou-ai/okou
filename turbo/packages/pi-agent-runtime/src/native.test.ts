@@ -19,12 +19,9 @@ import {
 } from "@okouai/api-contracts/contracts/pi-native";
 import fixtures from "../../api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
 import { MemoryPiSession } from "./session-memory";
-import { assertPiApiFirstTurnCompactionSafe } from "./compaction-preflight";
-import { PiApiFirstTurnCompactionRequiredError } from "./errors";
 import { materializePiAgentModelConfig } from "./credential";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
-import { createPiApiFirstTurnOwnership, runPiApiFirstTurn } from "./api";
-import { projectPiApiAssistantMessage } from "./api-turn";
+import { piModelFailureReason } from "./model-request-diagnostics";
 import { normalizeContext } from "@earendil-works/pi-ai";
 
 const server = setupServer();
@@ -236,36 +233,6 @@ describe("native Pi execution edges", () => {
           { apiKey: materialized.apiKey },
         ).result();
         expect(result.stopReason).toBe("toolUse");
-        const session = MemoryPiSession.create({
-          cwd: "/home/user/workspace",
-          id: "e8295b1b-0a85-4f68-89fb-dc5c06b251aa",
-        });
-        session.appendMessage({
-          role: "user",
-          content: "prior turn",
-          timestamp: 1,
-        });
-        session.appendMessage({
-          ...result,
-          stopReason: "stop",
-          content: [{ type: "text", text: "settled" }],
-          usage: {
-            ...result.usage,
-            input: model.contextWindow,
-            totalTokens: model.contextWindow,
-          },
-        });
-        expect(() => {
-          return assertPiApiFirstTurnCompactionSafe({
-            model,
-            session,
-            settings: {
-              enabled: true,
-              reserveTokens: 16384,
-              keepRecentTokens: 20000,
-            },
-          });
-        }).toThrow(PiApiFirstTurnCompactionRequiredError);
       }
     },
   );
@@ -287,7 +254,7 @@ describe("native Pi execution edges", () => {
       }[] = [];
       server.use(
         http.post(piNativeInferenceUrl(config), async ({ request }) => {
-          // API failure diagnostics must retain the native credential-safe
+          // Provider failure diagnostics must retain the native credential-safe
           // fetch policy, including refusal to follow redirects.
           if (config.dialect === "anthropic-messages") {
             expect(request.redirect).toBe("error");
@@ -309,38 +276,32 @@ describe("native Pi execution edges", () => {
           ? "explicit-native-key"
           : PI_NATIVE_CREDENTIAL_PLACEHOLDER;
       const model = await materialize(config, credentialTarget);
-      const result = await runPiApiFirstTurn({
-        cwd: "/home/user/workspace",
-        agentDir: "/tmp/pi-native-agent",
-        sessionId: "e8295b1b-0a85-4f68-89fb-dc5c06b251aa",
-        prompt: "read the file",
-        appendSystemPrompt: null,
-        model,
-        resourceSnapshot: {
-          schemaVersion: 2,
-          agentsFiles: [],
-          skills: [],
-          memoryRecall: {
-            status: "no-content",
-            memoryStorageId: "native-memory",
-            storageVersionId: "native-memory-version",
-          },
+      const nativeModel = resolvePiAgentModel(model);
+      if (!nativeModel) throw new Error("Missing native model");
+      const result = await piAgentStreamForConfig(model)(
+        nativeModel,
+        normalizeContext({
+          messages: [{ role: "user", content: "read the file", timestamp: 1 }],
+        }),
+        {
+          apiKey: model.apiKey,
+          reasoning:
+            model.thinkingLevel === "off" ? undefined : model.thinkingLevel,
         },
-        ownership: createPiApiFirstTurnOwnership(),
+      ).result();
+      expect(result.stopReason).toBe("toolUse");
+      expect(result.responseId).toBe("native-response");
+      const session = MemoryPiSession.create({
+        cwd: "/home/user/workspace",
+        id: "e8295b1b-0a85-4f68-89fb-dc5c06b251aa",
       });
-      expect(result.assistantMessage.stopReason).toBe("toolUse");
-      expect(result.handoffRequired).toBe(true);
-      expect(result.assistantMessage.responseId).toBe("native-response");
-      expect(result.sessionJsonl).toContain("opaque-signature");
-      expect(result.assistantMessage.usage).toMatchObject({
+      session.appendMessage(result);
+      expect(session.toJsonl()).toContain("opaque-signature");
+      expect(result.usage).toMatchObject({
         input: 11,
         output: 3,
         cacheRead: 7,
         cacheWrite: 5,
-      });
-      expect(result.usageObservation).toEqual({
-        coverage: "complete",
-        tokens: { input: 11, output: 3, cacheRead: 7, cacheCreation: 5 },
       });
       expect(requests).toHaveLength(1);
       const request = requests[0];
@@ -363,7 +324,7 @@ describe("native Pi execution edges", () => {
           expect(request.headers.get("x-api-key")).toBeNull();
         expect(request.body.thinking).toMatchObject({ type: "adaptive" });
         expect(request.body.max_tokens).toBe(128000);
-        expect(result.assistantMessage.usage.cacheWrite1h).toBe(2);
+        expect(result.usage.cacheWrite1h).toBe(2);
       } else {
         expect(request.body.additionalModelRequestFields).toMatchObject({
           thinking: { type: "adaptive" },
@@ -408,9 +369,7 @@ describe("native Pi execution edges", () => {
       ).result();
       expect(result.stopReason).toBe("error");
       expect(attempts).toBe(1);
-      expect(projectPiApiAssistantMessage(result).failureReason).toBe(
-        "provider_rate_limited",
-      );
+      expect(piModelFailureReason(result)).toBe("provider_rate_limited");
     },
   );
 
@@ -500,10 +459,9 @@ describe("native Pi execution edges", () => {
         expect(onObservedResponseStatus.mock.calls).toEqual([
           [scenario.status],
         ]);
-        expect(
-          projectPiApiAssistantMessage(result).failureReason,
-          scenario.code,
-        ).toBe(scenario.reason);
+        expect(piModelFailureReason(result), scenario.code).toBe(
+          scenario.reason,
+        );
         expect(result.diagnostics).toContainEqual(
           expect.objectContaining({
             type: "okou_model_request",
@@ -564,9 +522,7 @@ describe("native Pi execution edges", () => {
       expect(result.stopReason).toBe(
         scenario === "transport-error" ? "error" : "stop",
       );
-      expect(
-        projectPiApiAssistantMessage(result).failureReason,
-      ).toBeUndefined();
+      expect(piModelFailureReason(result)).toBeUndefined();
       if (scenario === "transport-error") {
         expect(result.diagnostics).toContainEqual(
           expect.objectContaining({
@@ -630,9 +586,7 @@ describe("native Pi execution edges", () => {
         { apiKey: materialized.apiKey },
       ).result();
       expect(result.stopReason).toBe("error");
-      expect(
-        projectPiApiAssistantMessage(result).failureReason,
-      ).toBeUndefined();
+      expect(piModelFailureReason(result)).toBeUndefined();
     },
   );
 
@@ -674,7 +628,7 @@ describe("native Pi execution edges", () => {
         { apiKey: materialized.apiKey },
       ).result();
       expect(result.stopReason).toBe("error");
-      expect(projectPiApiAssistantMessage(result).failureReason).toBe(
+      expect(piModelFailureReason(result)).toBe(
         messageType === "exception" ? "provider_rate_limited" : undefined,
       );
     },
@@ -715,9 +669,7 @@ describe("native Pi execution edges", () => {
 
       expect(result.stopReason).toBe("error");
       const errorMessage = result.errorMessage ?? "";
-      expect(projectPiApiAssistantMessage(result).failureReason).toBe(
-        "provider_server_error",
-      );
+      expect(piModelFailureReason(result)).toBe("provider_server_error");
       expect(errorMessage).toContain("upstream_non_api_response");
       expect(errorMessage).toContain("status=503");
       expect(errorMessage).toContain("content_type=html");
