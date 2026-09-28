@@ -127,6 +127,10 @@ async function seedExpiringLots(
   );
 }
 
+function lotExpiryInDays(days: number): string {
+  return new Date(nowDate().getTime() + days * 86_400_000).toISOString();
+}
+
 async function seedSettlementPricing(): Promise<string> {
   const provider = `settlement-${randomUUID()}`;
   await seedUsagePricingRows([
@@ -806,8 +810,8 @@ describe("POST /api/test/usage-settlement/process", () => {
     const fixture = await setupSettlementFixture(11, true);
     const provider = await seedSettlementPricing();
     await seedExpiringLots(fixture, [
-      { amount: 3, expiresAt: "2030-01-01T00:00:00.000Z" },
-      { amount: 8, expiresAt: "2031-01-01T00:00:00.000Z" },
+      { amount: 3, expiresAt: lotExpiryInDays(30) },
+      { amount: 8, expiresAt: lotExpiryInDays(60) },
     ]);
     const eventKey = await insertCharge({ fixture, provider, amount: 5 });
 
@@ -886,6 +890,7 @@ describe("POST /api/test/usage-settlement/process", () => {
         true,
       );
       const provider = await seedSettlementPricing();
+      const earliestExpiry = lotExpiryInDays(30);
       await seedExpiringLots(
         fixture,
         amounts.map((amount, index) => {
@@ -893,8 +898,8 @@ describe("POST /api/test/usage-settlement/process", () => {
             amount,
             expiresAt:
               index === 0 || label === "equal-expiry lots"
-                ? "2030-01-01T00:00:00.000Z"
-                : `203${index}-01-01T00:00:00.000Z`,
+                ? earliestExpiry
+                : lotExpiryInDays(30 * (index + 1)),
           };
         }),
       );
@@ -932,8 +937,8 @@ describe("POST /api/test/usage-settlement/process", () => {
     const fixture = await setupSettlementFixture(11, true);
     const provider = await seedSettlementPricing();
     await seedExpiringLots(fixture, [
-      { amount: 3, expiresAt: "2030-01-01T00:00:00.000Z" },
-      { amount: 8, expiresAt: "2031-01-01T00:00:00.000Z" },
+      { amount: 3, expiresAt: lotExpiryInDays(30) },
+      { amount: 8, expiresAt: lotExpiryInDays(60) },
     ]);
     await createGrant({
       fixture,
@@ -975,8 +980,8 @@ describe("POST /api/test/usage-settlement/process", () => {
     const fixture = await setupSettlementFixture(11, true);
     const provider = await seedSettlementPricing();
     await seedExpiringLots(fixture, [
-      { amount: 3, expiresAt: "2020-01-01T00:00:00.000Z" },
-      { amount: 8, expiresAt: "2031-01-01T00:00:00.000Z" },
+      { amount: 3, expiresAt: lotExpiryInDays(-30) },
+      { amount: 8, expiresAt: lotExpiryInDays(60) },
     ]);
     const eventKey = await insertCharge({ fixture, provider, amount: 5 });
     await processSettlement(fixture.orgId);
@@ -1000,8 +1005,8 @@ describe("POST /api/test/usage-settlement/process", () => {
     const provider = await seedSettlementPricing();
     for (const fixture of [first, second]) {
       await seedExpiringLots(fixture, [
-        { amount: 3, expiresAt: "2030-01-01T00:00:00.000Z" },
-        { amount: 8, expiresAt: "2031-01-01T00:00:00.000Z" },
+        { amount: 3, expiresAt: lotExpiryInDays(30) },
+        { amount: 8, expiresAt: lotExpiryInDays(60) },
       ]);
       await insertCharge({ fixture, provider, amount: 5 });
     }
