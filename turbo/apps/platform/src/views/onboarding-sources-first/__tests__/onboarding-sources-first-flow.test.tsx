@@ -41,6 +41,7 @@ const START_ACTION = "Start with Okou";
 const FALLBACK_REQUEST =
   "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
 const HANDOFF_PROMPT = "Draft the launch plan";
+const PROMPT_TITLE = "Try this prompt";
 function generatedProfile() {
   return {
     overview: "Your inbox has several conversations to keep moving.",
@@ -634,14 +635,14 @@ test("A member runs every step but the invite, then completes their own onboardi
   expect(pathname()).not.toMatch(/^\/onboarding/);
 });
 
-test("A step keeps the prompt handoff and redeem code it arrived with", async () => {
+test("A step keeps the redeem code it arrived with", async () => {
   mockOnboardingNeeded();
   mockCatalog();
 
   await setupPage({
     context,
     locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&redeemCode=LAUNCH50`,
+    path: `${ROUTES.onboarding}?redeemCode=LAUNCH50`,
     featureSwitches: SOURCES_FIRST_ON,
   });
 
@@ -659,8 +660,128 @@ test("A step keeps the prompt handoff and redeem code it arrived with", async ()
     screen.findByRole("heading", { name: SOURCES_QUESTION }),
   ).resolves.toBeInTheDocument();
   const params = new URLSearchParams(search());
-  expect(params.get("prompt")).toBe(HANDOFF_PROMPT);
   expect(params.get("redeemCode")).toBe("LAUNCH50");
+});
+
+test("A new user who brings a prompt tries it instead of the source-first flow", async () => {
+  mockOnboardingNeeded();
+  mockCatalog();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: PROMPT_TITLE }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
+    HANDOFF_PROMPT,
+  );
+  expect(
+    screen.queryByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).not.toBeInTheDocument();
+});
+
+test("A prompt that asks for a connector shows its Connect card", async () => {
+  mockOnboardingNeeded();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Review last week's Google Ads campaign performance")}&connector=google-ads`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: PROMPT_TITLE }),
+  ).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Google Ads")).resolves.toBeInTheDocument();
+  expect(getButtonByName("Connect")).toBeInTheDocument();
+});
+
+test("A prompt with a showcase carries the showcase into the chat", async () => {
+  const showcase = "https://cdn.vm0.io/artifacts/example/launch-deck.html";
+  mockOnboardingNeeded();
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  const params = new URLSearchParams({ prompt: HANDOFF_PROMPT, showcase });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?${params.toString()}`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: PROMPT_TITLE }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Next"));
+
+  await waitFor(() => {
+    expect(runPrompt).toBe(HANDOFF_PROMPT);
+    expect(pathname()).toMatch(/^\/chats\//u);
+  });
+  expect(new URLSearchParams(search()).get("showcase")).toBe(showcase);
+});
+
+test("A later source-first step opened with a prompt goes back to the prompt page", async () => {
+  mockOnboardingNeeded();
+  mockCatalog({ connected: true });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboardingSources}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: PROMPT_TITLE }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboarding);
+  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
+    HANDOFF_PROMPT,
+  );
+});
+
+test("An invited member who brings a prompt still runs the source-first flow", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("A blank prompt still opens the source-first flow", async () => {
+  mockOnboardingNeeded();
+  mockCatalog();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=%20%20`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("An already-onboarded visitor is forwarded with the prompt they brought", async () => {
