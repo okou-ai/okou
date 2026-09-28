@@ -1470,7 +1470,7 @@ async function inspectPendingBrowserUserAction(
 
 export const preflightBrowserUserAction$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1527,12 +1527,27 @@ export const preflightBrowserUserAction$ = command(
     if (inspection.kind === "stale") {
       const stale = await markPendingBrowserUserActionStale(db, current);
       signal.throwIfAborted();
-      return stale
-        ? {
-            kind: "ok",
-            value: publicRequest(stale, args.requestToken, payload),
-          }
-        : conflict("Browser input state changed during preflight");
+      if (!stale) {
+        return conflict("Browser input state changed during preflight");
+      }
+      if (payload.target.fields[0]?.fieldKind === "file") {
+        const cleanup = await settle(
+          get(
+            deleteS3Objects(
+              env("R2_USER_STORAGES_BUCKET_NAME"),
+              temporaryBrowserFileKeys(stale.requestTokenHash),
+            ),
+          ),
+        );
+        signal.throwIfAborted();
+        if (!cleanup.ok) {
+          L.warn("Temporary Browser file cleanup failed");
+        }
+      }
+      return {
+        kind: "ok",
+        value: publicRequest(stale, args.requestToken, payload),
+      };
     }
     return {
       kind: "ok",

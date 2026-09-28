@@ -17,6 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/browser";
 import {
   BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES,
+  BROWSER_USER_ACTION_MAX_FILE_BYTES,
   browserUserActionsContract,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import {
@@ -1007,11 +1008,11 @@ describe("Browser user-action route", () => {
         });
       }
       if (command instanceof DeleteObjectsCommand) {
-        deletedKeys.push(
-          ...(command.input.Delete?.Objects ?? []).map((entry) => {
-            return String(entry.Key);
-          }),
-        );
+        for (const entry of command.input.Delete?.Objects ?? []) {
+          const key = String(entry.Key);
+          deletedKeys.push(key);
+          temporaryObjects.delete(key);
+        }
         return Promise.resolve({});
       }
       return Promise.resolve({});
@@ -1145,6 +1146,7 @@ describe("Browser user-action route", () => {
     const stageSyntheticFile = async (
       requestToken: string,
       bytes = Buffer.from("test"),
+      index = 0,
     ) => {
       const prepared = await accept(
         userActionClient().prepareFileUpload({
@@ -1152,7 +1154,7 @@ describe("Browser user-action route", () => {
           params: { requestToken },
           body: {
             key: "document",
-            index: 0,
+            index,
             size: bytes.length,
             sha256: createHash("sha256").update(bytes).digest("hex"),
           },
@@ -1175,7 +1177,7 @@ describe("Browser user-action route", () => {
         createHash("sha256").update(bytes).digest("base64"),
       );
       expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
-      const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/0`;
+      const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
       temporaryObjects.set(key, bytes);
       return key;
     };
@@ -1209,6 +1211,26 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(drifted.body.state).toBe("stale");
+    expect(files).toHaveLength(0);
+    siteAccept = ".txt";
+    const preflightCandidate = await create();
+    const preflightKey = await stageSyntheticFile(
+      preflightCandidate.body.action.requestToken,
+    );
+    siteAccept = ".pdf";
+    const preflightStale = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: {
+          requestToken: preflightCandidate.body.action.requestToken,
+        },
+        body: {},
+      }),
+      [200],
+    );
+    expect(preflightStale.body.state).toBe("stale");
+    expect(deletedKeys).toContain(preflightKey);
+    expect(temporaryObjects.has(preflightKey)).toBeFalsy();
     expect(files).toHaveLength(0);
     siteAccept = ".txt";
     files = [];
@@ -1353,6 +1375,28 @@ describe("Browser user-action route", () => {
     );
     expect(pendingAfterReject.body.state).toBe("pending");
 
+    temporaryObjects.delete(tamperedKey);
+    const missingObject = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: tampered.body.action.requestToken },
+      body: { values: [value] },
+    });
+    expect(missingObject.status).toBe(409);
+    expect(browserInputWrites()).toHaveLength(writesBeforeTamper);
+
+    temporaryObjects.set(
+      tamperedKey,
+      Buffer.alloc(BROWSER_USER_ACTION_MAX_FILE_BYTES + 1),
+    );
+    const oversizedObject = await userActionClient().apply({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: tampered.body.action.requestToken },
+      body: { values: [value] },
+    });
+    expect(oversizedObject.status).toBe(409);
+    expect(browserInputWrites()).toHaveLength(writesBeforeTamper);
+    temporaryObjects.delete(tamperedKey);
+
     const maxBytes = Buffer.alloc(10 * 1024 * 1024, 0x61);
     const maxAction = await create();
     await stageSyntheticFile(maxAction.body.action.requestToken, maxBytes);
@@ -1381,6 +1425,60 @@ describe("Browser user-action route", () => {
     expect(files).toStrictEqual([
       { name: "note.txt", size: maxBytes.length, type: "text/plain" },
     ]);
+
+    files = [];
+    const multiAction = await create();
+    const parts = [
+      Buffer.from("first"),
+      Buffer.from("second"),
+      Buffer.from("third"),
+    ];
+    const multiToken = multiAction.body.action.requestToken;
+    const multiKeys: string[] = [];
+    for (const [index, bytes] of parts.entries()) {
+      multiKeys.push(await stageSyntheticFile(multiToken, bytes, index));
+    }
+    const multiValues = parts.map((bytes, index) => {
+      return {
+        name: `part-${index.toString()}.txt`,
+        type: "text/plain",
+        size: bytes.length,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      };
+    });
+    const multiApplied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: multiToken },
+        body: { values: [{ ...value, files: multiValues }] },
+      }),
+      [200],
+    );
+    expect(multiApplied.body.state).toBe("succeeded");
+    expect(files).toStrictEqual(
+      multiValues.map(({ name, size, type }) => {
+        return { name, size, type };
+      }),
+    );
+    for (const key of multiKeys) {
+      expect(deletedKeys).toContain(key);
+      expect(temporaryObjects.has(key)).toBeFalsy();
+    }
+
+    const cancelled = await create();
+    const cancelToken = cancelled.body.action.requestToken;
+    const cancelledKey = await stageSyntheticFile(cancelToken);
+    const cancelledResponse = await accept(
+      userActionClient().cancel({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: cancelToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(cancelledResponse.body.state).toBe("cancelled");
+    expect(deletedKeys).toContain(cancelledKey);
+    expect(temporaryObjects.has(cancelledKey)).toBeFalsy();
   });
 
   it("lets apply finish while the preflight provider read is still pending", async () => {
