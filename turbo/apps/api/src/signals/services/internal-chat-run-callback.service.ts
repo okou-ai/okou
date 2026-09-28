@@ -3073,14 +3073,36 @@ async function resolveQueuedMessageTemplateContext(args: {
   };
 }
 
-async function loadQueuedRunMaterial(
-  args: CreateQueuedChatRunInputArgs & {
-    readonly userMessageProjection: ReturnType<typeof projectUserMessage>;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
+async function loadQueuedChatRunContext(
+  args: CreateQueuedChatRunInputArgs,
   signal: AbortSignal,
 ) {
-  return await resolveQueuedLaunchMaterial(args, signal);
+  const featureSwitchContext = await loadUserFeatureSwitchContext(
+    args.db,
+    args.agent.orgId,
+    args.userId,
+  );
+  const modelRouteResolution = await resolveQueuedMessageModelRoute({
+    db: args.db,
+    threadId: args.threadId,
+    userId: args.userId,
+    orgId: args.agent.orgId,
+    contextType: args.queuedMessage.contextType,
+    timing: args.timing,
+  });
+  const userMessageProjection = queuedUserMessageProjection(
+    args.queuedMessage.userMessage,
+  );
+  const launchMaterial = await resolveQueuedLaunchMaterial(
+    { ...args, userMessageProjection, featureSwitchContext },
+    signal,
+  );
+  return {
+    featureSwitchContext,
+    modelRouteResolution,
+    userMessageProjection,
+    launchMaterial,
+  };
 }
 
 function queuedUserMessageProjection(
@@ -3128,30 +3150,12 @@ async function buildCreateQueuedChatRunInput(
   args: CreateQueuedChatRunInputArgs,
   signal: AbortSignal,
 ): Promise<CreateQueuedChatRunInput | QueuedMessageAdmissionFailure> {
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    args.db,
-    args.agent.orgId,
-    args.userId,
-  );
-  const modelRouteResolution = await resolveQueuedMessageModelRoute({
-    db: args.db,
-    threadId: args.threadId,
-    userId: args.userId,
-    orgId: args.agent.orgId,
-    contextType: args.queuedMessage.contextType,
-    timing: args.timing,
-  });
-  const userMessageProjection = queuedUserMessageProjection(
-    args.queuedMessage.userMessage,
-  );
-  const launchMaterial = await loadQueuedRunMaterial(
-    {
-      ...args,
-      userMessageProjection,
-      featureSwitchContext,
-    },
-    signal,
-  );
+  const {
+    featureSwitchContext,
+    modelRouteResolution,
+    userMessageProjection,
+    launchMaterial,
+  } = await loadQueuedChatRunContext(args, signal);
   if (args.queuedMessage.autonomyBudget.kind !== "ok") {
     return queuedMessageAdmissionFailure(args, launchMaterial, {
       code:
@@ -4596,6 +4600,123 @@ function queuedMessageRejection(
   };
 }
 
+type UnexpectedQueuedRejectionChannelLoader = (
+  args: {
+    readonly db: Db;
+    readonly source: Parameters<typeof loadSlackQueuedLaunchMaterial>[1];
+    readonly delivery: Pick<
+      ChatQueueHeadContext,
+      "chatThreadId" | "orgId" | "userId" | "agentId"
+    >;
+    readonly dependencies: ChatCallbackDependencies;
+  },
+  signal: AbortSignal,
+) => Promise<QueuedAdmissionFailureChannel | undefined>;
+
+const unexpectedQueuedRejectionChannelLoaders: Readonly<
+  Record<
+    "slack" | "feishu" | "teams" | "discord" | "telegram" | "agentphone",
+    UnexpectedQueuedRejectionChannelLoader
+  >
+> = {
+  slack: async ({ db, source, delivery, dependencies }) => {
+    const material = await loadSlackQueuedLaunchMaterial(db, source);
+    if (!material) {
+      return undefined;
+    }
+    return {
+      name: "Slack",
+      deliver: (chatEventId, signal) => {
+        return dependencies.deliverSlackAdmissionFailure(
+          { ...delivery, ...material.slackDelivery, chatEventId },
+          signal,
+        );
+      },
+    };
+  },
+  feishu: async ({ db, source, delivery, dependencies }) => {
+    const material = await loadFeishuQueuedLaunchMaterial(db, source);
+    if (!material) {
+      return undefined;
+    }
+    return {
+      name: "Feishu",
+      deliver: (chatEventId, signal) => {
+        return dependencies.deliverFeishuAdmissionFailure(
+          { ...delivery, target: material.feishuDelivery, chatEventId },
+          signal,
+        );
+      },
+      clearThinking: (signal) => {
+        return dependencies.clearFeishuThinkingReaction(
+          material.feishuDelivery,
+          signal,
+        );
+      },
+    };
+  },
+  teams: async ({ db, source, delivery, dependencies }) => {
+    const material = await loadTeamsQueuedLaunchMaterial(db, source);
+    if (!material) {
+      return undefined;
+    }
+    return {
+      name: "Teams",
+      deliver: (chatEventId, signal) => {
+        return dependencies.deliverTeamsAdmissionFailure(
+          { ...delivery, target: material.teamsDelivery, chatEventId },
+          signal,
+        );
+      },
+    };
+  },
+  discord: async ({ db, source, delivery, dependencies }, signal) => {
+    const material = await loadDiscordQueuedLaunchMaterial(db, source, signal);
+    if (!material) {
+      return undefined;
+    }
+    return {
+      name: "Discord",
+      deliver: (chatEventId, deliverySignal) => {
+        return dependencies.sendDiscordReply(
+          { ...delivery, target: material.discordDelivery, chatEventId },
+          deliverySignal,
+        );
+      },
+    };
+  },
+  telegram: async ({ db, source, delivery, dependencies }) => {
+    const material = await loadTelegramQueuedLaunchMaterial(db, source);
+    if (!material) {
+      return undefined;
+    }
+    return {
+      name: "Telegram",
+      deliver: (chatEventId, signal) => {
+        return dependencies.deliverTelegramAdmissionFailure(
+          { ...delivery, target: material.telegramDelivery, chatEventId },
+          signal,
+        );
+      },
+    };
+  },
+  agentphone: async ({ db, source, delivery, dependencies }) => {
+    const material = await loadAgentPhoneQueuedLaunchMaterial(db, source);
+    if (!material) {
+      return undefined;
+    }
+    return {
+      name: "AgentPhone",
+      deliver: (chatEventId, signal) => {
+        return dependencies.deliverAgentPhoneAdmissionFailure(
+          { ...delivery, target: material.agentphoneDelivery, chatEventId },
+          signal,
+        );
+      },
+    };
+  },
+};
+
 /**
  * An unexpected assembly failure can precede the assembler's delivery target.
  * Recover only its authorized source routing from the original event after
@@ -4633,130 +4754,28 @@ export const deliverUnexpectedQueuedPromptRejection$ = command(
       head.userId,
     );
     signal.throwIfAborted();
-    const source = {
-      eventId: head.id,
-      chatThreadId: head.chatThreadId,
-      orgId: head.orgId,
-      userId: head.userId,
-      featureSwitchContext,
-    };
-    const delivery = {
-      chatThreadId: head.chatThreadId,
-      orgId: head.orgId,
-      userId: head.userId,
-      agentId: head.agentId,
-    };
-    let channel: QueuedAdmissionFailureChannel;
-    switch (contextType) {
-      case "slack": {
-        const material = await loadSlackQueuedLaunchMaterial(db, source);
-        if (!material) {
-          return;
-        }
-        channel = {
-          name: "Slack",
-          deliver: (chatEventId, deliverySignal) => {
-            return dependencies.deliverSlackAdmissionFailure(
-              { ...delivery, ...material.slackDelivery, chatEventId },
-              deliverySignal,
-            );
-          },
-        };
-        break;
-      }
-      case "feishu": {
-        const material = await loadFeishuQueuedLaunchMaterial(db, source);
-        if (!material) {
-          return;
-        }
-        channel = {
-          name: "Feishu",
-          deliver: (chatEventId, deliverySignal) => {
-            return dependencies.deliverFeishuAdmissionFailure(
-              { ...delivery, target: material.feishuDelivery, chatEventId },
-              deliverySignal,
-            );
-          },
-          clearThinking: (deliverySignal) => {
-            return dependencies.clearFeishuThinkingReaction(
-              material.feishuDelivery,
-              deliverySignal,
-            );
-          },
-        };
-        break;
-      }
-      case "teams": {
-        const material = await loadTeamsQueuedLaunchMaterial(db, source);
-        if (!material) {
-          return;
-        }
-        channel = {
-          name: "Teams",
-          deliver: (chatEventId, deliverySignal) => {
-            return dependencies.deliverTeamsAdmissionFailure(
-              { ...delivery, target: material.teamsDelivery, chatEventId },
-              deliverySignal,
-            );
-          },
-        };
-        break;
-      }
-      case "discord": {
-        const material = await loadDiscordQueuedLaunchMaterial(
-          db,
-          source,
-          signal,
-        );
-        if (!material) {
-          return;
-        }
-        channel = {
-          name: "Discord",
-          deliver: (chatEventId, deliverySignal) => {
-            return dependencies.sendDiscordReply(
-              { ...delivery, target: material.discordDelivery, chatEventId },
-              deliverySignal,
-            );
-          },
-        };
-        break;
-      }
-      case "telegram": {
-        const material = await loadTelegramQueuedLaunchMaterial(db, source);
-        if (!material) {
-          return;
-        }
-        channel = {
-          name: "Telegram",
-          deliver: (chatEventId, deliverySignal) => {
-            return dependencies.deliverTelegramAdmissionFailure(
-              { ...delivery, target: material.telegramDelivery, chatEventId },
-              deliverySignal,
-            );
-          },
-        };
-        break;
-      }
-      case "agentphone": {
-        const material = await loadAgentPhoneQueuedLaunchMaterial(db, source);
-        if (!material) {
-          return;
-        }
-        channel = {
-          name: "AgentPhone",
-          deliver: (chatEventId, deliverySignal) => {
-            return dependencies.deliverAgentPhoneAdmissionFailure(
-              { ...delivery, target: material.agentphoneDelivery, chatEventId },
-              deliverySignal,
-            );
-          },
-        };
-        break;
-      }
-      default: {
-        return unreachableQueuedContextType(contextType);
-      }
+    const channel = await unexpectedQueuedRejectionChannelLoaders[contextType](
+      {
+        db,
+        dependencies,
+        source: {
+          eventId: head.id,
+          chatThreadId: head.chatThreadId,
+          orgId: head.orgId,
+          userId: head.userId,
+          featureSwitchContext,
+        },
+        delivery: {
+          chatThreadId: head.chatThreadId,
+          orgId: head.orgId,
+          userId: head.userId,
+          agentId: head.agentId,
+        },
+      },
+      signal,
+    );
+    if (!channel) {
+      return;
     }
     signal.throwIfAborted();
     await deliverQueuedAdmissionFailureToChannel(

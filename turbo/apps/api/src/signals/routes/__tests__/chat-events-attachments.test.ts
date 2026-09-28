@@ -1295,7 +1295,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         settled.events.some((event) => {
           return event.runId !== undefined;
         }),
-      ).toBe(false);
+      ).toBeFalsy();
     }
     expect((await api.readBillingStatus(actor)).credits).toBe(credits);
 

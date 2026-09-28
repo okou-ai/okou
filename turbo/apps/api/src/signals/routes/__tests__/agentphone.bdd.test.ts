@@ -1408,7 +1408,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         settled.events.some((event) => {
           return event.runId !== undefined && event.runId !== activeRun.runId;
         }),
-      ).toBe(false);
+      ).toBeFalsy();
       const replies = sends.messages.slice(beforeCompletion);
       if (unlink) {
         expect(replies).toStrictEqual([]);
@@ -1417,7 +1417,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           replies.map((reply) => {
             return reply.body;
           }),
-        ).toEqual(
+        ).toStrictEqual(
           expect.arrayContaining([
             "Task completed successfully.",
             "Oops, something went wrong. Please try again later.",
@@ -2171,7 +2171,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       groupEvents.events.some((event) => {
         return event.revokesEventId === pending.id;
       }),
-    ).toBe(false);
+    ).toBeFalsy();
     expect(
       groupEvents.events.some((event) => {
         return "runId" in event && event.runId !== undefined;

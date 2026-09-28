@@ -1476,9 +1476,9 @@ describe("workflow queue", () => {
     await expect(
       pendingAutomationEvents(webhookAutomation.threadId),
     ).resolves.toHaveLength(0);
-    await expect(workflowRunIds(webhookAutomation.threadId)).resolves.toEqual([
-      busyRunId,
-    ]);
+    await expect(
+      workflowRunIds(webhookAutomation.threadId),
+    ).resolves.toStrictEqual([busyRunId]);
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.enabled).toBeTruthy();
     expect(automation.nextRunAt).toBe(

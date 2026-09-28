@@ -1390,14 +1390,10 @@ describe("CHAT-02: shared user message queue", () => {
       agentId,
       prompt: "thread list publication failure anchor",
     });
-    await expect
-      .poll(() => {
-        return context.mocks.ably.publish.mock.calls.some(([topic]) => {
-          return topic === "threadListChanged";
-        });
-      })
-      .toBe(true);
-    context.mocks.ably.publish.mockClear();
+    // Seeing the anchor run does not finish its background pick publication.
+    // Finish that phase before observing the next send's notifications.
+    await flushWaitUntilForTest();
+    const beforeQueuedSend = context.mocks.ably.publish.mock.calls.length;
 
     let failedThreadListPublish = false;
     context.mocks.ably.publish.mockImplementation((topic: unknown) => {
@@ -1420,7 +1416,7 @@ describe("CHAT-02: shared user message queue", () => {
       runId: null,
       threadId: anchor.threadId,
     });
-    // The send publishes the thread list in the background after its pick.
+    // Finish the queued send's background publication before retrying.
     await flushWaitUntilForTest();
     expect(failedThreadListPublish).toBeTruthy();
 
@@ -1429,11 +1425,12 @@ describe("CHAT-02: shared user message queue", () => {
       runId: null,
       threadId: anchor.threadId,
     });
-    const threadListPublishes = context.mocks.ably.publish.mock.calls.filter(
-      ([topic]) => {
+    await flushWaitUntilForTest();
+    const threadListPublishes = context.mocks.ably.publish.mock.calls
+      .slice(beforeQueuedSend)
+      .filter(([topic]) => {
         return topic === "threadListChanged";
-      },
-    );
+      });
     expect(threadListPublishes).toHaveLength(1);
 
     await cancelChatRun(actor, anchor.runId);
