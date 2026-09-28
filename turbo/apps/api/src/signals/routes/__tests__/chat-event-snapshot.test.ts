@@ -861,6 +861,101 @@ describe("chat event snapshot read endpoints", () => {
     });
   }, 60_000);
 
+  // Chat Event V8 transition: removed in PR-3 with the V7 Snapshot upgrade.
+  it("routes batch cursors inside V7-only coverage to the upgraded V8 Snapshot", async () => {
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    const agent = await bdd.createAgent(owner, {
+      displayName: "V7 batch catch-up agent",
+    });
+    const threadId = await sendNoCreditMessage(owner, {
+      agentId: agent.agentId,
+      prompt: `v7-batch-${randomUUID()}`,
+    });
+    const { templates } = v7SnapshotUpgradeTemplates();
+    const v7 = await createStore().set(
+      seedV7ChatEventSnapshot$,
+      { chatThreadId: threadId, rows: templates },
+      context.signal,
+    );
+    writeFakeChatEventObject(v7.objectKey, v7.body);
+    await trackFakeChatEventObject(Promise.resolve(v7.objectKey));
+    await sendNoCreditMessage(owner, {
+      agentId: agent.agentId,
+      threadId,
+      prompt: `v7-batch-tail-${randomUUID()}`,
+    });
+    const archivedCursor = v7.rows[2]?.seqId;
+    if (archivedCursor === undefined) {
+      throw new Error("Expected a cursor inside the V7 coverage");
+    }
+
+    // A V7 pointer has no paired terminal cursor, so every cursor at or below
+    // its physical coverage must rebuild from the Snapshot: those Raw Events
+    // may already be reclaimed.
+    for (const cursor of [0, archivedCursor, v7.lastSeqId]) {
+      const covered = await accept(
+        eventsClient().catchUp({
+          headers: authenticate(owner),
+          body: [[threadId, cursor]],
+        }),
+        [200],
+      );
+      expect(covered.body).toStrictEqual({
+        events: {},
+        notFoundThreads: [threadId],
+      });
+    }
+    // Sequence watermarks above that coverage continue from Raw Events.
+    const watermark = v7.lastSeqId + 1;
+    const partitioned = await accept(
+      eventsClient().catchUp({
+        headers: authenticate(owner),
+        body: [[threadId, watermark]],
+      }),
+      [200],
+    );
+    expect(partitioned.body.notFoundThreads).toStrictEqual([]);
+    const tail = partitioned.body.events[threadId] ?? [];
+    expect(tail.length).toBeGreaterThan(0);
+    const tailSeqIds = tail.map((row) => {
+      return row.seqId;
+    });
+    expect(tailSeqIds).toStrictEqual(
+      tailSeqIds
+        .filter((seqId) => {
+          return seqId > watermark;
+        })
+        .sort((left, right) => {
+          return left - right;
+        }),
+    );
+
+    // The rebuild publishes the V8 Snapshot, whose terminal cursor then
+    // catches up with no further events.
+    await projectChatEventSearch(threadId);
+    const download = await accept(
+      eventsClient().snapshot({
+        headers: authenticate(owner),
+        params: { threadId },
+      }),
+      [200],
+    );
+    const head = await readChatEventSnapshotHead(context, threadId);
+    await trackFakeChatEventObject(Promise.resolve(head.object_key));
+    expect(download.body.lastSeqId).toBe(tail.at(-1)?.seqId);
+    const current = await accept(
+      eventsClient().catchUp({
+        headers: authenticate(owner),
+        body: [[threadId, download.body.lastSeqId]],
+      }),
+      [200],
+    );
+    expect(current.body).toStrictEqual({
+      events: { [threadId]: [] },
+      notFoundThreads: [],
+    });
+  }, 60_000);
+
   it("garbage-collects unreferenced snapshot objects", async () => {
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     const agent = await bdd.createAgent(owner, {

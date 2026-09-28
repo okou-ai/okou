@@ -24,8 +24,7 @@
         "src/signals/external/env.ts",
         "src/scripts/**/*.ts",
         "src/**/*.{test,spec}.ts",
-        "scripts/chat-event-*/acceptance.ts",
-        "scripts/chat-event-v8-snapshot-dry-run/main.ts"
+        "scripts/chat-event-*/acceptance.ts"
       ],
       "project": ["src/**/*.ts", "scripts/chat-event-*/*.ts"],
       "ignoreDependencies": ["@hono/node-server-v1", "clerk"],
