@@ -1429,6 +1429,13 @@
       "when": 1790594121029,
       "tag": "1281_chat_input_model_selection",
       "breakpoints": true
+    },
+    {
+      "idx": 1282,
+      "version": "7",
+      "when": 1790604232352,
+      "tag": "1282_drop_retired_integration_agent_tables",
+      "breakpoints": true
     }
   ]
 }

@@ -18,7 +18,6 @@ export async function validatePermanentDiscordFoundation(
   const userB = `user-b-${suffix}`;
   const senderA = `sender-a-${suffix}`;
   const senderB = `sender-b-${suffix}`;
-  const agentId = randomUUID();
   const connections = [randomUUID(), randomUUID(), randomUUID()] as const;
   const threads = [randomUUID(), randomUUID(), randomUUID()] as const;
   const routes = [randomUUID(), randomUUID(), randomUUID()] as const;
@@ -90,31 +89,6 @@ export async function validatePermanentDiscordFoundation(
       [guildA, userA],
       "23505",
       "uq_discord_org_connections_guild_user",
-    );
-    await client.query(
-      `INSERT INTO agents (id, org_id, owner, name) VALUES ($1, $2, $3, 'discord-test')`,
-      [agentId, orgA, userA],
-    );
-    await client.query(
-      `INSERT INTO discord_user_agent_preferences (user_id, org_id, connection_id, selected_agent_id)
-       VALUES ($1, $2, $3, $4)`,
-      [userA, orgA, connections[0], agentId],
-    );
-    await rejectWrite(
-      `UPDATE discord_user_agent_preferences SET user_id = $1 WHERE connection_id = $2`,
-      [userB, connections[0]],
-      "23503",
-      "discord_user_agent_preferences_connection_owner_fk",
-    );
-    await client.query("DELETE FROM agents WHERE id = $1", [agentId]);
-    assert.deepEqual(
-      (
-        await client.query(
-          `SELECT selected_agent_id FROM discord_user_agent_preferences WHERE connection_id = $1`,
-          [connections[0]],
-        )
-      ).rows,
-      [{ selected_agent_id: null }],
     );
     await client.query(
       `INSERT INTO discord_user_dm_preferences (discord_user_id, connection_id, user_id)
@@ -295,15 +269,6 @@ export async function validatePermanentDiscordFoundation(
       [],
     );
     assert.equal(await countIds("chat_threads", threads), 3);
-    assert.deepEqual(
-      (
-        await client.query(
-          `SELECT user_id FROM discord_user_agent_preferences WHERE user_id = $1`,
-          [userA],
-        )
-      ).rows,
-      [],
-    );
     assert.deepEqual(
       (
         await client.query(

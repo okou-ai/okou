@@ -1169,9 +1169,11 @@ try {
   const invalid = await cli("malformed", [], false, true);
   assert.equal(object(invalid.totals).invalid, 1);
   assert.equal(invalid.databaseVerifiedOnTarget, false);
-  // Migration 1272 dropped agent_run_queue; recovery still verifies the rest.
+  // Migrations 1272 and 1282 dropped agent_run_queue and
+  // telegram_installations; recovery still verifies the rest.
   await db.query("DELETE FROM secrets WHERE id = 'bad'");
   await db.query("DROP TABLE agent_run_queue");
+  await db.query("DROP TABLE telegram_installations");
   const droppedQueueRecovery = await cli("recovery-dropped-agent-run-queue", [
     "--verify",
     "--recovery-schema",
@@ -1181,11 +1183,14 @@ try {
     Array.isArray(droppedQueueRecovery.missingOptionalFields) &&
       droppedQueueRecovery.missingOptionalFields.includes(
         "agent_run_queue.encrypted_params",
+      ) &&
+      droppedQueueRecovery.missingOptionalFields.includes(
+        "telegram_installations.encrypted_bot_token",
       ),
-    "Recovery must accept databases after the agent_run_queue drop",
+    "Recovery must accept databases after the agent_run_queue and telegram_installations drops",
   );
   process.stdout.write(
-    "KMS rotation CLI integration passed: protected workflow entry, runtime and operator canaries, failure-before-write guards, secret-safe artifacts, read-only inventory, concurrent verification and failure checkpoints, nested verification, bounded resume, concurrent writes, KMS failure recovery, rewrap preservation, reverse migration, malformed ciphertext, and recovery after the agent_run_queue drop.\n",
+    "KMS rotation CLI integration passed: protected workflow entry, runtime and operator canaries, failure-before-write guards, secret-safe artifacts, read-only inventory, concurrent verification and failure checkpoints, nested verification, bounded resume, concurrent writes, KMS failure recovery, rewrap preservation, reverse migration, malformed ciphertext, and recovery after the agent_run_queue and telegram_installations drops.\n",
   );
 } finally {
   kms.destroy();
