@@ -550,13 +550,18 @@ function ExactReconnectConnectorActionCard({
 
   if (statusLoadable.state === "hasError") {
     return (
-      <ChatCard className="flex h-full items-center justify-between gap-3 px-4">
-        <span className="text-sm text-muted-foreground">
+      <ChatCard className="flex h-full w-full items-center gap-3 px-4 py-3">
+        <span className="min-w-0 flex-1 line-clamp-3 text-sm leading-5 text-muted-foreground">
           {t(($) => {
             return $.chat.connectorAccountSwitch.loadFailed;
           })}
         </span>
-        <Button size="sm" variant="outline" onClick={refresh}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0"
+          onClick={refresh}
+        >
           {t(($) => {
             return $.chat.connectorAccountSwitch.retry;
           })}
