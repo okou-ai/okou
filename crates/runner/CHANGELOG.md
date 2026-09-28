@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.214.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.27...runner-rs-v0.214.0) (2026-09-28)
+
+
+### Features
+
+* **runner:** gate wss tickets on host ingress heartbeat ([#37192](https://github.com/okou-ai/okou/issues/37192)) ([00b5a33](https://github.com/okou-ai/okou/commit/00b5a334dceacc63b97978c57108d736822fd230))
+
 ## [0.213.27](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.26...runner-rs-v0.213.27) (2026-09-28)
 
 

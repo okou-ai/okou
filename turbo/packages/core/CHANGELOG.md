@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.716.2](https://github.com/okou-ai/okou/compare/core-v8.716.1...core-v8.716.2) (2026-09-28)
+
+
+### Refactoring
+
+* remove onboarding sources-first feature switch ([#37216](https://github.com/okou-ai/okou/issues/37216)) ([c136fd9](https://github.com/okou-ai/okou/commit/c136fd9da995a561dd0fa6233b54b0a07c23bde3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.522.0
+
 ## [8.716.1](https://github.com/okou-ai/okou/compare/core-v8.716.0...core-v8.716.1) (2026-09-28)
 
 
