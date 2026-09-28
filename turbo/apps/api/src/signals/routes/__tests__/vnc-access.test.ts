@@ -101,6 +101,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
   it("filters live chat inventory by VNC access and the exact SSH dependency", async () => {
     const f = await api.fixture({
       grant: false,
+      defaultEnabled: false,
       runtime: { chat: true, access: false },
     });
     if (!f.threadId) {
@@ -274,13 +275,13 @@ describe("explicit VNC grants and current Agent inventory", () => {
     ).toHaveLength(2);
   });
 
-  it("does not auto-grant an Agent created after the first connection", async () => {
+  it("does not auto-grant a later Agent and ignores its legacy grant for chat inventory", async () => {
     const f = await api.fixture({ grant: false });
     const params = { agentId: f.agentId };
     expect(
       (await accept(api.access().get({ headers, params }), [200])).body,
     ).toStrictEqual({ enabled: false });
-    await accept(inventory().list({ headers: token(f) }), [404]);
+    await accept(inventory().list({ headers: token(f) }), [200]);
     await api.grant(f, true);
     const listed = await accept(inventory().list({ headers: token(f) }), [200]);
     expect(listed.body).toStrictEqual({
@@ -300,7 +301,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
     await accept(inventory().list({ headers: token(f) }), [200]);
     expect(kms.decryptCalls).toBe(0);
     await api.grant(f, false);
-    await accept(inventory().list({ headers: token(f) }), [404]);
+    await accept(inventory().list({ headers: token(f) }), [200]);
     await accept(
       api.connections().create({ headers, body: vncConnectionBody() }),
       [201],
@@ -326,13 +327,17 @@ describe("explicit VNC grants and current Agent inventory", () => {
         )
       ).body,
     ).toStrictEqual({ enabled: false });
-    await accept(
-      inventory().list({ headers: token({ ...current, ...other }) }),
-      [404],
-    );
+    expect(
+      (
+        await accept(
+          inventory().list({ headers: token({ ...current, ...other }) }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ hosts: [] });
   });
 
-  it("requires both VNC and SSH grants for SSH-backed inventory rows", async () => {
+  it("requires both VNC and SSH chat host permissions for SSH-backed inventory rows", async () => {
     const current = await owner();
     const runtime = { ...current, ...(await api.runtime(current)) };
     const ssh = await accept(
@@ -371,10 +376,8 @@ describe("explicit VNC grants and current Agent inventory", () => {
       }),
       [201],
     );
-    await api.grant(runtime, true);
-    // Creating the first SSH host auto-grants visible Agents. Establish the
-    // VNC-only baseline explicitly before testing the independent grant.
-    await api.grantSsh(runtime, false);
+    await api.enableDefault(current, "vnc", direct.body.id);
+    await api.enableDefault(current, "vnc", tunneled.body.id);
 
     const listIds = async () => {
       const result = await accept(
@@ -388,12 +391,12 @@ describe("explicit VNC grants and current Agent inventory", () => {
     };
 
     await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
-    await api.grantSsh(runtime, true);
+    await api.enableDefault(current, "ssh", ssh.body.id);
     await expect(listIds()).resolves.toStrictEqual([
       direct.body.id,
       tunneled.body.id,
     ]);
-    await api.grantSsh(runtime, false);
+    await api.setDefault(current, "ssh", ssh.body.id, false);
     await expect(listIds()).resolves.toStrictEqual([direct.body.id]);
   });
 
@@ -434,8 +437,8 @@ describe("explicit VNC grants and current Agent inventory", () => {
       }),
       [201],
     );
-    await api.grant(runtime, true);
-    await api.grantSsh(runtime, true);
+    await api.enableDefault(current, "vnc", saved.body.id);
+    await api.enableDefault(current, "ssh", ssh.body.id);
     const kms = useSecretKmsProbe();
     const listed = await accept(
       inventory().list({ headers: token(runtime) }),
@@ -456,7 +459,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
     });
     expect(JSON.stringify(listed.body)).not.toContain("testpass");
     expect(kms.decryptCalls).toBe(0);
-    await api.grantSsh(runtime, false);
+    await api.setDefault(current, "ssh", ssh.body.id, false);
     expect(
       (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
     ).toStrictEqual({ hosts: [] });
@@ -492,6 +495,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
       [201],
     );
     expect(plain.body.security.type).toBe("x509_plain");
+    await api.enableDefault(current, "vnc", plain.body.id);
     expect(
       (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
     ).toStrictEqual({
@@ -509,6 +513,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
     });
 
     const supported = await createHost("supported.example.com");
+    await api.enableDefault(current, "vnc", supported.body.id);
     expect(
       (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
     ).toStrictEqual({
@@ -543,7 +548,9 @@ describe("explicit VNC grants and current Agent inventory", () => {
       ...consumer,
       ...(await api.runtime(consumer, { agentId: creator.agentId })),
     };
-    await accept(inventory().list({ headers: token(runtime) }), [404]);
+    expect(
+      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+    ).toStrictEqual({ hosts: [] });
     const host = await accept(
       api.connections().create({
         headers,
@@ -551,7 +558,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
       }),
       [201],
     );
-    await api.grant(runtime, true);
+    await api.enableDefault(consumer, "vnc", host.body.id);
     expect(
       (
         await accept(inventory().list({ headers: token(runtime) }), [200])
@@ -696,7 +703,7 @@ describe("explicit VNC grants and current Agent inventory", () => {
         [403],
       );
     }
-    await accept(inventory().list({ headers: token(f) }), [404]);
+    await accept(inventory().list({ headers: token(f) }), [200]);
     await accept(
       inventory().list({ headers: token(f, ["vnc:read"], -1) }),
       [401],
