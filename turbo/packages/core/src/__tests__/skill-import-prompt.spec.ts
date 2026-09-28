@@ -120,6 +120,8 @@ describe("skill import prompt", () => {
     );
     expect(claude).toContain("through this session's own skill loading");
     expect(claude).toContain("3. Personal (account) skills");
+    expect(claude).toContain("local-agent-mode-sessions/");
+    expect(codex).not.toContain("local-agent-mode-sessions/");
     expect(codex).not.toContain("Personal (account)");
     expect(codex).not.toContain("content was not readable");
   });

@@ -134,9 +134,16 @@ Personal skills:
 Account skills:
 - Skills I created or uploaded in the Claude app or Cowork belong to my
   claude.ai account and can be loaded into this session from outside the
-  directories above, for example ~/.claude/skills/synced/. They are my
-  skills: label them Personal (account) and import them. Do not exclude
-  them as a cache, a sync copy, a plugin, or system skills.
+  directories above. They are my skills: label them Personal (account) and
+  import them. Do not exclude them as a cache, a sync copy, a plugin, or
+  system skills.
+- Known locations, scanned when they exist:
+  - ~/Library/Application Support/Claude/local-agent-mode-sessions/
+    (macOS; the Claude app writes them under a skills-plugin/ directory,
+    as .../skills-plugin/.../skills/<skill-name>/SKILL.md)
+  - ~/.claude/skills/synced/
+- The same account skill can appear in several session directories. Keep
+  one copy per skill name: the most recently modified SKILL.md.
 - Compare the skills available to you in this session with what the scan
   found. For each available skill that is not a Claude system, built-in,
   or official plugin skill and has no SKILL.md in the scanned directories,
