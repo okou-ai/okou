@@ -223,11 +223,18 @@ function mockMutableConversation(
     activeRunIds: [...activeRunIds],
   });
   const rowsSince = (sinceSeqId: number) => {
-    return mockChatEventRows(normalizeMockChatEvents(events, threadId)).filter(
-      (row) => {
+    return mockChatEventRows(normalizeMockChatEvents(events, threadId))
+      .filter((row) => {
         return row.seqId > sinceSeqId;
-      },
-    );
+      })
+      .map((row) => {
+        // The batched catch-up stores the last row ID as the next rows cursor.
+        // Use real UUID IDs in both paths so that cursor is valid on replay.
+        return {
+          ...row,
+          id: `00000000-0000-4000-8000-${row.seqId.toString(16).padStart(12, "0")}`,
+        };
+      });
   };
   context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
     return respond(
