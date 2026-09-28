@@ -1,5 +1,68 @@
 # Deployment Compatibility
 
+## Video model columns and `video_model_updated` dropped (#37249)
+
+Final contract step of the video retirement (#37242, #37256).
+
+- Migration `1282_drop_retired_video_model_columns` drops
+  `selected_video_model` from `chat_threads`, `org_members_metadata`,
+  `agent_runs` and `chat_thread_events`, deletes the remaining
+  `video_model_updated` thread events (one row in production per MaskDB on
+  2026-09-28) and recreates `chat_thread_event_kind` without that value in a
+  single table rewrite of `chat_thread_events`. It re-adds
+  `agent_runs_metadata_presence_check` without the dropped column as
+  `NOT VALID`; `1283_validate_agent_runs_metadata_presence_check` validates it
+  in its own transaction, so the `agent_runs` scan does not hold the
+  `ACCESS EXCLUSIVE` lock.
+- The contract, core replay, API, Platform and CLI no longer know the
+  `video_model_updated` kind or the `selectedVideoModel` field on thread
+  metadata, thread events or snapshot projections. Historical usage and credit
+  records are unaffected: `chat_events` usage payloads never carried the field,
+  and the video model catalog stays for historical display.
+
+Gates, all required before this change is released:
+
+- The #37256 API (`fbaf632f1d052fd3e956be3434b0bd472c323292`) is the first API
+  that neither reads nor writes the columns. It must be the production API,
+  and no rollback target may predate it. The migration-path floor below is
+  stricter, because the migration's main commit descends from #37256, so it
+  also enforces this.
+- The Web client floor must be raised to the first App build containing
+  #37256. App 0.981.0 still requires `selectedVideoModel` when it parses
+  IndexedDB thread events and snapshots and the R2 snapshot archive, so it
+  would fail every thread-list sync once the field is gone. That App build is
+  not live yet; the floor raise is added to this change before merge.
+- Sandbox CLIs from before #37256 also require the field in the snapshot
+  archive. They drain about two hours after the #37256 API is promoted, which
+  precedes this release.
+
+Old and new versions during deploy:
+
+- Migrations run before API promotion. The previous API still declares the
+  columns, so its inserts and bare `select()`/`returning()` on those four
+  tables receive `42703` until it drains, as with `1274`. `agent_runs`,
+  `chat_threads` and `chat_thread_events` are hot tables; release this change
+  at low traffic.
+- Previous API with the new App or CLI: the previous API still sends
+  `selectedVideoModel: null`, which the object schemas strip. It writes no
+  `video_model_updated` event.
+- New API with the floor-level App: that App treats the field as optional and
+  never sees the removed kind.
+- Cached state: a cached snapshot that still has `selectedVideoModel` parses
+  and the key is stripped. A browser that cached a `video_model_updated` event
+  fails its strict IndexedDB read. The existing degraded path then loads the
+  server snapshot and replaces the local snapshot and event log, with no
+  Sentry report. The CLI cache discards an unparseable file and rebuilds it
+  from the snapshot in the same way. A client whose saved cursor was a deleted
+  event receives `410` and reloads the snapshot.
+- iOS keeps its `videoModelUpdated` wire case, and its decoders do not require
+  `selectedVideoModel`. The server no longer sends either.
+
+Rollback promotes artifacts without restoring schema, so
+`resolve-production-rollback-target.sh` rejects API targets that predate the
+canonical main commit that added `1282`. Recovering past that commit requires a
+forward-fix migration that restores the columns and the enum value.
+
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)
 
 This is step 1 of the Chat Event V8 plan. It changes no wire protocol: the row

@@ -100,7 +100,6 @@ function chatThread(title: string): ChatThreadSnapshotProjection {
     modelSettings: {},
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
     selectedImageModel: null,
   };
 }

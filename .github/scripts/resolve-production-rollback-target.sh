@@ -51,6 +51,7 @@ readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-p
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 readonly PI_API_FIRST_TURN_RETIRED_PATH=.github/rollback-floors/pi-api-first-turn-retired
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
+readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_video_model_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -208,6 +209,20 @@ if [[ ! "$retired_preference_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$retired_preference_columns_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the retired preference column drop: ${retired_preference_columns_drop_commit}."
+fi
+
+# Migration 1282 drops selected_video_model from chat_threads,
+# org_members_metadata, agent_runs and chat_thread_events and removes the
+# video_model_updated event kind. Earlier APIs still declare the columns, so
+# every insert, bare select and bare returning on those tables names them. This
+# floor also covers #37256, the first API that stopped reading the columns.
+video_model_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$VIDEO_MODEL_COLUMNS_DROP_PATH" | sed -n '1p')
+if [[ ! "$video_model_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged video model column drop on main."
+fi
+if ! git merge-base --is-ancestor "$video_model_columns_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the video model column drop: ${video_model_columns_drop_commit}."
 fi
 
 # Release 7 stopped writing piLaunchConfig.apiFirstTurn. Its Runners, Guests

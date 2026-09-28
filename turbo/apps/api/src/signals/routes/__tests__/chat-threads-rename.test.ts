@@ -134,7 +134,6 @@ describe("POST /api/chat-threads/:id/rename", () => {
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
       selectedImageModel: DEFAULT_IMAGE_MODEL,
     });
   });

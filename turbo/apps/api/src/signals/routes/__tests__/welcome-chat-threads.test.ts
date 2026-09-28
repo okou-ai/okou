@@ -228,7 +228,6 @@ describe("POST /api/welcome-chat-threads", () => {
       title: "Welcome to Okou",
       selectedModel: MODEL,
       serviceTier: null,
-      selectedVideoModel: null,
       selectedImageModel: DEFAULT_IMAGE_MODEL,
       cloudBrowserEnabled: false,
     });
@@ -426,7 +425,6 @@ describe("POST /api/welcome-chat-threads", () => {
     );
     expect(metadata.body).toMatchObject({
       selectedModel: MODEL,
-      selectedVideoModel: null,
       selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
   });

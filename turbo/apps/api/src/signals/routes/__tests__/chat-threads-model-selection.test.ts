@@ -297,7 +297,6 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
       selectedImageModel: DEFAULT_IMAGE_MODEL,
     });
   });

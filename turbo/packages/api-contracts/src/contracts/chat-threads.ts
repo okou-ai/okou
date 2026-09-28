@@ -330,9 +330,6 @@ const chatThreadSnapshotProjectionSchema = z.object({
   serviceTier: chatThreadServiceTierSchema.nullable().default(null),
   computerUseHostId: z.string().uuid().nullable().default(null),
   cloudBrowserEnabled: z.boolean().optional(),
-  // Retired with video model selection. The API sends null for Web clients at
-  // the current floor; removal is tracked in #37249.
-  selectedVideoModel: z.string().nullable().optional(),
   // Keep this optional for pre-field browser rows and loose rather than
   // imageModelIdSchema so a stored model that later leaves the catalog remains
   // replayable. New write contracts validate against the shared schema.
@@ -357,7 +354,6 @@ const chatThreadEventSchema = z.object({
     "model_selection_updated",
     "service_tier_updated",
     "computer_use_host_updated",
-    "video_model_updated",
     "image_model_updated",
     "sort_touched",
     "archived",
@@ -380,8 +376,6 @@ const chatThreadEventSchema = z.object({
   serviceTier: chatThreadServiceTierSchema.nullable().default(null),
   computerUseHostId: z.string().uuid().nullable().default(null),
   cloudBrowserEnabled: z.boolean().optional(),
-  /** Retired; see chatThreadSnapshotProjectionSchema. */
-  selectedVideoModel: z.string().nullable().optional(),
   selectedImageModel: z.string().nullable().optional(),
   createdAt: z.string(),
 });
@@ -482,7 +476,7 @@ const videoGenerationTemplateRequestSchema = z.object({
  * Intro Video selections written before the product was removed.
  *
  * Read-only. No surface produces this type any more and the prompt builder
- * rejects it, so it contributes no behaviour. It stays in the union because
+ * ignores it, so it contributes no behaviour. It stays in the union because
  * `chat_events` is append-only — `chat_events_reject_update` blocks UPDATE, so
  * the rows can be neither rewritten nor migrated. Dropping the arm makes
  * `userMessageDocumentSchema.parse` throw for every archived message carrying
@@ -1020,7 +1014,6 @@ const chatThreadMetadataSchema = z.object({
   archived: z.boolean(),
   computerUseHostId: z.string().uuid().nullable(),
   cloudBrowserEnabled: z.boolean(),
-  selectedVideoModel: z.string().nullable(),
   selectedImageModel: z.string().nullable(),
 });
 

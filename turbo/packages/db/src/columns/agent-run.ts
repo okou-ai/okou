@@ -127,7 +127,6 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     codexServiceTier: varchar("codex_service_tier", {
       length: 20,
     }).$type<CodexServiceTier>(),
-    selectedVideoModel: varchar("selected_video_model", { length: 255 }),
     /** Built-in image model default snapshotted for this run. */
     selectedImageModel: varchar("selected_image_model", { length: 255 }),
     chatThreadId: uuid("chat_thread_id").references(

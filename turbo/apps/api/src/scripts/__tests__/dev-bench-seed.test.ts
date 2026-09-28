@@ -58,7 +58,6 @@ function runMetadata(row: ProfileRunMetadataRow) {
     modelProviderCredentialScope: row.modelProviderCredentialScope,
     selectedModel: row.selectedModel,
     codexServiceTier: row.codexServiceTier,
-    selectedVideoModel: row.selectedVideoModel,
     selectedImageModel: row.selectedImageModel,
     chatThreadId: row.chatThreadId,
     apiStartedAt: row.apiStartedAt,

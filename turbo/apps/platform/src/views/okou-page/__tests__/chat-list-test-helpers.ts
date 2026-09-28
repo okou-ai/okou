@@ -68,7 +68,6 @@ export function chatListThread(
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
     selectedImageModel: null,
     ...overrides,
   };
@@ -93,7 +92,6 @@ export function chatListEvent(
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: null,
     selectedImageModel: null,
     createdAt: `2026-08-01T01:00:${seconds}.000Z`,
     ...overrides,
@@ -255,7 +253,6 @@ export function installActiveChatBoundaries(
       archived: thread.archived,
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-      selectedVideoModel: thread.selectedVideoModel ?? null,
       selectedImageModel: thread.selectedImageModel ?? null,
     });
   });

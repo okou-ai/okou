@@ -406,8 +406,6 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
           serviceTier: thread.codexServiceTier === "fast" ? "priority" : null,
           computerUseHostId: thread.computerUseHostId,
           cloudBrowserEnabled: thread.cloudBrowserEnabled,
-          // Web clients at the current floor still require the field (#37249).
-          selectedVideoModel: null,
           selectedImageModel: thread.selectedImageModel,
         }),
       );

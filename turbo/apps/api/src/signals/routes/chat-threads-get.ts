@@ -60,8 +60,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       archived: thread.archived,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      // Web clients at the current floor still require the field (#37249).
-      selectedVideoModel: null,
       selectedImageModel: thread.selectedImageModel,
     },
   };

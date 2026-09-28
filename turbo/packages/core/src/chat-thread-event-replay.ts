@@ -40,7 +40,6 @@ function isDeferrableUpdate(kind: ReplayChatThreadEvent["kind"]): boolean {
     kind === "model_selection_updated" ||
     kind === "service_tier_updated" ||
     kind === "computer_use_host_updated" ||
-    kind === "video_model_updated" ||
     kind === "image_model_updated"
   );
 }
@@ -89,10 +88,6 @@ function updatedThreadFields(
       computerUseHostId: event.computerUseHostId,
       cloudBrowserEnabled: event.cloudBrowserEnabled ?? false,
     };
-  }
-  if (event.kind === "video_model_updated") {
-    // Retired kind that historical events still carry (#37249).
-    return {};
   }
   if (event.kind === "image_model_updated") {
     return { selectedImageModel: event.selectedImageModel ?? null };

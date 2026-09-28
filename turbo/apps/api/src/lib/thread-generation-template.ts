@@ -7,6 +7,7 @@ import {
 import {
   buildGenerationTemplatePrompt,
   buildGenerationTemplatesPrompt,
+  isRetiredGenerationTemplate,
 } from "./generation-template-prompt";
 
 /**
@@ -61,7 +62,11 @@ export function resolveThreadGenerationTemplatePrompt(args: {
     return built.status === "resolved"
       ? {
           prompt: built.prompt,
-          identities: args.explicitTemplates.map(generationTemplateIdentity),
+          identities: args.explicitTemplates
+            .filter((template) => {
+              return !isRetiredGenerationTemplate(template);
+            })
+            .map(generationTemplateIdentity),
         }
       : noGenerationTemplates();
   }
@@ -69,6 +74,9 @@ export function resolveThreadGenerationTemplatePrompt(args: {
     return noGenerationTemplates();
   }
   const explicit = args.explicit;
+  if (isRetiredGenerationTemplate(explicit)) {
+    return noGenerationTemplates();
+  }
   const built = buildGenerationTemplatePrompt(explicit, options);
   return built.status === "resolved"
     ? {

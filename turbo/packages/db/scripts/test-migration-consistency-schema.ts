@@ -1687,7 +1687,6 @@ async function validatePermanentAgentRunMetadataState(
       "model_runtime_model",
       "built_in_model_key_id",
       "codex_service_tier",
-      "selected_video_model",
       "selected_image_model",
       "chat_thread_id",
       "api_started_at",
@@ -1705,7 +1704,7 @@ async function validatePermanentAgentRunMetadataState(
       metadataPresence.definition.includes("autonomy_budget IS NOT NULL"),
     );
 
-    assert.equal(metadataPresence.definition.match(/ IS NULL/gu)?.length, 18);
+    assert.equal(metadataPresence.definition.match(/ IS NULL/gu)?.length, 17);
     assert.equal(
       metadataPresence.definition.match(/ IS NOT NULL/gu)?.length,
       2,
@@ -1912,7 +1911,6 @@ async function validatePermanentAgentRunMetadataState(
       model_runtime_model: "'fixture'",
       built_in_model_key_id: "gen_random_uuid()",
       codex_service_tier: "'priority'",
-      selected_video_model: "'fixture'",
       selected_image_model: "'fixture'",
       chat_thread_id: "gen_random_uuid()",
       api_started_at: "now()",

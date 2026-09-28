@@ -1429,6 +1429,20 @@
       "when": 1790594121029,
       "tag": "1281_chat_input_model_selection",
       "breakpoints": true
+    },
+    {
+      "idx": 1282,
+      "version": "7",
+      "when": 1790608888814,
+      "tag": "1282_drop_retired_video_model_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1283,
+      "version": "7",
+      "when": 1790608956832,
+      "tag": "1283_validate_agent_runs_metadata_presence_check",
+      "breakpoints": true
     }
   ]
 }

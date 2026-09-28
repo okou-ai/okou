@@ -1336,30 +1336,6 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
       {
         template: {
-          type: "video",
-          selection: { stylePresetId: "video-style:missing" },
-        },
-        message: "Video and avatar templates are no longer available",
-      },
-      {
-        template: {
-          type: "video",
-          selection: { stylePresetId: "video-template:epic-grandeur" },
-        },
-        message: "Video and avatar templates are no longer available",
-      },
-      {
-        template: {
-          type: "video",
-          selection: {
-            stylePresetId: "avatar-template:81",
-            avatarOptions: { voiceId: "en-US-ChristopherNeural" },
-          },
-        },
-        message: "Video and avatar templates are no longer available",
-      },
-      {
-        template: {
           type: "workflow",
           selection: { workflowTemplateId: "workflow-template:missing" },
         },

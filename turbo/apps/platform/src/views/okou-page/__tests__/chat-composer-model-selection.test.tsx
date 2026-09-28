@@ -836,7 +836,6 @@ test("Follow model-scoped effort changes made in another session", async () => {
       },
       serviceTier: null,
       computerUseHostId: null,
-      selectedVideoModel: null,
       createdAt: POLICY_DATE,
     });
     changeChatThreadList();

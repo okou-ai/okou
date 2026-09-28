@@ -1466,9 +1466,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     if (!thread) {
       throw new Error("Expected AgentPhone ingress to create a chat thread");
     }
-    expect(thread).toMatchObject({
-      selectedVideoModel: null,
-    });
     const phoneEvents = await chat.listThreadEvents(actor, thread.chatThreadId);
     expect(
       phoneEvents.events.some((event) => {

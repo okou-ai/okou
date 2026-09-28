@@ -109,7 +109,6 @@ describe("GET /api/chat-threads/:id/metadata", () => {
       archived: false,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
       selectedImageModel: DEFAULT_IMAGE_MODEL,
     });
   });

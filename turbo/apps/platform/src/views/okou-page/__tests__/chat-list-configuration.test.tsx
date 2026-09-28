@@ -184,15 +184,11 @@ test("Conversation configuration arriving before creation is retained", async ()
         cloudBrowserEnabled: false,
         createdAt: "2026-08-01T02:00:04.000Z",
       }),
-      chatListEvent(4, 5, "video_model_updated", threadId, {
-        selectedVideoModel: "MiniMax-H3",
+      chatListEvent(4, 5, "image_model_updated", threadId, {
+        selectedImageModel: "gpt-image-2",
         createdAt: "2026-08-01T02:00:05.000Z",
       }),
-      chatListEvent(4, 6, "image_model_updated", threadId, {
-        selectedImageModel: "gpt-image-2",
-        createdAt: "2026-08-01T02:00:06.000Z",
-      }),
-      chatListEvent(4, 7, "created", threadId, {
+      chatListEvent(4, 6, "created", threadId, {
         title: "Out-of-order configuration",
         selectedModel: "deepseek-v4-flash",
         createdAt: "2026-08-01T02:00:00.000Z",
@@ -228,7 +224,6 @@ test("The image model does not overwrite the run model", async () => {
   const auth = chatListAuth(6);
   const thread = chatListThread(38, "Independent media models", {
     selectedModel: "claude-sonnet-5",
-    selectedVideoModel: "MiniMax-H3",
     selectedImageModel: "gpt-image-1",
   });
   installChatListAgent(context);

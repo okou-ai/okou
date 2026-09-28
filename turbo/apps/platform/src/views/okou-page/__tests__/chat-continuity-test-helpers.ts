@@ -284,7 +284,6 @@ export function installContinuityWorkspace(
         archived: thread.archived,
         computerUseHostId: thread.computerUseHostId,
         cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-        selectedVideoModel: thread.selectedVideoModel ?? null,
         selectedImageModel: thread.selectedImageModel ?? null,
       });
     },
