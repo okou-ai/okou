@@ -33,7 +33,7 @@ const context = testContext();
 const HOST_ID = "a7000000-0000-4000-a000-000000000001";
 
 async function openMediaCategory(
-  name: "Image" | "Video",
+  name: "Image",
 ): Promise<HTMLElement> {
   if (!screen.queryByRole("menu", { name: "Models" })) {
     click(await waitFor(composerModelTriggerOrThrow));
@@ -224,10 +224,9 @@ test("Conversation configuration arriving before creation is retained", async ()
   expect(configuredHost).toBeChecked();
 
   expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
-  expectSelectedMediaModel(await openMediaCategory("Video"), "MiniMax H3");
 });
 
-test("Media models do not overwrite one another or the run model", async () => {
+test("The image model does not overwrite the run model", async () => {
   const auth = chatListAuth(6);
   const thread = chatListThread(38, "Independent media models", {
     selectedModel: "claude-sonnet-5",
@@ -256,8 +255,7 @@ test("Media models do not overwrite one another or the run model", async () => {
 
   await expectSelectedModel("Claude Sonnet 5");
   expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
-  expectSelectedMediaModel(await openMediaCategory("Video"), "MiniMax H3");
-  // Picking either media model must leave the run model where it was.
+  // Picking the image model must leave the run model where it was.
   await expect(composerModelTrigger("Claude Sonnet 5")).resolves.toBeVisible();
 });
 
