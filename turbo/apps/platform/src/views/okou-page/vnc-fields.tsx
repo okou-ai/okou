@@ -74,17 +74,19 @@ function isPrivateIpv4Literal(host: string): boolean {
 }
 
 export function isPrivateVncLiteral(host: string): boolean {
-  if (isPrivateIpv4Literal(host)) {
+  // The API strips one terminal dot before classifying both IP versions.
+  const value = host.endsWith(".") ? host.slice(0, -1) : host;
+  if (isPrivateIpv4Literal(value)) {
     return true;
   }
-  if (!host.includes(":")) {
+  if (!value.includes(":")) {
     return false;
   }
   let address: string;
   try {
     // Match the API's canonical IPv6 interpretation, including expanded and
     // IPv4-mapped forms; an invalid literal is left to form/API validation.
-    address = new URL(`http://[${host}]`).hostname.slice(1, -1);
+    address = new URL(`http://[${value}]`).hostname.slice(1, -1);
   } catch {
     return false;
   }

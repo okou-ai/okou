@@ -563,7 +563,9 @@ test("Direct route explains canonical IPv6 loopback and private mapped literals"
   });
   const destination = within(dialog).getByLabelText("RFB destination host");
   for (const address of [
+    "127.0.0.1.",
     "0:0:0:0:0:0:0:1",
+    "::1.",
     "::ffff:127.0.0.1",
     "::ffff:10.2.3.4",
     "fc00::1",
