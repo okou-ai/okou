@@ -1,6 +1,7 @@
 # Stage host ingress only on an explicitly selected NON-PRODUCTION host.
-# Never called by provision/build/promote/release; never starts Caddy, opens 443,
-# modifies DNS, or changes an existing Caddy listener.
+# Run provision-runner.yml first for the protected socket namespace. This playbook
+# is never called by provision/build/promote/release; it never starts Caddy, opens
+# 443, modifies DNS, or changes an existing Caddy listener.
 # ansible-playbook -i 'staging-host.example.net,' playbooks/stage-runner-wss-ingress.yml \
 #   -e 'ansible_user=ubuntu wss_nonproduction_stage=true wss_acme_email=ops@example.net'
 - name: Stage Runner WSS ingress without activation
@@ -117,6 +118,13 @@
         - /etc/tmpfiles.d/okou-wss.conf
       register: wss_existing_files
 
+    - name: Require Runner socket host prerequisites from provision-runner.yml
+      ansible.builtin.assert:
+        that:
+          - wss_paths.results[0].stat.exists
+          - wss_existing_files.results[3].stat.exists
+        fail_msg: Run provision-runner.yml to prepare the protected Runner WSS socket directory before staging ingress.
+
     - name: Refuse foreign file types or ownership before staging
       ansible.builtin.assert:
         that:
@@ -152,11 +160,6 @@
       loop_control:
         label: "{{ item.item.item }}"
 
-    - name: Create dedicated Caddy connector (no Runner writer membership)
-      ansible.builtin.group:
-        name: "{{ wss_caddy_group }}"
-        system: true
-
     - name: Create unprivileged Caddy service account
       ansible.builtin.user:
         name: okou-wss-caddy
@@ -165,14 +168,6 @@
         shell: /usr/sbin/nologin
         home: /var/lib/okou-wss-caddy
         create_home: false
-
-    - name: Create protected root-owned socket directory
-      ansible.builtin.file:
-        path: /run/okou-ws
-        state: directory
-        owner: root
-        group: "{{ wss_caddy_group }}"
-        mode: '0710'
 
     - name: Create root-owned config directory
       ansible.builtin.file:
@@ -192,14 +187,6 @@
       loop:
         - /var/lib/okou-wss-caddy
         - /var/lib/okou-wss-caddy/data
-
-    - name: Restore protected socket directory across reboots
-      ansible.builtin.copy:
-        dest: /etc/tmpfiles.d/okou-wss.conf
-        content: "d /run/okou-ws 0710 root okou-wss-caddy - -\n"
-        owner: root
-        group: root
-        mode: '0644'
 
     - name: Install fixed UUID-to-socket route
       ansible.builtin.copy:

@@ -3,6 +3,8 @@
 # Idempotent playbook that installs all system-level dependencies required by
 # the Okou runner on runner hosts. Safe to run repeatedly — all tasks use
 # idempotent operations (apt state=present, group append, file metadata convergence).
+# The private WSS socket namespace is a Runner startup prerequisite; public
+# Caddy ingress remains separately staged and activated.
 #
 # Usage:
 #   ansible-playbook -i "host1,host2," playbooks/provision-runner.yml \
@@ -12,6 +14,71 @@
   hosts: all
 
   tasks:
+    - name: Inspect Runner WSS socket directory without following symlinks
+      ansible.builtin.stat:
+        path: /run/okou-ws
+        follow: false
+      become: true
+      register: runner_wss_socket_directory
+
+    - name: Inspect Runner WSS tmpfiles configuration without following symlinks
+      ansible.builtin.stat:
+        path: /etc/tmpfiles.d/okou-wss.conf
+        follow: false
+      become: true
+      register: runner_wss_tmpfiles_config
+
+    - name: Refuse unsafe existing Runner WSS host paths before provisioning
+      ansible.builtin.assert:
+        that:
+          - not runner_wss_socket_directory.stat.exists or runner_wss_socket_directory.stat.isdir
+          - not runner_wss_socket_directory.stat.exists or runner_wss_socket_directory.stat.pw_name == 'root'
+          - not runner_wss_socket_directory.stat.exists or runner_wss_socket_directory.stat.gr_name == 'okou-wss-caddy'
+          - not runner_wss_socket_directory.stat.exists or runner_wss_socket_directory.stat.mode == '0710'
+          - not runner_wss_tmpfiles_config.stat.exists or runner_wss_tmpfiles_config.stat.isreg
+          - not runner_wss_tmpfiles_config.stat.exists or runner_wss_tmpfiles_config.stat.pw_name == 'root'
+          - not runner_wss_tmpfiles_config.stat.exists or runner_wss_tmpfiles_config.stat.gr_name == 'root'
+          - not runner_wss_tmpfiles_config.stat.exists or runner_wss_tmpfiles_config.stat.mode == '0644'
+        fail_msg: Refusing unsafe existing Runner WSS socket directory or tmpfiles configuration.
+
+    - name: Read existing Runner WSS tmpfiles configuration
+      ansible.builtin.slurp:
+        src: /etc/tmpfiles.d/okou-wss.conf
+      become: true
+      when: runner_wss_tmpfiles_config.stat.exists
+      register: runner_wss_existing_tmpfiles
+
+    - name: Refuse foreign Runner WSS tmpfiles configuration
+      ansible.builtin.assert:
+        that:
+          - (runner_wss_existing_tmpfiles.content | b64decode) == 'd /run/okou-ws 0710 root okou-wss-caddy - -\n'
+        fail_msg: Refusing to replace a foreign Runner WSS tmpfiles configuration.
+      when: runner_wss_tmpfiles_config.stat.exists
+
+    - name: Create dedicated WSS socket connector group
+      ansible.builtin.group:
+        name: okou-wss-caddy
+        system: true
+      become: true
+
+    - name: Persist protected Runner WSS socket directory across reboots
+      ansible.builtin.copy:
+        dest: /etc/tmpfiles.d/okou-wss.conf
+        content: "d /run/okou-ws 0710 root okou-wss-caddy - -\n"
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+
+    - name: Create protected Runner WSS socket directory
+      ansible.builtin.file:
+        path: /run/okou-ws
+        state: directory
+        owner: root
+        group: okou-wss-caddy
+        mode: '0710'
+      become: true
+
     - name: Wait for apt lock to be released
       shell: |
         while fuser \
