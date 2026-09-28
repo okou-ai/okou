@@ -59,10 +59,13 @@ Follow-up to the retirement below, tracked in #37249.
   and compacted snapshots still send `selectedVideoModel: null`, because Web
   clients at the current floor require the field. Historical
   `video_model_updated` events stay readable and replay as no-ops.
-- Gates before this release: the App build from the retirement below is live
-  and the Web client floor is raised to it in this same release, and no
-  pre-retirement API remains a rollback target and no `video` job is still
-  `queued` or `running` (confirmed with a read-only MaskDB query).
+- The Web client floor is raised to `0.981.0`, the App build that retired
+  video generation (live in production from release #37254). Older tabs
+  receive `426` and reload, so no client still reaches the removed routes and
+  controls.
+- Gate before this release: no pre-retirement API remains a rollback target
+  and no `video` job is still within its 30-minute timeout in `queued` or
+  `running` (confirmed with a read-only MaskDB query).
 
 Old and new versions during deploy:
 
