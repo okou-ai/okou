@@ -1065,6 +1065,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "ssh", reboundSsh.body.id);
     const rebound = await accept(
       api.connections().update({
         headers: vncSessionHeaders,

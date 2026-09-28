@@ -848,7 +848,9 @@ describe("SSH connection observations", () => {
       });
       await expect(resolve(sibling)).resolves.toStrictEqual(siblingCredential);
       await expect(observations(f)).resolves.toStrictEqual(siblingObservations);
-      await expect(list(f)).resolves.toStrictEqual([additional.body]);
+      await expect(list(f)).resolves.toMatchObject([
+        { id: additional.body.id },
+      ]);
     },
   );
 
@@ -1047,7 +1049,7 @@ describe("official Runner SSH authority", () => {
     expect(kms.decryptCalls).toBe(2);
   });
 
-  it("rechecks authority after waiting for an owner connection lock", async () => {
+  it("waits for the owner connection lock before pinning and denies later chat revocation", async () => {
     const f = await fixture({ triggerSource: "automation-schedule" });
     const scope = {
       orgId: f.orgId,
@@ -1083,15 +1085,19 @@ describe("official Runner SSH authority", () => {
             return (await lock("read-connection-lock")).body.waiting;
           })
           .toBe(true);
-        await setThreadHostOverride(f, false);
       })(),
       releaseLock,
     );
     await releaseLock();
-    await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(pending).resolves.toStrictEqual({
+      outcome: "pinned",
+      generation: 2,
+    });
+    await setThreadHostOverride(f, false);
+    await expect(pin(f, 2)).resolves.toStrictEqual({ outcome: "unavailable" });
     expect((await list(f))[0]).toMatchObject({
-      generation: 1,
-      learnedHostKey: null,
+      generation: 2,
+      learnedHostKey: hostKey,
     });
   });
 
