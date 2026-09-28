@@ -251,6 +251,7 @@ fn build_mock_run_config_with_runtime(
             cancel_tokens: cancel_tokens.clone(),
             cancel: cancel.clone(),
         },
+        caddy_service_probe: Arc::new(|| Box::pin(async { false })),
         proxy: ProxyState {
             mitm,
             mitm_crash_rx,

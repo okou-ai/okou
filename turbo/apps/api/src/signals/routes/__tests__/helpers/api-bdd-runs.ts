@@ -273,6 +273,7 @@ function runnerHeartbeatBody(
     readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
     readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
     readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
+    readonly caddyServiceActive?: boolean;
     readonly mode?: RunnerHeartbeatBody["mode"];
   } = {},
 ): RunnerHeartbeatBody {
@@ -291,6 +292,9 @@ function runnerHeartbeatBody(
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldWorkspaceStates: args.heldWorkspaceStates ?? [],
     activeReuseProducers: args.activeReuseProducers ?? [],
+    ...(args.caddyServiceActive === undefined
+      ? {}
+      : { caddyServiceActive: args.caddyServiceActive }),
     mode: args.mode ?? "running",
   };
 }
@@ -1375,12 +1379,27 @@ export function createRunsApi(
         readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
         readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
         readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
+        readonly caddyServiceActive?: boolean;
         readonly mode?: RunnerHeartbeatBody["mode"];
       } = {},
     ) {
       return await accept(
         runApp(context)(runnersHeartbeatContract).heartbeat({
           headers: runnerHeaders(validAuth),
+          body: runnerHeartbeatBody(args),
+        }),
+        statuses,
+      );
+    },
+
+    async requestHeartbeatRunnerAs(
+      authorization: string,
+      statuses: readonly (200 | 400 | 401 | 500)[],
+      args: Parameters<typeof runnerHeartbeatBody>[0] = {},
+    ) {
+      return await accept(
+        runApp(context)(runnersHeartbeatContract).heartbeat({
+          headers: { authorization },
           body: runnerHeartbeatBody(args),
         }),
         statuses,

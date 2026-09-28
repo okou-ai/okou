@@ -6,8 +6,9 @@ import { and, eq, gt, inArray, like, lte } from "drizzle-orm";
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
 import type { ReadonlyDb } from "../external/db";
 
-// Three missed 10-second routine heartbeats. A snapshot is NOT a socket or
-// browser-ingress health proof: #37027 must check live local-run ownership.
+// Three missed 10-second routine heartbeats. Local Caddy-active status is only
+// a negative availability filter, NOT browser DNS/TLS/socket health proof:
+// #37027 must independently check live local-run ownership.
 const WSS_RUNNER_FRESH_MS = 30_000;
 const MAX_CLOCK_LEAD_MS = 5000;
 
@@ -67,6 +68,15 @@ export async function resolveRunnerWssTarget(
         eq(agentRuns.status, "running"),
         like(agentRuns.runnerGroup, "vm0/%"),
         inArray(runnerState.mode, ["running", "draining"]),
+        eq(runnerState.caddyServiceActive, true),
+        gt(
+          runnerState.caddyServiceObservedAt,
+          new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),
+        ),
+        lte(
+          runnerState.caddyServiceObservedAt,
+          new Date(args.now.getTime() + MAX_CLOCK_LEAD_MS),
+        ),
         gt(
           runnerState.lastSeenAt,
           new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),

@@ -66,6 +66,7 @@ describe("direct Runner WSS ticket boundary", () => {
       group,
       mode: "running",
       snapshotSequence: 1,
+      caddyServiceActive: true,
     });
     return {
       bdd,
@@ -117,6 +118,52 @@ describe("direct Runner WSS ticket boundary", () => {
     const res = await accept(bootstrap(f), [200]);
     expect(res.body.wssUrl).toBe(`${origin}/ws/${f.runnerId}`);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("does not issue a ticket when Caddy is absent, down or reported active by a PAT", async () => {
+    const f = await setup();
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      snapshotSequence: 2,
+    });
+    const missing = await accept(bootstrap(f), [404]);
+    expect(missing.headers.get("Cache-Control")).toBe("no-store");
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      mode: "running",
+      snapshotSequence: 3,
+      caddyServiceActive: false,
+    });
+    const down = await accept(bootstrap(f), [404]);
+    expect(down.headers.get("Cache-Control")).toBe("no-store");
+    expect(down.body.error.code).toBe("NOT_FOUND");
+
+    const pat = await f.api.createCliToken(f.actor);
+    await f.api.requestHeartbeatRunnerAs(`Bearer ${pat.token}`, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      snapshotSequence: 4,
+      caddyServiceActive: true,
+    });
+    await accept(bootstrap(f), [404]);
+    const digests = await accept(
+      testState().action({
+        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
+      }),
+      [200],
+    );
+    expect(digests.body.wss_ticket_digests).toEqual([]);
+
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      snapshotSequence: 5,
+      caddyServiceActive: true,
+    });
+    await accept(bootstrap(f), [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
@@ -215,6 +262,7 @@ describe("direct Runner WSS ticket boundary", () => {
       group: f.group,
       mode: "running",
       snapshotSequence: 3,
+      caddyServiceActive: true,
     });
     mockNow(now() + 31_000);
     await accept(bootstrap(f), [404]);

@@ -1991,6 +1991,9 @@ export const heartbeatBodySchema = z
     heldSandboxStates: z.array(heldSandboxStateSchema).max(1024),
     heldWorkspaceStates: z.array(heldWorkspaceStateSchema).max(1024),
     activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
+    // Missing observations are never eligible for WSS; ordinary Runner
+    // heartbeats still work while the unused WSS channel rolls out.
+    caddyServiceActive: z.boolean().optional(),
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {
