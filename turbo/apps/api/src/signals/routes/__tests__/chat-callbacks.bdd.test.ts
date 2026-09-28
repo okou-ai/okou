@@ -1312,6 +1312,31 @@ describe("CHAT-02: completed chat callback", () => {
       expect.objectContaining({ id: clientEventId, eventType: "input.prompt" }),
     ]);
 
+    // A different input for the same follow-up is still rejected.
+    const other = await chat.requestSendEvent(
+      actor,
+      {
+        ...followupBody,
+        prompt: "Another take on the follow-up",
+        clientEventId: randomUUID(),
+      },
+      [409],
+    );
+    expect(other.body).toStrictEqual({
+      error: expect.objectContaining({
+        code: "CONFLICT",
+        message: "Recommended follow-up has already been used",
+      }),
+    });
+    await flushWaitUntilForTest();
+    const afterOther = await chat.listThreadEvents(actor, run.threadId);
+    expect(afterOther.events).toHaveLength(afterSend.events.length);
+    expect(
+      afterOther.events.filter((event) => {
+        return event.revokesEventId === followup.id;
+      }),
+    ).toStrictEqual([expect.objectContaining({ id: clientEventId })]);
+
     const runId = userMessages(afterRetry.events).find((message) => {
       return message.revokesEventId === clientEventId;
     })?.runId;
