@@ -126,6 +126,7 @@ import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingStatusRoutes } from "./routes/onboarding-status";
 import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
+import { onboardingWorkflowConnectorsRoutes } from "./routes/onboarding-workflow-connectors";
 import { orgInviteRoutes } from "./routes/org-invite";
 import { orgDeleteRoutes } from "./routes/org-delete";
 import { orgLogoRoutes } from "./routes/org-logo";
@@ -397,6 +398,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...onboardingRecommendationRoutes,
   ...onboardingStatusRoutes,
   ...onboardingSourcesRoutes,
+  ...onboardingWorkflowConnectorsRoutes,
   ...orgInviteRoutes,
   ...orgDeleteRoutes,
   ...orgLogoRoutes,

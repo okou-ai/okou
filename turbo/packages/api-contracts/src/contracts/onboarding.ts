@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
-import { publicConnectorCatalogConnectListResponseSchema } from "./connector-catalog";
+import {
+  publicConnectorCatalogConnectListResponseSchema,
+  publicConnectorCatalogIconSchema,
+} from "./connector-catalog";
+import { connectorSlugSchema } from "./connector-identity";
 import { userLocaleSchema } from "./user-preferences";
 
 const c = initContract();
@@ -98,6 +102,58 @@ export type OnboardingRecommendationConnectorSlug = z.infer<
   typeof onboardingRecommendationConnectorSlugSchema
 >;
 
+/**
+ * Every connector an onboarding workflow requires or offers as optional.
+ *
+ * Platform types each workflow's connectors against this list, and the API
+ * serves exactly these connectors, so the workflow pages never read the whole
+ * connector catalog to draw their marks.
+ */
+export const ONBOARDING_WORKFLOW_CONNECTOR_SLUGS = [
+  "asana",
+  "cloudflare",
+  "github",
+  "gmail",
+  "google-ads",
+  "google-analytics",
+  "google-calendar",
+  "google-cloud",
+  "google-docs",
+  "google-drive",
+  "google-forms",
+  "google-meet",
+  "google-search-console",
+  "google-sheets",
+  "hubspot",
+  "linear",
+  "meta-ads",
+  "notion",
+  "quickbooks",
+  "sentry",
+  "todoist",
+  "vercel",
+  "x",
+  "youtube",
+] as const;
+
+export type OnboardingWorkflowConnectorSlug =
+  (typeof ONBOARDING_WORKFLOW_CONNECTOR_SLUGS)[number];
+
+/** What a workflow page draws for one connector: its name and mark. */
+const onboardingWorkflowConnectorSchema = z.object({
+  slug: connectorSlugSchema,
+  label: z.string(),
+  icon: publicConnectorCatalogIconSchema,
+});
+
+export type OnboardingWorkflowConnector = z.infer<
+  typeof onboardingWorkflowConnectorSchema
+>;
+
+const onboardingWorkflowConnectorsResponseSchema = z.object({
+  connectors: z.array(onboardingWorkflowConnectorSchema),
+});
+
 /** A short, evidence-based portrait from the same sources as the first task. */
 export const onboardingUserProfileSchema = z
   .object({
@@ -180,6 +236,25 @@ export const onboardingSourcesContract = c.router({
       503: apiErrorSchema,
     },
     summary: "List onboarding source connectors with connection status",
+  },
+});
+
+/**
+ * The onboarding workflow connectors, `ONBOARDING_WORKFLOW_CONNECTOR_SLUGS`,
+ * that are visible to the caller, each with only its label and icon.
+ */
+export const onboardingWorkflowConnectorsContract = c.router({
+  list: {
+    method: "GET",
+    path: "/api/onboarding/workflow-connectors",
+    headers: authHeadersSchema,
+    responses: {
+      200: onboardingWorkflowConnectorsResponseSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "List onboarding workflow connector labels and icons",
   },
 });
 
