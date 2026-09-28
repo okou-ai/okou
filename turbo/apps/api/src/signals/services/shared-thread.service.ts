@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
 import { joinAll, onRejection, settle } from "../utils";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
-import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
@@ -39,7 +38,7 @@ import {
   canonicalArchivedChatEventContent,
   canonicalArchivedChatEventError,
   canonicalArchivedChatEventUserMessage,
-  canonicalChatEventVisibleContent,
+  canonicalChatEventContent,
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
 import { readCurrentChatEventHistory } from "./chat-event-history.service";
@@ -175,7 +174,7 @@ function loadSharedThreadSourceRows(
       .select({
         id: chatEvents.id,
         eventType: chatEvents.eventType,
-        content: canonicalChatEventVisibleContent(),
+        content: canonicalChatEventContent(),
         userMessage: canonicalChatEventUserMessage(),
         runId: chatEvents.runId,
         isVisible: sql`COALESCE(
@@ -673,12 +672,7 @@ export const readSharedThread$ = command(
             return {
               ...message,
               content:
-                message.role === "assistant" &&
-                !(
-                  message.runIndex === undefined &&
-                  message.runGroupIndex === undefined &&
-                  isRetiredGoalArchiveText(message.content)
-                )
+                message.role === "assistant"
                   ? visiblePiMemoryCitationText(message.content)
                   : message.content,
               ...(attachments === undefined ? {} : { attachments }),

@@ -116,9 +116,10 @@ describe("chatEvents schema", () => {
         "chat_events_input_payload_content_check",
         "chat_events_failure_reason_event_type_check",
         "chat_events_official_workflow_queue_claim_check",
-        "chat_events_goal_open_payload_check",
-        "chat_events_goal_close_payload_check",
-        "chat_events_goal_marker_payload_check",
+        "chat_events_event_type_check",
+        "chat_events_context_pair_check",
+        "chat_events_context_type_check",
+        "chat_events_input_context_type_check",
       ]),
     );
     const officialWorkflowQueueClaimCheck = config.checks.find((check) => {
@@ -216,7 +217,7 @@ describe("chatEventSnapshots schema", () => {
 
     expect(chatEventSnapshots.terminalEventId.notNull).toBe(false);
     expect(chatEventSnapshots.terminalSeqId.notNull).toBe(false);
-    expect(chatEventSnapshots.archiveSchemaVersion.default).toBe(7);
+    expect(chatEventSnapshots.archiveSchemaVersion.default).toBe(8);
     expect(
       config.indexes.map((index) => {
         return { name: index.config.name, unique: index.config.unique };

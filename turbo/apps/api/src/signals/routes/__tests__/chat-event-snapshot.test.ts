@@ -10,6 +10,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
+import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -37,6 +38,10 @@ import {
 } from "./helpers/runtime-state";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import {
+  seedV7ChatEventSnapshot$,
+  v7SnapshotUpgradeTemplates,
+} from "../../../test-fixtures/chat-event-snapshot-v7";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -700,7 +705,6 @@ describe("chat event snapshot read endpoints", () => {
       expect(row).not.toHaveProperty("userMessage");
       expect(row).not.toHaveProperty("usagePayload");
       expect(row).not.toHaveProperty("interruptsRunId");
-      expect(row).not.toHaveProperty("runGroupId");
     }
 
     const projected = rows.body.rows.map((row) => {
@@ -765,6 +769,93 @@ describe("chat event snapshot read endpoints", () => {
         message: "Chat events cursor has expired",
         code: "CHAT_EVENTS_EXPIRED",
       },
+    });
+  }, 60_000);
+
+  // Chat Event V8 transition: removed with the V7 -> V8 Snapshot upgrade in
+  // PR-3 once every Snapshot pointer is V8.
+  it("publishes an upgraded V8 Snapshot on read while only a V7 pointer exists", async () => {
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    const agent = await bdd.createAgent(owner, {
+      displayName: "V7 snapshot upgrade agent",
+    });
+    const threadId = await sendNoCreditMessage(owner, {
+      agentId: agent.agentId,
+      prompt: `v7-upgrade-${randomUUID()}`,
+    });
+    const { templates, expected } = v7SnapshotUpgradeTemplates();
+    const v7 = await createStore().set(
+      seedV7ChatEventSnapshot$,
+      { chatThreadId: threadId, rows: templates },
+      context.signal,
+    );
+    writeFakeChatEventObject(v7.objectKey, v7.body);
+    await trackFakeChatEventObject(Promise.resolve(v7.objectKey));
+
+    // Raw Events below the V7 coverage may already be reclaimed.
+    const coldStart = await accept(
+      eventsClient().rows({
+        headers: authenticate(owner),
+        params: { threadId },
+        query: { sinceSeqId: 0 },
+      }),
+      [410],
+    );
+    expect(coldStart.body).toStrictEqual({
+      error: {
+        message: "Chat events cursor has expired",
+        code: "CHAT_EVENTS_EXPIRED",
+      },
+    });
+
+    await sendNoCreditMessage(owner, {
+      agentId: agent.agentId,
+      threadId,
+      prompt: `v7-upgrade-tail-${randomUUID()}`,
+    });
+    await projectChatEventSearch(threadId);
+
+    const download = await accept(
+      eventsClient().snapshot({
+        headers: authenticate(owner),
+        params: { threadId },
+      }),
+      [200],
+    );
+    const head = await readChatEventSnapshotHead(context, threadId);
+    expect(head.archive_schema_version).toBe(CURRENT_CHAT_EVENT_SCHEMA_VERSION);
+    expect(head.object_key).not.toBe(v7.objectKey);
+    const snapshotObject = readFakeChatEventObject(head.object_key);
+    if (snapshotObject === undefined) {
+      throw new Error("Expected the upgraded V8 snapshot object");
+    }
+    await trackFakeChatEventObject(Promise.resolve(head.object_key));
+    const rows = gunzipSync(snapshotObject)
+      .toString("utf8")
+      .trim()
+      .split("\n")
+      .map((line) => {
+        return chatEventRowSchema.parse(JSON.parse(line));
+      });
+    const upgraded = rows.filter((row) => {
+      return row.seqId <= v7.lastSeqId;
+    });
+    expect(upgraded).toStrictEqual(
+      expected.map(({ index, fields }) => {
+        return expect.objectContaining({
+          id: v7.rows[index]?.id,
+          seqId: v7.rows[index]?.seqId,
+          ...fields,
+        });
+      }),
+    );
+    const tail = rows.filter((row) => {
+      return row.seqId > v7.lastSeqId;
+    });
+    expect(tail.length).toBeGreaterThan(0);
+    expect(download.body).toMatchObject({
+      lastEventId: tail.at(-1)?.id,
+      lastSeqId: tail.at(-1)?.seqId,
     });
   }, 60_000);
 

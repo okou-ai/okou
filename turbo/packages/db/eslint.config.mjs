@@ -8,6 +8,7 @@ export default [
       "**/dist/**",
       "scripts/migrations/00*/**",
       "scripts/migrations/01[0-2]*/**",
+      "scripts/migrations/014-goal-archive-search/**",
     ],
   },
   {

@@ -326,7 +326,7 @@ describe("chat thread generation template contract", () => {
         version: 1,
         parts: [
           { type: "text", text: "Visible content" },
-          { type: "goal", goalBrief: "Finish the rollout" },
+          { type: "automation", workflowName: "daily-digest" },
         ],
       }),
     ).toMatchObject({ success: true });
@@ -755,33 +755,5 @@ describe("chat thread generation template contract", () => {
     });
 
     expect(parsed.success).toBe(false);
-  });
-});
-
-describe("live message admission and retained Goal drafts", () => {
-  it("rejects Goal work at send while decoding historical parts and saved drafts", () => {
-    const legacy = {
-      version: 1,
-      parts: [{ type: "goal", goalBrief: "Retained objective" }],
-    };
-    expect(userMessageInputDocumentSchema.parse(legacy)).toStrictEqual(legacy);
-    expect(userMessageDocumentSchema.parse(legacy)).toStrictEqual(legacy);
-    const send = {
-      agentId: "agent-1",
-      prompt: "Retained objective",
-      hasTextContent: false,
-      userMessage: legacy,
-    };
-    expect(chatEventsContract.send.body.safeParse(send).success).toBe(false);
-    expect(
-      chatEventsContract.send.body.safeParse({
-        ...send,
-        hasTextContent: true,
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: "Ordinary work" }],
-        },
-      }).success,
-    ).toBe(true);
   });
 });

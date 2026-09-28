@@ -1,6 +1,9 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
+import {
+  chatEventRowSchema,
+  type ChatEventRow,
+} from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
@@ -21,6 +24,7 @@ import {
   testContext,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatEventRowContextType } from "./chat-event-test-helpers.ts";
 
 const context = testContext();
 
@@ -50,14 +54,14 @@ function eventRow(
   options: Pick<ChatEventRow, "eventType" | "payload" | "runId">,
 ): ChatEventRow {
   const caseSuffix = threadId.slice(-8);
-  return {
+  return chatEventRowSchema.parse({
     id: `d0000000-0000-4000-a000-${caseSuffix}${sequence
       .toString()
       .padStart(4, "0")}`,
     chatThreadId: threadId,
     runId: options.runId,
     revokesEventId: null,
-    contextType: null,
+    contextType: mockChatEventRowContextType(options.eventType),
     contextId: null,
     runEventSequenceNumber: null,
     runEventId: null,
@@ -65,7 +69,7 @@ function eventRow(
     createdAt: `2026-08-01T00:00:${sequence.toString().padStart(2, "0")}.000Z`,
     eventType: options.eventType,
     payload: options.payload,
-  };
+  });
 }
 
 function activeRunRow(threadId: string): ChatEventRow {

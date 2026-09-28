@@ -6,9 +6,7 @@ SSH is generally available; local/PAT Runners remain unsupported.
 Current [API authority](runner-ssh-authority.md), including the current Agent
 grant, is required on a cache miss and for first-use pinning.
 Successful authority snapshots follow the Run-scoped lifetime below. Run source,
-chat channel, workflows and trigger metadata add no eligibility gate. Retained
-historical Goal provenance follows the same source-independent rule; the retired
-Goal lifecycle cannot create or resume work.
+chat channel, workflows and trigger metadata add no eligibility gate.
 
 ## One-shot request and outcomes
 

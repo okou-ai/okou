@@ -60,6 +60,8 @@ case "${1:-}" in
       [ "${MOCK_RETIRED_PREFERENCE_COLUMNS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "9999999999999999999999999999999999999999" ]; then
       [ "${MOCK_PI_API_FIRST_TURN_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
+      [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -81,6 +83,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_RETIRED_PREFERENCE_COLUMNS_COMMIT-8888888888888888888888888888888888888888}"
     elif [[ "$*" == *pi-api-first-turn-retired* ]]; then
       printf '%s\n' "${MOCK_PI_API_FIRST_TURN_COMMIT-9999999999999999999999999999999999999999}"
+    elif [[ "$*" == *chat-event-v8* ]]; then
+      printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     else
       exit 2
     fi
@@ -317,6 +321,20 @@ assert_failure "Rollback target predates the Pi API-first turn retirement" \
 [ ! -s "${tmp_dir}/pi-api-first-turn-floor.output" ] || fail "pre-release-7 API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Pi API-first turn retirement floor must fail before artifact or host access"
+fi
+
+for v8_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Chat Event V8 migration" \
+    run_resolver "${tmp_dir}/chat-event-v8-history.output" "MOCK_CHAT_EVENT_V8_COMMIT=${v8_commit}"
+  [ ! -s "${tmp_dir}/chat-event-v8-history.output" ] || fail "invalid Chat Event V8 history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Chat Event V8 migration" \
+  run_resolver "${tmp_dir}/chat-event-v8-floor.output" MOCK_CHAT_EVENT_V8_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/chat-event-v8-floor.output" ] || fail "pre-V8 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Chat Event V8 floor must fail before artifact or host access"
 fi
 
 for retirement_commit in "" invalid; do

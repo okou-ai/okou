@@ -99,11 +99,6 @@ export function getTriggerSourceLabel(
         return $.activity.sources.automationEvent;
       });
     }
-    case "goal": {
-      return i18n.t(($) => {
-        return $.activity.sources.goal;
-      });
-    }
   }
 }
 

@@ -21,9 +21,11 @@ export {
 } from "./health";
 export {
   CHAT_EVENT_CONTENT_TEXT_TYPES,
+  CHAT_EVENT_CONTEXT_TYPES,
   CHAT_EVENT_TYPES,
   CHAT_EVENT_USER_MESSAGE_TEXT_TYPES,
   chatEventCompatibilityRole,
+  chatEventContextTypeSchema,
   chatEventTypeSchema,
   foldPendingChatQueueEvents,
   foldRunnableChatQueueEvents,
@@ -39,6 +41,7 @@ export {
   revokedChatEventIds,
   terminatedChatRunIds,
   type ChatEventCompatibilityRole,
+  type ChatEventContextType,
   type ChatEventRunLifecycle,
   type ChatQueueFoldInput,
   type ChatEventType,

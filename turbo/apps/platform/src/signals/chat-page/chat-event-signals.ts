@@ -39,11 +39,7 @@ export function withOptimisticAgentRunSource(
     version: 1,
     parts: [
       ...document.parts.filter((part) => {
-        return (
-          part.type !== "source" &&
-          part.type !== "automation" &&
-          part.type !== "goal"
-        );
+        return part.type !== "source" && part.type !== "automation";
       }),
       {
         type: "source",

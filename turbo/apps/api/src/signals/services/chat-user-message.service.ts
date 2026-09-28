@@ -40,7 +40,7 @@ function userMessageFileParts(
 
 type UserMessageNonContentPart = Extract<
   UserMessageInputPart,
-  { readonly type: "source" | "automation" | "goal" }
+  { readonly type: "source" | "automation" }
 >;
 
 export interface ChatAgentRunSourceAnnotation {
@@ -105,11 +105,7 @@ export function withAgentRunSourceAnnotation(
   source: ChatAgentRunSourceAnnotation,
 ): UserMessageDocument {
   const contentParts = document.parts.filter((part) => {
-    return (
-      part.type !== "source" &&
-      part.type !== "automation" &&
-      part.type !== "goal"
-    );
+    return part.type !== "source" && part.type !== "automation";
   });
   return {
     version: 1,
@@ -455,7 +451,6 @@ export function projectUserMessage(
     if (
       part.type === "source" ||
       part.type === "automation" ||
-      part.type === "goal" ||
       part.type === "model"
     ) {
       continue;

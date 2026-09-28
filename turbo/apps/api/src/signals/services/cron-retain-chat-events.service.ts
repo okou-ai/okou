@@ -29,7 +29,6 @@ function isPendingInputEventType(eventType: string): boolean {
   return (
     eventType === "input.prompt" ||
     eventType === "input.automation" ||
-    eventType === "input.goal" ||
     eventType === "input.budget"
   );
 }

@@ -226,9 +226,7 @@ async function loadIntegrationPromptMaterial(
       return await loadAgentPhoneQueuedLaunchMaterial(db, loaderArgs);
     }
     case "web":
-    case "github":
     case "automation":
-    case "goal":
     case "agent_run": {
       return null;
     }

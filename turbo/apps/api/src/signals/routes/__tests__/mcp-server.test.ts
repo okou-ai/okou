@@ -5255,8 +5255,8 @@ describe("MCP canonical message reads", () => {
                     runEventId: null,
                     seqId: index + 1,
                     createdAt: "2026-09-01T00:00:00.000Z",
-                    eventType: "browser.close",
-                    payload: null,
+                    eventType: "output.message",
+                    payload: { content: "a" },
                   }) + "\n"
                 );
               }).join(""),

@@ -77,6 +77,7 @@ export function createMarkdownChatFixture(
     inputPrompt: (text, options) => {
       return {
         ...rowBase(threadId, options),
+        contextType: "web",
         eventType: "input.prompt",
         payload: {
           userMessage: { version: 1, parts: [{ type: "text", text }] },

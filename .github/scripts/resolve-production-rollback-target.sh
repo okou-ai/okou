@@ -46,6 +46,7 @@ readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 readonly PI_API_FIRST_TURN_RETIRED_PATH=.github/rollback-floors/pi-api-first-turn-retired
+readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 
 fail() {
@@ -213,6 +214,18 @@ if [[ ! "$pi_api_first_turn_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$pi_api_first_turn_retired_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Pi API-first turn retirement: ${pi_api_first_turn_retired_commit}."
+fi
+
+# Chat Event V8 removes eight event types and two context types. Earlier APIs
+# serve V7 rows and snapshots that V8 App builds reject, so no earlier API can
+# serve chat reads.
+chat_event_v8_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CHAT_EVENT_V8_PATH" | sed -n '1p')
+if [[ ! "$chat_event_v8_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Chat Event V8 migration on main."
+fi
+if ! git merge-base --is-ancestor "$chat_event_v8_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Chat Event V8 migration: ${chat_event_v8_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

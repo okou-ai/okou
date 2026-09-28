@@ -16,7 +16,7 @@ retries are idempotent; a different org/user/time/source raises `23514`. Updates
 cannot replace the immutable identity. `usage_observed` only advances from false
 to true after a committed raw/rollup insertion or backfilled linkage; it cannot
 be cleared by raw compaction or the current destructive cleanup. The database source classifier follows
-`usage-record.service.ts`: web -> chat; schedule/event/legacy goal -> automation;
+`usage-record.service.ts`: web -> chat; schedule/event -> automation;
 slack/teams/telegram/email/agentphone/github/agent pass through; otherwise other.
 The historical null trigger source is other, without copying trigger payloads.
 

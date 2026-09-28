@@ -13,8 +13,7 @@ output, terminal, follow-up, usage, and active-input events cannot move that
 position. `control.interrupt` refers to its target run and does not establish
 ownership. Revoked events still establish ordering; the separate visibility
 predicate determines whether the run has visible history and which content can
-be included. Historical `input.goal` rows provide no queue or execution
-authority.
+be included.
 
 The reader walks at most 21 candidate runs in one recursive SQL statement and
 stops querying older anchors as soon as it reaches a successful run. Each step

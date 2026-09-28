@@ -1,7 +1,7 @@
 # Chat Event schema versioning
 
 Snapshot NDJSON rows and Raw Chat Event API rows are two representations of
-the same Chat Event schema. The current and only served version is V7.
+the same Chat Event schema. The current and only served version is V8.
 
 ## Client compatibility
 
@@ -19,7 +19,7 @@ Platform and CLI readers still require Snapshot responses to include the
 paired `lastEventId`; they do not reconstruct missing response metadata from
 the immutable NDJSON body.
 
-Raw Events are read from the current database schema and returned in V7. The
+Raw Events are read from the current database schema and returned in V8. The
 API does not downgrade rows or Snapshot objects to retired versions.
 
 ### MCP source reader preparation (#37233)
@@ -39,6 +39,54 @@ persisted-history readers are excluded or prepared, and outstanding old CLI
 contexts have drained. A merged reader PR or newer `main` alone does not prove
 this gate. Do not let a writer emit the new kind until this compatibility
 boundary is satisfied.
+
+## V8
+
+V8 removes retired Goal, run group, queue marker, thinking and browser
+lifecycle data from the schema. V8 rows are a strict subset of V7 rows, so a V7
+reader accepts every V8 row.
+
+- Event types go from 21 to 13: `input.prompt`, `input.automation`,
+  `input.budget`, `input.rejected`, `output.message`, `output.error`,
+  `output.followups`, `run.completed`, `run.failed`, `run.cancelled`,
+  `control.interrupt`, `control.revoke` and `usage.recorded`. The deleted
+  types are `input.goal`, `goal.open`, `goal.close`, `run.queued`,
+  `run.dequeued`, `output.thinking`, `browser.open` and `browser.close`.
+- `contextType` is an enum of `web`, `slack`, `discord`, `feishu`, `teams`,
+  `telegram`, `agentphone`, `automation` and `agent_run`; `goal` and `github`
+  are removed. `input.*` rows carry a `contextType`.
+- A userMessage document has no `goal` part, and projected events have no
+  `runGroupId`. Saved shares have no `runGroupIndex`.
+- The runless `Okou Goal retired.` notices written by migration
+  `1094_archive_retired_goals` are ordinary `output.message` rows and are
+  unchanged.
+
+### V7 to V8 upgrade rules
+
+Migration `1282_chat_event_v8` applies these rules to the Raw Event table, and
+the adjacent V7 to V8 Snapshot migration applies the same rules to stored V7
+Snapshot objects:
+
+1. Rows of the eight deleted types are removed. Revocation edges that pointed
+   at them may dangle; readers treat revocations only as a set of IDs.
+2. A `goal` context on an input row (`input.*` or `control.revoke`) becomes
+   `automation` with a null `contextId`.
+3. A `goal` context on any other row becomes a null `contextType` and
+   `contextId`, like ordinary output.
+4. A `github` context becomes `web` with a null `contextId`.
+5. Every userMessage part `{type: "goal", goalBrief}` becomes
+   `{type: "text", text: goalBrief}`, keeping the part order.
+
+The same migration rewrites `agent_runs.trigger_source` and
+`run_uploaded_files.source` from `goal` to `automation-schedule` (billing
+already counted both as automation), converts Goal parts in thread and agent
+drafts to text parts, and removes `runGroupIndex` from saved shares.
+
+A thread's V8 Snapshot pointer is published beside its V7 pointer, so
+`chat_event_snapshots.archive_schema_version` accepts 7 and 8 during the
+transition. The V7 to V8 Snapshot migration and the V7 pointers are transition
+code: the V8 plan's PR-3 removes them after every thread's Snapshot has
+converged to V8 and no rollback target serves V7.
 
 ### Optional V7 failure reasons
 

@@ -2059,6 +2059,7 @@ async function insertCanonicalSingleWrites(
     id: single.inputRejectedId,
     chatThreadId: threadId,
     eventType: "input.rejected",
+    contextType: "web",
     userMessage: inputUserMessage,
     runId: null,
     error: "input rejected",

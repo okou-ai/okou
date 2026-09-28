@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { chatEventTypeSchema } from "./chat-events";
+import { chatEventContextTypeSchema, chatEventTypeSchema } from "./chat-events";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 
 const requiredJsonValueSchema = z.unknown().refine((value) => {
@@ -11,7 +11,6 @@ const chatEventRowPayloadSchema = z
   .object({
     content: z.string().optional(),
     userMessage: requiredJsonValueSchema.optional(),
-    thinking: z.string().optional(),
     error: z.string().optional(),
     usage: requiredJsonValueSchema.optional(),
   })
@@ -22,7 +21,7 @@ const chatEventRowBaseShape = {
   chatThreadId: z.string(),
   runId: z.string().nullable(),
   revokesEventId: z.string().nullable(),
-  contextType: z.string().nullable(),
+  contextType: chatEventContextTypeSchema.nullable(),
   contextId: z.string().nullable(),
   runEventSequenceNumber: z.number().int().nullable(),
   runEventId: z.string().nullable(),
@@ -45,9 +44,28 @@ const failedChatEventRowSchema = chatEventRowBaseSchema
   })
   .strict();
 
-const nonFailedChatEventRowSchema = chatEventRowBaseSchema
+const INPUT_CHAT_EVENT_ROW_TYPES = [
+  "input.prompt",
+  "input.automation",
+  "input.budget",
+  "input.rejected",
+] as const;
+
+/** Input rows always record the surface that produced them. */
+const inputChatEventRowSchema = chatEventRowBaseSchema
   .extend({
-    eventType: chatEventTypeSchema.exclude(["run.failed"]),
+    eventType: chatEventTypeSchema.extract(INPUT_CHAT_EVENT_ROW_TYPES),
+    contextType: chatEventContextTypeSchema,
+    failureReason: z.never().optional(),
+  })
+  .strict();
+
+const otherChatEventRowSchema = chatEventRowBaseSchema
+  .extend({
+    eventType: chatEventTypeSchema.exclude([
+      ...INPUT_CHAT_EVENT_ROW_TYPES,
+      "run.failed",
+    ]),
     failureReason: z.never().optional(),
   })
   .strict();
@@ -58,7 +76,8 @@ const nonFailedChatEventRowSchema = chatEventRowBaseSchema
  */
 export const chatEventRowSchema = z.discriminatedUnion("eventType", [
   failedChatEventRowSchema,
-  nonFailedChatEventRowSchema,
+  inputChatEventRowSchema,
+  otherChatEventRowSchema,
 ]);
 
 export type ChatEventRow = z.infer<typeof chatEventRowSchema>;

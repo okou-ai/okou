@@ -25,7 +25,6 @@ import type {
 export const RUN_UPLOADED_FILE_SOURCES = [
   "automation-schedule",
   "automation-event",
-  "goal",
   "web",
   "slack",
   "discord",

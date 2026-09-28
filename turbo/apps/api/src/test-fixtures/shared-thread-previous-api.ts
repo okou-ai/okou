@@ -35,7 +35,6 @@ const previousReadContract = Object.freeze({
             role: z.enum(["user", "assistant"]),
             content: z.string(),
             runIndex: z.number().int().nonnegative().optional(),
-            runGroupIndex: z.number().int().nonnegative().optional(),
           })
           .strict(),
       ),

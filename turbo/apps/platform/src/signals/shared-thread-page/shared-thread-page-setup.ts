@@ -1,5 +1,3 @@
-import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
-import { literalHistoryTree } from "../../lib/markdown/literal-history.ts";
 import {
   sharedThreadsContract,
   type SharedThreadResponse,
@@ -55,14 +53,9 @@ const sharedThread$ = computed((get) => {
       messages.push(message);
       continue;
     }
-    const tree =
-      message.runIndex === undefined &&
-      message.runGroupIndex === undefined &&
-      isRetiredGoalArchiveText(message.content)
-        ? literalHistoryTree(message.content)
-        : createPlainMarkdownTree(message.content, {
-            mathEnabled: true,
-          });
+    const tree = createPlainMarkdownTree(message.content, {
+      mathEnabled: true,
+    });
     if (tree === null) {
       richMessages.push(message);
       messages.push({ ...message, tree: undefined });

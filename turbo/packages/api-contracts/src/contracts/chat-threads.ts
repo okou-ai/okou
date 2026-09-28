@@ -6,7 +6,7 @@ import {
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { chatEventRowSchema } from "./chat-event-rows";
-import { CHAT_EVENT_TYPES, V7_ONLY_CHAT_EVENT_TYPES } from "./chat-events";
+import { CHAT_EVENT_TYPES } from "./chat-events";
 import {
   connectorAccountConnectionSchema,
   connectorAccountSelectionSchema,
@@ -671,12 +671,6 @@ const userMessageInputPartSchema = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
-      type: z.literal("goal"),
-      goalBrief: z.string().min(1),
-    })
-    .strict(),
-  z
-    .object({
       type: z.literal("file"),
       fileId: z.string().min(1),
       filenameSnapshot: z.string().min(1),
@@ -740,11 +734,7 @@ const userMessageDocumentSchema = z
         (parts) => {
           return (
             parts.filter((part) => {
-              return (
-                part.type === "source" ||
-                part.type === "automation" ||
-                part.type === "goal"
-              );
+              return part.type === "source" || part.type === "automation";
             }).length <= 1
           );
         },
@@ -773,11 +763,7 @@ const userMessageInputDocumentSchema = z
         (parts) => {
           return (
             parts.filter((part) => {
-              return (
-                part.type === "source" ||
-                part.type === "automation" ||
-                part.type === "goal"
-              );
+              return part.type === "source" || part.type === "automation";
             }).length <= 1
           );
         },
@@ -962,9 +948,7 @@ const usageRecordedEventSchema = chatEventBaseSchema
 
 /**
  * Redacted public projection of the canonical thread stream.
- * Server-only payload fields are not accepted. The V7 row catalog still
- * contains V7_ONLY_CHAT_EVENT_TYPES, which the projection drops; V8 (PR-2)
- * removes them from the row schema.
+ * Server-only payload fields are not accepted.
  */
 const chatEventSchema = z.discriminatedUnion("eventType", [
   inputPromptEventSchema,
@@ -982,18 +966,18 @@ const chatEventSchema = z.discriminatedUnion("eventType", [
   usageRecordedEventSchema,
 ]);
 
+const projectedChatEventTypes = new Set<string>(
+  chatEventSchema.options.map((option) => {
+    return option.shape.eventType.value;
+  }),
+);
 if (
-  CHAT_EVENT_TYPES.length - V7_ONLY_CHAT_EVENT_TYPES.length !==
-    chatEventSchema.options.length ||
-  chatEventSchema.options.some((option) => {
-    return (V7_ONLY_CHAT_EVENT_TYPES as readonly string[]).includes(
-      option.shape.eventType.value,
-    );
+  projectedChatEventTypes.size !== CHAT_EVENT_TYPES.length ||
+  CHAT_EVENT_TYPES.some((eventType) => {
+    return !projectedChatEventTypes.has(eventType);
   })
 ) {
-  throw new Error(
-    "ChatEvent schema must cover every projected event catalog leaf",
-  );
+  throw new Error("ChatEvent schema must cover every event catalog leaf");
 }
 
 const chatThreadDetailSchema = z.object({
@@ -1120,11 +1104,7 @@ const chatNormalSendBodyShape = {
    */
   model: selectedModelRequestSchema.optional(),
   runOptions: chatRunOptionsRequestSchema.optional(),
-  userMessage: userMessageDocumentSchema.refine((message) => {
-    return message.parts.every((part) => {
-      return part.type !== "goal";
-    });
-  }, "Goal input is no longer supported"),
+  userMessage: userMessageDocumentSchema,
   computerUseHostId: z.string().uuid().nullable().optional(),
   cloudBrowserEnabled: z.boolean().optional(),
   hasTextContent: z.boolean(),

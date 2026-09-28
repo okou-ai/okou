@@ -142,8 +142,7 @@ async function createRuntime(
   const agentId = body.agentId ?? randomUUID();
   const sessionId = randomUUID();
   const runId = randomUUID();
-  const threadId =
-    body.chat || body.triggerSource === "goal" ? randomUUID() : null;
+  const threadId = body.chat ? randomUUID() : null;
   await db.transaction(async (tx) => {
     if (body.agentId) {
       const [agent] = await tx

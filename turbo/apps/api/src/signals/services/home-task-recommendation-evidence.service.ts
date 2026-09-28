@@ -9,8 +9,8 @@ import { and, desc, eq, inArray, isNull, notExists } from "drizzle-orm";
 import { stripMarkdown } from "../../lib/strip-markdown";
 import type { Db } from "../external/db";
 import {
+  canonicalChatEventContent,
   canonicalChatEventUserMessage,
-  canonicalChatEventVisibleContent,
 } from "./canonical-chat-event-read.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -159,7 +159,7 @@ async function recentMessages(
       chatThreadId: chatEvents.chatThreadId,
       runId: chatEvents.runId,
       eventType: chatEvents.eventType,
-      content: canonicalChatEventVisibleContent(),
+      content: canonicalChatEventContent(),
       userMessage: canonicalChatEventUserMessage(),
     })
     .from(chatEvents)

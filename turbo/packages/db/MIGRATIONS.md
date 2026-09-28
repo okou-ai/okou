@@ -100,16 +100,13 @@ operator tool and its two documented reader fallbacks.
 
 ### Active transition validators
 
-- `scripts/test-integration-dm-single-thread.ts` protects migration
-  `1279_integration_dm_single_thread_routes`: all six integration identities
-  consolidate by last thread use and canonical-key collisions converge.
-  Retained and historical threads preserve all model/provider/tier settings;
-  thread events and sequence counters are unchanged. Feishu and Lark
-  installations retain their physical default-agent column and foreign key,
-  with the value rebound to their organization's immutable default agent.
-  Reply threads and retired Telegram routes are preserved, and replay is a
-  no-op. The validator runs from migration consistency against
-  transaction-owned clones of the migrated table shapes.
+- `scripts/test-chat-event-v8-migration.ts` protects migration
+  `1282_chat_event_v8`: it seeds V7 rows in the 1281 schema, runs the
+  migration after an interrupted attempt that only swapped the checks, and
+  asserts the converged rows, drafts, shares, run sources, validated checks,
+  committed batches and an unchanged state after a repeated run. Retain it
+  until all three transition conditions above pass; the permanent migration
+  suite keeps the exact V8 event and context type sets.
 
 - `scripts/test-pi-inference-lifecycle.ts` protects migrations
   `1134_pi_inference_lifecycle` and `1135_validate_pi_inference_launch` (#34242):

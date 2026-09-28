@@ -698,6 +698,12 @@ export default [
       // has actually connected, so these exact byte, deadline, identity,
       // retention and language-precedence boundaries have no HTTP ingress.
       "src/signals/services/__tests__/morning-brief-composition.test.ts",
+      // Chat Event V8 transition (removed in PR-3 with the upgrade): V7-only
+      // Snapshot rows (the eight deleted event types, Goal and GitHub
+      // contexts, Goal parts) can no longer be written through any API, so
+      // the exact V7 -> V8 row matrix is pinned on the pure upgrade. The
+      // snapshot and cron route suites cover read-time and cron convergence.
+      "src/signals/services/__tests__/chat-event-snapshot-upgrade.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
@@ -882,6 +888,12 @@ export default [
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
+      // Chat Event V8 transition (removed in PR-3 with the upgrade): V7-only
+      // Snapshot rows (the eight deleted event types, Goal and GitHub
+      // contexts, Goal parts) can no longer be written through any API, so
+      // the exact V7 -> V8 row matrix is pinned on the pure upgrade. The
+      // snapshot and cron route suites cover read-time and cron convergence.
+      "src/signals/services/__tests__/chat-event-snapshot-upgrade.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.

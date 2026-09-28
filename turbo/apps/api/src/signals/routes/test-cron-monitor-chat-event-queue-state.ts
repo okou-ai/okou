@@ -318,6 +318,7 @@ async function seedFixtureEvents(
     fixtureKind === "failed-message"
       ? await insertChatEvent(tx, {
           ...baseEvent,
+          contextType: "web",
           eventType: "input.rejected",
           error: "INSUFFICIENT_CREDITS",
         })

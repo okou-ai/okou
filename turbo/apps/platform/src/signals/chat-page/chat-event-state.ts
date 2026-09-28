@@ -56,8 +56,7 @@ export function lastAssistantCancelledFromGroups(
 }
 
 // "running" means a run is live or a sent prompt is still optimistic; "queued"
-// means the server holds input without a run. Historical `run.queued` markers
-// are not supported.
+// means the server holds input without a run.
 export type RunIndicatorState = "running" | "queued" | null;
 type ActiveRunIndicatorState = "running" | null;
 

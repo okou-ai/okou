@@ -9,6 +9,7 @@ import {
   chatEventRowSchema,
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
+import type { ChatEventContextType } from "@okouai/api-contracts/contracts/chat-events";
 
 type UnionKeys<T> = T extends unknown ? keyof T : never;
 type UnionValue<T, K extends PropertyKey> = T extends unknown
@@ -351,6 +352,23 @@ function mockChatEventRowPayload(event: ChatEvent): ChatEventRow["payload"] {
   return null;
 }
 
+/** Input rows always record their surface; fixtures default to web chat. */
+export function mockChatEventRowContextType(
+  eventType: ChatEventRow["eventType"],
+): ChatEventContextType | null {
+  if (eventType === "input.automation") {
+    return "automation";
+  }
+  if (
+    eventType === "input.prompt" ||
+    eventType === "input.budget" ||
+    eventType === "input.rejected"
+  ) {
+    return "web";
+  }
+  return null;
+}
+
 export function mockChatEventRows(
   events: readonly ChatEvent[],
 ): ChatEventRow[] {
@@ -365,7 +383,7 @@ export function mockChatEventRows(
       revokesEventId: event.revokesEventId ?? null,
       eventType: event.eventType,
       payload: mockChatEventRowPayload(event),
-      contextType: null,
+      contextType: mockChatEventRowContextType(event.eventType),
       contextId: null,
       runEventSequenceNumber: event.sequenceNumber ?? null,
       runEventId: event.runEventId ?? null,

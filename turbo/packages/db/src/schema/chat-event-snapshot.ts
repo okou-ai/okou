@@ -35,13 +35,16 @@ export const chatEventSnapshots = pgTable(
     lastSeqId: bigint("last_seq_id", { mode: "number" }).notNull(),
     /** Last physical event observed through the coverage watermark. */
     lastEventId: uuid("last_event_id").notNull(),
-    /** Last retained event exposed as the V7 logical cursor. */
+    /** Last retained event exposed as the logical cursor. */
     terminalEventId: uuid("terminal_event_id"),
-    /** Sequence position paired with terminal_event_id, or zero for an empty V7 body. */
+    /** Sequence position paired with terminal_event_id, or zero for an empty body. */
     terminalSeqId: bigint("terminal_seq_id", { mode: "number" }),
-    /** Current NDJSON line-shape version, retained as a publication invariant. */
+    /**
+     * NDJSON line-shape version, retained as a publication invariant. Each
+     * thread has at most one pointer per version.
+     */
     archiveSchemaVersion: integer("archive_schema_version")
-      .default(7)
+      .default(8)
       .notNull(),
     /** Immutable content-addressed object referenced by this pointer. */
     objectKey: text("object_key").notNull(),
@@ -55,9 +58,12 @@ export const chatEventSnapshots = pgTable(
         table.chatThreadId,
         table.archiveSchemaVersion,
       ),
+      // Chat Event V8 transition: V7 pointers remain until every thread's
+      // snapshot has been upgraded to V8 and the V7 API has left the rollback
+      // window. The V8 plan's PR-3 then deletes them and restores `= 8`.
       check(
         "chat_event_snapshots_archive_schema_version_check",
-        sql`${table.archiveSchemaVersion} = 7`,
+        sql`${table.archiveSchemaVersion} IN (7, 8)`,
       ),
       check(
         "chat_event_snapshots_terminal_cursor_check",

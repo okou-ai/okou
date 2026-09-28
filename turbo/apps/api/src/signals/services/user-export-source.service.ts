@@ -12,7 +12,6 @@ import {
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
-import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
@@ -34,6 +33,7 @@ import { listAllUserOrganizationMemberships } from "../external/clerk-organizati
 import type { Db } from "../external/db";
 import { readUserExportAgentInstructions$ } from "./user-export-agent-instructions.service";
 import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
+import { READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS } from "./chat-event-snapshot-upgrade.service";
 import {
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
@@ -163,12 +163,14 @@ async function snapshotHead(
     .where(
       and(
         eq(chatEventSnapshots.chatThreadId, threadId),
-        eq(
-          chatEventSnapshots.archiveSchemaVersion,
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-        ),
+        inArray(chatEventSnapshots.archiveSchemaVersion, [
+          ...READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS,
+        ]),
       ),
     )
+    // Chat Event V8 transition (removed in PR-3): until a thread's V8 Snapshot
+    // is published, export its V7 object; metadata records the version.
+    .orderBy(desc(chatEventSnapshots.archiveSchemaVersion))
     .limit(1);
   signal.throwIfAborted();
   return head;

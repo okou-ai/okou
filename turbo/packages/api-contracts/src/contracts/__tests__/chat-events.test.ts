@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   CHAT_EVENT_TYPES,
-  V7_ONLY_CHAT_EVENT_TYPES,
   foldChatRunStates,
   foldLatestChatUsageByRunId,
   foldPendingChatQueueEvents,
@@ -213,24 +212,15 @@ const queueFoldFixture = [
     revokesEventId: "automation-revoked",
     createdAt: "2026-07-23T00:02:00.000Z",
   },
-  {
-    id: "goal-oldest",
-    eventType: "input.goal",
-    createdAt: "2026-07-22T23:59:00.000Z",
-  },
 ] as const;
 
-const PROJECTED_CHAT_EVENT_TYPES = CHAT_EVENT_TYPES.filter((eventType) => {
-  return !(V7_ONLY_CHAT_EVENT_TYPES as readonly string[]).includes(eventType);
-});
-
 describe("ChatEvent catalog", () => {
-  it("parses exactly one canonical fixture for every projected leaf", () => {
+  it("parses exactly one canonical fixture for every catalog leaf", () => {
     expect(
       chatEvents.map((event) => {
         return event.eventType;
       }),
-    ).toStrictEqual(PROJECTED_CHAT_EVENT_TYPES);
+    ).toStrictEqual(CHAT_EVENT_TYPES);
     for (const event of chatEvents) {
       expect(chatEventSchema.parse(event)).toStrictEqual(event);
     }
@@ -265,11 +255,9 @@ describe("ChatEvent catalog", () => {
 
   it("classifies only conversation-bearing fields as text", () => {
     expect(
-      PROJECTED_CHAT_EVENT_TYPES.filter(isChatEventUserMessageTextType),
+      CHAT_EVENT_TYPES.filter(isChatEventUserMessageTextType),
     ).toStrictEqual(["input.prompt", "input.rejected"]);
-    expect(
-      PROJECTED_CHAT_EVENT_TYPES.filter(isChatEventContentTextType),
-    ).toStrictEqual([
+    expect(CHAT_EVENT_TYPES.filter(isChatEventContentTextType)).toStrictEqual([
       "output.message",
       "output.error",
       "run.completed",
@@ -279,7 +267,7 @@ describe("ChatEvent catalog", () => {
     expect(isChatEventContentTextType("output.followups")).toBe(false);
   });
 
-  it("emits canonical responses for every projected leaf", () => {
+  it("emits canonical responses for every catalog leaf", () => {
     for (const event of chatEvents) {
       const response = chatEventResponse(event);
       expect(response).toStrictEqual(event);
@@ -292,19 +280,15 @@ describe("ChatEvent revocation rules", () => {
   const validPairs = new Set([
     "input.prompt->input.prompt",
     "input.prompt->input.automation",
-    "input.prompt->input.goal",
     "input.prompt->output.followups",
     "input.budget->input.budget",
     "input.rejected->input.prompt",
     "input.rejected->input.automation",
-    "input.rejected->input.goal",
     "input.rejected->output.followups",
     "control.revoke->input.prompt",
     "control.revoke->input.automation",
-    "control.revoke->input.goal",
     "control.revoke->input.budget",
     "control.revoke->input.rejected",
-    "run.dequeued->run.queued",
     "usage.recorded->usage.recorded",
   ]);
 
@@ -428,7 +412,7 @@ describe("ChatEvent folds", () => {
       foldPendingChatQueueEvents(queueFoldFixture).map((event) => {
         return event.id;
       }),
-    ).toStrictEqual(["prompt-newer", "goal-oldest", "automation-oldest"]);
+    ).toStrictEqual(["prompt-newer", "automation-oldest"]);
   });
 
   it("returns every pending queue event as runnable", () => {
@@ -436,7 +420,7 @@ describe("ChatEvent folds", () => {
       foldRunnableChatQueueEvents(queueFoldFixture).map((event) => {
         return event.id;
       }),
-    ).toStrictEqual(["prompt-newer", "goal-oldest", "automation-oldest"]);
+    ).toStrictEqual(["prompt-newer", "automation-oldest"]);
   });
 });
 

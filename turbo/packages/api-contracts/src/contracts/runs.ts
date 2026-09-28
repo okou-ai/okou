@@ -135,8 +135,7 @@ const unifiedRunRequestSchema = z
     // Settings JSON to pass to Claude CLI (passed as --settings)
     settings: z.string().optional(),
 
-    // Supported new work; the logs schema also decodes retained Goal history.
-    triggerSource: triggerSourceSchema.exclude(["goal"]).optional(),
+    triggerSource: triggerSourceSchema.optional(),
 
     // Per-permission policies (e.g., { "github": { "actions:read": "allow" } })
     permissionPolicies: firewallPoliciesSchema.optional(),

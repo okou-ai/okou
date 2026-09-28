@@ -245,6 +245,7 @@ type InputRejectedEvent = ChatEventIdentity &
   Pick<CanonicalChatEventInsert, "runEventSequenceNumber"> & {
     readonly eventType: "input.rejected";
     readonly content?: null;
+    readonly contextType?: "web";
     readonly error: string;
     readonly automationId?: string;
     readonly triggerBrief?: string | null;

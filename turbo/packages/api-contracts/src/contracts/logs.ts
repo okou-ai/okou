@@ -59,7 +59,6 @@ export const triggerSourceSchema = z.enum([
   "webhook",
   "automation-schedule",
   "automation-event",
-  "goal",
 ]);
 
 export type TriggerSource = z.infer<typeof triggerSourceSchema>;
@@ -69,7 +68,7 @@ export type TriggerSource = z.infer<typeof triggerSourceSchema>;
  * human-initiated surface is `interactive` and may feed memory extraction,
  * mirroring upstream Codex INTERACTIVE_SESSION_SOURCES. The CI-only `test`
  * source is `synthetic`. Platform-initiated runs (agent delegation, webhooks,
- * automations, goals) are `non_interactive` and never produce memory. The
+ * automations) are `non_interactive` and never produce memory. The
  * `satisfies` over the whole enum turns an unclassified new source into a
  * type error instead of a silently eligible source.
  */
@@ -89,7 +88,6 @@ export const PI_MEMORY_TRIGGER_SOURCE_CLASSES = {
   webhook: "non_interactive",
   "automation-schedule": "non_interactive",
   "automation-event": "non_interactive",
-  goal: "non_interactive",
 } as const satisfies Record<
   TriggerSource,
   "interactive" | "non_interactive" | "synthetic"

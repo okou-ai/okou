@@ -5,7 +5,6 @@ import {
   type ChatSearchResult,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
-import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEventSearchMessages } from "@okouai/db/schema/chat-event-search";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -37,8 +36,7 @@ function toChatSearchMessage(row: ChatSearchMessageRow): ChatSearchMessage {
     chatThreadId: row.chatThreadId,
     role: row.role,
     content:
-      row.role === "assistant" &&
-      !(row.runId === null && isRetiredGoalArchiveText(row.text))
+      row.role === "assistant"
         ? visiblePiMemoryCitationText(row.text)
         : row.text,
     createdAt: row.createdAt.toISOString(),

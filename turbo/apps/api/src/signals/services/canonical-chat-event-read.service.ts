@@ -2,10 +2,9 @@ import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/c
 import { userMessageDocumentSchema } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { isNull, sql, type SQLWrapper } from "drizzle-orm";
+import { sql, type SQLWrapper } from "drizzle-orm";
 import { z } from "zod";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
-import { visibleChatEventRowContent } from "@okouai/api-contracts/contracts/retired-goal-archive";
 
 import {
   nullableDriverValueDecoder,
@@ -34,43 +33,6 @@ export function canonicalChatEventContent(
 ) {
   return sql`${payload}->>'content'`.mapWith(
     nullableDriverValueDecoder(visibleChatEventTextDecoder),
-  );
-}
-
-const chatEventContentSourceDecoder = zodDriverValueDecoder(
-  z
-    .object({
-      event_type: z.string(),
-      run_id: z.string().nullable(),
-      revokes_event_id: z.string().nullable(),
-      context_type: z.string().nullable(),
-      context_id: z.string().nullable(),
-      run_event_sequence_number: z.number().nullable(),
-      run_event_id: z.string().nullable(),
-      payload: z.unknown(),
-    })
-    .transform((row) => {
-      return visibleChatEventRowContent({
-        eventType: row.event_type,
-        runId: row.run_id,
-        revokesEventId: row.revokes_event_id,
-        contextType: row.context_type,
-        contextId: row.context_id,
-        runEventSequenceNumber: row.run_event_sequence_number,
-        runEventId: row.run_event_id,
-        payload: row.payload,
-      });
-    }),
-);
-
-/**
- * SELECT-only projection: carry raw provenance to the shared historical reader.
- * Predicates must keep canonicalChatEventContent's original text/null/regex SQL.
- */
-export function canonicalChatEventVisibleContent() {
-  return sql`CASE WHEN ${isNull(canonicalChatEventContent())} THEN NULL
-    ELSE to_jsonb(${chatEvents}) END`.mapWith(
-    nullableDriverValueDecoder(chatEventContentSourceDecoder),
   );
 }
 
@@ -103,7 +65,8 @@ export function canonicalChatEventError(
 export function canonicalArchivedChatEventContent(
   row: ChatEventRow,
 ): string | null {
-  return visibleChatEventRowContent(row);
+  const content = row.payload?.content;
+  return content === undefined ? null : visiblePiMemoryCitationText(content);
 }
 
 export function canonicalArchivedChatEventUserMessage(row: ChatEventRow) {

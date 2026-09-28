@@ -1,14 +1,14 @@
 import { createStore } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
-import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { env } from "../../lib/env";
 import type { Db } from "../external/db";
 import { readCurrentChatEventHistoryAtSnapshot } from "./chat-event-history.service";
+import { READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS } from "./chat-event-snapshot-upgrade.service";
 
-/** Resolve archived provenance after a hot-row lookup, without Goal authority.
+/** Resolve archived provenance after a hot-row lookup.
  * Undefined means no archive read was needed, not a resolved empty history.
  */
 export async function runEventHistory(
@@ -27,12 +27,14 @@ export async function runEventHistory(
       .where(
         and(
           eq(chatEventSnapshots.chatThreadId, threadId),
-          eq(
-            chatEventSnapshots.archiveSchemaVersion,
-            CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-          ),
+          inArray(chatEventSnapshots.archiveSchemaVersion, [
+            ...READABLE_CHAT_EVENT_SNAPSHOT_SCHEMA_VERSIONS,
+          ]),
         ),
       )
+      // Chat Event V8 transition (removed in PR-3): the same head that
+      // readCurrentChatEventHistoryAtSnapshot reads, preferring V8.
+      .orderBy(desc(chatEventSnapshots.archiveSchemaVersion))
       .limit(1);
     signal.throwIfAborted();
     return row;

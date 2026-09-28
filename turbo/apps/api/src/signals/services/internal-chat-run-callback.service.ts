@@ -2224,16 +2224,12 @@ function priorRunsContextLabel(
     case "telegram": {
       return "Telegram";
     }
-    case "github": {
-      return "GitHub";
-    }
     case "web":
     case "agent_run":
     case "agentphone": {
       return "Web Chat";
     }
-    case "automation":
-    case "goal": {
+    case "automation": {
       return unreachableQueuedMessageContext(contextType);
     }
     default: {
@@ -2774,9 +2770,7 @@ async function resolveQueuedLaunchMaterial(
       });
       break;
     }
-    case "github":
-    case "automation":
-    case "goal": {
+    case "automation": {
       return unreachableQueuedMessageContext(contextType);
     }
     default: {
@@ -2818,13 +2812,8 @@ function unreachableQueuedContextType(contextType: never): never {
   throw new Error(`Unsupported queued context type: ${String(contextType)}`);
 }
 
-// GitHub direct chat was retired in #24941; persisted `github` context rows
-// are historical and have no launch or delivery material.
 function unreachableQueuedMessageContext(
-  contextType: Extract<
-    QueuedUserMessageContextType,
-    "automation" | "goal" | "github"
-  >,
+  contextType: Extract<QueuedUserMessageContextType, "automation">,
 ): never {
   throw new Error(`${contextType} context cannot route a queued user message`);
 }
@@ -2957,9 +2946,7 @@ function channelQueuedMessageAdmissionFailure(
         ),
       };
     }
-    case "github":
-    case "automation":
-    case "goal": {
+    case "automation": {
       return unreachableQueuedMessageContext(contextType);
     }
     default: {

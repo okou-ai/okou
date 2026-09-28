@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHAT_EVENT_CONTEXT_TYPES,
   CHAT_EVENT_TYPES,
-  V7_ONLY_CHAT_EVENT_TYPES,
   type ChatEventType,
 } from "../chat-events";
 import { chatEventFromRow } from "../chat-event-row-projection";
@@ -49,11 +49,6 @@ function projectableRow(eventType: ChatEventType): ChatEventRow {
       contextType: "automation",
       contextId: "00000000-0000-4000-8000-000000000015",
     },
-    "input.goal": {
-      payload: { userMessage },
-      contextType: "goal",
-      contextId: "00000000-0000-4000-8000-000000000016",
-    },
     "input.budget": { payload: { userMessage }, contextType: "web" },
     "input.rejected": {
       payload: { userMessage, error: "rejected" },
@@ -63,10 +58,7 @@ function projectableRow(eventType: ChatEventType): ChatEventRow {
     "output.error": {
       payload: { content: "display error", error: "output error" },
     },
-    "output.thinking": { payload: { thinking: "thinking" } },
     "output.followups": { payload: { content: "followups" } },
-    "run.queued": { runId, payload: { content: "queued" } },
-    "run.dequeued": { runId, revokesEventId },
     "run.completed": { runId },
     "run.failed": {
       runId,
@@ -75,10 +67,6 @@ function projectableRow(eventType: ChatEventType): ChatEventRow {
     "run.cancelled": { runId, payload: { error: "cancelled" } },
     "control.interrupt": { runId },
     "control.revoke": { revokesEventId },
-    "browser.open": {},
-    "browser.close": {},
-    "goal.open": { payload: { content: "goal opened" } },
-    "goal.close": {},
     "usage.recorded": {
       runId,
       payload: {
@@ -92,6 +80,16 @@ function projectableRow(eventType: ChatEventType): ChatEventRow {
     },
   };
   return canonicalRow({ eventType, ...variants[eventType] });
+}
+
+function projectableRowWith(
+  eventType: ChatEventType,
+  overrides: Readonly<Record<string, unknown>>,
+): unknown {
+  return {
+    ...(JSON.parse(JSON.stringify(projectableRow(eventType))) as object),
+    ...overrides,
+  };
 }
 
 describe("canonical chat event row schema", () => {
@@ -111,7 +109,6 @@ describe("canonical chat event row schema", () => {
           parts: [{ type: "text", text: "historical input" }],
           nestedProbe: { value: null },
         },
-        thinking: "historical thinking",
         error: "historical error",
         usage: {
           version: 1,
@@ -129,7 +126,43 @@ describe("canonical chat event row schema", () => {
     );
     expect(parsed).not.toHaveProperty("content");
     expect(parsed).not.toHaveProperty("interruptsRunId");
-    expect(parsed).not.toHaveProperty("runGroupId");
+  });
+});
+
+describe("chat event row context", () => {
+  it("accepts only the catalog context types", () => {
+    for (const contextType of CHAT_EVENT_CONTEXT_TYPES) {
+      expect(
+        chatEventRowSchema.safeParse(
+          projectableRowWith("input.prompt", { contextType }),
+        ).success,
+      ).toBe(true);
+    }
+    expect(
+      chatEventRowSchema.safeParse(
+        projectableRowWith("output.message", { contextType: "email" }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("requires a context type on every input row", () => {
+    for (const eventType of [
+      "input.prompt",
+      "input.automation",
+      "input.budget",
+      "input.rejected",
+    ] as const) {
+      expect(
+        chatEventRowSchema.safeParse(
+          projectableRowWith(eventType, { contextType: null }),
+        ).success,
+      ).toBe(false);
+    }
+    expect(
+      chatEventRowSchema.safeParse(
+        projectableRowWith("output.message", { contextType: null }),
+      ).success,
+    ).toBe(true);
   });
 });
 
@@ -155,7 +188,7 @@ describe("Chat Event Raw Event cursor contract", () => {
 
 describe("Chat Event versioned read contract", () => {
   it("requires the Snapshot terminal event ID", () => {
-    expect(CURRENT_CHAT_EVENT_SCHEMA_VERSION).toBe(7);
+    expect(CURRENT_CHAT_EVENT_SCHEMA_VERSION).toBe(8);
     const snapshotResponse = {
       url: "https://example.com/snapshot.ndjson.gz",
       expiresInSeconds: 900,
@@ -182,19 +215,9 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
         const wireRow = JSON.parse(
           JSON.stringify(projectableRow(eventType)),
         ) as unknown;
-        return (
-          chatEventFromRow(chatEventRowSchema.parse(wireRow))?.eventType ?? null
-        );
+        return chatEventFromRow(chatEventRowSchema.parse(wireRow)).eventType;
       }),
-    ).toStrictEqual(
-      CHAT_EVENT_TYPES.map((eventType) => {
-        return (V7_ONLY_CHAT_EVENT_TYPES as readonly string[]).includes(
-          eventType,
-        )
-          ? null
-          : eventType;
-      }),
-    );
+    ).toStrictEqual(CHAT_EVENT_TYPES);
   });
 
   it.each([
@@ -268,7 +291,7 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
       eventType: "control.interrupt",
       interruptsRunId: target,
     });
-    expect(projected?.runId).toBeUndefined();
+    expect(projected.runId).toBeUndefined();
   });
 
   it("defensively hides citation envelopes from historical cached rows", () => {
@@ -291,12 +314,12 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     const row = canonicalRow({ payload: { content } });
     const before = JSON.stringify(row);
     const expected = `explain \`&lt;${PI_MEMORY_CITATION_OPEN.slice(1, -1)}&gt;\` suffix`;
-    let projectedContent = chatEventFromRow(row)?.content;
+    let projectedContent = chatEventFromRow(row).content;
     expect(projectedContent).toBe(expected);
     for (let i = 0; i < 3; i++) {
       projectedContent = chatEventFromRow(
         canonicalRow({ payload: { content: projectedContent } }),
-      )?.content;
+      ).content;
       expect(projectedContent).toBe(expected);
     }
     expect(JSON.stringify(row)).toBe(before);

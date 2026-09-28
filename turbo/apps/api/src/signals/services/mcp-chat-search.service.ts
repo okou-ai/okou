@@ -6,7 +6,6 @@ import type {
   McpSearchChatMessagesInput,
 } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { mcpChatOutputTimestampSchema } from "@okouai/api-contracts/contracts/mcp-chat-time";
-import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { computed, type Computed } from "ccstate";
 import { sql } from "drizzle-orm";
@@ -133,13 +132,7 @@ function searchMatch(
   if (message.role !== candidate.role || message.runId !== candidate.runId) {
     return null;
   }
-  const indexedText =
-    message.role === "assistant" &&
-    message.runId === null &&
-    isRetiredGoalArchiveText(message.text)
-      ? message.text
-      : message.text.trim();
-  if (hash(indexedText) !== candidate.textHash) {
+  if (hash(message.text.trim()) !== candidate.textHash) {
     return null;
   }
   const range = chatSearchFirstMatchRange(message.text, query);

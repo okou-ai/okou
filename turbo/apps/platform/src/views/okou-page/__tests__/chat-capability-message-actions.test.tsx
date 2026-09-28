@@ -294,50 +294,6 @@ test("Copy workflow trigger bubbles and inspect their associated runs", async ()
   );
 });
 
-test("Show historical goal continuations as copyable text with run logs", async () => {
-  const goalBrief = "Continue checking the release";
-  const clipboard = context.mocks.browser.clipboardWrite();
-  installRunChat({
-    chatEvents: [
-      {
-        id: "goal-continuation-input",
-        eventType: "input.prompt",
-        content: null,
-        runId: FIRST_CAPABILITY_RUN_ID,
-        seqId: 1,
-        createdAt: "2026-08-01T10:00:00.000Z",
-        userMessage: {
-          version: 1,
-          parts: [{ type: "goal", goalBrief }],
-        },
-      },
-    ],
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-  await readyChat();
-
-  const actions = (await screen.findByText(goalBrief))
-    .closest('[data-role="user"]')
-    ?.querySelector("[data-chat-user-message-actions]");
-  if (!actions) {
-    throw new Error("Goal message action row was not available");
-  }
-  expect(linkIn(actions, "View run logs")).toHaveAttribute(
-    "href",
-    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
-  );
-  click(buttonIn(actions, "Copy message"));
-  const item = await readSingleRichClipboardWrite(clipboard);
-  await expect(readClipboardItemText(item, "text/plain")).resolves.toBe(
-    goalBrief,
-  );
-});
-
 test("Keep run logs under the user message when a run fails without output", async () => {
   const prompt = "Check the connection";
   installRunChat({

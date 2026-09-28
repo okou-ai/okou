@@ -1,20 +1,7 @@
 import type { ChatEventRow } from "./chat-event-rows";
-import {
-  V7_ONLY_CHAT_EVENT_TYPES,
-  type ChatEventType,
-  type ProjectedChatEventType,
-  type V7OnlyChatEventType,
-} from "./chat-events";
+import type { ChatEventType } from "./chat-events";
 import { chatEventSchema, type ChatEvent } from "./chat-threads";
-import { visibleChatEventRowContent } from "./retired-goal-archive";
-
-function isV7OnlyChatEventType(
-  eventType: ChatEventType,
-): eventType is V7OnlyChatEventType {
-  return (V7_ONLY_CHAT_EVENT_TYPES as readonly ChatEventType[]).includes(
-    eventType,
-  );
-}
+import { visiblePiMemoryCitationText } from "./pi-memory-citations";
 
 function requiredRowField<T>(
   value: T | null,
@@ -33,17 +20,13 @@ function requiredRowField<T>(
  * projection, and the contract test suite pins every supported event type. A
  * control.interrupt target is emitted as interruptsRunId, never as run
  * ownership.
- *
- * V7 transition: rows of V7_ONLY_CHAT_EVENT_TYPES have no ChatEvent shape and
- * project to null, so callers drop them. V8 (PR-2) removes those types from
- * the row schema, after which this projection no longer returns null.
  */
-export function chatEventFromRow(row: ChatEventRow): ChatEvent | null {
-  if (isV7OnlyChatEventType(row.eventType)) {
-    return null;
-  }
+export function chatEventFromRow(row: ChatEventRow): ChatEvent {
   const payload = row.payload;
-  const visibleContent = visibleChatEventRowContent(row);
+  const visibleContent =
+    payload?.content === undefined
+      ? null
+      : visiblePiMemoryCitationText(payload.content);
   const base = {
     id: row.id,
     threadId: row.chatThreadId,
@@ -58,7 +41,7 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent | null {
     sequenceNumber: row.runEventSequenceNumber,
     createdAt: row.createdAt,
   };
-  const candidates: Record<ProjectedChatEventType, () => unknown> = {
+  const candidates: Record<ChatEventType, () => unknown> = {
     "input.prompt": () => {
       return {
         ...base,

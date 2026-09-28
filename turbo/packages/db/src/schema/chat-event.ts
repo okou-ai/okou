@@ -55,13 +55,11 @@ export function chatEventRunlessInputPredicate(
  * Current user, automation, and budget inputs are persisted immediately. A
  * run-less, unrevoked prompt or automation is pending thread queue state. A
  * run-scoped budget is pending active input. Their run-attributed replacements
- * are the immutable claims. Retained input.goal and goal.open/goal.close rows
- * describe historical work; they grant no queue or lifecycle authority.
+ * are the immutable claims.
  *
- * Assistant rows are appended after run output exists. Retained queue marker
- * rows describe historical queued runs; nothing appends them anymore.
- * Event-backed rows are one row per assistant-visible agent
- * output event; result-only CLI output can be projected from a terminal
+ * Assistant rows are appended after run output exists. Event-backed rows are
+ * one row per assistant-visible agent output event; result-only CLI output can
+ * be projected from a terminal
  * "result" event. Failed runs append an assistant row carrying the terminal
  * error message. `run_event_sequence_number` is the upstream run-event
  * coordinate used for reconciliation and final-answer selection. The
@@ -105,12 +103,12 @@ export const chatEvents = pgTable(
      *
      * `web` identifies a source without a context row; current rows use reserved
      * UUID sentinels for web queue launch identity, while legacy rows are null.
-     * Historical `goal` retains its original ID as inert provenance; the Goal
-     * table no longer exists. For other values, contextId selects the row in the
-     * table named by contextType. contextId is not unique: when a pending event
-     * is claimed, the revoke + insert
-     * replacement reuses it. Legal
-     * (eventType, contextType) combinations are enforced by the NewChatEvent
+     * Migration 1282 rewrote historical Goal inputs to `automation` and
+     * historical GitHub rows to `web`, both without a contextId. For other
+     * values, contextId selects the row in the table named by contextType.
+     * contextId is not unique: when a pending event is claimed, the revoke +
+     * insert replacement reuses it. Legal (eventType, contextType)
+     * combinations are enforced by the NewChatEvent
      * TypeScript write union, not by SQL.
      */
     contextType: text("context_type").$type<
@@ -120,19 +118,13 @@ export const chatEvents = pgTable(
       | "feishu"
       | "teams"
       | "telegram"
-      | "github"
       | "agentphone"
       | "automation"
-      | "goal"
       | "agent_run"
     >(),
     contextId: uuid("context_id"),
     runEventSequenceNumber: integer("run_event_sequence_number"),
-    /**
-     * Upstream run-event ID or a deterministic seed for synthesized rows.
-     * Historical `queue:queued` and `queue:dequeued` seeds keyed the retired
-     * queue marker rows. Historical `thinking:initial` rows remain readable.
-     */
+    /** Upstream run-event ID or a deterministic seed for synthesized rows. */
     runEventId: text("run_event_id"),
     /** Strictly increasing thread position; it may start above 1 and have gaps. */
     seqId: bigint("seq_id", { mode: "number" }).notNull(),
@@ -180,24 +172,16 @@ export const chatEvents = pgTable(
         sql`${table.eventType} IN (
           'input.prompt',
           'input.automation',
-          'input.goal',
           'input.budget',
           'input.rejected',
           'output.message',
           'output.error',
-          'output.thinking',
           'output.followups',
-          'run.queued',
-          'run.dequeued',
           'run.completed',
           'run.failed',
           'run.cancelled',
           'control.interrupt',
           'control.revoke',
-          'browser.open',
-          'browser.close',
-          'goal.open',
-          'goal.close',
           'usage.recorded'
         )`,
       ),
@@ -227,34 +211,6 @@ export const chatEvents = pgTable(
         )`,
       ),
       check(
-        "chat_events_goal_open_payload_check",
-        sql`${table.eventType} <> 'goal.open'
-          OR (
-            ${table.payload} IS NOT NULL
-            AND ${table.payload} ? 'content'
-            AND jsonb_typeof(${table.payload} -> 'content') = 'string'
-            AND ${table.payload} ->> 'content' = btrim(${table.payload} ->> 'content')
-            AND char_length(${table.payload} ->> 'content') > 0
-            AND ${table.payload} - 'content' = '{}'::jsonb
-          )`,
-      ),
-      check(
-        "chat_events_goal_close_payload_check",
-        sql`${table.eventType} <> 'goal.close' OR ${table.payload} IS NULL`,
-      ),
-      check(
-        "chat_events_goal_marker_payload_check",
-        sql`${table.eventType} NOT IN ('goal.open', 'goal.close')
-          OR (
-            ${table.runId} IS NULL
-            AND ${table.revokesEventId} IS NULL
-            AND ${table.contextType} IS NULL
-            AND ${table.contextId} IS NULL
-            AND ${table.runEventSequenceNumber} IS NULL
-            AND ${table.runEventId} IS NULL
-          )`,
-      ),
-      check(
         "chat_events_context_pair_check",
         sql`${table.contextId} IS NULL OR ${table.contextType} IS NOT NULL`,
       ),
@@ -267,16 +223,14 @@ export const chatEvents = pgTable(
           'feishu',
           'teams',
           'telegram',
-          'github',
           'agentphone',
           'automation',
-          'goal',
           'agent_run'
         )`,
       ),
       check(
         "chat_events_input_context_type_check",
-        sql`${table.eventType} NOT IN ('input.prompt', 'input.automation', 'input.goal', 'input.budget')
+        sql`${table.eventType} NOT IN ('input.prompt', 'input.automation', 'input.budget', 'input.rejected')
           OR ${table.contextType} IS NOT NULL`,
       ),
     ];

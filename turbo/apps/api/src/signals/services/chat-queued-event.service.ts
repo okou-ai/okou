@@ -59,7 +59,6 @@ export type QueuedUserMessageTriggerSource =
   | "teams"
   | "telegram"
   | "agentphone"
-  | "github"
   | "automation-schedule";
 
 function unreachableQueuedContextType(contextType: never): never {
@@ -84,15 +83,13 @@ export function queuedUserMessageTriggerSource(
     case "discord":
     case "teams":
     case "telegram":
-    case "agentphone":
-    case "github": {
+    case "agentphone": {
       return contextType;
     }
     case "agent_run": {
       return "agent";
     }
-    case "automation":
-    case "goal": {
+    case "automation": {
       throw new Error(
         `${contextType} context cannot be routed as a queued user message`,
       );

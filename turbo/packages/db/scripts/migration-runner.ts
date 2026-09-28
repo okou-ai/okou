@@ -10,7 +10,18 @@ type DbMigration = {
 
 export const NON_TRANSACTIONAL_MIGRATION_MARKER = "-- vm0:non-transactional";
 
-export async function applyPendingMigrations(sql: postgres.Sql): Promise<void> {
+export interface ApplyPendingMigrationsOptions {
+  /**
+   * Stop before the first migration whose journal `when` is at or after this
+   * value. Migration tests use it to seed data in the preceding schema.
+   */
+  readonly beforeMillis?: number;
+}
+
+export async function applyPendingMigrations(
+  sql: postgres.Sql,
+  options: ApplyPendingMigrationsOptions = {},
+): Promise<void> {
   const migrations = readMigrationFiles({
     migrationsFolder: DRIZZLE_MIGRATE_OUT,
   });
@@ -33,6 +44,12 @@ export async function applyPendingMigrations(sql: postgres.Sql): Promise<void> {
   const lastDbMigration = dbMigrations[0];
 
   for (const migration of migrations) {
+    if (
+      options.beforeMillis !== undefined &&
+      migration.folderMillis >= options.beforeMillis
+    ) {
+      break;
+    }
     if (
       lastDbMigration &&
       Number(lastDbMigration.created_at) >= migration.folderMillis

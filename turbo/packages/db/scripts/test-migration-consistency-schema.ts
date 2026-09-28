@@ -207,29 +207,39 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
       { tableName: "browser_thread_profiles", columnName: "id" },
     ]);
 
-    const lifecycleConstraint = await client.query<{ definition: string }>(
+    const eventTypeConstraint = await client.query<{ definition: string }>(
       `
         SELECT pg_get_constraintdef("oid") AS "definition"
         FROM "pg_constraint"
         WHERE "conname" = 'chat_events_event_type_check'
       `,
     );
-    assert.equal(lifecycleConstraint.rows.length, 1);
-    const lifecycleDefinition = lifecycleConstraint.rows[0]?.definition ?? "";
-    // Only the canonical lifecycle values remain after the old API drain.
-    assert.match(lifecycleDefinition, /browser\.open/u);
-    assert.match(lifecycleDefinition, /browser\.close/u);
-    assert.doesNotMatch(lifecycleDefinition, /browser\.started/u);
-    assert.doesNotMatch(lifecycleDefinition, /browser\.stopped/u);
-    assert.match(lifecycleDefinition, /goal\.open/u);
-    assert.match(lifecycleDefinition, /goal\.close/u);
-    assert.doesNotMatch(lifecycleDefinition, /goal\.changed/u);
+    assert.equal(eventTypeConstraint.rows.length, 1);
+    const eventTypeDefinition = eventTypeConstraint.rows[0]?.definition ?? "";
+    const eventTypes = [...eventTypeDefinition.matchAll(/'([^']+)'/gu)]
+      .map((match) => {
+        return match[1];
+      })
+      .sort();
+    assert.deepEqual(eventTypes, [
+      "control.interrupt",
+      "control.revoke",
+      "input.automation",
+      "input.budget",
+      "input.prompt",
+      "input.rejected",
+      "output.error",
+      "output.followups",
+      "output.message",
+      "run.cancelled",
+      "run.completed",
+      "run.failed",
+      "usage.recorded",
+    ]);
     console.log(
       "   ✅ retired browser tables and identity columns still exist",
     );
-    console.log(
-      "   ✅ browser lifecycle and goal event constraints are canonical\n",
-    );
+    console.log("   ✅ chat event types are the canonical set\n");
   } finally {
     await client.end();
   }
@@ -587,12 +597,36 @@ async function validateChatEventContextPointerConstraints(
   const threadId = "00000000-0000-4000-8000-000000074502";
 
   try {
-    const contextConstraint = await client.query<{ validated: boolean }>(`
-      SELECT convalidated AS validated FROM pg_constraint
+    const contextConstraint = await client.query<{
+      definition: string;
+      validated: boolean;
+    }>(`
+      SELECT convalidated AS validated,
+        pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint
       WHERE conrelid = 'public.chat_events'::regclass
         AND conname = 'chat_events_context_type_check'
     `);
-    assert.deepEqual(contextConstraint.rows, [{ validated: true }]);
+    assert.equal(contextConstraint.rows.length, 1);
+    assert.equal(contextConstraint.rows[0]?.validated, true);
+    const contextTypes = [
+      ...(contextConstraint.rows[0]?.definition ?? "").matchAll(/'([^']+)'/gu),
+    ]
+      .map((match) => {
+        return match[1];
+      })
+      .sort();
+    assert.deepEqual(contextTypes, [
+      "agent_run",
+      "agentphone",
+      "automation",
+      "discord",
+      "feishu",
+      "slack",
+      "teams",
+      "telegram",
+      "web",
+    ]);
     await client.query(
       `
         INSERT INTO "agents" ("id", "org_id", "owner", "name")
@@ -3284,7 +3318,7 @@ async function main(): Promise<void> {
       console.log("   ✅ Journal timestamps are strictly increasing");
       console.log("   ✅ Latest snapshot accurately reflects final DB state");
       console.log(
-        "   ✅ Browser state uses canonical thread identity and lifecycle events",
+        "   ✅ Browser state uses canonical thread identity; chat event types are canonical",
       );
       console.log(
         "   ✅ Chat event storage accepts explicit sequences and cursors",

@@ -1450,7 +1450,6 @@ describe("CHAT-02: model-first provider policies", () => {
       webhook: "non_interactive_source",
       "automation-schedule": "non_interactive_source",
       "automation-event": "non_interactive_source",
-      goal: "non_interactive_source",
     } as const satisfies Record<
       TriggerSource,
       ReturnType<typeof piMemoryStage1AdmissionPrerequisiteSkipReasonFixture>

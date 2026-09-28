@@ -131,10 +131,9 @@ export function projectMcpChatMessages(
   rows: readonly ChatEventRow[],
   checkBudget: () => void,
 ): McpCompleteChatMessage[] {
-  const events = rows.flatMap((row) => {
+  const events = rows.map((row) => {
     checkBudget();
-    const event = chatEventFromRow(row);
-    return event === null ? [] : [event];
+    return chatEventFromRow(row);
   });
   const groups = groupSemanticChatEvents(
     semanticChatEventsFromChatEvents(events),

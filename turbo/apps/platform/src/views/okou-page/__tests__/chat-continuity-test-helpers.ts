@@ -10,7 +10,10 @@ import {
   type UserMessageInputDocument,
   type UserMessagePart,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
+import {
+  chatEventRowSchema,
+  type ChatEventRow,
+} from "@okouai/api-contracts/contracts/chat-event-rows";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 
 import type { SetupPageAuth } from "../../../__tests__/page-helper.ts";
@@ -25,6 +28,7 @@ import {
   installChatListStream,
   sidebarThreadLinks,
 } from "./chat-list-test-helpers.ts";
+import { mockChatEventRowContextType } from "./chat-event-test-helpers.ts";
 
 interface ContinuityDraftPatch {
   readonly threadId: string;
@@ -116,14 +120,14 @@ export function continuityEventRow(
   const threadSuffix = Number.parseInt(threadId.slice(-6), 10);
   const suffix = threadSuffix * 1000 + sequence;
   const second = (sequence % 60).toString().padStart(2, "0");
-  return {
+  return chatEventRowSchema.parse({
     id: `a8000000-0000-4000-a000-${suffix.toString().padStart(12, "0")}`,
     chatThreadId: threadId,
     eventType,
     payload: options.payload ?? null,
     runId: options.runId ?? null,
     revokesEventId: options.revokesEventId ?? null,
-    contextType: null,
+    contextType: mockChatEventRowContextType(eventType),
     contextId: null,
     runEventSequenceNumber: null,
     runEventId: null,
@@ -131,7 +135,7 @@ export function continuityEventRow(
     createdAt: `2026-08-${((caseId % 20) + 1)
       .toString()
       .padStart(2, "0")}T12:00:${second}.000Z`,
-  };
+  });
 }
 
 export function continuityDraft(

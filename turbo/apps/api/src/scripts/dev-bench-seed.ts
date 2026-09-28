@@ -831,7 +831,7 @@ function appendNullRunControlRows(args: {
       id: randomUUID(),
       chatThreadId: args.threadId,
       runId: null,
-      eventType: isInputPrompt ? "input.prompt" : "output.thinking",
+      eventType: isInputPrompt ? "input.prompt" : "output.message",
       ...(isInputPrompt
         ? {
             contextType: "web",
@@ -840,7 +840,7 @@ function appendNullRunControlRows(args: {
           }
         : {
             payload: {
-              thinking: `Synthetic background state ${String(controlIndex)}`,
+              content: `Synthetic background state ${String(controlIndex)}`,
             },
           }),
       createdAt,

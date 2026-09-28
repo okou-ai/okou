@@ -314,54 +314,6 @@ test("Navigate chat history with scroll controls and keyboard commands", async (
   });
 });
 
-test("Show new messages after history that ends with a retired browser event", async () => {
-  const thread = continuityThread(24, 1, "Browser history");
-  const runId = "history-run-browser";
-  const nextRunId = "history-run-after-browser";
-  // A retired browser lifecycle row is still valid V7 history, but the chat
-  // projection drops it.
-  const initialRows = [
-    promptRow(24, 1, thread.id, "Check the pricing page", { runId }),
-    outputRow(24, 2, thread.id, "The pricing page is up to date", {
-      id: runId,
-    }),
-    completedRow(24, 3, thread.id, runId),
-    continuityEventRow(24, 4, thread.id, "browser.close"),
-  ];
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 24,
-    threads: [thread],
-    chatEventRows: initialRows,
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-
-  await screen.findByRole("textbox", { name: "Message" });
-  const container = threadContainer(thread.id);
-  await waitFor(() => {
-    expect(container).toHaveTextContent("The pricing page is up to date");
-  });
-
-  workspace.setChatEventRows([
-    ...initialRows,
-    promptRow(24, 5, thread.id, "Check the signup page too", {
-      runId: nextRunId,
-    }),
-    outputRow(24, 6, thread.id, "The signup page is up to date", {
-      id: nextRunId,
-    }),
-  ]);
-  createChatEvent(thread.id);
-
-  await waitFor(() => {
-    expect(container).toHaveTextContent("The signup page is up to date");
-  });
-});
-
 test("Keep both open chats live without mixing their messages", async () => {
   const main = continuityThread(22, 1, "Live main conversation");
   const side = continuityThread(22, 2, "Live side conversation");

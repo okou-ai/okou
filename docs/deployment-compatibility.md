@@ -1,5 +1,55 @@
 # Deployment Compatibility
 
+## Chat Event V8 (2026-09-28)
+
+This is step 2 of the Chat Event V8 plan. `CURRENT_CHAT_EVENT_SCHEMA_VERSION`
+becomes 8; the V8 shape and the V7 to V8 upgrade rules are in
+[Chat Event schema versioning](./chat-event-schema-versioning.md#v8).
+
+Migration `1282_chat_event_v8` is non-transactional and re-runnable. It first
+replaces `chat_events_event_type_check`, `chat_events_context_type_check` and
+`chat_events_input_context_type_check` with their V8 versions as `NOT VALID`
+and drops the three Goal payload checks, so new writes are held to V8
+immediately. It then commits bounded batches: it walks the `chat_events` and
+`agent_runs` primary keys in 5,000-row ranges (neither table indexes the
+rewritten columns), deletes the eight retired event types, rewrites `goal` and
+`github` contexts and Goal userMessage parts, and moves the `goal` run and
+uploaded-file sources to `automation-schedule`. Thread and agent drafts lose
+their Goal parts and saved shares lose `runGroupIndex`. Finally it validates
+the three checks. Every rewrite selects only rows that still hold a retired
+value, so an interrupted or completed run can be repeated. The procedures take
+row locks only, under a `1s` lock timeout; the constraint swaps take a brief
+`ACCESS EXCLUSIVE` lock on `chat_events` and `chat_event_snapshots`. On
+2026-09-28 the rewrite covered about 146,000 deleted rows, 63,000 Goal input
+rows, 360,000 other Goal rows and 124,000 Goal runs. The `input.rejected`
+writers still omit a context, so the database check continues to require a
+context only for `input.prompt`, `input.automation` and `input.budget`.
+
+`chat_event_snapshots.archive_schema_version` now accepts 7 and 8 and defaults
+to 8. A thread's V8 pointer is published beside its V7 pointer by the adjacent
+V7 to V8 Snapshot migration.
+
+Release precheck: the migration runs before API promotion, so the serving API
+must no longer write any retired type, context or source. The production API
+must already contain `d687f84782c736f451682e7066caffb3696f6306` (#37225), which
+stopped the last writers. Do not release this change while production or a
+rollback target predates that commit.
+
+Compatibility:
+
+- Old App, CLI or iOS reading V8: V8 rows are a strict subset of V7, so V7
+  readers accept them. The Web client floor is not raised.
+- New App against a rolled-back API: the old API serves V7 rows and Snapshots
+  that the V8 reader rejects. The marker
+  `.github/rollback-floors/chat-event-v8` therefore sets the API rollback floor
+  to the main commit that adds it. `resolve-production-rollback-target.sh`
+  must reject targets that predate that commit, as it does for
+  `chat-event-schema-header-retired`.
+- Old API during the deploy window: it only writes V7 Snapshot pointers and
+  rows that V8 accepts, and it reads its own V7 pointers.
+- MCP chat history no longer returns the retired events; it has not returned
+  them since #37225 projected them away.
+
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)
 
 This is step 1 of the Chat Event V8 plan. It changes no wire protocol: the row

@@ -154,7 +154,7 @@ function integrationNoteLines(
 
 /**
  * A run whose trigger source has no conversational surface — webhooks,
- * automations, goals — never renders `# Current Integration`, so it keeps its
+ * automations — never renders `# Current Integration`, so it keeps its
  * fallback delivery guidance in `# Agent Tools` instead.
  */
 export function hasIntegrationNote(triggerSource: TriggerSource): boolean {

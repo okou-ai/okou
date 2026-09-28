@@ -25,11 +25,6 @@ export interface SharedMessage {
   readonly content: string;
   readonly attachments?: readonly SharedMessageAttachment[];
   readonly runIndex?: number;
-  /**
-   * Historical goal grouping. Current APIs no longer write it, but saved shares
-   * may still carry it; V8 (PR-2) removes it from stored shares and here.
-   */
-  readonly runGroupIndex?: number;
 }
 
 export interface SharedThreadResponse {
@@ -160,7 +155,6 @@ const sharedMessageZodSchema = z
       )
       .optional(),
     runIndex: z.number().int().nonnegative().optional(),
-    runGroupIndex: z.number().int().nonnegative().optional(),
   })
   .strict();
 export const sharedMessageSchema: ZodLikeSchema<SharedMessage> =

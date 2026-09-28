@@ -10,6 +10,7 @@ import {
   version as uuidVersion,
   v5 as uuidv5,
 } from "uuid";
+import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -17,6 +18,10 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
+import {
+  seedV7ChatEventSnapshot$,
+  v7SnapshotUpgradeTemplates,
+} from "../../../test-fixtures/chat-event-snapshot-v7";
 import { cronSnapshotChatEventsRoutes } from "../cron-snapshot-chat-events";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
@@ -1134,6 +1139,68 @@ describe("cron snapshot chat events", () => {
       );
       expect(currentHead).toStrictEqual(blockedHead);
     }
+  }, 90_000);
+
+  // Chat Event V8 transition: removed with the V7 -> V8 Snapshot upgrade in
+  // PR-3 once every Snapshot pointer is V8.
+  it("converges a V7 Snapshot to V8 by upgrading its prefix and appending the tail", async () => {
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    const agent = await bdd.createAgent(owner, {
+      displayName: "V7 snapshot convergence agent",
+    });
+    const threadId = await sendNoCreditMessage(owner, {
+      agentId: agent.agentId,
+      prompt: `v7-convergence-${randomUUID()}`,
+    });
+    const { templates, expected } = v7SnapshotUpgradeTemplates();
+    const v7 = await createStore().set(
+      seedV7ChatEventSnapshot$,
+      { chatThreadId: threadId, rows: templates },
+      context.signal,
+    );
+    writeFakeChatEventObject(v7.objectKey, v7.body);
+    await sendNoCreditMessage(owner, {
+      agentId: agent.agentId,
+      threadId,
+      prompt: `v7-convergence-tail-${randomUUID()}`,
+    });
+    await projectChatEventSearch(threadId);
+
+    const converged = await runSnapshotCron([threadId]);
+    expect(converged).toMatchObject({ snapshots: 1 });
+    const [put] = putsForThread(threadId);
+    if (put === undefined) {
+      throw new Error("Expected the upgraded V8 snapshot object");
+    }
+    const head = await readChatEventSnapshotHead(context, threadId);
+    expect(head).toMatchObject({
+      archive_schema_version: CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+      object_key: put.key,
+    });
+    const lines = expectArchiveInvariants(put, threadId);
+    expect(
+      lines.filter((line) => {
+        return line.seqId <= v7.lastSeqId;
+      }),
+    ).toStrictEqual(
+      expected.map(({ index, fields }) => {
+        return expect.objectContaining({
+          id: v7.rows[index]?.id,
+          seqId: v7.rows[index]?.seqId,
+          ...fields,
+        });
+      }),
+    );
+    expect(
+      lines.some((line) => {
+        return line.seqId > v7.lastSeqId;
+      }),
+    ).toBeTruthy();
+
+    // The published V8 pointer is current; the next pass has nothing to do.
+    const idle = await runSnapshotCron([threadId]);
+    expect(idle).toMatchObject({ snapshots: 0 });
+    expect(putsForThread(threadId)).toHaveLength(1);
   }, 90_000);
 
   it("uses the exact parent metadata as a publication CAS", async () => {

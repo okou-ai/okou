@@ -1,6 +1,4 @@
 import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
-import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
-import { literalHistoryTree } from "../../lib/markdown/literal-history.ts";
 import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
 import {
   command,
@@ -1029,10 +1027,6 @@ const registerUserMessageRenderPart$ = command(
       case "automation": {
         return { type: "automation", part };
       }
-      case "goal": {
-        // Historical goal continuations display their brief as plain text.
-        return { type: "text", part: { type: "text", text: part.goalBrief } };
-      }
       case "model": {
         return { type: "model", part };
       }
@@ -1702,25 +1696,6 @@ function planEventTreeUpdates(
       cached?.content === content &&
       cached.requireUrlTerminator === requireUrlTerminator
     ) {
-      continue;
-    }
-    // Raw-row projection already checked every 1094 provenance field. Keep
-    // retained run coordinates here so real assistant output stays Markdown.
-    if (
-      event.eventType === "output.message" &&
-      event.runId === undefined &&
-      event.runEventId === undefined &&
-      event.sequenceNumber === null &&
-      event.revokesEventId === undefined &&
-      isRetiredGoalArchiveText(content)
-    ) {
-      next ??= new Map(current);
-      next.set(event.id, {
-        content,
-        requireUrlTerminator,
-        tree: literalHistoryTree(content),
-        error: false,
-      });
       continue;
     }
     const plan = chatEventTreePlan(event, chatActionContext);
