@@ -3368,16 +3368,33 @@ describe("MCP chat mutations", () => {
       throw new Error("Expected the replayed MCP input event");
     }
     expect(after.userMessage).toStrictEqual(original.userMessage);
-    // The public history must still return the original source after the raw
-    // event has moved into the canonical archive, not only before snapshotting.
-    // Only the retention cutoff needs an infrastructure fixture: public MCP
-    // sends cannot choose a database-clock acceptance time 31 days in the past.
+    // The canonical archive must retain the source and the MCP history must
+    // remain readable after its raw input row is deleted. Raw Events correctly
+    // return 410 for a cursor that predates retention, so inspect the captured
+    // R2 write rather than attempting to read expired rows from sequence zero.
+    // Only the cutoff needs a fixture: public MCP sends cannot backdate input.
     await setQueuedUserMessageCreatedAtFixture({
       eventId: args.requestId,
       createdAt: new Date(now() - 31 * 24 * 60 * 60 * 1000),
     });
     await snapshotMessages(thread.id);
-    expect(archived).not.toHaveLength(0);
+    const archive = archived.at(-1);
+    if (!archive) {
+      throw new Error("Expected the canonical MCP archive");
+    }
+    const archivedInput = gunzipSync(archive.body)
+      .toString("utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => {
+        return chatEventRowSchema.parse(JSON.parse(line));
+      })
+      .find((row) => {
+        return row.id === args.requestId;
+      });
+    expect(archivedInput?.payload?.userMessage).toStrictEqual(
+      original.userMessage,
+    );
     const retained = await accept(
       setupApp({ context, routes: testChatEventRetentionRoutes })(
         testChatEventRetentionContract,
@@ -3385,15 +3402,6 @@ describe("MCP chat mutations", () => {
       [200],
     );
     expect(retained.body.deleted).toBe(1);
-    const archivedInput = (
-      await f.chat.listThreadEvents(f.actor, thread.id)
-    ).events.find((event) => {
-      return event.id === args.requestId;
-    });
-    if (archivedInput?.eventType !== "input.prompt") {
-      throw new Error("Expected the archived MCP input event");
-    }
-    expect(archivedInput.userMessage).toStrictEqual(original.userMessage);
     expect(
       (await getMessages(token, { threadId: thread.id })).messages,
     ).toMatchObject([{ text: args.text }]);
