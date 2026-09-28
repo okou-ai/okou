@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.975.0](https://github.com/okou-ai/okou/compare/app-v0.974.1...app-v0.975.0) (2026-09-28)
+
+
+### Features
+
+* **app:** pin a claude and codex subscription start card ([#37190](https://github.com/okou-ai/okou/issues/37190)) ([6e110e4](https://github.com/okou-ai/okou/commit/6e110e47f369d642bc3876caf15b4dd710a9f14d))
+* **platform:** show the prompt handoff in the source-first onboarding look ([#37187](https://github.com/okou-ai/okou/issues/37187)) ([a1023eb](https://github.com/okou-ai/okou/commit/a1023eb16915881b1eadc67cc84d6622816e7144))
+
+
+### Bug Fixes
+
+* **platform:** show thinking at once and keep runless prompts in chat history ([#37169](https://github.com/okou-ai/okou/issues/37169)) ([eed41f6](https://github.com/okou-ai/okou/commit/eed41f6f2722d447e12f60c9c596ef6ca1192966))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.519.1
+    * @okouai/core bumped to 8.715.0
+
 ## [0.974.1](https://github.com/okou-ai/okou/compare/app-v0.974.0...app-v0.974.1) (2026-09-28)
 
 

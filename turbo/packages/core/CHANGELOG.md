@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.715.0](https://github.com/okou-ai/okou/compare/core-v8.714.0...core-v8.715.0) (2026-09-28)
+
+
+### Features
+
+* **app:** pin a claude and codex subscription start card ([#37190](https://github.com/okou-ai/okou/issues/37190)) ([6e110e4](https://github.com/okou-ai/okou/commit/6e110e47f369d642bc3876caf15b4dd710a9f14d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.519.1
+
 ## [8.714.0](https://github.com/okou-ai/okou/compare/core-v8.713.0...core-v8.714.0) (2026-09-28)
 
 
