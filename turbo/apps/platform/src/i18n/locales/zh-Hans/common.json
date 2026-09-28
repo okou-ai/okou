@@ -4057,9 +4057,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "请求失败"
-    },
-    "realtime": {
-      "degraded": "实时更新出现问题，请刷新页面。"
     }
   },
   "invitationRedirect": {

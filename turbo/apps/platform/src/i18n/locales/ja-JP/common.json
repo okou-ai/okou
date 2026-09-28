@@ -4057,9 +4057,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "リクエストが失敗しました"
-    },
-    "realtime": {
-      "degraded": "ライブアップデートで問題が発生しました。ページを更新してください。"
     }
   },
   "invitationRedirect": {

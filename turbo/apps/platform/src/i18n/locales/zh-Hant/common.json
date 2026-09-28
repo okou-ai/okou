@@ -4057,9 +4057,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "請求失敗"
-    },
-    "realtime": {
-      "degraded": "實時更新出現問題，請重新整理頁面。"
     }
   },
   "invitationRedirect": {

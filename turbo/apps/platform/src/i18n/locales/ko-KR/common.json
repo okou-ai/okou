@@ -4057,9 +4057,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "요청 실패"
-    },
-    "realtime": {
-      "degraded": "실시간 업데이트에 문제가 발생했습니다. 페이지를 새로고침하세요."
     }
   },
   "invitationRedirect": {

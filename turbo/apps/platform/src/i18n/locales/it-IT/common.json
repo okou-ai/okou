@@ -4133,9 +4133,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Richiesta non riuscita"
-    },
-    "realtime": {
-      "degraded": "Gli aggiornamenti in tempo reale hanno riscontrato un problema. Aggiorna la pagina."
     }
   },
   "invitationRedirect": {
