@@ -214,8 +214,7 @@ endpoints is subsumed.
   Discord `session_key`, official Telegram and AgentPhone `root_message_id`).
   The migration keeps the most recently used `direct-message:%` route per
   identity, rewrites its key to the constant and deletes the other DM route
-  rows; their chat threads remain as history. New DM threads store no model;
-  pick resolves the user's web default, then the org default. Deploy window:
+  rows; their chat threads remain as history. Deploy window:
   the migration runs before the new API, so an old API instance that receives a
   DM in that window no longer finds its `direct-message:<agentId>:<model>` key,
   creates a new thread and inserts an old-style route. After promotion the new
@@ -230,6 +229,15 @@ endpoints is subsumed.
   code and earlier APIs still read them; a later release or the daily
   compatibility cleanup drops them. Rolling back restores the old per-user
   selections, which were left untouched.
+- **Self-hosted Telegram bots retired.** Only the official shared bot remains.
+  The API no longer reads or writes `telegram_installations` or
+  `telegram_user_links`, and the register, setup-status, bot delete and bot
+  default-agent routes are removed; bot-scoped Telegram routes answer `404` for
+  any bot other than `official`. Webhooks that the nine self-hosted bots still
+  have registered with Telegram are not deleted and receive `404`. Their chat
+  threads remain as history. Dropping the two tables is left to a later
+  release, like the preference tables. The Discord agent-preference route is
+  removed as well; an old App tab calling it receives `404`.
 
 ## Unified chat queue (release 6): Runner, Guest and Sandbox CLI
 
