@@ -283,7 +283,7 @@ test("Active-run prompts stay in the conversation while automation events wait i
   expect(screen.getAllByText("Summarize new incidents")).toHaveLength(1);
 });
 
-test("Queued inputs are listed in submission order regardless of kind", async () => {
+test("Pending automation events keep submission order around conversation prompts", async () => {
   installWorkflowQueueFixture(context, FIFO_ORDER_THREAD_ID, [
     activeRunRow(FIFO_ORDER_THREAD_ID),
     eventRow(FIFO_ORDER_THREAD_ID, 2, {
@@ -313,19 +313,19 @@ test("Queued inputs are listed in submission order regardless of kind", async ()
     auth: workflowAuth("fifo-order"),
   });
 
-  await waitFor(() => {
-    expect(screen.getByText("1 message and 2 events waiting")).toBeVisible();
-  });
-  const rows = Array.from(
-    queueListForText("Check rollout").querySelectorAll('[role="listitem"]'),
-  );
-  expect(rows).toHaveLength(3);
+  await expect(
+    screen.findByText("2 events waiting"),
+  ).resolves.toBeInTheDocument();
+  const list = queueListForText("Check rollout");
+  const rows = Array.from(list.querySelectorAll('[role="listitem"]'));
+  expect(rows).toHaveLength(2);
   expect(rows[0]).toHaveAccessibleName("Pending automation event");
   expect(rows[0]).toHaveTextContent("Check rollout");
-  expect(rows[1]).toHaveAccessibleName("Queued message");
-  expect(rows[1]).toHaveTextContent("Draft the customer update");
-  expect(rows[2]).toHaveAccessibleName("Pending automation event");
-  expect(rows[2]).toHaveTextContent("Triage alerts");
+  expect(rows[1]).toHaveAccessibleName("Pending automation event");
+  expect(rows[1]).toHaveTextContent("Triage alerts");
+  const prompt = screen.getByText("Draft the customer update");
+  expect(prompt).toBeInTheDocument();
+  expect(list).not.toContainElement(prompt);
 });
 
 test("Skip one pending automation event without removing the others", async () => {
