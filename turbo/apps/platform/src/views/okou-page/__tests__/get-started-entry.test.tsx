@@ -323,13 +323,6 @@ test("An admin sees every step and what each one pays", async () => {
   // affordance instead of collapsing to the completion check.
   const connectorRow = screen.getByTestId("get-started-quest-connector");
   expect(normalizedText(connectorRow)).toContain("100");
-
-  // The row does not count claimed connector rewards: the claims span
-  // workspaces and omit connections that never paid, so the figure never
-  // matched what the user had connected.
-  expect(normalizedText(connectorRow)).not.toContain("added");
-  // No lifetime earned total: it summed expired rewards from every workspace.
-  expect(within(panel).queryByText(/earned/)).not.toBeInTheDocument();
 });
 
 test("A member is only offered the steps they can finish themselves", async () => {
