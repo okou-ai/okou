@@ -465,22 +465,18 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       throw new Error("Expected the recommended follow-up to succeed");
     }
     expect(followup.body.runId).toBeNull();
-    const reservation = await api.reserveRunnerActiveInputs(
-      activeClaim.claim.sandboxToken,
-      active.runId,
-    );
-    if (reservation.outcome !== "reserved") {
-      throw new Error("Expected the recommended follow-up to be reserved");
-    }
-    expect(reservation.eventIds).toStrictEqual([eventId]);
-    expect(reservation.prompt).toBe("steer the recommended follow-up");
     await expect(
-      api.recordRunnerActiveInputDelivery(
+      api.nextSteerableInput(activeClaim.claim.sandboxToken, active.runId),
+    ).resolves.toStrictEqual({
+      input: { eventId, prompt: "steer the recommended follow-up" },
+    });
+    await expect(
+      api.declareSteeredInput(
         activeClaim.claim.sandboxToken,
         active.runId,
-        reservation.deliveryId,
+        eventId,
       ),
-    ).resolves.toStrictEqual({ outcome: "delivered" });
+    ).resolves.toStrictEqual({ outcome: "steered" });
 
     const afterFollowup = await waitForThreadMessages(
       actor,

@@ -167,13 +167,16 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       [201],
     );
-    const reserved = await api.reserveRunnerActiveInputs(
+    const steerable = await api.nextSteerableInput(
       claim.sandboxToken,
       run.runId,
     );
-    if (reserved.outcome !== "reserved") {
-      throw new Error("Expected one reserved active input");
-    }
+    expect(steerable).toStrictEqual({
+      input: {
+        eventId: activeInputEventId,
+        prompt: "preserve this in-flight active input",
+      },
+    });
     const { manifest } = expectPiSandboxHandoff(run.runId, checkpointObjects);
     expect(manifest).toMatchObject({
       schemaVersion: 4,
@@ -200,15 +203,15 @@ describe("CHAT-02: model-first provider policies", () => {
       ),
     ).toBeFalsy();
     await expect(
-      api.reserveRunnerActiveInputs(claim.sandboxToken, run.runId),
-    ).resolves.toStrictEqual(reserved);
+      api.nextSteerableInput(claim.sandboxToken, run.runId),
+    ).resolves.toStrictEqual(steerable);
     await expect(
-      api.recordRunnerActiveInputDelivery(
+      api.declareSteeredInput(
         claim.sandboxToken,
         run.runId,
-        reserved.deliveryId,
+        activeInputEventId,
       ),
-    ).resolves.toStrictEqual({ outcome: "delivered" });
+    ).resolves.toStrictEqual({ outcome: "steered" });
     const events = (await chat.listThreadEvents(actor, run.threadId)).events;
     expect(
       events.filter((event) => {

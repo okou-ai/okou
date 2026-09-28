@@ -1,8 +1,6 @@
 import { z } from "zod";
 import {
   piApiFirstTurnConfigSchema,
-  activeInputDeliveryReserveResponseSchema,
-  activeInputDeliveryReceiptResponseSchema,
   artifactMissingRootPolicySchema,
   builtInModelProviderConnectionSourceSchema,
   piLaunchConfigSchema,
@@ -87,18 +85,6 @@ export const rustTypeModuleDocs = [
     rustDoc: [
       "Run-scoped DTOs exchanged between runners, guests, and the API.",
     ],
-  },
-  {
-    rustModulePath: ["runners", "runs", "active_inputs"],
-    rustDoc: ["DTOs for durable active-input delivery."],
-  },
-  {
-    rustModulePath: ["runners", "runs", "active_inputs", "reserve"],
-    rustDoc: ["DTOs for reserving or retrieving active-input delivery."],
-  },
-  {
-    rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
-    rustDoc: ["DTOs for recording active-input acceptance receipts."],
   },
   {
     rustModulePath: ["runners", "runs", "steerable_inputs"],
@@ -638,57 +624,6 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema: activeInputDeliveryReserveResponseSchema,
-    rustModulePath: ["runners", "runs", "active_inputs", "reserve"],
-    rustTypeName: "Response",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "Response",
-        rustDoc: ["API outcome when reserving or retrieving active input."],
-        fields: {
-          deliveryId: ["Stable identity for the reserved delivery batch."],
-          eventIds: ["Ordered source chat-event identities in the batch."],
-          prompt: ["Materialized prompt sent to the active Guest."],
-          reason: ["Reason the pending input could not be reserved."],
-        },
-        variants: {
-          reserved: ["A stable delivery batch is ready for Guest delivery."],
-          empty: ["No pending active input is available."],
-          terminal: ["The run is terminal and has no open delivery."],
-          held: ["An open delivery remains held for a non-running run."],
-          rejected: ["Pending input cannot currently be reserved."],
-        },
-      },
-      {
-        rustTypeName: "ResponseRejectedReason",
-        rustDoc: ["Reason an active-input reservation was rejected."],
-        variants: {
-          payload_too_large: [
-            "The delivery-aware control payload exceeds the frame limit.",
-          ],
-          run_not_running: ["The target run is no longer running."],
-        },
-      },
-    ],
-  },
-  {
-    schema: activeInputDeliveryReceiptResponseSchema,
-    rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
-    rustTypeName: "Response",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "Response",
-        rustDoc: ["API outcome after recording active-input acceptance."],
-        variants: {
-          delivered: ["The delivery receipt was accepted idempotently."],
-          rejected: ["The delivery can no longer be accepted."],
-        },
-      },
-    ],
-  },
-  {
     schema: runnerNextSteerableInputResponseSchema,
     rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
     rustTypeName: "Response",
@@ -1113,9 +1048,6 @@ export const rustTypeBindings = [
           ],
           workspaceReuseResult: [
             "Optional outcome of the workspace reuse decision.",
-          ],
-          activeInputDeliveryIds: [
-            "Optional active-input delivery receipts recovered during completion.",
           ],
           checkpoint: [
             "Optional final checkpoint persisted atomically with completion.",

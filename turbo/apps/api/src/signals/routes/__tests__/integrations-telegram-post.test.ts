@@ -3307,11 +3307,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         body: nextBody,
       });
       await flushWaitUntilForTest();
-      const delivery = await runsApi.reserveRunnerActiveInputs(
+      const { input: delivery } = await runsApi.nextSteerableInput(
         claim.sandboxToken,
         run.id,
       );
-      if (delivery.outcome !== "reserved") {
+      if (!delivery) {
         throw new Error("Expected imported active input");
       }
       expect(delivery.prompt).toContain("inspect the follow-up file");
@@ -3435,11 +3435,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         expect.objectContaining({ fileId }),
         expect.objectContaining({ fileId }),
       ]);
-      const delivery = await runsApi.reserveRunnerActiveInputs(
+      const { input: delivery } = await runsApi.nextSteerableInput(
         claim.sandboxToken,
         run.id,
       );
-      if (delivery.outcome !== "reserved") {
+      if (!delivery) {
         throw new Error("Expected the next Telegram file message");
       }
       expect(metadataCalls).toBe(status === 429 ? 2 : 1);

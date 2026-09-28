@@ -4436,11 +4436,11 @@ export function registerFeishuIntegrationTests(
             expect.objectContaining({ fileId }),
             expect.objectContaining({ fileId }),
           ]);
-          const delivery = await runsApi.reserveRunnerActiveInputs(
+          const { input: delivery } = await runsApi.nextSteerableInput(
             claim.sandboxToken,
             run.id,
           );
-          if (delivery.outcome !== "reserved") {
+          if (!delivery) {
             throw new Error("Expected the next Feishu file message");
           }
           const retryable = status === 429 || status >= 500;

@@ -47,32 +47,6 @@ const expectedBindings = [
     rustConstName: "CLAIM",
   },
   {
-    method: "POST",
-    path: "/api/runners/runs/:runId/active-inputs/reserve",
-    rustModulePath: [
-      "runners",
-      "runs",
-      "by_run_id",
-      "active_inputs",
-      "reserve",
-    ],
-    rustConstName: "RESERVE",
-  },
-  {
-    method: "POST",
-    path: "/api/runners/runs/:runId/active-inputs/deliveries/:deliveryId/receipt",
-    rustModulePath: [
-      "runners",
-      "runs",
-      "by_run_id",
-      "active_inputs",
-      "deliveries",
-      "by_delivery_id",
-      "receipt",
-    ],
-    rustConstName: "RECEIPT",
-  },
-  {
     method: "GET",
     path: "/api/runners/runs/:runId/steerable-inputs/next",
     rustModulePath: [

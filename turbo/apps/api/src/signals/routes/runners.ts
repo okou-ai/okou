@@ -3,7 +3,6 @@ import {
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   elapsedSinceApiStartMs,
   RESUME_SESSION_HISTORY_MAX_BYTES,
-  runnersActiveInputsContract,
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
   runnersHeartbeatContract,
@@ -108,8 +107,6 @@ import { reportBuiltInModelProviderFailure } from "../services/built-in-model-pr
 import {
   declareSteeredInput,
   loadNextSteerableInput,
-  recordActiveInputDeliveryReceipt,
-  reserveActiveInputDelivery,
 } from "../services/active-input-delivery.service";
 import { notifyRunningChatRunOfPendingInput } from "../services/chat-thread-queue-drain.service";
 import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
@@ -2961,97 +2958,6 @@ const builtinFirewallsResolveInner$ = command(
   },
 );
 
-const activeInputReserveBody$ = bodyResultOf(
-  runnersActiveInputsContract.reserve,
-);
-const activeInputReceiptBody$ = bodyResultOf(
-  runnersActiveInputsContract.receipt,
-);
-
-const reserveActiveInputsInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(authContext$);
-    const { runId } = get(pathParamsOf(runnersActiveInputsContract.reserve));
-    if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
-      return forbidden("Active input delivery is not available");
-    }
-    const body = await get(activeInputReserveBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-    const result = await reserveActiveInputDelivery(
-      set(writeDb$),
-      {
-        runId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      },
-      signal,
-    );
-    if (result.outcome === "forbidden") {
-      return forbidden("Active input delivery is not available");
-    }
-    if (result.outcome === "reserved") {
-      // The delivery ID is the source chat event ID.
-      return {
-        status: 200 as const,
-        body: {
-          outcome: result.outcome,
-          deliveryId: result.deliveryId,
-          eventIds: [result.deliveryId],
-          prompt: result.prompt,
-        },
-      };
-    }
-    return { status: 200 as const, body: result };
-  },
-);
-
-const recordActiveInputDeliveryReceiptInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(authContext$);
-    const { runId, deliveryId } = get(
-      pathParamsOf(runnersActiveInputsContract.receipt),
-    );
-    if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
-      return forbidden("Active input delivery is not available");
-    }
-    const body = await get(activeInputReceiptBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-    const result = await recordActiveInputDeliveryReceipt(
-      set(writeDb$),
-      {
-        runId,
-        deliveryId,
-        userId: auth.userId,
-        orgId: auth.orgId,
-      },
-      signal,
-    );
-    if (result.outcome === "forbidden") {
-      return forbidden("Active input delivery is not available");
-    }
-    if (result.replacementsAppended) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: auth.userId,
-        orgId: auth.orgId,
-        threadId: result.chatThreadId,
-      });
-      signal.throwIfAborted();
-      await notifyRunningChatRunOfPendingInput(
-        set(writeDb$),
-        result.chatThreadId,
-      );
-      signal.throwIfAborted();
-    }
-    return { status: 200 as const, body: { outcome: result.outcome } };
-  },
-);
-
 const steeredInputBody$ = bodyResultOf(runnersSteerContract.steered);
 
 const nextSteerableInputInner$ = command(
@@ -3167,20 +3073,6 @@ export const runnersRoutes: readonly RouteEntry[] = [
   {
     route: runnersModelProviderFailuresContract.report,
     handler: modelProviderFailureInner$,
-  },
-  {
-    route: runnersActiveInputsContract.reserve,
-    handler: authRoute(
-      { accept: ["sandbox"], acceptAnySandboxCapability: true },
-      reserveActiveInputsInner$,
-    ),
-  },
-  {
-    route: runnersActiveInputsContract.receipt,
-    handler: authRoute(
-      { accept: ["sandbox"], acceptAnySandboxCapability: true },
-      recordActiveInputDeliveryReceiptInner$,
-    ),
   },
   {
     route: runnersSteerContract.next,

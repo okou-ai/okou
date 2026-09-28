@@ -104,16 +104,6 @@ const expectedBindings = [
     direction: "response",
   },
   {
-    rustModulePath: ["runners", "runs", "active_inputs", "reserve"],
-    rustTypeName: "Response",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
-    rustTypeName: "Response",
-    direction: "response",
-  },
-  {
     rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
     rustTypeName: "Response",
     direction: "response",

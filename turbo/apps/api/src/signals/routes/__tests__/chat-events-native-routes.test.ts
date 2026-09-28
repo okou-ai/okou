@@ -95,23 +95,14 @@ async function completeNativeToolHandoff({
     },
     [201],
   );
-  const reserved = await api.reserveRunnerActiveInputs(
-    claim.sandboxToken,
-    run.runId,
-  );
-  if (reserved.outcome !== "reserved") {
-    throw new Error("Expected native active input ownership");
-  }
   await expect(
-    api.reserveRunnerActiveInputs(claim.sandboxToken, run.runId),
-  ).resolves.toStrictEqual(reserved);
+    api.nextSteerableInput(claim.sandboxToken, run.runId),
+  ).resolves.toStrictEqual({
+    input: { eventId: activeInputEventId, prompt: activeInput },
+  });
   await expect(
-    api.recordRunnerActiveInputDelivery(
-      claim.sandboxToken,
-      run.runId,
-      reserved.deliveryId,
-    ),
-  ).resolves.toStrictEqual({ outcome: "delivered" });
+    api.declareSteeredInput(claim.sandboxToken, run.runId, activeInputEventId),
+  ).resolves.toStrictEqual({ outcome: "steered" });
   const { manifest, session: h0 } = expectPiSandboxHandoff(run.runId, objects);
   if (!h0) {
     throw new Error("Expected native sandbox-first history");

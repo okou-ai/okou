@@ -27,7 +27,6 @@ import {
 } from "@okouai/api-contracts/contracts/cron";
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
-  runnersActiveInputsContract,
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
@@ -118,7 +117,7 @@ type RunnerConnectorRuntimeSyncRequest = z.input<
   (typeof runnersConnectorRuntimeSyncContract.sync)["body"]
 >;
 type RunnerConnectorRuntimeSyncStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
-type RunnerActiveInputDeliveryStatus = 200 | 400 | 401 | 403 | 500;
+type RunnerNextSteerableInputStatus = 200 | 400 | 401 | 403 | 500;
 type RunnerSteeredInputStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
 type OrgModelPolicyRequest = z.infer<
   (typeof modelPoliciesMainContract.update)["body"]
@@ -640,71 +639,8 @@ export function createRunsApi(
       );
     },
 
-    async requestReserveRunnerActiveInputsAs<
-      TStatus extends RunnerActiveInputDeliveryStatus,
-    >(
-      authorization: string | undefined,
-      runId: string,
-      statuses: readonly TStatus[],
-    ) {
-      return await accept(
-        runApp(context)(runnersActiveInputsContract).reserve({
-          headers: authorization === undefined ? {} : { authorization },
-          params: { runId },
-          body: {},
-        }),
-        statuses,
-      );
-    },
-
-    async reserveRunnerActiveInputs(sandboxToken: string, runId: string) {
-      const response = await accept(
-        runApp(context)(runnersActiveInputsContract).reserve({
-          headers: { authorization: `Bearer ${sandboxToken}` },
-          params: { runId },
-          body: {},
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
-    async requestRecordRunnerActiveInputDeliveryAs<
-      TStatus extends RunnerActiveInputDeliveryStatus,
-    >(
-      authorization: string | undefined,
-      runId: string,
-      deliveryId: string,
-      statuses: readonly TStatus[],
-    ) {
-      return await accept(
-        runApp(context)(runnersActiveInputsContract).receipt({
-          headers: authorization === undefined ? {} : { authorization },
-          params: { runId, deliveryId },
-          body: {},
-        }),
-        statuses,
-      );
-    },
-
-    async recordRunnerActiveInputDelivery(
-      sandboxToken: string,
-      runId: string,
-      deliveryId: string,
-    ) {
-      const response = await accept(
-        runApp(context)(runnersActiveInputsContract).receipt({
-          headers: { authorization: `Bearer ${sandboxToken}` },
-          params: { runId, deliveryId },
-          body: {},
-        }),
-        [200],
-      );
-      return response.body;
-    },
-
     async requestNextSteerableInputAs<
-      TStatus extends RunnerActiveInputDeliveryStatus,
+      TStatus extends RunnerNextSteerableInputStatus,
     >(
       authorization: string | undefined,
       runId: string,
@@ -746,6 +682,22 @@ export function createRunsApi(
         }),
         statuses,
       );
+    },
+
+    async declareSteeredInput(
+      sandboxToken: string,
+      runId: string,
+      eventId: string,
+    ) {
+      const response = await accept(
+        runApp(context)(runnersSteerContract).steered({
+          headers: { authorization: `Bearer ${sandboxToken}` },
+          params: { runId, eventId },
+          body: {},
+        }),
+        [200],
+      );
+      return response.body;
     },
 
     async requestSyncConnectorRuntimeAs<

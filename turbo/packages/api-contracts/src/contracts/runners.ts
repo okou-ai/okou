@@ -1788,76 +1788,6 @@ export const runnersModelProviderFailuresContract = c.router({
   },
 });
 
-const activeInputDeliveryReferenceSchema = z.object({
-  deliveryId: z.uuid(),
-  eventIds: z.array(z.uuid()).length(1),
-});
-
-export const activeInputDeliveryReserveResponseSchema = z.discriminatedUnion(
-  "outcome",
-  [
-    activeInputDeliveryReferenceSchema.extend({
-      outcome: z.literal("reserved"),
-      prompt: z.string().min(1),
-    }),
-    z.object({ outcome: z.literal("empty") }),
-    z.object({ outcome: z.literal("terminal") }),
-    activeInputDeliveryReferenceSchema.extend({
-      outcome: z.literal("held"),
-    }),
-    z.object({
-      outcome: z.literal("rejected"),
-      reason: z.enum(["payload_too_large", "run_not_running"]),
-    }),
-  ],
-);
-
-export const activeInputDeliveryReceiptResponseSchema = z.discriminatedUnion(
-  "outcome",
-  [
-    z.object({ outcome: z.literal("delivered") }),
-    z.object({ outcome: z.literal("rejected") }),
-  ],
-);
-
-export const runnersActiveInputsContract = c.router({
-  reserve: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/active-inputs/reserve",
-    headers: authHeadersSchema,
-    pathParams: z.object({
-      runId: z.uuid(),
-    }),
-    body: z.object({}),
-    responses: {
-      200: activeInputDeliveryReserveResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Reserve or retrieve pending active input for a run",
-  },
-  receipt: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/active-inputs/deliveries/:deliveryId/receipt",
-    headers: authHeadersSchema,
-    pathParams: z.object({
-      runId: z.uuid(),
-      deliveryId: z.uuid(),
-    }),
-    body: z.object({}),
-    responses: {
-      200: activeInputDeliveryReceiptResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Record acceptance of an active-input delivery",
-  },
-});
-
 export const STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE =
   "INPUT_ALREADY_CONSUMED";
 export const STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE = "RUN_NOT_RUNNING";
@@ -2035,7 +1965,6 @@ export type RunnersPollContract = typeof runnersPollContract;
 export type RunnersJobClaimContract = typeof runnersJobClaimContract;
 export type RunnersModelProviderFailuresContract =
   typeof runnersModelProviderFailuresContract;
-export type RunnersActiveInputsContract = typeof runnersActiveInputsContract;
 export type RunnersSteerContract = typeof runnersSteerContract;
 export type RunnersConnectorRuntimeSyncContract =
   typeof runnersConnectorRuntimeSyncContract;

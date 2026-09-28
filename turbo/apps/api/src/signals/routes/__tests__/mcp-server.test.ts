@@ -3923,7 +3923,7 @@ describe("MCP chat mutations", () => {
     });
   });
 
-  it("reports steered input as associated with the same active run after its receipt", async () => {
+  it("reports steered input as associated with the same active run after its declaration", async () => {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
     const actor = await nativeRunnerChatActor(f, auth);
@@ -3951,15 +3951,15 @@ describe("MCP chat mutations", () => {
     };
     const sent = await sendMessage(token, args);
     expect(sent).toMatchObject({ disposition: "queued", runId: null });
-    const reserved = await f.api.reserveRunnerActiveInputs(
-      claimed.claim.sandboxToken,
-      active.runId,
-    );
-    if (reserved.outcome !== "reserved") {
-      throw new Error("Expected the runner to reserve MCP input");
-    }
-    expect(reserved.eventIds).toStrictEqual([args.requestId]);
-    // Reservation is read-only: the input stays queued until the receipt.
+    await expect(
+      f.api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+    ).resolves.toStrictEqual({
+      input: {
+        eventId: args.requestId,
+        prompt: expect.stringContaining(args.text),
+      },
+    });
+    // Reading is read-only: the input stays queued until it is declared steered.
     await expect(sendMessage(token, args)).resolves.toMatchObject({
       inputRef: sent.inputRef,
       replayed: true,
@@ -3967,12 +3967,12 @@ describe("MCP chat mutations", () => {
       runId: null,
     });
     await expect(
-      f.api.recordRunnerActiveInputDelivery(
+      f.api.declareSteeredInput(
         claimed.claim.sandboxToken,
         active.runId,
-        reserved.deliveryId,
+        args.requestId,
       ),
-    ).resolves.toStrictEqual({ outcome: "delivered" });
+    ).resolves.toStrictEqual({ outcome: "steered" });
     await expect(sendMessage(token, args)).resolves.toMatchObject({
       inputRef: sent.inputRef,
       replayed: true,

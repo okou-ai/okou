@@ -472,8 +472,8 @@ describe("canonical Discord terminal replies", () => {
     expect(launchedRunIds[1]).not.toBe(started.runId);
   });
 
-  it.each(["pending", "reserved"] as const)(
-    "rejects a revoked %s active input without retrying or delivering it",
+  it.each(["pending", "read"] as const)(
+    "keeps a revoked %s active input queued until the next pick rejects it",
     async (phase) => {
       const started = await startDiscordRun();
       const claim = await claimRun(started.actor, started.runId);
@@ -484,26 +484,37 @@ describe("canonical Discord terminal replies", () => {
       started.provider.messages.set(followup.id, followup);
       await postDiscordMessage(context, followup);
       await flushWaitUntilForTest();
-      if (phase === "reserved") {
-        const reserved = await runs.reserveRunnerActiveInputs(
+      if (phase === "read") {
+        const read = await runs.nextSteerableInput(
           claim.sandboxToken,
           started.runId,
         );
-        expect(reserved).toMatchObject({
-          outcome: "reserved",
-          prompt: expect.stringContaining(
-            "Use the confidential follow-up details.",
-          ),
-        });
+        expect(read.input?.prompt).toContain(
+          "Use the confidential follow-up details.",
+        );
       }
       await deleteDiscordFixture(context, started.actor.fixture);
       started.fixture.deleted = true;
       await expect(
-        runs.reserveRunnerActiveInputs(claim.sandboxToken, started.runId),
-      ).resolves.toStrictEqual({ outcome: "empty" });
+        runs.nextSteerableInput(claim.sandboxToken, started.runId),
+      ).resolves.toStrictEqual({ input: null });
       await expect(
-        runs.reserveRunnerActiveInputs(claim.sandboxToken, started.runId),
-      ).resolves.toStrictEqual({ outcome: "empty" });
+        runs.nextSteerableInput(claim.sandboxToken, started.runId),
+      ).resolves.toStrictEqual({ input: null });
+      const whileRunning = await readProjectedChatEvents(context, {
+        threadId: started.threadId,
+        headers: { authorization: "Bearer clerk-session" },
+      });
+      expect(
+        whileRunning.filter((event) => {
+          return event.eventType === "input.rejected";
+        }),
+      ).toHaveLength(0);
+      await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        text: "The original task is complete.",
+      });
       const events = await readProjectedChatEvents(context, {
         threadId: started.threadId,
         headers: { authorization: "Bearer clerk-session" },
@@ -519,11 +530,6 @@ describe("canonical Discord terminal replies", () => {
           content: "This Discord conversation is no longer available.",
         }),
       );
-      await completeRun({
-        runId: started.runId,
-        sandboxToken: claim.sandboxToken,
-        text: "The original task is complete.",
-      });
       expect(started.provider.sentMessages).toHaveLength(0);
     },
   );
@@ -545,36 +551,30 @@ describe("canonical Discord terminal replies", () => {
     started.provider.messages.set(followup.id, followup);
     await postDiscordMessage(context, followup);
     await flushWaitUntilForTest();
-    const initial = await runs.reserveRunnerActiveInputs(
+    const initial = await runs.nextSteerableInput(
       claim.sandboxToken,
       started.runId,
     );
-    expect(initial).toMatchObject({
-      outcome: "reserved",
-      prompt: expect.stringContaining(history.content),
-    });
+    expect(initial.input?.prompt).toContain(history.content);
     started.provider.state.everyonePermissions = (
       (1n << 10n) |
       (1n << 11n) |
       (1n << 38n)
     ).toString();
-    const narrowed = await runs.reserveRunnerActiveInputs(
+    const { input: narrowed } = await runs.nextSteerableInput(
       claim.sandboxToken,
       started.runId,
     );
-    expect(narrowed).toMatchObject({
-      outcome: "reserved",
-      prompt: expect.stringContaining("Continue with the current message."),
-    });
-    if (narrowed.outcome !== "reserved") {
-      throw new Error("Current Discord input should remain deliverable");
+    if (!narrowed) {
+      throw new Error("Current Discord input should remain steerable");
     }
+    expect(narrowed.prompt).toContain("Continue with the current message.");
     expect(narrowed.prompt).not.toContain(history.content);
     expect(narrowed.prompt).toContain("current Discord permissions");
-    await runs.recordRunnerActiveInputDelivery(
+    await runs.declareSteeredInput(
       claim.sandboxToken,
       started.runId,
-      narrowed.deliveryId,
+      narrowed.eventId,
     );
     await completeRun({
       runId: started.runId,

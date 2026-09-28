@@ -15,7 +15,6 @@ import {
   storageManifestFilesSchema,
 } from "../storages";
 import {
-  ACTIVE_INPUT_DELIVERY_RECEIPT_MAX_IDS,
   webhookCheckpointsContract,
   webhookCompleteContract,
   webhookEventsContract,
@@ -712,51 +711,6 @@ describe("agent completion reuse outcomes", () => {
         webhookCompleteContract.complete.body.safeParse({
           ...baseBody,
           ...body,
-        }).success,
-      ).toBe(false);
-    }
-  });
-});
-
-describe("agent completion active input receipts", () => {
-  const baseBody = {
-    runId: "00000000-0000-4000-8000-000000000000",
-    exitCode: 0,
-  };
-  const deliveryId = "00000000-0000-4000-8000-000000000001";
-
-  it("accepts optional unique canonical delivery IDs", () => {
-    expect(
-      webhookCompleteContract.complete.body.parse({
-        ...baseBody,
-        activeInputDeliveryIds: [deliveryId],
-      }),
-    ).toMatchObject({ activeInputDeliveryIds: [deliveryId] });
-    expect(
-      webhookCompleteContract.complete.body.safeParse(baseBody).success,
-    ).toBe(true);
-  });
-
-  it("rejects duplicate, malformed, non-canonical, and oversized IDs", () => {
-    const invalidLists = [
-      [deliveryId, deliveryId],
-      ["not-a-uuid"],
-      ["AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"],
-      Array.from(
-        { length: ACTIVE_INPUT_DELIVERY_RECEIPT_MAX_IDS + 1 },
-        (_, index) => {
-          return `00000000-0000-4000-8000-${index
-            .toString(16)
-            .padStart(12, "0")}`;
-        },
-      ),
-    ];
-
-    for (const activeInputDeliveryIds of invalidLists) {
-      expect(
-        webhookCompleteContract.complete.body.safeParse({
-          ...baseBody,
-          activeInputDeliveryIds,
         }).success,
       ).toBe(false);
     }

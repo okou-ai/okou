@@ -367,7 +367,6 @@ export function okouTokenFromClaim(claim: RunnerClaim): string {
  * run).
  */
 export interface ChatRunCompletionOptions {
-  readonly activeInputDeliveryIds?: readonly string[];
   readonly cliAgentSessionId?: string;
   readonly cliAgentType?: "claude-code" | "codex" | "pi";
   readonly lastEventSequence?: number;
@@ -1088,9 +1087,6 @@ export function createChatEventsFixture(context: TestContext) {
           cliAgentSessionId: options.cliAgentSessionId ?? `bdd-cli-${runId}`,
           cliAgentSessionHistoryHash: historyHash,
         },
-        ...(options.activeInputDeliveryIds === undefined
-          ? {}
-          : { activeInputDeliveryIds: [...options.activeInputDeliveryIds] }),
         ...(options.lastEventSequence === undefined
           ? stagedOutputEvents.length === 0
             ? {}
