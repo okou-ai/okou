@@ -182,8 +182,9 @@ them.
 Select a saved VNC credential or create one. The certificate-verified choices are
 VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
 VeNCrypt X509Plain (certificate-verified TLS plus username/password
-authentication); Mac Screen Sharing has separate SSH-only Apple DH, Apple
-Direct SRP and Apple RSA/SRP choices. Classic passwords must contain 1–8
+authentication); Mac VNC has separate SSH-only Apple DH, Apple
+Direct SRP and Apple RSA/SRP choices. Standalone macOS Screen Sharing is
+not yet verified; these profiles do not establish support for that mode. Classic passwords must contain 1–8
 printable ASCII characters.
 X509Plain usernames accept 1–255 UTF-8 bytes and passwords accept 1–1023 UTF-8
 bytes. Spaces are significant and embedded NUL is rejected. Changing profiles
@@ -216,8 +217,8 @@ and compatible credentials. Apple profiles have no Direct option or free-form
 RFB destination. For X509 profiles, Direct and saved SSH remain explicit choices;
 a private or loopback IP literal under Direct must be corrected by the owner,
 not automatically rerouted. The app hides X.509 trust fields for Apple and
-offers only profile-matching credentials. SSH protects the entire VNC session; neither
-Apple DH nor SRP server proof replaces this transport protection. Saving does
+offers only profile-matching credentials. SSH protects the entire VNC session;
+neither Apple DH nor SRP server proof replaces this transport protection. Saving does
 not verify Screen Sharing settings or prove the SSH server has no downstream
 proxy. A real product session must separately validate saved-host creation,
 Agent grant, screenshot and bounded input before activation.

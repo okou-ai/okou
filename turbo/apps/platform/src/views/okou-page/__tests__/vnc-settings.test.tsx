@@ -652,7 +652,12 @@ test("Name stays first and a later profile choice never rewrites the earlier dra
     within(dialog).getByLabelText("RFB destination host"),
     "desktop.example.com",
   );
-  await choose(dialog, "Security profile", "Mac Screen Sharing (Apple DH)");
+  await choose(dialog, "Security profile", "Mac VNC (Apple DH)");
+  expect(
+    within(dialog).getByText(
+      /Standalone macOS Screen Sharing remains unverified/u,
+    ),
+  ).toBeInTheDocument();
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
     "Office desktop",
   );
@@ -693,11 +698,7 @@ test("Mac classic password is an explicit SSH-only profile with risk disclosure 
   });
   await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
-  await choose(
-    dialog,
-    "Security profile",
-    "Mac Screen Sharing (classic VNC password)",
-  );
+  await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
   expect(
     within(dialog).getByText(/other clients may reach port 5900/u),
   ).toBeInTheDocument();
@@ -756,21 +757,21 @@ test.each([
   {
     profile: "apple_dh" as const,
     method: "apple_dh_username_password" as const,
-    label: "Mac Screen Sharing (Apple DH)",
+    label: "Mac VNC (Apple DH)",
     usernameMaxLength: 63,
     usernameHelp: /1–63 UTF-8 bytes/u,
   },
   {
     profile: "apple_srp" as const,
     method: "apple_srp_username_password" as const,
-    label: "Mac Screen Sharing (Apple Direct SRP)",
+    label: "Mac VNC (Apple Direct SRP)",
     usernameMaxLength: 255,
     usernameHelp: /1–255 UTF-8 bytes/u,
   },
   {
     profile: "apple_rsa_srp" as const,
     method: "apple_rsa_srp_username_password" as const,
-    label: "Mac Screen Sharing (Apple RSA/SRP)",
+    label: "Mac VNC (Apple RSA/SRP)",
     usernameMaxLength: 234,
     usernameHelp: /1–234 UTF-8 bytes/u,
   },
