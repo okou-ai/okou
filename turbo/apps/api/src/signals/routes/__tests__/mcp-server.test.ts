@@ -1612,6 +1612,24 @@ describe("MCP chat discovery and creation", () => {
       throw new Error("Expected the replayed combined input event");
     }
     expect(after.userMessage).toStrictEqual(original.userMessage);
+    const differentClient = f.auth.token({
+      client_id: "different_combined_client",
+      scope: defaultScopes,
+    });
+    expect(
+      structuredToolError(
+        await callTool(differentClient, "create_chat_thread", args),
+      ),
+    ).toMatchObject({ code: "request_id_conflict", retryable: false });
+    const unchanged = (
+      await f.chat.listThreadEvents(f.actor, args.requestId)
+    ).events.find((event) => {
+      return event.id === combined.input.inputRef.eventId;
+    });
+    if (unchanged?.eventType !== "input.prompt") {
+      throw new Error("Expected the original combined input event");
+    }
+    expect(unchanged.userMessage).toStrictEqual(original.userMessage);
   });
 
   it("finishes combined creation after its HTTP caller disconnects and recovers one input", async () => {
@@ -3350,8 +3368,32 @@ describe("MCP chat mutations", () => {
       throw new Error("Expected the replayed MCP input event");
     }
     expect(after.userMessage).toStrictEqual(original.userMessage);
+    // The public history must still return the original source after the raw
+    // event has moved into the canonical archive, not only before snapshotting.
+    // Only the retention cutoff needs an infrastructure fixture: public MCP
+    // sends cannot choose a database-clock acceptance time 31 days in the past.
+    await setQueuedUserMessageCreatedAtFixture({
+      eventId: args.requestId,
+      createdAt: new Date(now() - 31 * 24 * 60 * 60 * 1000),
+    });
     await snapshotMessages(thread.id);
     expect(archived).not.toHaveLength(0);
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({ body: { chat_thread_ids: [thread.id] } }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    const archivedInput = (
+      await f.chat.listThreadEvents(f.actor, thread.id)
+    ).events.find((event) => {
+      return event.id === args.requestId;
+    });
+    if (archivedInput?.eventType !== "input.prompt") {
+      throw new Error("Expected the archived MCP input event");
+    }
+    expect(archivedInput.userMessage).toStrictEqual(original.userMessage);
     expect(
       (await getMessages(token, { threadId: thread.id })).messages,
     ).toMatchObject([{ text: args.text }]);
