@@ -388,7 +388,6 @@ fn unavailable() -> io::Error {
 }
 
 #[cfg(test)]
-#[path = "guest_duplex/tests.rs"]
 mod guest_duplex_tests;
 #[cfg(test)]
 mod tests;
