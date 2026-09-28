@@ -1171,21 +1171,15 @@ describe("Browser user-action route", () => {
       });
       expect(signing?.[2]).toMatchObject({ expiresIn: 3600 });
       expect(signedCommand.input.ChecksumSHA256).toBeUndefined();
-      expect(prepared.body.uploadHeaders).toBeUndefined();
+      expect(prepared.body).toStrictEqual({
+        uploadUrl: expect.stringMatching(/^https?:\/\//u),
+      });
       expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
       const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
       temporaryObjects.set(key, bytes);
       return key;
     };
     const firstKey = await stageSyntheticFile(token);
-    const invalid = await userActionClient().apply({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: token },
-      body: {
-        values: [{ ...value, files: [{ ...value.files[0]!, sha256: "bad=" }] }],
-      },
-    });
-    expect(invalid.status).toBe(400);
     const invalidMime = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
       params: { requestToken: token },
@@ -1380,19 +1374,7 @@ describe("Browser user-action route", () => {
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: tampered.body.action.requestToken },
-        body: {
-          values: [
-            {
-              ...value,
-              files: [
-                {
-                  ...value.files[0]!,
-                  sha256: createHash("sha256").update("test").digest("hex"),
-                },
-              ],
-            },
-          ],
-        },
+        body: { values: [value] },
       }),
       [200],
     );

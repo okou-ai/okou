@@ -160,11 +160,6 @@ describe("Browser user-action contracts", () => {
     };
     for (const entry of [
       { ...base, operation: "replace", files: [file] },
-      {
-        ...base,
-        operation: "replace",
-        files: [{ ...file, sha256: "a".repeat(64) }],
-      },
       { ...base, operation: "keep", files: [] },
       { ...base, operation: "clear", files: [] },
     ]) {
@@ -207,7 +202,6 @@ describe("Browser user-action contracts", () => {
         operation: "replace",
         files: [{ ...file, size: 10 * 1024 * 1024 + 1 }],
       },
-      { ...base, operation: "replace", files: [{ ...file, sha256: "bad" }] },
       {
         ...base,
         operation: "replace",
@@ -222,27 +216,12 @@ describe("Browser user-action contracts", () => {
     }
   });
 
-  it("accepts checksum-free Browser file prepare and only the legacy signed header", () => {
+  it("accepts a checksum-free Browser file prepare request and response", () => {
     const endpoint = browserUserActionsContract.prepareFileUpload;
     const input = { key: "document", index: 0, size: 4 };
-    expect(endpoint.body.safeParse(input).success).toBe(true);
-    expect(
-      endpoint.body.safeParse({ ...input, sha256: "a".repeat(64) }).success,
-    ).toBe(true);
+    expect(endpoint.body.parse(input)).toStrictEqual(input);
     const output = { uploadUrl: "https://uploads.example.test/file" };
-    expect(endpoint.responses[200].safeParse(output).success).toBe(true);
-    expect(
-      endpoint.responses[200].safeParse({
-        ...output,
-        uploadHeaders: { "x-amz-checksum-sha256": "legacy" },
-      }).success,
-    ).toBe(true);
-    expect(
-      endpoint.responses[200].safeParse({
-        ...output,
-        uploadHeaders: { "x-unexpected": "extra" },
-      }).success,
-    ).toBe(false);
+    expect(endpoint.responses[200].parse(output)).toStrictEqual(output);
   });
 
   it("accepts a bounded radio index including explicit clear and rejects ambiguous scalar values", () => {

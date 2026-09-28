@@ -1131,7 +1131,6 @@ async function uploadBrowserInputFile(
   index: number,
   prepare: (body: BrowserUserActionPrepareFileUploadRequest) => Promise<{
     readonly uploadUrl: string;
-    readonly uploadHeaders?: { readonly "x-amz-checksum-sha256": string };
   }>,
   signal: AbortSignal,
 ): Promise<void> {
@@ -1142,10 +1141,7 @@ async function uploadBrowserInputFile(
     {
       method: "PUT",
       body: file,
-      headers: {
-        "content-type": "application/octet-stream",
-        ...signed.uploadHeaders,
-      },
+      headers: { "content-type": "application/octet-stream" },
     },
     signal,
   );

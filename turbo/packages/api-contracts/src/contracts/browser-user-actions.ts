@@ -207,11 +207,6 @@ const browserUserActionFileValueSchema = z
               .int()
               .min(0)
               .max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
-            // Older clients may still include this unused digest.
-            sha256: z
-              .string()
-              .regex(/^[0-9a-f]{64}$/u)
-              .optional(),
           })
           .strict(),
       )
@@ -471,10 +466,6 @@ const browserFileUploadPrepareSchema = z
       .min(0)
       .max(BROWSER_USER_ACTION_MAX_FILES - 1),
     size: z.number().int().min(0).max(BROWSER_USER_ACTION_MAX_FILE_BYTES),
-    sha256: z
-      .string()
-      .regex(/^[0-9a-f]{64}$/u)
-      .optional(),
   })
   .strict();
 const emptyBodySchema = z.object({}).strict();
@@ -525,11 +516,6 @@ export const browserUserActionsContract = c.router({
       200: z
         .object({
           uploadUrl: z.url(),
-          // Mixed-version APIs may still return the old required header.
-          uploadHeaders: z
-            .object({ "x-amz-checksum-sha256": z.string() })
-            .strict()
-            .optional(),
         })
         .strict(),
       ...commonErrors,
