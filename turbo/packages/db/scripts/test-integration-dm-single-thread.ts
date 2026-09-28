@@ -186,7 +186,7 @@ export async function validateIntegrationDmSingleThread(
                user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
                selected_model, service_tier, created_at
              ) VALUES ($1, $2, $3, $4, 'created', $5,
-               'gpt-6-sol', 'fast', '2026-09-01')`,
+               'gpt-6-sol', 'priority', '2026-09-01')`,
             [scope.userId, scope.orgId, index === 0 ? 6 : 7, threadId, agentId],
           );
         }
