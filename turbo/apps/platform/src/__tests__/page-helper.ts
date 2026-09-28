@@ -293,14 +293,6 @@ async function setupPageAsync(
     },
     signal,
   );
-  signal.addEventListener(
-    "abort",
-    () => {
-      toast.dismiss();
-    },
-    { once: true },
-  );
-
   signal.throwIfAborted();
   const ready = store.set(
     bootstrap$,
@@ -312,9 +304,17 @@ async function setupPageAsync(
         document.body.appendChild(container);
         const { unmount } = render(element, { container });
         pageRendered();
-        signal.addEventListener("abort", unmount, {
-          once: true,
-        });
+        signal.addEventListener(
+          "abort",
+          () => {
+            // Sonner schedules React updates when a toast is dismissed. Remove
+            // its subscriber before dismissing, so those updates cannot outlive
+            // the test's DOM environment.
+            unmount();
+            toast.dismiss();
+          },
+          { once: true },
+        );
       });
     },
     signal,
