@@ -119,6 +119,7 @@ type CompletionResponse =
   | AgentCheckpointErrorResponse;
 
 interface RunRecord extends AgentRunFailureLogSnapshot {
+  readonly id: string;
   readonly apiStartedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
   readonly error: string | null;
@@ -258,6 +259,7 @@ async function loadCompletionRun(
 ): Promise<RunRecord | null> {
   const [run] = await db
     .select({
+      id: agentRuns.id,
       apiStartedAt: agentRuns.apiStartedAt,
       error: agentRuns.error,
       orgId: agentRuns.orgId,
@@ -337,6 +339,7 @@ async function lockCompletionRun(
 ): Promise<RunRecord | null> {
   const [run] = await tx
     .select({
+      id: agentRuns.id,
       apiStartedAt: agentRuns.apiStartedAt,
       error: agentRuns.error,
       orgId: agentRuns.orgId,
