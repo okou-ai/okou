@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.718.0](https://github.com/okou-ai/okou/compare/core-v8.717.0...core-v8.718.0) (2026-09-28)
+
+
+### Features
+
+* **core:** enable chat thread link chips for all users ([#37252](https://github.com/okou-ai/okou/issues/37252)) ([90209b2](https://github.com/okou-ai/okou/commit/90209b2a5ac556b85e681b5bd6d43a48ad251b30))
+* retire video, voice, and talking-avatar generation ([#37242](https://github.com/okou-ai/okou/issues/37242)) ([45b537a](https://github.com/okou-ai/okou/commit/45b537a596a153a91b76c3bc7223187840f52775))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.524.0
+
 ## [8.717.0](https://github.com/okou-ai/okou/compare/core-v8.716.3...core-v8.717.0) (2026-09-28)
 
 

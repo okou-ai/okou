@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.372.0](https://github.com/okou-ai/okou/compare/cli-v9.371.0...cli-v9.372.0) (2026-09-28)
+
+
+### Features
+
+* retire video, voice, and talking-avatar generation ([#37242](https://github.com/okou-ai/okou/issues/37242)) ([45b537a](https://github.com/okou-ai/okou/commit/45b537a596a153a91b76c3bc7223187840f52775))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.524.0
+    * @okouai/core bumped to 8.718.0
+    * @okouai/pi-agent-runtime bumped to 1.41.1
+
 ## [9.371.0](https://github.com/okou-ai/okou/compare/cli-v9.370.2...cli-v9.371.0) (2026-09-28)
 
 

@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.981.0](https://github.com/okou-ai/okou/compare/app-v0.980.0...app-v0.981.0) (2026-09-28)
+
+
+### Features
+
+* retire video, voice, and talking-avatar generation ([#37242](https://github.com/okou-ai/okou/issues/37242)) ([45b537a](https://github.com/okou-ai/okou/commit/45b537a596a153a91b76c3bc7223187840f52775))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.524.0
+    * @okouai/core bumped to 8.718.0
+
 ## [0.980.0](https://github.com/okou-ai/okou/compare/app-v0.979.1...app-v0.980.0) (2026-09-28)
 
 
