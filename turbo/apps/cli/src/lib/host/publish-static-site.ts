@@ -79,7 +79,12 @@ export async function publishStaticSite(
     const bytes = await readStaticSiteFile(file);
     const response = await fetch(uploadUrl, {
       method: "PUT",
-      headers: { "Content-Type": file.contentType },
+      headers: {
+        "Content-Type": file.contentType,
+        "x-amz-checksum-sha256": Buffer.from(file.sha256, "hex").toString(
+          "base64",
+        ),
+      },
       body: new Uint8Array(bytes),
     });
     if (!response.ok) {

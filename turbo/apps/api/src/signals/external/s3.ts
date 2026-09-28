@@ -1034,8 +1034,8 @@ export function generateHostedSitesPresignedPutUrl(
       bucket,
       key,
       contentType,
-      // The signed query binds every retry to the same bytes without requiring
-      // new request headers from already-running CLI versions.
+      // The checksum is signed as a required PUT header, binding retries to
+      // the declared bytes when R2 validates the received body checksum.
       checksumSha256: Buffer.from(sha256, "hex").toString("base64"),
     },
   );

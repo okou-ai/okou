@@ -1,5 +1,22 @@
 # Deployment Compatibility
 
+## Hosted-site direct PUT checksum (#37241)
+
+The API already presigns hosted-site and Browser PUTs with a required
+`x-amz-checksum-sha256` request header. The Browser sends it; the current CLI
+fix also sends the Base64 encoding of each scanned file's SHA-256, including
+synthetic `robots.txt`. The host API does not download and rehash published
+files: R2 must reject a PUT whose body differs from its signed checksum header.
+Verify that property against real development R2 with matching and altered
+synthetic bytes before treating the fix as release-ready. The previous
+query-only workaround failed this integrity check and must not be used.
+
+An old `okou host` binary that omits the header will continue to receive a
+signature error from the header-bound API. This release assumes workflows use
+the newest CLI; confirm the CLI version in each publishing environment before
+expecting hosted-site uploads to recover. The change does not alter Browser's
+prepare response, apply-time R2 readback, feature switch, or production CORS.
+
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)
 
 This is step 1 of the Chat Event V8 plan. It changes no wire protocol: the row

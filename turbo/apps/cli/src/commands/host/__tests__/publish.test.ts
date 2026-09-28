@@ -144,11 +144,25 @@ describe("okou host publish command", () => {
           });
         }),
         http.put(INDEX_UPLOAD_URL, async ({ request }) => {
+          expect(request.headers.get("content-type")).toBe(
+            "text/html; charset=utf-8",
+          );
+          expect(request.headers.get("x-amz-checksum-sha256")).toBe(
+            Buffer.from(sha256(index), "hex").toString("base64"),
+          );
           expect(await request.text()).toBe(index);
           return new HttpResponse(null, { status: 200 });
         }),
         http.put(ROBOTS_UPLOAD_URL, async ({ request }) => {
           uploadedRobots = true;
+          expect(request.headers.get("content-type")).toBe(
+            "text/plain; charset=utf-8",
+          );
+          expect(request.headers.get("x-amz-checksum-sha256")).toBe(
+            Buffer.from(sha256(DEFAULT_HOSTED_SITE_ROBOTS_TXT), "hex").toString(
+              "base64",
+            ),
+          );
           expect(await request.text()).toBe(DEFAULT_HOSTED_SITE_ROBOTS_TXT);
           return new HttpResponse(null, { status: 200 });
         }),
@@ -237,6 +251,43 @@ describe("okou host publish command", () => {
       }
     },
   );
+
+  it("does not complete a hosted deployment after R2 rejects a checksum mismatch", async () => {
+    writeFileSync(join(tempDir, "index.html"), "<main>Checksum test</main>");
+    let completed = false;
+    server.use(
+      http.post(PREPARE_URL, () => {
+        return HttpResponse.json({
+          siteId: "00000000-0000-4000-8000-000000000001",
+          deploymentId: "00000000-0000-4000-8000-000000000002",
+          publicSlug: "demo-site",
+          url: ARTIFACT_URL,
+          uploads: [
+            { path: "/index.html", uploadUrl: INDEX_UPLOAD_URL },
+            { path: "/robots.txt", uploadUrl: ROBOTS_UPLOAD_URL },
+          ],
+        });
+      }),
+      http.put(INDEX_UPLOAD_URL, () => {
+        return new HttpResponse(null, { status: 400 });
+      }),
+      http.put(ROBOTS_UPLOAD_URL, () => {
+        return new HttpResponse(null, { status: 200 });
+      }),
+      http.post(COMPLETE_URL, () => {
+        completed = true;
+        return HttpResponse.json({ status: "ready" });
+      }),
+    );
+
+    await expect(
+      hostCommand.parseAsync(["node", "cli", tempDir, "--site", "demo-site"]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Failed to upload /index.html (HTTP 400)",
+    );
+    expect(completed).toBe(false);
+  });
 
   it("preserves the legacy suffix and response shape during rollout", async () => {
     const index = "<!doctype html><main>Legacy hosted site</main>";
