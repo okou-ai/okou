@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.689.0](https://github.com/okou-ai/okou/compare/api-v1.688.0...api-v1.689.0) (2026-09-28)
+
+
+### Features
+
+* **cli:** unify messaging command flags and output ([#37212](https://github.com/okou-ai/okou/issues/37212)) ([f276160](https://github.com/okou-ai/okou/commit/f276160290b1c7a4dd7e5fe5e09ecc8143ceb1cb))
+
+
+### Refactoring
+
+* remove getStartedQuests and getStartedQuestIntro feature switches ([#37211](https://github.com/okou-ai/okou/issues/37211)) ([0185fa1](https://github.com/okou-ai/okou/commit/0185fa1a020f90a6aba1501b2d3509c233858e68))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.521.0
+    * @okouai/core bumped to 8.716.1
+    * @okouai/db bumped to 1.309.1
+    * @okouai/pi-agent-runtime bumped to 1.40.40
+
 ## [1.688.0](https://github.com/okou-ai/okou/compare/api-v1.687.2...api-v1.688.0) (2026-09-28)
 
 

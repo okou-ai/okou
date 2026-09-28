@@ -6,7 +6,7 @@ import {
   createUser,
   generateTestEmail,
 } from "../lib/clerk-api";
-import { completeExploreOnboarding } from "../lib/onboarding";
+import { completePromptOnboarding } from "../lib/onboarding";
 import { deriveAppUrl } from "../playwright.config";
 
 test("send a message and receive the assistant reply", async ({ page }) => {
@@ -24,21 +24,12 @@ test("send a message and receive the assistant reply", async ({ page }) => {
     activeOrganizationId: orgId,
   });
 
-  await completeExploreOnboarding(page, {
-    appUrl,
-  });
-
-  await page.waitForURL("**/agents/*/chat", {
-    timeout: 120_000,
-    waitUntil: "domcontentloaded",
-  });
-
+  // The onboarding prompt handoff sends the message as the first chat.
   const expectedAnswer = "RESULT=3";
-  const composer = page.locator('[data-slot="chat-composer-card"]');
-  await composer
-    .getByRole("textbox", { name: "Message" })
-    .fill("1 + 2. Reply only RESULT=<answer>.");
-  await composer.getByRole("button", { name: "Send" }).click();
+  await completePromptOnboarding(page, {
+    appUrl,
+    prompt: "1 + 2. Reply only RESULT=<answer>.",
+  });
 
   await expect(
     page

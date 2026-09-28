@@ -1,6 +1,5 @@
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -25,10 +24,6 @@ vi.hoisted(() => {
 });
 
 const context = testContext();
-
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
 
 const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Connect a work tool";
@@ -105,7 +100,6 @@ async function openIndustryStep(): Promise<void> {
     locale: "en-US",
     path: ROUTES.onboarding,
     host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
   });
   await expect(
     screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
@@ -282,7 +276,6 @@ test("A source card starts OAuth directly and reports a successful connect", asy
     locale: "en-US",
     path: ROUTES.onboardingSources,
     host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
   });
   await expect(
     screen.findByRole("heading", { name: SOURCES_QUESTION }),
@@ -332,7 +325,6 @@ test("The starting prompt reports its length, never the request itself", async (
     locale: "en-US",
     path: ROUTES.onboardingReady,
     host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
   });
   await expect(
     screen.findByRole("heading", { name: READY_TITLE }),

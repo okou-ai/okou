@@ -101,8 +101,10 @@ import {
 import {
   artifactFallbackSubtitle,
   artifactSupportsFullscreen,
+  artifactTitleLink,
   artifactTitleSubtitle,
 } from "./artifact-display.ts";
+import { ArtifactTitle } from "./artifact-title.tsx";
 import {
   currentEventImageArtifactNavigation,
   equalEventImageGroups,
@@ -386,6 +388,7 @@ function artifactDialogMetadataFromItem(params: {
 }): AttachmentArtifactMetadata {
   return {
     agentId: params.agentId,
+    aliasUrl: params.item.file.aliasUrl,
     artifactKind: params.item.file.artifactKind,
     contentType: params.item.file.contentType,
     createdAt: params.item.file.createdAt,
@@ -1406,6 +1409,7 @@ function ArtifactPreviewDialogContent({
   const closeWithAnimation = useCloseArtifactPreview();
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const subtitle = artifactDialogKindLabel(preview, artifact);
+  const titleLink = artifact ? artifactTitleLink(preview.kind, artifact) : null;
   const visible = useGet(lightboxDialogVisible$);
   const fullscreen = useGet(lightboxDialogFullscreen$);
 
@@ -1454,7 +1458,9 @@ function ArtifactPreviewDialogContent({
         >
           <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{filename}</div>
+              <div className="truncate text-sm font-medium">
+                <ArtifactTitle filename={filename} link={titleLink} />
+              </div>
               <div className="truncate text-xs text-muted-foreground">
                 {subtitle}
               </div>

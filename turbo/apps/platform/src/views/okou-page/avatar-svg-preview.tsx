@@ -1,9 +1,6 @@
 import { useGet } from "ccstate-react";
 import { cn } from "@okouai/ui";
-import {
-  avatarFramingEnabled$,
-  avatarNeckSweaterEnabled$,
-} from "../../signals/external/feature-switch.ts";
+import { avatarFramingEnabled$ } from "../../signals/external/feature-switch.ts";
 import {
   AVATAR_ARTWORK_SLOT,
   AVATAR_HEAD_SLOT,
@@ -64,15 +61,14 @@ export function AvatarSvgPreview({
   alt,
   "data-testid": testId,
 }: AvatarSvgPreviewProps) {
-  const neckSweater = useGet(avatarNeckSweaterEnabled$);
   const preserveBaseline =
-    preserveChinBaseline && neckSweater && !isLegacyAvatarSvgConfig(config);
+    preserveChinBaseline && !isLegacyAvatarSvgConfig(config);
   const framing = useGet(avatarFramingEnabled$) && !preserveBaseline;
   // A texture and the bottom anchor are one decision, not two: the anchor only
   // matters because the texture makes the artwork's cut edge visible.
   const bottomAnchored = textureUrl !== undefined;
   const { behind, head, front, headOffsetY, contentOffsetY, contentScale } =
-    avatarSvgComposition(config, { neckSweater, framing, bottomAnchored });
+    avatarSvgComposition(config, { framing, bottomAnchored });
   // `centerContent` is the avatar maker asking for centering on its own while
   // the framing switch is off. Pinned rows keep the shared chin baseline instead
   // of letting hair height move each collar to a different position.

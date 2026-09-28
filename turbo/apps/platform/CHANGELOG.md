@@ -11,6 +11,35 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.978.0](https://github.com/okou-ai/okou/compare/app-v0.977.0...app-v0.978.0) (2026-09-28)
+
+
+### Features
+
+* **platform:** guide where to run the skill import prompt ([#37196](https://github.com/okou-ai/okou/issues/37196)) ([10e65e2](https://github.com/okou-ai/okou/commit/10e65e2b5588432d04c33cc818b7a107f9058e0e))
+* **platform:** title hosted site previews with their address ([#37213](https://github.com/okou-ai/okou/issues/37213)) ([ad3730a](https://github.com/okou-ai/okou/commit/ad3730ab1168fd6ac39cedbd3ff7c2e9975ee9eb))
+
+
+### Bug Fixes
+
+* **platform:** continue the gradient canvas behind the connectors toolbar ([#37207](https://github.com/okou-ai/okou/issues/37207)) ([c8cdb00](https://github.com/okou-ai/okou/commit/c8cdb009b9e0bd3870883b380469bed36b638809))
+* **platform:** keep chat turns mounted across input replacements ([#37206](https://github.com/okou-ai/okou/issues/37206)) ([31204a9](https://github.com/okou-ai/okou/commit/31204a90302aeb255501c66accfc74014e321b72))
+
+
+### Refactoring
+
+* remove getStartedQuests and getStartedQuestIntro feature switches ([#37211](https://github.com/okou-ai/okou/issues/37211)) ([0185fa1](https://github.com/okou-ai/okou/commit/0185fa1a020f90a6aba1501b2d3509c233858e68))
+* remove gradientColorThemes feature switch ([#37208](https://github.com/okou-ai/okou/issues/37208)) ([2ddcdaf](https://github.com/okou-ai/okou/commit/2ddcdafcd326781f3184f7ea73dcdb8b2a5b6e8a))
+* remove startCardModelSubscription feature switch ([#37210](https://github.com/okou-ai/okou/issues/37210)) ([f0b2481](https://github.com/okou-ai/okou/commit/f0b248140c6e478648978b840066affc62a658ff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.521.0
+    * @okouai/core bumped to 8.716.1
+
 ## [0.977.0](https://github.com/okou-ai/okou/compare/app-v0.976.0...app-v0.977.0) (2026-09-28)
 
 

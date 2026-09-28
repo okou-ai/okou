@@ -53,6 +53,11 @@ function skipsEventBodyRendering(event: ChatEvent): boolean {
   );
 }
 
+/** A provisional message can still gain more bytes at its current URL tail. */
+export function isTransientOutputMessage(event: ChatEvent): boolean {
+  return event.eventType === "output.message" && event.seqId === undefined;
+}
+
 /** Whether the event carries an assistant body rendered as markdown. */
 export function hasChatEventBodyContent(event: ChatEvent): boolean {
   return chatEventTreeContent(event) !== null;
@@ -80,6 +85,7 @@ interface ChatEventTreePlan {
   readonly content: string;
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
+  readonly requireUrlTerminator: boolean;
 }
 
 /**
@@ -93,13 +99,15 @@ export function chatEventTreePlan(
   if (content === null) {
     return null;
   }
+  const requireUrlTerminator = isTransientOutputMessage(event);
   const plan = eventBodyPlan(content, {
-    previews: true,
+    requireUrlTerminator,
     chatActionContext,
   });
   return {
     content,
     treeSource: plan.treeSource,
     descriptors: plan.descriptors,
+    requireUrlTerminator,
   };
 }

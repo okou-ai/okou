@@ -61,7 +61,6 @@ import {
 } from "./composer-agent-suggestion-domain.ts";
 import {
   avatarFramingEnabled$,
-  avatarNeckSweaterEnabled$,
   featureSwitch$,
 } from "../external/feature-switch.ts";
 import {
@@ -2037,7 +2036,6 @@ function createSyncAgentMentionAvatarsCommand(
     const agents = await get(agents$);
     signal.throwIfAborted();
     avatarRuntime.setSwitches({
-      neckSweater: get(avatarNeckSweaterEnabled$),
       framing: get(avatarFramingEnabled$),
     });
     avatarRuntime.replaceAgents(agents);

@@ -216,7 +216,6 @@ export const imessageQuestReward$ = computed(
 export interface GetStartedSummary {
   readonly completed: number;
   readonly total: number;
-  readonly earnedCredits: number;
   /** Credits still claimable, which is what the panel leads with. */
   readonly remainingCredits: number;
   readonly checkinStreak: number;
@@ -230,13 +229,6 @@ export const getStartedSummary$ = computed(
         return quest.status === "done";
       }).length,
       total: quests.length,
-      earnedCredits: quests
-        .filter((quest) => {
-          return quest.rewardTarget === "user";
-        })
-        .reduce((sum, quest) => {
-          return sum + quest.earnedCredits;
-        }, 0),
       remainingCredits: quests
         .filter((quest) => {
           return quest.canEarnMore && quest.status !== "inReview";

@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-
 import {
   onboardingCompleteContract,
   onboardingStatusContract,
@@ -17,7 +15,6 @@ import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { readOnboardingIndustryFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { onboardingCompleteRoutes } from "../onboarding-complete";
 import { onboardingStatusRoutes } from "../onboarding-status";
@@ -88,14 +85,6 @@ function memberOf(admin: OrgActor) {
   } as const;
 }
 
-async function enableSourcesFirst(actor: OrgActor): Promise<void> {
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId },
-    { [FeatureSwitchKey.OnboardingSourcesFirst]: true },
-  );
-}
-
 function mockDefaultAgentStorage(): void {
   context.mocks.s3.send.mockResolvedValue({ ContentLength: 1024 });
   context.mocks.s3.getSignedUrl.mockResolvedValue(
@@ -145,33 +134,12 @@ describe("GET /api/onboarding/status", () => {
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
   });
-
-  it("does not start onboarding for a member while the source-first switch is off", async () => {
-    const actor = orgActor("org:member");
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-
-    const response = await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      needsOnboarding: false,
-      onboardingComplete: false,
-      isAdmin: false,
-      hasOrg: true,
-      hasDefaultAgent: false,
-      defaultAgentId: null,
-      defaultAgentMetadata: null,
-    });
-  });
 });
 
 describe("member source-first onboarding", () => {
-  it("starts onboarding for a new member once the switch is on for them", async () => {
+  it("starts onboarding for a new member", async () => {
     const admin = orgActor();
     const member = memberOf(admin);
-    await enableSourcesFirst(member);
 
     await expect(statusAs(member)).resolves.toStrictEqual({
       needsOnboarding: true,
@@ -190,7 +158,6 @@ describe("member source-first onboarding", () => {
     const member = memberOf(admin);
     await statusAs(admin);
     await completeAs(admin);
-    await enableSourcesFirst(member);
 
     // The owner finishing setup does not finish it for the member.
     await expect(statusAs(member)).resolves.toMatchObject({
@@ -209,7 +176,6 @@ describe("member source-first onboarding", () => {
       needsOnboarding: true,
       onboardingComplete: false,
     });
-    await enableSourcesFirst(member);
 
     const completed = await completeAs(member, {
       query: { modelProvider: "codex" },
@@ -267,7 +233,6 @@ describe("member source-first onboarding", () => {
       orgId: admin.orgId,
       role: "org:member",
     } as const;
-    await enableSourcesFirst(member);
 
     await expect(statusAs(member)).resolves.toMatchObject({
       needsOnboarding: false,
@@ -332,7 +297,7 @@ describe("POST /api/onboarding/complete", () => {
       defaultAgentId: before.body.defaultAgentId,
     });
     // No endpoint returns the stored field, so the column is the only place
-    // this can be read. The make-something flow never asks the question, so it
+    // this can be read. The prompt handoff never asks the question, so it
     // stays uncollected rather than being filled with a guess.
     await expect(
       readOnboardingIndustryFixture(actor.orgId),

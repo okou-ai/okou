@@ -37,7 +37,7 @@ import {
   avatarMakerConfig$,
   avatarMakerEditing$,
   avatarMakerStep$,
-  avatarMakerSteps$,
+  AVATAR_MAKER_STEPS,
   avatarMakerStepIdx$,
   avatarMakerPreviewRevision$,
   avatarMakerShuffleRevision$,
@@ -262,7 +262,7 @@ function AvatarPreviewWithShuffle() {
 function StepNavigator() {
   const { t } = useTranslation("agents");
   const step = useGet(avatarMakerStep$);
-  const steps = useGet(avatarMakerSteps$);
+  const steps = AVATAR_MAKER_STEPS;
   const stepIdx = useGet(avatarMakerStepIdx$);
   const goBack = useSet(goBackStep$);
   const goForward = useSet(goForwardStep$);

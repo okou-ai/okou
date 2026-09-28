@@ -32,6 +32,12 @@ const listOnboardingWorkflowConnectorsInner$ = command(
   },
 );
 
+/**
+ * No current App reads this: the onboarding workflow pages it served were
+ * removed with the make-something flow. It stays for App bundles loaded before
+ * that removal (old web/app -> API gate in `docs/fallback.md`), and goes once
+ * the client-version floor excludes them.
+ */
 export const onboardingWorkflowConnectorsRoutes: readonly RouteEntry[] = [
   {
     route: onboardingWorkflowConnectorsContract.list,

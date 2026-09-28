@@ -1,6 +1,5 @@
 import { command, type Command } from "ccstate";
 import { createElement, type ComponentType } from "react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   OnboardingSkillsPage,
   OnboardingSlackPage,
@@ -17,7 +16,6 @@ import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { builtinConnectors$ } from "../external/connectors.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 import {
@@ -33,8 +31,7 @@ import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
 import {
   promptHandoffParams,
-  setupOnboardingMakePage$,
-  setupOnboardingSourcesFirstPromptPage$,
+  setupOnboardingPromptPage$,
 } from "./onboarding-page-setup.ts";
 import { enterSkillImport$ } from "./onboarding-skill-import.ts";
 import {
@@ -72,20 +69,11 @@ interface SourcesFirstPageConfig {
   readonly enter?: Command<Promise<void>, [AbortSignal]>;
 }
 
-const sourcesFirstEnabled$ = command(
-  async ({ get }, signal: AbortSignal): Promise<boolean> => {
-    const switches = await get(featureSwitches$);
-    signal.throwIfAborted();
-    return switches[FeatureSwitchKey.OnboardingSourcesFirst] ?? false;
-  },
-);
-
 /**
- * A visitor who brings a `prompt` (every Marketing "try it" link does) keeps
- * the make-something flow's prompt handoff, whatever the switch says: the
- * source-first flow ends on its own recommended request and would drop theirs.
- * Only an admin runs that flow, so an invited member stays in the source-first
- * flow either way.
+ * A visitor who brings a `prompt` (every Marketing "try it" link does) gets
+ * the prompt handoff: the source-first flow ends on its own recommended
+ * request and would drop theirs. Only an admin runs the handoff, so an invited
+ * member stays in the source-first flow either way.
  */
 function hasPromptHandoff(
   searchParams: URLSearchParams,
@@ -107,8 +95,8 @@ const redirectTo$ = command(({ get, set }, path: RoutePath) => {
 });
 
 /**
- * Nothing is left to onboard, so the visitor goes where the make-something
- * flow sends them: to their prompt when they brought one, and home otherwise.
+ * Nothing is left to onboard, so the visitor goes to their prompt when they
+ * brought one, and home otherwise.
  */
 const forwardOnboardedVisitor$ = command(({ get, set }) => {
   const searchParams = get(searchParams$);
@@ -127,12 +115,6 @@ function createSourcesFirstPageSetup(
   return command(async ({ get, set }, signal: AbortSignal) => {
     if (!get(page$)) {
       set(showAppSkeleton$);
-    }
-
-    if (!(await set(sourcesFirstEnabled$, signal))) {
-      signal.throwIfAborted();
-      set(redirectTo$, ROUTES.onboarding);
-      return;
     }
 
     const status = await get(onboardingStatus$);
@@ -235,47 +217,21 @@ const setupOnboardingIndustryEntryPage$ = createSourcesFirstPageSetup({
 });
 
 /**
- * What `/onboarding` opens: the source-first flow's first question when the
- * switch is on, unless the visitor brought a prompt of their own to try, and
- * the make-something page when the switch is off.
- */
-const onboardingEntry$ = command(
-  async (
-    { get, set },
-    signal: AbortSignal,
-  ): Promise<"sources-first" | "prompt" | "make"> => {
-    if (!(await set(sourcesFirstEnabled$, signal))) {
-      return "make";
-    }
-    signal.throwIfAborted();
-    const searchParams = get(searchParams$);
-    if (!searchParams.get("prompt")?.trim()) {
-      return "sources-first";
-    }
-    const status = await get(onboardingStatus$);
-    signal.throwIfAborted();
-    return hasPromptHandoff(searchParams, status) ? "prompt" : "sources-first";
-  },
-);
-
-/**
- * `/onboarding` keeps its public path: the switch and the visitor's own prompt
- * decide whether it opens the source-first flow's first question or the
- * prompt handoff, drawn in the look of the flow the switch picks.
+ * `/onboarding` keeps its public path: it opens the source-first flow's first
+ * question, unless the visitor brought a prompt of their own to try.
  */
 export const setupOnboardingEntryPage$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    const entry = await set(onboardingEntry$, signal);
-    signal.throwIfAborted();
-    if (entry === "sources-first") {
-      await set(setupOnboardingIndustryEntryPage$, signal);
-      return;
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const searchParams = get(searchParams$);
+    if (searchParams.get("prompt")?.trim()) {
+      const status = await get(onboardingStatus$);
+      signal.throwIfAborted();
+      if (hasPromptHandoff(searchParams, status)) {
+        await set(setupOnboardingPromptPage$, signal);
+        return;
+      }
     }
-    if (entry === "prompt") {
-      await set(setupOnboardingSourcesFirstPromptPage$, signal);
-      return;
-    }
-    await set(setupOnboardingMakePage$, signal);
+    await set(setupOnboardingIndustryEntryPage$, signal);
   },
 );
 

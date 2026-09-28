@@ -362,12 +362,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Trace explicitly opted-in Pi runs across the API-first and Sandbox ownership boundary in Langfuse.",
     enabled: false,
   },
-  [FeatureSwitchKey.AvatarNeckSweater]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Give composer avatars a shared neck and sweater, scaling each head so every chin meets the same collar.",
-    enabled: true,
-  },
   [FeatureSwitchKey.AvatarFraming]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -544,12 +538,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // against hand-built decks; the template corpus has not been checked yet.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.OnboardingSourcesFirst]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Replace the make-something onboarding with the source-first flow: choose an industry, connect a work source, invite, AI experience, Slack, and a tailored starting prompt.",
-    enabled: false,
   },
 };
 

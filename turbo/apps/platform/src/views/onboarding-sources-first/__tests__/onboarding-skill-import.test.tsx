@@ -10,7 +10,6 @@ import {
   workflowsCollectionContract,
   type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -37,10 +36,6 @@ vi.hoisted(() => {
 
 const context = testContext();
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
-
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
 
 const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
 const SKILLS_QUESTION = "Bring your existing skills into Okou";
@@ -239,7 +234,6 @@ async function openSkillsStep(
     locale: "en-US",
     path: fromStart ? ROUTES.onboarding : ROUTES.onboardingExperience,
     host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   if (fromStart) {
@@ -286,7 +280,6 @@ test("The skills step requires a selected tool", async () => {
     context,
     locale: "en-US",
     path: ROUTES.onboardingSkills,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -324,7 +317,6 @@ test("Refreshing the skills step restores the chosen tool", async () => {
     context,
     locale: "en-US",
     path: ROUTES.onboardingSkills,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -363,7 +355,6 @@ test("A saved draft from another user cannot select the current user's tool", as
     context,
     locale: "en-US",
     path: ROUTES.onboardingExperience,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(

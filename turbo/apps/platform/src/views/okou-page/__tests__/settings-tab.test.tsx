@@ -20,7 +20,6 @@ import {
   AVATAR_PRESET_COUNT,
   DEFAULT_AGENT_AVATAR_URL,
 } from "@okouai/core/agent-avatar";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -262,30 +261,7 @@ test("Offer avatar creation instead of editing when the agent has no avatar", as
   ).resolves.toBeVisible();
 });
 
-test("Load only the four head layers when neck and sweater are disabled", async () => {
-  prepareAgentProfile(null);
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}?tab=profile`,
-    featureSwitches: {
-      [FeatureSwitchKey.AvatarNeckSweater]: false,
-    },
-  });
-
-  click(await findCreateCustomAvatarButton());
-
-  const dialog = await screen.findByRole("dialog", {
-    name: "Give your agent a face",
-  });
-  const layerSrcs = renderedAvatarSvgLayerSrcs(dialog);
-
-  // Four head layers across the preview and the six face options.
-  expect(layerSrcs).toHaveLength(28);
-  expect(new Set(layerSrcs).size).toBe(24);
-  expect(layerSrcs.filter(isNeckOrSweaterLayer)).toStrictEqual([]);
-});
-
-test("Load the released neck and sweater layers by default", async () => {
+test("Load the neck and sweater layers with the avatar head", async () => {
   prepareAgentProfile(null);
   await setupPage({
     context,
@@ -311,9 +287,6 @@ test("Keep every composer step and its edge options usable in one dialog", async
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}?tab=profile`,
-    featureSwitches: {
-      [FeatureSwitchKey.AvatarNeckSweater]: true,
-    },
   });
 
   click(await findCreateCustomAvatarButton());
@@ -347,9 +320,6 @@ async function openNewComposerAvatar(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}?tab=profile`,
-    featureSwitches: {
-      [FeatureSwitchKey.AvatarNeckSweater]: true,
-    },
   });
 
   click(await findCreateCustomAvatarButton());

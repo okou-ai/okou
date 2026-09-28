@@ -28,7 +28,6 @@ interface AgentMentionAvatarSource {
 
 /** The avatar composition switches, as seen by a mention chip. */
 export interface AgentMentionAvatarSwitches {
-  readonly neckSweater: boolean;
   readonly framing: boolean;
 }
 
@@ -36,7 +35,7 @@ export interface AgentMentionAvatarRuntime {
   readonly resolve: (agentId: string, fallback: string | null) => string | null;
   readonly replaceAgents: (agents: readonly AgentMentionAvatarSource[]) => void;
   /**
-   * The `avatarNeckSweater` and `avatarFraming` switches. Mention chips are
+   * The `avatarFraming` switch. Mention chips are
    * ProseMirror node views built outside React and outside command scope, so
    * the switches are pushed in from the sync command that already feeds this
    * runtime rather than read from `featureSwitch$` here.
@@ -53,7 +52,6 @@ export interface AgentMentionAvatarRuntime {
 export function createAgentMentionAvatarRuntime(): AgentMentionAvatarRuntime {
   let agents: readonly AgentMentionAvatarSource[] = [];
   let switches: AgentMentionAvatarSwitches = {
-    neckSweater: false,
     framing: false,
   };
   const listeners = new Set<() => void>();
@@ -74,10 +72,7 @@ export function createAgentMentionAvatarRuntime(): AgentMentionAvatarRuntime {
       notify();
     },
     setSwitches(next) {
-      if (
-        switches.neckSweater === next.neckSweater &&
-        switches.framing === next.framing
-      ) {
+      if (switches.framing === next.framing) {
         return;
       }
       switches = next;
