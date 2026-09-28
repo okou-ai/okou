@@ -55,6 +55,7 @@ import {
   type CancelRunResult,
 } from "./run-cancel.service";
 import { isCodexFastServiceTierSupported } from "./model-selection.service";
+import { isIntegrationDirectMessageThread } from "./integration-dm-thread.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
@@ -563,9 +564,9 @@ async function loadAuthorizedAgent(
 }
 
 /**
- * The run settings a send persists on its thread. The model is stored as the
- * user selected it; the pick resolves its route, provider admission, and
- * credits when it launches the input.
+ * The send's requested settings. Main integration DMs store model selections
+ * as member defaults; other threads keep their selection. The pick resolves
+ * the model route, provider admission, and credits when it launches the input.
  */
 interface ThreadRunSettings {
   readonly selectedModel: string | null;
@@ -860,12 +861,20 @@ async function updateExistingSendThread(
   thread: ExistingSendThread,
 ): Promise<void> {
   const { runSettings, computerAccess, current } = thread;
+  const followsUserDefault = await isIntegrationDirectMessageThread(
+    tx,
+    thread.threadId,
+  );
+  const selectedModel = followsUserDefault ? null : runSettings.selectedModel;
+  const codexServiceTier = followsUserDefault
+    ? null
+    : runSettings.codexServiceTier;
   const patch = runSettings.modelSettingsPatch;
   const modelChanged =
-    runSettings.selectedModel !== current.selectedModel ||
+    selectedModel !== current.selectedModel ||
     (patch !== undefined &&
       current.modelSettings[patch.model]?.effort !== patch.effort);
-  const tierChanged = runSettings.codexServiceTier !== current.codexServiceTier;
+  const tierChanged = codexServiceTier !== current.codexServiceTier;
   const accessChanged =
     computerAccess.computerUseHostId !== current.computerUseHostId ||
     computerAccess.cloudBrowserEnabled !== current.cloudBrowserEnabled;
@@ -876,7 +885,7 @@ async function updateExistingSendThread(
   await tx
     .update(chatThreads)
     .set({
-      ...(modelChanged ? { selectedModel: runSettings.selectedModel } : {}),
+      ...(modelChanged ? { selectedModel } : {}),
       // Merge the effort into the stored settings rather than writing the
       // snapshot back, so a concurrent send's effort for another model stays.
       ...(patch === undefined
@@ -888,9 +897,7 @@ async function updateExistingSendThread(
                 || jsonb_build_object('effort', cast(${patch.effort} as text))
             )`,
           }),
-      ...(tierChanged
-        ? { codexServiceTier: runSettings.codexServiceTier }
-        : {}),
+      ...(tierChanged ? { codexServiceTier } : {}),
       ...(accessChanged ? computerAccess : {}),
       updatedAt,
     })
@@ -912,7 +919,7 @@ async function updateExistingSendThread(
     await appendChatThreadEvent(tx, {
       ...event,
       kind: "model_selection_updated",
-      selectedModel: runSettings.selectedModel,
+      selectedModel,
       modelSettingsPatch: runSettings.modelSettingsPatch,
     });
   }
@@ -920,7 +927,7 @@ async function updateExistingSendThread(
     await appendChatThreadEvent(tx, {
       ...event,
       kind: "service_tier_updated",
-      serviceTier: chatThreadServiceTierFromCodex(runSettings.codexServiceTier),
+      serviceTier: chatThreadServiceTierFromCodex(codexServiceTier),
     });
   }
   if (accessChanged) {

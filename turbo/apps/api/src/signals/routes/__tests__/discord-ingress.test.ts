@@ -1086,6 +1086,82 @@ describe("canonical Discord ingress", () => {
     await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
   });
 
+  it("keeps a busy main DM unpinned when a web send selects its next model", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const chatApi = createChatFilesBddApi(context);
+    const first = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "occupy the main DM while the web queues its next input",
+    });
+    provider.messages.set(first.id, first);
+    await postDiscordMessage(context, first);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the main DM thread");
+    }
+    const firstRun = await launchedRun(actor, thread.id);
+    const { providerId } = await runsApi.createOrgModelProvider(actor.actor, {
+      type: "openai-api-key",
+      secret: "sk-test-discord-dm-send-default",
+    });
+    await runsApi.updateOrgModelPolicies(actor.actor, [
+      {
+        model: "gpt-6-astra",
+        isDefault: true,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    const sent = await chatApi.requestSendEvent(
+      actor.actor,
+      {
+        agentId: actor.defaultAgentId,
+        threadId: thread.id,
+        prompt: "continue the DM from the web using my new default",
+        model: "gpt-6-astra",
+        runOptions: { codexServiceTier: "fast" },
+      },
+      [201],
+    );
+    expect(sent.body).toMatchObject({ threadId: thread.id, runId: null });
+    await flushWaitUntilForTest();
+    const queued = currentInputs(await events(actor, thread.id));
+    expect(queued).toHaveLength(2);
+    expect(queued[1]?.runId).toBeUndefined();
+    await expect(
+      chatApi.readThreadMetadata(actor.actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: null, serviceTier: null });
+    await expect(discordChatThreads(context, actor)).resolves.toMatchObject([
+      { id: thread.id, selectedModel: null, serviceTier: null },
+    ]);
+    const preference = await accept(
+      setupApp({ context, routes: userModelPreferenceRoutes })(
+        userModelPreferenceContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(preference.body).toMatchObject({
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+    });
+
+    await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+    await flushWaitUntilForTest();
+    const input = currentInputs(await events(actor, thread.id))[1];
+    if (!input?.runId) {
+      throw new Error("Expected the queued web input to launch");
+    }
+    await runsApi.heartbeatRunner(actor.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(input.runId);
+    expect(claim.modelUsageProvider).toBe("gpt-6-astra");
+    expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
+    await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
+  });
+
   it("keeps another organization's DM replies out of a newly selected organization's run", async () => {
     const first = await connected();
     const provider = mockDiscordProvider(first);
