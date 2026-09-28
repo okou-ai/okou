@@ -169,6 +169,7 @@ import {
   PrivateNetworkPanel,
   RemoteControlPanel,
 } from "./connectors-remote-panels.tsx";
+import { WORKSPACE_CANVAS_BACKDROP_CLASS } from "./workspace-inset.tsx";
 
 function withRemoteAccessCategory(
   metadata: PublicConnectorCatalogCategoryMetadata | undefined,
@@ -902,13 +903,18 @@ function ConnectorsDirectoryToolbar({
     // strip is latched, so it is the page's 24px rather than the 12px the
     // controls keep between themselves -- a gap equal to the one inside the
     // group reads as a crop against the viewport edge.
-    // The strip paints the workspace canvas rather than `background`: the
-    // surface it covers is `WorkspaceInset`'s paint layer, and under a colour
-    // palette that layer fills from `--card` while `--background` is a darker
-    // 98.8% -- so a `bg-background` strip stood out as a flat block the width
-    // of the 900px column, hard-edged against the canvas on both sides.
+    // The strip repaints the workspace canvas, fill and gradient both, rather
+    // than a flat colour: under a gradient palette the canvas is `--card` plus
+    // two corner gradients, so any flat strip -- `background` or the canvas
+    // fill alone -- stood out as a block the width of the 900px column,
+    // hard-edged against the gradient on both sides.
     <div className="sticky top-0 z-30 -mb-6 -mt-6">
-      <div className="flex flex-col gap-3 bg-workspace-canvas pt-6">
+      <div
+        className={cn(
+          "flex flex-col gap-3 pt-6",
+          WORKSPACE_CANVAS_BACKDROP_CLASS,
+        )}
+      >
         <div className="flex items-center overflow-x-auto">
           <ConnectorsScopeSegment
             scope={scope}
@@ -1065,7 +1071,10 @@ function ConnectorsDirectoryToolbar({
       </div>
       <div
         aria-hidden="true"
-        className="h-6 bg-gradient-to-b from-workspace-canvas to-transparent"
+        className={cn(
+          "h-6 [-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)] [mask-image:linear-gradient(to_bottom,#000,transparent)]",
+          WORKSPACE_CANVAS_BACKDROP_CLASS,
+        )}
       />
     </div>
   );
