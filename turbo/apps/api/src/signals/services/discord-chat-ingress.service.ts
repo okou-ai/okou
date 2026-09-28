@@ -1,3 +1,4 @@
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { createHash } from "node:crypto";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
@@ -31,7 +32,9 @@ export interface DiscordChatThreadRouteBinding extends DiscordChatThreadRouteKey
 function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
   return and(
     eq(discordChatThreadRoutes.connectionId, key.connectionId),
-    eq(discordChatThreadRoutes.channelId, key.channelId),
+    key.sessionKey === INTEGRATION_DM_SESSION_KEY
+      ? undefined
+      : eq(discordChatThreadRoutes.channelId, key.channelId),
     eq(discordChatThreadRoutes.sessionKey, key.sessionKey),
     eq(discordChatThreadRoutes.userId, key.userId),
   );

@@ -58,10 +58,6 @@ import {
 } from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
-import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { ensureTeamsChatThreadRoute } from "./teams-chat-ingress.service";
@@ -1089,9 +1085,6 @@ function isTeamsThreadReply(activity: TeamsMessageActivity): boolean {
 
 function teamsSessionThreadId(args: {
   readonly activity: TeamsMessageActivity;
-  readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly serviceTier: IntegrationModelRoutePin["serviceTier"];
 }): string {
   const { activity } = args;
   if (
@@ -1571,16 +1564,12 @@ const persistTeamsChatMessage$ = command(
       readonly promptFiles: readonly TeamsPromptFile[];
       readonly promptContext: TeamsPromptContext;
       readonly apiStartTime: number;
-      readonly modelRoute: IntegrationModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<PersistedTeamsChatMessage> => {
     const currentTime = new Date(args.apiStartTime);
     const threadId = teamsSessionThreadId({
       activity: args.activity,
-      agentId: args.composeId,
-      selectedModel: args.modelRoute?.selectedModel ?? null,
-      serviceTier: args.modelRoute?.serviceTier ?? null,
     });
     const route = await ensureTeamsChatThreadRoute(args.db, {
       isDirectMessage: args.activity.conversationType === "personal",
@@ -1590,8 +1579,8 @@ const persistTeamsChatMessage$ = command(
       userId: args.connection.userId,
       orgId: args.installation.orgId,
       agentId: args.composeId,
-      selectedModel: args.modelRoute?.selectedModel ?? null,
-      serviceTier: args.modelRoute?.serviceTier ?? null,
+      selectedModel: null,
+      serviceTier: null,
       currentTime,
     });
     signal.throwIfAborted();
@@ -1718,7 +1707,6 @@ const runAgentForTeams$ = command(
       readonly promptFiles: readonly TeamsPromptFile[];
       readonly promptContext: TeamsPromptContext;
       readonly apiStartTime: number;
-      readonly modelRoute: IntegrationModelRoutePin | undefined;
       readonly timing: ApiDispatchTimingCollector;
     },
     signal: AbortSignal,
@@ -1740,7 +1728,6 @@ const runAgentForTeams$ = command(
         promptFiles: args.promptFiles,
         promptContext: args.promptContext,
         apiStartTime: args.apiStartTime,
-        modelRoute: args.modelRoute,
       },
       signal,
     );
@@ -2042,16 +2029,6 @@ const runResolvedTeamsAgentForActivity$ = command(
     );
     signal.throwIfAborted();
 
-    const modelRoute = await set(
-      resolveIntegrationModelRouteForUser$,
-      {
-        orgId: args.installation.orgId,
-        userId: args.connection.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
     const promptContext = await loadOptionalChatEnrichment(
       "teams",
       () => {
@@ -2074,7 +2051,6 @@ const runResolvedTeamsAgentForActivity$ = command(
         promptFiles: args.promptFiles,
         promptContext,
         apiStartTime: args.apiStartTime,
-        modelRoute,
         timing: args.timing,
       },
       signal,

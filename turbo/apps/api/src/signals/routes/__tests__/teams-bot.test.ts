@@ -2315,7 +2315,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     );
   });
 
-  describe("preserves the pinned Teams model in an existing DM thread", () => {
+  describe("preserves the pinned Teams model in an existing DM reply thread", () => {
     async function prepareScenario() {
       const { fixture, actor, runnerGroup } =
         await setupConnectedTeamsBotActor();

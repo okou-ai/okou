@@ -1,3 +1,4 @@
+import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
@@ -44,10 +45,6 @@ import {
 } from "./feishu-config";
 import { ensureFeishuChatThreadRoute } from "./feishu-chat-ingress.service";
 import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
-import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
 import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
@@ -102,9 +99,6 @@ interface CanonicalFeishuInboundMessage extends FeishuInboundMessage {
 
 function canonicalThreadId(args: {
   readonly message: CanonicalFeishuInboundMessage;
-  readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly serviceTier: IntegrationModelRoutePin["serviceTier"];
 }): string {
   const { message } = args;
   const replyThreadId =
@@ -396,7 +390,7 @@ const persistCanonicalFeishuIngress$ = command(
       readonly message: CanonicalFeishuInboundMessage;
       readonly agentId: string;
       readonly selectedModel: string | null;
-      readonly serviceTier: IntegrationModelRoutePin["serviceTier"];
+      readonly serviceTier: ChatThreadServiceTier | null;
       readonly reactionId: string | undefined;
       readonly launchContext: CanonicalFeishuLaunchContext;
     },
@@ -404,9 +398,6 @@ const persistCanonicalFeishuIngress$ = command(
   ): Promise<PersistedCanonicalFeishuIngress> => {
     const routeThreadId = canonicalThreadId({
       message: args.message,
-      agentId: args.agentId,
-      selectedModel: args.selectedModel,
-      serviceTier: args.serviceTier,
     });
     const route = await ensureFeishuChatThreadRoute(args.db, {
       connectionId: args.connection.id,
@@ -666,13 +657,6 @@ const processClaimedIngress$ = command(
       return null;
     }
 
-    const modelRoute = await set(
-      resolveIntegrationModelRouteForUser$,
-      { orgId: installation.orgId, userId: connection.userId },
-      signal,
-    );
-    signal.throwIfAborted();
-    const selectedModel = modelRoute?.selectedModel ?? null;
     const reactionId =
       ingress.reactionId ??
       (await addFeishuThinkingReaction(
@@ -707,8 +691,8 @@ const processClaimedIngress$ = command(
       connection,
       message,
       agentId: effectiveAgent.agent.id,
-      selectedModel,
-      serviceTier: modelRoute?.serviceTier ?? null,
+      selectedModel: null,
+      serviceTier: null,
       reactionId,
       launchContext: canonicalFeishuLaunchContext({
         message,

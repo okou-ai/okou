@@ -32,11 +32,8 @@ export function slackSessionThreadTs(args: {
   readonly channelType: "channel" | "dm" | "group_dm";
   readonly messageTs: string;
   readonly threadTs?: string;
-  readonly agentId?: string;
-  readonly selectedModel?: string | null;
-  readonly serviceTier?: ChatThreadServiceTier | null;
 }): string {
-  if (args.channelType === "dm" && !args.threadTs && args.agentId) {
+  if (args.channelType === "dm" && !args.threadTs) {
     return INTEGRATION_DM_SESSION_KEY;
   }
   return args.threadTs ?? args.messageTs;
@@ -49,7 +46,9 @@ export function isSlackDirectMessageSessionThreadTs(threadTs: string): boolean {
 function slackChatThreadRouteWhere(key: SlackChatThreadRouteKey) {
   return and(
     eq(slackChatThreadRoutes.connectionId, key.connectionId),
-    eq(slackChatThreadRoutes.channelId, key.channelId),
+    key.threadTs === INTEGRATION_DM_SESSION_KEY
+      ? undefined
+      : eq(slackChatThreadRoutes.channelId, key.channelId),
     eq(slackChatThreadRoutes.threadTs, key.threadTs),
     eq(slackChatThreadRoutes.userId, key.userId),
   );

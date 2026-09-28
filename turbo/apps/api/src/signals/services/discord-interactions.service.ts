@@ -49,7 +49,7 @@ import {
 } from "./discord-config";
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
-import { resolveIntegrationModelRouteForUser$ } from "./integration-model-route.service";
+import { resolveDefaultModelFirstPin } from "./model-selection.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { updateUserModelPreferenceInDb } from "./user-data.service";
 import { writeDb$ } from "../external/db";
@@ -337,17 +337,18 @@ const discordModelPicker$ = command(
       );
     }
     // Preselect the model a new Discord conversation would actually run.
-    const route = await set(
-      resolveIntegrationModelRouteForUser$,
-      args.binding,
-      signal,
+    const route = await resolveDefaultModelFirstPin(
+      set(writeDb$),
+      args.binding.orgId,
+      args.binding.userId,
     );
+    signal.throwIfAborted();
     return discordAccountPicker({
       ...args,
       connectionId: args.binding.connectionId,
       action: "model",
       options,
-      ...(route ? { selected: route.selectedModel } : {}),
+      ...(route.selectedModel ? { selected: route.selectedModel } : {}),
       content:
         "Choose an allowed model for new conversations. This is your shared workspace model preference.",
     });

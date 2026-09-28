@@ -142,7 +142,8 @@ No API rollback floor is needed.
 
 ## Unified chat queue (release 7): legacy steer and Pi API-first removal
 
-Release 7 only deletes compatibility code that release 6 made unreachable:
+Release 7 completes the unified queue and removes compatibility code made
+unreachable by release 6:
 
 - The reserve and receipt endpoints
   (`POST /api/runners/runs/:runId/active-inputs/reserve` and
@@ -203,8 +204,8 @@ preinstalled in the Runner image):
 the old CLI floor on every Pi run: a release 7 Guest would launch its
 preinstalled release 7 CLI, which rejects the slot, so every Pi run fails until
 the Runners are rolled back as well. Earlier APIs also require the slot when
-they decode contexts queued by this release. The release 4 floor for the steer
-endpoints is subsumed.
+they decode contexts queued by this release. The release 6 Runner protocol is the minimum supported predecessor; the
+stricter release 7 API floor subsumes it.
 
 ### Integration DM threads and org default agent
 
@@ -213,8 +214,11 @@ endpoints is subsumed.
   `direct-message:main` (Slack `thread_ts`, Feishu and Teams `thread_id`,
   Discord `session_key`, official Telegram and AgentPhone `root_message_id`).
   The migration keeps the most recently used `direct-message:%` route per
-  identity, rewrites its key to the constant and deletes the other DM route
-  rows; their chat threads remain as history. Deploy window:
+  connection/link identity (not per channel), rewrites its key to the constant
+  and deletes the other DM route rows; their chat threads and canonical input
+  history remain. The retained main DM thread has its model/provider/tier pins
+  cleared. Discord route deletion also cascades its private launch-context and
+  ingress rows through existing foreign keys. Deploy window:
   the migration runs before the new API, so an old API instance that receives a
   DM in that window no longer finds its `direct-message:<agentId>:<model>` key,
   creates a new thread and inserts an old-style route. After promotion the new
@@ -222,6 +226,15 @@ endpoints is subsumed.
   history and its old-style route is unused. Rollback to an earlier API has the
   same effect: each DM opens one new old-style thread, and replaying the
   migration later folds it back in by recency.
+- **Model resolution at pick.** Entries no longer resolve model routes. A new
+  main DM thread leaves its model empty and keeps it empty after each pick;
+  the pick resolves the current `org_members_metadata.selected_model` and
+  `service_tier`, then the workspace default if that preference is unavailable.
+  Existing explicitly selected thread models still reject unavailable routes.
+  Native reply threads, channels and platform topics retain their own routes
+  and pin their first model at pick. Existing `/model` commands continue to
+  update the shared member preference; changing it no longer changes the DM
+  thread. Explicit `/new_session` remains an intentional conversation reset.
 - **Org default agent only.** Integrations no longer read or write the
   `*_user_agent_preferences` tables or installation-level `default_agent_id`;
   every integration message runs the org default agent. The tables and columns
@@ -238,6 +251,29 @@ endpoints is subsumed.
   threads remain as history. Dropping the two tables is left to a later
   release, like the preference tables. The Discord agent-preference route is
   removed as well; an old App tab calling it receives `404`.
+  The Telegram CLI no longer has `bot list` or `--bot-id`: message send,
+  upload and download use the official bot directly. The existing official
+  bot API paths remain usable by deployed CLIs. Integration notes and CLI
+  help no longer ask the user to choose a bot.
+
+### Pi memory and queue cleanup
+
+Maintenance admission and job binding run through `persistProducerRunBinding`
+in the launch transaction. The core accepts a generic no-agent identity,
+threadless session parameters and an explicitly empty secret namespace; claim
+validates session owner and organization without reading Pi jobs. Pi memory
+retains its own leases, fences, retries, result publication and cleanup/cancel
+protection. Only maintenance completion takes the existing memory-storage
+lock. The bypass still occupies a slot without applying the org concurrency
+limit, and releases through the same org-pick path.
+
+An idle queued head that cannot launch is consumed as `input.rejected`, even
+when assembly or rejection formatting fails. Only an actual active run leaves
+an unchanged head for a later pick. Concurrency admission stays in the picker;
+there is no create-time 429/waiting result. Stripe capacity changes schedule
+org picks through `waitUntil`. Entry-owned context rows commit with their input,
+and idempotent sends that append nothing do not touch `queued_chat_threads`.
+The existing runless-input predicate and index from #37193 are unchanged.
 
 ## Unified chat queue (release 6): Runner, Guest and Sandbox CLI
 

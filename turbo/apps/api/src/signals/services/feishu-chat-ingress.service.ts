@@ -1,3 +1,4 @@
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -28,7 +29,9 @@ interface FeishuChatThreadRouteBinding extends FeishuChatThreadRouteKey {
 function routeWhere(key: FeishuChatThreadRouteKey) {
   return and(
     eq(feishuChatThreadRoutes.connectionId, key.connectionId),
-    eq(feishuChatThreadRoutes.chatId, key.chatId),
+    key.threadId === INTEGRATION_DM_SESSION_KEY
+      ? undefined
+      : eq(feishuChatThreadRoutes.chatId, key.chatId),
     eq(feishuChatThreadRoutes.threadId, key.threadId),
     eq(feishuChatThreadRoutes.userId, key.userId),
   );

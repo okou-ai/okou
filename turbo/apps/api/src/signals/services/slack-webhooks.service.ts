@@ -48,10 +48,6 @@ import {
 import { writeDb$, type Db } from "../external/db";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
-import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import {
   updateUserModelPreference$,
@@ -686,12 +682,6 @@ const resolveSlackRouteCompose$ = command(
   },
 );
 
-function integrationModelRouteServiceTier(
-  route: IntegrationModelRoutePin | undefined,
-): IntegrationModelRoutePin["serviceTier"] {
-  return route?.serviceTier ?? null;
-}
-
 const resolveConnectedSlackAgentRouteAdmission$ = command(
   async (
     { set },
@@ -702,48 +692,10 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
     },
     signal: AbortSignal,
   ): Promise<SlackAgentRouteAdmission> => {
-    const reuseMainDirectMessageSession =
-      args.channelType === "dm" && args.threadTs === undefined;
-    let effectiveCompose = reuseMainDirectMessageSession
-      ? await set(
-          resolveSlackRouteCompose$,
-          {
-            db: args.db,
-            connection: args.connection,
-            orgId: args.orgId,
-            installation: args.installation,
-            workspaceId: args.workspaceId,
-            channelId: args.channelId,
-            channelType: args.channelType,
-            slackUserId: args.slackUserId,
-            messageTs: args.messageTs,
-          },
-          signal,
-        )
-      : undefined;
-    if (reuseMainDirectMessageSession && !effectiveCompose) {
-      return { kind: "ignored" };
-    }
-    const mainDirectMessageModelRoute = reuseMainDirectMessageSession
-      ? await set(
-          resolveIntegrationModelRouteForUser$,
-          {
-            orgId: args.orgId,
-            userId: args.connection.userId,
-          },
-          signal,
-        )
-      : undefined;
-    signal.throwIfAborted();
     const sessionThreadTs = slackSessionThreadTs({
       channelType: args.channelType,
       messageTs: args.messageTs,
       ...(args.threadTs ? { threadTs: args.threadTs } : {}),
-      ...(effectiveCompose ? { agentId: effectiveCompose.composeId } : {}),
-      selectedModel: mainDirectMessageModelRoute?.selectedModel ?? null,
-      serviceTier: integrationModelRouteServiceTier(
-        mainDirectMessageModelRoute,
-      ),
     });
     const routeKey = {
       connectionId: args.connection.id,
@@ -757,7 +709,7 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
       return { kind: "canonical", routeId: existingRoute.id };
     }
 
-    effectiveCompose ??= await set(
+    const effectiveCompose = await set(
       resolveSlackRouteCompose$,
       {
         db: args.db,
@@ -777,23 +729,12 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
       return { kind: "ignored" };
     }
 
-    const modelRoute = reuseMainDirectMessageSession
-      ? mainDirectMessageModelRoute
-      : await set(
-          resolveIntegrationModelRouteForUser$,
-          {
-            orgId: args.orgId,
-            userId: args.connection.userId,
-          },
-          signal,
-        );
-    signal.throwIfAborted();
     const route = await ensureCanonicalSlackChatThreadRoute(args.db, {
       ...routeKey,
       orgId: args.orgId,
       agentId: effectiveCompose.composeId,
-      selectedModel: modelRoute?.selectedModel ?? null,
-      serviceTier: modelRoute?.serviceTier ?? null,
+      selectedModel: null,
+      serviceTier: null,
       currentTime: nowDate(),
     });
     signal.throwIfAborted();

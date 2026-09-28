@@ -53,10 +53,6 @@ import {
 } from "../external/telegram-official";
 import { now } from "../../lib/time";
 import { safeJsonParse, tapError } from "../utils";
-import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import {
   enqueueChatInput,
@@ -231,8 +227,6 @@ interface WorkspaceAgent {
   readonly name: string;
   readonly displayName: string | null;
 }
-
-type ModelRoutePin = IntegrationModelRoutePin;
 
 interface TelegramUserInfoExtras {
   readonly telegramDisplayName?: string;
@@ -1008,8 +1002,6 @@ function rootMessageIdForAgentMessage(args: {
   readonly isDM: boolean;
   readonly message: TelegramMessage;
   readonly botId: string;
-  readonly agentId: string;
-  readonly modelRoute: ModelRoutePin | undefined;
 }): string | undefined {
   if (args.isDM) {
     return args.message.reply_to_message
@@ -1183,7 +1175,6 @@ async function resolveTelegramChatMessageThread(
     readonly source: TelegramAgentMessageArgs;
     readonly chatId: string;
     readonly rootMessageId: string | undefined;
-    readonly modelRoute: ModelRoutePin | undefined;
   },
   currentTime: Date,
 ) {
@@ -1191,8 +1182,8 @@ async function resolveTelegramChatMessageThread(
     userId: args.source.userLink.userId,
     orgId: args.source.orgId,
     agentId: args.source.composeId,
-    selectedModel: args.modelRoute?.selectedModel ?? null,
-    serviceTier: args.modelRoute?.serviceTier ?? null,
+    selectedModel: null,
+    serviceTier: null,
     currentTime,
   };
   return args.rootMessageId === undefined
@@ -1224,7 +1215,6 @@ const persistTelegramChatMessage$ = command(
       readonly context: string;
       readonly prompt: string;
       readonly userInfoExtras: TelegramUserInfoExtras;
-      readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<PersistedTelegramChatMessage> => {
@@ -1293,12 +1283,11 @@ const persistTelegramChatMessage$ = command(
       }),
       createdAt: currentTime,
     } as const;
-    await insertChatEventContext(args.source.db, values);
-    signal.throwIfAborted();
     const eventId = await enqueueChatInput(args.source.db, {
       chatThreadId: binding.chatThreadId,
       orgId: args.source.orgId,
       appendInput: async (tx) => {
+        await insertChatEventContext(tx, values);
         return (await insertChatEvent(tx, values, "id"))?.id ?? null;
       },
     });
@@ -1326,7 +1315,6 @@ const runAgentForTelegram$ = command(
       readonly context: string;
       readonly prompt: string;
       readonly userInfoExtras: TelegramUserInfoExtras;
-      readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1407,20 +1395,7 @@ const handleTelegramAgentMessage$ = command(
     });
     signal.throwIfAborted();
 
-    const modelRoute = await set(
-      resolveIntegrationModelRouteForUser$,
-      {
-        orgId: args.orgId,
-        userId: args.userLink.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    const rootMessageId = rootMessageIdForAgentMessage({
-      ...args,
-      agentId: args.composeId,
-      modelRoute,
-    });
+    const rootMessageId = rootMessageIdForAgentMessage(args);
     const context = await loadOptionalChatEnrichment(
       "telegram",
       () => {
@@ -1449,7 +1424,6 @@ const handleTelegramAgentMessage$ = command(
         context,
         prompt: runPrompt.prompt,
         userInfoExtras: runPrompt.userInfoExtras,
-        modelRoute,
       },
       signal,
     );

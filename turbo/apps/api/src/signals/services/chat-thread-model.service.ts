@@ -1,3 +1,4 @@
+import { isIntegrationDirectMessageThread } from "./integration-dm-thread.service";
 import {
   modelSettingsSchema,
   type ModelSettings,
@@ -330,6 +331,10 @@ async function evaluatePersistedChatThreadModel(
   thread: PersistedChatThreadModelSnapshot,
 ): Promise<PersistedChatThreadModelEvaluationResult> {
   const modelSettings = modelSettingsSchema.parse(thread.modelSettings);
+  const followsDefaultModel =
+    thread.selectedModel === null &&
+    (await isIntegrationDirectMessageThread(db, params.threadId));
+  let defaultCodexServiceTier: CodexServiceTier | null = null;
   let pin: ModelFirstPin;
   let selectedModelChanged: boolean;
   const externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource =
@@ -354,7 +359,9 @@ async function evaluatePersistedChatThreadModel(
       modelProviderCredentialScope: defaultPin.modelProviderCredentialScope,
       selectedModel: defaultPin.selectedModel,
     };
-    selectedModelChanged = true;
+    selectedModelChanged = !followsDefaultModel;
+    defaultCodexServiceTier =
+      defaultPin.serviceTier === "priority" ? "fast" : null;
   } else {
     // The thread's model is the user's selection. When it cannot run now,
     // the input is rejected rather than moved to another model.
@@ -394,7 +401,10 @@ async function evaluatePersistedChatThreadModel(
     externalPlanCapabilities,
   });
   const tier = resolveCodexTier({
-    persistedTier: thread.codexServiceTier,
+    persistedTier:
+      thread.selectedModel === null
+        ? defaultCodexServiceTier
+        : thread.codexServiceTier,
     requestedTier: params.requestedCodexServiceTier,
     persistRequestedTier: params.persistRequestedCodexServiceTier,
     fastSupported: isCodexFastServiceTierSupported({
@@ -412,7 +422,9 @@ async function evaluatePersistedChatThreadModel(
       pin,
       providerAdmission,
       runCodexServiceTier: tier.runCodexServiceTier,
-      persistedCodexServiceTier: tier.persistedCodexServiceTier,
+      persistedCodexServiceTier: followsDefaultModel
+        ? null
+        : tier.persistedCodexServiceTier,
       reasoningEffort: effort.reasoningEffort,
       modelSettings: effort.modelSettings,
       modelSettingsPatch: modelSettingsChanged
@@ -420,10 +432,10 @@ async function evaluatePersistedChatThreadModel(
         : undefined,
       modelSettingsChanged,
       selectedModelChanged,
-      tierChanged: tier.tierChanged,
+      tierChanged: followsDefaultModel ? false : tier.tierChanged,
       requiresReconciliation:
         selectedModelChanged ||
-        tier.tierChanged ||
+        (!followsDefaultModel && tier.tierChanged) ||
         modelSettingsChanged ||
         legacyProviderPinPresent(thread),
     },
@@ -465,7 +477,12 @@ async function resolvePersistedChatThreadModelInTransaction(
     tx,
     params,
     thread,
-    pin: evaluation.pin,
+    pin: {
+      ...evaluation.pin,
+      selectedModel: evaluation.selectedModelChanged
+        ? evaluation.pin.selectedModel
+        : thread.selectedModel,
+    },
     persistedCodexServiceTier: evaluation.persistedCodexServiceTier,
     modelSettings: evaluation.modelSettings,
     modelSettingsPatch: evaluation.modelSettingsPatch,

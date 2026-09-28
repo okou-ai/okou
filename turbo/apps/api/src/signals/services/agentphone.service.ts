@@ -54,10 +54,6 @@ import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { ensureAgentPhoneChatThreadRoute } from "./agentphone-chat-ingress.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
-import {
   enqueueChatInput,
   scheduleEnqueuedChatThreadPick$,
 } from "./chat-thread-queue-drain.service";
@@ -144,8 +140,6 @@ interface WorkspaceAgent {
   readonly name: string;
   readonly displayName: string | null;
 }
-
-type ModelRoutePin = IntegrationModelRoutePin;
 
 function isAgentPhoneGroupEvent(event: AgentPhoneMessageEvent): boolean {
   return event.channel === "imessage" && event.isGroup;
@@ -1481,7 +1475,6 @@ const persistAgentPhoneChatMessage$ = command(
       readonly prompt: string;
       readonly threadContext: string;
       readonly apiStartTime: number;
-      readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<PersistedAgentPhoneChatMessage> => {
@@ -1493,8 +1486,8 @@ const persistAgentPhoneChatMessage$ = command(
       userId: args.userLink.userId,
       orgId: args.userLink.orgId,
       agentId: args.agent.composeId,
-      selectedModel: args.modelRoute?.selectedModel ?? null,
-      serviceTier: args.modelRoute?.serviceTier ?? null,
+      selectedModel: null,
+      serviceTier: null,
       currentTime,
     });
     signal.throwIfAborted();
@@ -1589,7 +1582,6 @@ const runAgentForAgentPhone$ = command(
       readonly prompt: string;
       readonly threadContext: string;
       readonly apiStartTime: number;
-      readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1682,16 +1674,6 @@ export const handleAgentPhoneMessage$ = command(
     await refreshTypingIfSupported(params.event, signal);
     signal.throwIfAborted();
 
-    const modelRoute = await set(
-      resolveIntegrationModelRouteForUser$,
-      {
-        orgId: params.userLink.orgId,
-        userId: params.userLink.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
     const isGroup = isAgentPhoneGroupEvent(params.event);
     const rootMessageId = isGroup
       ? agentPhoneThreadRootMessageId(params.event)
@@ -1734,7 +1716,6 @@ export const handleAgentPhoneMessage$ = command(
         threadContext: executionContext,
         event: params.event,
         apiStartTime: params.apiStartTime,
-        modelRoute,
       },
       signal,
     );

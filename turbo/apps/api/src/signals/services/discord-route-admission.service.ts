@@ -28,10 +28,6 @@ import {
   discordIngressSenderBindings,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
-import {
-  resolveIntegrationModelRouteForUser$,
-  type IntegrationModelRoutePin,
-} from "./integration-model-route.service";
 import { sendDiscordIngressNotice } from "./internal-discord-chat-run-callback.service";
 
 function requireDiscordResult<T>(result: DiscordApiResult<T>): T {
@@ -309,13 +305,12 @@ const createDiscordAdmissionRoute$ = command(
     routeKey: DiscordRouteKey,
     preferences: {
       readonly effectiveAgent: { readonly id: string } | null;
-      readonly modelRoute: IntegrationModelRoutePin | undefined;
     },
     signal: AbortSignal,
   ): Promise<DiscordChatThreadRouteBinding | undefined> => {
     const db = set(writeDb$);
     const { binding } = context.source;
-    const { effectiveAgent, modelRoute } = preferences;
+    const { effectiveAgent } = preferences;
     const agent = effectiveAgent ?? (await get(discordEffectiveAgent(binding)));
     signal.throwIfAborted();
     if (!agent) {
@@ -323,16 +318,12 @@ const createDiscordAdmissionRoute$ = command(
       signal.throwIfAborted();
       return undefined;
     }
-    const pin =
-      modelRoute ??
-      (await set(resolveIntegrationModelRouteForUser$, binding, signal));
-    signal.throwIfAborted();
     const route = await ensureCanonicalDiscordChatThreadRoute(db, {
       ...routeKey,
       orgId: binding.orgId,
       agentId: agent.id,
-      selectedModel: pin?.selectedModel ?? null,
-      serviceTier: pin?.serviceTier ?? null,
+      selectedModel: null,
+      serviceTier: null,
       currentTime: context.ingress.createdAt,
       ...context.claim,
     });
@@ -376,11 +367,6 @@ const resolveCanonicalDiscordRoute$ = command(
     const effectiveAgent =
       isDm && !assignedRoute ? await get(discordEffectiveAgent(binding)) : null;
     signal.throwIfAborted();
-    const modelRoute =
-      isDm && !assignedRoute
-        ? await set(resolveIntegrationModelRouteForUser$, binding, signal)
-        : undefined;
-    signal.throwIfAborted();
     if (isDm && !assignedRoute && !effectiveAgent) {
       await terminalAgentUnavailable(db, context, signal);
       signal.throwIfAborted();
@@ -404,7 +390,7 @@ const resolveCanonicalDiscordRoute$ = command(
         createDiscordAdmissionRoute$,
         context,
         routeKey,
-        { effectiveAgent, modelRoute },
+        { effectiveAgent },
         signal,
       );
     }

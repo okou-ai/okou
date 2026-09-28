@@ -15,8 +15,8 @@ import {
 
 /**
  * Resolve a chat-derived run against the current canonical model policy.
- * Legacy threads without a stored model use the current canonical default and
- * persist that selection before the run is created.
+ * Unpinned main integration DMs follow the current member/workspace default on
+ * every pick. Other threads pin their initial default before creating the run.
  */
 export async function resolveRunChatThreadModelContext(params: {
   readonly db: Db;

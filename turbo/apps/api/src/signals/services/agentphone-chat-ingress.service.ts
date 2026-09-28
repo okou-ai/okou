@@ -199,52 +199,6 @@ async function reconcileExistingRoute(
   }
 
   await updateRouteConversationContext(tx, existing, args.conversationId);
-  const selectedModelChanged = existing.selectedModel !== args.selectedModel;
-  const codexServiceTier = args.serviceTier === "priority" ? "fast" : null;
-  const serviceTierChanged = existing.codexServiceTier !== codexServiceTier;
-  if (selectedModelChanged || serviceTierChanged) {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        ...(selectedModelChanged
-          ? {
-              modelProviderId: null,
-              modelProviderType: null,
-              modelProviderCredentialScope: null,
-              selectedModel: args.selectedModel,
-            }
-          : {}),
-        codexServiceTier,
-        updatedAt: args.currentTime,
-      })
-      .where(eq(chatThreads.id, existing.chatThreadId))
-      .returning({ id: chatThreads.id });
-    if (!thread) {
-      throw new Error("Failed to update canonical AgentPhone thread model");
-    }
-    if (selectedModelChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "model_selection_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        selectedModel: args.selectedModel,
-        createdAt: args.currentTime,
-      });
-    }
-    if (serviceTierChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "service_tier_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        serviceTier: args.serviceTier,
-        createdAt: args.currentTime,
-      });
-    }
-  }
   return existing;
 }
 

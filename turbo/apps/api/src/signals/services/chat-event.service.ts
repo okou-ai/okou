@@ -147,7 +147,7 @@ type ChatEventDisplayContext =
         readonly rootMessageId: string | null;
         readonly thinkingMessageId: string | null;
         readonly userLinkId: string;
-        readonly userLinkKind: "custom" | "official";
+        readonly userLinkKind: "official";
         readonly chatType: string;
         readonly senderUserId: string | null;
         readonly senderDisplayName: string | null;
@@ -457,7 +457,7 @@ type NewDisplayContext =
       readonly rootMessageId: string | null;
       readonly thinkingMessageId: string | null;
       readonly userLinkId: string;
-      readonly userLinkKind: "custom" | "official";
+      readonly userLinkKind: "official";
       readonly chatType: string;
       readonly senderUserId: string | null;
       readonly senderDisplayName: string | null;

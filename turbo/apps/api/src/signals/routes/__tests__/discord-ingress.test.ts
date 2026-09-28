@@ -807,7 +807,7 @@ describe("canonical Discord ingress", () => {
     );
   });
 
-  it("keeps native guild routes sticky while a changed DM model starts a new session without earlier DM history", async () => {
+  it("keeps native guild routes pinned while one DM thread follows the current user model", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const first = discordMessageForTest(actor, {
@@ -880,6 +880,17 @@ describe("canonical Discord ingress", () => {
     provider.messages.set(dm.id, dm);
     await postDiscordMessage(context, dm);
     await flushWaitUntilForTest();
+    const originalDm = (await discordChatThreads(context, actor)).find(
+      (thread) => {
+        return thread.id !== guildThread.id;
+      },
+    );
+    if (!originalDm) {
+      throw new Error("Expected the main DM thread");
+    }
+    const originalDmRun = await launchedRun(actor, originalDm.id);
+    await runsApi.requestCancelRun(actor.actor, originalDmRun.runId, [200]);
+    await flushWaitUntilForTest();
     createRouteMocks(context).clerk.session(
       actor.userId,
       actor.orgId,
@@ -911,25 +922,25 @@ describe("canonical Discord ingress", () => {
         return thread.id !== guildThread.id;
       },
     );
-    expect(dmThreads).toHaveLength(2);
-    expect(
-      dmThreads
-        .map((thread) => {
-          return thread.selectedModel;
-        })
-        .sort(),
-    ).toStrictEqual(["claude-fable-5-1", "claude-opus-5"]);
-    const nextSession = dmThreads.find((thread) => {
-      return thread.selectedModel === "claude-fable-5-1";
+    expect(dmThreads).toMatchObject([
+      { id: originalDm.id, selectedModel: null },
+    ]);
+    const inputs = currentInputs(await events(actor, originalDm.id));
+    expect(inputs).toHaveLength(2);
+    const nextInput = inputs.find((input) => {
+      return input.userMessage.parts.some((part) => {
+        return part.type === "text" && part.text === nextDm.content;
+      });
     });
-    if (!nextSession) {
-      throw new Error("Expected the changed DM session");
+    if (!nextInput?.runId) {
+      throw new Error("Expected the next DM input to launch");
     }
-    const run = await launchedRun(actor, nextSession.id);
-    expect(run.prompt).toBe(nextDm.content);
-    expect(run.appendSystemPrompt).not.toContain("ship on Friday");
-    expect(run.appendSystemPrompt).not.toContain(dm.content);
-    expect(run.appendSystemPrompt).not.toContain("Prior Discord Messages");
+    await runsApi.heartbeatRunner(actor.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(nextInput.runId);
+    expect(claim.prompt).toBe(nextDm.content);
+    expect(claim.modelUsageProvider).toBe("claude-fable-5-1");
+    expect(claim.appendSystemPrompt).not.toContain("ship on Friday");
+    await runsApi.requestCancelRun(actor.actor, nextInput.runId, [200]);
   });
 
   it("keeps another organization's DM replies out of a newly selected organization's run", async () => {

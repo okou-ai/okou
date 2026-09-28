@@ -1,3 +1,4 @@
+import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { agents } from "@okouai/db/schema/agent";
@@ -38,7 +39,9 @@ type TeamsChatThreadTransaction = Tx;
 function routeWhere(key: TeamsChatThreadRouteKey) {
   return and(
     eq(teamsChatThreadRoutes.connectionId, key.connectionId),
-    eq(teamsChatThreadRoutes.conversationId, key.conversationId),
+    key.threadId === INTEGRATION_DM_SESSION_KEY
+      ? undefined
+      : eq(teamsChatThreadRoutes.conversationId, key.conversationId),
     eq(teamsChatThreadRoutes.threadId, key.threadId),
     eq(teamsChatThreadRoutes.userId, key.userId),
   );
@@ -197,52 +200,6 @@ async function reconcileExistingRoute(
     return route;
   }
 
-  const selectedModelChanged = existing.selectedModel !== args.selectedModel;
-  const codexServiceTier = args.serviceTier === "priority" ? "fast" : null;
-  const serviceTierChanged = existing.codexServiceTier !== codexServiceTier;
-  if (selectedModelChanged || serviceTierChanged) {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        ...(selectedModelChanged
-          ? {
-              modelProviderId: null,
-              modelProviderType: null,
-              modelProviderCredentialScope: null,
-              selectedModel: args.selectedModel,
-            }
-          : {}),
-        codexServiceTier,
-        updatedAt: args.currentTime,
-      })
-      .where(eq(chatThreads.id, existing.chatThreadId))
-      .returning({ id: chatThreads.id });
-    if (!thread) {
-      throw new Error("Failed to update canonical Teams chat thread model");
-    }
-    if (selectedModelChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "model_selection_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        selectedModel: args.selectedModel,
-        createdAt: args.currentTime,
-      });
-    }
-    if (serviceTierChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "service_tier_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        serviceTier: args.serviceTier,
-        createdAt: args.currentTime,
-      });
-    }
-  }
   return existing;
 }
 
