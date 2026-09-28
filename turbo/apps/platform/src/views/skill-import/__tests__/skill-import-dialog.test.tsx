@@ -129,6 +129,21 @@ async function findDialog(): Promise<HTMLElement> {
   return await screen.findByRole("dialog", { name: DIALOG_TITLE });
 }
 
+/** The prompt's copy button, which appears once its session has opened. */
+async function findCopyPrompt(dialog: HTMLElement): Promise<HTMLElement> {
+  await waitFor(() => {
+    getButtonNamed("Copy prompt", dialog);
+  });
+  return getButtonNamed("Copy prompt", dialog);
+}
+
+/** The dialog keeps the prompt to one line until the user asks for all of it. */
+async function showFullPrompt(dialog: HTMLElement): Promise<HTMLElement> {
+  await findCopyPrompt(dialog);
+  click(getButtonNamed("Show full prompt", dialog));
+  return await within(dialog).findByRole("region", { name: PROMPT_LABEL });
+}
+
 test("Import skills sits between Browse official and Create in chat", async () => {
   mockWorkflows();
   mockSessions();
@@ -161,13 +176,22 @@ test("Import skills opens a Claude Code prompt by default", async () => {
   expect(
     within(dialog).getByRole("radio", { name: "Claude Code" }),
   ).toBeChecked();
-  const prompt = await within(dialog).findByRole("region", {
-    name: PROMPT_LABEL,
+  // Copying is the dialog's first step, and the full prompt stays folded.
+  await findCopyPrompt(dialog);
+  const guide = within(dialog).getByRole("list", {
+    name: "Where to run the prompt",
   });
-  expect(within(dialog).getByText("Run this in Claude Code")).toBeVisible();
+  expect(guide).toHaveTextContent("Copy the prompt");
+  expect(guide).toHaveTextContent(
+    "Open the Claude app and switch to the Code tab",
+  );
   expect(
-    within(dialog).getByRole("list", { name: "Where to run the prompt" }),
-  ).toHaveTextContent("Open the Claude app and switch to the Code tab");
+    within(dialog).queryByRole("region", { name: PROMPT_LABEL }),
+  ).toBeNull();
+  expect(
+    within(dialog).getByText("Imported skills appear here as they arrive."),
+  ).toBeVisible();
+  const prompt = await showFullPrompt(dialog);
   expect(prompt.textContent).toContain(
     "vm0_skillimport_claudeCode-session-token",
   );
@@ -182,13 +206,10 @@ test("Switching the dialog to Codex writes the prompt for Codex", async () => {
   await openWorkflowsPage();
   click(getButtonNamed("Import skills"));
   const dialog = await findDialog();
-  await within(dialog).findByRole("region", { name: PROMPT_LABEL });
+  await showFullPrompt(dialog);
 
   click(within(dialog).getByRole("radio", { name: "Codex" }));
 
-  await expect(
-    within(dialog).findByText("Run this in Codex"),
-  ).resolves.toBeVisible();
   await waitFor(() => {
     expect(
       within(dialog).getByRole("region", { name: PROMPT_LABEL }).textContent,
@@ -224,9 +245,7 @@ test("The empty workflow list offers the import", async () => {
   click(getButtonNamed("Import from Claude Code or Codex"));
 
   const dialog = await findDialog();
-  await expect(
-    within(dialog).findByRole("region", { name: PROMPT_LABEL }),
-  ).resolves.toBeVisible();
+  await expect(findCopyPrompt(dialog)).resolves.toBeVisible();
 });
 
 test("An imported workflow is tagged with the tool it came from", async () => {
@@ -294,7 +313,7 @@ test("The dialog lists only workflows the import tagged", async () => {
   await openWorkflowsPage();
   click(getButtonNamed("Import skills"));
   const dialog = await findDialog();
-  await within(dialog).findByRole("region", { name: PROMPT_LABEL });
+  await findCopyPrompt(dialog);
 
   // A workflow made in chat arrives alongside the imported one.
   workflows.write([
@@ -323,7 +342,7 @@ test("Reopening the dialog after an import leads with the imported skills", asyn
   await openWorkflowsPage();
   click(getButtonNamed("Import skills"));
   let dialog = await findDialog();
-  await within(dialog).findByRole("region", { name: PROMPT_LABEL });
+  await findCopyPrompt(dialog);
   expect(
     within(dialog).getByText("Imported skills appear here as they arrive."),
   ).toBeVisible();
@@ -361,7 +380,5 @@ test("Reopening the dialog after an import leads with the imported skills", asyn
   expect(showPrompt).toHaveAttribute("aria-expanded", "false");
   click(showPrompt);
 
-  await expect(
-    within(dialog).findByRole("region", { name: PROMPT_LABEL }),
-  ).resolves.toBeVisible();
+  await expect(showFullPrompt(dialog)).resolves.toBeVisible();
 });

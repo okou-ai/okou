@@ -4363,6 +4363,7 @@
             "local": "Local",
             "newChat": "New chat"
           },
+          "copy": "复制提示词",
           "label": "在哪里运行提示词",
           "paste": "粘贴提示词并发送",
           "scene": {
@@ -4374,6 +4375,7 @@
             "codexProjects": "Projects"
           }
         },
+        "hideFullPrompt": "收起完整提示词",
         "importedCopy": "已导入为Okou工作流。",
         "importedLabel": "已导入的技能",
         "importedTitle": "你的工作流已就绪",
@@ -4381,6 +4383,7 @@
         "promptCopy": "它会读取你本机上的技能，并写入Okou。",
         "promptLabel": "技能导入提示词",
         "promptTitle": "在{{provider}}中运行",
+        "showFullPrompt": "查看完整提示词",
         "startError": "无法打开导入会话。",
         "title": "把你已有的技能导入 Okou",
         "tryAgain": "重试",

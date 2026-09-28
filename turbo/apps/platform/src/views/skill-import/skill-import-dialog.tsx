@@ -23,15 +23,21 @@ import {
   closeSkillImportDialog$,
   selectSkillImportProvider$,
   setSkillImportPromptExpanded$,
+  setSkillImportPromptShown$,
   skillImportDialogOpen$,
   skillImportDialogProvider$,
   skillImportDialogSignals,
   skillImportPromptDisclosure$,
+  skillImportPromptShown$,
   startSkillImport$,
 } from "../../signals/skill-import/skill-import-dialog.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
-import { ImportedSkillList, SkillImportPanel } from "./skill-import-panel.tsx";
+import {
+  ImportedSkillList,
+  SkillImportPanel,
+  SkillImportWaiting,
+} from "./skill-import-panel.tsx";
 
 function useProviderName(provider: SkillImportProvider): string {
   const { t } = useTranslation();
@@ -51,6 +57,8 @@ function SkillImportPromptSection() {
   const selectProvider = useSet(selectSkillImportProvider$);
   const pageSignal = useGet(pageSignal$);
   const providerName = useProviderName(provider);
+  const promptShown = useGet(skillImportPromptShown$);
+  const setPromptShown = useSet(setSkillImportPromptShown$);
 
   return (
     <div className="flex flex-col gap-4">
@@ -80,6 +88,7 @@ function SkillImportPromptSection() {
         provider={provider}
         providerName={providerName}
         retry$={startSkillImport$}
+        promptToggle={{ shown: promptShown, setShown: setPromptShown }}
       />
     </div>
   );
@@ -163,7 +172,11 @@ export function SkillImportDialog() {
           {disclosure === "prompt-first" ? (
             <>
               <SkillImportPromptSection />
-              <ImportedSkillList skills={imported} />
+              {/* Until a skill arrives, the footer says the import is
+                  waiting; the list takes the room once there is one. */}
+              {imported.length > 0 ? (
+                <ImportedSkillList skills={imported} />
+              ) : null}
             </>
           ) : (
             <>
@@ -175,6 +188,11 @@ export function SkillImportDialog() {
           )}
         </div>
         <DialogFooter>
+          {disclosure === "prompt-first" && imported.length === 0 ? (
+            <div className="mr-auto min-w-0 self-center">
+              <SkillImportWaiting />
+            </div>
+          ) : null}
           <Button
             type="button"
             variant="quiet"
@@ -188,7 +206,8 @@ export function SkillImportDialog() {
           </Button>
           <Link
             pathname={ROUTES.workflows}
-            className={buttonVariants({ variant: "default" })}
+            // Copying the prompt is the dialog's primary action.
+            className={buttonVariants({ variant: "outline" })}
             onClick={() => {
               close();
             }}

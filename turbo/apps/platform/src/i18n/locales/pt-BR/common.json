@@ -4439,6 +4439,7 @@
             "local": "Local",
             "newChat": "New chat"
           },
+          "copy": "Copie o prompt",
           "label": "Onde executar o prompt",
           "paste": "Cole o prompt e envie",
           "scene": {
@@ -4450,6 +4451,7 @@
             "codexProjects": "Projects"
           }
         },
+        "hideFullPrompt": "Ocultar prompt completo",
         "importedCopy": "Importado como workflow do Okou.",
         "importedLabel": "Skills importadas",
         "importedTitle": "Suas skills estão no Okou",
@@ -4457,6 +4459,7 @@
         "promptCopy": "Ele lê as skills da sua máquina e as grava no Okou.",
         "promptLabel": "Prompt de importação de skills",
         "promptTitle": "Rode isto no {{provider}}",
+        "showFullPrompt": "Mostrar prompt completo",
         "startError": "Não foi possível abrir a sessão de importação.",
         "title": "Traga suas skills para o Okou",
         "tryAgain": "Tentar novamente",

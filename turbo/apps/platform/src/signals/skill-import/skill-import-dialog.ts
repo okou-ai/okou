@@ -22,6 +22,8 @@ type SkillImportPromptDisclosure = "prompt-first" | "collapsed" | "expanded";
 const internalOpen$ = state(false);
 const internalProvider$ = state<SkillImportProvider>("claudeCode");
 const internalDisclosure$ = state<SkillImportPromptDisclosure>("prompt-first");
+/** The full prompt under its one-line preview; copying it needs neither. */
+const internalPromptShown$ = state(false);
 /** Owns the poll while the dialog is open; closing or re-entering aborts it. */
 const resetSkillImport$ = resetSignal();
 
@@ -35,6 +37,10 @@ export const skillImportDialogProvider$ = computed((get) => {
 
 export const skillImportPromptDisclosure$ = computed((get) => {
   return get(internalDisclosure$);
+});
+
+export const skillImportPromptShown$ = computed((get) => {
+  return get(internalPromptShown$);
 });
 
 export const skillImportDialogSignals = createSkillImportSignals({
@@ -63,6 +69,7 @@ export const openSkillImportDialog$ = command(
       internalDisclosure$,
       imported.length > 0 ? "collapsed" : "prompt-first",
     );
+    set(internalPromptShown$, false);
     set(internalOpen$, true);
     await set(startSkillImport$, signal);
   },
@@ -100,3 +107,7 @@ export const setSkillImportPromptExpanded$ = command(
     set(internalDisclosure$, expanded ? "expanded" : "collapsed");
   },
 );
+
+export const setSkillImportPromptShown$ = command(({ set }, shown: boolean) => {
+  set(internalPromptShown$, shown);
+});

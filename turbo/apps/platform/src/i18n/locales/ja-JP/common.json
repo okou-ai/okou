@@ -4363,6 +4363,7 @@
             "local": "Local",
             "newChat": "New chat"
           },
+          "copy": "プロンプトをコピーする",
           "label": "プロンプトを実行する場所",
           "paste": "プロンプトを貼り付けて送信する",
           "scene": {
@@ -4374,6 +4375,7 @@
             "codexProjects": "Projects"
           }
         },
+        "hideFullPrompt": "プロンプト全文を隠す",
         "importedCopy": "Okou のワークフローとしてインポートしました。",
         "importedLabel": "インポートしたスキル",
         "importedTitle": "スキルが Okou に入りました",
@@ -4381,6 +4383,7 @@
         "promptCopy": "手元のスキルを読み取り、Okou に書き込みます。",
         "promptLabel": "スキルインポート用プロンプト",
         "promptTitle": "{{provider}} で実行してください",
+        "showFullPrompt": "プロンプト全文を表示",
         "startError": "インポートセッションを開けませんでした。",
         "title": "作成済みのスキルを Okou に取り込む",
         "tryAgain": "もう一度試す",

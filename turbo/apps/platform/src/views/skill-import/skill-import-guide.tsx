@@ -284,14 +284,15 @@ function CodexScene() {
   );
 }
 
-function ClaudeCodeSteps() {
+/** The tool's own steps, numbered on from whatever the guide put first. */
+function ClaudeCodeSteps({ first }: { readonly first: number }) {
   const { t } = useTranslation();
   const slot = { control: CONTROL_SLOT };
 
   return (
     <>
       <GuideStep
-        index={1}
+        index={first}
         note={t(($) => {
           return $.onboarding.sourcesFirst.skills.guide.claudeCode.openAppNote;
         })}
@@ -310,7 +311,7 @@ function ClaudeCodeSteps() {
         )}
       </GuideStep>
       <GuideStep
-        index={2}
+        index={first + 1}
         note={t(($) => {
           return $.onboarding.sourcesFirst.skills.guide.claudeCode
             .stayLocalNote;
@@ -328,7 +329,7 @@ function ClaudeCodeSteps() {
           />,
         )}
       </GuideStep>
-      <GuideStep index={3}>
+      <GuideStep index={first + 2}>
         {t(($) => {
           return $.onboarding.sourcesFirst.skills.guide.paste;
         })}
@@ -337,14 +338,14 @@ function ClaudeCodeSteps() {
   );
 }
 
-function CodexSteps() {
+function CodexSteps({ first }: { readonly first: number }) {
   const { t } = useTranslation();
   const slot = { control: CONTROL_SLOT };
 
   return (
     <>
       <GuideStep
-        index={1}
+        index={first}
         note={t(($) => {
           return $.onboarding.sourcesFirst.skills.guide.codex.openAppNote;
         })}
@@ -362,12 +363,12 @@ function CodexSteps() {
           />,
         )}
       </GuideStep>
-      <GuideStep index={2}>
+      <GuideStep index={first + 1}>
         {t(($) => {
           return $.onboarding.sourcesFirst.skills.guide.paste;
         })}
       </GuideStep>
-      <GuideStep index={3}>
+      <GuideStep index={first + 2}>
         {t(($) => {
           return $.onboarding.sourcesFirst.skills.guide.codex.keepOpen;
         })}
@@ -382,20 +383,42 @@ function CodexSteps() {
  */
 export function SkillImportGuide({
   provider,
+  copyStep = false,
+  className,
 }: {
   readonly provider: SkillImportProvider;
+  /** Leads with copying the prompt, where the copy button follows the steps. */
+  readonly copyStep?: boolean;
+  readonly className?: string;
 }) {
   const { t } = useTranslation();
+  const first = copyStep ? 2 : 1;
 
   return (
-    <div className="grid items-center gap-5 rounded-xl border border-border/60 bg-muted/30 p-4 sm:grid-cols-[minmax(0,1fr)_236px]">
+    <div
+      className={cn(
+        "grid items-center gap-5 sm:grid-cols-[minmax(0,1fr)_236px]",
+        className,
+      )}
+    >
       <ol
         aria-label={t(($) => {
           return $.onboarding.sourcesFirst.skills.guide.label;
         })}
         className="flex flex-col gap-3.5"
       >
-        {provider === "codex" ? <CodexSteps /> : <ClaudeCodeSteps />}
+        {copyStep ? (
+          <GuideStep index={1}>
+            {t(($) => {
+              return $.onboarding.sourcesFirst.skills.guide.copy;
+            })}
+          </GuideStep>
+        ) : null}
+        {provider === "codex" ? (
+          <CodexSteps first={first} />
+        ) : (
+          <ClaudeCodeSteps first={first} />
+        )}
       </ol>
       {provider === "codex" ? <CodexScene /> : <ClaudeCodeScene />}
     </div>

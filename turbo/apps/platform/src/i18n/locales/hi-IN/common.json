@@ -4380,6 +4380,7 @@
             "local": "Local",
             "newChat": "New chat"
           },
+          "copy": "प्रॉम्प्ट कॉपी करें",
           "label": "प्रॉम्प्ट कहाँ चलाएँ",
           "paste": "प्रॉम्प्ट पेस्ट करके भेजें",
           "scene": {
@@ -4391,6 +4392,7 @@
             "codexProjects": "Projects"
           }
         },
+        "hideFullPrompt": "पूरा प्रॉम्प्ट छिपाएँ",
         "importedCopy": "Okou workflow के रूप में इम्पोर्ट हुआ।",
         "importedLabel": "इम्पोर्ट हुई skills",
         "importedTitle": "आपकी skills Okou में आ गईं",
@@ -4398,6 +4400,7 @@
         "promptCopy": "यह आपकी मशीन की skills पढ़कर Okou में लिख देता है।",
         "promptLabel": "skill इम्पोर्ट prompt",
         "promptTitle": "इसे {{provider}} में चलाएँ",
+        "showFullPrompt": "पूरा प्रॉम्प्ट दिखाएँ",
         "startError": "इम्पोर्ट सेशन नहीं खोला जा सका।",
         "title": "अपनी मौजूदा स्किल Okou में लाएँ",
         "tryAgain": "फिर से कोशिश करें",

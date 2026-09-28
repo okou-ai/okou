@@ -4363,6 +4363,7 @@
             "local": "Local",
             "newChat": "New chat"
           },
+          "copy": "프롬프트 복사하기",
           "label": "프롬프트를 실행할 위치",
           "paste": "프롬프트를 붙여넣고 보내기",
           "scene": {
@@ -4374,6 +4375,7 @@
             "codexProjects": "Projects"
           }
         },
+        "hideFullPrompt": "전체 프롬프트 숨기기",
         "importedCopy": "Okou 워크플로로 가져왔습니다.",
         "importedLabel": "가져온 스킬",
         "importedTitle": "스킬이 Okou에 들어왔습니다",
@@ -4381,6 +4383,7 @@
         "promptCopy": "내 컴퓨터의 스킬을 읽어 Okou에 씁니다.",
         "promptLabel": "스킬 가져오기 프롬프트",
         "promptTitle": "{{provider}}에서 실행하세요",
+        "showFullPrompt": "전체 프롬프트 보기",
         "startError": "가져오기 세션을 열지 못했습니다.",
         "title": "기존 스킬을 Okou로 가져오세요",
         "tryAgain": "다시 시도",

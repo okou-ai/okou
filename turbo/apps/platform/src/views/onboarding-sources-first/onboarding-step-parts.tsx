@@ -11,7 +11,6 @@ export const ILLUSTRATION_BASE =
 const ILLUSTRATION_FILES = {
   experienced: "v3-choice-experienced",
   new: "v4-choice-new",
-  "skill-import": "v3-skill-import",
 } as const;
 
 /**
@@ -34,7 +33,7 @@ export function OnboardingIllustration({
   alt,
   size = "header",
 }: {
-  readonly name: "experienced" | "new" | "skill-import";
+  readonly name: "experienced" | "new";
   readonly alt: string;
   readonly size?: MarkSize;
 }) {

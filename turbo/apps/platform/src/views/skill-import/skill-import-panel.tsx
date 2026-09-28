@@ -1,10 +1,11 @@
 // The skill import prompt and its imported list, shared by the onboarding
 // skills step and the workflows page's import dialog.
+import type { ReactNode } from "react";
 import type { Command } from "ccstate";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Check, Copy, FileText, Loader2 } from "lucide-react";
-import { Button } from "@okouai/ui";
+import { Check, ChevronDown, Copy, FileText, Loader2 } from "lucide-react";
+import { Button, cn } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -13,7 +14,6 @@ import type {
   SkillImportSignals,
 } from "../../signals/skill-import/skill-import.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { OnboardingIllustration } from "../onboarding-sources-first/onboarding-step-parts.tsx";
 import { SkillImportGuide } from "./skill-import-guide.tsx";
 
 /** The prompt itself: long, read in full, and selectable where it stands. */
@@ -95,9 +95,12 @@ function SkillImportPromptFailed({
 function SkillImportCopyButton({
   copied,
   copyPrompt$,
+  primary = false,
 }: {
   readonly copied: boolean;
   readonly copyPrompt$: Command<Promise<boolean>, [AbortSignal]>;
+  /** Where copying is the one thing to do, it is the primary action. */
+  readonly primary?: boolean;
 }) {
   const { t } = useTranslation();
   const copyPrompt = useSet(copyPrompt$);
@@ -106,7 +109,7 @@ function SkillImportCopyButton({
   return (
     <Button
       type="button"
-      variant="outline"
+      variant={primary ? "default" : "outline"}
       size="sm"
       className="shrink-0 gap-1.5"
       onClick={() => {
@@ -188,14 +191,11 @@ export function ImportedSkillList({
       </p>
       <div className="mt-2 flex flex-col gap-2">
         {skills.length === 0 ? (
-          <div className="flex items-center gap-3 rounded-xl border border-dashed border-border/70 px-4 py-3">
-            <OnboardingIllustration name="skill-import" alt="" />
-            <span className="text-sm text-muted-foreground">
-              {t(($) => {
-                return $.onboarding.sourcesFirst.skills.waiting;
-              })}
-            </span>
-          </div>
+          <p className="rounded-xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.skills.waiting;
+            })}
+          </p>
         ) : (
           skills.map((skill) => {
             return <ImportedSkillRow key={skill.id} skill={skill} />;
@@ -206,24 +206,134 @@ export function ImportedSkillList({
   );
 }
 
+/** The import is still waiting for a skill, said in one line. */
+export function SkillImportWaiting() {
+  const { t } = useTranslation();
+
+  return (
+    <p
+      role="status"
+      className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
+    >
+      <Loader2 size={14} className="shrink-0 animate-spin" aria-hidden="true" />
+      <span className="truncate">
+        {t(($) => {
+          return $.onboarding.sourcesFirst.skills.waiting;
+        })}
+      </span>
+    </p>
+  );
+}
+
+/** Whether the full prompt is shown under its one-line preview. */
+export interface SkillImportPromptToggle {
+  readonly shown: boolean;
+  readonly setShown: (shown: boolean) => void;
+}
+
+/**
+ * The prompt reduced to its opening line: copying it is all most people need,
+ * and the full text stays one click away.
+ */
+function SkillImportPromptPreview({
+  prompt,
+  toggle,
+  children,
+}: {
+  readonly prompt: string;
+  readonly toggle: SkillImportPromptToggle;
+  readonly children: ReactNode;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 py-2 pl-4 pr-2">
+      <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+        {prompt.split("\n", 1)[0]}
+      </span>
+      <Button
+        type="button"
+        variant="quiet"
+        size="sm"
+        className="shrink-0 gap-1.5"
+        aria-expanded={toggle.shown}
+        onClick={() => {
+          toggle.setShown(!toggle.shown);
+        }}
+      >
+        <ChevronDown
+          size={14}
+          aria-hidden="true"
+          className={cn("transition-transform", toggle.shown && "rotate-180")}
+        />
+        {toggle.shown
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.skills.hideFullPrompt;
+            })
+          : t(($) => {
+              return $.onboarding.sourcesFirst.skills.showFullPrompt;
+            })}
+      </Button>
+      {children}
+    </div>
+  );
+}
+
 /**
  * The prompt for one tool, with its copy button and where in the tool to run
  * it, or where it will be while the session opens or after it could not.
+ * Given a prompt toggle, the panel is compact: the steps lead with copying,
+ * and the prompt is a one-line preview beside the primary copy button.
  */
 export function SkillImportPanel({
   signals,
   provider,
   providerName,
   retry$,
+  promptToggle,
 }: {
   readonly signals: SkillImportSignals;
   readonly provider: SkillImportProvider;
   readonly providerName: string;
   /** Opens the session again, under whatever owns this import's lifetime. */
   readonly retry$: Command<Promise<void>, [AbortSignal]>;
+  readonly promptToggle?: SkillImportPromptToggle;
 }) {
   const state = useGet(signals.state$);
   const { t } = useTranslation();
+  const pending =
+    state.status === "failed" ? (
+      <SkillImportPromptFailed retry$={retry$} />
+    ) : (
+      <SkillImportPromptPending />
+    );
+
+  if (promptToggle) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SkillImportGuide provider={provider} copyStep />
+        {state.prompt === null ? (
+          pending
+        ) : (
+          <>
+            <SkillImportPromptPreview
+              prompt={state.prompt}
+              toggle={promptToggle}
+            >
+              <SkillImportCopyButton
+                copied={state.copied}
+                copyPrompt$={signals.copyPrompt$}
+                primary
+              />
+            </SkillImportPromptPreview>
+            {promptToggle.shown ? (
+              <SkillImportPromptBody prompt={state.prompt} />
+            ) : null}
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -250,13 +360,12 @@ export function SkillImportPanel({
           />
         )}
       </div>
-      <SkillImportGuide provider={provider} />
+      <SkillImportGuide
+        provider={provider}
+        className="rounded-xl border border-border/60 bg-muted/30 p-4"
+      />
       {state.prompt === null ? (
-        state.status === "failed" ? (
-          <SkillImportPromptFailed retry$={retry$} />
-        ) : (
-          <SkillImportPromptPending />
-        )
+        pending
       ) : (
         <SkillImportPromptBody prompt={state.prompt} />
       )}

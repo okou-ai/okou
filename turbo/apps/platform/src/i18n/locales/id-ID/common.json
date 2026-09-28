@@ -4363,6 +4363,7 @@
             "local": "Local",
             "newChat": "New chat"
           },
+          "copy": "Salin prompt",
           "label": "Tempat menjalankan prompt",
           "paste": "Tempel prompt lalu kirim",
           "scene": {
@@ -4374,6 +4375,7 @@
             "codexProjects": "Projects"
           }
         },
+        "hideFullPrompt": "Sembunyikan prompt lengkap",
         "importedCopy": "Diimpor sebagai workflow Okou.",
         "importedLabel": "Skill yang diimpor",
         "importedTitle": "Skill Anda sudah ada di Okou",
@@ -4381,6 +4383,7 @@
         "promptCopy": "Ia membaca skill di komputer Anda dan menuliskannya ke Okou.",
         "promptLabel": "Prompt impor skill",
         "promptTitle": "Jalankan ini di {{provider}}",
+        "showFullPrompt": "Tampilkan prompt lengkap",
         "startError": "Sesi impor tidak dapat dibuka.",
         "title": "Bawa skill Anda ke Okou",
         "tryAgain": "Coba lagi",
