@@ -419,7 +419,6 @@ import {
   type SessionExecutionIdentity,
 } from "./session-compatibility";
 
-const PENDING_RUN_TTL_MS = 15 * 60 * 1000;
 const AUTO_MEMORY_ARTIFACT_NAME = MEMORY_ARTIFACT_NAME;
 type ArtifactMissingRootPolicy = NonNullable<
   StorageMountEntry["missingRootPolicy"]
@@ -5886,11 +5885,9 @@ export async function orgHasRunCapacity(
   db: Pick<Db, "select">,
   orgId: string,
 ): Promise<boolean> {
-  const at = nowDate();
   const state = await loadOrgConcurrencyAdmissionState(db, {
     orgId,
-    at,
-    activePendingAfter: new Date(at.getTime() - PENDING_RUN_TTL_MS),
+    at: nowDate(),
   });
   const limit = getEffectiveConcurrencyLimit(
     state.baseConcurrencyLimit,

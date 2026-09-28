@@ -1,4 +1,3 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -8,7 +7,6 @@ import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
-import { sandboxCapacityPredicate } from "./pi-inference-lifecycle.service";
 
 export const CONCURRENCY_SUBSCRIPTION_PURPOSE = "concurrency_subscription";
 const CONCURRENCY_SUBSCRIPTION_ACTIVE_STATUSES = [
@@ -110,14 +108,32 @@ export async function activePaidConcurrencySlots(
   return row?.slots ?? 0;
 }
 
-function orgConcurrencyStateTotals(
+/**
+ * Every `active_agent_runs` row holds one compute slot: launch inserts it only
+ * for a pending run, a never-started run loses it when it turns terminal, and
+ * a started run keeps it until its runner reports completion or cleanup
+ * declares the runner gone. Counting rows is therefore the slot count, read
+ * from the hot table alone through `active_agent_runs_org_idx`.
+ */
+async function countOrgActiveAgentRuns(
+  db: ReadDb,
+  orgId: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ count: count() })
+    .from(activeAgentRuns)
+    .where(eq(activeAgentRuns.orgId, orgId));
+  return row?.count ?? 0;
+}
+
+/** Fresh direct admission only, ordered at the caller's single captured `at`. */
+export async function loadOrgConcurrencyAdmissionState(
   db: ReadDb,
   args: {
     readonly orgId: string;
     readonly at: Date;
-    readonly activePendingAfter: Date;
   },
-) {
+): Promise<OrgConcurrencyState> {
   const paidSlotTotals = db
     .select({
       slots: sql`COALESCE(${sum(orgConcurrencySubscriptions.slots)}, 0)::int`
@@ -127,47 +143,19 @@ function orgConcurrencyStateTotals(
     .from(orgConcurrencySubscriptions)
     .where(activeConcurrencySubscriptionPredicate(args.orgId, args.at))
     .as("paid_concurrency_slot_totals");
-  const activeRunTotals = db
-    .select({
-      count: count().as("active_run_count"),
-    })
-    .from(activeAgentRuns)
-    .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
-    .where(
-      and(
-        eq(activeAgentRuns.orgId, args.orgId),
-        sandboxCapacityPredicate(args.activePendingAfter),
-      ),
-    )
-    .as("active_concurrency_run_totals");
-  return { paidSlotTotals, activeRunTotals };
-}
-
-/** Fresh direct admission only, ordered at the caller's single captured `at`. */
-export async function loadOrgConcurrencyAdmissionState(
-  db: ReadDb,
-  args: {
-    readonly orgId: string;
-    readonly at: Date;
-    readonly activePendingAfter: Date;
-  },
-): Promise<OrgConcurrencyState> {
-  const { paidSlotTotals, activeRunTotals } = orgConcurrencyStateTotals(
-    db,
-    args,
-  );
-  const [row] = await db
-    .select({
-      entitlementOrgId: orgPlanEntitlements.orgId,
-      metadataOrgId: orgMetadata.orgId,
-      baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-      paidSlots: paidSlotTotals.slots,
-      activeRunCount: activeRunTotals.count,
-    })
-    .from(paidSlotTotals)
-    .crossJoin(activeRunTotals)
-    .leftJoin(orgPlanEntitlements, eq(orgPlanEntitlements.orgId, args.orgId))
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId));
+  const [[row], activeRunCount] = await Promise.all([
+    db
+      .select({
+        entitlementOrgId: orgPlanEntitlements.orgId,
+        metadataOrgId: orgMetadata.orgId,
+        baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+        paidSlots: paidSlotTotals.slots,
+      })
+      .from(paidSlotTotals)
+      .leftJoin(orgPlanEntitlements, eq(orgPlanEntitlements.orgId, args.orgId))
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId)),
+    countOrgActiveAgentRuns(db, args.orgId),
+  ]);
   if (!row) {
     throw new Error("Concurrency admission aggregate returned no row");
   }
@@ -177,7 +165,7 @@ export async function loadOrgConcurrencyAdmissionState(
   return {
     baseConcurrencyLimit: row.baseConcurrencyLimit ?? 0,
     paidSlots: row.paidSlots,
-    activeRunCount: row.activeRunCount,
+    activeRunCount,
   };
 }
 
