@@ -1028,7 +1028,10 @@ type CreateRunRouteResult =
   | ApiErrorResponse<400, "BAD_REQUEST">
   | ApiErrorResponse<403, "FORBIDDEN">
   | ApiErrorResponse<404, "NOT_FOUND">
-  | ApiErrorResponse<409, "CONFLICT">
+  | (ApiErrorResponse<409, "CONFLICT"> & {
+      /** Producer-facing classification; the HTTP response body is unchanged. */
+      readonly admissionFailure?: "subscription_account_disconnected";
+    })
   | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
   | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
 
@@ -8717,9 +8720,12 @@ async function validateCapturedSubscriptionAccount(
         { subscription_provider_type: type },
       );
       if (!account) {
-        return conflict(
-          "The selected subscription account was disconnected. Reconnect it before starting another run.",
-        );
+        return {
+          ...conflict(
+            "The selected subscription account was disconnected. Reconnect it before starting another run.",
+          ),
+          admissionFailure: "subscription_account_disconnected" as const,
+        };
       }
       return { identity: personalSubscriptionAccountIdentity(account) };
     });

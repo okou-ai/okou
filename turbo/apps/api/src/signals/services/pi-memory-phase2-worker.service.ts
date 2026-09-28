@@ -359,7 +359,10 @@ const dispatchClaim$ = command(
         db,
         claim,
         nowDate(),
-        "maintenance_dispatch_failed",
+        result.status === 409 &&
+          result.admissionFailure === "subscription_account_disconnected"
+          ? "credential_unavailable"
+          : "maintenance_dispatch_failed",
       );
     }
     return { outcome: "dispatched", runId: result.body.runId };
