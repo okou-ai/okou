@@ -448,7 +448,7 @@ describe("Rust type bindings", () => {
       "pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,",
     );
     expect(firstRender).toMatch(
-      /#\[derive\(\n\s+Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,\n\s+\)\]\n\s+pub enum ResponseRejectedReason \{/,
+      /#\[derive\(\n\s+Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,\n\s+\)\]\n\s+pub enum SessionHistoryEncoding \{/,
     );
     expect(firstRender).toContain(
       "/// Request body for creating a recoverable agent checkpoint.",

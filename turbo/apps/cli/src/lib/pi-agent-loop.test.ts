@@ -1142,13 +1142,13 @@ describe("sandbox Pi agent loop", () => {
     );
   });
 
-  it("rejects a launch payload without the required handoff slot", async () => {
+  it("rejects a launch payload with the retired handoff slot", async () => {
     await writeFile(
       launchPayloadFile,
       JSON.stringify({
         schemaVersion: 1,
         appendSystemPrompt: null,
-        launchConfig: { schemaVersion: 2 },
+        launchConfig: { schemaVersion: 2, apiFirstTurn: {} },
       }),
     );
 

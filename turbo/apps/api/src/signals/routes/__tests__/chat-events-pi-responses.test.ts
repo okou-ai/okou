@@ -172,7 +172,7 @@ describe("CHAT-02: model-first provider policies", () => {
         },
       );
       mockPiResourceArchiveDownloads();
-      const checkpointObjects = mockPiCheckpointObjectStore();
+      mockPiCheckpointObjectStore();
 
       const run = await withOpenRouterRoute(async () => {
         return await sendChatRun(actor, {

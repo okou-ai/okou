@@ -301,13 +301,13 @@ describe("Rust route bindings", () => {
     expect(rendered).toContain("encode_path_segment(params.item_id)");
   });
 
-  it("renders both active-input receipt path parameters", () => {
+  it("renders both steered-input path parameters", () => {
     const rendered = renderRustRoutes(rustRouteBindings);
 
     expect(rendered).toContain("pub run_id: &'a str,");
-    expect(rendered).toContain("pub delivery_id: &'a str,");
+    expect(rendered).toContain("pub event_id: &'a str,");
     expect(rendered).toContain(
-      "crate::route::encode_path_segment(params.delivery_id)",
+      "crate::route::encode_path_segment(params.event_id)",
     );
   });
 

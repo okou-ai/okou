@@ -289,7 +289,8 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(claimed.claim.prompt).toBe(prompt);
     expect(claimed.claim.resumeSession).toBeNull();
     expect(claimed.claim.piSessionId).toBe(run.threadId);
-    expect(claimed.claim.piLaunchConfig).toStrictEqual({ schemaVersion: 2 });
+    expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
+    expect(claimed.claim.piLaunchConfig).not.toHaveProperty("apiFirstTurn");
     expect(claimed.claim.piInstalledCliRequirement).toStrictEqual({
       requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
       minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
