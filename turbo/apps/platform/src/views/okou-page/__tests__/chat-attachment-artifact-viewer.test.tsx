@@ -242,12 +242,11 @@ test("A public hosted site header titles itself with its address", async () => {
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
   const expectSiteLink = (surface: HTMLElement) => {
-    const link = within(surface).getByTestId("artifact-title-link");
-    expect(link).toHaveTextContent("reference-site.sites.vm7.io");
+    const link = getNamedLink("reference-site.sites.vm7.io", surface);
     expect(link).toHaveAttribute("href", `${siteUrl}/`);
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
-    expect(within(surface).getByText(/^Updated at /)).toBeVisible();
+    expect(within(surface).getByText(/^Updated at /)).toBeInTheDocument();
     expect(within(surface).queryByText("reference-site.html")).toBeNull();
     expect(within(surface).queryByText(/Hosted site/)).toBeNull();
     expect(within(surface).queryByText(/1 kB/)).toBeNull();
@@ -258,6 +257,34 @@ test("A public hosted site header titles itself with its address", async () => {
 
   click(await findNamedButton("Open in split view"));
   expectSiteLink(await screen.findByTestId("artifact-sidebar"));
+});
+
+test("A private hosted site header keeps its filename", async () => {
+  const siteUrl = publicArtifactUrl("private-site.html");
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`[Private site](${siteUrl})`)],
+    artifacts: [
+      artifactFile("private-site.html", {
+        id: "private-site",
+        contentType: "text/html",
+        url: siteUrl,
+        artifactKind: "hosted-site",
+      }),
+    ],
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  click(await findNamedLink("Private site"));
+  const dialog = await screen.findByTestId("attachment-lightbox");
+  expect(within(dialog).getByText("private-site.html")).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(/^Hosted site · Updated at /),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).queryByText("private-site.html")?.closest("a"),
+  ).toBeNull();
+  expect(within(dialog).queryByText(/1 kB/)).toBeNull();
 });
 
 test("Private attachment access stays scoped to the chat that owns it", async () => {
