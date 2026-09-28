@@ -14,15 +14,13 @@ import {
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
 import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
-import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
+import { runOnboardingRequest$ } from "../../signals/onboarding/onboarding-actions.ts";
 import {
   updateSourcesFirstDraft$,
   type SourcesFirstDraft,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { searchParams$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { useOnboardingNavigation } from "../onboarding/onboarding-navigation.ts";
 import { ONBOARDING_TEXTAREA_CLASS } from "../onboarding/onboarding-shell.tsx";
 import {
   pickStartingPromptSource,
@@ -165,9 +163,7 @@ export function OnboardingReadyPage() {
   const catalogLoadable = useLastLoadable(onboardingSourceConnectors$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
   const pageSignal = useGet(pageSignal$);
-  const searchParams = useGet(searchParams$);
-  const [completeLoadable, complete] = useLoadableSet(completeOnboarding$);
-  const { runPrompt } = useOnboardingNavigation();
+  const [runLoadable, runRequest] = useLoadableSet(runOnboardingRequest$);
 
   const connected =
     catalogLoadable.state === "hasData"
@@ -204,19 +200,6 @@ export function OnboardingReadyPage() {
       source?.label ?? null,
     );
 
-  /**
-   * Finishing the flow is what marks onboarding complete, so the request goes
-   * out before the first prompt: otherwise `needsOnboarding` stays true and the
-   * bootstrap guard returns the user here on the next load. An owner completes
-   * the workspace's onboarding; a member completes only their own. When
-   * completion fails the rejected command keeps the user on this step, with
-   * the button ready to try again.
-   */
-  const completeAndRun = async (request: string): Promise<void> => {
-    await complete(searchParams.get("redeemCode")?.trim() || null, pageSignal);
-    runPrompt(request);
-  };
-
   return (
     <OnboardingStepLayout
       currentStep={flow.currentStep}
@@ -234,10 +217,12 @@ export function OnboardingReadyPage() {
         const request = text.trim();
         // The request's length, never the request itself.
         captureStartClicked(request.length);
-        detach(completeAndRun(request), Reason.DomCallback);
+        // Starting it completes onboarding first: an owner completes the
+        // workspace's onboarding; a member completes only their own.
+        detach(runRequest(request, null, pageSignal), Reason.DomCallback);
       }}
       primaryDisabled={isLoading || text.trim().length === 0}
-      primaryBusy={completeLoadable.state === "loading"}
+      primaryBusy={runLoadable.state === "loading"}
       onBack={flow.goBack}
     >
       {/* One column on the step's own sheet: the welcome, then the request it

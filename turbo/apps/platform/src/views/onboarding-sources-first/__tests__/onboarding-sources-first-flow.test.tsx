@@ -770,6 +770,49 @@ test("A prompt with a showcase carries the showcase into the chat", async () => 
   expect(new URLSearchParams(search()).get("showcase")).toBe(showcase);
 });
 
+test("The prompt step completes onboarding, then runs the prompt as edited", async () => {
+  const editedPrompt = "Draft the launch plan for the EU market";
+  mockOnboardingNeeded();
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  // Where the browser still was when completion went out, so the order of the
+  // two is observable rather than assumed.
+  const completedFrom: string[] = [];
+  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+    completedFrom.push(pathname());
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: false,
+      onboardingComplete: true,
+    });
+    return respond(200, {
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: PROMPT_TITLE }),
+  ).resolves.toBeInTheDocument();
+  await fill(screen.getByLabelText("Onboarding prompt"), editedPrompt);
+  click(getButtonByName("Next"));
+
+  await waitFor(() => {
+    expect(runPrompt).toBe(editedPrompt);
+    expect(pathname()).toMatch(/^\/chats\//u);
+  });
+  expect(completedFrom).toStrictEqual([ROUTES.onboarding]);
+});
+
 test("A later source-first step opened with a prompt goes back to the prompt page", async () => {
   mockOnboardingNeeded();
   mockCatalog({ connected: true });

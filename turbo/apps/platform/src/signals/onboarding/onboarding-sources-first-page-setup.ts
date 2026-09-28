@@ -29,10 +29,8 @@ import { page$, updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
-import {
-  promptHandoffParams,
-  setupOnboardingPromptPage$,
-} from "./onboarding-page-setup.ts";
+import { promptHandoffParams } from "./onboarding-actions.ts";
+import { setupOnboardingPromptPage$ } from "./onboarding-page-setup.ts";
 import { enterSkillImport$ } from "./onboarding-skill-import.ts";
 import {
   allowOnboardingRecommendationFallback$,

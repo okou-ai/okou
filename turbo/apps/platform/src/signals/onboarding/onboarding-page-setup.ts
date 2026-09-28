@@ -8,36 +8,11 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
+import { promptHandoffParams } from "./onboarding-actions.ts";
 import { hydrateOnboardingRoute$ } from "./onboarding-state.ts";
 import { capturePaidOnboardingStepViewed$ } from "../bootstrap/paid-funnel-telemetry.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { sendEvent$ } from "../marketing/events.ts";
-
-const ONBOARDING_TRANSIENT_PARAMS = [
-  "choice",
-  "category",
-  "workflow",
-  "onboarding_billing",
-  "onboarding_billing_session_id",
-  "onboarding_note",
-  "onboarding_template",
-  "redeemCode",
-] as const;
-
-/**
- * The query a prompt handoff carries on, with every parameter that only
- * belonged to the onboarding step itself dropped, so an already-onboarded
- * visitor is handed the same URL wherever they arrive.
- */
-export function promptHandoffParams(
-  searchParams: URLSearchParams,
-): URLSearchParams {
-  const next = new URLSearchParams(searchParams);
-  for (const key of ONBOARDING_TRANSIENT_PARAMS) {
-    next.delete(key);
-  }
-  return next;
-}
 
 /**
  * The prompt handoff: a visitor who brings a prompt of their own tries it on
