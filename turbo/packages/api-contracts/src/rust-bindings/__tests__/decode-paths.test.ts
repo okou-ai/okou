@@ -63,7 +63,7 @@ describe("Rust decode-path bindings", () => {
     expect(first).toContain('DecodePathField::new("modelCatalog"');
     expect(first).toContain('DecodePathField::new("catalogDigest"');
     expect(first).toContain('DecodePathField::new("keyName"');
-    expect(first).toContain('DecodePathField::new("outcome"');
+    expect(first).toContain('DecodePathField::new("eventId"');
   });
 
   it("normalizes fixed objects, arrays, nullable objects, and unions", () => {
