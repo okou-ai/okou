@@ -97,7 +97,7 @@ export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
  * way an older CLI rejects. The first release without
  * `piLaunchConfig.apiFirstTurn` is the floor: earlier CLIs require that slot.
  */
-export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.368.2";
+export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.369.1";
 /** Release versions are exact `MAJOR.MINOR.PATCH`; nothing here is a range. */
 export const releaseVersionSchema = z
   .string()

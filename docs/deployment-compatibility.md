@@ -216,6 +216,8 @@ stricter release 7 API floor subsumes it.
   The migration keeps the most recently used `direct-message:%` route per
   connection/link ID (regardless of older channel IDs), rewrites its key to
   the constant and clears its thread model, provider and service-tier selection.
+  Model and tier resets append canonical thread events in the same transaction,
+  so existing App snapshots converge on the empty selection during replay.
   It deletes the other DM route rows; their chat threads and canonical input
   messages remain as history. Existing Discord route foreign keys also cascade
   deletion to the detached route's private launch context and ingress rows.
