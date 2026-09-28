@@ -127,6 +127,7 @@ async function setupFeishuInstallation(
     [FEISHU_PLATFORMS[platform].featureSwitch]: true,
   });
   authOrgApi.acceptAgentStorageWrites();
+  await runsApi.grantProEntitlement(actor);
   const agent = await authOrgApi.createAgent(actor, {
     displayName: "Feishu CLI agent",
     visibility: "public",

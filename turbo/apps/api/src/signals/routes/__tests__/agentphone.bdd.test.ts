@@ -10,6 +10,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it, beforeEach } from "vitest";
 
 import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
+import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -21,6 +22,7 @@ import {
   readChatEventContextFixture,
 } from "../../../test-fixtures/chat-events";
 import { withAgentPhoneQueueAssemblyFailureFixture } from "../../../test-fixtures/agentphone-queue-assembly-failure";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settle } from "../../utils";
 import {
@@ -219,6 +221,8 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
   readonly prompt: string;
   readonly appendSystemPrompt: string;
   readonly okouToken: string | undefined;
+  readonly agentId: string | undefined;
+  readonly resumedSessionId: string | undefined;
   readonly cliAgentType: "claude-code" | "codex";
   readonly environment: Record<string, string> | null;
   readonly serviceTier: string | undefined;
@@ -248,6 +252,8 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
     prompt: claim.prompt,
     appendSystemPrompt: claim.appendSystemPrompt ?? "",
     okouToken: claim.platformEnvironment.OKOU_TOKEN,
+    agentId: claim.platformEnvironment.OKOU_AGENT_ID,
+    resumedSessionId: claim.resumeSession?.sessionId,
     cliAgentType: claim.cliAgentType,
     environment: claim.environment,
     serviceTier: claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER,
@@ -773,6 +779,120 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
     expect(lastSend(sends).body).toBe("Task completed successfully.");
   });
+
+  it("keeps the DM thread while changing to the current default agent and a fresh session", async () => {
+    const bdd = createBddApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const runs = createRunsApi(context);
+    const chat = createChatFilesBddApi(context);
+    const { actor, phone, runnerGroup } = await entitledLinkedActor();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped AgentPhone user");
+    }
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "establish native history with the first default agent",
+    });
+    const first = await claimDispatchedRun(runnerGroup);
+    await completeSandboxRun(first.sandboxToken, first.runId, 0);
+    const originalSession = await waitForRunSessionIdPresent(
+      actor,
+      first.runId,
+    );
+    const before = await chat.requestThreadEvents(actor, {}, [200]);
+    if (before.status !== 200) {
+      throw new Error("Expected the first AgentPhone thread event stream");
+    }
+    const originalThread = before.body.events.find((event) => {
+      return event.kind === "created";
+    });
+    if (!originalThread) {
+      throw new Error("Expected AgentPhone ingress to create its DM thread");
+    }
+    expect(first.agentId).toBe(originalThread.agentId);
+
+    const replacement = await bdd.createAgent(actor, {
+      displayName: "Replacement organization default",
+      visibility: "public",
+    });
+    // Default reassignment has no public API; only this historical-state
+    // transition uses a fixture. Ingress, admission, claims and reads are real.
+    await setOrgDefaultAgentFixture({
+      orgId: actor.orgId,
+      agentId: replacement.agentId,
+    });
+    await expect(
+      bdd.readAgent(actor, originalThread.agentId),
+    ).resolves.toMatchObject({
+      agentId: originalThread.agentId,
+    });
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "use the current default on the existing DM thread",
+    });
+    const rebound = await claimDispatchedRun(runnerGroup);
+    expect(rebound.agentId).toBe(replacement.agentId);
+    expect(rebound.resumedSessionId).toBeUndefined();
+    const reboundSession = await waitForRunSessionIdPresent(
+      actor,
+      rebound.runId,
+    );
+    expect(reboundSession).not.toBe(originalSession);
+    await expect(runs.readRun(actor, rebound.runId)).resolves.toMatchObject({
+      vars: { OKOU_AGENT_ID: replacement.agentId },
+    });
+    await expect(
+      chat.readThreadMetadata(actor, originalThread.chatThreadId),
+    ).resolves.toMatchObject({
+      id: originalThread.chatThreadId,
+      agentId: replacement.agentId,
+    });
+    const after = await chat.requestThreadEvents(actor, {}, [200]);
+    if (after.status !== 200) {
+      throw new Error("Expected the rebound AgentPhone thread event stream");
+    }
+    expect(
+      after.body.events.filter((event) => {
+        return event.kind === "created";
+      }),
+    ).toHaveLength(1);
+    expect(replayChatThreadEvents([], after.body.events)).toContainEqual(
+      expect.objectContaining({
+        id: originalThread.chatThreadId,
+        agentId: replacement.agentId,
+      }),
+    );
+    const messages = await chat.listThreadEvents(
+      actor,
+      originalThread.chatThreadId,
+    );
+    for (const runId of [first.runId, rebound.runId]) {
+      expect(messages.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "input.prompt",
+          runId,
+        }),
+      );
+    }
+
+    await completeSandboxRun(rebound.sandboxToken, rebound.runId, 0);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "sms",
+      from: phone,
+      body: "continue the replacement agent's own native history",
+    });
+    const resumed = await claimDispatchedRun(runnerGroup);
+    expect(resumed.agentId).toBe(replacement.agentId);
+    expect(resumed.resumedSessionId).toBe(
+      agentPhoneCliAgentSessionIdForRun(rebound.runId),
+    );
+    await waitForRunSessionId(actor, resumed.runId, reboundSession);
+    await completeSandboxRun(resumed.sandboxToken, resumed.runId, 0);
+  }, 90_000);
 
   it("links an AgentPhone user without provisioning artifact storage", async () => {
     const bdd = createBddApi(context);

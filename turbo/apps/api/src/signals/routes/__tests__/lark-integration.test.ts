@@ -8,16 +8,12 @@ import {
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
-import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import {
   integrationsFeishuMessageContract,
   integrationsLarkMessageContract,
   integrationsLarkUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
-import {
-  FEISHU_PLATFORMS,
-  type FeishuPlatform,
-} from "@okouai/core/feishu-platform";
+import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -26,13 +22,11 @@ import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { feishuConnectRoutes } from "../feishu-connect";
 import { feishuEventsRoutes } from "../feishu-events";
 import { feishuOauthRoutes } from "../feishu-oauth";
 import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
-import { logsRoutes } from "../logs";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRouteMocks } from "./helpers/route-test";
@@ -133,6 +127,7 @@ describe("Lark integration", () => {
       [FeatureSwitchKey.FeishuIntegration]: true,
     });
     authOrgApi.acceptAgentStorageWrites();
+    await runsApi.grantProEntitlement(actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Bot agent",
       visibility: "public",

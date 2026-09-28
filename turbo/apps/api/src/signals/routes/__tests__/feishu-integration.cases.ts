@@ -1652,7 +1652,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu plaintext callback agent",
           visibility: "public",
         });
@@ -1715,7 +1715,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu single-bot agent",
           visibility: "public",
         });
@@ -1813,7 +1813,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu concurrent setup agent",
           visibility: "public",
         });
@@ -1879,7 +1879,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu replay setup agent",
           visibility: "public",
         });
@@ -1927,7 +1927,6 @@ export function registerFeishuIntegrationTests(
         authOrgApi.acceptAgentStorageWrites();
         const owners: {
           readonly actor: ApiTestUser;
-          readonly agent: { readonly agentId: string };
         }[] = [];
         for (let index = 0; index < 2; index += 1) {
           const actor = authOrgApi.user({
@@ -1936,11 +1935,11 @@ export function registerFeishuIntegrationTests(
             orgRole: "org:admin",
           });
           await enableFeishuIntegration(platform, actor);
-          const agent = await authOrgApi.createAgent(actor, {
+          await authOrgApi.createAgent(actor, {
             displayName: "Feishu competing setup agent",
             visibility: "public",
           });
-          owners.push({ actor, agent });
+          owners.push({ actor });
         }
         context.mocks.clerk.authenticateRequest.mockImplementation(
           (request) => {
@@ -1991,7 +1990,7 @@ export function registerFeishuIntegrationTests(
         const client = feishuConnectClient(platform);
         const appId = `cli_${randomUUID()}`;
         const outcomes = await Promise.all(
-          owners.map(async ({ actor, agent }) => {
+          owners.map(async ({ actor }) => {
             const headers = { authorization: `Bearer ${actor.userId}` };
             const response = await accept(
               client.setup({
@@ -2062,7 +2061,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu connector retry agent",
           visibility: "public",
         });
@@ -2187,7 +2186,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu unlinked removal agent",
           visibility: "public",
         });
@@ -2262,7 +2261,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu connector repair agent",
           visibility: "public",
         });
@@ -2359,7 +2358,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu managed bot agent",
           visibility: "public",
         });
@@ -2471,8 +2470,13 @@ export function registerFeishuIntegrationTests(
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, admin);
         await enableFeishuIntegration(platform, member);
-        const agent = await authOrgApi.createAgent(admin, {
-          displayName: "Feishu OAuth agent",
+        const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(
+          admin,
+          {
+            displayName: "Feishu OAuth agent",
+          },
+        );
+        await authOrgApi.updateAgentMetadata(admin, bootstrap.body.agentId, {
           visibility: "public",
         });
         mockAuthoritativeOrganizationMembers([admin, member]);
@@ -3201,7 +3205,7 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
+        await authOrgApi.createAgent(actor, {
           displayName: "Feishu callback agent",
           visibility: "public",
         });
@@ -3285,8 +3289,13 @@ export function registerFeishuIntegrationTests(
         });
         authOrgApi.acceptAgentStorageWrites();
         await enableFeishuIntegration(platform, actor);
-        const agent = await authOrgApi.createAgent(actor, {
-          displayName: "Feishu compatibility agent",
+        const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(
+          actor,
+          {
+            displayName: "Feishu compatibility agent",
+          },
+        );
+        await authOrgApi.updateAgentMetadata(actor, bootstrap.body.agentId, {
           visibility: "public",
         });
         mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
@@ -6711,7 +6720,7 @@ export function registerSharedFeishuConversationTests(): void {
       );
     });
 
-    it("tells the sender when Feishu reaches the concurrency limit", async () => {
+    it("starts a queued Feishu message when a run slot is released", async () => {
       // The active runs below fill the plan, independent of its own limit.
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
       const fixture = await setupFeishuRunFixture();
@@ -6742,21 +6751,6 @@ export function registerSharedFeishuConversationTests(): void {
         );
         await flushWaitUntilForTest();
       }
-
-      const queueNotice = fixtureState.outboundMessages.find((message) => {
-        return messageContent(message).includes("Waiting for a run slot");
-      });
-      expect(queueNotice).toMatchObject({
-        kind: "reply",
-        target: queuedMessageId,
-        replyInThread: true,
-      });
-      expect(queueNotice?.msgType).toBe("interactive");
-      const queueNoticeContent = queueNotice ? messageContent(queueNotice) : "";
-      expect(queueNoticeContent).toContain(
-        "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
-      );
-      expect(queueNoticeContent).not.toContain("View queue");
 
       const [firstRun, secondRun] = await Promise.all(
         prompts.slice(0, 2).map(async (prompt) => {
