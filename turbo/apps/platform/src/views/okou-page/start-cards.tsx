@@ -6,10 +6,8 @@ import {
   useSet,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import { surfaceVariants, Button } from "@okouai/ui";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
 import { modelPlanCapabilities$ } from "../../signals/okou-page/model-plan-capabilities.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../signals/okou-page/settings/claude-code-device-auth.ts";
@@ -22,6 +20,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   startCardKinds$,
+  startCardSubscriptionPinned$,
   startCardWorkflowConnectorIcons$,
   startCardWorkflowTemplate$,
   type StartCardConnectorIcon,
@@ -513,9 +512,11 @@ export function StartCards({
   onSelectPrompt: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
-  const featureSwitches = useGet(featureSwitch$);
+  // Held back until the account list resolves: a member who already has an
+  // account must not see the card flash in, and a failed lookup keeps the row
+  // as it was.
   const subscriptionPinned =
-    featureSwitches[FeatureSwitchKey.StartCardModelSubscription] ?? false;
+    useLastResolved(startCardSubscriptionPinned$) ?? false;
   const drawnKinds = useGet(startCardKinds$);
   // The pinned card takes the first slot, so one drawn kind makes way for it
   // and the row keeps its length.
