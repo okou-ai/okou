@@ -737,6 +737,180 @@ describe("POST /api/integrations/telegram/link", () => {
       message: `This Telegram account is already connected to another Okou organization through the official Telegram bot @${OFFICIAL_BOT_USERNAME}. Disconnect it before connecting a different account.`,
     });
   });
+  it("returns 400 for invalid telegramAuth hash", async () => {
+    const { token, orgId, userId } = await seedLinkContext();
+    await seedDefaultAgentForLink(orgId, userId);
+    const telegramBotId = OFFICIAL_TELEGRAM_BOT_ID;
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramRoutes,
+    })(integrationsTelegramContract);
+
+    const response = await accept(
+      client.link({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          telegramBotId,
+          telegramAuth: {
+            id: 99_007,
+            first_name: "Test",
+            auth_date: Math.floor(now() / 1000),
+            hash: "invalid_hash",
+          },
+        },
+      }),
+      [400],
+    );
+
+    expect(response.body.error.message).toBe("Invalid Telegram authorization");
+  });
+
+  it("returns 400 for invalid connectSignature", async () => {
+    const { token, orgId, userId } = await seedLinkContext();
+    await seedDefaultAgentForLink(orgId, userId);
+    const telegramBotId = OFFICIAL_TELEGRAM_BOT_ID;
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramRoutes,
+    })(integrationsTelegramContract);
+
+    const response = await accept(
+      client.link({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          telegramBotId,
+          connectSignature: {
+            telegramUserId: "99013",
+            timestamp: Math.floor(now() / 1000),
+            signature: "a".repeat(64),
+          },
+        },
+      }),
+      [400],
+    );
+
+    expect(response.body.error.message).toContain(
+      "Invalid or expired connect link",
+    );
+  });
+
+  it("returns 400 for expired connectSignature", async () => {
+    const { token, orgId, userId } = await seedLinkContext();
+    await seedDefaultAgentForLink(orgId, userId);
+    const telegramBotId = OFFICIAL_TELEGRAM_BOT_ID;
+    const timestamp = Math.floor(now() / 1000) - 601;
+    const telegramUserId = "99008";
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramRoutes,
+    })(integrationsTelegramContract);
+
+    const response = await accept(
+      client.link({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          telegramBotId,
+          connectSignature: {
+            telegramUserId,
+            timestamp,
+            signature: signConnectParams({
+              installationId: telegramBotId,
+              botToken: OFFICIAL_BOT_TOKEN,
+              telegramUserId,
+              timestamp,
+            }),
+          },
+        },
+      }),
+      [400],
+    );
+
+    expect(response.body.error.message).toContain(
+      "Invalid or expired connect link",
+    );
+  });
+  it("rejects unauthenticated unlink requests", async () => {
+    const client = setupApp({ context, routes: integrationsTelegramRoutes })(
+      integrationsTelegramContract,
+    );
+    const response = await accept(
+      client.unlink({
+        headers: {},
+        query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
+      }),
+      [401],
+    );
+    expectUnauthorized(response.body);
+  });
+
+  it("returns 404 when there is no official account to unlink", async () => {
+    const { token } = await seedLinkContext();
+    const client = setupApp({ context, routes: integrationsTelegramRoutes })(
+      integrationsTelegramContract,
+    );
+    const response = await accept(
+      client.unlink({
+        headers: { authorization: `Bearer ${token}` },
+        query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
+      }),
+      [404],
+    );
+    expect(response.body).toStrictEqual({
+      error: { message: "No linked Telegram account", code: "NOT_FOUND" },
+    });
+  });
+
+  it("unlinks the official account only in the active organization", async () => {
+    const first = await seedLinkContext();
+    const second = { ...first, orgId: `org_${randomUUID()}` };
+    await store.set(seedOrgMembership$, second, context.signal);
+    const client = setupApp({ context, routes: integrationsTelegramRoutes })(
+      integrationsTelegramContract,
+    );
+    for (const actor of [first, second]) {
+      await seedDefaultAgentForLink(actor.orgId, actor.userId);
+      mocks.clerk.session(actor.userId, actor.orgId);
+      await accept(
+        client.link({
+          headers: { authorization: `Bearer ${actor.token}` },
+          body: {
+            telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+            telegramAuth: makeTelegramAuth(
+              Number(newTelegramBotId()),
+              "official_user",
+              OFFICIAL_BOT_TOKEN,
+            ),
+          },
+        }),
+        [200],
+      );
+    }
+    mocks.clerk.session(first.userId, first.orgId);
+    await accept(
+      client.unlink({
+        headers: { authorization: `Bearer ${first.token}` },
+        query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
+      }),
+      [204],
+    );
+    const unlinked = await accept(
+      client.getLinkStatus({
+        headers: { authorization: `Bearer ${first.token}` },
+        query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
+      }),
+      [200],
+    );
+    expect(unlinked.body.linked).toBeFalsy();
+    mocks.clerk.session(second.userId, second.orgId);
+    const preserved = await accept(
+      client.getLinkStatus({
+        headers: { authorization: `Bearer ${second.token}` },
+        query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
+      }),
+      [200],
+    );
+    expect(preserved.body.linked).toBeTruthy();
+  });
 });
 
 describe("GET /api/integrations/telegram/:botId/avatar", () => {
@@ -863,6 +1037,25 @@ describe("GET /api/integrations/telegram/:botId/avatar", () => {
     expect(response.headers.get("cache-control")).toBe("private, max-age=300");
     const receivedBytes = Buffer.from(await response.arrayBuffer());
     expect(receivedBytes.equals(fileBytes)).toBeTruthy();
+  });
+  it("returns the avatar placeholder when the official bot has no avatar", async () => {
+    const { token } = await seedAvatarAuthContext();
+    context.mocks.telegram.getUserProfilePhotos.mockResolvedValue([]);
+    const response = await createApp({
+      signal: context.signal,
+      routes: TEST_APP_ROUTES,
+    }).request(
+      `/api/integrations/telegram/${OFFICIAL_TELEGRAM_BOT_ID}/avatar`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("image/svg+xml");
+    expect(response.headers.get("cache-control")).toBe("private, max-age=300");
+    await expect(response.text()).resolves.toContain(
+      "Telegram bot avatar fallback",
+    );
   });
 });
 
@@ -1079,5 +1272,168 @@ describe("GET /api/integrations/telegram/download-file", () => {
     expect(response.headers.get("x-file-name")).toBe("official.jpg");
     const receivedBytes = Buffer.from(await response.arrayBuffer());
     expect(receivedBytes.equals(fileBytes)).toBeTruthy();
+  });
+  it("returns 404 when Telegram file metadata has no downloadable path", async () => {
+    const token = await seedReadToken();
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    context.mocks.telegram.getFile.mockResolvedValue({
+      file_id: "tg-no-path",
+    });
+
+    const response = await requestDownload({
+      search: `?file_id=tg-no-path&bot_id=${botId}`,
+      token,
+    });
+
+    expect(response.status).toBe(404);
+    await expect(expectJson(response)).resolves.toStrictEqual({
+      error: {
+        message: "Telegram file does not have a downloadable path",
+        code: "NOT_FOUND",
+      },
+    });
+  });
+
+  it("returns 413 when Telegram reports a file over the proxy limit", async () => {
+    const token = await seedReadToken();
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    context.mocks.telegram.getFile.mockResolvedValue({
+      file_id: "tg-file-big",
+      file_size: 200 * 1024 * 1024,
+      file_path: "documents/big.bin",
+    });
+
+    const response = await requestDownload({
+      search: `?file_id=tg-file-big&bot_id=${botId}`,
+      token,
+    });
+
+    expect(response.status).toBe(413);
+    await expect(expectJson(response)).resolves.toStrictEqual({
+      error: {
+        message: "File exceeds maximum size of 104857600 bytes",
+        code: "PAYLOAD_TOO_LARGE",
+      },
+    });
+  });
+
+  it("returns 413 when download content-length exceeds the proxy limit", async () => {
+    const token = await seedReadToken();
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    context.mocks.telegram.getFile.mockResolvedValue({
+      file_id: "tg-huge-response",
+      file_path: "documents/huge-response.bin",
+    });
+    server.use(
+      http.get(
+        `https://api.telegram.org/file/bot${OFFICIAL_BOT_TOKEN}/documents/huge-response.bin`,
+        () => {
+          return new HttpResponse(Buffer.from("not actually huge"), {
+            status: 200,
+            headers: {
+              "content-type": "application/octet-stream",
+              "content-length": String(200 * 1024 * 1024),
+            },
+          });
+        },
+      ),
+    );
+
+    const response = await requestDownload({
+      search: `?file_id=tg-huge-response&bot_id=${botId}`,
+      token,
+    });
+
+    expect(response.status).toBe(413);
+    await expect(expectJson(response)).resolves.toStrictEqual({
+      error: {
+        message: "File exceeds maximum size of 104857600 bytes",
+        code: "PAYLOAD_TOO_LARGE",
+      },
+    });
+  });
+
+  it("returns 502 when Telegram returns HTML for a file download", async () => {
+    const token = await seedReadToken();
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    context.mocks.telegram.getFile.mockResolvedValue({
+      file_id: "tg-html",
+      file_path: "documents/html.bin",
+    });
+    server.use(
+      http.get(
+        `https://api.telegram.org/file/bot${OFFICIAL_BOT_TOKEN}/documents/html.bin`,
+        () => {
+          return new HttpResponse("<html></html>", {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          });
+        },
+      ),
+    );
+
+    const response = await requestDownload({
+      search: `?file_id=tg-html&bot_id=${botId}`,
+      token,
+    });
+
+    expect(response.status).toBe(502);
+    await expect(expectJson(response)).resolves.toStrictEqual({
+      error: {
+        message: "Telegram returned an unexpected response",
+        code: "BAD_GATEWAY",
+      },
+    });
+  });
+
+  it("returns 502 when Telegram file download returns a non-OK response", async () => {
+    const token = await seedReadToken();
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    context.mocks.telegram.getFile.mockResolvedValue({
+      file_id: "tg-download-fail",
+      file_path: "documents/fail.bin",
+    });
+    server.use(
+      http.get(
+        `https://api.telegram.org/file/bot${OFFICIAL_BOT_TOKEN}/documents/fail.bin`,
+        () => {
+          return new HttpResponse("unavailable", { status: 503 });
+        },
+      ),
+    );
+
+    const response = await requestDownload({
+      search: `?file_id=tg-download-fail&bot_id=${botId}`,
+      token,
+    });
+
+    expect(response.status).toBe(502);
+    await expect(expectJson(response)).resolves.toStrictEqual({
+      error: {
+        message: "Failed to download file from Telegram: 503",
+        code: "BAD_GATEWAY",
+      },
+    });
+  });
+
+  it("returns a generic 502 body when Telegram file lookup throws", async () => {
+    const token = await seedReadToken();
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    context.mocks.telegram.getFile.mockRejectedValue(
+      new Error("upstream detail"),
+    );
+
+    const response = await requestDownload({
+      search: `?file_id=tg-throws&bot_id=${botId}`,
+      token,
+    });
+
+    expect(response.status).toBe(502);
+    await expect(expectJson(response)).resolves.toStrictEqual({
+      error: {
+        message: "Failed to download file from Telegram",
+        code: "BAD_GATEWAY",
+      },
+    });
   });
 });

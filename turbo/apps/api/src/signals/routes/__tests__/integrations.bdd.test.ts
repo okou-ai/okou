@@ -340,6 +340,39 @@ function codexFastAuthJson(): string {
   });
 }
 
+async function configureFastCodexPreference(
+  actor: ReturnType<typeof integrations.user>,
+): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Expected the Fast Codex actor to have an org");
+  }
+  await runs.grantProEntitlement(actor);
+  await misc.upsertPersonalModelProvider(
+    actor,
+    {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: { CODEX_AUTH_JSON: codexFastAuthJson() },
+    },
+    [200, 201],
+  );
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "gpt-6-astra",
+      isDefault: true,
+      defaultProviderType: "codex-oauth-token",
+      credentialScope: "member",
+      modelProviderId: null,
+    },
+  ]);
+  await bdd.readOnboardingStatus(actor);
+  await integrations.updateUserModelPreference(
+    actor,
+    "gpt-6-astra",
+    "priority",
+  );
+}
+
 /**
  * Slack Runner fixtures default to Fable and offer Astra as the Codex choice;
  * both stay on their vendor harnesses, so runs remain claimable native jobs.
@@ -5606,6 +5639,256 @@ describe("INT-02: Telegram integration", () => {
     expect(JSON.stringify(sentMessages)).toContain(
       "Please choose an agent in Okou first.",
     );
+  });
+  it("keeps Telegram Fast footers bound to the originating run", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    const actor = integrations.user();
+    await integrations.enableOkouDebug(actor);
+    await configureFastCodexPreference(actor);
+
+    const telegramBotId = randomInt(1_000_000_000, 9_999_999_999);
+    const telegramBotToken = `${telegramBotId}:bdd-fast-token`;
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", telegramBotToken);
+    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "bdd_official_fast_bot");
+    mockEnv(
+      "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
+      TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
+    );
+    const webhookSecret = TELEGRAM_OFFICIAL_WEBHOOK_SECRET;
+    const sentMessages: Record<string, unknown>[] = [];
+    server.use(
+      http.post(
+        `https://api.telegram.org/bot${telegramBotToken}/sendChatAction`,
+        () => {
+          return HttpResponse.json({ ok: true, result: true });
+        },
+      ),
+      http.post(
+        `https://api.telegram.org/bot${telegramBotToken}/sendMessage`,
+        async ({ request }) => {
+          sentMessages.push((await request.json()) as Record<string, unknown>);
+          return HttpResponse.json({
+            ok: true,
+            result: { message_id: 655, chat: { id: 8_811_224 } },
+          });
+        },
+      ),
+    );
+    const telegramUserId = randomInt(100_000_000, 999_999_999);
+    await integrations.requestLinkTelegram(
+      actor,
+      {
+        telegramBotId: botId,
+        telegramAuth: telegramLoginAuth(telegramBotToken, {
+          id: telegramUserId,
+          first_name: "BDD",
+          username: "bdd_fast_user",
+        }),
+      },
+      [200],
+    );
+
+    const dmChatId = 8_811_224;
+    const inbound = await integrations.requestTelegramWebhook(
+      botId,
+      JSON.stringify({
+        update_id: 4002,
+        message: {
+          message_id: 72,
+          chat: { id: dmChatId, type: "private" },
+          from: {
+            id: telegramUserId,
+            first_name: "BDD",
+            username: "bdd_fast_user",
+          },
+          text: "reply using the originating Fast run",
+        },
+      }),
+      { "x-telegram-bot-api-secret-token": webhookSecret },
+      [200],
+    );
+    expect(inbound.body).toBe("OK");
+
+    const runId = await pollRunnerRun(
+      runnerGroup,
+      "Expected the Fast Telegram DM to dispatch a run",
+    );
+    const claim = await runs.claimRunnerJob(runId);
+    expect(claim.cliAgentType).toBe("codex");
+    expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
+    const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+    if (!okouToken) {
+      throw new Error("Expected the Telegram Fast run to expose OKOU_TOKEN");
+    }
+
+    const agentSend = await integrations.requestSendTelegramMessageAsRun(
+      okouToken,
+      {
+        botId,
+        chatId: String(dmChatId),
+        text: "agent-initiated fast message",
+      },
+      [200],
+    );
+    expect(agentSend.body).toMatchObject({ ok: true });
+    expect(JSON.stringify(sentMessages)).toContain("GPT 6 Astra Fast");
+
+    sentMessages.length = 0;
+    await integrations.updateUserModelPreference(actor, "gpt-6-astra", null);
+    await completeSlackTriggeredRun({
+      runId,
+      sandboxToken: claim.sandboxToken,
+      cliAgentType: "codex",
+      codexAgentMessageText: "telegram fast reply",
+    });
+    await flushWaitUntilAndAssert(() => {
+      expect(sentMessages).toStrictEqual([
+        expect.objectContaining({
+          text: "telegram fast reply\n\n<i>GPT 6 Astra Fast</i>",
+        }),
+      ]);
+    });
+  });
+
+  it("refreshes telegram typing for pending webhook-dispatched runs", async () => {
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    const actor = integrations.user();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+
+    const typingBotId = randomInt(1_000_000_000, 9_999_999_999);
+    const typingBotToken = `${typingBotId}:bdd-typing-token`;
+    const botId = OFFICIAL_TELEGRAM_BOT_ID;
+    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", typingBotToken);
+    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "bdd_official_typing_bot");
+    mockEnv(
+      "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
+      TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
+    );
+    const webhookSecret = TELEGRAM_OFFICIAL_WEBHOOK_SECRET;
+    await bdd.readOnboardingStatus(actor);
+    const chatActions: {
+      readonly chat_id: string;
+      readonly action: string;
+    }[] = [];
+    server.use(
+      http.post(
+        `https://api.telegram.org/bot${typingBotToken}/sendChatAction`,
+        async ({ request }) => {
+          chatActions.push(
+            (await request.json()) as (typeof chatActions)[number],
+          );
+          return HttpResponse.json({ ok: true, result: true });
+        },
+      ),
+      http.post(
+        `https://api.telegram.org/bot${typingBotToken}/sendMessage`,
+        () => {
+          return HttpResponse.json({
+            ok: true,
+            result: { message_id: 654, chat: { id: 999_111 } },
+          });
+        },
+      ),
+    );
+    const telegramUserId = randomInt(100_000_000, 999_999_999);
+    await integrations.requestLinkTelegram(
+      actor,
+      {
+        telegramBotId: botId,
+        telegramAuth: telegramLoginAuth(typingBotToken, {
+          id: telegramUserId,
+          first_name: "BDD",
+          username: "bdd_typing_user",
+        }),
+      },
+      [200],
+    );
+    const linkStatus = await integrations.readTelegramLinkStatus(actor, botId);
+    expect(linkStatus).toMatchObject({ linked: true });
+
+    // A linked DM dispatches a run carrying a pending Telegram callback.
+    const dmChatId = 8_811_223;
+    const dm = await integrations.requestTelegramWebhook(
+      botId,
+      JSON.stringify({
+        update_id: 4001,
+        message: {
+          message_id: 71,
+          chat: { id: dmChatId, type: "private" },
+          from: {
+            id: telegramUserId,
+            first_name: "BDD",
+            username: "bdd_typing_user",
+          },
+          text: "summarize my telegram inbox",
+        },
+      }),
+      { "x-telegram-bot-api-secret-token": webhookSecret },
+      [200],
+    );
+    expect(dm.body).toBe("OK");
+
+    // Poll only: claiming is not needed for typing refreshes.
+    const runId = await pollRunnerRun(
+      runnerGroup,
+      "Expected the Telegram DM to dispatch a run",
+    );
+    const typingBody = {
+      runId,
+      events: [{ type: "assistant", sequenceNumber: 1 }],
+    };
+    const sandboxHeaders = {
+      authorization: `Bearer ${runs.sandboxTokenForRun(actor, runId)}`,
+    };
+    const actionsBeforeTyping = chatActions.length;
+    const typing = await webhooks.requestAgentEvents(
+      typingBody,
+      sandboxHeaders,
+      [200],
+    );
+    expect(typing.body).toStrictEqual({
+      received: 1,
+      firstSequence: 1,
+      lastSequence: 1,
+    });
+    await flushWaitUntilForTest();
+    expect(chatActions.slice(actionsBeforeTyping)).toStrictEqual([
+      { chat_id: String(dmChatId), action: "typing" },
+    ]);
+
+    // Run cancellation dispatches completion callbacks via waitUntil. Wait for
+    // those side effects to settle before checking that later typing refreshes
+    // no longer see pending Telegram callbacks.
+    await runs.requestCancelRun(actor, runId, [200]);
+    await expect
+      .poll(async () => {
+        const run = await runs.readRun(actor, runId);
+        return run.status;
+      })
+      .toBe("cancelled");
+    await flushWaitUntilForTest();
+    const actionsAfterCancel = chatActions.length;
+    const idleTyping = await webhooks.requestAgentEvents(
+      typingBody,
+      sandboxHeaders,
+      [200],
+    );
+    expect(idleTyping.body).toStrictEqual({
+      received: 1,
+      firstSequence: 1,
+      lastSequence: 1,
+    });
+    await flushWaitUntilForTest();
+    expect(chatActions).toHaveLength(actionsAfterCancel);
   });
 });
 
