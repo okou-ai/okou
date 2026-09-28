@@ -80,13 +80,16 @@ test.each([
     });
 
     const cards = await screen.findByTestId("start-cards");
+    // With no personal model account, the subscription card leads the row and
+    // one rotating template card makes way for it.
+    await within(cards).findByTestId("start-card-subscription");
     await waitFor(() => {
       const templateButtons = queryAllByRoleFast("button", cards).filter(
         (button) => {
           return button.getAttribute("aria-label") === "Browse templates";
         },
       );
-      expect(templateButtons).toHaveLength(3);
+      expect(templateButtons).toHaveLength(2);
     });
 
     await openModels();
