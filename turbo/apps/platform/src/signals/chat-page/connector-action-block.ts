@@ -6,8 +6,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { detachedNavigateTo$ } from "../route.ts";
-import { ROUTES } from "../route-paths.ts";
 import { withConnectorConnectionProgress } from "../connector-connection-progress.ts";
 import {
   connectorSlugSchema,
@@ -132,6 +130,10 @@ type ConnectorCardSignalsRegistry = CardSignalsRegistry<
 type ActiveChatConnectorAction =
   | (CatalogConnectorActionDescriptor & {
       readonly catalogItem: PlatformConnectorCatalogStatusItem;
+    })
+  | (ExactReconnectConnectorActionDescriptor & {
+      readonly catalogItem: PlatformConnectorCatalogStatusItem;
+      readonly account: ConnectorAccountConnection;
     })
   | CustomConnectorActionDescriptor;
 
@@ -416,26 +418,40 @@ function createExactReconnectConnectorSignals(
     if (result.status === 404) {
       return { kind: "unavailable" as const };
     }
+    const account = result.body;
+    if (
+      account.id.toLowerCase() !== descriptor.connectionId.toLowerCase() ||
+      account.target.kind !== "builtin" ||
+      account.target.connectorSlug !== descriptor.connectorSlug ||
+      !catalogItem.authMethods.some((method) => {
+        return (
+          method.id === account.authMethod && method.grantKind !== "managed"
+        );
+      })
+    ) {
+      return { kind: "unavailable" as const };
+    }
     return {
       kind: "ready" as const,
-      account: result.body,
+      account,
       catalogItem,
     };
   });
 
   const activate$ = command(async ({ get, set }, signal: AbortSignal) => {
+    set(reload$, (version) => {
+      return version + 1;
+    });
     const status = await get(status$);
     signal.throwIfAborted();
     if (status.kind !== "ready") {
       return;
     }
-    set(detachedNavigateTo$, ROUTES.directedReconnect, {
-      pathParams: {
-        connectorSlug: descriptor.connectorSlug,
-        connectionId: descriptor.connectionId,
-      },
-      searchParams: new URL(descriptor.originalUrl, window.location.origin)
-        .searchParams,
+    set(resetBuiltinManualGrantForm$, descriptor.connectorSlug);
+    set(activeChatConnectorActionState$, {
+      ...descriptor,
+      catalogItem: status.catalogItem,
+      account: status.account,
     });
   });
 

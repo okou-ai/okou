@@ -566,14 +566,14 @@ catalog default-account activation. It validates the account ID and chat claims,
 reads the account scoped to the builtin connector, and displays that account's
 identity and connection status. Unnamed manual accounts use the same auth-method
 label as account management instead of appearing as only the connector name.
-Because this is an explicit reconnect action,
-the Reconnect button remains available even when that account is already
-connected; the direct route likewise permits proactive reconnection. A missing
-or wrong-target account is unavailable; other lookup errors retain a retry
-action. Activating it navigates to the existing exact-account directed reconnect
-route, which revalidates the target, uses its auth method, and runs any callback
-only after successful reconnection. The card never substitutes another account
-or starts the callback during navigation.
+Because this is an explicit reconnect action, the Reconnect button remains
+available even when that account is already connected. A missing, wrong-target,
+or unsupported-auth-method account is unavailable; other lookup errors retain a
+retry action. Clicking the card rechecks the exact account and opens the existing
+chat connection dialog, showing that account's label and restricting reconnection
+to its stored auth method and ID without a default-account projection. A callback
+runs only after that exact account reconnects successfully. The direct reconnect
+URL remains available for external navigation and older clients.
 
 ### Complex shared data: permission card
 

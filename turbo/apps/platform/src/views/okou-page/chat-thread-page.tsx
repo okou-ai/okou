@@ -195,6 +195,7 @@ import {
 } from "../../signals/chat-page/chat-event-group-keys.ts";
 import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
+import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 import {
   defaultBuiltinConnectorAccountOptions,
@@ -4557,12 +4558,19 @@ function ActiveChatConnectorActionConnectModal() {
   const runCallback = useSet(runChatActionCallback$);
   const pageSignal = useGet(pageSignal$);
   const customConnectors = useLastResolved(customConnectors$);
+  const accountLabelOf = useConnectorAccountLabel();
 
   if (!active) {
     return null;
   }
 
-  const onSuccess = async () => {
+  const onSuccess = async (connectionId: string | null) => {
+    if (
+      active.kind === "catalog-reconnect" &&
+      connectionId !== active.account.id
+    ) {
+      throw new Error("Reconnected a different connector account");
+    }
     if (active.callbackPrompt && active.threadId) {
       await runCallback(
         {
@@ -4591,6 +4599,26 @@ function ActiveChatConnectorActionConnectModal() {
         onSuccess={onSuccess}
       />
     ) : null;
+  }
+
+  if (active.kind === "catalog-reconnect") {
+    return (
+      <ConnectModal
+        item={active.catalogItem}
+        agentId={active.agentId}
+        accountLabel={accountLabelOf(active.account)}
+        accountMode={{
+          kind: "reconnect",
+          connectionId: active.account.id,
+          authMethod: active.account.authMethod,
+        }}
+        accountOptions={{
+          account: { intent: "reconnect", connectionId: active.account.id },
+        }}
+        onClose={close}
+        onSuccess={onSuccess}
+      />
+    );
   }
 
   const accountOptions = defaultBuiltinConnectorAccountOptions(
