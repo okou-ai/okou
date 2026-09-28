@@ -1,8 +1,5 @@
 import { mockClerkUsers } from "./helpers/clerk-users";
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { readGetStartedStatus } from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
@@ -15575,7 +15572,6 @@ describe("usage pack allocation management", () => {
 
   it("activates one paid invitation exactly once after Clerk acceptance", async () => {
     const purchase = await beginInvitationPurchase();
-    await setGetStartedEnabled(context, purchase.fixture);
     const invitationId = `inv_paid_${randomUUID()}`;
     await payInvitationPurchase(purchase, invitationId);
     await payInvitationPurchase(purchase, invitationId);

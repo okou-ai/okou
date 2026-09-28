@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createElement } from "react";
 import { AgentChatPage } from "../../views/okou-page/agent-chat-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
@@ -33,28 +32,11 @@ import {
 } from "./home-task-recommendations.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { detach, Reason } from "../utils.ts";
 import {
   setAgentPhoneConnectDialogOpen$,
   watchAgentPhoneConnection$,
 } from "./agentphone.ts";
-
-/**
- * Keep the phone link current while Get started can open its connect dialog
- * here, so a link made from the phone closes it the way it does on the pages
- * that also offer the link. Without the quests there is no dialog to update.
- */
-const watchGetStartedAgentPhone$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const switches = await get(featureSwitches$);
-    signal.throwIfAborted();
-    if (!switches[FeatureSwitchKey.GetStartedQuests]) {
-      return;
-    }
-    await set(watchAgentPhoneConnection$, signal);
-  },
-);
 
 export const setupAgentChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -74,9 +56,12 @@ export const setupAgentChatPage$ = command(
     set(resetChatPageModelSelection$);
     set(setAgentPhoneConnectDialogOpen$, false);
     set(updatePage$, createElement(AgentChatPage), "sidebar");
-    // Link status never delays the chat, so the watch runs beside setup.
+    // Keep the phone link current while Get started can open its connect
+    // dialog here, so a link made from the phone closes it the way it does on
+    // the pages that also offer the link. Link status never delays the chat,
+    // so the watch runs beside setup.
     detach(
-      set(watchGetStartedAgentPhone$, signal),
+      set(watchAgentPhoneConnection$, signal),
       Reason.Daemon,
       "get started phone link",
     );

@@ -7,18 +7,10 @@ import {
   type GetStartedQuestKey,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
-import {
-  detach,
-  Reason,
-  resetSignal,
-  settle,
-  waitForOperation,
-} from "../utils.ts";
+import { resetSignal, settle, waitForOperation } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { agentPhoneLinkStatus$ } from "./agentphone.ts";
@@ -56,10 +48,6 @@ const reloadVersion$ = state(0);
 const getStartedStatus$ = computed(
   async (get): Promise<GetStartedStatus | null> => {
     get(reloadVersion$);
-    const switches = await get(featureSwitches$);
-    if (!switches[FeatureSwitchKey.GetStartedQuests]) {
-      return null;
-    }
     await get(runtimeAuthenticatedIdentity$);
     const response = await accept(
       get(apiClient$)(getStartedContract).status(),
@@ -381,25 +369,14 @@ const refreshGetStartedFromRealtime$ = command(
 
 /** An authenticated app daemon; reward availability never delays route readiness. */
 export const setupGetStartedRewards$ = command(
-  ({ get, set }, signal: AbortSignal): void => {
-    detach(
-      (async (ownerSignal: AbortSignal): Promise<void> => {
-        const switches = await get(featureSwitches$);
-        ownerSignal.throwIfAborted();
-        if (!switches[FeatureSwitchKey.GetStartedQuests]) {
-          return;
-        }
-        set(
-          setAblyLoop$,
-          {
-            topic: GET_STARTED_REWARDS_CHANGED_EVENT,
-            loopCommand$: refreshGetStartedFromRealtime$,
-          },
-          ownerSignal,
-        );
-      })(signal),
-      Reason.Daemon,
-      "get started",
+  ({ set }, signal: AbortSignal): void => {
+    set(
+      setAblyLoop$,
+      {
+        topic: GET_STARTED_REWARDS_CHANGED_EVENT,
+        loopCommand$: refreshGetStartedFromRealtime$,
+      },
+      signal,
     );
   },
 );

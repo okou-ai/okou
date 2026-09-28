@@ -1,7 +1,4 @@
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { readGetStartedStatus } from "./helpers/get-started";
 import {
   scopedReviewContract,
   scopedReviewRoutes,
@@ -3104,7 +3101,6 @@ describe("workflow owner profile cancellation", () => {
 test("awards the workflow creator only after a queued user workflow really succeeds", async () => {
   const actor = user({ orgRole: "org:admin" });
   await enableWorkflowRuns(actor);
-  await setGetStartedEnabled(context, actor);
   const agent = await createAgent(actor, {
     displayName: "Reward Workflow Agent",
     visibility: "private",

@@ -1,7 +1,8 @@
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { mockApi } from "../msw-contract.ts";
 
-// The server reward rollout defaults to off. Quest tests opt into real fixtures.
+// Rewards are unavailable by default so unrelated pages render no quest entry.
+// Quest tests opt into real fixtures.
 const unavailable = Object.freeze({
   error: {
     code: "FORBIDDEN",

@@ -6,7 +6,6 @@ import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import {
   createGetStartedClaim,
-  getStartedRewardsEnabled,
   grantGetStartedClaim,
   type GetStartedClaimRow,
 } from "./get-started-rewards.service";
@@ -153,22 +152,15 @@ export async function acceptGetStartedInvitation(
       if (!purchase) {
         return;
       }
-      const created = await createGetStartedClaim(tx, {
+      claim = await createGetStartedClaim(tx, {
         orgId: args.orgId,
         userId: purchase.inviterUserId,
         questKey: "invite",
         sourceKey: `purchase:${purchase.id}`,
         invitationId: purchase.invitationId ?? args.invitationId,
       });
-      if (!created) {
-        return;
-      }
-      claim = created;
     }
     if (["granted", "ineligible"].includes(claim.status)) {
-      return;
-    }
-    if (!(await getStartedRewardsEnabled(tx, claim.orgId, claim.actorUserId))) {
       return;
     }
     if (

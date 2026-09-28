@@ -1,7 +1,4 @@
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { readGetStartedStatus } from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
@@ -202,7 +199,6 @@ describe("Steam OpenID connector", () => {
 
   it("starts Steam OpenID auth and stores the verified SteamID on callback", async () => {
     const actor = testActor();
-    await setGetStartedEnabled(context, actor);
     mockSteamRuntimeEnv();
 
     const { authorizationUrl, oauthAttemptId } = await startSteamOpenId(actor);

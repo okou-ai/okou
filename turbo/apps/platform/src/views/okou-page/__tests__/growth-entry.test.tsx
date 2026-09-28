@@ -9,7 +9,6 @@ import {
   integrationsSlackContract,
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import {
@@ -251,8 +250,8 @@ test("Installed Slack shifts the growth entry to inviting people", async () => {
 });
 
 test("An admin keeps the growth entry when the org has no quests", async () => {
-  // The switch is on, but the server withholds the quests, so Get started
-  // draws nothing and the corner would otherwise be empty.
+  // The server withholds the quests, so Get started draws nothing and the
+  // corner would otherwise be empty.
   configureGrowthPage(context, {
     role: "admin",
     slack: slackStatus({
@@ -264,7 +263,6 @@ test("An admin keeps the growth entry when the org has no quests", async () => {
   await setupPage({
     context,
     path: growthChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const invitePeople = await waitFor(() => {

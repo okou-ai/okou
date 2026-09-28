@@ -253,9 +253,7 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       inviterUserId: auth.userId,
       role: body.data.role === "admin" ? "org:admin" : "org:member",
       redirectUrl: env("APP_URL"),
-      ...(rewardClaim
-        ? { privateMetadata: { getStartedClaimId: rewardClaim.id } }
-        : {}),
+      privateMetadata: { getStartedClaimId: rewardClaim.id },
     }),
     signal,
   );
@@ -263,28 +261,20 @@ const inviteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     const conflictReason = clerkOrganizationInvitationConflict(
       invitationResult.error,
     );
-    if (rewardClaim) {
-      await invalidateGetStartedInvitationClaim(set(writeDb$), {
-        claimId: rewardClaim.id,
-        reason: conflictReason
-          ? "invitee_unavailable"
-          : "invitation_create_failed",
-      });
-      signal.throwIfAborted();
-    }
+    await invalidateGetStartedInvitationClaim(set(writeDb$), {
+      claimId: rewardClaim.id,
+      reason: conflictReason
+        ? "invitee_unavailable"
+        : "invitation_create_failed",
+    });
+    signal.throwIfAborted();
     if (conflictReason) {
       return invitationConflictError(conflictReason);
     }
     throw invitationResult.error;
   }
   const invitation = invitationResult.value;
-  if (rewardClaim) {
-    await linkGetStartedInvitation(
-      set(writeDb$),
-      rewardClaim.id,
-      invitation.id,
-    );
-  }
+  await linkGetStartedInvitation(set(writeDb$), rewardClaim.id, invitation.id);
   signal.throwIfAborted();
 
   return {

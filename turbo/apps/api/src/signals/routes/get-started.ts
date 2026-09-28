@@ -16,7 +16,6 @@ import {
   awardCompletedGetStartedQuest,
   createGetStartedClaim,
   getStartedClaimResponse,
-  getStartedRewardsEnabled,
   getStartedStatus,
   getStartedUtcDay,
 } from "../services/get-started-rewards.service";
@@ -26,27 +25,8 @@ import {
 } from "../services/get-started-review.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
-const rewardsUnavailable = Object.freeze({
-  status: 403 as const,
-  body: {
-    error: {
-      code: "FORBIDDEN",
-      message: "Get started rewards are not available for this organization",
-    },
-  },
-});
-
 const status$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await getStartedRewardsEnabled(
-    get(db$),
-    auth.orgId,
-    auth.userId,
-  );
-  signal.throwIfAborted();
-  if (!enabled) {
-    return rewardsUnavailable;
-  }
   const body = await getStartedStatus(get(db$), {
     orgId: auth.orgId,
     userId: auth.userId,
@@ -58,15 +38,6 @@ const status$ = command(async ({ get }, signal: AbortSignal) => {
 
 const checkin$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await getStartedRewardsEnabled(
-    get(db$),
-    auth.orgId,
-    auth.userId,
-  );
-  signal.throwIfAborted();
-  if (!enabled) {
-    return rewardsUnavailable;
-  }
   const claim = await set(writeDb$).transaction((tx) => {
     return awardCompletedGetStartedQuest(tx, {
       orgId: auth.orgId,
@@ -76,9 +47,6 @@ const checkin$ = command(async ({ get, set }, signal: AbortSignal) => {
     });
   });
   signal.throwIfAborted();
-  if (!claim) {
-    throw new Error("Authorized check-in did not create a claim");
-  }
   return { status: 200 as const, body: getStartedClaimResponse(claim) };
 });
 
@@ -86,15 +54,6 @@ const shareBody$ = bodyResultOf(getStartedContract.submitShare);
 
 const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const enabled = await getStartedRewardsEnabled(
-    get(db$),
-    auth.orgId,
-    auth.userId,
-  );
-  signal.throwIfAborted();
-  if (!enabled) {
-    return rewardsUnavailable;
-  }
   const body = await get(shareBody$);
   signal.throwIfAborted();
   if (!body.ok) {
@@ -126,7 +85,7 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
       sourceKey: post.id,
       postUrl: post.url,
     });
-    if (!pending || pending.status !== "pending") {
+    if (pending.status !== "pending") {
       return pending;
     }
     // Grants made before author reward keys were keyed by post. Newer grants
@@ -154,9 +113,6 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
     return duplicate;
   });
   signal.throwIfAborted();
-  if (!claim) {
-    throw new Error("Authorized X submission did not create a claim");
-  }
   return { status: 202 as const, body: getStartedClaimResponse(claim) };
 });
 
