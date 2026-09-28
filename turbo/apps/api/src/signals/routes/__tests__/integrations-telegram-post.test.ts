@@ -1281,7 +1281,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           message_id: 700,
           chat: { id: chatId, type: "supergroup" },
           from: {
-            id: Number(fixture.telegramBotId),
+            id: 987_654,
             is_bot: true,
             username: "provider_renamed_bot",
           },
