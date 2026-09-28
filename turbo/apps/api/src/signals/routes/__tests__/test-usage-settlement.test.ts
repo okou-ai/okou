@@ -125,7 +125,6 @@ async function seedExpiringLots(
     }),
     [200],
   );
-  return await readExpiringLots(fixture.orgId);
 }
 
 async function seedSettlementPricing(): Promise<string> {
@@ -860,6 +859,12 @@ describe("POST /api/test/usage-settlement/process", () => {
       remaining: [5],
     },
     {
+      label: "two selected but one consumed",
+      amounts: [10, 8],
+      charge: 5,
+      remaining: [5, 8],
+    },
+    {
       label: "four consumed lots",
       amounts: [2, 2, 2, 2],
       charge: 7,
@@ -873,7 +878,7 @@ describe("POST /api/test/usage-settlement/process", () => {
     },
   ])(
     "preserves $label deduction outcomes",
-    async ({ amounts, charge, remaining }) => {
+    async ({ label, amounts, charge, remaining }) => {
       const fixture = await setupSettlementFixture(
         amounts.reduce((a, b) => {
           return a + b;
@@ -887,7 +892,7 @@ describe("POST /api/test/usage-settlement/process", () => {
           return {
             amount,
             expiresAt:
-              index === 0 || amounts.length === 2
+              index === 0 || label === "equal-expiry lots"
                 ? "2030-01-01T00:00:00.000Z"
                 : `203${index}-01-01T00:00:00.000Z`,
           };
@@ -903,7 +908,7 @@ describe("POST /api/test/usage-settlement/process", () => {
         return lot.remaining;
       });
       expect(
-        amounts.length === 2
+        label === "equal-expiry lots"
           ? actual.sort((a, b) => {
               return a - b;
             })
