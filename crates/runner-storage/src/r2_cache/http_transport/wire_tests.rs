@@ -1494,6 +1494,71 @@ async fn cdata_message_does_not_hide_a_plain_retryable_code() {
 }
 
 #[tokio::test]
+async fn last_direct_code_wins_even_with_cdata_and_repeated_fields() {
+    // Smithy's error metadata builder overwrites an earlier Code. The last
+    // direct Code can contain CDATA, while fake tags in comments or nested
+    // fields must still be ignored.
+    let server = MockServer::start_async().await;
+    let get = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(400).body(
+                "<Error><Code>InvalidPart</Code><Code><![CDATA[ignored]]>NoSuchKey</Code></Error>",
+            );
+        })
+        .await;
+    assert!(
+        client(&server)
+            .get("runner-templates/h.tar.zst")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    get.assert_calls_async(1).await;
+
+    for status in ["400 Bad Request", "200 OK"] {
+        for operation in ["create", "part", "complete", "abort"] {
+            let success = match operation {
+                "create" => mock_reply(
+                    "200 OK",
+                    "<InitiateMultipartUploadResult><UploadId>id</UploadId></InitiateMultipartUploadResult>",
+                    "",
+                ),
+                "part" => mock_reply("200 OK", "", "ETag: tag\r\n"),
+                "complete" => mock_reply("200 OK", "<CompleteMultipartUploadResult/>", ""),
+                _ => mock_reply("200 OK", "", ""),
+            };
+            let (url, requests) = scripted_server(vec![
+                mock_reply(
+                    status,
+                    "<Error><Code>InvalidPart</Code><!-- <Code>SlowDown<![CDATA[fake]]></Code> --><Code>InternalError<![CDATA[ignored]]></Code></Error>",
+                    "x-amz-retry-after: 0\r\n",
+                ),
+                success,
+            ])
+            .await;
+            let c = R2HttpClient::with_test_endpoint_retry_quota(url, "test-bucket".into(), 500)
+                .unwrap();
+            let key = "runner-templates/h.tar.zst";
+            match operation {
+                "create" => assert_eq!(c.create_multipart(key).await.unwrap(), "id"),
+                "part" => assert_eq!(
+                    c.upload_part(key, "id", 1, Bytes::from_static(b"part"))
+                        .await
+                        .unwrap()
+                        .etag,
+                    "tag"
+                ),
+                "complete" => c.complete_multipart(key, "id", &[]).await.unwrap(),
+                _ => c.abort_multipart(key, "id").await.unwrap(),
+            }
+            assert_eq!(requests.await.unwrap().len(), 2, "{operation} {status}");
+        }
+    }
+}
+
+#[tokio::test]
 async fn malformed_embedded_error_retries_all_four_nonstreaming_operations() {
     // Smithy's Error-root probe succeeds before its full XML decoder fails;
     // that response error is transient, unlike an unrelated malformed body.

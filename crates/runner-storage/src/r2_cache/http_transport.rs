@@ -1327,21 +1327,21 @@ fn xml_code(body: &[u8]) -> Option<String> {
     // Message must not turn NoSuchKey into a cache miss. Repeated Code fields
     // overwrite the builder, so the last value determines classification.
     let mut code = None;
-    let mut code_fields = 0;
     for field in doc.root_element().children().filter(|n| n.is_element()) {
         if matches!(field.tag_name().name(), "Code" | "Message") {
             if field.text().is_none() && field.children().any(|n| n.is_element()) {
                 return None;
             }
             if field.tag_name().name() == "Code" {
-                code_fields += 1;
                 code = Some(field.text().unwrap_or("").to_owned());
             }
         }
     }
+    // Smithy's metadata builder overwrites each earlier direct Code. The
+    // lexical CDATA reader also tracks only the last direct Code, so a CDATA
+    // token there must not be discarded merely because an earlier Code exists.
     match cdata_value {
-        Some(value) if code_fields == 1 => value,
-        Some(_) => None,
+        Some(value) => value,
         None => code,
     }
 }
