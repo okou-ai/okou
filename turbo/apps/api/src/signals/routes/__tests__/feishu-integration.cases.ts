@@ -5747,12 +5747,18 @@ export function registerFeishuIntegrationTests(
         expect(completedReply?.msgType).toBe("interactive");
         expect(completedReply?.target).toBe(firstMessageId);
         expect(completedReply?.replyInThread).toBeTruthy();
-        const completedReplyContent = completedReply
-          ? messageContent(completedReply)
-          : "";
-        expect(completedReplyContent).toContain("Okou");
-        expect(completedReplyContent).toContain("Claude Fable");
-        expect(completedReplyContent).toContain("Responded by Okou");
+        expect(completedReply?.content).toMatchObject({
+          header: { title: { content: "Okou" } },
+          body: {
+            elements: expect.arrayContaining([
+              {
+                tag: "markdown",
+                content: "*Claude Fable 5.1*",
+                text_size: "notation",
+              },
+            ]),
+          },
+        });
         expect(fixtureState.removedReactions).toHaveLength(1);
 
         const client = setupApp({ context, routes: feishuConnectRoutes })(

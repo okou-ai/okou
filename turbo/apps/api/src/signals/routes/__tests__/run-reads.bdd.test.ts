@@ -72,13 +72,13 @@ function mustOk<TResponse extends { readonly status: number }>(
   }
 }
 
-async function entitledActor(): Promise<ApiTestUser> {
+async function entitledActor(customerId?: string): Promise<ApiTestUser> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
   api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
+  await api.grantProEntitlement(actor, { customerId });
   return actor;
 }
 
@@ -1492,7 +1492,8 @@ describe("RUN-01: direct run admission boundaries", () => {
   });
 
   it("enforces chat pick concurrency until the cap is disabled", async () => {
-    const actor = await entitledActor();
+    const customerId = `cus_${randomUUID()}`;
+    const actor = await entitledActor(customerId);
     const compose = await createClaudeAgent(actor, "bdd-admission");
     const agentId = await createChatAgent(actor);
 
@@ -1518,7 +1519,7 @@ describe("RUN-01: direct run admission boundaries", () => {
     });
 
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
-    await refreshConcurrencyEntitlement(actor, context.signal);
+    await refreshConcurrencyEntitlement(actor, customerId, context.signal);
     const uncapped = await readChatInputOutcome(actor, limited);
     if (uncapped.kind !== "launched") {
       throw new Error("Expected the uncapped pick to launch the queued input");

@@ -104,6 +104,7 @@ function modelProvidersByTypeClient() {
 
 interface Scenario {
   readonly actor: ApiTestUser;
+  readonly customerId: string;
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
@@ -114,7 +115,7 @@ interface Scenario {
 async function setup(): Promise<Scenario> {
   const runnerGroup = runsApi.configureRunnerGroup();
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-  const { actor } = await wf.setupWorkflowOrg({ tier: "team" });
+  const { actor, customerId } = await wf.setupWorkflowOrg({ tier: "team" });
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
@@ -142,6 +143,7 @@ async function setup(): Promise<Scenario> {
   chatCallbacks.mockChatOutputEvents([]);
   return {
     actor,
+    customerId,
     orgId: actor.orgId,
     userId: actor.userId,
     agentId: agent.agentId,
@@ -459,6 +461,7 @@ async function executeDueWorkflowAutomations(
 
 async function releaseStaleRunAndPickWorkflowQueue(args: {
   readonly actor: ApiTestUser;
+  readonly customerId: string;
   readonly threadId: string;
   readonly runIds: readonly string[];
 }): Promise<void> {
@@ -474,7 +477,11 @@ async function releaseStaleRunAndPickWorkflowQueue(args: {
     }),
     [200],
   );
-  await refreshConcurrencyEntitlement(args.actor, context.signal);
+  await refreshConcurrencyEntitlement(
+    args.actor,
+    args.customerId,
+    context.signal,
+  );
 }
 
 describe("workflow queue", () => {
@@ -563,6 +570,7 @@ describe("workflow queue", () => {
 
       await releaseStaleRunAndPickWorkflowQueue({
         actor: scenario.actor,
+        customerId: scenario.customerId,
         threadId: automation.threadId,
         runIds: [firstRunId],
       });
@@ -615,6 +623,7 @@ describe("workflow queue", () => {
 
     await releaseStaleRunAndPickWorkflowQueue({
       actor: scenario.actor,
+      customerId: scenario.customerId,
       threadId: automation.threadId,
       runIds: [firstRunId],
     });

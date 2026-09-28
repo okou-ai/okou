@@ -362,6 +362,7 @@ export async function postOneTimePurchaseCompleted(
 /** Reevaluate queued inputs through the production entitlement-change entry. */
 export async function refreshConcurrencyEntitlement(
   actor: { readonly orgId: string | null; readonly userId: string },
+  customerId: string,
   signal: AbortSignal,
 ): Promise<void> {
   if (!actor.orgId) {
@@ -370,7 +371,7 @@ export async function refreshConcurrencyEntitlement(
   await postConcurrencyEntitlementsInvoicePaid(signal, {
     orgId: actor.orgId,
     userId: actor.userId,
-    customerId: `cus_${randomUUID()}`,
+    customerId,
     subscriptionId: `sub_${randomUUID()}`,
     lines: [
       {
