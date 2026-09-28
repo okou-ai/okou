@@ -263,13 +263,6 @@ type OutputErrorEvent = ChatEventIdentity &
     readonly error: string;
   };
 
-type OutputThinkingEvent = ChatEventIdentity &
-  ChatEventOutputSequence & {
-    readonly eventType: "output.thinking";
-    readonly content?: null;
-    readonly thinking: string;
-  };
-
 type OutputFollowupsEvent = ChatEventIdentity & {
   readonly eventType: "output.followups";
   readonly content: string;
@@ -307,14 +300,6 @@ type ControlRevokeEvent = ChatEventIdentity & {
   readonly content?: null;
 };
 
-type BrowserLifecycleEvent = Pick<
-  ChatEventIdentity,
-  "id" | "chatThreadId" | "createdAt"
-> & {
-  readonly eventType: "browser.open" | "browser.close";
-  readonly content?: null;
-};
-
 type UsageRecordedEvent = ChatEventIdentity & {
   readonly eventType: "usage.recorded";
   readonly runId: string;
@@ -329,14 +314,12 @@ export type NewChatEvent =
   | InputRejectedEvent
   | OutputMessageEvent
   | OutputErrorEvent
-  | OutputThinkingEvent
   | OutputFollowupsEvent
   | RunCompletedEvent
   | RunFailedEvent
   | RunCancelledEvent
   | ControlInterruptEvent
   | ControlRevokeEvent
-  | BrowserLifecycleEvent
   | UsageRecordedEvent;
 
 type AppendChatEvent = Exclude<NewChatEvent, ControlRevokeEvent>;
@@ -878,7 +861,6 @@ function canonicalChatEventPayload(
 ): ChatEventPayload | null {
   const content = "content" in values ? values.content : undefined;
   const userMessage = "userMessage" in values ? values.userMessage : undefined;
-  const thinking = "thinking" in values ? values.thinking : undefined;
   const error = "error" in values ? values.error : undefined;
   const usagePayload =
     "usagePayload" in values ? values.usagePayload : undefined;
@@ -887,7 +869,6 @@ function canonicalChatEventPayload(
     ...(userMessage === null || userMessage === undefined
       ? {}
       : { userMessage }),
-    ...(thinking === null || thinking === undefined ? {} : { thinking }),
     ...(error === null || error === undefined ? {} : { error }),
     ...(usagePayload === null || usagePayload === undefined
       ? {}

@@ -2123,7 +2123,6 @@
       "event_one": "{{count}} evento",
       "event_many": "{{count}} eventos",
       "event_other": "{{count}} eventos",
-      "goal": "Objetivo",
       "itemsWaiting": "{{items}} esperando",
       "itemsWaitingTogether": "{{messages}} y {{events}} esperando",
       "message_one": "{{count}} mensaje",
@@ -5067,14 +5066,14 @@
         },
         "fast": "Rápido",
         "fastImpact": {
-          "apiCost": "2× el coste de tokens de API",
-          "chatGptUsage": "2,5× el consumo de ChatGPT",
+          "apiCost": "{{multiplier}}× el coste de tokens de API",
+          "apiSpeed": "Hasta {{multiplier}}× la velocidad del modelo",
+          "chatGptUsage": "{{multiplier}}× el consumo de ChatGPT",
           "fasterResponses": "Respuestas del modelo más rápidas",
           "modelSpeed": "{{multiplier}}× la velocidad del modelo",
-          "okouCredits": "2× los créditos de modelos de Okou",
+          "okouCredits": "{{multiplier}}× los créditos de modelos de Okou",
           "providerSpeed": "La velocidad depende del proveedor",
           "providerUsage": "El consumo depende del proveedor",
-          "solApiSpeed": "Hasta 2,5× la velocidad del modelo",
           "summary": "{{speed}} · {{usage}}"
         },
         "generationPriceTiers": {

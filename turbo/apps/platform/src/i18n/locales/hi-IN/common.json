@@ -2083,7 +2083,6 @@
       "cancellationRecoveryPending": "पंक्तिबद्ध कार्य जारी रखने से पहले रद्द किए गए रन को अंतिम रूप दिया जा रहा है।",
       "event_one": "{{count}} घटना",
       "event_other": "{{count}} घटनाएँ",
-      "goal": "लक्ष्य",
       "itemsWaiting": "{{items}} प्रतीक्षा कर रहा है",
       "itemsWaitingTogether": "{{messages}} और {{events}} प्रतीक्षारत हैं",
       "message_one": "{{count}} संदेश",
@@ -5003,14 +5002,14 @@
         },
         "fast": "तेज़",
         "fastImpact": {
-          "apiCost": "2× API टोकन लागत",
-          "chatGptUsage": "2.5× ChatGPT उपयोग",
+          "apiCost": "{{multiplier}}× API टोकन लागत",
+          "apiSpeed": "अधिकतम {{multiplier}}× मॉडल गति",
+          "chatGptUsage": "{{multiplier}}× ChatGPT उपयोग",
           "fasterResponses": "मॉडल के तेज़ जवाब",
           "modelSpeed": "{{multiplier}}× मॉडल गति",
-          "okouCredits": "2× Okou मॉडल क्रेडिट",
+          "okouCredits": "{{multiplier}}× Okou मॉडल क्रेडिट",
           "providerSpeed": "गति प्रदाता पर निर्भर है",
           "providerUsage": "उपयोग प्रदाता पर निर्भर है",
-          "solApiSpeed": "अधिकतम 2.5× मॉडल गति",
           "summary": "{{speed}} · {{usage}}"
         },
         "generationPriceTiers": {

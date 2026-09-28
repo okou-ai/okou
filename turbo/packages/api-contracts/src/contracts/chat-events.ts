@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+/**
+ * Row-level event catalog for chat event schema V7. It still contains the
+ * retired types in V7_ONLY_CHAT_EVENT_TYPES because historical V7 rows and
+ * snapshots can carry them; V8 (PR-2) removes them from the row catalog.
+ */
 export const CHAT_EVENT_TYPES = [
   "input.prompt",
   "input.automation",
@@ -24,12 +29,33 @@ export const CHAT_EVENT_TYPES = [
   "usage.recorded",
 ] as const;
 
+/**
+ * V7 transition: row types that no writer produces anymore and that the
+ * ChatEvent projection drops. They stay in the V7 row schema only so existing
+ * rows and snapshots keep parsing; V8 (PR-2) deletes them.
+ */
+export const V7_ONLY_CHAT_EVENT_TYPES = [
+  "input.goal",
+  "goal.open",
+  "goal.close",
+  "run.queued",
+  "run.dequeued",
+  "output.thinking",
+  "browser.open",
+  "browser.close",
+] as const satisfies readonly (typeof CHAT_EVENT_TYPES)[number][];
+
 export const chatEventTypeSchema = z.enum(CHAT_EVENT_TYPES);
 
 export type ChatEventType = z.infer<typeof chatEventTypeSchema>;
 export type ChatEventCompatibilityRole = "user" | "assistant";
 export type ChatEventRunLifecycle = "completed" | "failed" | "cancelled";
-export type ChatRunFoldState = "queued" | "dequeued" | ChatEventRunLifecycle;
+export type ChatRunFoldState = ChatEventRunLifecycle;
+export type V7OnlyChatEventType = (typeof V7_ONLY_CHAT_EVENT_TYPES)[number];
+export type ProjectedChatEventType = Exclude<
+  ChatEventType,
+  V7OnlyChatEventType
+>;
 
 export const CHAT_EVENT_USER_MESSAGE_TEXT_TYPES = [
   "input.prompt",
@@ -39,15 +65,9 @@ export const CHAT_EVENT_USER_MESSAGE_TEXT_TYPES = [
 export const CHAT_EVENT_CONTENT_TEXT_TYPES = [
   "output.message",
   "output.error",
-  "run.queued",
   "run.completed",
   "run.failed",
   "run.cancelled",
-] as const satisfies readonly ChatEventType[];
-
-export const CHAT_GOAL_MARKER_EVENT_TYPES = [
-  "goal.open",
-  "goal.close",
 ] as const satisfies readonly ChatEventType[];
 
 const VALID_CHAT_EVENT_REVOCATION_TARGETS = {
@@ -100,8 +120,8 @@ const CHAT_RUN_FOLD_STATES = {
   "output.error": null,
   "output.thinking": null,
   "output.followups": null,
-  "run.queued": "queued",
-  "run.dequeued": "dequeued",
+  "run.queued": null,
+  "run.dequeued": null,
   "run.completed": "completed",
   "run.failed": "failed",
   "run.cancelled": "cancelled",
@@ -210,12 +230,6 @@ export function isChatOutputEventType(
   return eventType.startsWith("output.");
 }
 
-export function isBrowserLifecycleEventType(
-  eventType: ChatEventType,
-): eventType is "browser.open" | "browser.close" {
-  return eventType === "browser.open" || eventType === "browser.close";
-}
-
 export function isChatEventUserMessageTextType(
   eventType: ChatEventType,
 ): eventType is (typeof CHAT_EVENT_USER_MESSAGE_TEXT_TYPES)[number] {
@@ -228,14 +242,6 @@ export function isChatEventContentTextType(
   eventType: ChatEventType,
 ): eventType is (typeof CHAT_EVENT_CONTENT_TEXT_TYPES)[number] {
   return (CHAT_EVENT_CONTENT_TEXT_TYPES as readonly ChatEventType[]).includes(
-    eventType,
-  );
-}
-
-export function isChatGoalMarkerEventType(
-  eventType: ChatEventType,
-): eventType is (typeof CHAT_GOAL_MARKER_EVENT_TYPES)[number] {
-  return (CHAT_GOAL_MARKER_EVENT_TYPES as readonly ChatEventType[]).includes(
     eventType,
   );
 }

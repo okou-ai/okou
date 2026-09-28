@@ -332,7 +332,7 @@ function selectionLabel({
     : modelLabel;
 }
 
-function ModelFirstTriggerLabel({
+export function ModelFirstTriggerLabel({
   selection,
   placeholder,
   mobileIcon,
@@ -475,7 +475,7 @@ function isHiddenModelFirstSelectValue(value: string): boolean {
   );
 }
 
-function ModelFirstPolicyRowContent({
+export function ModelFirstPolicyRowContent({
   policy,
   modelCapabilities,
   selected = false,
@@ -1038,7 +1038,7 @@ interface ModelFirstModelPickerState {
   triggerAriaLabel: string;
 }
 
-function resolveModelFirstModelPickerState({
+export function resolveModelFirstModelPickerState({
   value,
   policyResponse,
   modelCapabilities,
@@ -1282,7 +1282,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
   );
 }
 
-function useExplicitModelSelectionChange(
+export function useExplicitModelSelectionChange(
   props: Pick<ModelProviderPickerProps, "value" | "onChange">,
 ) {
   const resolveSelection = useSet(resolveExplicitModelSelection$);

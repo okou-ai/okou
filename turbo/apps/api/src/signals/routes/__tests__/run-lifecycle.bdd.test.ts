@@ -15328,8 +15328,8 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       null,
     );
 
-    // Codex item.completed batches persist non-blank reasoning and
-    // agent_message text as separate transcript events.
+    // Codex item.completed batches persist non-blank agent_message text as
+    // separate transcript events.
     await webhooks.requestAgentEvents(
       {
         runId,
@@ -15398,22 +15398,6 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
         return message.content;
       }),
     ).toContain("Codex follow-up note");
-    const codexThinking = afterCodex.events.filter((message) => {
-      return message.eventType === "output.thinking" && message.runId === runId;
-    });
-    expect(codexThinking).toStrictEqual([
-      expect.objectContaining({
-        runEventId: "reasoning_bdd_3",
-        sequenceNumber: 3,
-        thinking:
-          "Inspecting the event projection.\nComparing transcript order.",
-      }),
-      expect.objectContaining({
-        runEventId: "reasoning_bdd_5",
-        sequenceNumber: 5,
-        thinking: "Preparing the next response.",
-      }),
-    ]);
 
     // Assistant batches without visible text leave the thread unchanged.
     await webhooks.requestAgentEvents(

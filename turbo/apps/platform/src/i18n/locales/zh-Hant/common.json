@@ -2076,7 +2076,6 @@
       "cancellationRecoveryPending": "正在收尾已取消的執行，之後繼續處理排隊中的任務。",
       "event_one": "{{count}}個事件",
       "event_other": "{{count}}個事件",
-      "goal": "目標",
       "itemsWaiting": "{{items}}等待中",
       "itemsWaitingTogether": "{{messages}}和{{events}}等待中",
       "message_one": "{{count}}條訊息",
@@ -4985,14 +4984,14 @@
         },
         "fast": "快速",
         "fastImpact": {
-          "apiCost": "2×API token成本",
-          "chatGptUsage": "2.5×ChatGPT用量",
+          "apiCost": "{{multiplier}}×API token成本",
+          "apiSpeed": "模型速度最高{{multiplier}}×",
+          "chatGptUsage": "{{multiplier}}×ChatGPT用量",
           "fasterResponses": "模型響應更快",
           "modelSpeed": "{{multiplier}}×模型速度",
-          "okouCredits": "2×Okou模型積分",
+          "okouCredits": "{{multiplier}}×Okou模型積分",
           "providerSpeed": "速度取決於服務商",
           "providerUsage": "用量取決於服務商",
-          "solApiSpeed": "模型速度最高2.5×",
           "summary": "{{speed}} · {{usage}}"
         },
         "generationPriceTiers": {

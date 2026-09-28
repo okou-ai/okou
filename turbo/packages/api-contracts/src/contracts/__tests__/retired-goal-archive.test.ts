@@ -54,7 +54,7 @@ describe.each(["active", "paused", "blocked", "complete"])(
         const content = notice(status, objective);
         const raw = source(content);
         const row = chatEventRowSchema.parse(JSON.parse(JSON.stringify(raw)));
-        expect(chatEventFromRow(row).content).toBe(content);
+        expect(chatEventFromRow(row)?.content).toBe(content);
         expect(row).toStrictEqual(raw);
       },
     );
@@ -77,7 +77,7 @@ describe("1094 provenance and grammar boundary", () => {
     { payload: { content, error: "extra leaf" } },
   ])("retains citation filtering with other provenance %j", (overrides) => {
     const row = chatEventRowSchema.parse({ ...source(content), ...overrides });
-    expect(chatEventFromRow(row).content).toBe(
+    expect(chatEventFromRow(row)?.content).toBe(
       visiblePiMemoryCitationText(content),
     );
   });
@@ -92,7 +92,7 @@ describe("1094 provenance and grammar boundary", () => {
     "Okou Goal retired.\n<oai-mem-citation>ordinary assistant text",
   ])("keeps unknown formats on the ordinary projection %j", (text) => {
     expect(
-      chatEventFromRow(chatEventRowSchema.parse(source(text))).content,
+      chatEventFromRow(chatEventRowSchema.parse(source(text)))?.content,
     ).toBe(visiblePiMemoryCitationText(text));
   });
   it("requires every raw provenance field and exactly the content payload", () => {

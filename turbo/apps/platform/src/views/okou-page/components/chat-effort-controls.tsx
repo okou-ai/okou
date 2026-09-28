@@ -8,6 +8,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  cn,
 } from "@okouai/ui";
 import { useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
@@ -75,12 +76,15 @@ export function formatChatEffort(effort: ReasoningEffort) {
  * not the setting row's second sentence. It stays outside the track, so the
  * aurora revealed at the highest step never sits underneath the words.
  */
-function EffortScaleLabels() {
+function EffortScaleLabels({ spaced }: { spaced: boolean }) {
   const { t } = useTranslation();
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none mt-5 mb-2 flex select-none items-baseline justify-between gap-3 text-xs text-muted-foreground"
+      className={cn(
+        "pointer-events-none mb-2 flex select-none items-baseline justify-between gap-3 text-xs text-muted-foreground",
+        spaced && "mt-5",
+      )}
     >
       <span>
         {t(($) => {
@@ -104,10 +108,17 @@ export function ChatEffortSettings({
   selection,
   disabled,
   onChange,
+  showValue = true,
 }: {
   selection: ModelProviderSelection;
   disabled: boolean;
   onChange: (selection: ModelProviderSelection) => void;
+  /**
+   * The label/value row above the bar. The composer's model panel leaves it
+   * out: its trigger already names the level and the bar carries it for
+   * assistive technology, so the row only repeated both.
+   */
+  showValue?: boolean;
 }) {
   const { t } = useTranslation();
   const { efforts, effort: value } = useChatEffort(selection);
@@ -128,13 +139,15 @@ export function ChatEffortSettings({
     <div className="flex flex-col px-2 py-3">
       {/* The same label/value pair the composer's video options use: the name
           of the setting recedes, the chosen value carries the row. */}
-      <div className="flex items-baseline justify-between gap-3 text-[13px]">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium text-foreground">{displayValue}</span>
-      </div>
+      {showValue && (
+        <div className="flex items-baseline justify-between gap-3 text-[13px]">
+          <span className="text-muted-foreground">{label}</span>
+          <span className="font-medium text-foreground">{displayValue}</span>
+        </div>
+      )}
       {index !== -1 ? (
         <>
-          <EffortScaleLabels />
+          <EffortScaleLabels spaced={showValue} />
           <ChatEffortSlider
             steps={efforts.length}
             value={index}

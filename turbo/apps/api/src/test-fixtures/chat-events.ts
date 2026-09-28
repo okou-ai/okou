@@ -2038,9 +2038,7 @@ interface CanonicalChatEventWriteFixture {
     readonly interruptTargetRunId: string;
   };
   readonly batch: {
-    readonly thinkingId: string;
     readonly runFailedId: string;
-    readonly browserCloseId: string;
     readonly usageId: string;
   };
   readonly replacement: {
@@ -2088,13 +2086,6 @@ async function insertCanonicalBatchWrites(
 ): Promise<void> {
   await insertChatEvents(tx, [
     {
-      id: batch.thinkingId,
-      chatThreadId: threadId,
-      eventType: "output.thinking",
-      thinking: "canonical thinking",
-      runId: randomUUID(),
-    },
-    {
       id: batch.runFailedId,
       chatThreadId: threadId,
       eventType: "run.failed",
@@ -2102,11 +2093,6 @@ async function insertCanonicalBatchWrites(
       error: "runner error",
       failureReason: "future_reason",
       runId: randomUUID(),
-    },
-    {
-      id: batch.browserCloseId,
-      chatThreadId: threadId,
-      eventType: "browser.close",
     },
     {
       id: batch.usageId,
@@ -2170,9 +2156,7 @@ export async function insertCanonicalChatEventWritesFixture(args: {
     interruptTargetRunId: randomUUID(),
   };
   const batch = {
-    thinkingId: randomUUID(),
     runFailedId: randomUUID(),
-    browserCloseId: randomUUID(),
     usageId: randomUUID(),
   };
   const replacement = {
@@ -2204,9 +2188,7 @@ export async function insertCanonicalChatEventWritesFixture(args: {
       single.inputRejectedId,
       single.outputErrorId,
       single.interruptId,
-      batch.thinkingId,
       batch.runFailedId,
-      batch.browserCloseId,
       batch.usageId,
       replacement.targetId,
       replacement.replacementId,

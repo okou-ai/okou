@@ -2076,7 +2076,6 @@
       "cancellationRecoveryPending": "Menyelesaikan eksekusi yang dibatalkan sebelum melanjutkan pekerjaan dalam antrean.",
       "event_one": "{{count}} peristiwa",
       "event_other": "{{count}} peristiwa",
-      "goal": "Tujuan",
       "itemsWaiting": "{{items}} menunggu",
       "itemsWaitingTogether": "{{messages}} dan {{events}} menunggu",
       "message_one": "{{count}} pesan",
@@ -4985,14 +4984,14 @@
         },
         "fast": "Cepat",
         "fastImpact": {
-          "apiCost": "2× biaya token API",
-          "chatGptUsage": "2,5× penggunaan ChatGPT",
+          "apiCost": "{{multiplier}}× biaya token API",
+          "apiSpeed": "Hingga {{multiplier}}× kecepatan model",
+          "chatGptUsage": "{{multiplier}}× penggunaan ChatGPT",
           "fasterResponses": "Respons model lebih cepat",
           "modelSpeed": "{{multiplier}}× kecepatan model",
-          "okouCredits": "2× kredit model Okou",
+          "okouCredits": "{{multiplier}}× kredit model Okou",
           "providerSpeed": "Kecepatan bergantung pada penyedia",
           "providerUsage": "Penggunaan bergantung pada penyedia",
-          "solApiSpeed": "Hingga 2,5× kecepatan model",
           "summary": "{{speed}} · {{usage}}"
         },
         "generationPriceTiers": {

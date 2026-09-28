@@ -2,26 +2,13 @@ import { z } from "zod";
 
 import {
   isSupportedRunModel,
-  normalizeBuiltInModelId,
   supportedRunModelSchema,
 } from "./model-providers";
-
-const CODEX_REASONING_EFFORTS = [
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-  "ultra",
-] as const;
-const CLAUDE_CODE_EFFORTS = [
-  "low",
-  "medium",
-  "high",
-  "extra",
-  "max",
-  "ultracode",
-] as const;
+import {
+  CLAUDE_CODE_EFFORTS,
+  CODEX_REASONING_EFFORTS,
+  getModelRunOptions,
+} from "./model-run-options";
 
 export const reasoningEffortSchema = z.union([
   z.enum(CODEX_REASONING_EFFORTS),
@@ -66,39 +53,7 @@ export type ModelSettingsPatch = z.infer<typeof modelSettingsPatchSchema>;
 export function getModelReasoningEfforts(
   model: string | null | undefined,
 ): readonly ReasoningEffort[] {
-  const bareModel = model?.startsWith("openai/")
-    ? model.slice("openai/".length)
-    : model;
-  // Retired run models keep their cases: persisted member and thread
-  // model_settings maps still contain their keys and must keep parsing.
-  switch (normalizeBuiltInModelId(bareModel ?? "")) {
-    case "gpt-5.6-sol":
-    case "gpt-5.6-terra":
-    case "gpt-6-astra":
-    case "gpt-6-sol":
-      return CODEX_REASONING_EFFORTS;
-    case "gpt-6-luna":
-    case "gpt-5.6-luna":
-      return ["low", "medium", "high", "xhigh", "max"];
-    case "gpt-5.5":
-      return ["low", "medium", "high", "xhigh"];
-    case "claude-fable-5-1":
-    case "claude-opus-5-5":
-    case "claude-opus-5":
-    case "claude-opus-4-8":
-    case "claude-sonnet-5":
-      // Ultracode is a Claude Code mode; preserve it for --effort instead of
-      // translating it to an API reasoning level.
-      return CLAUDE_CODE_EFFORTS;
-    case "claude-sonnet-4-6":
-      return ["low", "medium", "high", "max"];
-    case "deepseek-v4-flash":
-      return ["low", "high", "xhigh", "max"];
-    case "deepseek-v4-pro":
-      return ["high", "xhigh", "max"];
-    default:
-      return [];
-  }
+  return getModelRunOptions(model).efforts;
 }
 
 export function isModelReasoningEffortSupported(
@@ -112,32 +67,7 @@ export function isModelReasoningEffortSupported(
 export function defaultModelReasoningEffort(
   model: string | null | undefined,
 ): ReasoningEffort | undefined {
-  const bareModel = model?.startsWith("openai/")
-    ? model.slice("openai/".length)
-    : model;
-  switch (normalizeBuiltInModelId(bareModel ?? "")) {
-    case "gpt-6-astra":
-    case "gpt-6-sol":
-    case "gpt-6-luna":
-    case "gpt-5.6-sol":
-    case "gpt-5.6-terra":
-    case "gpt-5.6-luna":
-    case "claude-fable-5-1":
-      return "max";
-    case "gpt-5.5":
-      return "xhigh";
-    case "claude-opus-5-5":
-      return "medium";
-    case "claude-opus-5":
-    case "claude-opus-4-8":
-    case "claude-sonnet-5":
-    case "claude-sonnet-4-6":
-    case "deepseek-v4-flash":
-    case "deepseek-v4-pro":
-      return "high";
-    default:
-      return undefined;
-  }
+  return getModelRunOptions(model).defaultEffort;
 }
 
 /** Product choices supported by the captured runtime and provider catalog. */

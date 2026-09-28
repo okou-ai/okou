@@ -206,7 +206,7 @@ describe("chat event snapshot read endpoints", () => {
         return chatEventFromRow(chatEventRowSchema.parse(JSON.parse(line)));
       });
     const archivedInput = archivedEvents.find((event) => {
-      return event.eventType === "input.prompt";
+      return event?.eventType === "input.prompt";
     });
     if (archivedInput?.eventType !== "input.prompt") {
       throw new Error("Expected the archived feedback input");
@@ -404,7 +404,7 @@ describe("chat event snapshot read endpoints", () => {
       throw new Error("Expected a prompt row for the retired Snapshot fixture");
     }
     const projectedPrompt = chatEventFromRow(prompt);
-    if (projectedPrompt.eventType !== "input.prompt") {
+    if (projectedPrompt?.eventType !== "input.prompt") {
       throw new Error("Expected a projected prompt for the retired fixture");
     }
     const retiredPrompt = chatEventRowSchema.parse({
@@ -663,7 +663,7 @@ describe("chat event snapshot read endpoints", () => {
         return chatEventFromRow(row);
       })
       .find((event) => {
-        return event.eventType === "input.prompt";
+        return event?.eventType === "input.prompt";
       });
     if (canonicalInput?.eventType !== "input.prompt") {
       throw new Error("Expected the canonical feedback input");

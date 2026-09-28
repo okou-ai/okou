@@ -1,5 +1,4 @@
 import { command, computed, type Computed } from "ccstate";
-import { foldChatRunStates } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { sessionOutputDeltaSchema } from "@okouai/api-contracts/contracts/realtime";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
@@ -17,15 +16,7 @@ function createActiveRunId$(
   chatEvents$: Computed<ChatEvent[]>,
 ): Computed<string | null> {
   return computed((get) => {
-    const events = get(chatEvents$);
-    const states = foldChatRunStates(events);
-    return (
-      liveRunIdsFromChatEvents(events)
-        .filter((id) => {
-          return states.get(id) !== "queued";
-        })
-        .at(-1) ?? null
-    );
+    return liveRunIdsFromChatEvents(get(chatEvents$)).at(-1) ?? null;
   });
 }
 

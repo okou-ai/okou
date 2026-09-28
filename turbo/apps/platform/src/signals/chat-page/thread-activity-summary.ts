@@ -5,7 +5,6 @@ import {
   type ActivitySummaryResponse,
   type ThinkingMessage,
 } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import { foldChatRunStates } from "@okouai/api-contracts/contracts/chat-events";
 import { accept } from "../../lib/accept.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -100,15 +99,7 @@ export function createThreadActivitySummarySignals(
     if (get(currentChatThreadId$) !== threadId || get(threadMeta$) === null) {
       return null;
     }
-    const events = get(chatEvents$);
-    const states = foldChatRunStates(events);
-    return (
-      liveRunIdsFromChatEvents(events)
-        .filter((id) => {
-          return states.get(id) !== "queued";
-        })
-        .at(-1) ?? null
-    );
+    return liveRunIdsFromChatEvents(get(chatEvents$)).at(-1) ?? null;
   });
   const demand = createThinkingSummaryDemand(
     threadId,

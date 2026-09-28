@@ -17,6 +17,11 @@ import {
 } from "../../../test-fixtures/system-config-seeds";
 import { testUsageSettlementRoutes } from "../test-usage-settlement";
 import {
+  testUsagePackSubscriptionStateContract,
+  testUsagePackSubscriptionStateRoutes,
+  type TestUsagePackSubscriptionStateAction,
+} from "../test-usage-pack-subscription-state";
+import {
   attachUsageAllowance$,
   deleteUsageData$,
   deleteUsageStateFixture$,
@@ -39,6 +44,7 @@ function client(usagePricingResolution?: UsagePricingFixture["resolution"]) {
 
 async function setupSettlementFixture(
   credits: number,
+  withExpiringLots = false,
 ): Promise<UsageStateFixture> {
   mockEnv("ENV", "development");
   const fixture = await store.set(
@@ -53,6 +59,12 @@ async function setupSettlementFixture(
     [200],
   );
   onTestFinished(async () => {
+    if (withExpiringLots) {
+      await usagePackStateAction({
+        action: "cleanup-migration",
+        orgId: fixture.orgId,
+      });
+    }
     await accept(client().cleanup({ body: { org_id: fixture.orgId } }), [200]);
     await store.set(
       deleteUsageData$,
@@ -62,6 +74,61 @@ async function setupSettlementFixture(
     await store.set(deleteUsageStateFixture$, fixture, context.signal);
   });
   return fixture;
+}
+
+async function usagePackStateAction(
+  body: TestUsagePackSubscriptionStateAction,
+) {
+  const response = await accept(
+    setupApp({ context, routes: testUsagePackSubscriptionStateRoutes })(
+      testUsagePackSubscriptionStateContract,
+    ).action({ body }),
+    [200],
+  );
+  return response.body;
+}
+
+async function readExpiringLots(orgId: string) {
+  const response = await usagePackStateAction({ action: "read", orgId });
+  if (response.action !== "read") {
+    throw new Error("Expected usage pack state read response");
+  }
+  return response.state.legacyCredits;
+}
+
+async function seedExpiringLots(
+  fixture: UsageStateFixture,
+  lots: readonly { readonly amount: number; readonly expiresAt: string }[],
+) {
+  // Exact historical credit-lot amounts and expiries cannot be made through a
+  // production API. Use the existing guarded fixture route, not DB imports.
+  for (const [index, lot] of lots.entries()) {
+    await usagePackStateAction({
+      action: "seed-legacy-migration",
+      orgId: fixture.orgId,
+      tier: "pro",
+      stripeCustomerId: `cus_${randomUUID()}`,
+      stripeSubscriptionId: `sub_${randomUUID()}`,
+      currentPeriodEnd: lot.expiresAt,
+      legacyCreditInvoiceId: `in_${index}_${randomUUID()}`,
+      credits: lot.amount,
+    });
+  }
+  await accept(
+    client().setup({
+      body: {
+        org_id: fixture.orgId,
+        credits: lots.reduce((total, lot) => {
+          return total + lot.amount;
+        }, 0),
+      },
+    }),
+    [200],
+  );
+}
+
+function lotExpiryInDays(days: number): string {
+  return new Date(nowDate().getTime() + days * 86_400_000).toISOString();
 }
 
 async function seedSettlementPricing(): Promise<string> {
@@ -736,6 +803,226 @@ describe("POST /api/test/usage-settlement/process", () => {
 
       expect(owner.body.allowed).toBeTruthy();
       expect(otherMember.body.allowed).toBeFalsy();
+    }
+  });
+
+  it("rolls back two-lot deductions and settles concurrent retries once", async () => {
+    const fixture = await setupSettlementFixture(11, true);
+    const provider = await seedSettlementPricing();
+    await seedExpiringLots(fixture, [
+      { amount: 3, expiresAt: lotExpiryInDays(30) },
+      { amount: 8, expiresAt: lotExpiryInDays(60) },
+    ]);
+    const eventKey = await insertCharge({ fixture, provider, amount: 5 });
+
+    await accept(client().rollback({ body: { org_id: fixture.orgId } }), [200]);
+    expect(
+      (await readExpiringLots(fixture.orgId)).map((lot) => {
+        return lot.remaining;
+      }),
+    ).toStrictEqual([3, 8]);
+    expect((await readSettlementState(fixture.orgId)).body.org_credits).toBe(
+      11,
+    );
+    await expect(
+      store.set(readUsageEventState$, eventKey, context.signal),
+    ).resolves.toMatchObject({
+      status: "pending",
+      creditsCharged: null,
+    });
+
+    await Promise.all([
+      processSettlement(fixture.orgId),
+      processSettlement(fixture.orgId),
+    ]);
+    expect(
+      (await readExpiringLots(fixture.orgId)).map((lot) => {
+        return lot.remaining;
+      }),
+    ).toStrictEqual([0, 6]);
+    expect((await readSettlementState(fixture.orgId)).body.org_credits).toBe(6);
+    await expect(
+      store.set(readUsageEventState$, eventKey, context.signal),
+    ).resolves.toMatchObject({
+      status: "processed",
+      creditsCharged: 5,
+    });
+    await processSettlement(fixture.orgId);
+    expect(
+      (await readExpiringLots(fixture.orgId)).map((lot) => {
+        return lot.remaining;
+      }),
+    ).toStrictEqual([0, 6]);
+  });
+
+  it.each([
+    {
+      label: "one consumed lot",
+      amounts: [10],
+      charge: 5,
+      remaining: [5],
+    },
+    {
+      label: "two selected but one consumed",
+      amounts: [10, 8],
+      charge: 5,
+      remaining: [5, 8],
+    },
+    {
+      label: "four consumed lots",
+      amounts: [2, 2, 2, 2],
+      charge: 7,
+      remaining: [0, 0, 0, 1],
+    },
+    {
+      label: "equal-expiry lots",
+      amounts: [4, 4],
+      charge: 6,
+      remaining: [0, 2],
+    },
+  ])(
+    "preserves $label deduction outcomes",
+    async ({ label, amounts, charge, remaining }) => {
+      const fixture = await setupSettlementFixture(
+        amounts.reduce((a, b) => {
+          return a + b;
+        }, 0),
+        true,
+      );
+      const provider = await seedSettlementPricing();
+      const earliestExpiry = lotExpiryInDays(30);
+      await seedExpiringLots(
+        fixture,
+        amounts.map((amount, index) => {
+          return {
+            amount,
+            expiresAt:
+              index === 0 || label === "equal-expiry lots"
+                ? earliestExpiry
+                : lotExpiryInDays(30 * (index + 1)),
+          };
+        }),
+      );
+      const eventKey = await insertCharge({
+        fixture,
+        provider,
+        amount: charge,
+      });
+      await processSettlement(fixture.orgId);
+      const actual = (await readExpiringLots(fixture.orgId)).map((lot) => {
+        return lot.remaining;
+      });
+      expect(
+        label === "equal-expiry lots"
+          ? actual.sort((a, b) => {
+              return a - b;
+            })
+          : actual,
+      ).toStrictEqual(remaining);
+      expect((await readSettlementState(fixture.orgId)).body.org_credits).toBe(
+        amounts.reduce((a, b) => {
+          return a + b;
+        }, 0) - charge,
+      );
+      await expect(
+        store.set(readUsageEventState$, eventKey, context.signal),
+      ).resolves.toMatchObject({
+        status: "processed",
+        creditsCharged: charge,
+      });
+    },
+  );
+
+  it("preserves purchased and bonus grants before consuming two org lots", async () => {
+    const fixture = await setupSettlementFixture(11, true);
+    const provider = await seedSettlementPricing();
+    await seedExpiringLots(fixture, [
+      { amount: 3, expiresAt: lotExpiryInDays(30) },
+      { amount: 8, expiresAt: lotExpiryInDays(60) },
+    ]);
+    await createGrant({
+      fixture,
+      grantType: "purchased",
+      idempotencyKey: randomUUID(),
+      amount: 2,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    await createGrant({
+      fixture,
+      grantType: "bonus",
+      idempotencyKey: randomUUID(),
+      amount: 3,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    const eventKey = await insertCharge({ fixture, provider, amount: 15 });
+    await processSettlement(fixture.orgId);
+    const state = await readSettlementState(fixture.orgId);
+    expect(state.body.org_credits).toBe(1);
+    expect(
+      state.body.grants.map((grant) => {
+        return grant.remaining_amount;
+      }),
+    ).toStrictEqual([0, 0]);
+    expect(
+      (await readExpiringLots(fixture.orgId)).map((lot) => {
+        return lot.remaining;
+      }),
+    ).toStrictEqual([0, 1]);
+    await expect(
+      store.set(readUsageEventState$, eventKey, context.signal),
+    ).resolves.toMatchObject({
+      status: "processed",
+      creditsCharged: 15,
+    });
+  });
+
+  it("expires a past lot without changing live-lot deduction", async () => {
+    const fixture = await setupSettlementFixture(11, true);
+    const provider = await seedSettlementPricing();
+    await seedExpiringLots(fixture, [
+      { amount: 3, expiresAt: lotExpiryInDays(-30) },
+      { amount: 8, expiresAt: lotExpiryInDays(60) },
+    ]);
+    const eventKey = await insertCharge({ fixture, provider, amount: 5 });
+    await processSettlement(fixture.orgId);
+    expect(
+      (await readExpiringLots(fixture.orgId)).map((lot) => {
+        return lot.remaining;
+      }),
+    ).toStrictEqual([0, 3]);
+    expect((await readSettlementState(fixture.orgId)).body.org_credits).toBe(3);
+    await expect(
+      store.set(readUsageEventState$, eventKey, context.signal),
+    ).resolves.toMatchObject({
+      status: "processed",
+      creditsCharged: 5,
+    });
+  });
+
+  it("preserves independent organizations during parallel two-lot settlements", async () => {
+    const first = await setupSettlementFixture(11, true);
+    const second = await setupSettlementFixture(11, true);
+    const provider = await seedSettlementPricing();
+    for (const fixture of [first, second]) {
+      await seedExpiringLots(fixture, [
+        { amount: 3, expiresAt: lotExpiryInDays(30) },
+        { amount: 8, expiresAt: lotExpiryInDays(60) },
+      ]);
+      await insertCharge({ fixture, provider, amount: 5 });
+    }
+    await Promise.all([
+      processSettlement(first.orgId),
+      processSettlement(second.orgId),
+    ]);
+    for (const fixture of [first, second]) {
+      expect(
+        (await readExpiringLots(fixture.orgId)).map((lot) => {
+          return lot.remaining;
+        }),
+      ).toStrictEqual([0, 6]);
+      expect((await readSettlementState(fixture.orgId)).body.org_credits).toBe(
+        6,
+      );
     }
   });
 

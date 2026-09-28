@@ -83,4 +83,5 @@ export enum FeatureSwitchKey {
   AgentResponsibilitySetup = "agentResponsibilitySetup",
   ChatThreadLinkChips = "chatThreadLinkChips",
   HostedSiteDelete = "hostedSiteDelete",
+  ComposerModelPanel = "composerModelPanel",
 }

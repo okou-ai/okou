@@ -2,7 +2,7 @@ import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Textarea, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
+import { runPromptOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
 import {
   onboardingDraft$,
   updateOnboardingDraft$,
@@ -12,7 +12,6 @@ import { searchParams$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
-import { useOnboardingNavigation } from "../onboarding/onboarding-navigation.ts";
 import { ONBOARDING_TEXTAREA_CLASS } from "../onboarding/onboarding-shell.tsx";
 import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
@@ -25,11 +24,9 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 function usePromptOnboarding() {
   const draft = useGet(onboardingDraft$);
   const setDraft = useSet(updateOnboardingDraft$);
-  const [completeLoadable, complete] = useLoadableSet(completeOnboarding$);
+  const [runLoadable, runPrompt] = useLoadableSet(runPromptOnboarding$);
   const searchParams = useGet(searchParams$);
   const pageSignal = useGet(pageSignal$);
-  const { runPrompt } = useOnboardingNavigation();
-  const template = searchParams.get("template")?.trim() || undefined;
   const connectorSlugs = (searchParams.get("connector") ?? "")
     .split(",")
     .map((value) => {
@@ -38,12 +35,7 @@ function usePromptOnboarding() {
     .filter(Boolean);
 
   const run = (): void => {
-    const redeemCode = searchParams.get("redeemCode")?.trim() || null;
-    const completeAndRun = async (): Promise<void> => {
-      await complete(redeemCode, pageSignal);
-      runPrompt(draft.prompt, template);
-    };
-    detach(completeAndRun(), Reason.DomCallback);
+    detach(runPrompt(pageSignal), Reason.DomCallback);
   };
 
   return {
@@ -53,7 +45,7 @@ function usePromptOnboarding() {
     },
     connectorSlugs,
     run,
-    busy: completeLoadable.state === "loading",
+    busy: runLoadable.state === "loading",
   };
 }
 

@@ -294,9 +294,9 @@ test("Copy workflow trigger bubbles and inspect their associated runs", async ()
   );
 });
 
-test("Copy goal continuation bubbles and expose their run logs", async () => {
+test("Show historical goal continuations as copyable text with run logs", async () => {
   const goalBrief = "Continue checking the release";
-  const clipboard = context.mocks.browser.clipboardWriteText();
+  const clipboard = context.mocks.browser.clipboardWrite();
   installRunChat({
     chatEvents: [
       {
@@ -332,9 +332,10 @@ test("Copy goal continuation bubbles and expose their run logs", async () => {
     `/activities/${FIRST_CAPABILITY_RUN_ID}`,
   );
   click(buttonIn(actions, "Copy message"));
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([goalBrief]);
-  });
+  const item = await readSingleRichClipboardWrite(clipboard);
+  await expect(readClipboardItemText(item, "text/plain")).resolves.toBe(
+    goalBrief,
+  );
 });
 
 test("Keep run logs under the user message when a run fails without output", async () => {

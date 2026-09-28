@@ -15,7 +15,6 @@ import {
   promptEvent,
   readyChat,
   RUN_PATH,
-  thinkingEvent,
 } from "./chat-run-test-fixtures.ts";
 
 const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000601";
@@ -68,12 +67,6 @@ function installScrollableActiveChat(): void {
         runId: ACTIVE_RUN_ID,
         seqId: 2,
         text: "The first launch section is ready.",
-      }),
-      thinkingEvent({
-        id: "mobile-progress",
-        runId: ACTIVE_RUN_ID,
-        seqId: 3,
-        text: "Preparing the remaining launch sections",
       }),
     ],
   });

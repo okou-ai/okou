@@ -27,12 +27,6 @@ import { onRejection, resetSignal, settle } from "../utils.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
 import { createThreadSidebarSignals } from "./thread-sidebar.ts";
 import {
-  createThreadSidebarAutoOpenCandidate,
-  threadSidebarAutoOpenCandidateKey,
-} from "./thread-sidebar-auto-open.ts";
-import { activeThreadSidebar$ } from "./thread-sidebar-coordinator.ts";
-import { CHAT_THREAD_SIDEBAR_SPLIT_VIEW_MEDIA_QUERY } from "./chat-thread-sidebar-layout.ts";
-import {
   createChatThreadScrollSignals,
   createThreadScrollPositionSignals,
   type ChatThreadScrollSignals,
@@ -110,10 +104,8 @@ import {
 } from "./chat-event-state.ts";
 import {
   groupSemanticChatEvents,
-  isGoalMarkerEvent,
   isInterruptControlEvent,
   isInterruptedAssistantCancellation,
-  isQueueMarkerEvent,
   isUsageEvent,
   semanticChatEventsFromChatEvents,
   type SemanticChatEventState,
@@ -185,10 +177,6 @@ import {
   threadMeta,
   type ThreadMeta,
 } from "./chat-thread-event-sourcing.ts";
-import {
-  previousRunGroupVisualWindowStartIndex,
-  runGroupVisualWindowStartIndex,
-} from "./run-group-visual-window.ts";
 import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
 import { connectorOverview$ } from "../okou-page/connector-overview.ts";
 import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
@@ -207,10 +195,7 @@ import {
   createMailDraftCardSignalsRegistry,
   type MailDraftCardSignalsRegistry,
 } from "./mail-draft.ts";
-import {
-  createBrowserSessionSignals,
-  type BrowserLifecycleOptimisticEvents,
-} from "./browser-session-block.ts";
+import { createBrowserSessionSignals } from "./browser-session-block.ts";
 import { createChatThreadContainerSignals } from "./chat-thread-container.ts";
 import { replyTurnKey } from "./chat-event-group-keys.ts";
 import {
@@ -1099,7 +1084,8 @@ const registerUserMessageRenderPart$ = command(
         return { type: "automation", part };
       }
       case "goal": {
-        return { type: "goal", part };
+        // Historical goal continuations display their brief as plain text.
+        return { type: "text", part: { type: "text", text: part.goalBrief } };
       }
       case "model": {
         return { type: "model", part };
@@ -1258,7 +1244,6 @@ interface SemanticChatEvent extends SemanticChatEventState {
 }
 
 type SemanticChatGroups = GenericSemanticChatGroups<SemanticChatEvent>;
-type SemanticChatEventGroup = SemanticChatGroups["activeGroups"][number];
 
 function semanticTranscriptEventsFromRaw(
   raw: readonly ChatEventProjectionEntry[],
@@ -1281,56 +1266,6 @@ function semanticTranscriptEventsFromRaw(
   });
 }
 
-function isRenderableAssistantSemanticEvent(entry: SemanticChatEvent): boolean {
-  const { event } = entry;
-  return (
-    chatEventCompatibilityRole(event.eventType) === "assistant" &&
-    ((isChatEventContentTextType(event.eventType) && Boolean(event.content)) ||
-      ("error" in event && Boolean(event.error)))
-  );
-}
-
-function isThinkingMarkerSemanticEvent(entry: SemanticChatEvent): boolean {
-  const { event } = entry;
-  return (
-    event.eventType === "output.thinking" &&
-    event.content === null &&
-    event.thinking.trim().length > 0 &&
-    event.runId !== undefined
-  );
-}
-
-function lastRunThinkingEvent(
-  groups: readonly SemanticChatEventGroup[],
-): SemanticChatEvent | undefined {
-  const events = groups.flatMap((group) => {
-    return group.events;
-  });
-  const lastEvent = events.at(-1);
-  if (!lastEvent || !isThinkingMarkerSemanticEvent(lastEvent)) {
-    return undefined;
-  }
-  const runId = lastEvent.event.runId;
-  const runHasAssistantText = events.some((entry) => {
-    return (
-      entry.event.runId === runId && isRenderableAssistantSemanticEvent(entry)
-    );
-  });
-  return runHasAssistantText ? undefined : lastEvent;
-}
-
-function assistantGroupOnlyHasThinking(
-  group: SemanticChatEventGroup,
-  thinkingEvent: SemanticChatEvent | undefined,
-): boolean {
-  if (group.role !== "assistant" || thinkingEvent === undefined) {
-    return false;
-  }
-  return !group.events.some((entry) => {
-    return isRenderableAssistantSemanticEvent(entry);
-  });
-}
-
 // After the thread goes idle, the last assistant turn of a run shows the
 // finished row with its completion time and recommended followups.
 function runFinishedFromGroups(groups: SemanticChatGroups): boolean {
@@ -1340,12 +1275,10 @@ function runFinishedFromGroups(groups: SemanticChatGroups): boolean {
     return false;
   }
   const lastAssistantEvent = lastGroup.events.at(-1)?.event;
-  if (!lastAssistantEvent?.runId || isCancelledRunEvent(lastAssistantEvent)) {
-    return false;
-  }
-  return !assistantGroupOnlyHasThinking(
-    lastGroup,
-    lastRunThinkingEvent(activeGroups),
+  return (
+    lastAssistantEvent !== undefined &&
+    Boolean(lastAssistantEvent.runId) &&
+    !isCancelledRunEvent(lastAssistantEvent)
   );
 }
 
@@ -1516,8 +1449,6 @@ function latestAssistantTextCreatedAtFromRaw(
       chatEventCompatibilityRole(event.eventType) === "assistant" &&
       isChatEventContentTextType(event.eventType) &&
       !isUsageEvent(event) &&
-      !isQueueMarkerEvent(event) &&
-      !isGoalMarkerEvent(event) &&
       !isInterruptedAssistantCancellation(event, interruptedRunIds) &&
       (event.content?.trim().length ?? 0) > 0
     ) {
@@ -1824,7 +1755,6 @@ function planEventTreeUpdates(
     if (
       event.eventType === "output.message" &&
       event.runId === undefined &&
-      event.runGroupId === undefined &&
       event.runEventId === undefined &&
       event.sequenceNumber === null &&
       event.revokesEventId === undefined &&
@@ -2083,7 +2013,6 @@ function createPagedEventResources({
   previewImageUrlsByUrl$,
   previewRefreshRevision$,
   previewCatalogReady$,
-  browserLifecycleOptimisticEvents,
   connector,
 }: {
   readonly chatActionContext: ChatActionContext;
@@ -2093,15 +2022,11 @@ function createPagedEventResources({
   >;
   readonly previewRefreshRevision$: Computed<number>;
   readonly previewCatalogReady$: Computed<boolean>;
-  readonly browserLifecycleOptimisticEvents: BrowserLifecycleOptimisticEvents;
   readonly connector: ComposerConnectorSignals;
 }) {
   const { threadId } = chatActionContext;
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
-  const browserSessionSignals = createBrowserSessionSignals(
-    threadId,
-    browserLifecycleOptimisticEvents,
-  );
+  const browserSessionSignals = createBrowserSessionSignals(threadId);
   const artifactCardSignals = createArtifactCardSignalsRegistry(
     previewImageUrlsByUrl$,
     previewRefreshRevision$,
@@ -2208,11 +2133,6 @@ function createPagedEventResources({
     registeredEvents$,
     syncRegisteredEvents$,
   };
-}
-
-interface BrowserLifecycleOptimisticEvent {
-  readonly eventId: string;
-  readonly eventType: "browser.open" | "browser.close";
 }
 
 interface ThinkingIndicatorSources {
@@ -2364,41 +2284,13 @@ function createEventChangeEffects({
     latestRunFinishCreatedAt$: projections.latestRunFinishCreatedAt$,
     locallyMarkedReadAt$,
   });
-  const sidebarAutoOpenCandidate$ = createThreadSidebarAutoOpenCandidate(
-    projections.rawEvents$,
-  );
-  const autoOpenSidebar$ = command(
-    ({ get, set }, signal: AbortSignal): void => {
-      signal.throwIfAborted();
-      if (
-        typeof window === "undefined" ||
-        !window.matchMedia(CHAT_THREAD_SIDEBAR_SPLIT_VIEW_MEDIA_QUERY).matches
-      ) {
-        return;
-      }
-      const candidate = get(sidebarAutoOpenCandidate$);
-      if (
-        !candidate ||
-        get(sidebar.target$) !== null ||
-        get(activeThreadSidebar$) !== null
-      ) {
-        return;
-      }
-      const candidateKey = threadSidebarAutoOpenCandidateKey(candidate);
-      if (!set(sidebar.claimAutoOpenCandidate$, candidateKey)) {
-        return;
-      }
-      set(sidebar.open$, { type: "browser" }, signal);
-    },
-  );
   const updateEventPresentation$ = command(
     async (
       { set },
       scrollPosition: ThreadScrollPosition | null,
       signal: AbortSignal,
     ): Promise<void> => {
-      const eventTreesReady = set(syncVisibleEventTrees$, true, signal);
-      await Promise.all([eventTreesReady, set(autoOpenSidebar$, signal)]);
+      await set(syncVisibleEventTrees$, true, signal);
       signal.throwIfAborted();
       await set(scroll.autoScroll$, scrollPosition, signal);
     },
@@ -2514,26 +2406,6 @@ function createReadyScrollAfterRenderRequest(
   });
 }
 
-function createBrowserLifecycleOptimisticEvents(
-  chatEvents: ChatEventSignals,
-): BrowserLifecycleOptimisticEvents {
-  return {
-    append$: command(
-      async (
-        { set },
-        event: BrowserLifecycleOptimisticEvent,
-        signal: AbortSignal,
-      ): Promise<void> => {
-        await set(
-          chatEvents.sendEvent$,
-          { kind: "browser-lifecycle", ...event },
-          signal,
-        );
-      },
-    ),
-  };
-}
-
 interface ChatThreadMessagePipelineOptions {
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
@@ -2554,8 +2426,6 @@ function createChatThreadMessagePipeline({
   thinkingSummaries$,
 }: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
-  const browserLifecycleOptimisticEvents =
-    createBrowserLifecycleOptimisticEvents(chatEvents);
   // Position is created before scroll writers are wired to the render window.
   const position = createThreadScrollPositionSignals(threadId);
   const resources = createPagedEventResources({
@@ -2564,7 +2434,6 @@ function createChatThreadMessagePipeline({
     previewImageUrlsByUrl$,
     previewRefreshRevision$,
     previewCatalogReady$,
-    browserLifecycleOptimisticEvents,
     connector,
   });
   const projections = createPagedEventProjections({
@@ -2727,22 +2596,65 @@ const renderWindowStateByThreadId$ = state(
   new Map<string, ChatRenderWindowState>(),
 );
 
+// A turn without events (the pending assistant turn) takes no window slot of
+// its own; it stays with the turn before it.
+function takesRenderWindowSlot(
+  groups: readonly ChatEventGroup[],
+  groupIndex: number,
+): boolean {
+  return groupIndex === 0 || (groups[groupIndex]?.events.length ?? 0) > 0;
+}
+
+/** The start index that shows `slotCount` window slots before `endIndex`. */
+function renderWindowStartIndexBefore(
+  groups: readonly ChatEventGroup[],
+  endIndex: number,
+  slotCount: number,
+): number {
+  let slots = 0;
+  for (
+    let groupIndex = Math.min(endIndex, groups.length) - 1;
+    groupIndex >= 0;
+    groupIndex--
+  ) {
+    if (takesRenderWindowSlot(groups, groupIndex)) {
+      slots++;
+      if (slots >= slotCount) {
+        return groupIndex;
+      }
+    }
+  }
+  return 0;
+}
+
 function renderWindowStartIndex(
   groups: readonly ChatEventGroup[],
   cursorGroupId: string | null,
 ): number {
-  return runGroupVisualWindowStartIndex(
-    groups,
-    cursorGroupId,
-    INITIAL_RENDER_GROUP_COUNT,
-  );
+  let cursorGroupIndex =
+    cursorGroupId === null
+      ? -1
+      : groups.findIndex((group) => {
+          return group.beginEventId === cursorGroupId;
+        });
+  if (cursorGroupIndex === -1) {
+    return renderWindowStartIndexBefore(
+      groups,
+      groups.length,
+      INITIAL_RENDER_GROUP_COUNT,
+    );
+  }
+  while (!takesRenderWindowSlot(groups, cursorGroupIndex)) {
+    cursorGroupIndex--;
+  }
+  return cursorGroupIndex;
 }
 
 function previousRenderWindowStartIndex(
   groups: readonly ChatEventGroup[],
   currentStartGroupIndex: number,
 ): number {
-  return previousRunGroupVisualWindowStartIndex(
+  return renderWindowStartIndexBefore(
     groups,
     currentStartGroupIndex,
     RENDER_GROUP_LOAD_INCREMENT,

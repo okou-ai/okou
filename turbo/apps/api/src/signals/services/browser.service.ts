@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   BROWSER_IDLE_LEASE_MINUTES,
   BROWSER_INITIAL_SCREEN_HEIGHT,
@@ -43,10 +42,7 @@ import { logger } from "../../lib/log";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
-import {
-  publishBrowserSessionChangedSafely,
-  publishChatThreadMessageCreatedSafely,
-} from "../external/realtime";
+import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
 import { deleteS3Objects, putImmutableS3Object } from "../external/s3";
@@ -82,7 +78,6 @@ import {
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { insertChatEvent } from "./chat-event.service";
 import type { Tx } from "../../lib/db-types";
 import {
   reconcileBrowserUserActions,
@@ -675,7 +670,6 @@ async function stopActiveBrowserInstance(
   reason: BrowserSuspensionReason,
   signal: AbortSignal,
   options: {
-    readonly emitCloseEvent?: boolean;
     readonly stopProvider: boolean;
     readonly saveTabSnapshot?: boolean;
   } = { stopProvider: true },
@@ -724,23 +718,7 @@ async function stopActiveBrowserInstance(
           eq(browserSessions.status, "active"),
         ),
       );
-    if (options.emitCloseEvent === false) {
-      return { eventSeqId: null };
-    }
-    const event = await insertChatEvent(
-      tx,
-      {
-        id: randomUUID(),
-        chatThreadId: target.chatThreadId,
-        eventType: "browser.close",
-        content: null,
-      },
-      "id",
-    );
-    if (!event) {
-      throw new Error("Failed to persist managed browser close event");
-    }
-    return { eventSeqId: event.seqId };
+    return true;
   });
   if (stopped && options.stopProvider) {
     stopProviderSessionLater(target.providerSessionId);
@@ -752,14 +730,6 @@ async function stopActiveBrowserInstance(
   await publishBrowserSessionChangedSafely(target.userId, {
     threadId: target.chatThreadId,
   });
-  if (stopped.eventSeqId !== null) {
-    await publishChatThreadMessageCreatedSafely({
-      userId: target.userId,
-      orgId: target.orgId,
-      threadId: target.chatThreadId,
-      syncThroughSeqId: stopped.eventSeqId,
-    });
-  }
   signal.throwIfAborted();
   return true;
 }
@@ -2421,36 +2391,15 @@ export const openBrowserForThread$ = command(
       return connection;
     }
     // The viewer runs in the user's browser, so it only ever learns the live
-    // view; the CDP endpoint stays inside the agent runtime.
-    const event = await insertChatEvent(
-      db,
-      {
-        id: args.lifecycleEventId,
-        chatThreadId: context.value.chatThreadId,
-        eventType: "browser.open",
-        content: null,
-      },
-      "id",
-    );
-    signal.throwIfAborted();
-    if (!event) {
-      return conflict(
-        "The managed browser open event ID is already in use",
-        "BROWSER_EVENT_ID_CONFLICT",
-      );
-    }
-    await publishChatThreadMessageCreatedSafely({
-      userId: context.value.userId,
-      orgId: context.value.orgId,
-      threadId: context.value.chatThreadId,
-      syncThroughSeqId: event.seqId,
-    });
-    signal.throwIfAborted();
+    // view; the CDP endpoint stays inside the agent runtime. Browser lifecycle
+    // is no longer a chat event; the request eventId is echoed for older web
+    // clients. Remove once the Web client floor excludes them (Chat Event V8
+    // PR-3).
     return {
       kind: "ok",
       value: {
         browser: connection.value.browser,
-        lifecycleEventId: event.id,
+        lifecycleEventId: args.lifecycleEventId,
       },
     };
   },
@@ -2473,34 +2422,14 @@ export const closeBrowserForThread$ = command(
     if (accessError) {
       return accessError;
     }
-    const event = await insertChatEvent(
-      db,
-      {
-        id: args.lifecycleEventId,
-        chatThreadId: thread.chatThreadId,
-        eventType: "browser.close",
-        content: null,
-      },
-      "id",
-    );
-    signal.throwIfAborted();
-    if (!event) {
-      return conflict(
-        "The managed browser close event ID is already in use",
-        "BROWSER_EVENT_ID_CONFLICT",
-      );
-    }
-    await publishChatThreadMessageCreatedSafely({
-      userId: thread.userId,
-      orgId: args.orgId,
-      threadId: thread.chatThreadId,
-      syncThroughSeqId: event.seqId,
-    });
-    signal.throwIfAborted();
+    // Closing the viewer does not stop the browser. Browser lifecycle is no
+    // longer a chat event; the request eventId is echoed for older web
+    // clients. Remove once the Web client floor excludes them (Chat Event V8
+    // PR-3).
     return {
       kind: "ok",
       value: {
-        lifecycleEventId: event.id,
+        lifecycleEventId: args.lifecycleEventId,
       },
     };
   },
@@ -2864,7 +2793,6 @@ export const stopThreadBrowsers$ = command(
     for (const target of active) {
       if (
         await stopActiveBrowserInstance(db, target, "reconcile", signal, {
-          emitCloseEvent: false,
           stopProvider: false,
           saveTabSnapshot: false,
         })
@@ -3681,10 +3609,7 @@ const reconcileBrowserInstance$ = command(
       },
       reason,
       signal,
-      {
-        emitCloseEvent: row.chatThreadId !== null,
-        stopProvider,
-      },
+      { stopProvider },
     );
     return {
       stopped: stopped ? 1 : 0,

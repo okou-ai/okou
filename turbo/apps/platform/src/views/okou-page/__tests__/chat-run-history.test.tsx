@@ -20,7 +20,6 @@ import {
   queryWorkHistoryToggles,
   readyChat,
   RUN_PATH,
-  thinkingEvent,
   usageEvent,
 } from "./chat-run-test-fixtures.ts";
 
@@ -388,12 +387,6 @@ test("Do not create history before the first output.message", async () => {
         seqId: 1,
         text: "Inspect the release",
         createdAt: createdAt(0),
-      }),
-      thinkingEvent({
-        id: "status-only-thinking",
-        runId: RUN_A,
-        seqId: 2,
-        text: "Reading release evidence",
       }),
     ],
   });

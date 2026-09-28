@@ -16,12 +16,16 @@ const MAX_EVENT_ROWS_PER_PAGE = 50;
 export function projectChatEventRows(
   rows: readonly ChatEventRow[],
 ): readonly ChatEvent[] {
-  return rows.map((row) => {
-    const serialized = JSON.stringify(chatEventFromRow(row));
+  return rows.flatMap((row) => {
+    const event = chatEventFromRow(row);
+    if (event === null) {
+      return [];
+    }
+    const serialized = JSON.stringify(event);
     if (serialized === undefined) {
       throw new Error(`Failed to serialize chat event ${row.id}`);
     }
-    return chatEventSchema.parse(JSON.parse(serialized));
+    return [chatEventSchema.parse(JSON.parse(serialized))];
   });
 }
 

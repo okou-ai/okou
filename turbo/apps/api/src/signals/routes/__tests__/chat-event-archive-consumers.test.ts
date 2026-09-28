@@ -749,7 +749,10 @@ describe("archived chat event consumers", () => {
           }),
         );
         const visible = semanticChatEventsFromChatEvents(
-          restored.map(chatEventFromRow),
+          restored.flatMap((row) => {
+            const event = chatEventFromRow(row);
+            return event === null ? [] : [event];
+          }),
         );
         expect(
           visible.map(({ event }) => {

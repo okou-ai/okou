@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CHAT_EVENT_TYPES, type ChatEventType } from "../chat-events";
+import {
+  CHAT_EVENT_TYPES,
+  V7_ONLY_CHAT_EVENT_TYPES,
+  type ChatEventType,
+} from "../chat-events";
 import { chatEventFromRow } from "../chat-event-row-projection";
 import {
   PI_MEMORY_CITATION_OPEN,
@@ -178,9 +182,19 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
         const wireRow = JSON.parse(
           JSON.stringify(projectableRow(eventType)),
         ) as unknown;
-        return chatEventFromRow(chatEventRowSchema.parse(wireRow)).eventType;
+        return (
+          chatEventFromRow(chatEventRowSchema.parse(wireRow))?.eventType ?? null
+        );
       }),
-    ).toStrictEqual([...CHAT_EVENT_TYPES]);
+    ).toStrictEqual(
+      CHAT_EVENT_TYPES.map((eventType) => {
+        return (V7_ONLY_CHAT_EVENT_TYPES as readonly string[]).includes(
+          eventType,
+        )
+          ? null
+          : eventType;
+      }),
+    );
   });
 
   it.each([
@@ -254,23 +268,7 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
       eventType: "control.interrupt",
       interruptsRunId: target,
     });
-    expect(projected.runId).toBeUndefined();
-  });
-
-  it("emits goal context pointers as runGroupId", () => {
-    const goalId = "00000000-0000-4000-8000-000000000011";
-    const projected = chatEventFromRow(
-      canonicalRow({
-        payload: { content: "goal result" },
-        contextType: "goal",
-        contextId: goalId,
-      }),
-    );
-    expect(projected).toMatchObject({
-      eventType: "output.message",
-      content: "goal result",
-      runGroupId: goalId,
-    });
+    expect(projected?.runId).toBeUndefined();
   });
 
   it("defensively hides citation envelopes from historical cached rows", () => {
@@ -293,13 +291,13 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     const row = canonicalRow({ payload: { content } });
     const before = JSON.stringify(row);
     const expected = `explain \`&lt;${PI_MEMORY_CITATION_OPEN.slice(1, -1)}&gt;\` suffix`;
-    let projected = chatEventFromRow(row);
-    expect(projected.content).toBe(expected);
+    let projectedContent = chatEventFromRow(row)?.content;
+    expect(projectedContent).toBe(expected);
     for (let i = 0; i < 3; i++) {
-      projected = chatEventFromRow(
-        canonicalRow({ payload: { content: projected.content } }),
-      );
-      expect(projected.content).toBe(expected);
+      projectedContent = chatEventFromRow(
+        canonicalRow({ payload: { content: projectedContent } }),
+      )?.content;
+      expect(projectedContent).toBe(expected);
     }
     expect(JSON.stringify(row)).toBe(before);
   });

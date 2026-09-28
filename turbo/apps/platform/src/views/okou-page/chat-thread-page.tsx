@@ -63,7 +63,6 @@ import {
   Package,
   Route,
   Search,
-  Target,
   X,
   Clock,
   Hourglass,
@@ -364,26 +363,24 @@ type RecommendedFollowup = ChatRecommendedFollowup;
 
 type UserMessageNonContentPart = Extract<
   UserMessagePart,
-  { readonly type: "source" | "automation" | "goal" }
+  { readonly type: "source" | "automation" }
 >;
 
 type UserMessageAnnotationRenderPart = Extract<
   UserMessageRenderPart,
-  { readonly type: "source" | "automation" | "goal" }
+  { readonly type: "source" | "automation" }
 >;
 
 function isUserMessageNonContentPart(
   part: UserMessagePart,
 ): part is UserMessageNonContentPart {
-  return (
-    part.type === "source" || part.type === "automation" || part.type === "goal"
-  );
+  return part.type === "source" || part.type === "automation";
 }
 
 type UserMessageHiddenPart = Extract<
   UserMessagePart,
   {
-    readonly type: "source" | "automation" | "goal" | "model";
+    readonly type: "source" | "automation" | "model";
   }
 >;
 
@@ -397,7 +394,6 @@ function isInputChatEvent(event: ChatEvent): event is ChatInputEvent {
   return (
     event.eventType === "input.prompt" ||
     event.eventType === "input.automation" ||
-    event.eventType === "input.goal" ||
     event.eventType === "input.rejected"
   );
 }
@@ -519,11 +515,7 @@ function userMessageAnnotationRenderPart(
 ): UserMessageAnnotationRenderPart | undefined {
   return document?.parts.find(
     (renderPart): renderPart is UserMessageAnnotationRenderPart => {
-      return (
-        renderPart.type === "source" ||
-        renderPart.type === "automation" ||
-        renderPart.type === "goal"
-      );
+      return renderPart.type === "source" || renderPart.type === "automation";
     },
   );
 }
@@ -3157,10 +3149,7 @@ function ChatThreadRenderedEventGroups({
   const modelChanges = modelChangesByEventId(renderedActiveGroups);
   const scrollTargetEventId =
     useGet(thread.threadScrollPosition$)?.targetEventId ?? null;
-  const runWorkFolding = buildRunWorkFolding(
-    renderedActiveGroups,
-    new Set(modelChanges.keys()),
-  );
+  const runWorkFolding = buildRunWorkFolding(renderedActiveGroups);
   const runWorkExpandedKeys = useGet(runWorkExpandedKeys$);
   const effectiveRunWorkExpandedKeys = runWorkExpandedKeysForScrollTarget(
     runWorkFolding,
@@ -3697,23 +3686,6 @@ function RunWorkSectionRow({
         <div className={className}>{content}</div>
       )}
     </div>
-  );
-}
-
-function isRejectedGoalUserMessage(event: EnrichedChatEvent): boolean {
-  return (
-    event.eventType === "input.rejected" &&
-    eventNonContentPart(event)?.type === "goal"
-  );
-}
-
-function isGoalUserMessage(
-  event: EnrichedChatEvent,
-): event is EnrichedChatEvent & ChatInputEvent {
-  return (
-    isInputChatEvent(event) &&
-    !isRejectedGoalUserMessage(event) &&
-    eventNonContentPart(event)?.type === "goal"
   );
 }
 
@@ -6216,10 +6188,7 @@ function SelectablePagedGroupRow({
           ? [
               ...group.events,
               ...(runWorkSection
-                ? [
-                    ...runWorkSection.hiddenGroups,
-                    ...runWorkSection.hiddenGroupsAfterAnchor,
-                  ].flatMap((hiddenGroup) => {
+                ? runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
                     return hiddenGroup.events;
                   })
                 : []),
@@ -6311,15 +6280,10 @@ function PagedUserGroup({
   );
 }
 
-// A user event does not always render as a bubble: a workflow run, a historical
-// goal, and a rejected historical goal each render as their own card or as
-// nothing at all.
+// A user event does not always render as a bubble: a workflow run renders as
+// its own card.
 function rendersUserBubble(event: EnrichedChatEvent): boolean {
-  return (
-    !isRejectedGoalUserMessage(event) &&
-    !isWorkflowUserMessage(event) &&
-    !isGoalUserMessage(event)
-  );
+  return !isWorkflowUserMessage(event);
 }
 
 function isWorkflowUserMessage(
@@ -6757,23 +6721,6 @@ function MessageAnnotation({
         title={part.workflowName}
       >
         {content}
-      </div>
-    );
-  }
-  if (renderPart.type === "goal") {
-    return (
-      <div
-        aria-label={t(($) => {
-          return $.chat.queue.goal;
-        })}
-        className={className}
-      >
-        <Target size={15} className="shrink-0" />
-        <span>
-          {t(($) => {
-            return $.chat.queue.goal;
-          })}
-        </span>
       </div>
     );
   }
@@ -7337,7 +7284,7 @@ function UserMessageFeedbackGroup({
 type UserMessageContentRenderPart = Exclude<
   UserMessageRenderPart,
   {
-    readonly type: "source" | "automation" | "goal" | "model";
+    readonly type: "source" | "automation" | "model";
   }
 >;
 type UserMessageStandaloneRenderPart = Exclude<
@@ -7601,53 +7548,6 @@ function WorkflowUserMessage({
   );
 }
 
-function GoalUserMessage({
-  event,
-  thread,
-}: {
-  event: EnrichedChatEvent & ChatInputEvent;
-  thread: ChatPanelSignals;
-}) {
-  const turnOnRef = useSet(thread.locator.turnOnRef$);
-  const renderPart = userMessageAnnotationRenderPart(
-    event.userMessageRenderDocument,
-  );
-  if (renderPart?.type !== "goal") {
-    return null;
-  }
-  const { part } = renderPart;
-  const goalBrief = part.goalBrief.trim();
-  return (
-    <div
-      data-role="user"
-      data-chat-scroll-anchor-event-id={event.id}
-      data-turn-created-at={event.createdAt}
-      className="relative group"
-      ref={turnOnRef}
-    >
-      <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
-      <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
-        <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
-        <div className="flex w-full flex-col items-end">
-          <MessageAnnotation renderPart={renderPart} />
-          {goalBrief ? (
-            <div className="rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10 bg-gray-200 text-foreground">
-              <div className="px-4 py-3 whitespace-pre-wrap">{goalBrief}</div>
-            </div>
-          ) : null}
-          {goalBrief ? (
-            <UserMessageTextActions
-              event={event}
-              text={goalBrief}
-              thread={thread}
-            />
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function resolvePagedUserMessageRendering({
   renderDocument,
 }: {
@@ -7761,16 +7661,8 @@ function PagedUserMessage({
     );
   };
 
-  if (isRejectedGoalUserMessage(event)) {
-    return null;
-  }
-
   if (isWorkflowUserMessage(event)) {
     return <WorkflowUserMessage event={event} thread={thread} />;
-  }
-
-  if (isGoalUserMessage(event)) {
-    return <GoalUserMessage event={event} thread={thread} />;
   }
 
   const nonContentRenderPart = userMessageAnnotationRenderPart(renderDocument);
@@ -7921,14 +7813,6 @@ function buildPagedAssistantTimeline({
       kind: "run-work-main",
       event: anchorEvent,
     });
-  }
-  if (showAllHistory) {
-    items.push(
-      ...foldedRunWorkTimelineItems(
-        runWorkSection.hiddenGroupsAfterAnchor,
-        modelChanges,
-      ),
-    );
   }
   return items;
 }

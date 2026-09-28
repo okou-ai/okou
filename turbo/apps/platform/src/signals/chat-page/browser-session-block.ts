@@ -60,19 +60,6 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   >;
 }
 
-export interface BrowserLifecycleOptimisticEvents {
-  readonly append$: Command<
-    Promise<void>,
-    [
-      {
-        readonly eventId: string;
-        readonly eventType: "browser.open" | "browser.close";
-      },
-      AbortSignal,
-    ]
-  >;
-}
-
 export function parseBrowserSessionUrl(
   value: string,
 ): BrowserSessionDescriptor | null {
@@ -289,38 +276,26 @@ interface BrowserMutationSignalContext {
   readonly descriptor: BrowserSessionDescriptor;
   readonly sessionOverride$: State<BrowserSession | null | undefined>;
   readonly reload$: Command<void, []>;
-  readonly optimisticEvents?: BrowserLifecycleOptimisticEvents;
 }
 
 function createStartBrowserSignals({
   descriptor,
   sessionOverride$,
   reload$,
-  optimisticEvents,
 }: BrowserMutationSignalContext): Pick<
   BrowserSessionSignals,
   "starting$" | "start$"
 > {
   const startingState$ = state(false);
   const start$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const eventId = crypto.randomUUID();
     set(startingState$, true);
-    if (optimisticEvents) {
-      await set(
-        optimisticEvents.append$,
-        {
-          eventId,
-          eventType: "browser.open",
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-    }
     const started = await settle(
       accept(
         get(apiClient$)(browserContract).open({
           params: { threadId: descriptor.threadId },
-          body: { eventId },
+          // Pre-V8 APIs require a lifecycle event ID. Remove once those APIs
+          // leave the production rollback window (Chat Event V8 PR-3).
+          body: { eventId: crypto.randomUUID() },
           fetchOptions: { signal },
         }),
         [200],
@@ -345,26 +320,15 @@ function createStartBrowserSignals({
 
 function createCloseBrowserSignals({
   descriptor,
-  optimisticEvents,
 }: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "close$"> {
-  const close$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const eventId = crypto.randomUUID();
-    if (optimisticEvents) {
-      await set(
-        optimisticEvents.append$,
-        {
-          eventId,
-          eventType: "browser.close",
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-    }
+  const close$ = command(async ({ get }, signal: AbortSignal) => {
     await settle(
       accept(
         get(apiClient$)(browserContract).close({
           params: { threadId: descriptor.threadId },
-          body: { eventId },
+          // Pre-V8 APIs require a lifecycle event ID. Remove once those APIs
+          // leave the production rollback window (Chat Event V8 PR-3).
+          body: { eventId: crypto.randomUUID() },
           fetchOptions: { signal },
         }),
         [200],
@@ -420,7 +384,6 @@ function createBrowserSessionSubscriptionSignals(
 
 export function createBrowserSessionSignals(
   threadId: string,
-  optimisticEvents?: BrowserLifecycleOptimisticEvents,
 ): BrowserSessionSignals {
   const descriptor: BrowserSessionDescriptor = {
     threadId,
@@ -453,7 +416,6 @@ export function createBrowserSessionSignals(
     descriptor,
     sessionOverride$,
     reload$,
-    ...(optimisticEvents ? { optimisticEvents } : {}),
   };
   const startSignals = createStartBrowserSignals(mutationContext);
   const closeSignals = createCloseBrowserSignals(mutationContext);

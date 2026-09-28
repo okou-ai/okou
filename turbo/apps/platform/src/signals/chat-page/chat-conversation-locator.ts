@@ -111,15 +111,8 @@ function userMessageForLocator(event: EnrichedChatEvent) {
 
 function userMessageAnnotationForLocator(event: EnrichedChatEvent) {
   return userMessageForLocator(event)?.parts.find((part) => {
-    return part.type === "automation" || part.type === "goal";
+    return part.type === "automation";
   });
-}
-
-function rejectedGoalForLocator(event: EnrichedChatEvent): boolean {
-  return (
-    event.eventType === "input.rejected" &&
-    userMessageAnnotationForLocator(event)?.type === "goal"
-  );
 }
 
 function userPreviewText(event: EnrichedChatEvent): string {
@@ -130,10 +123,7 @@ function userPreviewText(event: EnrichedChatEvent): string {
     return messageText;
   }
   const annotation = userMessageAnnotationForLocator(event);
-  if (annotation?.type === "goal") {
-    return normalizePreviewText(annotation.goalBrief);
-  }
-  if (annotation?.type === "automation") {
+  if (annotation !== undefined) {
     const brief = normalizePreviewText(annotation.automationBrief);
     return brief || normalizePreviewText(annotation.workflowName);
   }
@@ -152,7 +142,7 @@ function userTurns(groups: readonly ChatEventGroup[]): LocatorTurn[] {
       continue;
     }
     for (const event of group.events) {
-      if (event.isQueued || rejectedGoalForLocator(event)) {
+      if (event.isQueued) {
         continue;
       }
       turns.push({
@@ -197,8 +187,8 @@ function createSampledTurns(
       });
       return events.length === 0 ? [] : [{ ...group, events }];
     });
-    // Match the transcript's visible projection: folded continuation inputs
-    // have no rendered anchor, while independent goals retain a context row.
+    // Match the transcript's visible projection so every turn has a rendered
+    // anchor.
     return sampleTurns(
       userTurns(buildRunWorkFolding(activeGroups).visibleGroups),
     );

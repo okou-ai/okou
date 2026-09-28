@@ -2083,7 +2083,6 @@
       "cancellationRecoveryPending": "Die abgebrochene Ausführung wird abgeschlossen, bevor die Arbeit in der Warteschlange fortgesetzt wird.",
       "event_one": "{{count}} Ereignis",
       "event_other": "{{count}} Ereignisse",
-      "goal": "Ziel",
       "itemsWaiting": "{{items}} wartet",
       "itemsWaitingTogether": "{{messages}} und {{events}} warten",
       "message_one": "{{count}} Nachricht",
@@ -5003,14 +5002,14 @@
         },
         "fast": "Schnell",
         "fastImpact": {
-          "apiCost": "2× API-Tokenkosten",
-          "chatGptUsage": "2,5× ChatGPT-Verbrauch",
+          "apiCost": "{{multiplier}}× API-Tokenkosten",
+          "apiSpeed": "Bis zu {{multiplier}}× Modellgeschwindigkeit",
+          "chatGptUsage": "{{multiplier}}× ChatGPT-Verbrauch",
           "fasterResponses": "Schnellere Modellantworten",
           "modelSpeed": "{{multiplier}}× Modellgeschwindigkeit",
-          "okouCredits": "2× Okou-Modell-Credits",
+          "okouCredits": "{{multiplier}}× Okou-Modell-Credits",
           "providerSpeed": "Geschwindigkeit hängt vom Anbieter ab",
           "providerUsage": "Verbrauch hängt vom Anbieter ab",
-          "solApiSpeed": "Bis zu 2,5× Modellgeschwindigkeit",
           "summary": "{{speed}} · {{usage}}"
         },
         "generationPriceTiers": {

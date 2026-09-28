@@ -37,7 +37,6 @@ function promptRow(
   options: {
     readonly id?: string;
     readonly runId?: string;
-    readonly runGroupId?: string;
     readonly revokesEventId?: string;
     readonly userMessage?: UserMessageDocument;
   } = {},
@@ -45,9 +44,6 @@ function promptRow(
   const row = continuityEventRow(caseId, sequence, threadId, "input.prompt", {
     payload: { userMessage: options.userMessage ?? textDocument(text) },
     ...(options.runId === undefined ? {} : { runId: options.runId }),
-    ...(options.runGroupId === undefined
-      ? {}
-      : { runGroupId: options.runGroupId }),
     ...(options.revokesEventId === undefined
       ? {}
       : { revokesEventId: options.revokesEventId }),
@@ -60,12 +56,11 @@ function outputRow(
   sequence: number,
   threadId: string,
   text: string,
-  run: { readonly id: string; readonly groupId?: string },
+  run: { readonly id: string },
 ): ChatEventRow {
   return continuityEventRow(caseId, sequence, threadId, "output.message", {
     payload: { content: text },
     runId: run.id,
-    ...(run.groupId === undefined ? {} : { runGroupId: run.groupId }),
   });
 }
 
@@ -133,25 +128,22 @@ function queuedMessage(container: ParentNode): HTMLElement | undefined {
   );
 }
 
-async function prepareLongGroupedConversation() {
-  const thread = continuityThread(20, 1, "Long grouped history");
+async function prepareLongConversation() {
+  const thread = continuityThread(20, 1, "Long history");
   const rows: ChatEventRow[] = [];
   let sequence = 1;
   const addPair = (
     prompt: string,
     response: string,
     runId: string,
-    runGroupId?: string,
     userMessage?: UserMessageDocument,
   ): { readonly prompt: ChatEventRow; readonly response: ChatEventRow } => {
     const promptEvent = promptRow(20, sequence++, thread.id, prompt, {
       runId,
-      ...(runGroupId === undefined ? {} : { runGroupId }),
       ...(userMessage === undefined ? {} : { userMessage }),
     });
     const responseEvent = outputRow(20, sequence++, thread.id, response, {
       id: runId,
-      ...(runGroupId === undefined ? {} : { groupId: runGroupId }),
     });
     rows.push(promptEvent, responseEvent);
     return { prompt: promptEvent, response: responseEvent };
@@ -163,29 +155,25 @@ async function prepareLongGroupedConversation() {
   );
   addPair("Older planning request", "Older planning answer", "history-run-2");
   addPair("Earlier review request", "Earlier review answer", "history-run-3");
-  const beforeGroup = addPair(
+  const beforeRepeated = addPair(
     "Context before repeated work",
     "Neighboring answer before repeated work",
-    "history-run-before-group",
+    "history-run-before-repeated",
   );
-  const runGroupId = "launch-brief-group";
   addPair(
     "Build the launch brief from these references",
     "First launch brief result",
-    "history-group-run-1",
-    runGroupId,
+    "history-repeated-run-1",
   );
   addPair(
     "Build the launch brief from these references",
     "Second launch brief result",
-    "history-group-run-2",
-    runGroupId,
+    "history-repeated-run-2",
   );
-  const latestGrouped = addPair(
+  const latestRepeated = addPair(
     "Build the launch brief from these references",
     "Final launch brief is ready",
-    "history-group-run-3",
-    runGroupId,
+    "history-repeated-run-3",
     {
       version: 1,
       parts: [
@@ -202,10 +190,10 @@ async function prepareLongGroupedConversation() {
       ],
     },
   );
-  const afterGroup = addPair(
+  const afterRepeated = addPair(
     "Review the final launch brief",
     "Neighboring answer after repeated work",
-    "history-run-after-group",
+    "history-run-after-repeated",
   );
   addPair("Most recent follow-up", "Most recent answer", "history-run-recent");
   const workspace = installContinuityWorkspace(context, {
@@ -224,21 +212,18 @@ async function prepareLongGroupedConversation() {
     thread,
     composer,
     container,
-    latestGrouped,
+    latestRepeated,
     earliest,
-    beforeGroup,
-    afterGroup,
+    beforeRepeated,
+    afterRepeated,
   };
 }
 
-test("Render a long conversation with intact grouped messages", async () => {
-  const { composer, container, latestGrouped } =
-    await prepareLongGroupedConversation();
+test("Render the latest turns of a long conversation", async () => {
+  const { composer, container, latestRepeated } =
+    await prepareLongConversation();
   await waitFor(() => {
     expect(container).toHaveTextContent("Final launch brief is ready");
-    expect(container).toHaveTextContent(
-      "Neighboring answer before repeated work",
-    );
     expect(container).toHaveTextContent(
       "Neighboring answer after repeated work",
     );
@@ -247,13 +232,15 @@ test("Render a long conversation with intact grouped messages", async () => {
   expect(composer).toBeVisible();
   expect(container).toHaveTextContent("First launch brief result");
   expect(container).toHaveTextContent("Second launch brief result");
-  expect(container).not.toHaveTextContent("Earliest retained request");
-  expect(eventAnchorCount(container, latestGrouped.response.id)).toBe(1);
+  expect(container).not.toHaveTextContent(
+    "Neighboring answer before repeated work",
+  );
+  expect(eventAnchorCount(container, latestRepeated.response.id)).toBe(1);
 });
 
-test("Page older conversation history without losing grouped-run anchors", async () => {
-  const { thread, container, earliest, beforeGroup, afterGroup } =
-    await prepareLongGroupedConversation();
+test("Page older conversation history without losing turn anchors", async () => {
+  const { thread, container, earliest, beforeRepeated, afterRepeated } =
+    await prepareLongConversation();
   await waitFor(() => {
     expect(container).toHaveTextContent("Final launch brief is ready");
   });
@@ -267,8 +254,8 @@ test("Page older conversation history without losing grouped-run anchors", async
     expect(container).toHaveTextContent("Earliest retained answer");
   });
   expect(eventAnchorCount(container, earliest.prompt.id)).toBe(1);
-  expect(eventAnchorCount(container, beforeGroup.prompt.id)).toBe(1);
-  expect(eventAnchorCount(container, afterGroup.response.id)).toBe(1);
+  expect(eventAnchorCount(container, beforeRepeated.prompt.id)).toBe(1);
+  expect(eventAnchorCount(container, afterRepeated.response.id)).toBe(1);
 });
 
 test("Navigate chat history with scroll controls and keyboard commands", async () => {
@@ -324,6 +311,54 @@ test("Navigate chat history with scroll controls and keyboard commands", async (
   await waitFor(() => {
     expect(scroller.scrollTop).toBe(0);
     expect(container.querySelector("[data-scroll-to-bottom]")).toBeVisible();
+  });
+});
+
+test("Show new messages after history that ends with a retired browser event", async () => {
+  const thread = continuityThread(24, 1, "Browser history");
+  const runId = "history-run-browser";
+  const nextRunId = "history-run-after-browser";
+  // A retired browser lifecycle row is still valid V7 history, but the chat
+  // projection drops it.
+  const initialRows = [
+    promptRow(24, 1, thread.id, "Check the pricing page", { runId }),
+    outputRow(24, 2, thread.id, "The pricing page is up to date", {
+      id: runId,
+    }),
+    completedRow(24, 3, thread.id, runId),
+    continuityEventRow(24, 4, thread.id, "browser.close"),
+  ];
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 24,
+    threads: [thread],
+    chatEventRows: initialRows,
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+
+  await screen.findByRole("textbox", { name: "Message" });
+  const container = threadContainer(thread.id);
+  await waitFor(() => {
+    expect(container).toHaveTextContent("The pricing page is up to date");
+  });
+
+  workspace.setChatEventRows([
+    ...initialRows,
+    promptRow(24, 5, thread.id, "Check the signup page too", {
+      runId: nextRunId,
+    }),
+    outputRow(24, 6, thread.id, "The signup page is up to date", {
+      id: nextRunId,
+    }),
+  ]);
+  createChatEvent(thread.id);
+
+  await waitFor(() => {
+    expect(container).toHaveTextContent("The signup page is up to date");
   });
 });
 

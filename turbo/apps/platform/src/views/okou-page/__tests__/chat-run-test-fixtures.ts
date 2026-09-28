@@ -263,23 +263,6 @@ export function assistantEvent(args: {
   };
 }
 
-export function thinkingEvent(args: {
-  readonly id: string;
-  readonly runId: string;
-  readonly seqId: number;
-  readonly text: string;
-}): MockChatEventInput {
-  return {
-    id: args.id,
-    role: "assistant",
-    content: null,
-    thinking: args.text,
-    runId: args.runId,
-    seqId: args.seqId,
-    createdAt: `2026-08-01T10:00:${String(args.seqId).padStart(2, "0")}.000Z`,
-  };
-}
-
 export function completedEvent(args: {
   readonly id: string;
   readonly runId: string;

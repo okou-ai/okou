@@ -119,21 +119,6 @@ function assistantMessageText(event: AgentEvent): string | null {
   return anthropicMessageText(event) ?? codexAgentMessageText(event);
 }
 
-function codexReasoningText(event: AgentEvent): string | null {
-  if (event.type !== "item.completed") {
-    return null;
-  }
-  const item = recordOf(event.item);
-  if (
-    item?.type !== "reasoning" ||
-    typeof item.text !== "string" ||
-    item.text.trim().length === 0
-  ) {
-    return null;
-  }
-  return item.text;
-}
-
 function resultText(event: AgentEvent): string | null {
   if (event.type !== "result") {
     return null;
@@ -211,18 +196,6 @@ function assistantEventItems(args: {
           ? { eventType: "output.message", content: messageText }
           : { eventType: "output.error", error: balanceError }),
       });
-      continue;
-    }
-
-    const reasoningText = codexReasoningText(event);
-    if (reasoningText !== null) {
-      items.push({
-        eventType: "output.thinking",
-        runEventSequenceNumber: event.sequenceNumber,
-        thinking: reasoningText,
-        runEventId: eventOutputId(event),
-      });
-      continue;
     }
   }
   return items;

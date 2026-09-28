@@ -25,7 +25,6 @@ import {
   readyChat,
   RUN_PATH,
   sendText,
-  thinkingEvent,
 } from "./chat-run-test-fixtures.ts";
 
 const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000501";
@@ -126,12 +125,6 @@ test("Queue a visual attachment without requiring text", async () => {
         runId: ACTIVE_RUN_ID,
         seqId: 1,
         text: "Prepare the campaign",
-      }),
-      thinkingEvent({
-        id: "video-progress",
-        runId: ACTIVE_RUN_ID,
-        seqId: 2,
-        text: "Preparing the campaign",
       }),
     ],
     onQueuedEventAppend(body) {

@@ -51,7 +51,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { setBrowserTabSnapshotAsPreviousApi } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { testBrowserReconcileRoutes } from "../test-browser-reconcile";
@@ -8529,51 +8528,6 @@ describe("okou browser route", () => {
       [200],
     );
     expect(stillActive.body.browser.status).toBe("active");
-
-    const events = await readProjectedChatEvents(context, {
-      threadId: first.threadId,
-      headers: { authorization: "Bearer clerk-session" },
-    });
-    expect(
-      events.flatMap((event) => {
-        return event.eventType === "browser.open" ||
-          event.eventType === "browser.close"
-          ? [
-              {
-                id: event.id,
-                eventType: event.eventType,
-                content: event.content,
-              },
-            ]
-          : [];
-      }),
-    ).toStrictEqual([
-      {
-        id: beforeStartCloseEventId,
-        eventType: "browser.close",
-        content: null,
-      },
-      {
-        id: beforeReclaimCloseEventId,
-        eventType: "browser.close",
-        content: null,
-      },
-      {
-        id: expect.any(String),
-        eventType: "browser.close",
-        content: null,
-      },
-      {
-        id: openEventId,
-        eventType: "browser.open",
-        content: null,
-      },
-      {
-        id: closeEventId,
-        eventType: "browser.close",
-        content: null,
-      },
-    ]);
 
     await chat.deleteThread(actor, first.threadId);
     await flushWaitUntilForTest();
