@@ -3,9 +3,7 @@ import type {
   ColorTheme,
   ThemePreference,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cookieSignals, refreshCookies$ } from "./external/cookie.ts";
-import { featureSwitchState$ } from "./external/feature-switch-state.ts";
 import { clerk$, clerkUser$ } from "./auth.ts";
 import {
   updateUserPreference$,
@@ -61,15 +59,12 @@ export const colorTheme$ = computed((get) => {
 
 /**
  * The palette a themed shell carries, or `undefined` when it carries none.
- * Both the capability being off and the default palette being selected mean
- * no palette attributes, so every shell asks this one question instead of
- * pairing its own feature-switch read with the raw preference.
+ * The default palette being selected means no palette attributes, so every
+ * shell asks this one question instead of comparing the raw preference itself.
  */
 export const paletteColorTheme$ = computed((get): ColorTheme | undefined => {
-  const enabled =
-    get(featureSwitchState$)[FeatureSwitchKey.GradientColorThemes] ?? false;
   const colorTheme = get(colorTheme$);
-  return enabled && colorTheme !== DEFAULT_COLOR_THEME ? colorTheme : undefined;
+  return colorTheme !== DEFAULT_COLOR_THEME ? colorTheme : undefined;
 });
 
 function resolveTheme(preference: ThemePreference): "light" | "dark" {

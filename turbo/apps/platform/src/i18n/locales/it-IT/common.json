@@ -590,7 +590,8 @@
       "video": "Video"
     },
     "metadata": {
-      "generated": "Generato {{date}}"
+      "generated": "Generato {{date}}",
+      "updated": "Aggiornato {{date}}"
     },
     "preview": {
       "audioLabel": "Anteprima audio per {{filename}}",
@@ -4354,13 +4355,47 @@
         "copy": "Esegui questo prompt in {{provider}} per importare le skill che hai già creato, così Okou può usarle da subito.",
         "copyError": "Non è stato possibile copiare il prompt.",
         "copyPrompt": "Copia prompt",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Apri l'app Claude e passa alla scheda {{control}}",
+            "openAppNote": "Code gira sul tuo computer, quindi può leggere le cartelle delle tue skill.",
+            "stayLocal": "Mantieni la sessione su {{control}}",
+            "stayLocalNote": "La chat e le sessioni cloud non vedono i file sul tuo computer."
+          },
+          "codex": {
+            "keepOpen": "Tienila aperta finché le tue skill non compaiono qui sotto",
+            "openApp": "Apri l'app Codex e avvia una {{control}}",
+            "openAppNote": "Usa l'app sul tuo computer, così può leggere le cartelle delle tue skill."
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "Copia il prompt",
+          "label": "Dove eseguire il prompt",
+          "paste": "Incolla il prompt e invialo",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "Nascondi prompt completo",
         "importedCopy": "Importato come workflow di Okou.",
+        "importedCount_one": "1 importata · in attesa di altre",
+        "importedCount_many": "{{count}} importate · in attesa di altre",
+        "importedCount_other": "{{count}} importate · in attesa di altre",
         "importedLabel": "Skill importate",
         "importedTitle": "Le tue skill sono in Okou",
         "preparing": "Apertura della sessione di importazione…",
         "promptCopy": "Legge le skill sul tuo computer e le scrive in Okou.",
         "promptLabel": "Prompt per l’importazione delle skill",
         "promptTitle": "Esegui questo in {{provider}}",
+        "showFullPrompt": "Mostra prompt completo",
         "startError": "Non è stato possibile aprire la sessione di importazione.",
         "title": "Porta le tue skill in Okou",
         "tryAgain": "Riprova",
@@ -7945,9 +7980,7 @@
       "action": "Importa skill",
       "description": "Esegui questo prompt dove si trovano le tue skill. Ognuna diventa un workflow privato.",
       "emptyAction": "Importa da Claude Code o Codex",
-      "hidePrompt": "Nascondi prompt",
       "providerLabel": "Importa da",
-      "showPrompt": "Mostra prompt",
       "source": {
         "claudeCode": "Importato da Claude Code",
         "codex": "Importato da Codex"

@@ -1079,13 +1079,11 @@ async function ensurePaidInvitationCreated(
       ),
       privateMetadata: {
         [PURCHASE_ID_METADATA_KEY]: purchase.id,
-        ...(rewardClaim ? { getStartedClaimId: rewardClaim.id } : {}),
+        getStartedClaimId: rewardClaim.id,
       },
     }));
   await persistInvitation(db, purchase, invitation.id);
-  if (rewardClaim) {
-    await linkGetStartedInvitation(db, rewardClaim.id, invitation.id);
-  }
+  await linkGetStartedInvitation(db, rewardClaim.id, invitation.id);
 }
 
 async function finalizeRefund(

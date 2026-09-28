@@ -21,7 +21,6 @@ import {
   scopedReviewRoutes,
 } from "../test-get-started-rewards";
 import { createRouteMocks } from "./helpers/route-test";
-import { setGetStartedEnabled } from "./helpers/get-started";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -56,19 +55,19 @@ const postId = () => {
   ).toString();
 };
 
-async function enabledSession(
+function signedInSession(
   userId = `user_${randomUUID()}`,
   orgId = `org_${randomUUID()}`,
   orgRole: "org:admin" | "org:member" = "org:admin",
 ) {
   const actor = { userId, orgId, orgRole };
-  await setGetStartedEnabled(context, actor);
+  mocks.clerk.session(userId, orgId, orgRole);
   return actor;
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   mockEnv("OKOU_SOCIAL_SOCIALKIT_TOKEN", "synthetic-socialkit-token");
-  await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  signedInSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
 });
 
 /** A fresh author per post by default: share rewards are unique per X author. */
@@ -118,7 +117,7 @@ function provider(
 
 test("status never grants; concurrent check-ins and org switches preserve one award and its exact 168-hour expiry", async () => {
   const userId = `user_${randomUUID()}`;
-  await enabledSession(userId, `org_${randomUUID()}`);
+  signedInSession(userId, `org_${randomUUID()}`);
   mockNow(new Date("2026-09-15T23:59:59.123Z"));
   expect((await status()).claimedToday).toBeFalsy();
   const results = await Promise.all(
@@ -156,7 +155,7 @@ test("status never grants; concurrent check-ins and org switches preserve one aw
       expiresAt: "2026-09-22T23:59:59.123Z",
     }),
   ]);
-  await enabledSession(userId, `org_${randomUUID()}`);
+  signedInSession(userId, `org_${randomUUID()}`);
   expect(
     (await accept(client().checkin({ headers }), [200])).body,
   ).toStrictEqual(first);
@@ -183,54 +182,10 @@ test("status never grants; concurrent check-ins and org switches preserve one aw
   expect((await status()).checkinStreak).toBe(2);
 });
 
-test("the shared getStartedQuests switch gates API rewards and supports the same persisted overrides", async () => {
-  const actor = {
-    userId: `user_${randomUUID()}`,
-    orgId: `org_${randomUUID()}`,
-  };
-  mocks.clerk.session(actor.userId, actor.orgId);
-  await setGetStartedEnabled(context, actor, false);
-  await expect(client().status({ headers })).resolves.toMatchObject({
-    status: 403,
-  });
-  await expect(client().checkin({ headers })).resolves.toMatchObject({
-    status: 403,
-  });
-  await accept(
-    client().submitShare({
-      headers,
-      body: { url: "https://x.com/example/status/123" },
-    }),
-    [403],
-  );
-  await setGetStartedEnabled(context, actor);
-  await expect(client().status({ headers })).resolves.toMatchObject({
-    status: 200,
-  });
-  await expect(client().checkin({ headers })).resolves.toMatchObject({
-    status: 200,
-    body: { status: "granted" },
-  });
-  await setGetStartedEnabled(context, actor, false);
-  await expect(client().checkin({ headers })).resolves.toMatchObject({
-    status: 403,
-  });
-
-  const staff = {
-    userId: `user_${randomUUID()}`,
-    orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-  };
-  mocks.clerk.session(staff.userId, staff.orgId);
-  // The shared staff identity is read-only; credit writes use unique orgs above.
-  await expect(client().status({ headers })).resolves.toMatchObject({
-    status: 200,
-  });
-});
-
 test("x submission returns persisted pending state without calling SocialKit; review starts the 7-day lifetime", async () => {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
-  await enabledSession(userId, orgId);
+  signedInSession(userId, orgId);
   const id = postId();
   let providerCalls = 0;
   server.use(
@@ -263,15 +218,6 @@ test("x submission returns persisted pending state without calling SocialKit; re
     null,
   );
   expect(providerCalls).toBe(0);
-  await setGetStartedEnabled(context, { userId, orgId }, false);
-  await review([submitted.body.id]);
-  expect(providerCalls).toBe(0);
-  await setGetStartedEnabled(context, { userId, orgId });
-  expect((await status()).shareClaim).toMatchObject({
-    status: "pending",
-    reason: "feature_disabled",
-    grantedAt: null,
-  });
   expect(
     (
       await accept(
@@ -422,7 +368,7 @@ test("a realtime delivery failure leaves the reviewed reward committed and spend
 
 test("concurrent claims reserve a post once globally, including after the bonus expires", async () => {
   const id = postId();
-  const firstActor = await enabledSession();
+  const firstActor = signedInSession();
   const submissions = await Promise.all(
     Array.from({ length: 2 }, () => {
       return accept(
@@ -439,7 +385,7 @@ test("concurrent claims reserve a post once globally, including after the bonus 
     throw new Error("Missing submitted claim");
   }
   expect(submissions[1]?.body.id).toBe(first.body.id);
-  const secondActor = await enabledSession();
+  const secondActor = signedInSession();
   const second = await accept(
     client().submitShare({
       headers,
@@ -478,7 +424,7 @@ test("concurrent claims reserve a post once globally, including after the bonus 
   }
   expect(outcomes.sort()).toStrictEqual(["declined", "granted"]);
   mockNow(new Date("2027-01-01T00:00:00Z"));
-  await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  signedInSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
   const late = await accept(
     client().submitShare({
       headers,
@@ -494,7 +440,7 @@ test("concurrent claims reserve a post once globally, including after the bonus 
 });
 
 test("different posts reviewed concurrently share one personal reward across organizations", async () => {
-  const firstActor = await enabledSession();
+  const firstActor = signedInSession();
   const firstId = postId();
   const first = await accept(
     client().submitShare({
@@ -503,7 +449,7 @@ test("different posts reviewed concurrently share one personal reward across org
     }),
     [202],
   );
-  const secondActor = await enabledSession(firstActor.userId);
+  const secondActor = signedInSession(firstActor.userId);
   const secondId = postId();
   const second = await accept(
     client().submitShare({
@@ -556,7 +502,7 @@ test("different posts reviewed concurrently share one personal reward across org
 
 /** Submit a post as a fresh user and review it with the given provider evidence. */
 async function reviewedShare(text: string, profileUrl?: string) {
-  await enabledSession();
+  signedInSession();
   const id = postId();
   const submitted = await accept(
     client().submitShare({
@@ -672,7 +618,7 @@ test("invalid URLs and missing cron authorization are rejected", async () => {
 test("a personal bonus is spendable without a purchased Usage Pack and disappears exactly at expiry", async () => {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
-  await enabledSession(userId, orgId, "org:member");
+  signedInSession(userId, orgId, "org:member");
   const settlement = setupApp({ context, routes: testUsageSettlementRoutes })(
     testUsageSettlementContract,
   );

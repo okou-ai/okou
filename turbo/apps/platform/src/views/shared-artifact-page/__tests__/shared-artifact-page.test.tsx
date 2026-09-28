@@ -55,13 +55,11 @@ async function openViewer({
   filename = "launch.png",
   contentType = "image/png",
   url = imageUrl,
-  colorThemes = false,
 }: {
   path?: string;
   filename?: string;
   contentType?: string;
   url?: string;
-  colorThemes?: boolean;
 } = {}) {
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
@@ -79,10 +77,7 @@ async function openViewer({
     context,
     path,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.PrivateArtifacts]: true,
-      [FeatureSwitchKey.GradientColorThemes]: colorThemes,
-    },
+    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
 }
 
@@ -235,7 +230,6 @@ test.each([
       },
       featureSwitches: {
         [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
-        [FeatureSwitchKey.GradientColorThemes]: true,
       },
     });
 

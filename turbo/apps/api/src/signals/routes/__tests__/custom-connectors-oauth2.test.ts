@@ -1,7 +1,4 @@
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { readGetStartedStatus } from "./helpers/get-started";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -285,7 +282,6 @@ describe("Custom connector OAuth callbacks", () => {
     });
     const actor = createBddApi(context).user({ orgRole: "org:admin" });
     await connectors.updateFeatureSwitches(actor, {});
-    await setGetStartedEnabled(context, actor);
     const connector = await createCustomOAuthConnector(actor, provider);
     const legacyRedirectUri = "https://app.okou.ai/connectors/custom/callback";
     const state = `okou.${randomBytes(32).toString("hex")}`;
@@ -368,7 +364,6 @@ describe("Custom connector Get Started reward", () => {
     });
     const actor = createBddApi(context).user({ orgRole: "org:admin" });
     await connectors.updateFeatureSwitches(actor, {});
-    await setGetStartedEnabled(context, actor);
 
     const first = await createCustomOAuthConnector(actor, provider);
     await connectCustomOAuthConnector(actor, first.id);

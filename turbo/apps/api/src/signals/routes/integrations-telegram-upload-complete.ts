@@ -20,6 +20,10 @@ import {
   uploadedArtifactFetchUrl$,
 } from "../services/uploaded-artifact.service";
 import { recordTelegramUploadedFile$ } from "../services/run-uploaded-files.service";
+import {
+  currentUserTelegramChatId,
+  telegramAccountNotLinked,
+} from "../services/telegram-data.service";
 import type { RouteEntry } from "../route-entry";
 
 const botNotFound = Object.freeze({
@@ -54,15 +58,17 @@ const organizationContextRequired = Object.freeze({
 
 function buildMetadata(args: {
   readonly body: TelegramUploadCompleteBody;
+  readonly chatId: string;
   readonly s3Key: string;
   readonly sourceUrl: string;
   readonly telegramMessageId: number;
   readonly telegramFileId: string | undefined;
 }): Record<string, unknown> {
-  const { body, s3Key, sourceUrl, telegramMessageId, telegramFileId } = args;
+  const { body, chatId, s3Key, sourceUrl, telegramMessageId, telegramFileId } =
+    args;
   return {
     botId: body.botId,
-    chatId: body.chatId,
+    chatId,
     uploadId: body.uploadId,
     s3Key,
     sourceUrl,
@@ -114,6 +120,16 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return botNotFound;
   }
 
+  let chatId = body.chatId;
+  if (chatId === "me") {
+    const resolved = await get(currentUserTelegramChatId({ orgId, userId }));
+    signal.throwIfAborted();
+    if (!resolved) {
+      return telegramAccountNotLinked;
+    }
+    chatId = resolved;
+  }
+
   const s3Object = await set(
     materializeUploadedArtifact$,
     { userId, orgId, id: body.uploadId },
@@ -127,7 +143,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const fetchUrl = await set(uploadedArtifactFetchUrl$, s3Object, signal);
   signal.throwIfAborted();
-  const result = await sendDocument(botToken, body.chatId, fetchUrl, {
+  const result = await sendDocument(botToken, chatId, fetchUrl, {
     caption: body.caption,
     messageThreadId: body.messageThreadId,
   });
@@ -142,7 +158,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const size = document?.file_size ?? s3Object.size;
   const fileId = document?.file_id;
   const responseFilename = document?.file_name ?? filename;
-  const externalId = fileId ?? `${body.chatId}:${result.messageId}`;
+  const externalId = fileId ?? `${chatId}:${result.messageId}`;
 
   await set(
     recordTelegramUploadedFile$,
@@ -158,6 +174,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       layout: s3Object.layout,
       metadata: buildMetadata({
         body,
+        chatId,
         s3Key: s3Object.key,
         sourceUrl: fileUrl,
         telegramMessageId: result.messageId,

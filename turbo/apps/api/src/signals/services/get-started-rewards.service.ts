@@ -6,8 +6,6 @@ import {
   type GetStartedQuestKey,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { and, count, desc, eq, or, sql } from "drizzle-orm";
@@ -19,7 +17,6 @@ import type { Db } from "../external/db";
 import { settle } from "../utils";
 import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
 import { grantOrgCredits } from "./onboarding-credit-grants.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 export type GetStartedClaimRow = typeof getStartedClaims.$inferSelect;
 
@@ -30,16 +27,6 @@ export type GetStartedClaimRow = typeof getStartedClaims.$inferSelect;
  * source would let one user farm the reward without limit.
  */
 export const CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY = "custom";
-
-/** Resolve the same registry and persisted overrides used by the App. */
-export async function getStartedRewardsEnabled(
-  db: Pick<Db, "select">,
-  orgId: string,
-  userId: string,
-): Promise<boolean> {
-  const context = await loadUserFeatureSwitchContext(db, orgId, userId);
-  return isFeatureEnabled(FeatureSwitchKey.GetStartedQuests, context);
-}
 
 export function getStartedUtcDay(at: Date): string {
   return at.toISOString().slice(0, 10);
@@ -104,10 +91,7 @@ export async function createGetStartedClaim(
     readonly workflowId?: string;
     readonly sourceEventId?: string;
   },
-): Promise<GetStartedClaimRow | null> {
-  if (!(await getStartedRewardsEnabled(tx, args.orgId, args.userId))) {
-    return null;
-  }
+): Promise<GetStartedClaimRow> {
   const reward = GET_STARTED_REWARDS[args.questKey];
   const actorUserId = args.actorUserId ?? args.userId;
   const [created] = await tx
@@ -411,14 +395,11 @@ export async function awardCompletedGetStartedQuest(
     readonly questKey: "connector" | "slack" | "imessage" | "checkin";
     readonly sourceKey: string;
   },
-): Promise<GetStartedClaimRow | null> {
+): Promise<GetStartedClaimRow> {
   const claim = await createGetStartedClaim(tx, {
     ...args,
     completedAt: nowDate(),
   });
-  if (!claim) {
-    return null;
-  }
   const rewardKey =
     args.questKey === "slack"
       ? `slack:${args.sourceKey}`

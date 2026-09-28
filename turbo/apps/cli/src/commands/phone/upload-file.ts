@@ -1,11 +1,17 @@
 import { readFileSync, statSync } from "fs";
 import { basename, extname } from "path";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import {
   completePhoneFileUpload,
   initPhoneFileUpload,
 } from "../../lib/api/domains/integrations-phone";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../lib/command/message-output";
+import { assertPhoneTarget, phoneToOption } from "./target";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".png": "image/png",
@@ -33,31 +39,37 @@ export const uploadFileCommand = new Command()
   .name("upload-file")
   .description("Send a local file to your connected phone")
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  // Deprecated: files always go to the phone linked to your Okou account.
-  // Kept hidden so existing scripts passing --to keep working.
-  .addOption(new Option("--to <phone>").hideHelp())
-  .option("--agent-id <id>", "Phone agent ID (inferred when omitted)")
-  .option("--caption <text>", "Caption to accompany the file")
+  .addOption(phoneToOption())
+  .option(
+    "--as <agent-id>",
+    "Phone agent ID to send as (inferred when omitted)",
+  )
+  .option("-t, --text <text>", "Caption to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
 Examples:
   Upload a file:    okou phone upload-file -f /tmp/report.pdf
-  With a caption:   okou phone upload-file -f /tmp/photo.jpg --caption "Here it is"
+  With a caption:   okou phone upload-file -f /tmp/photo.jpg -t "Here it is"
 
 Output:
-  Prints a JSON object to stdout on success:
-    {"messageId":"msg_123","toNumber":"+15551234567","filename":"report.pdf","mimetype":"application/pdf","size":12345,"url":"https://..."}`,
+  Prints "✓ File uploaded" with the message ID, destination number, and file URL.
+  With --json, prints one JSON object:
+    {"integration":"phone","chatId":"+15551234567","messages":[{"id":"msg_123","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}`,
   )
   .action(
     withErrorHandler(
       async (options: {
         file: string;
-        agentId?: string;
-        caption?: string;
+        to: string;
+        as?: string;
+        text?: string;
         contentType?: string;
+        json?: boolean;
       }) => {
+        assertPhoneTarget(options.to);
         let fileSize: number;
         try {
           const stat = statSync(options.file);
@@ -104,12 +116,25 @@ Output:
 
         const result = await completePhoneFileUpload({
           uploadId: prepared.uploadId,
-          agentphoneAgentId: options.agentId,
+          agentphoneAgentId: options.as,
           contentType: prepared.contentType,
-          caption: options.caption,
+          caption: options.text,
         });
 
-        console.log(JSON.stringify(result));
+        printMessageOutput(
+          {
+            integration: "phone",
+            chatId: result.toNumber,
+            messages: [{ id: result.messageId, url: null }],
+            file: {
+              name: result.filename,
+              contentType: result.mimetype,
+              size: result.size,
+              url: result.url,
+            },
+          },
+          options,
+        );
       },
     ),
   );

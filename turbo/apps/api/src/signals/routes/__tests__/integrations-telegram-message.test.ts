@@ -1,16 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createStore } from "ccstate";
+import { http, HttpResponse } from "msw";
 
-import { integrationsTelegramMessageContract } from "@okouai/api-contracts/contracts/integrations";
+import {
+  integrationsTelegramMessageContract,
+  integrationsTelegramUploadCompleteContract,
+} from "@okouai/api-contracts/contracts/integrations";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
+import { mockEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { seedOfficialUserLink$ } from "./helpers/telegram";
 import { createRouteMocks } from "./helpers/route-test";
 import { integrationsTelegramMessageRoutes } from "../integrations-telegram-message";
+import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
 
 const context = testContext();
 const store = createStore();
@@ -19,6 +28,21 @@ const mocks = createRouteMocks(context);
 function uniqueBotId(): string {
   // 9-digit numeric matches parseTelegramBotId's /^\d+$/ check.
   return String(100_000_000 + Math.floor(Math.random() * 899_999_999));
+}
+
+const OFFICIAL_BOT_TOKEN = "987654:official-bot-token";
+
+async function officialSender() {
+  const orgId = `org_${randomUUID()}`;
+  const userId = `user_${randomUUID()}`;
+  mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", OFFICIAL_BOT_TOKEN);
+  await store.set(
+    seedOrgMembership$,
+    { orgId, userId, role: "admin" },
+    context.signal,
+  );
+  mocks.clerk.session(userId, orgId);
+  return { orgId, userId, telegramUserId: uniqueBotId() };
 }
 
 function okouToken(args: {
@@ -143,6 +167,158 @@ describe("POST /api/integrations/telegram/message", () => {
     );
     expect(response.body).toStrictEqual({
       error: { message: "Telegram bot not found", code: "NOT_FOUND" },
+    });
+  });
+});
+
+describe("official Telegram self delivery", () => {
+  it("resolves chatId 'me' through the caller's official link in the current org", async () => {
+    const sender = await officialSender();
+    await store.set(seedOfficialUserLink$, sender, context.signal);
+    let telegramBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(
+        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendMessage`,
+        async ({ request }) => {
+          telegramBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              message_id: 324,
+              chat: { id: Number(sender.telegramUserId) },
+              text: telegramBody.text,
+            },
+          });
+        },
+      ),
+    );
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramMessageRoutes,
+    })(integrationsTelegramMessageContract);
+    const response = await accept(
+      client.sendMessage({
+        body: {
+          botId: OFFICIAL_TELEGRAM_BOT_ID,
+          chatId: "me",
+          text: "Hello self",
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(response.body).toStrictEqual({
+      ok: true,
+      messageId: 324,
+      chatId: sender.telegramUserId,
+    });
+    expect(telegramBody).toMatchObject({ chat_id: sender.telegramUserId });
+  });
+
+  it("does not use an official link belonging to another org", async () => {
+    const sender = await officialSender();
+    await store.set(
+      seedOfficialUserLink$,
+      { ...sender, orgId: `org_${randomUUID()}` },
+      context.signal,
+    );
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramMessageRoutes,
+    })(integrationsTelegramMessageContract);
+    const response = await accept(
+      client.sendMessage({
+        body: {
+          botId: OFFICIAL_TELEGRAM_BOT_ID,
+          chatId: "me",
+          text: "Hello self",
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [404],
+    );
+    expect(response.body).toStrictEqual({
+      error: {
+        message:
+          "No Telegram account linked to the current user. Link Telegram first.",
+        code: "NOT_FOUND",
+      },
+    });
+  });
+
+  it("delivers an uploaded file to the caller's linked private chat", async () => {
+    const sender = await officialSender();
+    await store.set(seedOfficialUserLink$, sender, context.signal);
+    const uploadId = randomUUID();
+    mocks.s3.listObjects([
+      {
+        bucket: "test-user-artifacts",
+        key: `artifacts/${sender.userId}/${uploadId}/report.pdf`,
+        size: 1234,
+      },
+    ]);
+    let telegramBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(
+        `https://api.telegram.org/bot${OFFICIAL_BOT_TOKEN}/sendDocument`,
+        async ({ request }) => {
+          telegramBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              message_id: 322,
+              chat: { id: Number(sender.telegramUserId) },
+            },
+          });
+        },
+      ),
+    );
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramUploadCompleteRoutes,
+    })(integrationsTelegramUploadCompleteContract);
+    const response = await accept(
+      client.complete({
+        body: {
+          uploadId,
+          botId: OFFICIAL_TELEGRAM_BOT_ID,
+          chatId: "me",
+          contentType: "application/pdf",
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(telegramBody).toMatchObject({ chat_id: sender.telegramUserId });
+    expect(response.body).toMatchObject({
+      messageId: 322,
+      chatId: sender.telegramUserId,
+    });
+  });
+
+  it("rejects self uploads without an official Telegram link", async () => {
+    await officialSender();
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramUploadCompleteRoutes,
+    })(integrationsTelegramUploadCompleteContract);
+    const response = await accept(
+      client.complete({
+        body: {
+          uploadId: randomUUID(),
+          botId: OFFICIAL_TELEGRAM_BOT_ID,
+          chatId: "me",
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [404],
+    );
+    expect(response.body).toStrictEqual({
+      error: {
+        message:
+          "No Telegram account linked to the current user. Link Telegram first.",
+        code: "NOT_FOUND",
+      },
     });
   });
 });

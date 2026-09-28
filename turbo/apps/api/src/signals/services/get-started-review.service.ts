@@ -10,7 +10,6 @@ import type { Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import {
   grantGetStartedClaim,
-  getStartedRewardsEnabled,
   type GetStartedClaimRow,
 } from "./get-started-rewards.service";
 import { readGetStartedRewardPost } from "./social.service";
@@ -241,15 +240,7 @@ export async function processGetStartedClaims(
     if (!claimed) {
       break;
     }
-    const enabled = await getStartedRewardsEnabled(
-      db,
-      claimed.orgId,
-      claimed.beneficiaryUserId ?? claimed.actorUserId,
-    );
-    signal.throwIfAborted();
-    const result: Review = enabled
-      ? await reviewClaim(db, claimed, signal)
-      : { kind: "retry", reason: "feature_disabled" };
+    const result: Review = await reviewClaim(db, claimed, signal);
     signal.throwIfAborted();
     if (!claimed.leaseId) {
       throw new Error("Get started review has no lease");

@@ -149,6 +149,28 @@ export function telegramBots(args: {
   });
 }
 
+export const telegramAccountNotLinked = Object.freeze({
+  status: 404 as const,
+  body: Object.freeze({
+    error: Object.freeze({
+      message:
+        "No Telegram account linked to the current user. Link Telegram first.",
+      code: "NOT_FOUND",
+    }),
+  }),
+});
+
+/** Resolves `chatId: "me"` to the caller's private chat with the official bot. */
+export function currentUserTelegramChatId(args: {
+  readonly orgId: string;
+  readonly userId: string;
+}): Computed<Promise<string | null>> {
+  return computed(async (get) => {
+    const link = await get(officialUserLink(args));
+    return link?.telegramUserId ?? null;
+  });
+}
+
 function telegramLoginOrigin(): string {
   return new URL(env("APP_URL")).origin;
 }

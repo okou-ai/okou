@@ -551,7 +551,7 @@ export function buildFeishuSystemPrompt(args: {
   const typeLabel = isDirectMessage ? "Direct message" : "Group mention";
   const groupIdLine = isDirectMessage
     ? ""
-    : `Group ID: ${args.chatId} (same as Chat ID; use it directly as the \`--chat\` value for \`okou ${args.platform ?? "feishu"} message send\`)`;
+    : `Group ID: ${args.chatId} (same as Chat ID; use it directly as the \`--to\` value for \`okou ${args.platform ?? "feishu"} message send\`)`;
   const currentIntegration = [
     "# Current Integration",
     `You are currently running inside: ${platformName}`,

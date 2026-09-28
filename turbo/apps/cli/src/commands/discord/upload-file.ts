@@ -15,14 +15,22 @@ import {
 } from "../../lib/api/domains/integrations-discord-files";
 import { inferWebUploadContentType } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { TO_OPTION_FLAGS } from "../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../lib/command/message-output";
+import { resolveDiscordChannelId } from "./target";
 
 interface UploadFileOptions {
   readonly file: string;
-  readonly channel: string;
+  readonly to: string;
   readonly guildId?: string;
-  readonly comment?: string;
+  readonly text?: string;
   readonly contentType?: string;
   readonly operationId?: string;
+  readonly json?: boolean;
 }
 
 async function readUploadFile(path: string): Promise<Buffer> {
@@ -79,36 +87,77 @@ async function uploadCanonicalBody(
   }
 }
 
-function printDelivery(result: DiscordUploadMaterializeResponse): void {
-  console.log(JSON.stringify(result));
-  if (result.delivery.status === "failed") {
-    console.warn(`Discord delivery failed: ${result.delivery.message}`);
+function printDelivery(
+  result: DiscordUploadMaterializeResponse,
+  upload: {
+    readonly channelId: string;
+    readonly filename: string;
+    readonly contentType: string;
+    readonly size: number;
+    readonly json?: boolean;
+  },
+): void {
+  const { delivery } = result;
+  printMessageOutput(
+    {
+      integration: "discord",
+      chatId:
+        delivery.status === "delivered" ? delivery.channelId : upload.channelId,
+      messages:
+        delivery.status === "delivered"
+          ? [{ id: delivery.messageId, url: delivery.permalink }]
+          : [],
+      file: {
+        name: upload.filename,
+        contentType: upload.contentType,
+        size: upload.size,
+        url: result.url,
+      },
+      delivery: {
+        status: delivery.status,
+        ...(delivery.status === "failed" ? { error: delivery.message } : {}),
+        operationId: result.operationId,
+      },
+    },
+    upload,
+  );
+  if (delivery.status === "failed") {
+    console.warn(`Discord delivery failed: ${delivery.message}`);
   }
 }
 
 async function uploadFile(options: UploadFileOptions): Promise<void> {
+  const channelId = resolveDiscordChannelId(options.to);
   const content = await readUploadFile(options.file);
   const contentType = new MIMEType(
     options.contentType ?? inferWebUploadContentType(options.file),
   ).essence;
   const operationId = options.operationId ?? randomUUID();
+  const filename = basename(options.file);
+  const upload = {
+    channelId,
+    filename,
+    contentType,
+    size: content.byteLength,
+    json: options.json,
+  };
   console.warn(`Upload operation: ${operationId}`);
   try {
     const initialized = await initDiscordFileUpload({
-      filename: basename(options.file),
+      filename,
       length: content.byteLength,
       contentType,
       checksumSha256: createHash("sha256").update(content).digest("hex"),
       operationId,
-      channelId: options.channel,
+      channelId,
       ...(options.guildId === undefined ? {} : { guildId: options.guildId }),
-      ...(options.comment === undefined ? {} : { comment: options.comment }),
+      ...(options.text === undefined ? {} : { comment: options.text }),
     });
     await uploadCanonicalBody(initialized, contentType, content);
     const operation = { assetId: initialized.assetId, operationId };
     const materialized = await materializeDiscordFileUpload(operation);
     if (materialized.delivery.status === "delivered") {
-      printDelivery(materialized);
+      printDelivery(materialized, upload);
       return;
     }
     let completed: DiscordUploadMaterializeResponse;
@@ -116,10 +165,10 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
       completed = await completeDiscordFileUpload(operation);
     } catch (error) {
       // Publication has succeeded even if the delivery response was lost.
-      printDelivery(materialized);
+      printDelivery(materialized, upload);
       throw error;
     }
-    printDelivery(completed);
+    printDelivery(completed, upload);
   } catch (error) {
     console.warn(
       `To resume publication or check delivery status, reuse the same file and destination with --operation-id ${operationId}; delivery will not be resent.`,
@@ -135,24 +184,30 @@ export const uploadFileCommand = new Command()
     "-f, --file <path>",
     "Local file path to upload (up to 10 MiB)",
   )
-  .requiredOption("-c, --channel <id>", "Discord channel or thread ID")
+  .requiredOption(
+    TO_OPTION_FLAGS,
+    "Destination: chat:<id> or a Discord channel or thread ID",
+  )
   .option(
     "--guild-id <id>",
     "Optional; must match your organization's bound guild",
   )
-  .option("--comment <text>", "Comment to accompany the file")
+  .option("-t, --text <text>", "Comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
   .option("--operation-id <uuid>", "Reuse a previous upload operation")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
 Examples:
-  okou discord upload-file -f /tmp/report.pdf -c 123456789012345678
-  okou discord upload-file -f /tmp/report.pdf -c 123456789012345678 --comment "Weekly report"
+  okou discord upload-file -f /tmp/report.pdf --to 123456789012345678
+  okou discord upload-file -f /tmp/report.pdf --to 123456789012345678 -t "Weekly report"
 
 Output:
-  Prints JSON containing the canonical asset URL, operation ID and Discord delivery status.
-  A delivered file includes the Discord message permalink.
+  Prints "✓ File uploaded" with the Discord message ID, permalink, and Okou file URL.
+  With --json, prints one JSON object:
+    {"integration":"discord","chatId":"123456789012345678","messages":[{"id":"...","url":"https://discord.com/channels/..."}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered","operationId":"..."}}
+  delivery.status is delivered, pending, or failed; messages is empty until delivered.
 
 Notes:
   - Canonical publication completes before Discord delivery begins.
@@ -161,7 +216,7 @@ Notes:
   - Uses server-side bot credentials; no Discord token is needed locally.
   - Like okou slack upload-file, the command exits 0 whenever the server reports a
     delivery status, even if Discord delivery failed or is pending. Check
-    delivery.status in the JSON output. To send again after a failed delivery,
+    delivery.status in the --json output. To send again after a failed delivery,
     start a new upload operation.`,
   )
   .action(withErrorHandler(uploadFile));

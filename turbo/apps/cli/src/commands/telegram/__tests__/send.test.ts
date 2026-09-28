@@ -44,13 +44,13 @@ describe("okou telegram message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--chat-id",
+      "--to",
       "-1001234567890",
       "--text",
       "hello world",
-      "--reply-to-message-id",
+      "--reply-to",
       "42",
-      "--message-thread-id",
+      "--topic",
       "7",
     ]);
 
@@ -62,18 +62,41 @@ describe("okou telegram message send command", () => {
       messageThreadId: 7,
     });
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("Message sent");
-    expect(logCalls).toContain("message_id: 321");
+    expect(logCalls).toContain("Message sent (id: 321)");
+    expect(logCalls).toContain("chat: -1001234567890");
+  });
+
+  it("prints the message envelope with --json", async () => {
+    server.use(
+      http.post(TELEGRAM_MESSAGE_URL, () => {
+        return HttpResponse.json(
+          { ok: true, messageId: 321, chatId: "-1001234567890" },
+          { status: 200 },
+        );
+      }),
+    );
+
+    await sendCommand.parseAsync([
+      "node",
+      "cli",
+      "--to",
+      "@channel",
+      "--text",
+      "hello",
+      "--json",
+    ]);
+
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(stdout)).toStrictEqual({
+      integration: "telegram",
+      chatId: "-1001234567890",
+      messages: [{ id: "321", url: null }],
+    });
   });
 
   it("errors when text is missing", async () => {
     await expect(async () => {
-      await sendCommand.parseAsync([
-        "node",
-        "cli",
-        "--chat-id",
-        "-1001234567890",
-      ]);
+      await sendCommand.parseAsync(["node", "cli", "--to", "-1001234567890"]);
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
@@ -81,23 +104,47 @@ describe("okou telegram message send command", () => {
     );
   });
 
-  it("errors when message-thread-id is not a positive integer", async () => {
+  it("errors when --topic is not a positive integer", async () => {
     await expect(async () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--chat-id",
+        "--to",
         "-1001234567890",
         "--text",
         "hello",
-        "--message-thread-id",
+        "--topic",
         "not-a-number",
       ]);
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining("message-thread-id must be a positive integer"),
+      expect.stringContaining("--topic must be a positive integer"),
     );
+  });
+
+  it("sends to the linked private chat with --to me", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(TELEGRAM_MESSAGE_URL, async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          { ok: true, messageId: 7, chatId: "555" },
+          { status: 200 },
+        );
+      }),
+    );
+
+    await sendCommand.parseAsync([
+      "node",
+      "cli",
+      "--to",
+      "me",
+      "--text",
+      "hello",
+    ]);
+
+    expect(capturedBody).toMatchObject({ botId: "official", chatId: "me" });
   });
 
   it("surfaces API errors", async () => {
@@ -119,7 +166,7 @@ describe("okou telegram message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--chat-id",
+        "--to",
         "-1001234567890",
         "--text",
         "hello",

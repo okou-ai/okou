@@ -5,10 +5,7 @@ import {
 import { billingStatusRoutes } from "../billing-status";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { setupApp } from "../../../__tests__/test-helpers";
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { readGetStartedStatus } from "./helpers/get-started";
 import { randomBytes } from "node:crypto";
 
 import { createStore } from "ccstate";
@@ -755,7 +752,6 @@ describe("Slack OAuth API routes", () => {
           context.signal,
         ),
       );
-      await setGetStartedEnabled(context, fixture);
       await store.set(deleteSlackConnectOrg$, fixture, context.signal);
       await seedMembership(fixture.orgId, fixture.userId, "member");
       mockOAuthSuccess({ teamId: fixture.slackWorkspaceId });
@@ -1012,7 +1008,6 @@ describe("Slack OAuth API routes", () => {
           context.signal,
         ),
       );
-      await setGetStartedEnabled(context, fixture);
       await store.set(deleteSlackConnectOrg$, fixture, context.signal);
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       const state = await installStateFor({

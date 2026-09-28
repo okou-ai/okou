@@ -571,7 +571,8 @@
       "video": "影片"
     },
     "metadata": {
-      "generated": "生成於 {{date}}"
+      "generated": "生成於 {{date}}",
+      "updated": "更新於 {{date}}"
     },
     "preview": {
       "audioLabel": "{{filename}} 的音訊預覽",
@@ -4278,13 +4279,45 @@
         "copy": "在 {{provider}} 中執行這段提示詞，匯入你已經寫好的技能，Okou 馬上就能用上。",
         "copyError": "無法複製提示詞。",
         "copyPrompt": "複製提示詞",
+        "guide": {
+          "claudeCode": {
+            "openApp": "開啟 Claude 應用程式，切換到 {{control}} 分頁",
+            "openAppNote": "Code 在你的電腦上執行，所以能讀取你的技能資料夾。",
+            "stayLocal": "讓工作階段保持在 {{control}}",
+            "stayLocalNote": "Chat 和雲端工作階段看不到你電腦上的檔案。"
+          },
+          "codex": {
+            "keepOpen": "保持開啟，直到技能出現在下方",
+            "openApp": "開啟 Codex 應用程式，點選 {{control}}",
+            "openAppNote": "請使用你電腦上的應用程式，這樣它才能讀取你的技能資料夾。"
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "複製提示詞",
+          "label": "在哪裡執行提示詞",
+          "paste": "貼上提示詞並送出",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "收合完整提示詞",
         "importedCopy": "已匯入為Okou工作流。",
+        "importedCount_other": "已匯入 {{count}} 個 · 繼續等待",
         "importedLabel": "已匯入的技能",
         "importedTitle": "你的工作流已就緒",
         "preparing": "正在開啟匯入會話…",
         "promptCopy": "它會讀取你本機上的技能，並寫入Okou。",
         "promptLabel": "技能匯入提示詞",
         "promptTitle": "在{{provider}}中執行",
+        "showFullPrompt": "查看完整提示詞",
         "startError": "無法開啟匯入會話。",
         "title": "把你已有的技能匯入 Okou",
         "tryAgain": "重試",
@@ -7842,9 +7875,7 @@
       "action": "匯入技能",
       "description": "在你的技能所在的地方執行這段提示詞。每個技能都會成為一個私人工作流程。",
       "emptyAction": "從 Claude Code 或 Codex 匯入",
-      "hidePrompt": "隱藏提示詞",
       "providerLabel": "匯入來源",
-      "showPrompt": "顯示提示詞",
       "source": {
         "claudeCode": "匯入自 Claude Code",
         "codex": "匯入自 Codex"

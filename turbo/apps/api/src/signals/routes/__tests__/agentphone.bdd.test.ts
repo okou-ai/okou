@@ -51,10 +51,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { readGetStartedStatus } from "./helpers/get-started";
 
 const context = testContext();
 interface LinkedAgentPhoneActor {
@@ -663,13 +660,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
   });
 
-  it("rewards the Get started iMessage quest once, for a new link only", async () => {
+  it("rewards the Get started iMessage quest once per user", async () => {
     const bdd = createBddApi(context);
     const integrations = createBddIntegrationApi(context);
     const ap = createAgentPhoneBddApi(context);
     // The quest is personal, so a member who is not an admin is offered it.
     const actor = bdd.user({ orgRole: "org:member" });
-    const earlyAdopter = bdd.user();
     integrations.configureAgentPhoneProvider();
     integrations.configureAgentPhoneWebhook();
     const sends = ap.captureAgentPhoneSends();
@@ -696,16 +692,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       });
     }
 
-    // A phone linked before the quest existed is not credited afterwards.
-    await setGetStartedEnabled(context, earlyAdopter, false);
-    await linkWithCode(earlyAdopter);
-    await setGetStartedEnabled(context, earlyAdopter);
-    await expect(imessageQuest(earlyAdopter)).resolves.toMatchObject({
-      claimedCount: 0,
-      canEarnMore: true,
-    });
-
-    await setGetStartedEnabled(context, actor);
     await expect(imessageQuest(actor)).resolves.toStrictEqual({
       key: "imessage",
       rewardAmount: 1000,

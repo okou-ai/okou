@@ -13,7 +13,7 @@ export const telegramCommand = new Command()
     "after",
     `
 Examples:
-  Send a message:   okou telegram message send -c <chat-id> -t "Hello!"
-  Upload a file:    okou telegram upload-file -f /tmp/report.pdf -c <chat-id>
+  Send a message:   okou telegram message send --to <chat-id> -t "Hello!"
+  Upload a file:    okou telegram upload-file -f /tmp/report.pdf --to <chat-id>
   Download a file:  okou telegram download-file <file-id> -o /tmp/out.jpg`,
   );

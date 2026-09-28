@@ -63,7 +63,6 @@ export enum FeatureSwitchKey {
   LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",
-  GradientColorThemes = "gradientColorThemes",
   AvatarNeckSweater = "avatarNeckSweater",
   AvatarFraming = "avatarFraming",
   AvatarTexture = "avatarTexture",
@@ -73,8 +72,6 @@ export enum FeatureSwitchKey {
   ChatThreadArchiving = "chatThreadArchiving",
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
-  GetStartedQuests = "getStartedQuests",
-  GetStartedQuestIntro = "getStartedQuestIntro",
   ComposerAddMenu = "composerAddMenu",
   CustomTemplates = "customTemplates",
   PresentationConvert = "presentationConvert",
@@ -89,5 +86,4 @@ export enum FeatureSwitchKey {
   AgentResponsibilitySetup = "agentResponsibilitySetup",
   ChatThreadLinkChips = "chatThreadLinkChips",
   HostedSiteDelete = "hostedSiteDelete",
-  StartCardModelSubscription = "startCardModelSubscription",
 }

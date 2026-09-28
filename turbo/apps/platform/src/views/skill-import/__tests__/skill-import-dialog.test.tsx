@@ -129,6 +129,21 @@ async function findDialog(): Promise<HTMLElement> {
   return await screen.findByRole("dialog", { name: DIALOG_TITLE });
 }
 
+/** The prompt's copy button, which appears once its session has opened. */
+async function findCopyPrompt(dialog: HTMLElement): Promise<HTMLElement> {
+  await waitFor(() => {
+    getButtonNamed("Copy prompt", dialog);
+  });
+  return getButtonNamed("Copy prompt", dialog);
+}
+
+/** The dialog keeps the prompt to one line until the user asks for all of it. */
+async function showFullPrompt(dialog: HTMLElement): Promise<HTMLElement> {
+  await findCopyPrompt(dialog);
+  click(getButtonNamed("Show full prompt", dialog));
+  return await within(dialog).findByRole("region", { name: PROMPT_LABEL });
+}
+
 test("Import skills sits between Browse official and Create in chat", async () => {
   mockWorkflows();
   mockSessions();
@@ -161,10 +176,22 @@ test("Import skills opens a Claude Code prompt by default", async () => {
   expect(
     within(dialog).getByRole("radio", { name: "Claude Code" }),
   ).toBeChecked();
-  const prompt = await within(dialog).findByRole("region", {
-    name: PROMPT_LABEL,
+  // Copying is the dialog's first step, and the full prompt stays folded.
+  await findCopyPrompt(dialog);
+  const guide = within(dialog).getByRole("list", {
+    name: "Where to run the prompt",
   });
-  expect(within(dialog).getByText("Run this in Claude Code")).toBeVisible();
+  expect(guide).toHaveTextContent("Copy the prompt");
+  expect(guide).toHaveTextContent(
+    "Open the Claude app and switch to the Code tab",
+  );
+  expect(
+    within(dialog).queryByRole("region", { name: PROMPT_LABEL }),
+  ).toBeNull();
+  expect(
+    within(dialog).getByText("Imported skills appear here as they arrive."),
+  ).toBeVisible();
+  const prompt = await showFullPrompt(dialog);
   expect(prompt.textContent).toContain(
     "vm0_skillimport_claudeCode-session-token",
   );
@@ -179,18 +206,20 @@ test("Switching the dialog to Codex writes the prompt for Codex", async () => {
   await openWorkflowsPage();
   click(getButtonNamed("Import skills"));
   const dialog = await findDialog();
-  await within(dialog).findByRole("region", { name: PROMPT_LABEL });
+  await showFullPrompt(dialog);
 
   click(within(dialog).getByRole("radio", { name: "Codex" }));
 
-  await expect(
-    within(dialog).findByText("Run this in Codex"),
-  ).resolves.toBeVisible();
   await waitFor(() => {
     expect(
       within(dialog).getByRole("region", { name: PROMPT_LABEL }).textContent,
     ).toContain("vm0_skillimport_codex-session-token");
   });
+  const guide = within(dialog).getByRole("list", {
+    name: "Where to run the prompt",
+  });
+  expect(guide).toHaveTextContent("Open the Codex app and start a New chat");
+  expect(guide).not.toHaveTextContent("Code tab");
   const prompt = within(dialog).getByRole("region", { name: PROMPT_LABEL });
   expect(prompt.textContent).toContain("~/.codex/skills/");
   expect(prompt.textContent).not.toContain("~/.claude/skills/");
@@ -216,9 +245,7 @@ test("The empty workflow list offers the import", async () => {
   click(getButtonNamed("Import from Claude Code or Codex"));
 
   const dialog = await findDialog();
-  await expect(
-    within(dialog).findByRole("region", { name: PROMPT_LABEL }),
-  ).resolves.toBeVisible();
+  await expect(findCopyPrompt(dialog)).resolves.toBeVisible();
 });
 
 test("An imported workflow is tagged with the tool it came from", async () => {
@@ -286,7 +313,7 @@ test("The dialog lists only workflows the import tagged", async () => {
   await openWorkflowsPage();
   click(getButtonNamed("Import skills"));
   const dialog = await findDialog();
-  await within(dialog).findByRole("region", { name: PROMPT_LABEL });
+  await findCopyPrompt(dialog);
 
   // A workflow made in chat arrives alongside the imported one.
   workflows.write([
@@ -309,29 +336,32 @@ test("The dialog lists only workflows the import tagged", async () => {
   expect(within(dialog).queryByText("Made in chat")).toBeNull();
 });
 
-test("Reopening the dialog after an import leads with the imported skills", async () => {
+test("Reopening the dialog lists only the skills that opening imports", async () => {
   const workflows = mockWorkflows();
   mockSessions();
   await openWorkflowsPage();
   click(getButtonNamed("Import skills"));
   let dialog = await findDialog();
-  await within(dialog).findByRole("region", { name: PROMPT_LABEL });
+  await findCopyPrompt(dialog);
   expect(
     within(dialog).getByText("Imported skills appear here as they arrive."),
   ).toBeVisible();
 
   // The user's Claude Code session writes one skill back.
-  workflows.write([
-    workflow({
-      id: "d0000000-0000-4000-a000-000000000411",
-      name: "weekly-report",
-      displayName: "Weekly report",
-      importSource: "claudeCode",
-    }),
-  ]);
+  const weeklyReport = workflow({
+    id: "d0000000-0000-4000-a000-000000000411",
+    name: "weekly-report",
+    displayName: "Weekly report",
+    importSource: "claudeCode",
+  });
+  workflows.write([weeklyReport]);
   await expect(
     within(dialog).findByText("Weekly report"),
   ).resolves.toBeVisible();
+  // The footer counts what arrived and keeps listening for more.
+  expect(within(dialog).getByRole("status")).toHaveTextContent(
+    "1 imported · listening for more",
+  );
 
   click(getButtonNamed("Close", dialog));
   await waitFor(() => {
@@ -342,18 +372,26 @@ test("Reopening the dialog after an import leads with the imported skills", asyn
     screen.findByText("Imported from Claude Code"),
   ).resolves.toBeVisible();
 
+  // Reopening starts over: the same steps, and none of the earlier skills.
   click(getButtonNamed("Import skills"));
   dialog = await findDialog();
-  expect(within(dialog).getByText("Weekly report")).toBeVisible();
-  expect(
-    within(dialog).queryByRole("region", { name: PROMPT_LABEL }),
-  ).toBeNull();
+  await findCopyPrompt(dialog);
+  expect(within(dialog).queryByText("Weekly report")).toBeNull();
+  expect(within(dialog).getByRole("status")).toHaveTextContent(
+    "Imported skills appear here as they arrive.",
+  );
 
-  const showPrompt = getButtonNamed("Show prompt", dialog);
-  expect(showPrompt).toHaveAttribute("aria-expanded", "false");
-  click(showPrompt);
-
+  workflows.write([
+    weeklyReport,
+    workflow({
+      id: "d0000000-0000-4000-a000-000000000412",
+      name: "launch-checklist",
+      displayName: "Launch checklist",
+      importSource: "claudeCode",
+    }),
+  ]);
   await expect(
-    within(dialog).findByRole("region", { name: PROMPT_LABEL }),
+    within(dialog).findByText("Launch checklist"),
   ).resolves.toBeVisible();
+  expect(within(dialog).queryByText("Weekly report")).toBeNull();
 });

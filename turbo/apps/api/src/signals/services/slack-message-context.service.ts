@@ -1,4 +1,4 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -8,6 +8,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { and, eq } from "drizzle-orm";
 
 import { db$, type ReadonlyDb } from "../external/db";
+import type { SlackClient } from "../external/slack-message-client";
 import { tapError } from "../utils";
 import { resolveRunModelSelection } from "./run-model-selection.service";
 
@@ -136,3 +137,67 @@ export function resolveCurrentUserSlackId(args: {
     return row?.slackUserId ?? null;
   });
 }
+
+const noUserConnection = Object.freeze({
+  status: 404 as const,
+  body: Object.freeze({
+    error: Object.freeze({
+      message:
+        "No Slack connection found for current user. Connect your Slack account first.",
+      code: "NOT_FOUND",
+    }),
+  }),
+});
+
+/**
+ * Resolve a Slack delivery target to a channel ID. A `channel` is used as-is;
+ * a `user` (Slack user ID, or `"me"` for the caller's connected Slack user)
+ * is resolved to the bot's DM channel with that user.
+ */
+export const resolveSlackTargetChannel$ = command(
+  async (
+    { get },
+    args: {
+      readonly client: SlackClient;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly channel?: string;
+      readonly user?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    if (!args.user) {
+      if (!args.channel) {
+        throw new Error("Slack target requires a channel or user");
+      }
+      return { channelId: args.channel };
+    }
+
+    let slackUserId = args.user;
+    if (slackUserId === "me") {
+      const resolved = await get(
+        resolveCurrentUserSlackId({ userId: args.userId, orgId: args.orgId }),
+      );
+      signal.throwIfAborted();
+      if (!resolved) {
+        return noUserConnection;
+      }
+      slackUserId = resolved;
+    }
+
+    const dm = await args.client.openDMChannel(slackUserId);
+    signal.throwIfAborted();
+    if (dm.kind === "slack_error") {
+      return {
+        status: 404 as const,
+        body: {
+          error: {
+            message: `Cannot open DM: ${dm.error}`,
+            code: "NOT_FOUND",
+          },
+        },
+      };
+    }
+    return { channelId: dm.channelId };
+  },
+);

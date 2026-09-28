@@ -32,7 +32,6 @@ import {
   DropdownMenuTrigger,
   Input,
 } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -57,7 +56,6 @@ import {
   type GetStartedQuest,
   type GetStartedSummary,
 } from "../../signals/okou-page/get-started.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { SlackMark } from "./components/slack-mark.tsx";
@@ -870,30 +868,24 @@ function useQuestHandoffs(
   };
 }
 
-function useQuestIntroEnabled(): boolean {
-  return useGet(featureSwitch$)[FeatureSwitchKey.GetStartedQuestIntro] === true;
-}
-
 /**
  * What a row does when it is selected.
  *
- * With the intro switch on, a quest that has something to explain opens its
- * dialog first and the dialog performs the handoff; every other quest keeps
- * going straight to its destination.
+ * A quest that has something to explain opens its dialog first and the
+ * dialog performs the handoff; every other quest keeps going straight to its
+ * destination.
  */
 function useQuestActions(
   handoffs: Record<GetStartedQuestKey, () => void>,
 ): Record<GetStartedQuestKey, () => void> {
   const setQuestIntroKey = useSet(setQuestIntroKey$);
-  const introEnabled = useQuestIntroEnabled();
   const actions: Partial<Record<GetStartedQuestKey, () => void>> = {};
   for (const key of Object.keys(handoffs) as GetStartedQuestKey[]) {
-    actions[key] =
-      introEnabled && questHasIntro(key)
-        ? () => {
-            setQuestIntroKey(key);
-          }
-        : handoffs[key];
+    actions[key] = questHasIntro(key)
+      ? () => {
+          setQuestIntroKey(key);
+        }
+      : handoffs[key];
   }
   return actions as Record<GetStartedQuestKey, () => void>;
 }
@@ -947,12 +939,11 @@ function GetStartedPanel({
   const { t } = useTranslation();
   const copy = useQuestCopy();
   const actions = useQuestActions(handoffs);
-  const introEnabled = useQuestIntroEnabled();
   const opensModal = (quest: GetStartedQuest): boolean => {
     return (
       quest.key === "share" ||
       quest.key === "imessage" ||
-      (introEnabled && questHasIntro(quest.key))
+      questHasIntro(quest.key)
     );
   };
   // The check-in leads whatever its state, because it is asked again tomorrow:

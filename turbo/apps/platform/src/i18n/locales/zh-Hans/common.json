@@ -571,7 +571,8 @@
       "video": "视频"
     },
     "metadata": {
-      "generated": "生成于 {{date}}"
+      "generated": "生成于 {{date}}",
+      "updated": "更新于 {{date}}"
     },
     "preview": {
       "audioLabel": "{{filename}} 的音频预览",
@@ -4278,13 +4279,45 @@
         "copy": "在 {{provider}} 中运行这段提示词，导入你已经写好的技能，Okou 马上就能用上。",
         "copyError": "无法复制提示词。",
         "copyPrompt": "复制提示词",
+        "guide": {
+          "claudeCode": {
+            "openApp": "打开 Claude 应用，切换到 {{control}} 标签页",
+            "openAppNote": "Code 在你的电脑上运行，所以能读取你的技能文件夹。",
+            "stayLocal": "保持会话为 {{control}}",
+            "stayLocalNote": "Chat 和云端会话看不到你电脑上的文件。"
+          },
+          "codex": {
+            "keepOpen": "保持打开，直到技能出现在下方",
+            "openApp": "打开 Codex 应用，点击 {{control}}",
+            "openAppNote": "请使用你电脑上的应用，这样它才能读取你的技能文件夹。"
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "复制提示词",
+          "label": "在哪里运行提示词",
+          "paste": "粘贴提示词并发送",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "收起完整提示词",
         "importedCopy": "已导入为Okou工作流。",
+        "importedCount_other": "已导入 {{count}} 个 · 继续等待",
         "importedLabel": "已导入的技能",
         "importedTitle": "你的工作流已就绪",
         "preparing": "正在打开导入会话…",
         "promptCopy": "它会读取你本机上的技能，并写入Okou。",
         "promptLabel": "技能导入提示词",
         "promptTitle": "在{{provider}}中运行",
+        "showFullPrompt": "查看完整提示词",
         "startError": "无法打开导入会话。",
         "title": "把你已有的技能导入 Okou",
         "tryAgain": "重试",
@@ -7842,9 +7875,7 @@
       "action": "导入技能",
       "description": "在你的技能所在的地方运行这段提示词。每个技能都会成为一个私有工作流。",
       "emptyAction": "从 Claude Code 或 Codex 导入",
-      "hidePrompt": "隐藏提示词",
       "providerLabel": "导入来源",
-      "showPrompt": "显示提示词",
       "source": {
         "claudeCode": "导入自 Claude Code",
         "codex": "导入自 Codex"

@@ -9,6 +9,10 @@ import {
   getOfficialTelegramBotConfig,
   isOfficialTelegramBotId,
 } from "../external/telegram-official";
+import {
+  currentUserTelegramChatId,
+  telegramAccountNotLinked,
+} from "../services/telegram-data.service";
 import { telegramMessageSendFooterText } from "../services/telegram-footer.service";
 import { buildTelegramResponse } from "../../lib/telegram-format";
 import type { RouteEntry } from "../route-entry";
@@ -44,6 +48,21 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
     return botNotFound;
   }
 
+  let chatId = body.chatId;
+  if (chatId === "me") {
+    const resolved = await get(
+      currentUserTelegramChatId({
+        orgId: auth.orgId,
+        userId: auth.userId,
+      }),
+    );
+    signal.throwIfAborted();
+    if (!resolved) {
+      return telegramAccountNotLinked;
+    }
+    chatId = resolved;
+  }
+
   const footerText = await get(
     telegramMessageSendFooterText({
       authRunId,
@@ -54,7 +73,7 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
 
   const text = buildTelegramResponse(body.text, footerText);
 
-  const result = await sendMessage(botToken, body.chatId, text, {
+  const result = await sendMessage(botToken, chatId, text, {
     replyToMessageId: body.replyToMessageId,
     messageThreadId: body.messageThreadId,
   });
