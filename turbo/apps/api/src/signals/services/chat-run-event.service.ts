@@ -9,6 +9,7 @@ import {
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   resolvePersistedChatThreadModel,
+  type ChatThreadModelError,
   type ResolvedPersistedChatThreadModel,
 } from "./chat-thread-model.service";
 
@@ -26,7 +27,7 @@ export async function resolveRunChatThreadModelContext(params: {
   | (ResolvedPersistedChatThreadModel & {
       readonly featureSwitchContext: FeatureSwitchContext;
     })
-  | ReturnType<typeof badRequestMessage>
+  | ChatThreadModelError
 > {
   const featureSwitchContext = await loadUserFeatureSwitchContext(
     params.db,

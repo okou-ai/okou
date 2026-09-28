@@ -9,7 +9,12 @@ import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-thre
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
-import { badRequestMessage } from "../../lib/error";
+import { badRequestMessage, type insufficientCredits } from "../../lib/error";
+
+/** Why a thread's stored model cannot run: unavailable, or not in the plan. */
+export type ChatThreadModelError =
+  | ReturnType<typeof badRequestMessage>
+  | ReturnType<typeof insufficientCredits>;
 import type { Db } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
@@ -27,7 +32,8 @@ import {
   type DefaultModelFirstPin,
   type ExternalModelProviderPlanCapabilitiesSource,
   resolveModelFirstProviderAdmission,
-  resolvePersistedModelFirstRoute,
+  resolveModelSelectionPin,
+  MODEL_FIRST_SELECTION_PROVIDER_ID,
   type ModelFirstPin,
 } from "./model-selection.service";
 import type { Tx } from "../../lib/db-types";
@@ -120,13 +126,13 @@ type PersistedChatThreadModelEvaluationResult =
     }
   | {
       readonly kind: "error";
-      readonly error: ReturnType<typeof badRequestMessage>;
+      readonly error: ChatThreadModelError;
     };
 
 interface PersistedChatThreadModelTransactionResult {
   readonly resolved:
     | ResolvedPersistedChatThreadModel
-    | ReturnType<typeof badRequestMessage>
+    | ChatThreadModelError
     | null;
   readonly publishThreadList: boolean;
   readonly publishThreadDetail: boolean;
@@ -135,7 +141,7 @@ interface PersistedChatThreadModelTransactionResult {
 type CodexTierResolution =
   | {
       readonly kind: "error";
-      readonly error: ReturnType<typeof badRequestMessage>;
+      readonly error: ChatThreadModelError;
     }
   | {
       readonly kind: "ok";
@@ -325,9 +331,8 @@ async function evaluatePersistedChatThreadModel(
   const modelSettings = modelSettingsSchema.parse(thread.modelSettings);
   let pin: ModelFirstPin;
   let selectedModelChanged: boolean;
-  let externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource = {
-    kind: "load-current",
-  };
+  const externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource =
+    { kind: "load-current" };
   if (thread.selectedModel === null) {
     const defaultPin = await resolveDefaultModelFirstPin(
       db,
@@ -350,34 +355,22 @@ async function evaluatePersistedChatThreadModel(
     };
     selectedModelChanged = true;
   } else {
-    const modelResolution = await resolvePersistedModelFirstRoute({
+    // The thread's model is the user's selection. When it cannot run now,
+    // the input is rejected rather than moved to another model.
+    const selected = await resolveModelSelectionPin({
       db,
       orgId: params.orgId,
       userId: params.userId,
-      selectedModel: thread.selectedModel,
+      modelSelection: {
+        selectedModel: thread.selectedModel,
+        modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
+      },
     });
-    if (!modelResolution.route) {
-      return {
-        kind: "error",
-        error: badRequestMessage(
-          "No valid model route is configured for this workspace",
-        ),
-      };
+    if ("status" in selected) {
+      return { kind: "error", error: selected };
     }
-    pin = {
-      modelProviderId: modelResolution.route.modelProviderId,
-      modelProviderType: modelResolution.route.modelProviderType,
-      modelProviderCredentialScope:
-        modelResolution.route.modelProviderCredentialScope,
-      selectedModel: modelResolution.route.selectedModel,
-    };
-    selectedModelChanged =
-      modelResolution.selectedModelChanged ||
-      thread.selectedModel !== pin.selectedModel;
-    externalPlanCapabilities = {
-      kind: "resolved",
-      capabilities: modelResolution.orgPlanCapabilities,
-    };
+    pin = selected;
+    selectedModelChanged = thread.selectedModel !== pin.selectedModel;
   }
   const effort = resolveChatReasoningEffort({
     selectedModel: pin.selectedModel,
@@ -495,9 +488,7 @@ async function resolvePersistedChatThreadModelInTransaction(
 
 export async function resolvePersistedChatThreadModel(
   params: ResolvePersistedChatThreadModelParams,
-): Promise<
-  ResolvedPersistedChatThreadModel | ReturnType<typeof badRequestMessage> | null
-> {
+): Promise<ResolvedPersistedChatThreadModel | ChatThreadModelError | null> {
   const thread =
     params.threadSnapshot ?? (await loadChatThreadModel(params.db, params));
   if (!thread) {

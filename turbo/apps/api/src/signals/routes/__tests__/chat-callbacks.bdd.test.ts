@@ -5832,7 +5832,7 @@ describe("CHAT-02: auto-send after failures", () => {
 });
 
 describe("CHAT-02: auto-send across a model switch", () => {
-  it("recovers a queued message through the current same-family workspace default", async () => {
+  it("rejects a queued message whose model the workspace no longer offers", async () => {
     const fixture = await entitledChatActor();
     const { actor, agentId, runnerGroup, providerId } = fixture;
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -5892,6 +5892,8 @@ describe("CHAT-02: auto-send across a model switch", () => {
       lastEventSequence: 0,
     });
 
+    // The thread keeps the user's model; once the workspace no longer offers
+    // it, the queued input is rejected instead of moving to another model.
     const messages = await waitForThreadMessages(
       actor,
       first.threadId,
@@ -5899,56 +5901,27 @@ describe("CHAT-02: auto-send across a model switch", () => {
         return userMessages(items).some((message) => {
           return (
             chatEventDisplayText(message) === "queued before policy removal" &&
-            message.runId !== undefined
+            message.eventType === "input.rejected"
           );
         });
       },
     );
-    const claimed = userMessages(messages.events).find((message) => {
-      return (
-        chatEventDisplayText(message) === "queued before policy removal" &&
-        message.runId !== undefined
-      );
-    });
-    if (!claimed?.runId) {
-      throw new Error(
-        "Expected the queued message to be auto-claimed after policy removal",
-      );
-    }
-
-    const autoContext = await waitForRunContext(actor, claimed.runId);
-    const appended = autoContext.body.appendSystemPrompt ?? "";
-    expect(appended).not.toContain("# Web Chat Run Context");
-    expect(appended).not.toContain("# Incomplete Rounds Context");
-    expect(autoContext.body.sessionId).toBe(`bdd-cli-${second.runId}`);
-    // The member's Claude Code subscription carries every org Claude policy,
-    // including the recovered Fable workspace default.
-    expect(Object.keys(autoContext.body.environment)).toContain(
-      "CLAUDE_CODE_OAUTH_TOKEN",
-    );
-    expect(autoContext.body.environment.ANTHROPIC_MODEL).toBe(
-      "claude-fable-5-1",
-    );
-
-    const thread = await chat.readThread(actor, first.threadId);
-    expect(thread).not.toHaveProperty("selectedModel");
-    await expect(
-      readThreadTitleFromEvents(actor, first.threadId),
-    ).resolves.toBe("Working with JSON");
-    const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
-    expect(threadEvents.status).toBe(200);
-    if (threadEvents.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
     expect(
-      threadEvents.body.events.filter((event) => {
+      userMessages(messages.events).find((message) => {
         return (
-          event.kind === "model_selection_updated" &&
-          event.chatThreadId === first.threadId &&
-          event.selectedModel === "claude-fable-5-1"
+          chatEventDisplayText(message) === "queued before policy removal" &&
+          message.eventType === "input.rejected"
         );
       }),
-    ).toHaveLength(1);
+    ).toMatchObject({ error: "bad_request" });
+    expect(
+      userMessages(messages.events).some((message) => {
+        return (
+          chatEventDisplayText(message) === "queued before policy removal" &&
+          message.runId !== undefined
+        );
+      }),
+    ).toBeFalsy();
 
     expect(titlePrompts).toHaveLength(1);
     const initialTitlePrompt = titlePrompts[0];
@@ -5957,9 +5930,6 @@ describe("CHAT-02: auto-send across a model switch", () => {
     }
     expect(initialTitlePrompt).toContain("How do I parse JSON?");
     expect(initialTitlePrompt).not.toContain("Use JSON.stringify(value).");
-
-    await api.requestCancelRun(actor, claimed.runId, [200]);
-    await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
 
   it("resumes the CLI session by default when the queued model stays within the same family", async () => {
