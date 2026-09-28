@@ -1,5 +1,5 @@
 import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
-import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
+import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { Toolbar } from "@base-ui/react/toolbar";
@@ -274,7 +274,7 @@ import { userMessageFileAttachments } from "../../signals/chat-page/user-message
 import type {
   ChatPanelSignals,
   RecommendedFollowupSource,
-  ThinkingIndicatorMode,
+  ThinkingIndicators,
 } from "../../signals/chat-page/chat-panel-signals.ts";
 import {
   applyChatThreadEmoji,
@@ -3089,21 +3089,47 @@ function ChatThreadScrollCommitMarker({
   );
 }
 
-function assistantGroupIdForRunWorkIndicator(
+type RunStatusRow =
+  | {
+      readonly kind: "thinking-indicators";
+      readonly indicators: ThinkingIndicators;
+    }
+  | { readonly kind: "finished" };
+
+// A status tail event (such as a run error) replaces the status row.
+function runStatusRow(
+  runWorkFolding: RunWorkFolding | null,
+  thinkingIndicators: ThinkingIndicators | null,
+  runFinished: boolean,
+): RunStatusRow | undefined {
+  if (runWorkFolding?.statusTail?.events.length) {
+    return undefined;
+  }
+  if (thinkingIndicators !== null) {
+    return { kind: "thinking-indicators", indicators: thinkingIndicators };
+  }
+  return runFinished ? { kind: "finished" } : undefined;
+}
+
+// The status row belongs to the run's work anchor group, otherwise to the
+// latest assistant turn.
+function statusRowAssistantGroupId(
   groups: readonly ChatEventGroup[],
   runWorkFolding: RunWorkFolding | null,
 ): string | null {
   const anchorEventId = runWorkFolding?.statusTail?.anchorEventId;
-  if (anchorEventId === undefined) {
-    return null;
-  }
-  return (
-    groups.find((group) => {
+  if (anchorEventId !== undefined) {
+    const anchorGroup = groups.find((group) => {
       return group.events.some((event) => {
         return event.id === anchorEventId;
       });
-    })?.beginEventId ?? null
-  );
+    });
+    if (anchorGroup !== undefined) {
+      return anchorGroup.beginEventId;
+    }
+  }
+  const lastGroup = groups.at(-1);
+  return lastGroup?.role === "assistant" ? lastGroup.beginEventId : null;
 }
 
 function ChatThreadRenderedEventGroups({
@@ -3133,15 +3159,18 @@ function ChatThreadRenderedEventGroups({
   );
   const toggleRunWorkExpanded = useSet(toggleRunWorkExpanded$);
   const visibleGroups = runWorkFolding?.visibleGroups ?? renderedActiveGroups;
-  const resolvedThinkingIndicatorMode =
-    useLastResolved(thread.thinkingIndicatorMode$) ?? null;
-  const thinkingIndicatorMode = runWorkFolding?.statusTail?.events.length
-    ? null
-    : resolvedThinkingIndicatorMode;
-  const runIndicatorAssistantGroupId = assistantGroupIdForRunWorkIndicator(
-    visibleGroups,
+  const thinkingIndicators =
+    useLastResolved(thread.thinkingIndicators$) ?? null;
+  const runFinished = useLastResolved(thread.runFinished$) ?? false;
+  const statusRow = runStatusRow(
     runWorkFolding,
+    thinkingIndicators,
+    runFinished,
   );
+  const statusRowGroupId =
+    statusRow === undefined
+      ? null
+      : statusRowAssistantGroupId(visibleGroups, runWorkFolding);
 
   return withChatScrollLayout(
     <>
@@ -3152,18 +3181,12 @@ function ChatThreadRenderedEventGroups({
         runWorkFolding={runWorkFolding}
         runWorkExpandedKeys={effectiveRunWorkExpandedKeys}
         onToggleRunWork={toggleRunWorkExpanded}
-        thinkingIndicatorMode={thinkingIndicatorMode}
-        runIndicatorAssistantGroupId={runIndicatorAssistantGroupId}
+        statusRow={statusRow}
+        statusRowGroupId={statusRowGroupId}
       />
       <ChatThreadScrollCommitMarker
         thread={thread}
         renderedGroups={resolvedRenderedGroups}
-      />
-      <ChatThreadThinkingIndicator
-        thread={thread}
-        mode={
-          runIndicatorAssistantGroupId === null ? thinkingIndicatorMode : null
-        }
       />
     </>,
   );
@@ -3242,19 +3265,6 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
       </div>
     </main>,
   );
-}
-
-function ChatThreadThinkingIndicator({
-  thread,
-  mode,
-}: {
-  thread: ChatPanelSignals;
-  mode: ThinkingIndicatorMode;
-}) {
-  const sharingPhase = useGet(thread.sharing.phase$);
-  return sharingPhase === "idle" ? (
-    <ThinkingIndicator thread={thread} mode={mode} />
-  ) : null;
 }
 
 function ChatThreadNextRunModelNotice({
@@ -3361,8 +3371,8 @@ function ChatThreadEventGroups({
   runWorkFolding,
   runWorkExpandedKeys,
   onToggleRunWork,
-  thinkingIndicatorMode,
-  runIndicatorAssistantGroupId,
+  statusRow,
+  statusRowGroupId,
 }: {
   thread: ChatPanelSignals;
   groups: readonly ChatEventGroup[];
@@ -3370,8 +3380,8 @@ function ChatThreadEventGroups({
   runWorkFolding: RunWorkFolding | null;
   runWorkExpandedKeys: ReadonlySet<string>;
   onToggleRunWork: (key: string) => void;
-  thinkingIndicatorMode: ThinkingIndicatorMode;
-  runIndicatorAssistantGroupId: string | null;
+  statusRow: RunStatusRow | undefined;
+  statusRowGroupId: string | null;
 }) {
   // A run that ends re-forms the groups around it, so the messages the user
   // sent back to back can land in separate groups with nothing rendered in
@@ -3390,11 +3400,8 @@ function ChatThreadEventGroups({
         if (groupRendersContent(group, runWorkSection)) {
           previousVisibleGroup = group;
         }
-        const runIndicatorMode =
-          group.beginEventId === runIndicatorAssistantGroupId &&
-          thinkingIndicatorMode !== null
-            ? thinkingIndicatorMode
-            : undefined;
+        const groupStatusRow =
+          group.beginEventId === statusRowGroupId ? statusRow : undefined;
         return (
           <div
             key={runWorkSection?.key ?? group.beginEventId}
@@ -3410,7 +3417,7 @@ function ChatThreadEventGroups({
                 runWorkExpandedKeys,
                 onToggleRunWork,
               )}
-              runIndicatorMode={runIndicatorMode}
+              statusRow={groupStatusRow}
               statusTailEvents={runWorkFolding?.statusTail?.events.filter(
                 (event) => {
                   return group.events.includes(event);
@@ -4288,7 +4295,7 @@ function ChatSkeleton() {
 
 interface ServerThinkingLabel {
   readonly id: string;
-  readonly messages: ThinkingSummaries["messages"];
+  readonly messages: readonly ThinkingMessage[];
 }
 
 function ShimmerText({
@@ -4354,6 +4361,7 @@ function ThinkingLabel({
           key={serverThinkingLabel.id}
           messages={serverThinkingLabel.messages}
           fallback={thinkingLabel}
+          intervalMs={5000}
         />
       </ShimmerText>
     );
@@ -4408,6 +4416,60 @@ function InlineThinkingRow({
   );
 }
 
+function RunStatusRowContent({
+  thread,
+  statusRow,
+}: {
+  thread: ChatPanelSignals;
+  statusRow: RunStatusRow;
+}) {
+  return statusRow.kind === "finished" ? (
+    <FinishedStatusRow thread={thread} />
+  ) : (
+    <ThinkingIndicatorRow thread={thread} indicators={statusRow.indicators} />
+  );
+}
+
+function ThinkingIndicatorRow({
+  thread,
+  indicators,
+}: {
+  thread: ChatPanelSignals;
+  indicators: ThinkingIndicators;
+}) {
+  const thinkingLabel = useGet(thread.thinkingPhrase$);
+  const isQueued = indicators.kind === "queued";
+  const serverThinkingLabel =
+    indicators.kind === "thinking" && indicators.messages.length > 0
+      ? { id: indicators.runId ?? "", messages: indicators.messages }
+      : undefined;
+  return (
+    <div
+      {...(isQueued ? {} : { "data-thinking-indicator": true })}
+      data-role="assistant-thinking"
+      className="animate-thinking-in min-w-0"
+    >
+      <InlineThinkingRow
+        isQueued={isQueued}
+        thinkingLabel={thinkingLabel}
+        serverThinkingLabel={serverThinkingLabel}
+      />
+    </div>
+  );
+}
+
+function FinishedStatusRow({ thread }: { thread: ChatPanelSignals }) {
+  const recommendedFollowupSource =
+    useLastResolved(thread.recommendedFollowupSource$, {
+      equalityFn: equalRecommendedFollowupSources,
+    }) ?? null;
+  return (
+    <div data-role="assistant-thinking" className="animate-thinking-in min-w-0">
+      <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
+    </div>
+  );
+}
+
 function FinishedRunRow({
   thread,
   source,
@@ -4451,130 +4513,6 @@ function FinishedRunRow({
   );
 }
 
-function WaitingForAssistantResponse({
-  thread,
-  isQueued,
-  thinkingLabel,
-  serverThinkingLabel,
-  inAssistantGroup,
-}: {
-  thread: ChatPanelSignals;
-  isQueued: boolean;
-  thinkingLabel: string;
-  serverThinkingLabel?: ServerThinkingLabel;
-  inAssistantGroup: boolean;
-}) {
-  const thinkingIndicatorProps = isQueued
-    ? {}
-    : { "data-thinking-indicator": true };
-
-  if (inAssistantGroup) {
-    return (
-      <div
-        {...thinkingIndicatorProps}
-        data-role="assistant-thinking"
-        className="animate-thinking-in min-w-0"
-      >
-        <InlineThinkingRow
-          isQueued={isQueued}
-          thinkingLabel={thinkingLabel}
-          serverThinkingLabel={serverThinkingLabel}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      {...thinkingIndicatorProps}
-      data-role="assistant"
-      className="animate-thinking-in flex flex-col gap-2"
-    >
-      <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
-        <AssistantBubbleAvatar thread={thread} />
-        <div
-          className={cn(
-            "relative flex min-w-0 flex-col gap-2",
-            CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
-          )}
-        >
-          <ChatAssistantMessageBody>
-            <InlineThinkingRow
-              isQueued={isQueued}
-              thinkingLabel={thinkingLabel}
-              serverThinkingLabel={serverThinkingLabel}
-            />
-          </ChatAssistantMessageBody>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AssistantThinkingStatusRow({
-  active,
-  isQueued,
-  thinkingLabel,
-  serverThinkingLabel,
-  thread,
-  recommendedFollowupSource,
-  inAssistantGroup,
-}: {
-  active: boolean;
-  isQueued: boolean;
-  thinkingLabel: string;
-  serverThinkingLabel?: ServerThinkingLabel;
-  thread: ChatPanelSignals;
-  recommendedFollowupSource: RecommendedFollowupSource | null;
-  inAssistantGroup: boolean;
-}) {
-  const thinkingIndicatorProps =
-    active && !isQueued ? { "data-thinking-indicator": true } : {};
-
-  const content = active ? (
-    <InlineThinkingRow
-      isQueued={isQueued}
-      thinkingLabel={thinkingLabel}
-      serverThinkingLabel={serverThinkingLabel}
-    />
-  ) : (
-    <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
-  );
-  if (inAssistantGroup) {
-    return (
-      <div
-        {...thinkingIndicatorProps}
-        data-role="assistant-thinking"
-        className="animate-thinking-in min-w-0"
-      >
-        {content}
-      </div>
-    );
-  }
-  return (
-    <div
-      {...thinkingIndicatorProps}
-      data-role="assistant-thinking"
-      className={RUN_SECTION_ROW_CLASS}
-    >
-      <div className="hidden @[900px]:block" />
-      <div className="min-w-0">{content}</div>
-    </div>
-  );
-}
-
-function runStatusIndicatorActive(mode: ThinkingIndicatorMode): boolean {
-  return mode !== null && mode !== "finished";
-}
-
-function thinkingIndicatorQueued(mode: ThinkingIndicatorMode): boolean {
-  return mode === "waiting-queued" || mode === "running-queued";
-}
-
-function thinkingIndicatorUsesStatusRow(mode: ThinkingIndicatorMode): boolean {
-  return mode === "running" || mode === "running-queued" || mode === "finished";
-}
-
 function equalRecommendedFollowupSources(
   previous: RecommendedFollowupSource | null,
   next: RecommendedFollowupSource | null,
@@ -4585,60 +4523,6 @@ function equalRecommendedFollowupSources(
       next !== null &&
       previous.eventId === next.eventId &&
       previous.followups === next.followups)
-  );
-}
-
-function ThinkingIndicator({
-  thread,
-  mode,
-  inAssistantGroup = false,
-}: {
-  thread: ChatPanelSignals;
-  mode: ThinkingIndicatorMode;
-  inAssistantGroup?: boolean;
-}) {
-  const summaries = useLastResolved(thread.thinkingSummaries$);
-  const thinkingRunId = useLastResolved(thread.thinkingRunId$);
-  const recommendedFollowupSource =
-    useLastResolved(thread.recommendedFollowupSource$, {
-      equalityFn: equalRecommendedFollowupSources,
-    }) ?? null;
-  const thinkingLabel = useGet(thread.thinkingPhrase$);
-  const active = runStatusIndicatorActive(mode);
-  const isQueued = thinkingIndicatorQueued(mode);
-  const serverThinkingLabel =
-    summaries && summaries.runId === thinkingRunId && active && !isQueued
-      ? { id: summaries.runId, messages: summaries.messages }
-      : undefined;
-
-  if (mode === null) {
-    return null;
-  }
-
-  // Active and finished states share the response line metrics.
-  if (thinkingIndicatorUsesStatusRow(mode)) {
-    return (
-      <AssistantThinkingStatusRow
-        active={active}
-        isQueued={isQueued}
-        thinkingLabel={thinkingLabel}
-        serverThinkingLabel={serverThinkingLabel}
-        thread={thread}
-        recommendedFollowupSource={recommendedFollowupSource}
-        inAssistantGroup={inAssistantGroup}
-      />
-    );
-  }
-
-  // Waiting for first assistant response — show bubble with avatar
-  return (
-    <WaitingForAssistantResponse
-      thread={thread}
-      isQueued={isQueued}
-      thinkingLabel={thinkingLabel}
-      serverThinkingLabel={serverThinkingLabel}
-      inAssistantGroup={inAssistantGroup}
-    />
   );
 }
 
@@ -6191,7 +6075,7 @@ function PagedGroupRow({
   modelChanges,
   stackFirstOnPrevious = false,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: {
   group: ChatEventGroup;
@@ -6199,7 +6083,7 @@ function PagedGroupRow({
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
   runWorkSection?: RunWorkSectionControl;
-  runIndicatorMode?: Exclude<ThinkingIndicatorMode, null>;
+  statusRow?: RunStatusRow;
   statusTailEvents?: readonly EnrichedChatEvent[];
 }) {
   if (group.role === "user") {
@@ -6218,7 +6102,7 @@ function PagedGroupRow({
       thread={thread}
       modelChanges={modelChanges}
       runWorkSection={runWorkSection}
-      runIndicatorMode={runIndicatorMode}
+      statusRow={statusRow}
       statusTailEvents={statusTailEvents}
     />
   );
@@ -6262,7 +6146,7 @@ function SelectablePagedGroupRow({
   modelChanges,
   stackFirstOnPrevious,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: Parameters<typeof PagedGroupRow>[0]) {
   const { t } = useTranslation();
@@ -6278,7 +6162,7 @@ function SelectablePagedGroupRow({
       modelChanges={modelChanges}
       stackFirstOnPrevious={sharing ? false : stackFirstOnPrevious}
       runWorkSection={sharing ? undefined : runWorkSection}
-      runIndicatorMode={sharing ? undefined : runIndicatorMode}
+      statusRow={sharing ? undefined : statusRow}
       statusTailEvents={sharing ? undefined : statusTailEvents}
     />
   );
@@ -7931,7 +7815,7 @@ type PagedAssistantGroupProps = {
   readonly thread: ChatPanelSignals;
   readonly modelChanges: ReadonlyMap<string, RunModelChange>;
   readonly runWorkSection?: RunWorkSectionControl;
-  readonly runIndicatorMode?: Exclude<ThinkingIndicatorMode, null>;
+  readonly statusRow?: RunStatusRow;
   readonly statusTailEvents?: readonly EnrichedChatEvent[];
 };
 
@@ -8112,7 +7996,7 @@ function PagedRunWorkAssistantContent({
   thread,
   modelChanges,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: Pick<
   PagedAssistantGroupProps,
@@ -8120,7 +8004,7 @@ function PagedRunWorkAssistantContent({
   | "thread"
   | "modelChanges"
   | "runWorkSection"
-  | "runIndicatorMode"
+  | "statusRow"
   | "statusTailEvents"
 >) {
   const timelineItems = buildPagedAssistantTimeline({
@@ -8157,7 +8041,7 @@ function PagedRunWorkAssistantContent({
         thread={thread}
         mainActions={mainActions}
       />
-      {(statusTailEvents?.length ?? 0) > 0 || runIndicatorMode !== undefined ? (
+      {(statusTailEvents?.length ?? 0) > 0 || statusRow !== undefined ? (
         <div
           data-chat-run-status-tail
           className={CHAT_THREAD_RESPONSE_STACK_CLASS}
@@ -8172,12 +8056,8 @@ function PagedRunWorkAssistantContent({
                 />
               );
             })
-          ) : runIndicatorMode !== undefined ? (
-            <ThinkingIndicator
-              thread={thread}
-              mode={runIndicatorMode}
-              inAssistantGroup
-            />
+          ) : statusRow !== undefined ? (
+            <RunStatusRowContent thread={thread} statusRow={statusRow} />
           ) : null}
         </div>
       ) : null}
@@ -8190,14 +8070,14 @@ function PagedAssistantGroup({
   thread,
   modelChanges,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: PagedAssistantGroupProps) {
   const turnOnRef = useSet(thread.locator.turnOnRef$);
   const hasRenderableEvent = group.events.some((event) => {
     return isRenderableAssistantEvent(event);
   });
-  if (!hasRenderableEvent && !runWorkSection) {
+  if (!hasRenderableEvent && !runWorkSection && statusRow === undefined) {
     return null;
   }
 
@@ -8211,7 +8091,7 @@ function PagedAssistantGroup({
     .join("\n\n");
   const usesRunWorkPresentation =
     runWorkSection !== undefined ||
-    runIndicatorMode !== undefined ||
+    statusRow !== undefined ||
     (statusTailEvents?.length ?? 0) > 0;
 
   return (
@@ -8245,7 +8125,7 @@ function PagedAssistantGroup({
               thread={thread}
               modelChanges={modelChanges}
               runWorkSection={runWorkSection}
-              runIndicatorMode={runIndicatorMode}
+              statusRow={statusRow}
               statusTailEvents={statusTailEvents}
             />
           ) : (

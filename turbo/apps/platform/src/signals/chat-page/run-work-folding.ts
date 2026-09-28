@@ -796,14 +796,20 @@ export function buildRunWorkFolding(
       return section.anchorEventId;
     }),
   );
+  // A trailing turn without events holds the status row until output arrives.
+  const pendingGroup =
+    groups.at(-1)?.events.length === 0 ? groups.at(-1) : undefined;
   return {
     statusTail,
-    visibleGroups: attachUsageToRunWorkGroups(
-      groupEventsForRunWorkDisplay(visibleEvents, workAnchorEventIds),
-      usageByRunId,
-      usageByAnchorEventId,
-      workAnchorEventIds,
-    ),
+    visibleGroups: [
+      ...attachUsageToRunWorkGroups(
+        groupEventsForRunWorkDisplay(visibleEvents, workAnchorEventIds),
+        usageByRunId,
+        usageByAnchorEventId,
+        workAnchorEventIds,
+      ),
+      ...(pendingGroup ? [pendingGroup] : []),
+    ],
     sectionsByAnchorEventId: new Map(
       sections.map((section) => {
         return [section.anchorEventId, section];
