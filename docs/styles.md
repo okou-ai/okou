@@ -213,7 +213,7 @@ The picker's first option, `default`, is the product's own palette rather than
 another preset. `signals/theme.ts` writes no palette attribute while it is
 selected, so every token keeps the shared Amber-on-Linen values and none of the
 `[data-gradient-color-themes]` rules key in — the interface is byte-identical to
-the one the capability's switch turns off. Its `[data-color-theme="default"]`
+the unthemed shell. Its `[data-color-theme="default"]`
 rule therefore declares only an anchor and a companion, for the one element that
 does carry the attribute: the picker's own swatch. Neither is a designed colour:
 both are `primary-300`, the brand stop the interface already paints with, so the
@@ -226,7 +226,7 @@ behind the selected option, is owned at `:root` and refined by the preset rules
 rather than existing only under them: one option's selected card must not read
 heavier than another's.
 
-When `GradientColorThemes` is enabled on the document, each preset's HSL primary
+When a preset carries the palette attributes on the document, each preset's HSL primary
 value supplies both its anchor color and the shared `--primary` token. Primary
 actions, including portaled dialog buttons, immediately use that fill and the
 preset's contrast-checked `--primary-foreground` in Light/Dark. Hover and

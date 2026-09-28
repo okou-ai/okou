@@ -63,7 +63,6 @@ export enum FeatureSwitchKey {
   LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",
-  GradientColorThemes = "gradientColorThemes",
   AvatarNeckSweater = "avatarNeckSweater",
   AvatarFraming = "avatarFraming",
   AvatarTexture = "avatarTexture",

@@ -409,12 +409,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Let an attached image be marked up in the composer lightbox — boxes, arrows, freehand, text, highlight and redaction, each able to carry a note — and send a rendered copy carrying the editable marks.",
     enabled: false,
   },
-  [FeatureSwitchKey.GradientColorThemes]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Apply a palette-derived tint across interface surfaces, borders, states, and workspace ambience.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:
