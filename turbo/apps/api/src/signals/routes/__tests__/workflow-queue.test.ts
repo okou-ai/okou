@@ -475,9 +475,10 @@ describe("workflow queue", () => {
   it("rejects a workflow automation when every built-in route is unavailable", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
+    // The automation thread keeps its model; only its route turns built-in.
     await chatCallbacks.updateOrgModelPolicies(scenario.actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -486,12 +487,12 @@ describe("workflow queue", () => {
     ]);
     await setOrgModelPolicyProviderTypeFixture({
       orgId: scenario.orgId,
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
       defaultProviderType: "built-in",
     });
 
     const response = await withBuiltInModelRuntimeRouteUnavailableForTest(
-      "claude-sonnet-5",
+      "claude-fable-5-1",
       async () => {
         return await postWorkflowWebhook(
           automation,
@@ -1316,7 +1317,17 @@ describe("workflow queue", () => {
     });
     expect(rejectedEvent.userMessage).toStrictEqual(admittedEvent.userMessage);
     expect(chatEventDisplayText(admittedEvent)).toBe(rejectedDisplayPrompt);
-    await runsApi.ensureOrgModelProvider(scenario.actor);
+    // Reconnect the thread's model so the next trigger can launch.
+    const { providerId } = await runsApi.ensureOrgModelProvider(scenario.actor);
+    await runsApi.updateOrgModelPolicies(scenario.actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const runId = await expectAcceptedRunId(
       await postWorkflowWebhook(automation, "next trigger"),
       automation.threadId,
