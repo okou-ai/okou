@@ -32,9 +32,7 @@ import {
 const context = testContext();
 const HOST_ID = "a7000000-0000-4000-a000-000000000001";
 
-async function openMediaCategory(
-  name: "Image",
-): Promise<HTMLElement> {
+async function openMediaCategory(name: "Image"): Promise<HTMLElement> {
   if (!screen.queryByRole("menu", { name: "Models" })) {
     click(await waitFor(composerModelTriggerOrThrow));
   }
