@@ -5,6 +5,9 @@ import {
   onboardingRecommendationContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -47,6 +50,13 @@ function generatedProfile() {
     communicationStyle: [],
     priorities: ["Keep important replies moving"],
   };
+}
+
+function templateFromUserMessage(document: UserMessageDocument | undefined) {
+  const part = document?.parts.find((candidate) => {
+    return candidate.type === "template";
+  });
+  return part?.type === "template" ? part.template : undefined;
 }
 
 function mockOnboardingNeeded(): void {
@@ -811,6 +821,88 @@ test("The prompt step completes onboarding, then runs the prompt as edited", asy
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(completedFrom).toStrictEqual([ROUTES.onboarding]);
+});
+
+test("A prompt link's template carries into the first request", async () => {
+  const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
+  if (!websiteTemplate) {
+    throw new Error("Expected a website template");
+  }
+  mockOnboardingNeeded();
+  let websiteTemplateId: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      const template = templateFromUserMessage(body.userMessage);
+      websiteTemplateId =
+        template?.type === "website"
+          ? template.selection.websiteTemplateId
+          : undefined;
+    },
+  });
+  const params = new URLSearchParams({
+    prompt: HANDOFF_PROMPT,
+    template: websiteTemplate.id,
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?${params.toString()}`,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: PROMPT_TITLE }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Next"));
+
+  await waitFor(() => {
+    expect(websiteTemplateId).toBe(websiteTemplate.id);
+    expect(pathname()).toMatch(/^\/chats\//u);
+  });
+});
+
+test("A prompt link's redeem code is redeemed before completion and left out of the chat", async () => {
+  mockOnboardingNeeded();
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  const requests: string[] = [];
+  context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
+    requests.push(`redeem:${body.code}`);
+    return respond(200, { redeemed: true });
+  });
+  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+    requests.push("complete");
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: false,
+      onboardingComplete: true,
+    });
+    return respond(200, {
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&redeemCode=%20LAUNCH50%20`,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: PROMPT_TITLE }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Next"));
+
+  await waitFor(() => {
+    expect(runPrompt).toBe(HANDOFF_PROMPT);
+    expect(pathname()).toMatch(/^\/chats\//u);
+  });
+  expect(requests).toStrictEqual(["redeem:LAUNCH50", "complete"]);
+  expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();
 });
 
 test("A later source-first step opened with a prompt goes back to the prompt page", async () => {

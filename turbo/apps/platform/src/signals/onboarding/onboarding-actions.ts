@@ -121,7 +121,6 @@ export const runOnboardingRequest$ = command(
       searchParams.get("redeemCode")?.trim() || null,
       signal,
     );
-    signal.throwIfAborted();
     const handoffParams = promptHandoffParams(searchParams);
     handoffParams.set("prompt", request);
     if (template) {
