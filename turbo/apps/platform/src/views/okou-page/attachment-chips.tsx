@@ -101,10 +101,10 @@ import {
 import {
   artifactFallbackSubtitle,
   artifactSupportsFullscreen,
-  artifactSubtitleLink,
+  artifactTitleLink,
   artifactTitleSubtitle,
 } from "./artifact-display.ts";
-import { ArtifactSubtitle } from "./artifact-subtitle.tsx";
+import { ArtifactTitle } from "./artifact-title.tsx";
 import {
   currentEventImageArtifactNavigation,
   equalEventImageGroups,
@@ -1409,9 +1409,7 @@ function ArtifactPreviewDialogContent({
   const closeWithAnimation = useCloseArtifactPreview();
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const subtitle = artifactDialogKindLabel(preview, artifact);
-  const subtitleLink = artifact
-    ? artifactSubtitleLink(preview.kind, artifact)
-    : null;
+  const titleLink = artifact ? artifactTitleLink(preview.kind, artifact) : null;
   const visible = useGet(lightboxDialogVisible$);
   const fullscreen = useGet(lightboxDialogFullscreen$);
 
@@ -1460,9 +1458,11 @@ function ArtifactPreviewDialogContent({
         >
           <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">{filename}</div>
+              <div className="truncate text-sm font-medium">
+                <ArtifactTitle filename={filename} link={titleLink} />
+              </div>
               <div className="truncate text-xs text-muted-foreground">
-                <ArtifactSubtitle link={subtitleLink} text={subtitle} />
+                {subtitle}
               </div>
             </div>
             {connectionProgressActive ? (

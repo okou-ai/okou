@@ -24,7 +24,7 @@ type ArtifactTitleMetadata = Pick<
   | "size"
 >;
 
-export interface ArtifactSubtitleLink {
+export interface ArtifactTitleLink {
   readonly href: string;
   readonly label: string;
 }
@@ -252,7 +252,7 @@ export function artifactFallbackSubtitle(
 
 function hostedSiteLink(
   aliasUrl: string | undefined,
-): ArtifactSubtitleLink | null {
+): ArtifactTitleLink | null {
   if (!aliasUrl || !URL.canParse(aliasUrl)) {
     return null;
   }
@@ -265,14 +265,14 @@ function hostedSiteLink(
 }
 
 /**
- * A public hosted site is addressed by its own URL, so the subtitle leads with
- * that address instead of the generic kind label. Private sites have no public
- * alias and keep the label.
+ * A public hosted site is addressed by its own URL, so the header shows that
+ * address in place of the entry filename. Private sites have no public alias
+ * and keep the filename.
  */
-export function artifactSubtitleLink(
+export function artifactTitleLink(
   kind: ArtifactDisplayKind,
   meta: ArtifactTitleMetadata,
-): ArtifactSubtitleLink | null {
+): ArtifactTitleLink | null {
   return artifactTitleKind(kind, meta.filename, meta.artifactKind) ===
     "hosted-site"
     ? hostedSiteLink(meta.aliasUrl)

@@ -55,11 +55,11 @@ import {
 } from "./artifact-actions.tsx";
 import {
   artifactFallbackSubtitle,
-  artifactSubtitleLink,
+  artifactTitleLink,
   artifactTitleSubtitle,
-  type ArtifactSubtitleLink,
+  type ArtifactTitleLink,
 } from "./artifact-display.ts";
-import { ArtifactSubtitle } from "./artifact-subtitle.tsx";
+import { ArtifactTitle } from "./artifact-title.tsx";
 import {
   currentEventImageArtifactNavigation,
   equalEventImageGroups,
@@ -290,7 +290,7 @@ function ArtifactSidebarResolvedContent({
         kind={display.kind}
         artifactKind={display.artifactKind}
         subtitle={display.subtitle}
-        subtitleLink={display.subtitleLink}
+        titleLink={display.titleLink}
         shareAvailable={display.shareAvailable}
         syncTarget={syncTarget}
         url={display.url}
@@ -323,7 +323,7 @@ interface ArtifactDisplay {
   kind: ArtifactKindForBody;
   filename: string;
   subtitle: string;
-  subtitleLink: ArtifactSubtitleLink | null;
+  titleLink: ArtifactTitleLink | null;
   shareAvailable: boolean;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
 }
@@ -394,7 +394,7 @@ function resolveArtifactDisplay(
       kind: ref.kind,
       filename: item.file.filename,
       subtitle: artifactTitleSubtitle(ref.kind, item.file),
-      subtitleLink: artifactSubtitleLink(ref.kind, item.file),
+      titleLink: artifactTitleLink(ref.kind, item.file),
       shareAvailable: ref.shareAvailable ?? true,
       artifactKind: item.file.artifactKind,
     };
@@ -404,7 +404,7 @@ function resolveArtifactDisplay(
     kind: ref.kind,
     filename: ref.filename,
     subtitle: artifactFallbackSubtitle(ref.kind, ref.filename),
-    subtitleLink: null,
+    titleLink: null,
     shareAvailable: ref.shareAvailable ?? true,
   };
 }
@@ -415,7 +415,7 @@ function ArtifactSidebarHeader({
   kind,
   artifactKind,
   subtitle,
-  subtitleLink,
+  titleLink,
   shareAvailable,
   syncTarget,
   url,
@@ -429,7 +429,7 @@ function ArtifactSidebarHeader({
   kind?: ArtifactKindForBody;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   subtitle: string;
-  subtitleLink: ArtifactSubtitleLink | null;
+  titleLink: ArtifactTitleLink | null;
   shareAvailable: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   url?: string;
@@ -465,11 +465,11 @@ function ArtifactSidebarHeader({
       )}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium text-foreground">
-          {title}
+          <ArtifactTitle filename={title} link={titleLink} />
         </div>
         {subtitle && (
           <div className="mt-0.5 truncate text-xs text-muted-foreground">
-            <ArtifactSubtitle link={subtitleLink} text={subtitle} />
+            {subtitle}
           </div>
         )}
       </div>

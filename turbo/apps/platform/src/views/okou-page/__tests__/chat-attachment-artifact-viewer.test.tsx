@@ -224,7 +224,7 @@ test("An open artifact sidebar reuses one pane", async () => {
   expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
 });
 
-test("A public hosted site header links to its address", async () => {
+test("A public hosted site header titles itself with its address", async () => {
   const siteUrl = "https://reference-site.sites.vm7.io";
   mockAttachmentChat(context, {
     chatEvents: [assistantMessage(`[Reference site](${siteUrl})`)],
@@ -242,12 +242,13 @@ test("A public hosted site header links to its address", async () => {
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
   const expectSiteLink = (surface: HTMLElement) => {
-    const link = within(surface).getByTestId("artifact-subtitle-link");
+    const link = within(surface).getByTestId("artifact-title-link");
     expect(link).toHaveTextContent("reference-site.sites.vm7.io");
     expect(link).toHaveAttribute("href", `${siteUrl}/`);
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
-    expect(within(surface).getByText(/Updated at /)).toBeVisible();
+    expect(within(surface).getByText(/^Updated at /)).toBeVisible();
+    expect(within(surface).queryByText("reference-site.html")).toBeNull();
     expect(within(surface).queryByText(/Hosted site/)).toBeNull();
     expect(within(surface).queryByText(/1 kB/)).toBeNull();
   };
