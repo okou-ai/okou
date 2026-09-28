@@ -20,6 +20,7 @@ import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { buildTelegramBotAvatarUrl } from "../../external/telegram-avatar";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createRouteMocks } from "./helpers/route-test";
 import {
   deleteTelegramFixture$,
   freezeTelegramFixture,
@@ -34,6 +35,7 @@ const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
 const context = testContext();
 const store = createStore();
+const mocks = createRouteMocks(context);
 
 const OFFICIAL_BOT_TOKEN = "9876543210:fake-test-token";
 const OFFICIAL_BOT_USERNAME = "official_okou_bot";
@@ -241,7 +243,7 @@ describe("GET /api/integrations/telegram/bots", () => {
 
   it("returns 401 when the authenticated session has no organization", async () => {
     expect.hasAssertions();
-    context.mocks.clerk.session(`user_${randomUUID()}`, null);
+    mocks.clerk.session(`user_${randomUUID()}`, null);
     const client = setupApp({
       context,
       routes: integrationsTelegramRoutes,
@@ -492,7 +494,7 @@ describe("POST /api/integrations/telegram/link", () => {
     const userId = `user_${randomUUID()}`;
     await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
     fixtures.push(freezeTelegramFixture(makeTelegramFixtureBuilder(orgId)));
-    context.mocks.clerk.session(userId, orgId);
+    mocks.clerk.session(userId, orgId);
     return {
       token: "clerk-session",
       orgId,
@@ -987,7 +989,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
   });
 
   it("returns 401 when the authenticated session has no organization", async () => {
-    context.mocks.clerk.session(`user_${randomUUID()}`, null);
+    mocks.clerk.session(`user_${randomUUID()}`, null);
 
     const response = await requestDownload({
       search: "?file_id=tg-file-1&bot_id=tg-bot",
