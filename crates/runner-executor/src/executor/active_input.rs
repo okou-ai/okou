@@ -1,7 +1,8 @@
 //! Active-input forwarding from a Runner source to Guest control.
 //!
-//! The API source reads the next steerable input prompt of the run. The Guest
-//! declares an accepted input steered; the Runner only forwards it once.
+//! The API source reads the next prompt or time-budget warning targeted at the
+//! run. Both use the same event identity and materialized text. The Guest declares
+//! an accepted input steered; the Runner only forwards it once.
 
 use std::time::Duration;
 

@@ -3,7 +3,8 @@
 //! One serial worker declares each accepted chat event steered with a single
 //! HTTP attempt. A `409` means the input was already consumed or the run is no
 //! longer running; both are final. A failed declaration is not retried: the
-//! input stays queued and a later pick consumes it.
+//! prompt stays queued for a later pick; a run-targeted budget expires when its
+//! run ends. Both carry the same source event identity through this worker.
 
 use std::sync::Mutex;
 use std::time::Duration;

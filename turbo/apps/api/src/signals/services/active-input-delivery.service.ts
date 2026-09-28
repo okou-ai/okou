@@ -136,7 +136,7 @@ function replacementTarget(source: ActiveInputSourceRow) {
 }
 
 /**
- * Consume one steered `input.prompt` for the run with a single replacement
+ * Consume one steered prompt or run-targeted budget with a single replacement
  * insert. On a revoke-edge conflict the revoker decides: this run's
  * replacement means the source was already steered, anything else means
  * another consumer won. Without `append` (the run is no longer running) only
@@ -152,7 +152,13 @@ async function consumeActiveInputSource(
   const [source] = await activeInputRowsByIds(db, scope.chatThreadId, [
     sourceEventId,
   ]);
-  if (!source?.userMessage || source.eventType !== "input.prompt") {
+  if (
+    !source?.userMessage ||
+    (source.eventType !== "input.prompt" &&
+      (source.eventType !== "input.budget" ||
+        source.contextType !== "agent_run" ||
+        source.contextId !== scope.runId))
+  ) {
     return { outcome: "invalid" };
   }
   if (append && source.runId === null) {
@@ -161,7 +167,7 @@ async function consumeActiveInputSource(
       replacementTarget(source),
       {
         chatThreadId: scope.chatThreadId,
-        eventType: "input.prompt",
+        eventType: source.eventType,
         runId: scope.runId,
         userMessage: source.userMessage,
       },
@@ -247,8 +253,9 @@ async function steeringAnchorSeqId(
 }
 
 /**
- * The next `input.prompt` a running sandbox run may steer: the first run-less,
- * unrevoked prompt positioned after the queue input the run consumed last.
+ * The next run-less, unrevoked prompt or budget a running sandbox may steer.
+ * Prompts follow the last consumed queue input; the run's own budget remains
+ * eligible regardless of that anchor. Both are returned in sequence order.
  * Read-only.
  * A prompt that cannot be steered as is (its Discord binding is gone, or it
  * exceeds the control payload) yields `null` and stays queued for the next
@@ -275,6 +282,7 @@ export async function loadNextSteerableInput(
   const [next] = await listPendingChatInputs(db, {
     chatThreadId: scope.chatThreadId,
     eventTypes: ["input.prompt"],
+    budgetForRunId: scope.runId,
     afterSeqId,
   });
   signal.throwIfAborted();
@@ -308,7 +316,7 @@ export async function loadNextSteerableInput(
 }
 
 /**
- * The runner handed an `input.prompt` to the model of the run. Consume it with
+ * The runner handed a prompt or its own budget to the model. Consume it with
  * a replacement; a replacement by this run makes a repeat idempotent, and any
  * other revoker is a conflict the runner ignores.
  */
@@ -360,7 +368,8 @@ export async function declareSteeredInput(
  * run is running, so no budget input can appear afterwards. The budget event
  * ID is derived from the run, so this is one primary-key read and one append;
  * the unique revoke edge lets exactly one consumer revoke the source. Best
- * effort: losing that race or failing leaves an inert pending row.
+ * effort: a failed expiry leaves an unconsumed budget that neither a later
+ * run's steering nor the ordinary queue picker can consume.
  */
 export async function expireRunTimeBudgetInput(
   db: Db,

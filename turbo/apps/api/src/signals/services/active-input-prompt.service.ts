@@ -109,8 +109,8 @@ export type ActiveInputSourceRow = Awaited<
 >[number];
 
 /**
- * Render one pending active input for delivery. Reserve is read-only and may
- * repeat for the same source, so template usage is reported at receipt time
+ * Render one pending active input for steering. Reads may repeat for the same
+ * source, so template usage is reported when it is declared steered
  * through `activeInputTemplateIdentities`, not here.
  */
 export async function materializeActiveInputSource(
@@ -170,7 +170,7 @@ function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
   };
 }
 
-/** Template identities a steered prompt carried, reported once at receipt. */
+/** Template identities a prompt carried, reported once when declared steered. */
 export function activeInputTemplateIdentities(
   userMessage: ChatEventUserMessage,
 ): readonly GenerationTemplateIdentity[] {

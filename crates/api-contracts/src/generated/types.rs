@@ -1111,11 +1111,11 @@ pub mod runners {
             }
         }
 
-        /// DTOs for steering input prompts into a running run.
+        /// DTOs for steering prompts and run-targeted budgets into a running run.
         pub mod steerable_inputs {
-            /// DTOs for reading the next steerable input prompt.
+            /// DTOs for reading the next steerable prompt or run-targeted budget.
             pub mod next {
-                /// Input prompt the run may steer.
+                /// Prompt or run-targeted budget the run may steer.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct ResponseInput {
@@ -1125,7 +1125,7 @@ pub mod runners {
                     pub prompt: String,
                 }
 
-                /// Next input prompt a running run may steer.
+                /// Next prompt or run-targeted budget a running run may steer.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct Response {
@@ -1134,9 +1134,9 @@ pub mod runners {
                 }
             }
 
-            /// DTOs for declaring an input prompt steered.
+            /// DTOs for declaring a prompt or run-targeted budget steered.
             pub mod steered {
-                /// API outcome after declaring an input prompt steered.
+                /// API outcome after declaring a prompt or run-targeted budget steered.
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct Response {

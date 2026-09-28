@@ -1671,9 +1671,9 @@ export const runnerSteeredInputResponseSchema = z.object({
 });
 
 /**
- * Steering without delivery IDs: read the next steerable `input.prompt` for a
- * running run, then declare it steered, which consumes it with a replacement
- * event carrying the run ID. Both authenticate with the run's sandbox token.
+ * Read the next steerable prompt or `input.budget` targeting the running run,
+ * then declare it steered. The replacement retains the source event type and
+ * carries the run ID. Both authenticate with the run's sandbox token.
  */
 export const runnersSteerContract = c.router({
   next: {
@@ -1690,7 +1690,8 @@ export const runnersSteerContract = c.router({
       403: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Read the next input prompt a running run may steer",
+    summary:
+      "Read the next prompt or run-targeted budget a running run may steer",
   },
   steered: {
     method: "POST",
@@ -1717,7 +1718,7 @@ export const runnersSteerContract = c.router({
       }),
       500: apiErrorSchema,
     },
-    summary: "Declare an input prompt steered into a run",
+    summary: "Declare a prompt or run-targeted budget steered into a run",
   },
 });
 

@@ -307,7 +307,7 @@ pub mod runners {
                 pub mod by_event_id {
                     /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs::by_event_id::steered`.
                     pub mod steered {
-                        /// Declare an input prompt steered into a run.
+                        /// Declare a prompt or run-targeted budget steered into a run.
                         /// Route contract: `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`.
                         pub const STEERED: crate::RouteTemplate = crate::RouteTemplate {
                             method: crate::Method::Post,
@@ -344,7 +344,7 @@ pub mod runners {
 
                 /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs::next`.
                 pub mod next {
-                    /// Read the next input prompt a running run may steer.
+                    /// Read the next prompt or run-targeted budget a running run may steer.
                     /// Route contract: `GET /api/runners/runs/:runId/steerable-inputs/next`.
                     pub const NEXT: crate::RouteTemplate = crate::RouteTemplate {
                         method: crate::Method::Get,

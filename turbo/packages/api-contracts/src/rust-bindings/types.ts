@@ -87,15 +87,19 @@ export const rustTypeModuleDocs = [
   },
   {
     rustModulePath: ["runners", "runs", "steerable_inputs"],
-    rustDoc: ["DTOs for steering input prompts into a running run."],
+    rustDoc: [
+      "DTOs for steering prompts and run-targeted budgets into a running run.",
+    ],
   },
   {
     rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
-    rustDoc: ["DTOs for reading the next steerable input prompt."],
+    rustDoc: [
+      "DTOs for reading the next steerable prompt or run-targeted budget.",
+    ],
   },
   {
     rustModulePath: ["runners", "runs", "steerable_inputs", "steered"],
-    rustDoc: ["DTOs for declaring an input prompt steered."],
+    rustDoc: ["DTOs for declaring a prompt or run-targeted budget steered."],
   },
   {
     rustModulePath: ["runners", "runs", "model_provider_failures"],
@@ -591,14 +595,16 @@ export const rustTypeBindings = [
     declarations: [
       {
         rustTypeName: "Response",
-        rustDoc: ["Next input prompt a running run may steer."],
+        rustDoc: [
+          "Next prompt or run-targeted budget a running run may steer.",
+        ],
         fields: {
           input: ["Steerable input, or absent when nothing can be steered."],
         },
       },
       {
         rustTypeName: "ResponseInput",
-        rustDoc: ["Input prompt the run may steer."],
+        rustDoc: ["Prompt or run-targeted budget the run may steer."],
         fields: {
           eventId: ["Source chat-event identity to declare steered."],
           prompt: ["Materialized prompt sent to the active Guest."],
@@ -614,7 +620,9 @@ export const rustTypeBindings = [
     declarations: [
       {
         rustTypeName: "Response",
-        rustDoc: ["API outcome after declaring an input prompt steered."],
+        rustDoc: [
+          "API outcome after declaring a prompt or run-targeted budget steered.",
+        ],
         fields: {
           outcome: ["The input is consumed by this run, idempotently."],
         },
