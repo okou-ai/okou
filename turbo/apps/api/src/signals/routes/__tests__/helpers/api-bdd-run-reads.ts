@@ -87,9 +87,7 @@ function authenticate(
 
 export function createRunReadsApi(context: TestContext) {
   return {
-    async requestCreateDirectRun<
-      TStatus extends 201 | 400 | 401 | 403 | 404 | 429,
-    >(
+    async requestCreateDirectRun<TStatus extends 201 | 400 | 401 | 403 | 404>(
       actor: ApiTestUser | null,
       body: DirectRunRequest,
       statuses: readonly TStatus[],

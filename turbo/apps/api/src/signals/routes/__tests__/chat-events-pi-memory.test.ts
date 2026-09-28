@@ -711,8 +711,28 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     expect(newerVersion).not.toBe(version);
     release.resolve(undefined);
-    const resumed = await sending;
-    const claimed = await claimChatRun(runnerGroup, resumed.runId);
+    // The picked input is bound to the prepared run.
+    const resumedMessages = await waitForThreadMessages(
+      actor,
+      first.threadId,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === resumeEventId &&
+            typeof message.runId === "string"
+          );
+        });
+      },
+    );
+    const resumedRunId = userMessages(resumedMessages.events).find(
+      (message) => {
+        return message.revokesEventId === resumeEventId;
+      },
+    )?.runId;
+    if (typeof resumedRunId !== "string") {
+      throw new Error("Expected the resumed input to launch a run");
+    }
+    const claimed = await claimChatRun(runnerGroup, resumedRunId);
     const mounts = expectCanonicalStorageManifest(
       claimed.claim.storageManifest,
     )?.storageMounts;
@@ -743,7 +763,7 @@ describe("CHAT-02: model-first provider policies", () => {
       sessionId: first.threadId,
       historyRef: { kind: "blob", hash: historyHash },
     });
-    await cancelChatRun(actor, resumed.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, resumedRunId, claimed.sandboxHeaders);
     await cancelChatRun(actor, writer.runId, writerClaim.sandboxHeaders);
   }, 90_000);
 

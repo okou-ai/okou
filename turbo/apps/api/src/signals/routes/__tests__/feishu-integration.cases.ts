@@ -1135,8 +1135,12 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     await runsApi.grantProEntitlement(actor);
     await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     if (options.useAlternateInstallationDefault) {
+      const orgId = actor.orgId;
+      if (!orgId) {
+        throw new Error("Expected the Feishu actor to belong to an org");
+      }
       await setOrgDefaultAgentFixture({
-        orgId: actor.orgId,
+        orgId,
         agentId: installationDefaultAgent.agentId,
       });
     }
