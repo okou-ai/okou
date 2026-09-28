@@ -112,7 +112,7 @@ test("Reconcile live text with the durable assistant event", async () => {
   expect(screen.getAllByText("The complete report")).toHaveLength(1);
 });
 
-test("A growing action URL stays text until the durable message provides its card", async () => {
+test("A growing action URL becomes a card as soon as a boundary arrives", async () => {
   const events = activeRun();
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
   await subscribed();
@@ -133,6 +133,63 @@ test("A growing action URL stays text until the durable message provides its car
     expect(screen.queryByText("Computer Use authorization")).toBeNull();
   }
 
+  // A trailing period is still ambiguous: it may be part of the next URL byte.
+  push(3, ".");
+  await waitFor(() => {
+    expect(
+      document.querySelector("[data-chat-thread-container-id]"),
+    ).toHaveTextContent(`${url}.`);
+  });
+  expect(screen.queryByText("Computer Use authorization")).toBeNull();
+
+  push(4, " ");
+  await expect(
+    screen.findByText("Computer Use authorization"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
+
+  const content = `${url}. Read more`;
+  push(5, "Read more");
+  await expect(screen.findByText(/Read more/u)).resolves.toBeInTheDocument();
+  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
+
+  events.push(
+    assistantEvent({
+      id: EVENT_ID,
+      runId: RUN_ID,
+      seqId: 2,
+      text: `${content} (finished)`,
+    }),
+  );
+  publishRunUpdate();
+  await waitFor(() => {
+    expect(screen.getByText(/Read more \(finished\)/u)).toBeInTheDocument();
+    expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
+  });
+});
+
+test("A closed Markdown action link becomes a card before the run finishes", async () => {
+  await setupActiveOutputStream();
+  const url =
+    "https://app.okou.ai/computer-use/authorize/abcdefghijklmnopqrstuvwxyz";
+  push(0, `[Authorize](<${url}>)`);
+  await expect(
+    screen.findByText("Computer Use authorization"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
+});
+
+test("A trailing bare URL becomes a card when its final event arrives", async () => {
+  const events = activeRun();
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await subscribed();
+
+  const url =
+    "https://app.okou.ai/computer-use/authorize/abcdefghijklmnopqrstuvwxyz";
+  push(0, url);
+  await expect(screen.findByText(url)).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Computer Use authorization")).toBeNull();
+
   events.push(
     assistantEvent({ id: EVENT_ID, runId: RUN_ID, seqId: 2, text: url }),
   );
@@ -141,28 +198,38 @@ test("A growing action URL stays text until the durable message provides its car
     screen.findByText("Computer Use authorization"),
   ).resolves.toBeInTheDocument();
   expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
-  expect(screen.queryByText(url)).toBeNull();
 });
 
-test("An explicit artifact preview waits for the durable message", async () => {
+test("An explicit artifact preview appears when its Markdown link closes", async () => {
   const events = activeRun();
   await setupPage({ context, path: RUN_PATH });
   await subscribed();
 
   const content = "![Brief preview](https://a.okou.io/a1b2c3d4e5.pdf)";
-  push(0, content);
-  await expect(
-    screen.findByAltText("Brief preview"),
-  ).resolves.toBeInTheDocument();
+  push(0, content.slice(0, -1));
   const cardLabel = "Open pdf preview for a1b2c3d4e5.pdf";
+  await expect(
+    screen.findByText(/Brief preview/u),
+  ).resolves.toBeInTheDocument();
   expect(screen.queryByLabelText(cardLabel)).toBeNull();
 
-  events.push(
-    assistantEvent({ id: EVENT_ID, runId: RUN_ID, seqId: 2, text: content }),
-  );
-  publishRunUpdate();
+  push(1, ")");
   await expect(screen.findByLabelText(cardLabel)).resolves.toBeInTheDocument();
   expect(screen.getAllByLabelText(cardLabel)).toHaveLength(1);
+
+  events.push(
+    assistantEvent({
+      id: EVENT_ID,
+      runId: RUN_ID,
+      seqId: 2,
+      text: `${content}\n\nPreview complete`,
+    }),
+  );
+  publishRunUpdate();
+  await waitFor(() => {
+    expect(screen.getByText("Preview complete")).toBeInTheDocument();
+    expect(screen.getAllByLabelText(cardLabel)).toHaveLength(1);
+  });
 });
 
 test("Unsubscribe from output after the durable run completes", async () => {

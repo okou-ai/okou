@@ -136,10 +136,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ChatThreadPinButton } from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
-import {
-  hasChatEventBodyContent,
-  isTransientOutputMessage,
-} from "../../signals/chat-page/chat-event-body-blocks.ts";
+import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
 import { runChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
@@ -8329,7 +8326,7 @@ function PagedAssistantEventItem({
             workHistory ? CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS : undefined
           }
           tree={event.tree}
-          mediaPreview={!isTransientOutputMessage(event)}
+          mediaPreview
           onRetry={
             event.richContentError
               ? () => {

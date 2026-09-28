@@ -53,7 +53,7 @@ function skipsEventBodyRendering(event: ChatEvent): boolean {
   );
 }
 
-/** Provisional assistant text has no authoritative URL/card boundary yet. */
+/** A provisional message can still gain more bytes at its current URL tail. */
 export function isTransientOutputMessage(event: ChatEvent): boolean {
   return event.eventType === "output.message" && event.seqId === undefined;
 }
@@ -85,7 +85,7 @@ interface ChatEventTreePlan {
   readonly content: string;
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
-  readonly previews: boolean;
+  readonly requireUrlTerminator: boolean;
 }
 
 /**
@@ -99,15 +99,15 @@ export function chatEventTreePlan(
   if (content === null) {
     return null;
   }
-  const previews = !isTransientOutputMessage(event);
+  const requireUrlTerminator = isTransientOutputMessage(event);
   const plan = eventBodyPlan(content, {
-    previews,
+    requireUrlTerminator,
     chatActionContext,
   });
   return {
     content,
     treeSource: plan.treeSource,
     descriptors: plan.descriptors,
-    previews,
+    requireUrlTerminator,
   };
 }
