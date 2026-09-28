@@ -213,6 +213,24 @@ export function createVncRuntimeApi(context: TestContext) {
       [200],
     );
   }
+  async function enableDefault(
+    owner: Owner,
+    protocol: "ssh" | "vnc",
+    connectionId: string,
+  ) {
+    authenticate(owner);
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    await accept(
+      remote.updateHostDefault({
+        headers: vncSessionHeaders,
+        params: { protocol, connectionId },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+  }
   async function fixture(
     options: {
       readonly grant?: boolean;
@@ -236,17 +254,7 @@ export function createVncRuntimeApi(context: TestContext) {
       [201],
     );
     if (options.defaultEnabled !== false) {
-      const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-        chatRemoteAccessContract,
-      );
-      await accept(
-        remote.updateHostDefault({
-          headers: vncSessionHeaders,
-          params: { protocol: "vnc", connectionId: connection.body.id },
-          body: { enabled: true },
-        }),
-        [200],
-      );
+      await enableDefault(owner, "vnc", connection.body.id);
     }
     const running = await runtime(owner, options.runtime);
     const result = {
@@ -300,6 +308,7 @@ export function createVncRuntimeApi(context: TestContext) {
     runtime,
     grant,
     grantSsh,
+    enableDefault,
     fixture,
     resolve,
     resolved,

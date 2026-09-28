@@ -120,7 +120,8 @@ describe("VNC depends on current SSH binding", () => {
         [201],
       );
       const target = { ...f, connectionId: tunneled.body.id };
-      await api.grantSsh(f, true);
+      await api.enableDefault(f, "ssh", ssh.body.id);
+      await api.enableDefault(f, "vnc", tunneled.body.id);
       const seconds = Math.floor(now() / 1000);
       const guestHeaders = {
         authorization: `Bearer ${signSandboxJwtForTests({

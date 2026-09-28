@@ -1346,7 +1346,7 @@ describe("private Runner VNC authority", () => {
         chat: false,
       });
       expect((await api.resolve({ ...f, ...other })).outcome).toBe(
-        "resolved_transport",
+        "unavailable",
       );
     }
   });
