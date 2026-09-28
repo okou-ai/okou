@@ -22,7 +22,7 @@ import {
   readChatEventContextFixture,
 } from "../../../test-fixtures/chat-events";
 import { withAgentPhoneQueueAssemblyFailureFixture } from "../../../test-fixtures/agentphone-queue-assembly-failure";
-import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
+import { bindLegacyAgentPhoneThreadFixture } from "../../../test-fixtures/agentphone-legacy-thread-route";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settle } from "../../utils";
 import {
@@ -766,7 +766,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(lastSend(sends).body).toBe("Task completed successfully.");
   });
 
-  it("keeps the DM thread while changing to the current default agent and a fresh session", async () => {
+  it("rebinds a legacy preferred-agent DM once to the immutable org default with a fresh session", async () => {
     const bdd = createBddApi(context);
     const ap = createAgentPhoneBddApi(context);
     const runs = createRunsApi(context);
@@ -776,12 +776,22 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       throw new Error("Expected an organization-scoped AgentPhone user");
     }
 
-    await ap.postAgentPhoneInboundMessage({
-      channel: "sms",
-      from: phone,
-      body: "establish native history with the first default agent",
+    const onboarding = await bdd.readOnboardingStatus(actor);
+    if (!onboarding.defaultAgentId) {
+      throw new Error("Expected the immutable organization default agent");
+    }
+    const replacement = { agentId: onboarding.defaultAgentId };
+    const historicalAgent = await bdd.createAgent(actor, {
+      displayName: "Historical integration preference",
+      visibility: "public",
+    });
+    await runs.heartbeatRunner(runnerGroup);
+    const historical = await chat.sendAndLaunch(actor, {
+      agentId: historicalAgent.agentId,
+      prompt: "establish the historical preferred agent's native session",
     });
     const first = await claimDispatchedRun(runnerGroup);
+    expect(first.runId).toBe(historical.runId);
     await completeSandboxRun(first.sandboxToken, first.runId, 0);
     const originalSession = await waitForRunSessionIdPresent(
       actor,
@@ -804,15 +814,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       }),
     ).toHaveLength(0);
 
-    const replacement = await bdd.createAgent(actor, {
-      displayName: "Replacement organization default",
-      visibility: "public",
-    });
-    // Default reassignment has no public API; only this historical-state
-    // transition uses a fixture. Ingress, admission, claims and reads are real.
-    await setOrgDefaultAgentFixture({
+    await bindLegacyAgentPhoneThreadFixture({
       orgId: actor.orgId,
-      agentId: replacement.agentId,
+      userId: actor.userId,
+      chatThreadId: originalThread.chatThreadId,
     });
     await expect(
       bdd.readAgent(actor, originalThread.agentId),
@@ -892,7 +897,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await ap.postAgentPhoneInboundMessage({
       channel: "sms",
       from: phone,
-      body: "continue the replacement agent's own native history",
+      body: "continue the default agent's own native history",
     });
     const resumed = await claimDispatchedRun(runnerGroup);
     expect(resumed.agentId).toBe(replacement.agentId);

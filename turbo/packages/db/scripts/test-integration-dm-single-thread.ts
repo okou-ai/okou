@@ -61,6 +61,8 @@ export async function validateIntegrationDmSingleThread(
   const schema = `integration_dm_${randomUUID().replaceAll("-", "")}`;
   const tables = [
     "agents",
+    "org_metadata",
+    "feishu_org_installations",
     "chat_threads",
     "chat_thread_events",
     "chat_thread_event_sequences",
@@ -71,7 +73,11 @@ export async function validateIntegrationDmSingleThread(
 
   async function rows(table: string) {
     const order =
-      table === "chat_thread_event_sequences" ? "user_id, org_id" : "id";
+      table === "chat_thread_event_sequences"
+        ? "user_id, org_id"
+        : table === "org_metadata"
+          ? "org_id"
+          : "id";
     const result = await client.query(
       `SELECT * FROM ${table} ORDER BY ${order}`,
     );
@@ -100,7 +106,6 @@ export async function validateIntegrationDmSingleThread(
       );
     }
 
-    const retainedThreadIds = new Set<string>();
     const removedRouteIds = new Set<string>();
     const retainedRouteIds = new Set<string>();
     const agentA = randomUUID();
@@ -111,8 +116,7 @@ export async function validateIntegrationDmSingleThread(
               ($2, 'org-b', 'dm-user', 'agent-b')`,
       [agentA, agentB],
     );
-    // Cover an existing stream, a new user in the same org, and the same user
-    // in a different org. The latter two have no sequence row before migration.
+    // Model settings and event streams are independent of route consolidation.
     const scopes = [
       { userId: "dm-user", orgId: "org-a", agentId: agentA, lastSeqId: 7 },
       { userId: "other-user", orgId: "org-a", agentId: agentA, lastSeqId: 0 },
@@ -122,15 +126,28 @@ export async function validateIntegrationDmSingleThread(
       `INSERT INTO chat_thread_event_sequences (user_id, org_id, last_seq_id)
        VALUES ('dm-user', 'org-a', 7)`,
     );
-    const expectedResetEvents: {
-      threadId: string;
-      userId: string;
-      orgId: string;
-      agentId: string;
-      kind: string;
-    }[] = [];
-    // The second identity on each platform covers both pins, model only,
-    // tier only, provider only, already unpinned, and an agentless thread.
+    const legacyAgent = randomUUID();
+    await client.query(
+      `INSERT INTO agents (id, org_id, owner, name)
+       VALUES ($1, 'org-a', 'dm-user', 'former-installation-choice')`,
+      [legacyAgent],
+    );
+    await client.query(
+      `INSERT INTO org_metadata (org_id, default_agent_id)
+       VALUES ('org-a', $1), ('org-b', $2)`,
+      [agentA, agentB],
+    );
+    await client.query(
+      `INSERT INTO feishu_org_installations (
+         org_id, platform, app_id, encrypted_app_secret,
+         encrypted_verification_token, encrypted_encrypt_key, default_agent_id
+       ) VALUES
+         ('org-a', 'feishu', 'feishu-a', 'secret', 'token', 'key', $1),
+         ('org-a', 'lark', 'lark-a', 'secret', 'token', 'key', NULL),
+         ('org-b', 'feishu', 'feishu-b', 'secret', 'token', 'key', $2)`,
+      [legacyAgent, agentB],
+    );
+    // Preserve every combination of retained thread model/provider/tier pins.
     const secondaryPins = [
       ["gpt-6-sol", "fast", true],
       ["gpt-6-sol", null, true],
@@ -141,21 +158,17 @@ export async function validateIntegrationDmSingleThread(
     ] as const;
     async function seedThreadWithModelPin(args: {
       readonly routeIndex: number;
-      readonly routeTable: string;
       readonly threadIndex: number;
       readonly lastMessageAt: string;
     }) {
-      const { routeIndex, routeTable, threadIndex, lastMessageAt } = args;
+      const { routeIndex, threadIndex, lastMessageAt } = args;
       const threadId = randomUUID();
       const scope =
         threadIndex !== 4 ? scopes[0] : scopes[routeIndex % 2 === 0 ? 2 : 1];
       const pins = secondaryPins[threadIndex === 4 ? routeIndex : 0];
       assert.ok(pins);
       const [selectedModel, serviceTier, hasProvider] = pins;
-      const agentId =
-        threadIndex === 4 && routeTable === "agentphone_chat_thread_routes"
-          ? null
-          : scope.agentId;
+      const agentId = scope.agentId;
       await client.query(
         `INSERT INTO chat_threads (
          id, user_id, agent_id, selected_model, codex_service_tier,
@@ -206,13 +219,11 @@ export async function validateIntegrationDmSingleThread(
         [4, "direct-message:other-agent:gpt-6-sol", "2026-09-25", "2026-09-25"],
       ] as const) {
         const routeId = randomUUID();
-        const { threadId, scope, agentId, selectedModel, serviceTier } =
-          await seedThreadWithModelPin({
-            routeIndex,
-            routeTable: route.table,
-            threadIndex: index,
-            lastMessageAt,
-          });
+        const { threadId, scope } = await seedThreadWithModelPin({
+          routeIndex,
+          threadIndex: index,
+          lastMessageAt,
+        });
         const columns = [
           "id",
           route.identity,
@@ -240,23 +251,7 @@ export async function validateIntegrationDmSingleThread(
           values,
         );
         if (index === 0 || index === 4) {
-          retainedThreadIds.add(threadId);
           retainedRouteIds.add(routeId);
-          if (agentId !== null) {
-            const kinds = [
-              ...(selectedModel !== null ? ["model_selection_updated"] : []),
-              ...(serviceTier !== null ? ["service_tier_updated"] : []),
-            ];
-            for (const kind of kinds) {
-              expectedResetEvents.push({
-                threadId,
-                userId: scope.userId,
-                orgId: scope.orgId,
-                agentId,
-                kind,
-              });
-            }
-          }
         } else if (index !== 3) {
           removedRouteIds.add(routeId);
         }
@@ -279,6 +274,8 @@ export async function validateIntegrationDmSingleThread(
 
     const beforeThreads = await rows("chat_threads");
     const beforeEvents = await rows("chat_thread_events");
+    const beforeSequences = await rows("chat_thread_event_sequences");
+    const beforeInstallations = await rows("feishu_org_installations");
     const beforeRoutes = new Map<string, Awaited<ReturnType<typeof rows>>>();
     for (const { table } of routeTables) {
       beforeRoutes.set(table, await rows(table));
@@ -306,93 +303,26 @@ export async function validateIntegrationDmSingleThread(
         });
       assert.deepEqual(await rows(route.table), expected);
     }
+    assert.deepEqual(await rows("chat_threads"), beforeThreads);
+    assert.deepEqual(await rows("chat_thread_events"), beforeEvents);
     assert.deepEqual(
-      await rows("chat_threads"),
-      beforeThreads.map((row) => {
-        return retainedThreadIds.has(String(row.id))
-          ? {
-              ...row,
-              selected_model: null,
-              codex_service_tier: null,
-              model_provider_id: null,
-              model_provider_type: null,
-              model_provider_credential_scope: null,
-            }
-          : row;
-      }),
-    );
-    const events = await rows("chat_thread_events");
-    const beforeEventIds = new Set(
-      beforeEvents.map((event) => {
-        return event.id;
-      }),
+      await rows("chat_thread_event_sequences"),
+      beforeSequences,
     );
     assert.deepEqual(
-      events.filter((event) => {
-        return beforeEventIds.has(event.id);
+      await rows("feishu_org_installations"),
+      beforeInstallations.map((row) => {
+        return {
+          ...row,
+          default_agent_id: row.org_id === "org-a" ? agentA : agentB,
+        };
       }),
-      beforeEvents,
     );
-    const resetEvents = events.filter((event) => {
-      return !beforeEventIds.has(event.id);
-    });
-    assert.equal(resetEvents.length, expectedResetEvents.length);
-    const sequences = await rows("chat_thread_event_sequences");
-    assert.equal(sequences.length, scopes.length);
-    for (const scope of scopes) {
-      const expected = expectedResetEvents
-        .filter((event) => {
-          return event.userId === scope.userId && event.orgId === scope.orgId;
-        })
-        .sort((left, right) => {
-          return (
-            left.threadId.localeCompare(right.threadId) ||
-            left.kind.localeCompare(right.kind)
-          );
-        });
-      const actual = resetEvents
-        .filter((event) => {
-          return event.user_id === scope.userId && event.org_id === scope.orgId;
-        })
-        .sort((left, right) => {
-          return Number(left.seq_id) - Number(right.seq_id);
-        });
-      assert.deepEqual(
-        actual.map((event) => {
-          return [
-            event.chat_thread_id,
-            event.agent_id,
-            event.kind,
-            Number(event.seq_id),
-            event.selected_model,
-            event.service_tier,
-          ];
-        }),
-        expected.map((event, index) => {
-          return [
-            event.threadId,
-            event.agentId,
-            event.kind,
-            scope.lastSeqId + index + 1,
-            null,
-            null,
-          ];
-        }),
-      );
-      const sequence = sequences.find((row) => {
-        return row.user_id === scope.userId && row.org_id === scope.orgId;
-      });
-      assert.ok(sequence);
-      assert.equal(
-        Number(sequence.last_seq_id),
-        scope.lastSeqId + expected.length,
-      );
-    }
     const after = await snapshot();
     await client.query(migration);
     assert.deepEqual(await snapshot(), after);
     console.log(
-      "Integration DM migration: identity scope, last use, canonical key collisions, model reset events, stream sequences, history and idempotency passed",
+      "Integration DM migration: identity scope, last use, canonical key collisions, unchanged model pins and event history, Feishu/Lark default binding and idempotency passed",
     );
   } finally {
     await client.query("ROLLBACK");

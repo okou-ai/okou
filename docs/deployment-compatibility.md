@@ -225,10 +225,9 @@ API floor subsumes it.
   Discord `session_key`, official Telegram and AgentPhone `root_message_id`).
   The migration keeps the most recently used `direct-message:%` route per
   connection/link ID (regardless of older channel IDs), rewrites its key to
-  the constant and clears its thread model, provider and service-tier selection.
-  Model and tier resets append canonical thread events in the same transaction,
-  so existing App snapshots converge on the empty selection during replay.
-  It deletes the other DM route rows; their chat threads and canonical input
+  the constant. It preserves every thread's model, provider and service-tier
+  selection and writes no thread or chat-thread events. It deletes the other
+  DM route rows; their chat threads and canonical input
   messages remain as history. Existing Discord route foreign keys also cascade
   deletion to the detached route's private launch context and ingress rows.
   No new table, column or constraint is introduced. Deploy window:
@@ -239,31 +238,51 @@ API floor subsumes it.
   history and its old-style route is unused. Rollback to an earlier API has the
   same effect: each DM opens one new old-style thread, and replaying the
   migration later folds it back in by recency.
-- **Model resolution at pick.** Entries no longer resolve model routes. A new
-  main DM thread leaves its model empty and keeps it empty after each pick;
-  the pick resolves the current `org_members_metadata.selected_model` and
-  `service_tier`, then the workspace default if that preference is unavailable.
-  Main DM model edits update the shared member preference, leaving the thread
-  model and tier empty. A pick also clears pins written by an older API during
-  promotion. Other threads with an explicit model still reject unavailable routes.
-  Native reply threads, channels and platform topics retain their own routes
-  and pin their first model at pick. Existing `/model` commands continue to
-  update the shared member preference; changing it no longer changes the DM
-  thread. Explicit `/new_session` remains an intentional conversation reset.
+- **Model selection at enqueue (migration 1281).** Web and every integration
+  use the same rule. Existing threads use their stored model, or the org
+  default when that model is unavailable. New threads initialize their model
+  from the member preference, then the org default; explicit web model choices
+  remain normal thread edits. Each input captures the effective model, tier
+  and reasoning effort in the nullable server-only JSONB
+  `chat_events.model_selection`. A thread's unavailable choice is not
+  overwritten merely because an input uses the org default. Pick validates
+  the captured choice without consulting current thread/member preferences;
+  if it is unavailable, the input becomes `input.rejected` without fallback.
+  `direct-message:main` is only a route key and has no model semantics.
+  Model settings update the thread normally. Integration `/model` commands
+  still set the member default for newly created threads; `/new_session`
+  remains an intentional conversation reset.
+  The additive column is separate from the strict public event payload, so
+  old API/App/SharedWorker readers and archive paths can ignore it. Migrations
+  precede new code; old writers omit the column and remain valid. No hot-table
+  backfill is performed: pending inputs from an outgoing API lack a captured
+  model and are rejected by the new pick instead of being re-resolved. Steering
+  inputs into an already-running run uses that run's existing model. Keep the
+  column on rollback; the existing Release 7 API floor remains unchanged.
 - **Org default agent only.** Integrations no longer read or write the
   `*_user_agent_preferences` tables or installation-level `default_agent_id`;
   every integration message runs the org default agent. The tables and columns
   are not dropped in this release because the migration runs before the new
   code and earlier APIs still read them; a later release or the daily
   compatibility cleanup drops them. Rolling back restores the old per-user
-  selections, which were left untouched. Existing integration threads move to
-  the current default at pick, in the same transaction as the new run and
-  session binding. A changed agent starts a new native/Pi session. The existing
+  selections, which were left untouched. A legacy integration thread bound to
+  a former per-user preference moves once to the immutable org default at pick,
+  in the same transaction as the new run and session binding. The single-row
+  CAS matches thread ID, owner and former agent; it has no default-change
+  subquery or visibility branch. Rebinding starts a new native/Pi session. The existing
   `sort_touched` event carries an explicit optional `reassignedAgentId`;
   updated clients replay that identity update without resetting other metadata.
   Ordinary activity and optimistic pin-order events may carry an old `agentId`
   and never reassign the thread. Older clients ignore the additive field and
   retain their previous agent until they load a newer canonical snapshot.
+- **Feishu/Lark installation binding (migration 1279).** Every physical
+  `feishu_org_installations.default_agent_id` is set to its org default for
+  both platforms. The default cannot change or be deleted, so the retained
+  `ON DELETE CASCADE` foreign key no longer follows a retired user selection.
+  Old instances read the same default; the new runtime mapping omits the
+  retired column, which is dropped only in a later compatibility cleanup.
+  The migration changes routes and installation bindings only, with no
+  `chat_threads` or event-table updates and no lock-timeout adjustment.
 - **Agent reassignment events (migration 1280).** The nullable UUID column
   `chat_thread_events.reassigned_agent_id` records only canonical reassignment
   facts, in the same transaction as the thread and run binding. No DM routing
