@@ -40,6 +40,20 @@ import type {
  * transaction and excluding its new event, so a tick that loses the
  * occurrence never revokes the winner's event.
  */
+async function flushWorkflowAdmission<T>(
+  operation: Promise<T>,
+  flush: () => void,
+): Promise<T> {
+  const result = await settleIncludingAbort(operation);
+  // Emit completed steps even when admission fails. Telemetry must never
+  // replace the committed result, original transaction error, or cancellation.
+  await settleIncludingAbort(flush);
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
+}
+
 function queueAdmissionSourceTransition(args: {
   readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
   readonly persistSourceTransition:
@@ -162,62 +176,61 @@ export const runWorkflowAutomationNow$ = command(
           ? "journaled_schedule"
           : "unjournaled_schedule";
     let admissionOutcome: WorkflowAdmissionOutcome = "failed";
-    const enqueued = await censusWorkflowAdmission(
-      schedulePath,
-      measureWorkflowAdmissionStep(
-        timing,
-        "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
-        async () => {
-          const attempt = await settle(
-            enqueueChatInput(db, {
-              chatThreadId,
-              orgId: automation.orgId,
-              appendInput,
-              measureStep: (step, operation) => {
-                const action = {
-                  transaction: "api_dispatch_workflow_enqueue_transaction",
-                  callback:
-                    "api_dispatch_workflow_enqueue_transaction_callback",
-                  queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
-                } as const;
-                return measureWorkflowAdmissionStep(
+    const enqueued = await flushWorkflowAdmission(
+      censusWorkflowAdmission(
+        schedulePath,
+        measureWorkflowAdmissionStep(
+          timing,
+          "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
+          async () => {
+            const attempt = await settle(
+              enqueueChatInput(db, {
+                chatThreadId,
+                orgId: automation.orgId,
+                appendInput,
+                measureStep: (step, operation) => {
+                  const action = {
+                    transaction: "api_dispatch_workflow_enqueue_transaction",
+                    callback:
+                      "api_dispatch_workflow_enqueue_transaction_callback",
+                    queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
+                  } as const;
+                  return measureWorkflowAdmissionStep(
+                    timing,
+                    action[step],
+                    operation,
+                  );
+                },
+                ...queueAdmissionSourceTransition({
+                  scheduleClaim,
+                  persistSourceTransition,
+                  replacePendingTicks,
                   timing,
-                  action[step],
-                  operation,
-                );
-              },
-              ...queueAdmissionSourceTransition({
-                scheduleClaim,
-                persistSourceTransition,
-                replacePendingTicks,
-                timing,
+                }),
               }),
-            }),
-          );
-          if (!attempt.ok) {
-            if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {
-              admissionOutcome = "superseded";
-              return false;
+            );
+            if (!attempt.ok) {
+              if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {
+                admissionOutcome = "superseded";
+                return false;
+              }
+              throw attempt.error;
             }
-            throw attempt.error;
-          }
-          admissionOutcome = "inserted";
-          return true;
-        },
+            admissionOutcome = "inserted";
+            return true;
+          },
+          () => {
+            return {
+              schedule_path: schedulePath,
+              admission_outcome: admissionOutcome,
+            };
+          },
+        ),
         () => {
-          return {
-            schedule_path: schedulePath,
-            admission_outcome: admissionOutcome,
-          };
+          return admissionOutcome;
         },
       ),
       () => {
-        return admissionOutcome;
-      },
-    ).finally(async () => {
-      // Failure or cancellation must not discard completed steps. The sink
-      // cannot replace the admission result, including a DB/abort error.
-      await settleIncludingAbort(() => {
         timing.flushWithoutRun(
           {
             schedule_path: schedulePath,
@@ -228,8 +241,8 @@ export const runWorkflowAutomationNow$ = command(
           },
           admissionOutcome !== "failed",
         );
-      });
-    });
+      },
+    );
     signal.throwIfAborted();
 
     // A superseded occurrence adds no queue item; the claim plan's owner
