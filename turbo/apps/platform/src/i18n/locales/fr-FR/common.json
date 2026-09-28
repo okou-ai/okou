@@ -641,7 +641,6 @@
       "activeHtmlPreview": "Aperçu HTML actif de {{title}}",
       "all": "Tout",
       "avatar": "Avatar",
-      "avatarWithId": "Avatar {{id}}",
       "categories": "Catégories de modèles",
       "category": "Catégorie de modèle",
       "fullPreview": "Aperçu complet du site {{title}}",

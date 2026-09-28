@@ -622,7 +622,6 @@
       "activeHtmlPreview": "{{title}} アクティブな HTML プレビュー",
       "all": "すべて",
       "avatar": "アバター",
-      "avatarWithId": "アバター {{id}}",
       "categories": "テンプレートのカテゴリ",
       "category": "テンプレートカテゴリ",
       "fullPreview": "{{title}} Web サイトの完全なプレビュー",

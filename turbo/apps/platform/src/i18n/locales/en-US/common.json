@@ -623,7 +623,6 @@
       "activeHtmlPreview": "{{title}} active HTML preview",
       "all": "All",
       "avatar": "Avatar",
-      "avatarWithId": "Avatar {{id}}",
       "categories": "Template categories",
       "category": "Template category",
       "fullPreview": "{{title}} website full preview",

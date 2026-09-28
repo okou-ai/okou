@@ -622,7 +622,6 @@
       "activeHtmlPreview": "{{title}} 활성 HTML 미리보기",
       "all": "전체",
       "avatar": "아바타",
-      "avatarWithId": "아바타 {{id}}",
       "categories": "템플릿 카테고리",
       "category": "템플릿 카테고리",
       "fullPreview": "{{title}} 웹사이트 전체 미리보기",

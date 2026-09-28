@@ -622,7 +622,6 @@
       "activeHtmlPreview": "{{title}} 当前 HTML 预览",
       "all": "全部",
       "avatar": "虚拟形象",
-      "avatarWithId": "虚拟形象 {{id}}",
       "categories": "模板分类",
       "category": "模板分类",
       "fullPreview": "{{title}} 网站完整预览",
