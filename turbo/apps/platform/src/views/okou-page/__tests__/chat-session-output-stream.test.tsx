@@ -168,6 +168,42 @@ test("A growing action URL becomes a card as soon as a boundary arrives", async 
   });
 });
 
+test("Only terminated URLs become cards when two actions share a streaming line", async () => {
+  const events = activeRun();
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await subscribed();
+
+  const first = `https://app.okou.ai/computer-use/authorize/${"a".repeat(26)}`;
+  const second = `https://app.okou.ai/computer-use/authorize/${"b".repeat(26)}`;
+  const content = `${first} ${second}`;
+  push(0, content);
+  await expect(screen.findByText(second)).resolves.toBeInTheDocument();
+  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
+
+  push(1, " ");
+  await waitFor(() => {
+    expect(
+      screen.getAllByTestId("computer-use-authorization-card").map((card) => {
+        return card.querySelector("a")?.href;
+      }),
+    ).toStrictEqual([first, second]);
+  });
+
+  events.push(
+    assistantEvent({
+      id: EVENT_ID,
+      runId: RUN_ID,
+      seqId: 2,
+      text: `${content} \n\nBoth actions complete`,
+    }),
+  );
+  publishRunUpdate();
+  await waitFor(() => {
+    expect(screen.getByText("Both actions complete")).toBeInTheDocument();
+    expect(screen.getAllByText("Computer Use authorization")).toHaveLength(2);
+  });
+});
+
 test("A closed Markdown action link becomes a card before the run finishes", async () => {
   await setupActiveOutputStream();
   const url =
