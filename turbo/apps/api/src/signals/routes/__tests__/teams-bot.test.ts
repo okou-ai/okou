@@ -2602,9 +2602,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       type: "message",
       text: expect.stringContaining("This model picker is out of date"),
     });
-    await expect(userConfigApi.readModelPreference(actor)).resolves.toEqual(
-      before,
-    );
+    await expect(
+      userConfigApi.readModelPreference(actor),
+    ).resolves.toStrictEqual(before);
   });
 
   describe("queued runs for a connected Teams bot", () => {
