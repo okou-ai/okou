@@ -242,7 +242,12 @@ stricter release 7 API floor subsumes it.
   are not dropped in this release because the migration runs before the new
   code and earlier APIs still read them; a later release or the daily
   compatibility cleanup drops them. Rolling back restores the old per-user
-  selections, which were left untouched.
+  selections, which were left untouched. Existing integration threads move to
+  the current default at pick, in the same transaction as the new run and
+  session binding. A changed agent starts a new native/Pi session. The existing
+  `sort_touched` event carries the current agent identity; updated clients replay
+  it into the thread list without resetting other metadata. Older clients can
+  parse this event but display the previous agent until they upgrade.
 - **Self-hosted Telegram bots retired.** Only the official shared bot remains.
   The API no longer reads or writes `telegram_installations` or
   `telegram_user_links`, and the register, setup-status, bot delete and bot

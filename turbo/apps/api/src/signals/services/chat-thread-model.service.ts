@@ -149,7 +149,6 @@ type CodexTierResolution =
       readonly kind: "ok";
       readonly runCodexServiceTier: "fast" | undefined;
       readonly persistedCodexServiceTier: CodexServiceTier | null;
-      readonly tierChanged: boolean;
     };
 
 function transactionResultWithoutPublish(
@@ -243,7 +242,6 @@ function resolveCodexTier(args: {
     kind: "ok",
     runCodexServiceTier,
     persistedCodexServiceTier,
-    tierChanged: persistedCodexServiceTier !== args.persistedTier,
   };
 }
 
@@ -416,15 +414,18 @@ async function evaluatePersistedChatThreadModel(
     return { kind: "error", error: tier.error };
   }
 
+  const persistedCodexServiceTier = followsDefaultModel
+    ? null
+    : tier.persistedCodexServiceTier;
+  const tierChanged = persistedCodexServiceTier !== thread.codexServiceTier;
+
   return {
     kind: "resolved",
     evaluation: {
       pin,
       providerAdmission,
       runCodexServiceTier: tier.runCodexServiceTier,
-      persistedCodexServiceTier: followsDefaultModel
-        ? null
-        : tier.persistedCodexServiceTier,
+      persistedCodexServiceTier,
       reasoningEffort: effort.reasoningEffort,
       modelSettings: effort.modelSettings,
       modelSettingsPatch: modelSettingsChanged
@@ -432,10 +433,10 @@ async function evaluatePersistedChatThreadModel(
         : undefined,
       modelSettingsChanged,
       selectedModelChanged,
-      tierChanged: followsDefaultModel ? false : tier.tierChanged,
+      tierChanged,
       requiresReconciliation:
         selectedModelChanged ||
-        (!followsDefaultModel && tier.tierChanged) ||
+        tierChanged ||
         modelSettingsChanged ||
         legacyProviderPinPresent(thread),
     },
