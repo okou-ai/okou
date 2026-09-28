@@ -161,8 +161,7 @@ unreachable by release 6:
   no longer parses the startup record or launch config. The Runner's generated
   `PiLaunchConfig` has no `deny_unknown_fields`, so it tolerates the removed
   slot; only the installed release 7 CLI's strict launch schema rejects it.
-  `okou run usage` accepts
-  only the `sandboxProxy` source.
+  `okou run usage` accepts only the `sandboxProxy` source.
 - `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` rises to the first CLI release without
   the slot, because release 6 installed CLIs parse the launch config strictly
   and require `apiFirstTurn`. The value is the last released CLI version plus
@@ -196,9 +195,16 @@ preinstalled in the Runner image):
   created before promotion and not yet claimed; runs are normally claimed
   within seconds and the pending timeout bounds the window at five minutes.
   This is accepted; release at low traffic.
-- No reader remains for handoff objects that release 6 APIs wrote under
-  `pi-api-first-turn/`; objects that the removed sweep had not yet deleted stay
-  in the bucket until removed separately.
+- No reader remains for handoff objects that earlier APIs wrote under
+  `pi-api-first-turn/`. The one-time
+  [`019-pi-api-first-turn-cleanup`](../turbo/packages/db/scripts/migrations/019-pi-api-first-turn-cleanup/README.md)
+  script inventories this fixed prefix in `R2_USER_STORAGES_BUCKET_NAME` by
+  default and deletes it only with `--execute`. Operations runs it after
+  release 7 promotion and old API writer drain; deployment and cron do not
+  invoke it. It paginates, stops on request or per-object errors without
+  retries, and independently verifies the prefix is empty. This PR has not
+  executed remote cleanup; canonical session history outside the prefix is
+  untouched.
 
 **API rollback floor: this release**, pinned by the marker
 `.github/rollback-floors/pi-api-first-turn-retired` in
@@ -206,9 +212,10 @@ preinstalled in the Runner image):
 the old CLI floor on every Pi run: a release 7 Guest would launch its
 preinstalled release 7 CLI, which rejects the slot, so every Pi run fails until
 the Runners are rolled back as well. This rejection comes from the installed
-CLI, not the Runner's generated type or the Guest. Earlier APIs also require the slot when
-they decode contexts queued by this release. The release 6 Runner protocol is the minimum supported predecessor; the
-stricter release 7 API floor subsumes it.
+CLI, not the Runner's generated type or the Guest. Earlier APIs also require
+the slot when they decode contexts queued by this release. The release 6
+Runner protocol is the minimum supported predecessor; the stricter release 7
+API floor subsumes it.
 
 ### Integration DM threads and org default agent
 
@@ -268,8 +275,7 @@ stricter release 7 API floor subsumes it.
   optional contract field and keep accepting earlier events without it. An old
   App may also omit the field from cached events; upgrading does not change
   those cached facts, and a newer canonical snapshot resolves their identity.
-  This
-  field adds no rollback floor beyond the release 7 API floor above. Keep the
+  This field adds no rollback floor beyond the release 7 API floor above. Keep the
   column on rollback; older APIs and Apps can ignore it, while snapshots read
   the canonical thread agent directly. It is a permanent event fact with no
   compatibility fallback or removal deadline.
