@@ -2125,15 +2125,14 @@ describe("CHAT-02: completed chat callback", () => {
       `chatThreadMessageCreated:${first.threadId}`,
       { syncThroughSeqId: followupEvent.seqId },
     );
-    // The auto-sent queued message titles the thread as soon as its run is
-    // created, with the completed round supplying prior context.
+    // The auto-sent queued message titles the thread in background work
+    // started with its run, with the completed round supplying prior context.
+    await flushWaitUntilForTest();
     expect(titlePrompts).toHaveLength(1);
     expect(titlePrompts[0]).toContain(
       "Most recent user message:\nqueued while side effects wait",
     );
     expect(titlePrompts[0]).toContain("finish the current turn");
-
-    await flushWaitUntilForTest();
 
     await queueChatEvent(actor, {
       agentId,
