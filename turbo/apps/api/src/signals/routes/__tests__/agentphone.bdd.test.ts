@@ -837,11 +837,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const rebound = await claimDispatchedRun(runnerGroup);
     expect(rebound.agentId).toBe(replacement.agentId);
     expect(rebound.resumedSessionId).toBeUndefined();
-    const reboundSession = await waitForRunSessionIdPresent(
-      actor,
-      rebound.runId,
-    );
-    expect(reboundSession).not.toBe(originalSession);
     await expect(runs.readRun(actor, rebound.runId)).resolves.toMatchObject({
       vars: { OKOU_AGENT_ID: replacement.agentId },
     });
@@ -880,6 +875,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     }
 
     await completeSandboxRun(rebound.sandboxToken, rebound.runId, 0);
+    const reboundSession = await waitForRunSessionIdPresent(
+      actor,
+      rebound.runId,
+    );
+    expect(reboundSession).not.toBe(originalSession);
     await ap.postAgentPhoneInboundMessage({
       channel: "sms",
       from: phone,
@@ -890,8 +890,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(resumed.resumedSessionId).toBe(
       agentPhoneCliAgentSessionIdForRun(rebound.runId),
     );
-    await waitForRunSessionId(actor, resumed.runId, reboundSession);
     await completeSandboxRun(resumed.sandboxToken, resumed.runId, 0);
+    await waitForRunSessionId(actor, resumed.runId, reboundSession);
   }, 90_000);
 
   it("links an AgentPhone user without provisioning artifact storage", async () => {
