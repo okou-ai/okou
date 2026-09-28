@@ -6,13 +6,6 @@ const c = initContract();
 
 export const OFFICIAL_TELEGRAM_BOT_ID = "official" as const;
 
-const telegramEnvironmentSchema = z.object({
-  requiredSecrets: z.array(z.string()),
-  requiredVars: z.array(z.string()),
-  missingSecrets: z.array(z.string()),
-  missingVars: z.array(z.string()),
-});
-
 const telegramTokenStatusSchema = z.enum(["valid", "invalid", "unknown"]);
 
 const telegramConnectedUserSchema = z.object({
@@ -224,7 +217,12 @@ export type IntegrationsTelegramContract = typeof integrationsTelegramContract;
 export type TelegramBot = z.infer<typeof telegramBotSchema>;
 export type TelegramBotStatus = z.infer<typeof telegramBotSchema> & {
   readonly domainConfigured: boolean;
-  readonly environment: z.infer<typeof telegramEnvironmentSchema>;
+  readonly environment: {
+    readonly requiredSecrets: string[];
+    readonly requiredVars: string[];
+    readonly missingSecrets: string[];
+    readonly missingVars: string[];
+  };
 };
 export type TelegramListResponse = z.infer<typeof telegramListResponseSchema>;
 export type TelegramLinkStatusResponse = z.infer<
