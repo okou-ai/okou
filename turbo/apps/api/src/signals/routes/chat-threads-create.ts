@@ -178,14 +178,29 @@ function inheritedRunId(auth: AuthContext): string | undefined {
     : undefined;
 }
 
-function selectedCodexServiceTier(
-  requested: ChatThreadServiceTier | null | undefined,
-  inherited: CodexServiceTier | null,
-): CodexServiceTier | null {
-  if (requested === undefined) {
-    return inherited;
-  }
-  return requested === "priority" ? "fast" : null;
+async function initialThreadModel(
+  db: Db,
+  owner: { readonly orgId: string; readonly userId: string },
+  requested: {
+    readonly model?: string;
+    readonly serviceTier?: ChatThreadServiceTier | null;
+  },
+): Promise<{
+  readonly selectedModel: string | null;
+  readonly codexServiceTier: CodexServiceTier | null;
+}> {
+  const initial =
+    requested.model === undefined
+      ? await resolveDefaultModelFirstPin(db, owner.orgId, owner.userId)
+      : { selectedModel: requested.model, serviceTier: null };
+  const serviceTier =
+    requested.serviceTier === undefined
+      ? initial.serviceTier
+      : requested.serviceTier;
+  return {
+    selectedModel: initial.selectedModel,
+    codexServiceTier: serviceTier === "priority" ? "fast" : null,
+  };
 }
 
 const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -229,19 +244,15 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     inheritedRunId(auth),
   );
   signal.throwIfAborted();
-  const initialModel =
-    body.data.model === undefined
-      ? await resolveDefaultModelFirstPin(writeDb, auth.orgId, auth.userId)
-      : null;
+  const { selectedModel, codexServiceTier } = await initialThreadModel(
+    writeDb,
+    auth,
+    body.data,
+  );
   signal.throwIfAborted();
-  const selectedModel = body.data.model ?? initialModel?.selectedModel;
   if (!selectedModel) {
     return badRequestMessage("A model selection is required");
   }
-  const codexServiceTier = selectedCodexServiceTier(
-    body.data.serviceTier,
-    initialModel?.serviceTier === "priority" ? "fast" : null,
-  );
   // Explicit request, then what the caller's own thread pinned, then the
   // member and catalog defaults. The last step is what keeps a thread from
   // following a default the member changes after this thread exists.
