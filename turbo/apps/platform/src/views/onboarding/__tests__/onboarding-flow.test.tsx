@@ -399,7 +399,7 @@ test("Presentation creation opens its template gallery", async () => {
   expect(pathname()).toBe("/agents/c0000000-0000-4000-a000-000000000001/chat");
 });
 
-test("New accounts skip the Video production choice and can continue onboarding", async () => {
+test("Onboarding omits the Video production choice even for older accounts", async () => {
   mockOnboardingNeeded();
   await setupPage({
     context,
@@ -408,7 +408,7 @@ test("New accounts skip the Video production choice and can continue onboarding"
       user: {
         id: "test-user-123",
         fullName: "Test User",
-        createdAt: new Date("2026-09-21T07:13:25.000Z"),
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
       },
     },
   });

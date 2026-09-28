@@ -20,7 +20,6 @@ const ONBOARDING_MAKE_OPTION_IDS = [
   "slack",
   "workflow",
   "presentation",
-  "video",
   "images",
   "website",
   "explore",
