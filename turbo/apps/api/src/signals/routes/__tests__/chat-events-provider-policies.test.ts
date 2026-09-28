@@ -20,7 +20,6 @@ import {
   setOrgModelPolicyProviderTypeFixture,
   stageUnrepairedOrgModelPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
-import { withModelRoutingQueryReceipt } from "../../../test-fixtures/model-routing-query-receipt";
 import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
@@ -59,6 +58,7 @@ const {
   configureBuiltInPiModel,
   configureBuiltInPiModelOnOpenRouter,
   sendChatRun,
+  requestSendEventRaw,
   expectNoThreadModelUpdateEvent,
   claimChatRun,
   waitForThreadMessages,
@@ -386,8 +386,9 @@ describe("CHAT-02: model-first provider policies", () => {
     }
   }, 90_000);
 
-  it("reads no routing state on an existing-thread send", async () => {
-    const { actor, agentId, providerId } = await entitledChatActor();
+  it("queues an existing-thread input with its model until the active run releases the thread", async () => {
+    const { actor, agentId, providerId, runnerGroup } =
+      await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await api.updateOrgModelPolicies(actor, [
       {
@@ -403,7 +404,7 @@ describe("CHAT-02: model-first provider policies", () => {
       agentId,
       model: "claude-fable-5-1",
     });
-    // Keep the thread busy so the follow-up's pick ends without routing.
+    // Keep the thread busy so the follow-up stays queued after model selection.
     const active = await sendChatRun(actor, {
       agentId,
       threadId: thread.id,
@@ -411,27 +412,28 @@ describe("CHAT-02: model-first provider policies", () => {
     });
 
     const clientEventId = randomUUID();
-    const captured = await withModelRoutingQueryReceipt(() => {
-      return chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: thread.id,
-          prompt: "enqueue without routing reads",
-          clientEventId,
-        },
-        [201],
-      );
-    });
-    expect(captured.result.status).toBe(201);
-    // The send only enqueues; model routing and plan admission belong to the
-    // pick that later launches the input.
-    expect(captured.receipt).toMatchObject({
-      planReads: 0,
-      policyReads: 0,
-      personalMetadataReads: 0,
-      personalAccountReads: 0,
-    });
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: thread.id,
+        prompt: "enqueue with the thread model",
+        clientEventId,
+      },
+      [201],
+    );
+    expect(sent.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    expect(
+      (await chat.listThreadEvents(actor, thread.id)).events,
+    ).toContainEqual(
+      expect.objectContaining({ id: clientEventId, eventType: "input.prompt" }),
+    );
+    expect(
+      (await chat.listThreadEvents(actor, thread.id)).events,
+    ).not.toContainEqual(
+      expect.objectContaining({ revokesEventId: clientEventId }),
+    );
 
     await cancelChatRun(actor, active.runId);
     const { picked } = await waitForPickedInput(
@@ -442,6 +444,8 @@ describe("CHAT-02: model-first provider policies", () => {
     if (picked.runId === undefined) {
       throw new Error("Expected the follow-up to launch after the cancel");
     }
+    const { claim } = await claimChatRun(runnerGroup, picked.runId);
+    expect(claim.modelUsageProvider).toBe("claude-fable-5-1");
     await cancelChatRun(actor, picked.runId);
   }, 90_000);
 
@@ -523,53 +527,69 @@ describe("CHAT-02: model-first provider policies", () => {
       error: "insufficient_credits",
     });
 
-    // A missing plan authority fails the pick itself: the input is neither
-    // launched nor rejected. It waits on its own thread so it cannot hold the
-    // FIFO head of the thread the next sends use.
+    // Missing canonical plan authority is an invariant failure during model
+    // selection. The HTTP request fails before appending an input or a run.
     const missingThread = await chat.createThread(actor, {
       agentId,
       model: "claude-fable-5-1",
     });
     await deleteOrgPlanEntitlementFixture(orgId);
     const missingEventId = randomUUID();
-    const missing = await chat.requestSendEvent(
+    const prompt = "reject missing persisted plan authority";
+    const missing = await requestSendEventRaw(actor, {
+      agentId,
+      threadId: missingThread.id,
+      prompt,
+      clientEventId: missingEventId,
+      userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+      hasTextContent: true,
+    });
+    expect(missing).toStrictEqual({
+      status: 500,
+      body: { error: "Internal server error" },
+    });
+    await flushWaitUntilForTest();
+    expect(
+      (await chat.listThreadEvents(actor, missingThread.id)).events,
+    ).toStrictEqual([]);
+
+    await upsertOrgPlanEntitlementFixture({
+      orgId,
+      status: "active",
+      supportByok: true,
+      restrictedBuiltInModels: false,
+    });
+    const busy = await sendChatRun(actor, {
+      agentId,
+      threadId: initial.threadId,
+      prompt: "hold the thread while the next input captures its model",
+    });
+    const queuedEventId = randomUUID();
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
-        threadId: missingThread.id,
-        prompt: "reject missing persisted plan authority",
-        clientEventId: missingEventId,
+        threadId: initial.threadId,
+        clientEventId: queuedEventId,
+        prompt: "reject a model that becomes BYOK-disabled before pick",
       },
       [201],
     );
-    if (missing.status !== 201) {
-      throw new Error("Expected missing-plan send to return 201");
-    }
-    expect(missing.body.runId).toBeNull();
     await flushWaitUntilForTest();
-    const missingMessages = await chat.listThreadEvents(
-      actor,
-      missingThread.id,
-    );
-    expect(
-      userMessages(missingMessages.events).filter((message) => {
-        return message.revokesEventId === missingEventId;
-      }),
-    ).toStrictEqual([]);
-
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "active",
       supportByok: false,
       restrictedBuiltInModels: false,
     });
-    // The thread keeps its BYOK model; a plan without BYOK rejects the
-    // input instead of moving it to the plan's built-in default.
-    const byokDisabled = await sendUntilPicked(actor, {
-      agentId,
-      threadId: initial.threadId,
-      prompt: "reject a BYOK-disabled persisted route",
-    });
+    // Pick validates the model captured before the plan changed. It rejects
+    // that model rather than selecting the newly available workspace default.
+    await cancelChatRun(actor, busy.runId);
+    const byokDisabled = await waitForPickedInput(
+      actor,
+      initial.threadId,
+      queuedEventId,
+    );
     expect(byokDisabled.picked).toMatchObject({
       eventType: "input.rejected",
       error: "insufficient_credits",
