@@ -5,7 +5,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
-import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 
 import { recordBillingOperationTimings } from "../external/sandbox-op-log";
 import { writeDb$ } from "../external/db";
@@ -157,16 +157,36 @@ async function deductFromExpiresRecords(
     .for("update");
 
   let left = amount;
+  const updates: { readonly id: string; readonly remaining: number }[] = [];
   for (const record of records) {
     if (left <= 0) {
       break;
     }
     const deduct = Math.min(left, record.remaining);
+    updates.push({ id: record.id, remaining: record.remaining - deduct });
+    left -= deduct;
+  }
+
+  const [first, second] = updates;
+  if (updates.length === 2 && first && second) {
+    // The ordered SELECT already locked both rows; persist the same FEFO results
+    // with one statement instead of two round trips.
     await tx
       .update(creditExpiresRecord)
-      .set({ remaining: record.remaining - deduct })
-      .where(eq(creditExpiresRecord.id, record.id));
-    left -= deduct;
+      .set({
+        remaining: sql`CASE ${creditExpiresRecord.id}
+          WHEN ${first.id} THEN ${first.remaining}::bigint
+          WHEN ${second.id} THEN ${second.remaining}::bigint
+          ELSE ${creditExpiresRecord.remaining} END`,
+      })
+      .where(inArray(creditExpiresRecord.id, [first.id, second.id]));
+  } else {
+    for (const update of updates) {
+      await tx
+        .update(creditExpiresRecord)
+        .set({ remaining: update.remaining })
+        .where(eq(creditExpiresRecord.id, update.id));
+    }
   }
   // If left > 0, the excess comes from non-expiring credits — that's fine.
   return records.length;
