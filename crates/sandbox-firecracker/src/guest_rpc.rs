@@ -103,6 +103,18 @@ impl GuestRpcEndpoint {
             return Err(error);
         }
         let ingress = tokio::spawn(route_connections(Arc::clone(&shared), rpc_tx, duplex_tx));
+        // A retained old acceptor may keep Shared alive after park. Close its
+        // queued idle sockets promptly, not only its listener and active IO.
+        let drain_shared = Arc::clone(&shared);
+        tokio::spawn(async move {
+            drain_shared.closed.cancelled().await;
+            let mut duplex = drain_shared.duplex.lock().await;
+            duplex.close();
+            while duplex.try_recv().is_ok() {}
+            let mut rpc = drain_shared.rpc.lock().await;
+            rpc.close();
+            while rpc.try_recv().is_ok() {}
+        });
         let cleanup_shared = Arc::clone(&shared);
         let cleanup = tokio::spawn(async move {
             runtime_cancel.cancelled().await;

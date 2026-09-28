@@ -221,6 +221,25 @@ async fn legacy_rpc_request_survives_shared_ingress_byte_for_byte() {
 }
 
 #[tokio::test]
+async fn endpoint_close_drops_idle_duplex_even_when_old_capability_is_retained() {
+    let mut fixture = Fixture::new().await;
+    let mut peer = UnixStream::connect(&fixture.path).await.unwrap();
+    peer.write_all(&[PREFACE]).await.unwrap();
+    let mut ready = [0];
+    peer.read_exact(&mut ready).await.unwrap();
+    assert_eq!(ready, [READY]);
+
+    let retained = fixture.endpoint.as_ref().unwrap().duplex_acceptor("run-a");
+    drop(fixture.endpoint.take());
+    let eof = timeout(Duration::from_secs(1), peer.read(&mut ready))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(eof, 0);
+    assert!(retained.accept().await.is_err());
+}
+
+#[tokio::test]
 async fn full_duplex_queue_rejects_excess_without_disrupting_legacy_rpc() {
     let fixture = Fixture::new().await;
     let mut first = UnixStream::connect(&fixture.path).await.unwrap();
