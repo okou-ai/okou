@@ -492,8 +492,22 @@ describe("canonical Discord terminal replies", () => {
       ).toHaveLength(1);
       expect(events).toContainEqual(
         expect.objectContaining({
+          eventType: "input.rejected",
+          error: "discord_access_revoked",
+        }),
+      );
+      expect(
+        events.filter((event) => {
+          return (
+            event.eventType === "input.prompt" && event.runId !== undefined
+          );
+        }),
+      ).toHaveLength(1);
+      expect(events).toContainEqual(
+        expect.objectContaining({
           eventType: "output.error",
-          content: "This Discord conversation is no longer available.",
+          error: "discord_access_revoked",
+          content: "Oops, something went wrong. Please try again later.",
         }),
       );
       expect(started.provider.sentMessages).toHaveLength(0);
