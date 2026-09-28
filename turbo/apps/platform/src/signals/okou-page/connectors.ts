@@ -32,10 +32,6 @@ import {
   type ComposerConnectorAccountSignals,
 } from "./composer-connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
-import { sshAccessForAgent } from "../ssh.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { vncAccessForAgent } from "../vnc-access.ts";
 
 export interface ComposerConnectorAuthorizationState {
   readonly agentId: string;
@@ -117,20 +113,6 @@ export interface ComposerConnectorSignals {
     Promise<readonly PlatformUserPermissionGrant[]>
   >;
   readonly accounts: ComposerConnectorAccountSignals;
-  readonly sshAccess$: Computed<
-    Promise<{
-      readonly identity: string;
-      readonly agentId: string;
-      readonly enabled: boolean;
-    } | null>
-  >;
-  readonly vncAccess$: Computed<
-    Promise<{
-      readonly identity: string;
-      readonly agentId: string;
-      readonly enabled: boolean;
-    } | null>
-  >;
 }
 
 /** Browse reads ask for no keyword; the category, when set, scopes them. */
@@ -325,20 +307,6 @@ export function createComposerConnectorSignals(
   threadId?: string,
 ): ComposerConnectorSignals {
   const ui = createConnectorUiSignals();
-  const sshAccessForAgent$ = sshAccessForAgent(agentId);
-  const vncAccessForAgent$ = vncAccessForAgent(agentId);
-  const sshAccess$ = computed(async (get) => {
-    return get(ui.connectorUiState$).popoverHasOpened &&
-      !get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]
-      ? await get(sshAccessForAgent$)
-      : null;
-  });
-  const vncAccess$ = computed(async (get) => {
-    return get(ui.connectorUiState$).popoverHasOpened &&
-      !get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]
-      ? await get(vncAccessForAgent$)
-      : null;
-  });
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {
     const [overview, authorization] = await Promise.all([
@@ -419,7 +387,5 @@ export function createComposerConnectorSignals(
     connectorPermissionMetadata$,
     connectorPermissionGrants$,
     accounts: createComposerConnectorAccountSignals(threadId),
-    sshAccess$,
-    vncAccess$,
   };
 }

@@ -2,7 +2,7 @@
 
 SSH is generally available as a standalone capability, including Direct and
 Cloudflare Access transports. There is no rollout switch or staff-membership
-gate. Owner, Agent grant and Run authorization checks remain mandatory.
+gate. Owner, chat-thread host selection and Run authorization checks remain mandatory.
 SSH uses neither connector accounts nor connector permissions.
 
 ## Owner setup
@@ -13,19 +13,17 @@ card uses the same presentation as connector cards: no hosts shows the service
 description and add affordance; one configured host shows its display name and
 multiple hosts show their count. Hosts without a reported failure use a green dot;
 current failures use an amber dot and `failed/total need attention`, including
-`1/1 need attention` for a single failed host. The footer keeps **Add access** or
-**Used by** Agent authorization. The authorization
-dialog lists your currently visible Agents with search and the same switches as
-Connector access management, while writing only the standalone SSH grant API.
-The count is configuration, not tested connectivity. It participates in
-search and category navigation. Connection-status filters mean configured or
-not configured for SSH; an Agent filter uses its independent SSH grant, even
-when no hosts are configured. SSH never opens generic connector account or
-permission dialogs.
+`1/1 need attention` for a single failed host. Agent-wide grant controls are no longer shown. Each host has a chat default,
+and each chat can explicitly allow or deny that exact host; see
+[Chat remote access](thread-remote-access.md). The count is configuration,
+not tested connectivity. It participates in search and category navigation.
+Connection-status filters mean configured or not configured for SSH; Agent
+and unshared filters do not list SSH hosts. SSH never opens generic connector
+account or permission dialogs.
 
 The SSH card opens the Remote control scope with the SSH type selected. Use
 **Add host** there to create a host. Host management remains independent of
-Agent grants.
+chat host selections.
 
 The **Connections** view configures a display name, public hostname or IP, port, and a
 credential. Select an existing credential or create a named credential inline with
@@ -129,31 +127,12 @@ API; ordinary overlapping API deployment is not supported for this reset.
 Already-loaded staff pages must reload. This is separate from the Runner's
 existing support for both key and password authority responses.
 
-Enable the **SSH** row in **Agent -> Authorization**, alongside connector rows
-with the same search and loading switch, not in Profile. The description explains
-the all-host grant; there is no information tooltip, permission-sliders or
-host-management button in that row. With no hosts, the SSH
-row is hidden without clearing grants. Adding the first host automatically
-authorizes all Agents currently visible to you, including other users' public
-Agents in the same workspace. Host creation and these grants commit together.
-Adding more hosts preserves manually disabled grants. Deleting every host and
-adding one again repeats automatic authorization, just like connecting the first
-Connector account; Agents created afterward are not automatically authorized.
-
-You can grant or revoke your own SSH access for any currently visible Agent.
-The grant covers all your current and future hosts in that workspace, only for
-your Runs. An Agent's creator or another user does not receive your credentials
-or your grant. Agents cannot grant themselves access. This is not limited to
-chat-triggered Runs.
-
-Chat's services popover shows SSH alongside configured Connectors, with the
-same authorization switch and an enabled trigger icon, without a host-management
-action. Manage hosts through the global SSH card.
-Both the service list and trigger icons order built-in Connectors before SSH,
-then custom Connectors. The trigger keeps its three-icon limit and existing
-computer/browser slots; SSH no longer displaces built-in Connector icons.
-It always uses that composer's Agent, including split-pane chats. No hosts hides
-the SSH row; **Add connectors** offers the same zero-host setup entry.
+The Agent-wide SSH authorization row and services-popover grant switch are
+retired. Configure each saved host's chat default in Remote control; choose
+`On`, `Off`, or `Use default` per host from the chat's Remote access menu.
+Creating the first host may still populate legacy Agent-grant records for
+compatibility, but these records do not authorize Run access. **Add connectors**
+continues to offer zero-host SSH setup.
 Both the legacy dialog and the Discover directory include this entry when
 no hosts are configured. In Discover, it appears after
 built-in shelves and under **Remote access**, participates in search, and stays
@@ -345,8 +324,8 @@ blocked ID; Runner resolution and pinning still return unavailable before
 credentials are decrypted. List again after an unavailable or unknown ID; never
 invent IDs or automatically replay a command whose effects are unknown.
 The inventory requires a current running Run, an Agent visible to its user,
-`ssh:read`, and either the current Agent grant or the Run's chat-level host
-selection (when Thread Remote Access is enabled). A `hosts: []` result means no
+`ssh:read`, and the Run's current chat-level permission for each host.
+A Run without a valid chat thread is denied. A `hosts: []` result means no
 hosts are visible to this Run; it does not prove the owner has none saved.
 An authorized empty inventory is distinct from unavailable authority.
 Execution requires `ssh:write`. Both capabilities are minted only

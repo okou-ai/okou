@@ -27,58 +27,7 @@ import { getAction } from "./connector-integrations-test-helpers.ts";
 const context = testContext();
 const agentId = "c0000000-0000-4000-8000-000000000001";
 
-test.each([false])(
-  "A single SSH host shows its name unless it needs attention (failed: %s)",
-  async (failed) => {
-    mockCatalog();
-    const connectionId = "b0000000-0000-4000-8000-000000000001";
-    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-      return respond(200, { configuredCount: 1 });
-    });
-    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-      return respond(200, {
-        connections: [
-          {
-            id: connectionId,
-            displayName: "Deployment",
-            host: "ssh.example.com",
-            port: 22,
-            username: "deploy",
-            credentialId: "d0000000-0000-4000-8000-000000000001",
-            credentialName: "Deployment login",
-            generation: 1,
-            learnedHostKey: null,
-            createdAt: "2026-09-10T08:00:00.000Z",
-            updatedAt: "2026-09-10T08:00:00.000Z",
-          },
-        ],
-      });
-    });
-    context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
-      return respond(200, {
-        observations: [
-          {
-            connectionId,
-            generation: 1,
-            observedAt: "2026-09-10T08:00:00.000Z",
-            failureReason: failed ? "authentication_failed" : null,
-          },
-        ],
-      });
-    });
-    await page("/connectors?keywords=ssh");
-    const label = failed ? "1/1 need attention" : "Deployment";
-    await screen.findByText(label);
-    expect(screen.queryByText("1 host configured")).toBeNull();
-    expect(screen.getByText("Add access")).toBeInTheDocument();
-    expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
-      "href",
-      "/connectors?scope=remote-control&type=ssh",
-    );
-  },
-);
-
-test("The SSH directory summarizes attention like Connectors and recovers without changing Agent access", async () => {
+test("The SSH directory summarizes attention and recovers without Agent grant controls", async () => {
   mockCatalog();
   context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
     return respond(200, { configuredCount: 3 });
@@ -122,7 +71,7 @@ test("The SSH directory summarizes attention like Connectors and recovers withou
   });
   await screen.findByText("2/3 need attention");
   expect(screen.queryByText("3 hosts configured")).toBeNull();
-  expect(screen.getByText("Add access")).toBeInTheDocument();
+  expect(screen.queryByText("Add access")).toBeNull();
   expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
     "href",
     "/connectors?scope=remote-control&type=ssh",
@@ -131,7 +80,7 @@ test("The SSH directory summarizes attention like Connectors and recovers withou
   context.mocks.ably.trigger("ssh:changed", { orgId });
   await screen.findByText("3 hosts configured");
   expect(screen.queryByText("2/3 need attention")).toBeNull();
-  expect(screen.getByText("Add access")).toBeInTheDocument();
+  expect(screen.queryByText("Add access")).toBeNull();
 });
 
 test("The SSH directory distinguishes unavailable diagnostics from failed hosts", async () => {
@@ -152,7 +101,7 @@ test("The SSH directory distinguishes unavailable diagnostics from failed hosts"
     "href",
     "/connectors?scope=remote-control&type=ssh",
   );
-  expect(screen.getByText("Add access")).toBeInTheDocument();
+  expect(screen.queryByText("Add access")).toBeNull();
 });
 
 test.each([2])(
@@ -230,72 +179,6 @@ test.each([2])(
   },
 );
 
-test("The global card manages visible Agent grants with Connector presentation and search", async () => {
-  mockCatalog();
-  const otherId = "c0000000-0000-4000-8000-000000000002";
-  context.mocks.data.agents([
-    listAgent(agentId, "Research"),
-    { ...listAgent(otherId, "Shared"), ownerId: "another-owner" },
-  ]);
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 2 });
-  });
-  const grants = new Set<string>();
-  context.mocks.api(agentSshAccessContract.get, ({ params, respond }) => {
-    return respond(200, { enabled: grants.has(params.agentId) });
-  });
-  context.mocks.api(
-    agentSshAccessContract.update,
-    ({ params, body, respond }) => {
-      if (body.enabled) {
-        grants.add(params.agentId);
-      } else {
-        grants.delete(params.agentId);
-      }
-      return respond(200, { enabled: body.enabled });
-    },
-  );
-  await page("/connectors?keywords=ssh");
-  await screen.findByText("Add access");
-  click(screen.getByTestId("connector-card-agent-access"));
-  const dialog = await screen.findByRole("dialog");
-  click(
-    await within(dialog).findByRole("switch", {
-      name: "Authorize SSH access for Research",
-    }),
-  );
-  await within(dialog).findByRole("switch", {
-    name: "Revoke SSH access for Research",
-  });
-  expect(screen.getByTestId("connector-card-access-names")).toHaveTextContent(
-    "Research",
-  );
-  click(
-    within(dialog).getByRole("switch", {
-      name: "Authorize SSH access for Shared",
-    }),
-  );
-  await within(dialog).findByRole("switch", {
-    name: "Revoke SSH access for Shared",
-  });
-  expect(screen.getByTestId("connector-card-access-names")).toHaveTextContent(
-    "2 agents",
-  );
-  await fill(within(dialog).getByRole("textbox"), "shared");
-  expect(within(dialog).queryByText("Research")).toBeNull();
-  click(
-    within(dialog).getByRole("switch", {
-      name: "Revoke SSH access for Shared",
-    }),
-  );
-  await within(dialog).findByRole("switch", {
-    name: "Authorize SSH access for Shared",
-  });
-  expect(screen.getByTestId("connector-card-access-names")).toHaveTextContent(
-    "Research",
-  );
-});
-
 function mockCatalog() {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, []);
@@ -310,28 +193,6 @@ async function page(path = "/connectors") {
     path,
   });
 }
-
-test("Legacy tabs remain usable after opening SSH management", async () => {
-  mockCatalog();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  await page();
-  click(
-    await waitFor(() => {
-      return getConnectorAction("link", "Manage SSH hosts");
-    }),
-  );
-  await screen.findByText("0 hosts configured");
-  click(getConnectorAction("tab", "Custom"));
-  await waitFor(() => {
-    expect(window.location.search).toBe("?tab=custom");
-    expect(screen.queryByText("0 hosts configured")).toBeNull();
-  });
-});
 
 test("Opening the SSH card returns to connections after viewing credentials", async () => {
   mockCatalog();
@@ -365,63 +226,6 @@ test("Opening the SSH card returns to connections after viewing credentials", as
   );
 });
 
-test.each([0])(
-  "Global SSH entry shows %i configured hosts and opens management without an Agent",
-  async (count) => {
-    mockCatalog();
-    context.mocks.data.agents([]);
-    context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
-      return respond(200, { credentials: [] });
-    });
-    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-      return respond(200, { configuredCount: count });
-    });
-    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-      return respond(200, { connections: [] });
-    });
-    await page();
-    const label =
-      count === 0
-        ? "Let your agents run commands on remote machines."
-        : `${count} ${count === 1 ? "host" : "hosts"} configured`;
-    await screen.findByText(label);
-    const entry = getConnectorAction("link", "Manage SSH hosts");
-    expect(entry).toHaveAttribute(
-      "href",
-      "/connectors?scope=remote-control&type=ssh",
-    );
-    expect(
-      screen.getByRole("heading", { name: "Remote access" }),
-    ).toBeInTheDocument();
-    const card = screen.getByTestId("connector-category-remote-access");
-    expect(
-      within(card).queryByText(
-        "Let your agents run commands on remote machines.",
-      ) !== null,
-    ).toBe(count === 0);
-    expect(
-      within(card).queryByText("0 hosts configured"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(card).queryByText(/connected|tested/iu),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByTestId("connector-category-remote-access"),
-    ).toContainElement(entry);
-    expect(
-      screen.getByText("Connect 2 services for your agents to use."),
-    ).toBeInTheDocument();
-    click(entry);
-    await screen.findByRole("heading", { name: "SSH" });
-    expect(window.location.search).toBe("?scope=remote-control&type=ssh");
-    click(getConnectorAction("button", "Add host"));
-    const dialog = await screen.findByRole("dialog");
-    const key = await within(dialog).findByLabelText("Private key");
-    expect(key).toHaveValue("");
-    expect(within(dialog).queryByText("OAuth")).not.toBeInTheDocument();
-  },
-);
-
 test("SSH participates in search and configured filters without changing generic connector actions", async () => {
   mockCatalog();
   context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
@@ -454,92 +258,6 @@ test("SSH participates in search and configured filters without changing generic
   expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
 });
 
-test.each([
-  [false, false],
-  [true, true],
-] as const)(
-  "The unshared filter uses visible SSH grants (directory: %s, enabled: %s)",
-  async (directory, enabled) => {
-    mockCatalog();
-    context.mocks.data.agents([listAgent(agentId, "Research")]);
-    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-      return respond(200, { configuredCount: 1 });
-    });
-    context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-      return respond(200, { enabled });
-    });
-    await setupPage({
-      context,
-      path: "/connectors?scope=connected&connection=unshared&keywords=ssh",
-      featureSwitches: {
-        [FeatureSwitchKey.ConnectorDirectory]: directory,
-      },
-    });
-    if (directory) {
-      await screen.findByText(/Every connector is shared with an agent/u);
-    } else if (enabled) {
-      await screen.findByText('No connectors matching "ssh"');
-    } else {
-      await screen.findByText("1 host configured");
-    }
-    expect(queryConnectorAction("link", "Manage SSH hosts") !== null).toBe(
-      !directory && !enabled,
-    );
-  },
-);
-
-test("SSH access remains manageable in Remote control", async () => {
-  mockCatalog();
-  context.mocks.data.agents([listAgent(agentId, "Research")]);
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  let enabled = false;
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled });
-  });
-  context.mocks.api(agentSshAccessContract.update, ({ body, respond }) => {
-    enabled = body.enabled;
-    return respond(200, { enabled });
-  });
-  await setupPage({
-    context,
-    path: "/connectors?scope=remote-control",
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorDirectory]: true,
-    },
-  });
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage SSH access");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog");
-  click(
-    await within(dialog).findByRole("switch", {
-      name: "Authorize SSH access for Research",
-    }),
-  );
-  await within(dialog).findByRole("switch", {
-    name: "Revoke SSH access for Research",
-  });
-  click(getConnectorAction("button", "Close", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  click(screen.getByTestId("connectors-scope-connected"));
-  expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-  click(screen.getByTestId("connectors-scope-remote-control"));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("button", "Manage SSH access");
-    }),
-  );
-  await within(await screen.findByRole("dialog")).findByRole("switch", {
-    name: "Revoke SSH access for Research",
-  });
-});
-
 test("Thread remote access hides legacy Agent grants in Remote control", async () => {
   mockCatalog();
   context.mocks.data.agents([listAgent(agentId, "Research")]);
@@ -551,51 +269,11 @@ test("Thread remote access hides legacy Agent grants in Remote control", async (
     path: "/connectors?scope=remote-control",
     featureSwitches: {
       [FeatureSwitchKey.ConnectorDirectory]: true,
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
     },
   });
   await screen.findByRole("heading", { name: "SSH" });
   expect(queryConnectorAction("button", "Manage SSH access")).toBeNull();
   expect(screen.queryByText("Add access")).toBeNull();
-});
-
-test.each([true])(
-  "Agent filter uses its standalone SSH grant (%s), including no hosts",
-  async (enabled) => {
-    mockCatalog();
-    context.mocks.data.agents([listAgent(agentId, "Research")]);
-    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-      return respond(200, { configuredCount: 0 });
-    });
-    context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-      return respond(200, { enabled });
-    });
-    await page(`/connectors?keywords=ssh&connection=agent:${agentId}`);
-    await screen.findByText(
-      enabled
-        ? "Let your agents run commands on remote machines."
-        : /No connectors for this agent/,
-    );
-    expect(queryConnectorAction("link", "Manage SSH hosts") !== null).toBe(
-      enabled,
-    );
-  },
-);
-
-test("A shared Agent filter uses the current user's SSH grant", async () => {
-  mockCatalog();
-  context.mocks.data.agents([
-    { ...listAgent(agentId, "Shared"), ownerId: "another-owner" },
-  ]);
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 2 });
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: true });
-  });
-  await page(`/connectors?keywords=ssh&connection=agent:${agentId}`);
-  await screen.findByText("2 hosts configured");
-  expect(queryConnectorAction("link", "Manage SSH hosts")).not.toBeNull();
 });
 
 test("Deleting an SSH host referenced by VNC explains how to resolve the dependency", async () => {

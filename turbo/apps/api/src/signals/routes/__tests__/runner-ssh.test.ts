@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 
 import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   runnerSshContract,
   type RunnerSshResolveRequest,
@@ -29,7 +28,6 @@ import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -403,9 +401,6 @@ describe("chat thread SSH authority", () => {
       throw new Error("Missing fixture chat thread");
     }
     const threadId = f.threadId;
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-    });
     authenticate(f);
     const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
       chatRemoteAccessContract,

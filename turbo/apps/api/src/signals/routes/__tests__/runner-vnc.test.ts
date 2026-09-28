@@ -69,7 +69,6 @@ describe("private Runner VNC authority", () => {
     const threadId = f.threadId;
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.VncAccess]: true,
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
     });
     api.authenticate(f);
     const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(

@@ -1,13 +1,13 @@
 # Runner VNC authority
 
 The #34980 API slice authorizes the engine and session integration delivered by
-#34780. `VncAccess` remains disabled by default, including staff. VNC grants
-remain independent of SSH and Desktop; an SSH-backed route additionally requires
-the Agent's separate SSH grant and shared Run-owned SSH authority. The Agent
+#34780. `VncAccess` remains disabled by default, including staff. Chat-level VNC access
+remains independent of SSH and Desktop; an SSH-backed route additionally requires
+the thread's effective access to the exact SSH host and shared Run-owned SSH authority. The Agent
 chooses native shared or exclusive mode for each session; the VNC server enforces
 its connection policy.
 
-With `ThreadRemoteAccess` enabled for the Run owner, live VNC inventory, private resolve, and check require the Run's chat thread and that thread's effective permission for the exact VNC host. SSH-backed hosts also require effective permission for the referenced SSH host. A Run without a chat thread is denied. The Agent-grant rules below apply while the switch is off.
+Live VNC inventory, private resolve, and check require the Run's chat thread and that thread's effective permission for the exact VNC host. SSH-backed hosts also require effective permission for the referenced SSH host. A Run without a chat thread is denied. Legacy Agent grants below remain stored for compatibility but do not authorize runtime VNC access.
 
 ## Explicit grants and inventory
 
@@ -22,9 +22,9 @@ revoke removes the row and regrant restores current access without a historical
 grant incarnation.
 
 Agent tokens receive `vnc:read` and `vnc:write` only when the feature is enabled.
-These capabilities do not replace a current grant. GET `/api/vnc/hosts` requires
-`vnc:read`, the exact running Run, same-owner session, visible Agent and owner's
-grant. Inventory contains only id, displayName, host, port, authMethod,
+These capabilities do not replace current chat host selection. GET `/api/vnc/hosts` requires
+`vnc:read`, the exact running Run, same-owner session, visible Agent and current
+chat-thread VNC host access. Inventory contains only id, displayName, host, port, authMethod,
 securityType, and availability. Availability is `ready` for configured hosts or
 `blocked: needs_rebind` for an SSH-backed host whose underlying SSH binding
 needs repair. The host stays visible for diagnosis, but fresh Runner authority
@@ -43,8 +43,8 @@ credentials do not authorize these routes. Fleet-secret protection remains a
 trust assumption; the shared credential itself does not identify a machine.
 
 Every call joins the current same-owner Run/session/visible Agent/VNC
-grant/connection and credential. SSH rows additionally require the independent
-SSH Agent grant and same-owner referenced SSH connection. Requests contain
+connection and credential and checks current chat-thread host access. SSH rows
+additionally require effective access to the same-owner referenced SSH connection. Requests contain
 saved IDs, not endpoint or owner overrides.
 Private handlers set `Cache-Control: no-store` before authentication and body
 validation. Malformed path parameters return a generic 400 before the handler.
@@ -58,7 +58,7 @@ Mac classic-password `vnc_password` / `apple_vnc_password` pair and Apple DH,
 Apple Direct SRP and Apple RSA/SRP pairs only for `ssh`. Every advertised tuple
 names its `transportType`. An empty list or a saved tuple absent from the list
 returns `unsupported_profile` only after VNC authorization and before KMS. An
-SSH row is also checked for its SSH grant before any credential handoff.
+SSH row is also checked for its chat-thread SSH access before any credential handoff.
 Unknown methods, profiles and cross-paired combinations are rejected. Future
 engine support must add a new exact pair instead of broadening a saved policy or
 creating an implicit downgrade path. The Mac classic-password profile selects
@@ -97,7 +97,7 @@ snapshot.
 `check` takes `connectionId`, `runnerIdentity`, `expectedGeneration` and, for a
 capable Runner, `expectedTransport`. It
 returns `valid`, `configuration_changed` or `unavailable`. It rechecks current
-authorization, both grants and both generations without decrypting credentials
+authorization, both chat host permissions and both generations without decrypting credentials
 or changing database state. A missing expected transport is accepted only for a
 legacy direct row; SSH requires the exact referenced ID and generation. Multiple
 authorized Runs can independently resolve and check the same connection. Neither

@@ -4,18 +4,15 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
-import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, eq, isNotNull, or } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   runThreadSshAccess,
   runThreadVncAccess,
-  runUsesThreadRemoteAccess,
 } from "./run-thread-remote-access.service";
 
 type RunnerVncInput = Pick<
@@ -29,7 +26,6 @@ export async function currentRunnerVncAuthority(
   input: RunnerVncInput,
   signal: AbortSignal,
 ) {
-  const threadMode = await runUsesThreadRemoteAccess(db, input.runId, signal);
   const [row] = await db
     .select({
       generation: vncConnections.generation,
@@ -41,7 +37,6 @@ export async function currentRunnerVncAuthority(
       sshConnectionId: vncConnections.sshConnectionId,
       sshGeneration: sshConnections.generation,
       sshNeedsRebind: sshConnections.needsRebind,
-      sshGrantAgentId: agentSshAccess.agentId,
       sshAllowed: runThreadSshAccess(db),
       x509ServerName: vncConnections.x509ServerName,
       securityType: vncConnections.securityType,
@@ -66,22 +61,6 @@ export async function currentRunnerVncAuthority(
         eq(agents.id, agentSessions.agentId),
         eq(agents.orgId, agentRuns.orgId),
         or(eq(agents.visibility, "public"), eq(agents.owner, agentRuns.userId)),
-      ),
-    )
-    .leftJoin(
-      agentVncAccess,
-      and(
-        eq(agentVncAccess.agentId, agents.id),
-        eq(agentVncAccess.orgId, agentRuns.orgId),
-        eq(agentVncAccess.userId, agentRuns.userId),
-      ),
-    )
-    .leftJoin(
-      agentSshAccess,
-      and(
-        eq(agentSshAccess.agentId, agents.id),
-        eq(agentSshAccess.orgId, agentRuns.orgId),
-        eq(agentSshAccess.userId, agentRuns.userId),
       ),
     )
     .innerJoin(
@@ -117,7 +96,7 @@ export async function currentRunnerVncAuthority(
           agentRuns.runnerHeartbeatGeneration,
           input.runnerIdentity.heartbeatGeneration,
         ),
-        threadMode ? runThreadVncAccess(db) : isNotNull(agentVncAccess.agentId),
+        runThreadVncAccess(db),
       ),
     );
   signal.throwIfAborted();
@@ -133,5 +112,5 @@ export async function currentRunnerVncAuthority(
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
     return null;
   }
-  return { ...row, threadMode };
+  return row;
 }

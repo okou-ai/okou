@@ -10,7 +10,6 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
@@ -30,7 +29,6 @@ import { runnerSshRoutes } from "../runner-ssh";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -127,9 +125,6 @@ describe("owner SSH grants and live Run inventory", () => {
       throw new Error("Missing fixture chat thread");
     }
     const threadId = f.threadId;
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-    });
     authenticate(f);
     const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
       chatRemoteAccessContract,

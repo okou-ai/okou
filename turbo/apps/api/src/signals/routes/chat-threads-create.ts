@@ -151,11 +151,6 @@ const validateInitialRemoteAccess$ = command(
     );
     signal.throwIfAborted();
     if (
-      !isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, featureContext)
-    ) {
-      return badRequestMessage("Remote access is not available");
-    }
-    if (
       args.overrides.some((item) => {
         return item.protocol === "vnc";
       }) &&

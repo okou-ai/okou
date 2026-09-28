@@ -1,5 +1,4 @@
 import { useGet, useSet } from "ccstate-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Filter } from "lucide-react";
 import {
@@ -18,11 +17,6 @@ import {
   setRemoteControlView$,
   type RemoteControlType,
 } from "../../signals/okou-page/settings/remote-control-directory.ts";
-import { openSshAccessManagement$ } from "../../signals/ssh.ts";
-import { openVncAccessManagement$ } from "../../signals/vnc-access.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { detach, Reason } from "../../signals/utils.ts";
 import { SshCredentials, SshDialog, SshHosts } from "./ssh-management.tsx";
 import { VncCredentials, VncHosts } from "./vnc-management.tsx";
 import { VncDialog } from "./vnc-dialog.tsx";
@@ -111,15 +105,10 @@ export function RemoteControlPanel({
   readonly vncEnabled: boolean;
 }) {
   const { t } = useTranslation();
-  const threadRemoteAccess =
-    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
   const type = useGet(remoteControlType$);
   const selectedType = type === "vnc" && !vncEnabled ? "all" : type;
   const view = useGet(remoteControlView$);
   const setView = useSet(setRemoteControlView$);
-  const openSshAccess = useSet(openSshAccessManagement$);
-  const openVncAccess = useSet(openVncAccessManagement$);
-  const signal = useGet(pageSignal$);
   const showSsh = selectedType === "all" || selectedType === "ssh";
   const showVnc =
     vncEnabled && (selectedType === "all" || selectedType === "vnc");
@@ -161,22 +150,6 @@ export function RemoteControlPanel({
                 return $.ssh.label;
               })}
             </h2>
-            {view === "connections" && !threadRemoteAccess && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  return detach(openSshAccess(signal), Reason.DomCallback);
-                }}
-              >
-                {t(
-                  ($) => {
-                    return $.connectors.access.title;
-                  },
-                  { connector: "SSH" },
-                )}
-              </Button>
-            )}
           </div>
           {view === "connections" ? <SshHosts /> : <SshCredentials />}
         </section>
@@ -194,22 +167,6 @@ export function RemoteControlPanel({
                 return $.vnc.label;
               })}
             </h2>
-            {view === "connections" && !threadRemoteAccess && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  return detach(openVncAccess(signal), Reason.DomCallback);
-                }}
-              >
-                {t(
-                  ($) => {
-                    return $.connectors.access.title;
-                  },
-                  { connector: "VNC" },
-                )}
-              </Button>
-            )}
           </div>
           {view === "connections" ? <VncHosts /> : <VncCredentials />}
         </section>

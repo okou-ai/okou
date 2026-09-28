@@ -148,15 +148,12 @@ import {
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
-import { VncAccessManagementDialog } from "./components/settings/vnc-access-management-dialog.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { vncSummary$ } from "../../signals/vnc.ts";
-import { vncAgentAccessRows$ } from "../../signals/vnc-access.ts";
 import { filteredVncSummary$ } from "../../signals/okou-page/settings/vnc-connector.ts";
 import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
-import { SshAccessManagementDialog } from "./components/settings/ssh-access-management-dialog.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
-import { sshSummary$, sshAgentAccessRows$ } from "../../signals/ssh.ts";
+import { sshSummary$ } from "../../signals/ssh.ts";
 import { cloudflareAccessSummary$ } from "../../signals/cloudflare-access.ts";
 import {
   filteredSshSummary$,
@@ -1982,10 +1979,7 @@ function ManagedConnectorAccessDialog() {
 function SshDirectoryLoadError() {
   const summary = useLoadable(sshSummary$);
   const filtered = useLoadable(filteredSshSummary$);
-  const rows = useLoadable(sshAgentAccessRows$);
-  return summary.state === "hasError" ||
-    filtered.state === "hasError" ||
-    rows.state === "hasError" ? (
+  return summary.state === "hasError" || filtered.state === "hasError" ? (
     <SshLoadError />
   ) : null;
 }
@@ -1993,10 +1987,7 @@ function SshDirectoryLoadError() {
 function VncDirectoryLoadError() {
   const summary = useLoadable(vncSummary$);
   const filtered = useLoadable(filteredVncSummary$);
-  const rows = useLoadable(vncAgentAccessRows$);
-  return summary.state === "hasError" ||
-    filtered.state === "hasError" ||
-    rows.state === "hasError" ? (
+  return summary.state === "hasError" || filtered.state === "hasError" ? (
     <VncLoadError />
   ) : null;
 }
@@ -2630,9 +2621,6 @@ export function ConnectorsPage() {
           </div>
         </div>
       </main>
-
-      <SshAccessManagementDialog />
-      <VncAccessManagementDialog />
 
       {accountConnect && (
         <ConnectModal

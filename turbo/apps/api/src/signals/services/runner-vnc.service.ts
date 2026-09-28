@@ -52,8 +52,7 @@ function hasTransportAuthority(
 ) {
   return (
     transport.type === "direct" ||
-    (row.sshNeedsRebind === false &&
-      (row.threadMode ? row.sshAllowed : row.sshGrantAgentId !== null))
+    (row.sshNeedsRebind === false && row.sshAllowed)
   );
 }
 
@@ -338,7 +337,7 @@ export async function resolveRunnerVnc(
     throw new Error("VNC connection has an invalid stored profile");
   }
   const transport = storedTransportSnapshot(row);
-  if (row.threadMode && !hasTransportAuthority(row, transport)) {
+  if (!hasTransportAuthority(row, transport)) {
     return { outcome: "unavailable" };
   }
   const capability = selectedCapability(
@@ -348,9 +347,6 @@ export async function resolveRunnerVnc(
   );
   if (!capability) {
     return { outcome: "unsupported_profile" };
-  }
-  if (!row.threadMode && !hasTransportAuthority(row, transport)) {
-    return { outcome: "unavailable" };
   }
   const security = storedRunnerSecurity(row, transport);
   const authentication = await decryptRunnerAuthentication(row, signal);

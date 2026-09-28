@@ -79,9 +79,6 @@ describe("chat remote access owner API", () => {
   it("inherits the current default without chat rows and preserves explicit allow or deny across multiple hosts", async () => {
     useSecretKmsProbe();
     const owner = await ownerWithThread();
-    await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-    });
     mocks.clerk.session(
       owner.actor.userId,
       owner.actor.orgId,
@@ -258,16 +255,13 @@ describe("chat remote access owner API", () => {
     });
   });
 
-  it("keeps the new API gated and gives cross-owner IDs the same not-found result", async () => {
+  it("makes owner host defaults available and gives cross-owner IDs the same not-found result", async () => {
     useSecretKmsProbe();
     const firstOwner = await ownerWithThread();
     const firstHost = await createSshHost("Private host");
-    await accept(accessClient().listHostDefaults({ headers }), [404]);
+    await accept(accessClient().listHostDefaults({ headers }), [200]);
 
     const secondOwner = await ownerWithThread();
-    await updateFeatureSwitchesForUser(context, secondOwner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-    });
     mocks.clerk.session(
       secondOwner.actor.userId,
       secondOwner.actor.orgId,
@@ -332,7 +326,6 @@ describe("chat remote access owner API", () => {
     initializeVncRuntimeTest();
     const owner = await ownerWithThread();
     await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
       [FeatureSwitchKey.VncAccess]: true,
     });
     vnc.authenticate({
@@ -430,7 +423,6 @@ describe("chat remote access owner API", () => {
       source: "default",
     });
     await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
       [FeatureSwitchKey.VncAccess]: false,
     });
     vnc.authenticate({

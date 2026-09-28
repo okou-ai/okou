@@ -2,15 +2,7 @@ import {
   sshCredentialsContract,
   type SshCredentialResponse,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
-import {
-  agentsByIdContract,
-  type AgentResponse,
-} from "@okouai/api-contracts/contracts/agents";
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
-import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   sshConnectionsContract,
   type SshConnectionResponse,
@@ -22,10 +14,6 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
-import {
-  catalogConnectorFixture,
-  mockConnectorOverview,
-} from "../../team-page/__tests__/team-page-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -41,7 +29,6 @@ const auth = Object.freeze({
   },
 });
 const id = "b0000000-0000-4000-8000-000000000001";
-const agentId = "c0000000-0000-4000-8000-000000000001";
 const base: SshConnectionResponse = Object.freeze({
   id,
   displayName: "Deployment",
@@ -486,7 +473,7 @@ test("SSH host settings update the chat default in thread remote access mode", a
     context,
     path: "/connectors?scope=remote-control&type=ssh",
     auth,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   const toggle = await screen.findByRole("switch", {
     name: "Enabled by default for chats",
@@ -533,7 +520,7 @@ test("SSH host default can retry after its settings fail to load", async () => {
     context,
     path: "/connectors?scope=remote-control&type=ssh",
     auth,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   await screen.findByText("Couldn't load remote access.");
   expect(document.body.textContent).not.toContain("private default error");
@@ -1014,219 +1001,4 @@ test("Changing owner closes the credential form and clears its fields", async ()
   expect(
     screen.queryByDisplayValue("old-owner-canary"),
   ).not.toBeInTheDocument();
-});
-
-test("A visible shared Agent offers the current user's SSH authorization", async () => {
-  const agent: AgentResponse = {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: "another-owner",
-    displayName: "Shared Agent",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
-    visibility: "public",
-  };
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  let enabled = true;
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled });
-  });
-  context.mocks.api(agentSshAccessContract.update, ({ body, respond }) => {
-    enabled = body.enabled;
-    return respond(200, { enabled });
-  });
-  await page(`/agents/${agentId}?tab=authorization`);
-  const control = await screen.findByRole("switch", {
-    name: "Revoke SSH access",
-  });
-  expect(control).toBeChecked();
-  click(control);
-  await screen.findByRole("switch", { name: "Grant SSH access" });
-  expect(
-    screen.getByRole("switch", { name: "Grant SSH access" }),
-  ).not.toBeChecked();
-});
-
-test("Changing users hides the previous user's SSH grant while the new grant loads", async () => {
-  const agent: AgentResponse = {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: "shared-agent-owner",
-    displayName: "Shared Agent",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
-    visibility: "public",
-  };
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  const nextOwner = context.mocks.deferred<void>();
-  let changing = false;
-  context.mocks.api(sshConnectionsContract.summary, async ({ respond }) => {
-    if (changing) {
-      await nextOwner.promise;
-    }
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: !changing });
-  });
-  await page(`/agents/${agentId}?tab=authorization`);
-  await screen.findByRole("switch", { name: "Revoke SSH access" });
-  const clerk = context.mocks.clerk();
-  changing = true;
-  act(() => {
-    clerk.user(
-      { id: "other-owner", fullName: "Other Owner" },
-      { token: "other-token" },
-    );
-    clerk.stateChanged();
-  });
-  await waitFor(() => {
-    expect(screen.queryByRole("switch", { name: /SSH access/ })).toBeNull();
-  });
-  nextOwner.resolve();
-  const control = await screen.findByRole("switch", {
-    name: "Grant SSH access",
-  });
-  expect(control).not.toBeChecked();
-});
-
-test("Owner Authorization offers SSH access while Profile has no SSH controls", async () => {
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  const agent: AgentResponse = {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: auth.user.id,
-    displayName: "Research",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
-    visibility: "private",
-  };
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  let enabled = false;
-  context.mocks.api(agentSshAccessContract.get, ({ params, respond }) => {
-    expect(params.agentId).toBe(agentId);
-    return respond(200, { enabled });
-  });
-  context.mocks.api(
-    agentSshAccessContract.update,
-    ({ body, params, respond }) => {
-      expect(params.agentId).toBe(agentId);
-      enabled = body.enabled;
-      return respond(200, body);
-    },
-  );
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [] });
-  });
-  await page(`/agents/${agentId}?tab=profile`);
-  await screen.findByDisplayValue("Research");
-  expect(
-    screen.queryByRole("switch", { name: /SSH access/ }),
-  ).not.toBeInTheDocument();
-  click(getAction("button", "Authorization"));
-  const control = await screen.findByRole("switch", {
-    name: "Grant SSH access",
-  });
-  expect(control).not.toBeChecked();
-  expect(
-    screen.getByText(
-      "Allow this Agent to execute commands on all your current and future configured SSH hosts. This is separate from connector permissions.",
-    ),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByText(/No connected services yet/),
-  ).not.toBeInTheDocument();
-  click(control);
-  await waitFor(() => {
-    return expect(
-      screen.getByRole("switch", { name: "Revoke SSH access" }),
-    ).toBeChecked();
-  });
-  click(screen.getByRole("switch", { name: "Revoke SSH access" }));
-  await waitFor(() => {
-    return expect(
-      screen.getByRole("switch", { name: "Grant SSH access" }),
-    ).not.toBeChecked();
-  });
-});
-
-test("SSH uses connector authorization search", async () => {
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  const agent: AgentResponse = {
-    isDefaultAgent: false,
-    agentId,
-    ownerId: auth.user.id,
-    displayName: "Research",
-    description: null,
-    sound: null,
-    avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
-    visibility: "private",
-  };
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: true });
-  });
-  const github = catalogConnectorFixture(
-    connectorSlugSchema.parse("github"),
-    "GitHub",
-    { hasPermissions: false },
-  );
-  mockConnectorOverview(context, [github]);
-  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
-    return respond(200, []);
-  });
-  await page(`/agents/${agentId}?tab=authorization`);
-  await screen.findByRole("switch", { name: "Revoke SSH access" });
-  await screen.findByRole("switch", { name: "Grant GitHub access" });
-  click(getAction("button", "Find connectors"));
-  const search = screen.getByPlaceholderText("Find connectors...");
-  await fill(search, "ssh");
-  expect(
-    screen.getByRole("switch", { name: "Revoke SSH access" }),
-  ).toBeChecked();
-  expect(
-    screen.queryByRole("switch", { name: /GitHub access/ }),
-  ).not.toBeInTheDocument();
-  await fill(search, "github");
-  expect(
-    screen.queryByRole("switch", { name: /SSH access/ }),
-  ).not.toBeInTheDocument();
-  await fill(search, "");
-  expect(
-    screen.getByRole("switch", { name: "Revoke SSH access" }),
-  ).toBeChecked();
 });

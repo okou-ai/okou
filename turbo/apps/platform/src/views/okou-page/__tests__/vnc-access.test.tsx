@@ -1,10 +1,6 @@
-import { agentVncAccessContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
-import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -17,47 +13,14 @@ import {
   SCOUT_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 import {
-  listAgent,
   mockConnectors,
   mockPublicConnectorStatus,
 } from "./connector-page-test-helpers.ts";
-
-const agentId = "c0000000-0000-4000-8000-000000000001";
 
 function mockCatalog() {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, []);
 }
-
-test.each([true, false])(
-  "Agent discovery filter uses its independent VNC grant (%s)",
-  async (enabled) => {
-    mockCatalog();
-    context.mocks.data.agents([listAgent(agentId, "Research")]);
-    context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-      return respond(200, { configuredCount: 0 });
-    });
-    context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
-      return respond(200, { enabled });
-    });
-    await setupPage({
-      context,
-      path: `/connectors?keywords=vnc&connection=agent:${agentId}`,
-      featureSwitches: {
-        [FeatureSwitchKey.VncAccess]: true,
-        [FeatureSwitchKey.ConnectorDirectory]: false,
-      },
-    });
-    if (enabled) {
-      await findFastControl("link", "Manage VNC");
-    } else {
-      await screen.findByText(/No connectors for this agent/u);
-    }
-    expect(
-      queryFastControl("link", "Manage VNC")?.getAttribute("href") ?? null,
-    ).toBe(enabled ? "/connectors?scope=remote-control&type=vnc" : null);
-  },
-);
 
 test.each([false, true])(
   "VNC is available in its layout's connection list (%s)",
@@ -79,8 +42,8 @@ test.each([false, true])(
         [FeatureSwitchKey.ConnectorDirectory]: directory,
       },
     });
+    expect(queryFastControl("button", "Manage VNC access")).toBeNull();
     if (directory) {
-      await findFastControl("button", "Manage VNC access");
       await screen.findByRole("heading", { name: "VNC" });
     } else {
       await findFastControl("link", "Manage VNC");
@@ -117,99 +80,6 @@ test.each([false])(
     expect(queryFastControl("link", "Manage VNC")).toBeNull();
   },
 );
-
-test("VNC settings grants authorize a visible Agent independently of SSH", async () => {
-  mockCatalog();
-  context.mocks.data.agents([listAgent(agentId, "Research")]);
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  let enabled = false;
-  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled });
-  });
-  context.mocks.api(
-    agentVncAccessContract.update,
-    ({ body, params, respond }) => {
-      expect(params.agentId).toBe(agentId);
-      enabled = body.enabled;
-      return respond(200, { enabled });
-    },
-  );
-  context.mocks.api(agentSshAccessContract.update, () => {
-    throw new Error("VNC authorization must not alter SSH access");
-  });
-  await setupPage({
-    context,
-    path: "/connectors?keywords=vnc",
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
-  });
-  click(await findFastControl("button", "Manage VNC access"));
-  const dialog = await screen.findByRole("dialog");
-  click(
-    await within(dialog).findByRole("switch", {
-      name: "Authorize VNC access for Research",
-    }),
-  );
-  await expect(
-    within(dialog).findByRole("switch", {
-      name: "Revoke VNC access for Research",
-    }),
-  ).resolves.toBeChecked();
-  click(
-    within(dialog).getByRole("switch", {
-      name: "Revoke VNC access for Research",
-    }),
-  );
-  await expect(
-    within(dialog).findByRole("switch", {
-      name: "Authorize VNC access for Research",
-    }),
-  ).resolves.not.toBeChecked();
-});
-
-test("Agent authorization hides retained VNC grants when the owner changes", async () => {
-  const agent = listAgent(agentId, "Research");
-  context.mocks.data.agents([agent]);
-  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
-    return respond(200, agent);
-  });
-  const nextOwner = context.mocks.deferred<void>();
-  let changing = false;
-  context.mocks.api(vncConnectionsContract.summary, async ({ respond }) => {
-    if (changing) {
-      await nextOwner.promise;
-    }
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: !changing });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${agentId}?tab=authorization`,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
-  });
-  await expect(
-    screen.findByRole("switch", { name: "Revoke VNC access" }),
-  ).resolves.toBeChecked();
-  const clerk = context.mocks.clerk();
-  changing = true;
-  act(() => {
-    clerk.user(
-      { id: "other-owner", fullName: "Other Owner" },
-      { token: "other-token" },
-    );
-    clerk.stateChanged();
-  });
-  await waitFor(() => {
-    expect(screen.queryByRole("switch", { name: /VNC access/u })).toBeNull();
-  });
-  nextOwner.resolve();
-  await expect(
-    screen.findByRole("switch", { name: "Grant VNC access" }),
-  ).resolves.not.toBeChecked();
-});
 
 test.each([true])(
   "Chat VNC setup appears and filters in directory layout %s",
@@ -299,84 +169,3 @@ test.each([true])(
     ).toBeNull();
   },
 );
-
-test("Chat VNC grant changes leave SSH authorization intact", async () => {
-  installComposerConnectorFixture();
-  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: true });
-  });
-  context.mocks.api(agentSshAccessContract.update, () => {
-    throw new Error("VNC must not change SSH grants");
-  });
-  let enabled = false;
-  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled });
-  });
-  context.mocks.api(
-    agentVncAccessContract.update,
-    ({ body, params, respond }) => {
-      expect(params.agentId).toBe(SCOUT_AGENT_ID);
-      enabled = body.enabled;
-      return respond(200, { enabled });
-    },
-  );
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
-  });
-  click(await findFastControl("button", "Connectors"));
-  click(await screen.findByLabelText("Add VNC"));
-  await expect(screen.findByLabelText("Remove VNC")).resolves.toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  expect(screen.getByLabelText("Remove SSH")).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-});
-
-test("Changing user clears retained VNC access in the chat composer", async () => {
-  installComposerConnectorFixture();
-  const clerk = context.mocks.clerk();
-  const nextOwner = context.mocks.deferred<void>();
-  let changing = false;
-  context.mocks.api(vncConnectionsContract.summary, async ({ respond }) => {
-    if (changing) {
-      await nextOwner.promise;
-    }
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: !changing });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
-  });
-  click(await findFastControl("button", "Connectors"));
-  await screen.findByLabelText("Remove VNC");
-  changing = true;
-  act(() => {
-    clerk.user(
-      { id: "other-vnc-composer-user", fullName: "Other user" },
-      { token: "other-vnc-user-token" },
-    );
-    clerk.stateChanged();
-  });
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Remove VNC")).toBeNull();
-  });
-  expect(screen.queryByLabelText("Add VNC")).toBeNull();
-  nextOwner.resolve();
-  await expect(screen.findByLabelText("Add VNC")).resolves.toBeInTheDocument();
-  expect(screen.queryByLabelText("Remove VNC")).toBeNull();
-});

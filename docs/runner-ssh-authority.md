@@ -15,22 +15,20 @@ credentials or command. The shared fleet secret authenticates the fleet, not an
 individual machine: the process identity is checked against the Run's immutable
 winning claim. Protecting the fleet secret remains a trust assumption.
 
-When `ThreadRemoteAccess` is enabled for the Run owner, each call requires the Run's current chat thread and that thread's effective permission for the exact SSH host. The host default applies when no override row exists. Explicit `false` denies even when the default is enabled; an explicit `true` allows independently of the Agent grant. A Run without a chat thread is denied. The original Agent-grant path below applies while the switch is off.
+Each call requires the Run's current chat thread and that thread's effective permission for the exact SSH host. The host default applies when no override row exists. Explicit `false` denies even when the default is enabled; an explicit `true` allows independently of any legacy Agent grant. A Run without a chat thread is denied.
 
 Each call joins the current running Run, session, currently visible Agent,
-the Run user's SSH grant, exact user-owned connection and its credential.
-Run, session, grant and host user/workspace identities must agree. The Agent
+exact user-owned connection and its credential.
+Run, session, chat thread and host user/workspace identities must agree. The Agent
 must belong to that workspace and be public or owned by the Run user; its
 creator need not own the host. Shared Agents never use their creator's hosts
 on another user's Run. SSH is generally available, without a rollout switch or
 staff-org gate.
-SSH access depends on the user's current configuration and the Agent's current
-grant, not how the Run started. All chat channels, workflow schedule/event
-automations, delegated Agents, webhooks, SDK/non-chat and test Runs use the same
-authority path. A chat thread or trigger metadata is not required; workflow
-associations and retained historical Goal provenance add no eligibility gate.
-The Goal lifecycle is retired; that provenance cannot create or resume work.
-The session identifies the Agent without using chat-thread state as an authorization gate.
+SSH access depends on the user's current configuration and the Run's current
+chat-thread host selection, not how the Run started. All chat channels use the
+same authority path. Runs without a valid chat thread, including non-chat
+runs, are denied remote host access. The session identifies the Agent and
+the thread must remain bound to that Agent and user.
 General availability does not replace authorization or expose credentials to
 local/PAT Runners.
 
@@ -160,7 +158,7 @@ Null means host-key verification and SSH authentication succeeded, not command
 success. No command, output, peer diagnostic, credential or arbitrary error text
 is accepted. The strict guest/CLI outcome and inventory DTOs are unchanged.
 
-The API applies the current Run, owner, Agent visibility/grant and
+The API applies the current Run, owner, Agent visibility, chat host access and
 winning-claim checks before locking the owned connection. It rechecks authority
 under the same lock used by edits and pinning, then records only the exact current
 generation. TOFU reporters use the post-pin generation. A single child row in
@@ -201,8 +199,8 @@ URL, wildcard, alternate recipient list or Direct fallback exists.
 
 SSH has one canonical contract, without a version/profile selector or duplicate
 legacy DTO. Protected authority requires the existing SSH authorization checks, plus a
-bound same-owner configuration. The existing SSH grant is
-the only Agent permission for either transport; configuration creation or edits
+bound same-owner configuration. The current chat SSH host selection governs runtime access for either transport;
+configuration creation or edits
 never grant SSH. Direct handoffs retain their actual key/password variants.
 
 The protected `resolved_access` outcome contains the saved host, port, username,
@@ -218,10 +216,9 @@ An S1-only Runner still rejects protected handoffs as unavailable; the feature
 must not be activated on that Runner. See the activation gate below.
 
 Pin and observation retain host-first locking and recheck protected authority
-through the non-null configuration with a share lock, while retaining the
-existing SSH-grant lock. Owner mutations use the
+through the non-null configuration with a share lock. Owner mutations use the
 owner advisory lock, ordered affected-host locks, then configuration locks.
-SSH-grant edits retain their existing Agent-lock boundary. Token replacement
+Legacy SSH-grant edits retain their existing Agent-lock boundary. Token replacement
 advances both config generation and every referencing host generation atomically.
 Metadata rename advances only config revision. Configurations have no separate
 enabled state. Host pins survive rotation, rebinding and every transition

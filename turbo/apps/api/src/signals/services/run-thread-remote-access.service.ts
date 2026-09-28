@@ -1,5 +1,3 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
@@ -10,27 +8,6 @@ import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { and, eq, exists, sql } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-
-/** The rollout mode is selected for the Run owner, never from Runner input. */
-export async function runUsesThreadRemoteAccess(
-  db: Pick<ReadonlyDb, "select">,
-  runId: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const [run] = await db
-    .select({ orgId: agentRuns.orgId, userId: agentRuns.userId })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!run) {
-    return false;
-  }
-  const context = await loadUserFeatureSwitchContext(db, run.orgId, run.userId);
-  signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, context);
-}
 
 /** A Run must still refer to its own current, Agent-bound chat thread. */
 export function runThreadExists(db: Pick<ReadonlyDb, "select">) {

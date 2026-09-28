@@ -136,6 +136,19 @@ function mockSettings(
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: data.sshConnections });
   });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [],
+        vnc: data.connections.map((connection) => ({
+          connectionId: connection.id,
+          displayName: connection.displayName,
+          defaultEnabled: false,
+        })),
+      });
+    },
+  );
   return data;
 }
 
@@ -194,7 +207,6 @@ test("VNC host settings update the chat default in thread remote access mode", a
     auth,
     featureSwitches: {
       [FeatureSwitchKey.VncAccess]: true,
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
     },
   });
   const toggle = await screen.findByRole("switch", {
