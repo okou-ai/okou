@@ -2,6 +2,11 @@
 //!
 //! The API source reads the next steerable input prompt of the run. The Guest
 //! declares an accepted input steered; the Runner only forwards it once.
+//!
+//! An API source reads when the run starts and after each wakeup (an
+//! `active-input` push for the run, or an Ably reconnect). A failed read or a
+//! forward the Guest did not accept is not retried; the next wakeup reads
+//! again, and an input no run steers is picked as the thread's next run.
 
 use std::time::Duration;
 
@@ -12,24 +17,18 @@ use sandbox::{
     ProcessControlOutcome, ProcessControlWriteState,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use runner_provider::{
-    ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, ActiveInputBatch, ActiveInputSource,
+    ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, ActiveInputBatch, ActiveInputSource, ProviderError,
     local_active_input_event_id,
 };
 use runner_types::ids::RunId;
 
-mod read_failures;
-
 #[cfg(test)]
 mod tests;
 
-use read_failures::ReadFailures;
-
 const ACTIVE_INPUT_CONTROL_TIMEOUT: Duration = Duration::from_secs(1);
-pub(super) const ACTIVE_INPUT_CONTROL_RETRY_INITIAL_INTERVAL: Duration = Duration::from_millis(250);
-pub(super) const ACTIVE_INPUT_CONTROL_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(4);
 const FIRST_ACTIVE_INPUT_SEQUENCE: u64 = 1;
 
 pub(super) struct ActiveInputForwarder {
@@ -75,14 +74,10 @@ enum DeliveryMode {
 
 enum ForwardDisposition {
     Accepted,
-    Retry,
+    /// The Guest did not take the input; it stays unforwarded until a later read.
+    NotForwarded,
     Suppress,
     Stop,
-}
-
-struct PreparedActiveInput {
-    event_id: String,
-    payload: Vec<u8>,
 }
 
 async fn run_forwarder(
@@ -94,9 +89,9 @@ async fn run_forwarder(
 ) {
     let mut next_local_sequence = FIRST_ACTIVE_INPUT_SEQUENCE;
     // The API keeps returning a forwarded input until the Guest declares it
-    // steered; an uncertain forward is never sent again.
+    // steered; an uncertain forward is never sent again. An input the Guest
+    // did not take is not recorded, so a later read forwards it.
     let mut forwarded_api_event_id: Option<String> = None;
-    let mut read_failures = ReadFailures::default();
     loop {
         let batch = tokio::select! {
             biased;
@@ -104,10 +99,7 @@ async fn run_forwarder(
             () = job_cancel.cancelled() => return,
             batch = source.read(next_local_sequence) => batch,
         };
-        if let Ok(batch) = &batch {
-            read_failures.recover(run_id, batch);
-        }
-        let retry_after_read_error = match batch {
+        match batch {
             Ok(ActiveInputBatch::Local(entries)) => {
                 for entry in entries {
                     if entry.sequence < next_local_sequence {
@@ -117,7 +109,7 @@ async fn run_forwarder(
                         break;
                     }
                     let event_id = local_active_input_event_id(run_id, entry.sequence);
-                    let disposition = forward_with_retry(
+                    let disposition = forward(
                         run_id,
                         event_id,
                         entry.text,
@@ -131,17 +123,16 @@ async fn run_forwarder(
                         ForwardDisposition::Accepted => {
                             next_local_sequence = next_local_sequence.saturating_add(1);
                         }
-                        ForwardDisposition::Suppress
-                        | ForwardDisposition::Retry
-                        | ForwardDisposition::Stop => return,
+                        // The next local poll reads this sequence again.
+                        ForwardDisposition::NotForwarded => break,
+                        ForwardDisposition::Suppress | ForwardDisposition::Stop => return,
                     }
                 }
-                false
             }
             Ok(ActiveInputBatch::Api(response)) => match response.input {
                 Some(ResponseInput { event_id, prompt }) => {
                     if forwarded_api_event_id.as_deref() != Some(&event_id) {
-                        let disposition = forward_with_retry(
+                        let disposition = forward(
                             run_id,
                             event_id.clone(),
                             prompt,
@@ -155,38 +146,58 @@ async fn run_forwarder(
                             ForwardDisposition::Accepted | ForwardDisposition::Suppress => {
                                 forwarded_api_event_id = Some(event_id);
                             }
-                            ForwardDisposition::Retry | ForwardDisposition::Stop => return,
+                            ForwardDisposition::NotForwarded => {}
+                            ForwardDisposition::Stop => return,
                         }
                     }
-                    false
                 }
                 None => {
                     forwarded_api_event_id = None;
-                    false
                 }
             },
-            Err(error) => {
-                read_failures.record(run_id, &error);
-                true
-            }
-        };
+            Err(error) => log_read_error(run_id, &error),
+        }
 
         tokio::select! {
             biased;
             () = stop.cancelled() => return,
             () = job_cancel.cancelled() => return,
-            () = async {
-                if retry_after_read_error {
-                    source.wait_after_read_error().await;
-                } else {
-                    source.wait_until_next_read().await;
-                }
-            } => {}
+            () = source.wait_until_next_read() => {}
         }
     }
 }
 
-async fn forward_with_retry(
+fn log_read_error(run_id: RunId, error: &ProviderError) {
+    const MESSAGE: &str = "active-input source read failed; waiting for the next wakeup";
+    match error {
+        ProviderError::ApiTransport(api_error) => error!(
+            target: "runner::executor::active_input",
+            run_id = %run_id,
+            error = %error,
+            endpoint = api_error.request.endpoint_label,
+            method = %api_error.request.method,
+            host = %api_error.request.host,
+            path = %api_error.request.path,
+            client_request_id = %api_error.request.client_request_id,
+            client_session_id = %api_error.request.client_session_id,
+            client_version = %api_error.request.client_version,
+            failure_kind = api_error.failure_kind.as_str(),
+            failure_cause = api_error.failure_cause.as_str(),
+            error_summary = %api_error.summary,
+            "{MESSAGE}"
+        ),
+        _ => error!(
+            target: "runner::executor::active_input",
+            run_id = %run_id,
+            error = %error,
+            "{MESSAGE}"
+        ),
+    }
+}
+
+/// Offer one input to the Guest exactly once; the caller never resends it
+/// before its next read.
+async fn forward(
     run_id: RunId,
     event_id: String,
     text: String,
@@ -216,78 +227,42 @@ async fn forward_with_retry(
         }
     };
     drop(text);
-    let prepared = PreparedActiveInput { event_id, payload };
-    let mut warn_retryable_failure = true;
-    let mut retry_interval = ACTIVE_INPUT_CONTROL_RETRY_INITIAL_INTERVAL;
-    loop {
-        if stop.is_cancelled() || job_cancel.is_cancelled() {
-            return ForwardDisposition::Stop;
-        }
-        // Once started, retain the control future until its write outcome is known.
-        let disposition =
-            forward_once(run_id, &prepared, mode, control, warn_retryable_failure).await;
-        if !matches!(disposition, ForwardDisposition::Retry) {
-            return disposition;
-        }
-        warn_retryable_failure = false;
-        tokio::select! {
-            biased;
-            () = stop.cancelled() => return ForwardDisposition::Stop,
-            () = job_cancel.cancelled() => return ForwardDisposition::Stop,
-            () = tokio::time::sleep(retry_interval) => {}
-        }
-        retry_interval = (retry_interval * 2).min(ACTIVE_INPUT_CONTROL_RETRY_MAX_INTERVAL);
+    if stop.is_cancelled() || job_cancel.is_cancelled() {
+        return ForwardDisposition::Stop;
     }
-}
-
-async fn forward_once(
-    run_id: RunId,
-    prepared: &PreparedActiveInput,
-    mode: DeliveryMode,
-    control: &GuestProcessControlHandle,
-    warn_retryable_failure: bool,
-) -> ForwardDisposition {
+    // Once started, retain the control future until its write outcome is known.
     let outcome = control
-        .control_owned_outcome(
-            prepared.event_id.clone(),
-            prepared.payload.clone(),
-            ACTIVE_INPUT_CONTROL_TIMEOUT,
-        )
+        .control_owned_outcome(event_id, payload, ACTIVE_INPUT_CONTROL_TIMEOUT)
         .await;
-    classify_control_outcome(run_id, mode, outcome, warn_retryable_failure)
+    classify_control_outcome(run_id, mode, outcome)
 }
 
 fn classify_control_outcome(
     run_id: RunId,
     mode: DeliveryMode,
     outcome: ProcessControlOutcome,
-    warn_retryable_failure: bool,
 ) -> ForwardDisposition {
     match outcome {
         ProcessControlOutcome::Delivered(_) => ForwardDisposition::Accepted,
         ProcessControlOutcome::GuestStatus { status, diagnostic } => match status {
             ProcessControlGuestStatus::QueueFull | ProcessControlGuestStatus::SinkUnavailable => {
-                if warn_retryable_failure {
-                    warn!(
-                        run_id = %run_id,
-                        outcome = guest_status_label(status),
-                        diagnostic = %diagnostic,
-                        "active-input control will retry"
-                    );
-                }
-                ForwardDisposition::Retry
+                warn!(
+                    run_id = %run_id,
+                    outcome = guest_status_label(status),
+                    diagnostic = %diagnostic,
+                    "active-input control not accepted; waiting for the next read"
+                );
+                ForwardDisposition::NotForwarded
             }
             ProcessControlGuestStatus::SinkTimeout
             | ProcessControlGuestStatus::SinkError
             | ProcessControlGuestStatus::SinkClosed => {
-                if warn_retryable_failure {
-                    warn!(
-                        run_id = %run_id,
-                        outcome = guest_status_label(status),
-                        diagnostic = %diagnostic,
-                        "active-input control acknowledgement is unknown"
-                    );
-                }
+                warn!(
+                    run_id = %run_id,
+                    outcome = guest_status_label(status),
+                    diagnostic = %diagnostic,
+                    "active-input control acknowledgement is unknown"
+                );
                 uncertain_disposition(mode)
             }
             ProcessControlGuestStatus::Inactive => ForwardDisposition::Stop,
@@ -313,14 +288,12 @@ fn classify_control_outcome(
             }
         },
         ProcessControlOutcome::GuestError(error) => {
-            if warn_retryable_failure {
-                warn!(
-                    run_id = %run_id,
-                    outcome = "guest_error",
-                    error = %error,
-                    "active-input control acknowledgement is unknown"
-                );
-            }
+            warn!(
+                run_id = %run_id,
+                outcome = "guest_error",
+                error = %error,
+                "active-input control acknowledgement is unknown"
+            );
             uncertain_disposition(mode)
         }
         ProcessControlOutcome::Failed {
@@ -345,17 +318,15 @@ fn classify_control_outcome(
                     ProcessControlWriteState::PossiblyWritten,
                 ) => "backend_crashed_possibly_written",
             };
-            if warn_retryable_failure {
-                warn!(
-                    run_id = %run_id,
-                    outcome,
-                    error = %error,
-                    "active-input control failed"
-                );
-            }
+            warn!(
+                run_id = %run_id,
+                outcome,
+                error = %error,
+                "active-input control failed"
+            );
             match (kind, write_state) {
                 (ProcessControlFailureKind::Operation, ProcessControlWriteState::NotWritten) => {
-                    ForwardDisposition::Retry
+                    ForwardDisposition::NotForwarded
                 }
                 (
                     ProcessControlFailureKind::Operation,
@@ -379,7 +350,7 @@ fn classify_control_outcome(
 fn uncertain_disposition(mode: DeliveryMode) -> ForwardDisposition {
     match mode {
         DeliveryMode::Api => ForwardDisposition::Suppress,
-        DeliveryMode::Local => ForwardDisposition::Retry,
+        DeliveryMode::Local => ForwardDisposition::NotForwarded,
     }
 }
 

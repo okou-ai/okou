@@ -35,16 +35,20 @@ The Runner sends the delivery ID with the Guest control payload. The Guest
 deduplicates that identity, persists it after the CLI backend accepts the
 follow-up, and attempts the direct receipt asynchronously. A delivered or
 acknowledgement-uncertain input is not sent again while the API keeps returning
-the same reservation. Explicit pre-write failures and retryable Guest capacity
-statuses retry the same identity.
+the same reservation. An explicit pre-write failure or a Guest capacity status
+leaves the input unforwarded; the Runner does not retry it, and the next read
+offers the same identity again.
 
 After the Guest process exits, the Runner reads the bounded run-scoped receipt
 journal while it still owns the sandbox. It attempts those receipts within one
 total five-second budget and includes unresolved IDs in the normal completion
 request. This uses completion's existing retry and idempotency boundary as the
 final recovery path. A successful receipt reuses the existing Runner
-notification channel when another prompt is queued; the 30-second poll remains
-notification-loss recovery rather than normal steering latency.
+notification channel when another prompt is queued. The Runner has no periodic
+poll: it reads when the run starts, on the run's notification, and once for
+every active run after its Ably subscription reconnects. A failed read is logged
+and not retried; an input no read reaches stays queued and the thread's next
+pick launches it.
 
 Pi runs execute in the Sandbox from their first turn, so the Runner steers
 them under the rules above. The retired API-first turn never steered.
@@ -117,8 +121,8 @@ the run's slot release may launch it in the successor run.
 
 Reserve and receipt run without locks or transactions: reserve is a bounded
 read, and receipt ends with one replacement insert on the revoke edge. Input
-committed after a reserve read uses the realtime notification path, with the
-30-second poll as notification-loss recovery.
+committed after a reserve read uses the realtime notification path; an Ably
+reconnect wakes every active run once to cover a lost notification.
 
 A run's time budget steer that nothing consumed is revoked after the completion
 commit rather than inside it. Steering appends only while the run is running,
