@@ -121,13 +121,13 @@ describe("okou telegram upload-file command", () => {
       "cli",
       "--file",
       testFilePath,
-      "--bot-id",
+      "--as",
       "123456789",
-      "--chat-id",
+      "--to",
       "-1001234567890",
-      "--caption",
+      "--text",
       "Daily report",
-      "--message-thread-id",
+      "--topic",
       "42",
     ]);
 
@@ -194,9 +194,9 @@ describe("okou telegram upload-file command", () => {
       "cli",
       "-f",
       dataPath,
-      "--bot-id",
+      "--as",
       "123456789",
-      "-c",
+      "--to",
       "@channel",
       "--content-type",
       "text/csv",
@@ -214,9 +214,9 @@ describe("okou telegram upload-file command", () => {
         "cli",
         "-f",
         join(tmpDir, "missing.pdf"),
-        "--bot-id",
+        "--as",
         "123456789",
-        "-c",
+        "--to",
         "-1001234567890",
       ]);
     }).rejects.toThrow("process.exit called");
@@ -226,24 +226,24 @@ describe("okou telegram upload-file command", () => {
     );
   });
 
-  it("errors when message-thread-id is not a positive integer", async () => {
+  it("errors when --topic is not a positive integer", async () => {
     await expect(async () => {
       await uploadFileCommand.parseAsync([
         "node",
         "cli",
         "-f",
         testFilePath,
-        "--bot-id",
+        "--as",
         "123456789",
-        "-c",
+        "--to",
         "-1001234567890",
-        "--message-thread-id",
+        "--topic",
         "not-a-number",
       ]);
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining("message-thread-id must be a positive integer"),
+      expect.stringContaining("--topic must be a positive integer"),
     );
   });
 
@@ -282,9 +282,9 @@ describe("okou telegram upload-file command", () => {
         "cli",
         "-f",
         testFilePath,
-        "--bot-id",
+        "--as",
         "123456789",
-        "-c",
+        "--to",
         "-1001234567890",
       ]);
     }).rejects.toThrow("process.exit called");

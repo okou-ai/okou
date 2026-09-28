@@ -110,11 +110,12 @@ describe.each(["feishu", "lark"] as const)(
         "okou",
         "--file",
         filePath,
-        "--installation",
+        "--as",
         "00000000-0000-4000-8000-000000000001",
-        "--reply",
+        "--reply-to",
         "om_parent",
-        "--thread",
+        "--reply-mode",
+        "thread",
       ]);
 
       expect(completeBody).toStrictEqual({
@@ -134,23 +135,12 @@ describe.each(["feishu", "lark"] as const)(
       });
     });
 
-    it("requires exactly one Feishu target", async () => {
+    it("requires a Feishu destination", async () => {
       await expect(
-        uploadFileCommand.parseAsync([
-          "node",
-          "okou",
-          "--file",
-          filePath,
-          "--chat",
-          "oc_chat",
-          "--user",
-          "ou_user",
-        ]),
+        uploadFileCommand.parseAsync(["node", "okou", "--file", filePath]),
       ).rejects.toThrow("process.exit called");
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "Exactly one of --chat, --user, or --reply must be provided",
-        ),
+        expect.stringContaining("Missing --to"),
       );
     });
 
@@ -165,7 +155,7 @@ describe.each(["feishu", "lark"] as const)(
           "okou",
           "--file",
           largeFilePath,
-          "--chat",
+          "--to",
           "oc_chat",
         ]),
       ).rejects.toThrow("process.exit called");

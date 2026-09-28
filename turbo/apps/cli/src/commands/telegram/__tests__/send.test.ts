@@ -44,15 +44,15 @@ describe("okou telegram message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--bot-id",
+      "--as",
       "123456789",
-      "--chat-id",
+      "--to",
       "-1001234567890",
       "--text",
       "hello world",
-      "--reply-to-message-id",
+      "--reply-to",
       "42",
-      "--message-thread-id",
+      "--topic",
       "7",
     ]);
 
@@ -73,9 +73,9 @@ describe("okou telegram message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--bot-id",
+        "--as",
         "123456789",
-        "--chat-id",
+        "--to",
         "-1001234567890",
       ]);
     }).rejects.toThrow("process.exit called");
@@ -85,24 +85,43 @@ describe("okou telegram message send command", () => {
     );
   });
 
-  it("errors when message-thread-id is not a positive integer", async () => {
+  it("errors when --topic is not a positive integer", async () => {
     await expect(async () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--bot-id",
+        "--as",
         "123456789",
-        "--chat-id",
+        "--to",
         "-1001234567890",
         "--text",
         "hello",
-        "--message-thread-id",
+        "--topic",
         "not-a-number",
       ]);
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining("message-thread-id must be a positive integer"),
+      expect.stringContaining("--topic must be a positive integer"),
+    );
+  });
+
+  it("errors when --to is me", async () => {
+    await expect(async () => {
+      await sendCommand.parseAsync([
+        "node",
+        "cli",
+        "--as",
+        "123456789",
+        "--to",
+        "me",
+        "--text",
+        "hello",
+      ]);
+    }).rejects.toThrow("process.exit called");
+
+    expect(mockConsoleError).toHaveBeenCalledWith(
+      expect.stringContaining("Telegram does not support --to me"),
     );
   });
 
@@ -125,9 +144,9 @@ describe("okou telegram message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--bot-id",
+        "--as",
         "123456789",
-        "--chat-id",
+        "--to",
         "-1001234567890",
         "--text",
         "hello",

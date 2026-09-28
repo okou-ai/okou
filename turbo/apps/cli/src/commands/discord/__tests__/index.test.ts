@@ -248,7 +248,7 @@ describe("okou discord", () => {
     await runDiscordCommand([
       "message",
       "send",
-      "--channel-id",
+      "--to",
       channelId,
       "--guild-id",
       guildId,
@@ -286,7 +286,7 @@ describe("okou discord", () => {
       runDiscordCommand([
         "message",
         "send",
-        "--channel-id",
+        "--to",
         channelId,
         "--text",
         "An update",
@@ -348,7 +348,7 @@ describe("okou discord", () => {
       error: "limit",
     },
     {
-      args: ["message", "send", "--channel-id", channelId, "--text", "   "],
+      args: ["message", "send", "--to", channelId, "--text", "   "],
       error: "Message text must not be blank",
     },
   ])(

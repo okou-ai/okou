@@ -102,7 +102,7 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
       ]);
 
@@ -112,7 +112,7 @@ describe("okou slack upload-file command", () => {
       expect(logCalls).toContain("https://workspace.slack.com/files/F0123ABC");
     });
 
-    it("should pass thread, title, and comment to complete", async () => {
+    it("should pass reply-to, title, and text to complete", async () => {
       let capturedCompleteBody: Record<string, unknown> | undefined;
 
       server.use(
@@ -145,13 +145,13 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
-        "--thread",
+        "--reply-to",
         "1234567890.000000",
         "--title",
         "Daily Report",
-        "--comment",
+        "--text",
         "Here is the report",
       ]);
 
@@ -194,7 +194,7 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
       ]);
 
@@ -282,7 +282,7 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
         "--operation-id",
         operationId,
@@ -375,7 +375,7 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
         "--operation-id",
         operationId,
@@ -396,6 +396,23 @@ describe("okou slack upload-file command", () => {
   });
 
   describe("validation errors", () => {
+    it("should error when --to is a user", async () => {
+      await expect(async () => {
+        await uploadFileCommand.parseAsync([
+          "node",
+          "cli",
+          "--file",
+          testFilePath,
+          "--to",
+          "me",
+        ]);
+      }).rejects.toThrow("process.exit called");
+
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        expect.stringContaining("Slack upload-file does not support --to me"),
+      );
+    });
+
     it("should error when file does not exist", async () => {
       await expect(async () => {
         await uploadFileCommand.parseAsync([
@@ -403,7 +420,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           "/tmp/nonexistent-file.pdf",
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -423,7 +440,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           emptyFile,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -451,7 +468,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           testFilePath,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -482,7 +499,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           testFilePath,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -514,7 +531,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           testFilePath,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -554,7 +571,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           testFilePath,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");

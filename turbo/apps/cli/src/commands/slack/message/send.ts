@@ -1,101 +1,82 @@
-import { readFileSync } from "fs";
 import { Command } from "commander";
 import chalk from "chalk";
 import { sendSlackMessage } from "../../../lib/api/domains/integrations-slack";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
+import {
+  TO_OPTION_FLAGS,
+  missingTargetError,
+  parseMessageTarget,
+  parseRichJson,
+  readMessageText,
+  toOptionDescription,
+} from "../../../lib/command/message-target";
+
+type SlackBlock = { type: string; [key: string]: unknown };
+
+export function isSlackUserId(id: string): boolean {
+  return /^[UW][A-Z0-9]+$/.test(id);
+}
+
+function parseBlocks(value: string): SlackBlock[] {
+  const parsed = parseRichJson(value, "a JSON array of Block Kit blocks");
+  if (!Array.isArray(parsed)) {
+    throw new Error("Invalid --rich payload", {
+      cause: new Error("Provide a JSON array of Block Kit blocks"),
+    });
+  }
+  return parsed as SlackBlock[];
+}
 
 export const sendCommand = new Command()
   .name("send")
   .description("Send a message to a Slack channel or DM a user")
-  .option("-c, --channel <id>", "Channel ID")
-  .option("-u, --user <id>", 'Slack user ID for DM (use "me" for yourself)')
-  .option("-t, --text <message>", "Message text")
-  .option("--thread <ts>", "Thread timestamp for replies")
-  .option("--blocks <json>", "Block Kit JSON string")
+  .option(TO_OPTION_FLAGS, toOptionDescription("C… channel, D… DM, U…/W… user"))
+  .option("-t, --text <message>", "Message text (or pipe it on stdin)")
+  .option("--reply-to <ts>", "Parent message timestamp to reply in thread")
+  .option("--rich <json>", "Block Kit blocks JSON array")
   .addHelpText(
     "after",
     `
 Examples:
-  Simple message:        okou slack message send -c C01234 -t "Hello!"
-  DM a user:             okou slack message send -u U0A8V9X98QJ -t "Hello!"
-  DM yourself:           okou slack message send -u me -t "Hello!"
-  Reply in thread:       okou slack message send -c C01234 --thread 1234567890.123456 -t "reply"
-  Rich blocks:           okou slack message send -c C01234 --blocks '[{"type":"section","text":{"type":"mrkdwn","text":"*Bold*"}}]'
+  Simple message:        okou slack message send --to C01234 -t "Hello!"
+  DM a user:             okou slack message send --to U0A8V9X98QJ -t "Hello!"
+  DM yourself:           okou slack message send --to me -t "Hello!"
+  Reply in thread:       okou slack message send --to C01234 --reply-to 1234567890.123456 -t "reply"
+  Rich blocks:           okou slack message send --to C01234 --rich '[{"type":"section","text":{"type":"mrkdwn","text":"*Bold*"}}]'
 
 Notes:
-  - Either --channel or --user is required; they are mutually exclusive
-  - Either --text or --blocks is required; both can be used together`,
+  - --to is required; U…/W… IDs open a DM, other IDs are channels
+  - Either --text or --rich is required; both can be used together`,
   )
   .action(
     withErrorHandler(
       async (options: {
-        channel?: string;
-        user?: string;
+        to?: string;
         text?: string;
-        thread?: string;
-        blocks?: string;
+        replyTo?: string;
+        rich?: string;
       }) => {
-        let text = options.text;
-        const { channel, user, thread, blocks: blocksStr } = options;
-
-        // Validate mutual exclusion: exactly one of --channel or --user
-        if (!channel && !user) {
-          throw new Error("Either --channel or --user must be provided", {
-            cause: new Error(
-              'Usage: okou slack message send -c CHANNEL_ID -t "your message"\n       okou slack message send -u USER_ID -t "your message"',
-            ),
-          });
+        if (!options.to) {
+          throw missingTargetError("Slack", "me or a channel/user ID");
         }
-        if (channel && user) {
-          throw new Error("--channel and --user are mutually exclusive", {
-            cause: new Error(
-              "Provide either --channel to send to a channel or --user to DM a user, not both",
-            ),
-          });
-        }
+        const target = parseMessageTarget(options.to, isSlackUserId);
+        const text = readMessageText(options.text);
+        const blocks = options.rich ? parseBlocks(options.rich) : undefined;
 
-        // Read from stdin if text not provided and stdin is not a TTY
-        // (isTTY is true only for an interactive terminal, undefined when piped).
-        if (!text && !process.stdin.isTTY) {
-          try {
-            text = readFileSync("/dev/stdin", "utf8").trim();
-          } catch {
-            // stdin not readable (e.g. test runner with no piped input);
-            // fall through to the missing-text validation below.
-          }
-        }
-
-        // Parse blocks JSON if provided
-        let blocks: Array<{ type: string; [key: string]: unknown }> | undefined;
-        if (blocksStr) {
-          try {
-            blocks = JSON.parse(blocksStr) as Array<{
-              type: string;
-              [key: string]: unknown;
-            }>;
-          } catch {
-            throw new Error("Invalid JSON for --blocks flag", {
-              cause: new Error(
-                "Provide a valid JSON array of Block Kit blocks",
-              ),
-            });
-          }
-        }
-
-        // Validate at least one of text or blocks
         if (!text && !blocks) {
-          throw new Error("Either --text or --blocks must be provided", {
+          throw new Error("Either --text or --rich must be provided", {
             cause: new Error(
-              'Usage: okou slack message send -c CHANNEL_ID -t "your message"',
+              'Usage: okou slack message send --to CHANNEL_ID -t "your message"',
             ),
           });
         }
 
         const result = await sendSlackMessage({
-          channel: channel || undefined,
-          user: user || undefined,
+          ...(target.kind === "chat"
+            ? { channel: target.id }
+            : { user: target.kind === "me" ? "me" : target.id }),
           text: text || undefined,
-          threadTs: thread,
+          threadTs: options.replyTo,
           blocks,
         });
 

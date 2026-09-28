@@ -18,8 +18,8 @@ Examples:
   List channels:    okou discord channel list --json
   Read history:     okou discord message history --channel-id <id> --json
   Read a thread:    okou discord message replies --channel-id <parent-channel-id> --message-id <root-message-id> --json
-  Send a message:   okou discord message send --channel-id <id> --text "Hello!"
-  Upload a file:    okou discord upload-file --file report.pdf --channel <id>
+  Send a message:   okou discord message send --to <id> --text "Hello!"
+  Upload a file:    okou discord upload-file --file report.pdf --to <id>
   Download a file:  okou discord download-file <attachment-id> --channel <id> --message <id> --out report.pdf
 
 Notes:

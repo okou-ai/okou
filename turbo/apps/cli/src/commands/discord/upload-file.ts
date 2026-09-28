@@ -15,12 +15,14 @@ import {
 } from "../../lib/api/domains/integrations-discord-files";
 import { inferWebUploadContentType } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { TO_OPTION_FLAGS } from "../../lib/command/message-target";
+import { resolveDiscordChannelId } from "./target";
 
 interface UploadFileOptions {
   readonly file: string;
-  readonly channel: string;
+  readonly to: string;
   readonly guildId?: string;
-  readonly comment?: string;
+  readonly text?: string;
   readonly contentType?: string;
   readonly operationId?: string;
 }
@@ -87,6 +89,7 @@ function printDelivery(result: DiscordUploadMaterializeResponse): void {
 }
 
 async function uploadFile(options: UploadFileOptions): Promise<void> {
+  const channelId = resolveDiscordChannelId(options.to);
   const content = await readUploadFile(options.file);
   const contentType = new MIMEType(
     options.contentType ?? inferWebUploadContentType(options.file),
@@ -100,9 +103,9 @@ async function uploadFile(options: UploadFileOptions): Promise<void> {
       contentType,
       checksumSha256: createHash("sha256").update(content).digest("hex"),
       operationId,
-      channelId: options.channel,
+      channelId,
       ...(options.guildId === undefined ? {} : { guildId: options.guildId }),
-      ...(options.comment === undefined ? {} : { comment: options.comment }),
+      ...(options.text === undefined ? {} : { comment: options.text }),
     });
     await uploadCanonicalBody(initialized, contentType, content);
     const operation = { assetId: initialized.assetId, operationId };
@@ -135,20 +138,23 @@ export const uploadFileCommand = new Command()
     "-f, --file <path>",
     "Local file path to upload (up to 10 MiB)",
   )
-  .requiredOption("-c, --channel <id>", "Discord channel or thread ID")
+  .requiredOption(
+    TO_OPTION_FLAGS,
+    "Destination: chat:<id> or a Discord channel or thread ID",
+  )
   .option(
     "--guild-id <id>",
     "Optional; must match your organization's bound guild",
   )
-  .option("--comment <text>", "Comment to accompany the file")
+  .option("-t, --text <text>", "Comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
   .option("--operation-id <uuid>", "Reuse a previous upload operation")
   .addHelpText(
     "after",
     `
 Examples:
-  okou discord upload-file -f /tmp/report.pdf -c 123456789012345678
-  okou discord upload-file -f /tmp/report.pdf -c 123456789012345678 --comment "Weekly report"
+  okou discord upload-file -f /tmp/report.pdf --to 123456789012345678
+  okou discord upload-file -f /tmp/report.pdf --to 123456789012345678 -t "Weekly report"
 
 Output:
   Prints JSON containing the canonical asset URL, operation ID and Discord delivery status.

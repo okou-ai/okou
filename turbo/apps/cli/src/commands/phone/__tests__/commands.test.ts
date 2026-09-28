@@ -102,7 +102,7 @@ describe("okou phone commands", () => {
     await messageCommand.parseAsync([
       "node",
       "cli",
-      "--agent-id",
+      "--as",
       "agt_123",
       "--text",
       "hello",
@@ -118,7 +118,7 @@ describe("okou phone commands", () => {
     );
   });
 
-  it("accepts the deprecated --to option without sending it", async () => {
+  it("accepts --to me for the connected phone", async () => {
     let capturedBody: Record<string, unknown> | undefined;
 
     server.use(
@@ -137,7 +137,7 @@ describe("okou phone commands", () => {
       "node",
       "cli",
       "--to",
-      "+15551234567",
+      "me",
       "--text",
       "hello",
     ]);
@@ -204,7 +204,7 @@ describe("okou phone commands", () => {
       "cli",
       "-f",
       testFilePath,
-      "--caption",
+      "--text",
       "report",
     ]);
 

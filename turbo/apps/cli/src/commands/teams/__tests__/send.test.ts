@@ -45,9 +45,9 @@ describe("okou teams message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--conversation-id",
+      "--to",
       "19:thread@thread.tacv2",
-      "--activity-id",
+      "--reply-to",
       "root-activity",
       "--text",
       "hello Teams",
@@ -80,11 +80,11 @@ describe("okou teams message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--user",
+      "--to",
       "me",
       "--text",
       "Pick a workflow",
-      "--card",
+      "--rich",
       '{"type":"AdaptiveCard","version":"1.4","body":[{"type":"TextBlock","text":"Pick a workflow","wrap":true}]}',
     ]);
 
@@ -113,14 +113,14 @@ describe("okou teams message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--conversation-id",
+        "--to",
         "19:thread@thread.tacv2",
       ]);
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
       expect.stringContaining(
-        "Either --text, --card, or piped stdin must be provided",
+        "Either --text, --rich, or piped stdin must be provided",
       ),
     );
   });
@@ -131,9 +131,26 @@ describe("okou teams message send command", () => {
     }).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "Either --conversation-id or --user must be provided",
-      ),
+      expect.stringContaining("Missing --to"),
+    );
+  });
+
+  it("errors when replying in a DM", async () => {
+    await expect(async () => {
+      await sendCommand.parseAsync([
+        "node",
+        "cli",
+        "--to",
+        "29:user-id",
+        "--reply-to",
+        "teams-activity-1",
+        "--text",
+        "hello",
+      ]);
+    }).rejects.toThrow("process.exit called");
+
+    expect(mockConsoleError).toHaveBeenCalledWith(
+      expect.stringContaining("--reply-to requires a conversation --to target"),
     );
   });
 });

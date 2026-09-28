@@ -73,7 +73,7 @@ describe("okou discord upload-file", () => {
       "okou",
       "--file",
       filePath,
-      "--channel",
+      "--to",
       CHANNEL_ID,
       "--operation-id",
       OPERATION_ID,
@@ -140,7 +140,7 @@ describe("okou discord upload-file", () => {
     await upload([
       "--guild-id",
       GUILD_ID,
-      "--comment",
+      "--text",
       "A weekly update",
       "--content-type",
       "TEXT/PLAIN; charset=utf-8",
@@ -279,7 +279,7 @@ describe("okou discord upload-file", () => {
         "okou",
         "-f",
         filePath,
-        "-c",
+        "--to",
         CHANNEL_ID,
       ]),
     ).rejects.toThrow("process.exit called");

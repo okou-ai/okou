@@ -14,6 +14,13 @@ import {
 } from "../../lib/api/domains/integrations-slack";
 import { inferWebUploadContentType } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import {
+  TO_OPTION_FLAGS,
+  parseMessageTarget,
+  toOptionDescription,
+  unsupportedTargetError,
+} from "../../lib/command/message-target";
+import { isSlackUserId } from "./message/send";
 
 interface UploadFileOptions {
   readonly file: string;
@@ -210,7 +217,40 @@ async function publishCanonicalFile(
   });
 }
 
-async function uploadFile(options: UploadFileOptions): Promise<void> {
+interface UploadFileCliOptions {
+  readonly file: string;
+  readonly to: string;
+  readonly replyTo?: string;
+  readonly title?: string;
+  readonly text?: string;
+  readonly contentType?: string;
+  readonly operationId?: string;
+}
+
+function resolveUploadOptions(
+  options: UploadFileCliOptions,
+): UploadFileOptions {
+  const target = parseMessageTarget(options.to, isSlackUserId);
+  if (target.kind !== "chat") {
+    throw unsupportedTargetError(
+      "Slack upload-file",
+      target,
+      "Pass a channel or DM conversation ID (C…, G…, or D…)",
+    );
+  }
+  return {
+    file: options.file,
+    channel: target.id,
+    thread: options.replyTo,
+    title: options.title,
+    comment: options.text,
+    contentType: options.contentType,
+    operationId: options.operationId,
+  };
+}
+
+async function uploadFile(cliOptions: UploadFileCliOptions): Promise<void> {
+  const options = resolveUploadOptions(cliOptions);
   const file = readUploadFile(options.file);
   const filename = basename(options.file);
   const rawContentType =
@@ -246,19 +286,22 @@ export const uploadFileCommand = new Command()
   .name("upload-file")
   .description("Upload a file to a Slack channel as the bot")
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  .requiredOption("-c, --channel <id>", "Slack channel ID")
-  .option("--thread <ts>", "Thread timestamp to post as a reply")
+  .requiredOption(
+    TO_OPTION_FLAGS,
+    toOptionDescription("C… channel or D… DM conversation"),
+  )
+  .option("--reply-to <ts>", "Parent message timestamp to reply in thread")
   .option("--title <title>", "Display title for the file")
-  .option("--comment <text>", "Initial comment to accompany the file")
+  .option("-t, --text <text>", "Initial comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
   .option("--operation-id <uuid>", "Reuse a failed upload operation")
   .addHelpText(
     "after",
     `
 Examples:
-  Upload a file:           okou slack upload-file -f /tmp/report.pdf -c C01234
-  Upload to thread:        okou slack upload-file -f /tmp/log.txt -c C01234 --thread 1234567890.123456
-  With title and comment:  okou slack upload-file -f /tmp/data.csv -c C01234 --title "Daily Report" --comment "Here's the report"
+  Upload a file:           okou slack upload-file -f /tmp/report.pdf --to C01234
+  Upload to thread:        okou slack upload-file -f /tmp/log.txt --to C01234 --reply-to 1234567890.123456
+  With title and comment:  okou slack upload-file -f /tmp/data.csv --to C01234 --title "Daily Report" -t "Here's the report"
 
 Notes:
   - Uses the bot token (not user SLACK_TOKEN), so no files:write permission is needed

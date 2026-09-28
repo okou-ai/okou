@@ -6,6 +6,13 @@ import {
   initTeamsFileUpload,
 } from "../../lib/api/domains/integrations-teams";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import {
+  TO_OPTION_FLAGS,
+  parseMessageTarget,
+  toOptionDescription,
+  unsupportedTargetError,
+} from "../../lib/command/message-target";
+import { isTeamsUserId } from "./message/send";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".png": "image/png",
@@ -35,17 +42,17 @@ export const uploadFileCommand = new Command()
     "Upload a local file to a Microsoft Teams conversation as the bot",
   )
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  .requiredOption("-c, --conversation-id <id>", "Teams conversation ID")
-  .option("--activity-id <id>", "Activity ID to reply to")
+  .requiredOption(TO_OPTION_FLAGS, toOptionDescription("19:… conversation"))
+  .option("--reply-to <activity-id>", "Activity ID to reply to in thread")
   .option("-t, --text <message>", "Message text to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
   .addHelpText(
     "after",
     `
 Examples:
-  Upload a file:     okou teams upload-file -f /tmp/report.pdf -c 19:thread@thread.tacv2
-  Upload to thread:  okou teams upload-file -f /tmp/log.txt -c 19:thread@thread.tacv2 --activity-id root-activity
-  With message text: okou teams upload-file -f /tmp/data.csv -c 19:thread@thread.tacv2 -t "Daily report"
+  Upload a file:     okou teams upload-file -f /tmp/report.pdf --to 19:thread@thread.tacv2
+  Upload to thread:  okou teams upload-file -f /tmp/log.txt --to 19:thread@thread.tacv2 --reply-to root-activity
+  With message text: okou teams upload-file -f /tmp/data.csv --to 19:thread@thread.tacv2 -t "Daily report"
 
 Output:
   Prints a JSON object to stdout on success:
@@ -59,11 +66,20 @@ Notes:
     withErrorHandler(
       async (options: {
         file: string;
-        conversationId: string;
-        activityId?: string;
+        to: string;
+        replyTo?: string;
         text?: string;
         contentType?: string;
       }) => {
+        const target = parseMessageTarget(options.to, isTeamsUserId);
+        if (target.kind !== "chat") {
+          throw unsupportedTargetError(
+            "Teams upload-file",
+            target,
+            "Pass a Teams conversation ID (19:…)",
+          );
+        }
+
         let fileSize: number;
         try {
           const stat = statSync(options.file);
@@ -109,8 +125,8 @@ Notes:
 
         const result = await completeTeamsFileUpload({
           uploadId: prepared.uploadId,
-          conversationId: options.conversationId,
-          activityId: options.activityId,
+          conversationId: target.id,
+          activityId: options.replyTo,
           contentType: prepared.contentType,
           text: options.text,
         });

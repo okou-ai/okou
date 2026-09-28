@@ -118,9 +118,9 @@ describe("okou teams upload-file command", () => {
       "cli",
       "--file",
       testFilePath,
-      "--conversation-id",
+      "--to",
       "19:thread@thread.tacv2",
-      "--activity-id",
+      "--reply-to",
       "root-activity",
       "--text",
       "Daily report",
@@ -154,7 +154,7 @@ describe("okou teams upload-file command", () => {
         "cli",
         "--file",
         join(tmpDir, "missing.pdf"),
-        "--conversation-id",
+        "--to",
         "19:thread@thread.tacv2",
       ]);
     }).rejects.toThrow("process.exit called");

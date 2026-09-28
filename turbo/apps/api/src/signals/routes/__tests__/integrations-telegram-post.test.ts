@@ -192,7 +192,7 @@ function expectOk(response: Response, operation: string): void {
 const TELEGRAM_INTEGRATION_NOTE = [
   "# Integration Note",
   "",
-  "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram bot list` to inspect available bots, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. When sending or uploading, explicitly choose the bot with `--bot-id`; if you do not know which bot to use, ask the user before sending.",
+  "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram bot list` to inspect available bots, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. When sending or uploading, explicitly choose the bot with `--as <bot-id>`; if you do not know which bot to use, ask the user before sending.",
 ].join("\n");
 
 function expectExactSystemPromptFragment(

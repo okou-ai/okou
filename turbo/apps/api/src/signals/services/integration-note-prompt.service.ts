@@ -83,7 +83,7 @@ function integrationNoteLines(
       const platform = args.triggerSource;
       const providerName = FEISHU_PLATFORMS[platform].name;
       return [
-        `- ${providerName} messaging and files: use \`okou ${platform} --help\`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress reaches ${providerName} on its own, so ${providerName} commands are for a different chat, DM, reply target, or explicit extra message/file. Use \`okou ${platform} message send --help\` for extra messages, \`okou ${platform} download-file -h\` for \`[${providerName} file]\` blocks, and \`okou ${platform} upload-file -h\` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify \`--installation\` when the organization has multiple ${providerName} bots.`,
+        `- ${providerName} messaging and files: use \`okou ${platform} --help\`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress reaches ${providerName} on its own, so ${providerName} commands are for a different chat, DM, reply target, or explicit extra message/file. Use \`okou ${platform} message send --help\` for extra messages, \`okou ${platform} download-file -h\` for \`[${providerName} file]\` blocks, and \`okou ${platform} upload-file -h\` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify \`--as <installation-id>\` when the organization has multiple ${providerName} bots.`,
         ...(args.privateArtifactsEnabled
           ? [
               privateArtifactFinalReplyLine({
@@ -122,7 +122,7 @@ function integrationNoteLines(
     }
     case "telegram": {
       return [
-        "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram bot list` to inspect available bots, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. When sending or uploading, explicitly choose the bot with `--bot-id`; if you do not know which bot to use, ask the user before sending.",
+        "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram bot list` to inspect available bots, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. When sending or uploading, explicitly choose the bot with `--as <bot-id>`; if you do not know which bot to use, ask the user before sending.",
         ...(args.privateArtifactsEnabled
           ? [
               privateArtifactFinalReplyLine({

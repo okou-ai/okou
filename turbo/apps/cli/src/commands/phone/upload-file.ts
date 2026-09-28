@@ -1,11 +1,12 @@
 import { readFileSync, statSync } from "fs";
 import { basename, extname } from "path";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import {
   completePhoneFileUpload,
   initPhoneFileUpload,
 } from "../../lib/api/domains/integrations-phone";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { assertPhoneTarget, phoneToOption } from "./target";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".png": "image/png",
@@ -33,18 +34,19 @@ export const uploadFileCommand = new Command()
   .name("upload-file")
   .description("Send a local file to your connected phone")
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  // Deprecated: files always go to the phone linked to your Okou account.
-  // Kept hidden so existing scripts passing --to keep working.
-  .addOption(new Option("--to <phone>").hideHelp())
-  .option("--agent-id <id>", "Phone agent ID (inferred when omitted)")
-  .option("--caption <text>", "Caption to accompany the file")
+  .addOption(phoneToOption())
+  .option(
+    "--as <agent-id>",
+    "Phone agent ID to send as (inferred when omitted)",
+  )
+  .option("-t, --text <text>", "Caption to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
   .addHelpText(
     "after",
     `
 Examples:
   Upload a file:    okou phone upload-file -f /tmp/report.pdf
-  With a caption:   okou phone upload-file -f /tmp/photo.jpg --caption "Here it is"
+  With a caption:   okou phone upload-file -f /tmp/photo.jpg -t "Here it is"
 
 Output:
   Prints a JSON object to stdout on success:
@@ -54,10 +56,12 @@ Output:
     withErrorHandler(
       async (options: {
         file: string;
-        agentId?: string;
-        caption?: string;
+        to: string;
+        as?: string;
+        text?: string;
         contentType?: string;
       }) => {
+        assertPhoneTarget(options.to);
         let fileSize: number;
         try {
           const stat = statSync(options.file);
@@ -104,9 +108,9 @@ Output:
 
         const result = await completePhoneFileUpload({
           uploadId: prepared.uploadId,
-          agentphoneAgentId: options.agentId,
+          agentphoneAgentId: options.as,
           contentType: prepared.contentType,
-          caption: options.caption,
+          caption: options.text,
         });
 
         console.log(JSON.stringify(result));

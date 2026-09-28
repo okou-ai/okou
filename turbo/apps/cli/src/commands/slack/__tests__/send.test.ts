@@ -32,11 +32,11 @@ describe("okou slack message send command", () => {
   });
 
   describe("help text", () => {
-    it("should document 'me' shorthand for --user flag", () => {
-      const userOption = sendCommand.options.find((o) => {
-        return o.long === "--user";
+    it("should document the --to target forms", () => {
+      const toOption = sendCommand.options.find((o) => {
+        return o.long === "--to";
       });
-      expect(userOption?.description).toContain('"me"');
+      expect(toOption?.description).toContain("me, user:<id>, chat:<id>");
     });
   });
 
@@ -54,7 +54,7 @@ describe("okou slack message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--channel",
+        "--to",
         "C1234567",
         "--text",
         "hello world",
@@ -65,7 +65,7 @@ describe("okou slack message send command", () => {
       expect(logCalls).toContain("ts: 1234567890.123456");
     });
 
-    it("should send a DM with --user flag", async () => {
+    it("should send a DM when --to is a user ID", async () => {
       let capturedBody: Record<string, unknown> | undefined;
 
       server.use(
@@ -81,7 +81,7 @@ describe("okou slack message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--user",
+        "--to",
         "U0A8V9X98QJ",
         "--text",
         "Hello DM!",
@@ -97,7 +97,7 @@ describe("okou slack message send command", () => {
       expect(logCalls).toContain("Message sent");
     });
 
-    it("should send a message with --text and --thread", async () => {
+    it("should send a message with --text and --reply-to", async () => {
       let capturedBody: Record<string, unknown> | undefined;
 
       server.use(
@@ -113,11 +113,11 @@ describe("okou slack message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--channel",
+        "--to",
         "C1234567",
         "--text",
         "thread reply",
-        "--thread",
+        "--reply-to",
         "1234567890.000000",
       ]);
 
@@ -128,7 +128,7 @@ describe("okou slack message send command", () => {
       });
     });
 
-    it("should send a message with --blocks", async () => {
+    it("should send a message with --rich", async () => {
       let capturedBody: Record<string, unknown> | undefined;
 
       server.use(
@@ -148,9 +148,9 @@ describe("okou slack message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--channel",
+        "--to",
         "C1234567",
-        "--blocks",
+        "--rich",
         blocks,
       ]);
 
@@ -162,59 +162,40 @@ describe("okou slack message send command", () => {
   });
 
   describe("validation errors", () => {
-    it("should error when both --channel and --user are provided", async () => {
-      await expect(async () => {
-        await sendCommand.parseAsync([
-          "node",
-          "cli",
-          "--channel",
-          "C1234567",
-          "--user",
-          "U0A8V9X98QJ",
-          "--text",
-          "hello",
-        ]);
-      }).rejects.toThrow("process.exit called");
-
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("--channel and --user are mutually exclusive"),
-      );
-    });
-
-    it("should error when neither --channel nor --user is provided", async () => {
+    it("should error when --to is missing", async () => {
       await expect(async () => {
         await sendCommand.parseAsync(["node", "cli", "--text", "hello"]);
       }).rejects.toThrow("process.exit called");
 
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("Either --channel or --user must be provided"),
+        expect.stringContaining("Missing --to"),
       );
     });
 
-    it("should error when neither --text nor --blocks is provided", async () => {
+    it("should error when neither --text nor --rich is provided", async () => {
       await expect(async () => {
-        await sendCommand.parseAsync(["node", "cli", "--channel", "C1234567"]);
+        await sendCommand.parseAsync(["node", "cli", "--to", "C1234567"]);
       }).rejects.toThrow("process.exit called");
 
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("Either --text or --blocks must be provided"),
+        expect.stringContaining("Either --text or --rich must be provided"),
       );
     });
 
-    it("should error when --blocks contains invalid JSON", async () => {
+    it("should error when --rich contains invalid JSON", async () => {
       await expect(async () => {
         await sendCommand.parseAsync([
           "node",
           "cli",
-          "--channel",
+          "--to",
           "C1234567",
-          "--blocks",
+          "--rich",
           "not-json",
         ]);
       }).rejects.toThrow("process.exit called");
 
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("Invalid JSON for --blocks flag"),
+        expect.stringContaining("Invalid JSON for --rich"),
       );
     });
   });
@@ -234,7 +215,7 @@ describe("okou slack message send command", () => {
         await sendCommand.parseAsync([
           "node",
           "cli",
-          "--channel",
+          "--to",
           "C1234567",
           "--text",
           "hello",
@@ -265,7 +246,7 @@ describe("okou slack message send command", () => {
         await sendCommand.parseAsync([
           "node",
           "cli",
-          "--channel",
+          "--to",
           "C1234567",
           "--text",
           "hello",
