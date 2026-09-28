@@ -5,6 +5,7 @@ import { v5 as uuidv5 } from "uuid";
 
 import { command, createStore } from "ccstate";
 import {
+  CHAT_EVENT_USER_MESSAGE_TEXT_TYPES,
   chatEventCompatibilityRole,
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
@@ -136,7 +137,10 @@ import {
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
-import { buildWebChatAppendSystemPrompt } from "./web-chat-session-prompt.service";
+import {
+  buildWebChatAppendSystemPrompt,
+  lastRunMessageSeqIds,
+} from "./web-chat-session-prompt.service";
 import {
   integrationCompletionFallbackEventIdForRun,
   followupsEventIdForRun,
@@ -2323,6 +2327,17 @@ async function getLatestRunsByThreadId(
         chatEventTextCondition(),
         inArray(chatEvents.runId, runIds),
         visibleChatEventCondition(db),
+        // A web round replays only each run's final answer, not the
+        // narration of its intermediate steps.
+        isWebChatContextType(contextType)
+          ? or(
+              chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
+              inArray(
+                chatEvents.seqId,
+                lastRunMessageSeqIds(db, threadId, runIds),
+              ),
+            )
+          : undefined,
       ),
     )
     .orderBy(asc(chatEvents.seqId));

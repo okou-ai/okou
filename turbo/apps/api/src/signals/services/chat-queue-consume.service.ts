@@ -3,6 +3,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
+import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
@@ -21,6 +22,7 @@ import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import { assembleQueuedPromptRun$ } from "./internal-chat-run-callback.service";
+import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { assembleQueuedAutomationRun$ } from "./workflow-chat-event-queue.service";
 import type {
   ChatQueueHeadContext,
@@ -184,6 +186,35 @@ async function publishChatQueueHeadConsumed(head: {
 }
 
 /**
+ * The guidance a direct chat send (web, CLI, MCP, or another agent) shows when
+ * the workspace has no spendable credits. Integration inputs use the
+ * external-surface formatter instead.
+ */
+async function directSendInsufficientCreditsMessage(
+  db: Db,
+  orgId: string,
+): Promise<string> {
+  const capabilities = await loadOrgPlanCapabilities(db, orgId);
+  const appUrl = env("APP_URL");
+  if (capabilities?.canBuyCredits !== true) {
+    return [
+      "Insufficient credits. This workspace has no spendable credits right now.",
+      "",
+      `Upgrade to Pro to get more credits: ${appUrl}/?settings=billing&billingView=plans`,
+    ].join("\n");
+  }
+  return [
+    "Insufficient credits. This workspace has no spendable credits right now.",
+    "",
+    `Buy more credits or adjust auto-recharge: ${appUrl}/?settings=usage`,
+  ].join("\n");
+}
+
+function isDirectSendContext(contextType: string | null): boolean {
+  return contextType === "web" || contextType === "agent_run";
+}
+
+/**
  * The single rejection exit of the pick: consume the head as `input.rejected`
  * with a formatted `output.error`, tell the thread's viewers, and deliver the
  * error to the integration the input came from.
@@ -203,16 +234,22 @@ const rejectChatQueueHead$ = command(
     const displayError =
       rejection.error.code === "CONFLICT"
         ? rejection.error.message
-        : await set(
-            formatIntegrationRunError$,
-            {
-              orgId: head.orgId,
-              userId: rejection.userId,
-              code: rejection.error.code,
-              message: rejection.error.message,
-            },
-            signal,
-          );
+        : rejection.error.code === "INSUFFICIENT_CREDITS" &&
+            isDirectSendContext(head.contextType)
+          ? await directSendInsufficientCreditsMessage(
+              set(writeDb$),
+              head.orgId,
+            )
+          : await set(
+              formatIntegrationRunError$,
+              {
+                orgId: head.orgId,
+                userId: rejection.userId,
+                code: rejection.error.code,
+                message: rejection.error.message,
+              },
+              signal,
+            );
     signal.throwIfAborted();
     const rejected = await appendChatQueueHeadRejection(set(writeDb$), {
       chatThreadId: head.chatThreadId,
