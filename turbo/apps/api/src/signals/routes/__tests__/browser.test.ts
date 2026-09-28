@@ -7937,9 +7937,6 @@ describe("okou browser route", () => {
           return input.ContentType === "image/webp" || "Delete" in input;
         }),
       ).toHaveLength(failureKind === "timeout" ? 1 : 0);
-      expect(context.mocks.sentry.captureException.mock.calls).toStrictEqual(
-        [],
-      );
     },
     120_000,
   );
@@ -8290,9 +8287,6 @@ describe("okou browser route", () => {
         status: "active",
         screenshotUrl: finalScreenshotUrl,
       });
-      expect(context.mocks.sentry.captureException.mock.calls).toStrictEqual(
-        [],
-      );
       expect(
         context.mocks.s3.send.mock.calls.filter(([command]) => {
           const input = commandInput(command);

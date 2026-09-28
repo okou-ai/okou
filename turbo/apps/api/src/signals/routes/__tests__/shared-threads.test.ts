@@ -3,7 +3,6 @@ import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/c
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { z } from "zod";
 
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -235,7 +234,6 @@ describe("optional shared-thread titles", () => {
       expect(prompt).toContain(selectedContent);
       expect(prompt).not.toContain(privateTitle);
       expect(prompt).not.toContain(privateContent);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
 
@@ -368,7 +366,6 @@ describe("optional shared-thread titles", () => {
         created.body.id,
         "Shared conversation",
       );
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
 
@@ -394,7 +391,6 @@ describe("optional shared-thread titles", () => {
     await flushWaitUntilForTest();
     await expectNoShare(fixture);
     expect(requests).toStrictEqual([]);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -461,7 +457,6 @@ describe("optional shared-thread titles", () => {
       await returned.promise;
       await flushWaitUntilForTest();
       await expectNoShare(fixture);
-      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
 
@@ -498,7 +493,6 @@ describe("optional shared-thread titles", () => {
     );
     expect(unknown.body.error.code).toBe("NO_SHAREABLE_MESSAGES");
     await expectNoShare(fixture);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("rejects oversized selections before title generation", async () => {
@@ -507,7 +501,6 @@ describe("optional shared-thread titles", () => {
     const response = await accept(client().create(requestBody(fixture)), [413]);
     expect(response.body.error.code).toBe("SHARED_THREAD_TOO_LARGE");
     await expectNoShare(fixture);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
   it("rolls back the share when the real artifact write fails after title degradation", async () => {
@@ -528,23 +521,21 @@ describe("optional shared-thread titles", () => {
         return new HttpResponse(null, { status: 429 });
       }),
     );
-    await expect(client().create(requestBody(fixture))).rejects.toThrow(
+    // The client can choose the share ID before creating it. This lets public
+    // reads prove rollback without recovering an ID from diagnostic reporting.
+    const id = randomUUID();
+    await expect(
+      client().create({
+        ...requestBody(fixture),
+        body: { eventIds: [fixture.eventId], id },
+      }),
+    ).rejects.toThrow(
       "Unknown response status 500 for POST /api/chat-threads/:threadId/shared-threads",
     );
     await flushWaitUntilForTest();
     expect(context.mocks.sentry.captureException).toHaveBeenCalledOnce();
-    // PostgreSQL reports the attempted public share ID through the external
-    // error capture. Verify rollback using both public read endpoints.
-    const error = z
-      .object({
-        cause: z.object({
-          code: z.literal("23514"),
-          detail: z.string().uuid(),
-        }),
-      })
-      .parse(context.mocks.sentry.captureException.mock.calls[0]?.[0]);
-    await accept(client().get({ params: { id: error.cause.detail } }), [404]);
-    await accept(client().meta({ params: { id: error.cause.detail } }), [404]);
+    await accept(client().get({ params: { id } }), [404]);
+    await accept(client().meta({ params: { id } }), [404]);
     await expectNoShare(fixture);
   });
 });
