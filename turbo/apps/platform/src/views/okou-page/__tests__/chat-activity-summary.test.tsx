@@ -91,7 +91,6 @@ test("A completed run cannot revive the previous indicator", async () => {
 
   await setupPage({ context, path: RUN_PATH });
   await firstRequestStarted.promise;
-  await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 
   events.push(completedEvent({ id: "completed", runId: RUN_ID, seqId: 3 }));
   publishRunUpdate();
@@ -125,7 +124,7 @@ test("A 403 response clears the displayed summary", async () => {
   expect(screen.queryByText(PREPARATION)).not.toBeInTheDocument();
 });
 
-test("A replacement run cannot display the previous run's last result", async () => {
+test("A replacement run shows its own summary once it arrives", async () => {
   const events = installActiveRun();
   const nextRunResponse = createDeferredPromise<void>(context.signal);
   context.mocks.api(
@@ -158,9 +157,9 @@ test("A replacement run cannot display the previous run's last result", async ()
   );
   publishRunUpdate();
 
-  await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
-  expect(screen.queryByLabelText(PREPARATION)).not.toBeInTheDocument();
-
+  // The indicators keep the last resolved summary until the replacement
+  // run's request returns.
   nextRunResponse.resolve(undefined);
   await expect(screen.findByText(ACTIVITY)).resolves.toBeVisible();
+  expect(screen.queryByText(PREPARATION)).not.toBeInTheDocument();
 });

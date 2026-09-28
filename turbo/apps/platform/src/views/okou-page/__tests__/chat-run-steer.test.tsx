@@ -135,13 +135,9 @@ test("Keep the work boundary and elapsed time stable through steer delivery and 
   const events = [...resultEvents(), pendingSteer()];
   const chat = installRunChat({ chatEvents: events, activeRunIds: [RUN_A] });
   await openChat(12);
-  // Until delivery carries the run, the steer waits in the queue bar.
-  const queued = await screen.findByRole("listitem", {
-    name: "Queued message",
-  });
-  expect(queued).toHaveTextContent(STEER);
-  expectWaitingAfter(RESULT);
-  expect(workSummary()).toHaveTextContent("Working for");
+  expect(screen.getByText(STEER)).toBeVisible();
+  expectWaitingAfter(STEER);
+  expect.soft(workSummary()).toHaveTextContent("Worked for 12 sec");
 
   mockNow(new Date(createdAt(20)), context.signal);
   events.push(
@@ -281,10 +277,7 @@ test("Stop interrupts the live run and keeps the queued follow-up", async () => 
     },
   });
   await openChat(12);
-  const queued = await screen.findByRole("listitem", {
-    name: "Queued message",
-  });
-  expect(queued).toHaveTextContent(STEER);
+  expect(screen.getByText(STEER)).toBeVisible();
 
   click(await findEnabledButton("Stop"));
 
@@ -292,7 +285,8 @@ test("Stop interrupts the live run and keeps the queued follow-up", async () => 
     expect(interrupted).toStrictEqual([RUN_A]);
   });
   expect(recalled).toStrictEqual([]);
+  expect(screen.getByText(STEER)).toBeVisible();
   expect(
-    screen.getByRole("listitem", { name: "Queued message" }),
-  ).toHaveTextContent(STEER);
+    screen.queryByRole("listitem", { name: "Queued message" }),
+  ).not.toBeInTheDocument();
 });

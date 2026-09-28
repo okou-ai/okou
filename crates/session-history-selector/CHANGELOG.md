@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.124](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.123...session-history-selector-v0.3.124) (2026-09-28)
+
+
+### Bug Fixes
+
+* **guest-agent:** checkpoint bounded pi compact history ([#37106](https://github.com/okou-ai/okou/issues/37106)) ([06b651a](https://github.com/okou-ai/okou/commit/06b651ad612ab9d0002f54bd87ad281447407c26))
+
 ## [0.3.123](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.122...session-history-selector-v0.3.123) (2026-09-28)
 
 ## [0.3.122](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.121...session-history-selector-v0.3.122) (2026-09-27)

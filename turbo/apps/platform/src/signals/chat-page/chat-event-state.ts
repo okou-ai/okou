@@ -1,6 +1,5 @@
 import {
   chatEventCompatibilityRole,
-  foldChatRunStates,
   isChatRunTerminalEventType,
   revokedChatEventIds,
   terminatedChatRunIds,
@@ -58,22 +57,21 @@ export function lastAssistantCancelledFromGroups(
   return lastEvent ? isCancelledRunEvent(lastEvent) : false;
 }
 
-// Only a run makes the thread active. An input without a run is either still
-// being sent (optimistic) or waiting in the queue; neither shows "Thinking…".
-// "queued" is kept for historical `run.queued` markers.
+// "running" means a run is live or a sent prompt is still optimistic; "queued"
+// means the server holds input without a run. Historical `run.queued` markers
+// are not supported.
 export type RunIndicatorState = "running" | "queued" | null;
 type ActiveRunIndicatorState = "running" | null;
 
 interface RunIndicatorContext {
   readonly terminatedRunIds: ReadonlySet<string>;
-  readonly queuedRunIds: ReadonlySet<string>;
 }
 
 function runActivityIndicatorState(
   context: RunIndicatorContext,
   runId: string,
 ): ActiveRunIndicatorState | undefined {
-  if (context.terminatedRunIds.has(runId) || context.queuedRunIds.has(runId)) {
+  if (context.terminatedRunIds.has(runId)) {
     return undefined;
   }
   return "running";
@@ -218,26 +216,38 @@ function activeRunIndicatorStateFromChatEvents(
 
 export function deriveRunIndicatorStateFromChatEvents(
   events: readonly ChatEvent[],
-): RunIndicatorState {
-  const revokedEventIds = revokedChatEventIds(events);
-  const terminatedRunIds = terminatedChatRunIds(events);
-  const queuedRunIds = new Set(
-    [...foldChatRunStates(events)].flatMap(([runId, state]) => {
-      return state === "queued" ? [runId] : [];
-    }),
-  );
-  const activeRunState = activeRunIndicatorStateFromChatEvents(
+): ActiveRunIndicatorState {
+  return activeRunIndicatorStateFromChatEvents(
     events,
-    revokedEventIds,
-    {
-      terminatedRunIds,
-      queuedRunIds,
-    },
+    revokedChatEventIds(events),
+    { terminatedRunIds: terminatedChatRunIds(events) },
   );
-  if (activeRunState === "running") {
-    return activeRunState;
+}
+
+function hasRunlessInput(events: readonly ChatEvent[]): boolean {
+  const revokedEventIds = revokedChatEventIds(events);
+  return events.some((event) => {
+    return (
+      isQueuedChatEvent(event) &&
+      event.runId === undefined &&
+      !revokedEventIds.has(event.id)
+    );
+  });
+}
+
+/**
+ * Run state of the thread as the server has persisted it. Pass only persisted
+ * events: optimistic input has not reached the server queue yet. Input that no
+ * run has consumed while no run is live waits in the server queue.
+ */
+export function deriveServerRunStateFromChatEvents(
+  events: readonly ChatEvent[],
+): RunIndicatorState {
+  const state = deriveRunIndicatorStateFromChatEvents(events);
+  if (state !== null) {
+    return state;
   }
-  return queuedRunIds.size > 0 ? "queued" : activeRunState;
+  return hasRunlessInput(events) ? "queued" : null;
 }
 
 export function liveRunIdsFromChatEvents(

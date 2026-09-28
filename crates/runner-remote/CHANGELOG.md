@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.5.3...runner-remote-v0.5.4) (2026-09-28)
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
 ## [0.5.3](https://github.com/okou-ai/okou/compare/runner-remote-v0.5.2...runner-remote-v0.5.3) (2026-09-28)
 
 ## [0.5.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.5.1...runner-remote-v0.5.2) (2026-09-27)

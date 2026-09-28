@@ -319,7 +319,7 @@ const QUEST_ROW_CLASS =
  * The outcomes a reviewer can record, in the reader's words.
  *
  * `get-started-review.service.ts` writes a fixed set of reason codes; these are
- * the two a reader can act on. Anything else falls back to the plain "not
+ * the ones a reader can act on. Anything else falls back to the plain "not
  * eligible", so a new code added on the server degrades rather than throws.
  */
 function useRejectionCopy(): Record<string, string | undefined> {
@@ -334,6 +334,18 @@ function useRejectionCopy(): Record<string, string | undefined> {
     ),
     already_redeemed: t(($) => {
       return $.chat.agentPage.getStarted.rejected.alreadyRedeemed;
+    }),
+    author_already_rewarded: t(($) => {
+      return $.chat.agentPage.getStarted.rejected.authorAlreadyRewarded;
+    }),
+    post_by_official_account: t(
+      ($) => {
+        return $.chat.agentPage.getStarted.rejected.officialAccount;
+      },
+      { assistantName },
+    ),
+    post_author_unavailable: t(($) => {
+      return $.chat.agentPage.getStarted.rejected.authorUnavailable;
     }),
   };
 }

@@ -1484,6 +1484,9 @@
         "pendingState": "{{amount}} 件承諾待ち",
         "rejected": {
           "alreadyRedeemed": "投稿は使用済み",
+          "authorAlreadyRewarded": "このアカウントは報酬受取済み",
+          "authorUnavailable": "投稿者を確認できません",
+          "officialAccount": "{{assistantName}} 公式の投稿は対象外",
           "postMustMention": "{{assistantName}} に触れる必要あり"
         },
         "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
@@ -2224,6 +2227,13 @@
       },
       "openTemplatesAria": "テンプレートを見る",
       "startWithPrompt": "作成",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Claude Max 5x/20x や Codex のプランで",
+        "openSettingsAria": "モデル設定を開く",
+        "title": "タスクを無料で実行"
+      },
       "templates": "テンプレート"
     },
     "taskChips": {
@@ -4057,9 +4067,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "リクエストが失敗しました"
-    },
-    "realtime": {
-      "degraded": "ライブアップデートで問題が発生しました。ページを更新してください。"
     }
   },
   "invitationRedirect": {
@@ -4330,6 +4337,9 @@
       "industry": {
         "copy": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。分野を選ぶと、合った最初のタスクを提案します。",
         "title": "どんな仕事をしていますか？"
+      },
+      "prompt": {
+        "intro": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。"
       },
       "skills": {
         "copied": "コピーしました",

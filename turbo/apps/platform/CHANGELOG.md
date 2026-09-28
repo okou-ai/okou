@@ -11,6 +11,24 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.974.1](https://github.com/okou-ai/okou/compare/app-v0.974.0...app-v0.974.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **api:** limit get started x share reward to one non-official author ([#37186](https://github.com/okou-ai/okou/issues/37186)) ([4541bd4](https://github.com/okou-ai/okou/commit/4541bd42e77a79a5c10491de8849390e38fb45ef))
+* **platform:** keep the try-this-prompt onboarding for visitors who bring a prompt ([#37176](https://github.com/okou-ai/okou/issues/37176)) ([93b2105](https://github.com/okou-ai/okou/commit/93b21053a25d617c8c76936bb90721323940a818))
+* **platform:** remove the live-updates degraded toast ([#37188](https://github.com/okou-ai/okou/issues/37188)) ([223a0dc](https://github.com/okou-ai/okou/commit/223a0dc7a467b1cb0acbb1b02a01878e8de912d4))
+* **platform:** show the slack get started step done when slack is already installed ([#37183](https://github.com/okou-ai/okou/issues/37183)) ([3227a0b](https://github.com/okou-ai/okou/commit/3227a0b9c70fc1ed78dbae7cb74c32b511ef4b32))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.519.0
+    * @okouai/core bumped to 8.714.0
+
 ## [0.974.0](https://github.com/okou-ai/okou/compare/app-v0.973.3...app-v0.974.0) (2026-09-28)
 
 

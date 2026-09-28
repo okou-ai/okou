@@ -5,6 +5,7 @@ import type {
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatEvent } from "./chat-event-types.ts";
+import type { RunIndicatorState } from "./chat-event-state.ts";
 import {
   createChatEventStorageSignals,
   type AppendOptimisticEventCommand,
@@ -388,6 +389,7 @@ export interface ChatEventSignals {
   readonly threadId: string;
   readonly chatEvents$: Computed<ChatEvent[]>;
   readonly hasOptimisticUserMessage$: Computed<boolean>;
+  readonly serverRunState$: Computed<RunIndicatorState>;
   readonly setup$: Command<Promise<void>, [AbortSignal]>;
   readonly catchUp$: Command<Promise<void>, [AbortSignal]>;
   readonly sendEvent$: Command<
@@ -411,6 +413,7 @@ export function createChatEventSignals(threadId: string): ChatEventSignals {
     threadId,
     chatEvents$: events.chatEvents$,
     hasOptimisticUserMessage$: events.hasOptimisticUserMessage$,
+    serverRunState$: events.serverRunState$,
     ...setup,
     sendEvent$,
   };

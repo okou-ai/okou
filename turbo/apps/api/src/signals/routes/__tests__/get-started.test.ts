@@ -71,7 +71,16 @@ beforeEach(async () => {
   await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
 });
 
-function postResponse(id: string, text: string) {
+/** A fresh author per post by default: share rewards are unique per X author. */
+function authorHandle() {
+  return `a${randomUUID().replaceAll("-", "").slice(0, 14)}`;
+}
+
+function postResponse(
+  id: string,
+  text: string,
+  profileUrl = `https://x.com/${authorHandle()}`,
+) {
   return HttpResponse.json({
     success: true,
     data: {
@@ -86,7 +95,7 @@ function postResponse(id: string, text: string) {
         author: {
           name: "Example",
           headline: "",
-          profileUrl: "https://x.com/example",
+          profileUrl,
         },
         hashtags: [],
         urls: [],
@@ -95,10 +104,14 @@ function postResponse(id: string, text: string) {
   });
 }
 
-function provider(id: string, text: string) {
+function provider(
+  id: string,
+  text: string,
+  profileUrl = `https://x.com/${authorHandle()}`,
+) {
   server.use(
     http.get("https://api.socialkit.dev/twitter/tweet", () => {
-      return postResponse(id, text);
+      return postResponse(id, text, profileUrl);
     }),
   );
 }
@@ -446,34 +459,37 @@ test("concurrent claims reserve a post once globally, including after the bonus 
     if (!share) {
       throw new Error("Missing share claim");
     }
-    outcomes.push(share.status);
+    outcomes.push(share.status === "granted" ? "granted" : "declined");
     const balance = await personalCredits();
     if (share.status === "granted") {
       expect(balance.bonusCredits).toBe(2000);
       expect(balance.creditGrants).toHaveLength(1);
     } else {
-      expect(share).toMatchObject({
-        status: "ineligible",
-        reason: "already_redeemed",
-      });
+      // The review sees the author's grant first, or loses the race to the
+      // unique reward key; either way nothing is granted twice.
+      expect([
+        "ineligible:already_redeemed",
+        "rejected:author_already_rewarded",
+      ]).toContain(`${share.status}:${share.reason}`);
       expect(balance.bonusCredits).toBe(0);
       expect(balance.creditGrants).toStrictEqual([]);
     }
   }
-  expect(outcomes.sort()).toStrictEqual(["granted", "ineligible"]);
+  expect(outcomes.sort()).toStrictEqual(["declined", "granted"]);
   mockNow(new Date("2027-01-01T00:00:00Z"));
   await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
-  expect(
-    (
-      await accept(
-        client().submitShare({
-          headers,
-          body: { url: `https://x.com/example/status/${id}` },
-        }),
-        [202],
-      )
-    ).body,
-  ).toMatchObject({ status: "ineligible", reason: "already_redeemed" });
+  const late = await accept(
+    client().submitShare({
+      headers,
+      body: { url: `https://x.com/example/status/${id}` },
+    }),
+    [202],
+  );
+  await review([late.body.id]);
+  expect((await status()).shareClaim).toMatchObject({
+    status: "rejected",
+    reason: "author_already_rewarded",
+  });
 });
 
 test("different posts reviewed concurrently share one personal reward across organizations", async () => {
@@ -535,6 +551,102 @@ test("different posts reviewed concurrently share one personal reward across org
       return balance.creditGrants;
     }),
   ).toHaveLength(1);
+});
+
+/** Submit a post as a fresh user and review it with the given provider evidence. */
+async function reviewedShare(text: string, profileUrl?: string) {
+  await enabledSession();
+  const id = postId();
+  const submitted = await accept(
+    client().submitShare({
+      headers,
+      body: { url: `https://x.com/example/status/${id}` },
+    }),
+    [202],
+  );
+  provider(id, text, profileUrl);
+  await review([submitted.body.id]);
+  return {
+    share: (await status()).shareClaim,
+    bonusCredits: (await personalCredits()).bonusCredits,
+  };
+}
+
+test("a post by an official Okou account is rejected, not retried", async () => {
+  for (const profileUrl of [
+    "https://x.com/okou_ai",
+    "https://twitter.com/Okou_AI/",
+  ]) {
+    await expect(
+      reviewedShare("Okou ships scheduled workflows today", profileUrl),
+    ).resolves.toStrictEqual({
+      share: expect.objectContaining({
+        status: "rejected",
+        reason: "post_by_official_account",
+      }),
+      bonusCredits: 0,
+    });
+  }
+});
+
+test("a post whose author cannot be identified is rejected", async () => {
+  for (const profileUrl of [
+    "",
+    "https://example.com/someone",
+    "https://x.com/i/web",
+  ]) {
+    await expect(
+      reviewedShare("Okou is great", profileUrl),
+    ).resolves.toStrictEqual({
+      share: expect.objectContaining({
+        status: "rejected",
+        reason: "post_author_unavailable",
+      }),
+      bonusCredits: 0,
+    });
+  }
+});
+
+test("an X author earns the share reward once, even for a different post and claimant", async () => {
+  const handle = authorHandle();
+  await expect(
+    reviewedShare("Okou saved me an hour", `https://x.com/${handle}`),
+  ).resolves.toMatchObject({
+    share: { status: "granted" },
+    bonusCredits: 2000,
+  });
+  await expect(
+    reviewedShare(
+      "Okou again, from the same account",
+      `https://twitter.com/${handle.toUpperCase()}`,
+    ),
+  ).resolves.toStrictEqual({
+    share: expect.objectContaining({
+      status: "rejected",
+      reason: "author_already_rewarded",
+    }),
+    bonusCredits: 0,
+  });
+});
+
+test("the mention check accepts handles, hashtags and possessives but not a longer word", async () => {
+  for (const text of [
+    "Loving @okou_ai for my inbox",
+    "#okou changed my week",
+    "Okou's scheduler is neat",
+    "我在用Okou整理邮件",
+  ]) {
+    await expect(reviewedShare(text)).resolves.toMatchObject({
+      share: { status: "granted" },
+      bonusCredits: 2000,
+    });
+  }
+  await expect(reviewedShare("Dinner at tokou tonight")).resolves.toMatchObject(
+    {
+      share: { status: "rejected", reason: "post_must_mention_okou" },
+      bonusCredits: 0,
+    },
+  );
 });
 
 test("invalid URLs and missing cron authorization are rejected", async () => {

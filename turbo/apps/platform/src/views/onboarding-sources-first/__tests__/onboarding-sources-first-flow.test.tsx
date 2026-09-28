@@ -4,8 +4,9 @@ import {
   onboardingCompleteContract,
   onboardingRecommendationContract,
 } from "@okouai/api-contracts/contracts/onboarding";
+import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -42,6 +43,9 @@ const FALLBACK_REQUEST =
   "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
 const HANDOFF_PROMPT = "Draft the launch plan";
 const PROMPT_TITLE = "Try this prompt";
+const PROMPT_INTRO =
+  "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud.";
+const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 function generatedProfile() {
   return {
     overview: "Your inbox has several conversations to keep moving.",
@@ -107,8 +111,11 @@ function mockCatalog({
   ]);
 }
 
-function getButtonByName(name: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
+function getButtonByName(
+  name: string,
+  container: ParentNode = document.body,
+): HTMLElement {
+  const button = queryAllByRoleFast("button", container).find((candidate) => {
     return (
       candidate.textContent?.trim() === name ||
       candidate.getAttribute("aria-label") === name
@@ -663,7 +670,7 @@ test("A step keeps the redeem code it arrived with", async () => {
   expect(params.get("redeemCode")).toBe("LAUNCH50");
 });
 
-test("A new user who brings a prompt tries it instead of the source-first flow", async () => {
+test("A new user who brings a prompt tries it on the source-first flow's single step", async () => {
   mockOnboardingNeeded();
   mockCatalog();
 
@@ -680,9 +687,51 @@ test("A new user who brings a prompt tries it instead of the source-first flow",
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
     HANDOFF_PROMPT,
   );
+  // The first question's introduction and compliance beside the prompt.
+  expect(screen.getByText(PROMPT_INTRO)).toBeInTheDocument();
+  expect(
+    screen.getByRole("region", { name: COMPLIANCE_TITLE }),
+  ).toBeInTheDocument();
+  // The source-first flow's filling track, as one step of one.
+  expect(
+    screen.getAllByRole("progressbar", { name: "Step 1 of 1" }).length,
+  ).toBeGreaterThan(0);
+  expect(getButtonByName("Next")).toBeEnabled();
   expect(
     screen.queryByRole("heading", { name: INDUSTRY_QUESTION }),
   ).not.toBeInTheDocument();
+});
+
+test("With the switch off, a prompt keeps the make-something page's look", async () => {
+  mockOnboardingNeeded();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&connector=google-ads`,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: PROMPT_TITLE }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
+    HANDOFF_PROMPT,
+  );
+  // The make-something page's segmented track and its list card's plain
+  // Connect button, not the source-first sheet.
+  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  expect(screen.queryByText(PROMPT_INTRO)).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("region", { name: COMPLIANCE_TITLE }),
+  ).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(getButtonByName("Connect")).toBeEnabled();
+  });
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label") === "Connect Google Ads";
+    }),
+  ).toBeFalsy();
 });
 
 test("A prompt that asks for a connector shows its Connect card", async () => {
@@ -698,8 +747,61 @@ test("A prompt that asks for a connector shows its Connect card", async () => {
   await expect(
     screen.findByRole("heading", { name: PROMPT_TITLE }),
   ).resolves.toBeInTheDocument();
-  await expect(screen.findByText("Google Ads")).resolves.toBeInTheDocument();
-  expect(getButtonByName("Connect")).toBeInTheDocument();
+  // The source step's own card, connected from anywhere on it.
+  await waitFor(() => {
+    expect(getButtonByName("Connect Google Ads")).toBeEnabled();
+  });
+  expect(
+    screen.getByText("Manage Google Ads campaigns and reports."),
+  ).toBeInTheDocument();
+});
+
+test("The sheet's connector card connects the tool the prompt link names", async () => {
+  mockOnboardingNeeded();
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    ({ params, respond }) => {
+      expect(params.connectorSlug).toBe("ahrefs");
+      return respond(200, {
+        id: "11111111-1111-4111-8111-111111111112",
+        slug: "ahrefs",
+        authMethod: "api-token",
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: null,
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+    },
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Track keyword rankings")}&connector=ahrefs`,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  click(
+    await waitFor(() => {
+      return getButtonByName("Connect Ahrefs");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Ahrefs" });
+  await fill(
+    within(dialog).getByPlaceholderText("your-ahrefs-api-token"),
+    "test-ahrefs-token",
+  );
+  click(getButtonByName("Save", dialog));
+
+  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
+    "Track keyword rankings",
+  );
 });
 
 test("A prompt with a showcase carries the showcase into the chat", async () => {

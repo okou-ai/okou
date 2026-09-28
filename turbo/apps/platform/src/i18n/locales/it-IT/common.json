@@ -1509,6 +1509,9 @@
         "pendingState": "{{amount}} in sospeso",
         "rejected": {
           "alreadyRedeemed": "Post già utilizzato",
+          "authorAlreadyRewarded": "Account già premiato",
+          "authorUnavailable": "Impossibile verificare l'autore",
+          "officialAccount": "I post ufficiali di {{assistantName}} non valgono",
           "postMustMention": "Deve menzionare {{assistantName}}"
         },
         "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
@@ -2280,6 +2283,13 @@
       },
       "openTemplatesAria": "Sfoglia i modelli",
       "startWithPrompt": "Crea",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Con il tuo piano Claude Max 5x/20x o Codex",
+        "openSettingsAria": "Apri le impostazioni dei modelli",
+        "title": "Esegui attività gratis"
+      },
       "templates": "Modelli"
     },
     "taskChips": {
@@ -4133,9 +4143,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Richiesta non riuscita"
-    },
-    "realtime": {
-      "degraded": "Gli aggiornamenti in tempo reale hanno riscontrato un problema. Aggiorna la pagina."
     }
   },
   "invitationRedirect": {
@@ -4406,6 +4413,9 @@
       "industry": {
         "copy": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud. Scegli il tuo settore per una prima attività su misura.",
         "title": "Che tipo di lavoro fai?"
+      },
+      "prompt": {
+        "intro": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud."
       },
       "skills": {
         "copied": "Copiato",

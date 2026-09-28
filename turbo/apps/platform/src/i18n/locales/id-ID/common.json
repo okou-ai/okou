@@ -1484,6 +1484,9 @@
         "pendingState": "{{amount}} tertunda",
         "rejected": {
           "alreadyRedeemed": "Postingan sudah dipakai",
+          "authorAlreadyRewarded": "Akun sudah diberi hadiah",
+          "authorUnavailable": "Penulis tidak dapat diverifikasi",
+          "officialAccount": "Postingan resmi {{assistantName}} tidak dihitung",
           "postMustMention": "Harus menyebut {{assistantName}}"
         },
         "rewardsNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
@@ -2224,6 +2227,13 @@
       },
       "openTemplatesAria": "Jelajahi templat",
       "startWithPrompt": "Buat",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Dengan paket Claude Max 5x/20x atau Codex Anda",
+        "openSettingsAria": "Buka pengaturan model",
+        "title": "Jalankan tugas gratis"
+      },
       "templates": "Templat"
     },
     "taskChips": {
@@ -4057,9 +4067,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Permintaan gagal"
-    },
-    "realtime": {
-      "degraded": "Pembaruan langsung mengalami masalah. Segarkan halaman."
     }
   },
   "invitationRedirect": {
@@ -4330,6 +4337,9 @@
       "industry": {
         "copy": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud. Pilih bidang Anda untuk tugas pertama yang pas.",
         "title": "Pekerjaan Anda seperti apa?"
+      },
+      "prompt": {
+        "intro": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud."
       },
       "skills": {
         "copied": "Tersalin",

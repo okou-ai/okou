@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.368.0](https://github.com/okou-ai/okou/compare/cli-v9.367.5...cli-v9.368.0) (2026-09-28)
+
+
+### Features
+
+* **host:** let owners soft-delete a hosted site with okou host delete ([#37182](https://github.com/okou-ai/okou/issues/37182)) ([2d7b45c](https://github.com/okou-ai/okou/commit/2d7b45cff7a39047acd200659010fbb176902a86))
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.519.0
+    * @okouai/core bumped to 8.714.0
+    * @okouai/pi-agent-runtime bumped to 1.40.37
+
 ## [9.367.5](https://github.com/okou-ai/okou/compare/cli-v9.367.4...cli-v9.367.5) (2026-09-28)
 
 

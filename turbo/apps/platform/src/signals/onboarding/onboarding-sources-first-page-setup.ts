@@ -34,6 +34,7 @@ import { detach, Reason } from "../utils.ts";
 import {
   promptHandoffParams,
   setupOnboardingMakePage$,
+  setupOnboardingSourcesFirstPromptPage$,
 } from "./onboarding-page-setup.ts";
 import { enterSkillImport$ } from "./onboarding-skill-import.ts";
 import {
@@ -234,38 +235,46 @@ const setupOnboardingIndustryEntryPage$ = createSourcesFirstPageSetup({
 });
 
 /**
- * Whether `/onboarding` opens the source-first flow: the switch is on and the
- * visitor did not bring a prompt of their own to try.
+ * What `/onboarding` opens: the source-first flow's first question when the
+ * switch is on, unless the visitor brought a prompt of their own to try, and
+ * the make-something page when the switch is off.
  */
-const sourcesFirstEntry$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+const onboardingEntry$ = command(
+  async (
+    { get, set },
+    signal: AbortSignal,
+  ): Promise<"sources-first" | "prompt" | "make"> => {
     if (!(await set(sourcesFirstEnabled$, signal))) {
-      return false;
+      return "make";
     }
     signal.throwIfAborted();
     const searchParams = get(searchParams$);
     if (!searchParams.get("prompt")?.trim()) {
-      return true;
+      return "sources-first";
     }
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
-    return !hasPromptHandoff(searchParams, status);
+    return hasPromptHandoff(searchParams, status) ? "prompt" : "sources-first";
   },
 );
 
 /**
  * `/onboarding` keeps its public path: the switch and the visitor's own prompt
  * decide whether it opens the source-first flow's first question or the
- * make-something page.
+ * prompt handoff, drawn in the look of the flow the switch picks.
  */
 export const setupOnboardingEntryPage$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
-    if (await set(sourcesFirstEntry$, signal)) {
-      signal.throwIfAborted();
+    const entry = await set(onboardingEntry$, signal);
+    signal.throwIfAborted();
+    if (entry === "sources-first") {
       await set(setupOnboardingIndustryEntryPage$, signal);
       return;
     }
-    signal.throwIfAborted();
+    if (entry === "prompt") {
+      await set(setupOnboardingSourcesFirstPromptPage$, signal);
+      return;
+    }
     await set(setupOnboardingMakePage$, signal);
   },
 );

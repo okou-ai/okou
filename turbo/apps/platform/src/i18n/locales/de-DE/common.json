@@ -1485,6 +1485,9 @@
         "pendingState": "{{amount}} ausstehend",
         "rejected": {
           "alreadyRedeemed": "Post bereits verwendet",
+          "authorAlreadyRewarded": "Konto bereits belohnt",
+          "authorUnavailable": "Autor nicht überprüfbar",
+          "officialAccount": "Offizielle {{assistantName}}-Posts zählen nicht",
           "postMustMention": "Muss {{assistantName}} erwähnen"
         },
         "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
@@ -2233,6 +2236,13 @@
       },
       "openTemplatesAria": "Vorlagen durchsuchen",
       "startWithPrompt": "Erstellen",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Mit deinem Claude Max 5x/20x- oder Codex-Plan",
+        "openSettingsAria": "Modelleinstellungen öffnen",
+        "title": "Kostenlos ausführen"
+      },
       "templates": "Vorlagen"
     },
     "taskChips": {
@@ -4074,9 +4084,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Die Anfrage ist fehlgeschlagen"
-    },
-    "realtime": {
-      "degraded": "Bei Live-Updates ist ein Problem aufgetreten. Bitte aktualisieren Sie die Seite."
     }
   },
   "invitationRedirect": {
@@ -4347,6 +4354,9 @@
       "industry": {
         "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud. Wähle dein Feld für eine passende erste Aufgabe.",
         "title": "Welche Arbeit machst du?"
+      },
+      "prompt": {
+        "intro": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud."
       },
       "skills": {
         "copied": "Kopiert",

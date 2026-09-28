@@ -1484,6 +1484,9 @@
         "pendingState": "{{amount}} 待發放",
         "rejected": {
           "alreadyRedeemed": "貼文已被使用",
+          "authorAlreadyRewarded": "該帳號已領取過獎勵",
+          "authorUnavailable": "無法確認作者",
+          "officialAccount": "{{assistantName}}官方貼文不計入",
           "postMustMention": "需要提到{{assistantName}}"
         },
         "rewardsNote": "獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
@@ -2224,6 +2227,13 @@
       },
       "openTemplatesAria": "瀏覽模板",
       "startWithPrompt": "建立",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "用你的 Claude Max 5x/20x 或 Codex 方案",
+        "openSettingsAria": "開啟模型設定",
+        "title": "免費執行任務"
+      },
       "templates": "模板"
     },
     "taskChips": {
@@ -4057,9 +4067,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "請求失敗"
-    },
-    "realtime": {
-      "degraded": "實時更新出現問題，請重新整理頁面。"
     }
   },
   "invitationRedirect": {
@@ -4330,6 +4337,9 @@
       "industry": {
         "copy": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。選擇你的領域，取得適合你的第一項任務。",
         "title": "你主要做哪類工作？"
+      },
+      "prompt": {
+        "intro": "Okou 是你和團隊的工作助理，在雲端把零散的資訊變成完成的工作。"
       },
       "skills": {
         "copied": "已複製",

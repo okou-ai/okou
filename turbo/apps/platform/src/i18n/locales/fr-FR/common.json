@@ -1509,6 +1509,9 @@
         "pendingState": "{{amount}} en attente",
         "rejected": {
           "alreadyRedeemed": "Publication déjà utilisée",
+          "authorAlreadyRewarded": "Compte déjà récompensé",
+          "authorUnavailable": "Auteur non vérifiable",
+          "officialAccount": "Les publications officielles de {{assistantName}} ne comptent pas",
           "postMustMention": "Doit mentionner {{assistantName}}"
         },
         "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
@@ -2280,6 +2283,13 @@
       },
       "openTemplatesAria": "Parcourir les modèles",
       "startWithPrompt": "Créer",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Avec votre forfait Claude Max 5x/20x ou Codex",
+        "openSettingsAria": "Ouvrir les paramètres des modèles",
+        "title": "Tâches gratuites"
+      },
       "templates": "Modèles"
     },
     "taskChips": {
@@ -4133,9 +4143,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "La requête a échoué"
-    },
-    "realtime": {
-      "degraded": "Les mises à jour en direct ont rencontré un problème. Veuillez actualiser la page."
     }
   },
   "invitationRedirect": {
@@ -4406,6 +4413,9 @@
       "industry": {
         "copy": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud. Choisissez votre domaine pour une première tâche adaptée.",
         "title": "Quel type de travail faites-vous ?"
+      },
+      "prompt": {
+        "intro": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud."
       },
       "skills": {
         "copied": "Copié",

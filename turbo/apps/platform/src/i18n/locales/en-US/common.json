@@ -1485,6 +1485,9 @@
         "pendingState": "{{amount}} pending",
         "rejected": {
           "alreadyRedeemed": "Post already used",
+          "authorAlreadyRewarded": "Account already rewarded",
+          "authorUnavailable": "Couldn't verify the author",
+          "officialAccount": "Official {{assistantName}} posts don't count",
           "postMustMention": "Must mention {{assistantName}}"
         },
         "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
@@ -2233,6 +2236,13 @@
       },
       "openTemplatesAria": "Browse templates",
       "startWithPrompt": "Create",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "With your Claude Max 5x/20x or Codex plan",
+        "openSettingsAria": "Open model settings",
+        "title": "Run tasks for free"
+      },
       "templates": "Templates"
     },
     "taskChips": {
@@ -4066,9 +4076,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Request failed"
-    },
-    "realtime": {
-      "degraded": "Live updates ran into a problem. Please refresh the page."
     }
   },
   "invitationRedirect": {
@@ -4339,6 +4346,9 @@
       "industry": {
         "copy": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
         "title": "What kind of work do you do?"
+      },
+      "prompt": {
+        "intro": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud."
       },
       "skills": {
         "copied": "Copied",

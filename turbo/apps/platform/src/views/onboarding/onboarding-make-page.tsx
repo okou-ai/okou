@@ -88,8 +88,12 @@ function choiceTemplatePickerCategory(
   }
 }
 
-function PromptOnboarding() {
-  const { t } = useTranslation();
+/**
+ * What the prompt handoff does, whichever look shows it: the prompt the
+ * visitor brought stays editable, the tools its link names can be connected,
+ * and running it completes onboarding before the first request.
+ */
+export function usePromptOnboarding() {
   const draft = useGet(onboardingDraft$);
   const setDraft = useSet(updateOnboardingDraft$);
   const [completeLoadable, complete] = useLoadableSet(completeOnboarding$);
@@ -104,7 +108,7 @@ function PromptOnboarding() {
     })
     .filter(Boolean);
 
-  const handleRun = (): void => {
+  const run = (): void => {
     const redeemCode = searchParams.get("redeemCode")?.trim() || null;
     const completeAndRun = async (): Promise<void> => {
       await complete(redeemCode, pageSignal);
@@ -112,6 +116,22 @@ function PromptOnboarding() {
     };
     detach(completeAndRun(), Reason.DomCallback);
   };
+
+  return {
+    prompt: draft.prompt,
+    setPrompt: (prompt: string) => {
+      setDraft({ prompt });
+    },
+    connectorSlugs,
+    run,
+    busy: completeLoadable.state === "loading",
+  };
+}
+
+function PromptOnboarding() {
+  const { t } = useTranslation();
+  const { prompt, setPrompt, connectorSlugs, run, busy } =
+    usePromptOnboarding();
 
   return (
     <OnboardingShell
@@ -125,12 +145,12 @@ function PromptOnboarding() {
       })}
       footer={
         <OnboardingFooter
-          onPrimary={handleRun}
+          onPrimary={run}
           primaryLabel={t(($) => {
             return $.onboarding.common.next;
           })}
-          primaryDisabled={!draft.prompt.trim()}
-          busy={completeLoadable.state === "loading"}
+          primaryDisabled={!prompt.trim()}
+          busy={busy}
         />
       }
     >
@@ -143,9 +163,9 @@ function PromptOnboarding() {
         aria-label={t(($) => {
           return $.onboarding.make.promptLabel;
         })}
-        value={draft.prompt}
+        value={prompt}
         onChange={(event) => {
-          setDraft({ prompt: event.target.value });
+          setPrompt(event.target.value);
         }}
         className={cn(
           ONBOARDING_TEXTAREA_CLASS,

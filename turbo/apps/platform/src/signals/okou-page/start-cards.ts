@@ -1,11 +1,18 @@
-import { computed, state } from "ccstate";
+import { command, computed, state } from "ccstate";
 import {
   WORKFLOW_TEMPLATE_ITEMS,
   type WorkflowTemplateItem,
 } from "@okouai/core/workflow-template-items";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { personalModelProviders$ } from "../external/personal-model-providers.ts";
+import { modelPlanCapabilities$ } from "./model-plan-capabilities.ts";
+import { openClaudeCodeDeviceAuthDialogPersonal$ } from "./settings/claude-code-device-auth.ts";
+import { openCodexDeviceAuthDialogPersonal$ } from "./settings/codex-device-auth.ts";
+import { openSettingsBillingPlansDialog$ } from "./settings/settings-dialog.ts";
 
 /**
  * Entry kinds on the chat landing page. The values match the template picker
@@ -85,3 +92,49 @@ export const startCardKinds$ = computed((get): readonly StartCardKind[] => {
     })
     .slice(0, START_CARD_COUNT);
 });
+
+/**
+ * Whether the subscription card leads the row: it stays until the member has
+ * any personal model account. Personal accounts are only ever Claude or Codex
+ * subscriptions, so an empty list is exactly "nothing connected yet". A
+ * successful connect reloads the list, which retires the card in place.
+ */
+export const startCardSubscriptionPinned$ = computed(
+  async (get): Promise<boolean> => {
+    if (!get(featureSwitch$)[FeatureSwitchKey.StartCardModelSubscription]) {
+      return false;
+    }
+    const { modelProviders } = await get(personalModelProviders$);
+    return modelProviders.length === 0;
+  },
+);
+
+export type StartCardSubscriptionProvider =
+  | "codex-oauth-token"
+  | "claude-code-oauth-token";
+
+/**
+ * Routes a provider button on the subscription card. The plan decides the
+ * target, so it is awaited rather than guessed: a plan without BYOK lands on
+ * the plan comparison, any other opens that provider's device sign-in.
+ */
+export const connectStartCardSubscription$ = command(
+  async (
+    { get, set },
+    provider: StartCardSubscriptionProvider,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { supportByok } = await get(modelPlanCapabilities$);
+    signal.throwIfAborted();
+    if (!supportByok) {
+      await set(openSettingsBillingPlansDialog$, signal);
+      return;
+    }
+    const args = { mode: "connect" as const };
+    if (provider === "codex-oauth-token") {
+      await set(openCodexDeviceAuthDialogPersonal$, args, signal);
+      return;
+    }
+    await set(openClaudeCodeDeviceAuthDialogPersonal$, args, signal);
+  },
+);

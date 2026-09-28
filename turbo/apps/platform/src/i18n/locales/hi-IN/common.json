@@ -1485,6 +1485,9 @@
         "pendingState": "{{amount}} लंबित",
         "rejected": {
           "alreadyRedeemed": "पोस्ट पहले इस्तेमाल हो चुकी",
+          "authorAlreadyRewarded": "खाते को पहले ही इनाम मिल चुका",
+          "authorUnavailable": "लेखक की पुष्टि नहीं हो सकी",
+          "officialAccount": "{{assistantName}} की आधिकारिक पोस्ट मान्य नहीं",
           "postMustMention": "{{assistantName}} का ज़िक्र ज़रूरी"
         },
         "rewardsNote": "इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। चेक इन 00:00 UTC पर रीसेट होता है। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
@@ -2233,6 +2236,13 @@
       },
       "openTemplatesAria": "टेम्पलेट ब्राउज़ करें",
       "startWithPrompt": "बनाएं",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "अपने Claude Max 5x/20x या Codex प्लान से",
+        "openSettingsAria": "मॉडल सेटिंग्स खोलें",
+        "title": "मुफ़्त में काम चलाएँ"
+      },
       "templates": "टेम्पलेट"
     },
     "taskChips": {
@@ -4074,9 +4084,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "अनुरोध विफल रहा"
-    },
-    "realtime": {
-      "degraded": "लाइव अपडेट में समस्या आई। कृपया पृष्ठ को ताज़ा करें."
     }
   },
   "invitationRedirect": {
@@ -4347,6 +4354,9 @@
       "industry": {
         "copy": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है। अपने लिए सही पहला टास्क पाने के लिए अपना क्षेत्र चुनें।",
         "title": "आप किस तरह का काम करते हैं?"
+      },
+      "prompt": {
+        "intro": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है।"
       },
       "skills": {
         "copied": "कॉपी हो गया",

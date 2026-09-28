@@ -8,6 +8,35 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.687.0](https://github.com/okou-ai/okou/compare/api-v1.686.4...api-v1.687.0) (2026-09-28)
+
+
+### Features
+
+* **host:** let owners soft-delete a hosted site with okou host delete ([#37182](https://github.com/okou-ai/okou/issues/37182)) ([2d7b45c](https://github.com/okou-ai/okou/commit/2d7b45cff7a39047acd200659010fbb176902a86))
+
+
+### Bug Fixes
+
+* **api:** keep runner poll predecessor join on the agent_runs primary key ([#37181](https://github.com/okou-ai/okou/issues/37181)) ([1d6ace9](https://github.com/okou-ai/okou/commit/1d6ace9a3451991186b616fc5c1148c24c06286f))
+* **api:** limit get started x share reward to one non-official author ([#37186](https://github.com/okou-ai/okou/issues/37186)) ([4541bd4](https://github.com/okou-ai/okou/commit/4541bd42e77a79a5c10491de8849390e38fb45ef))
+* **guest-agent:** checkpoint bounded pi compact history ([#37106](https://github.com/okou-ai/okou/issues/37106)) ([06b651a](https://github.com/okou-ai/okou/commit/06b651ad612ab9d0002f54bd87ad281447407c26))
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.519.0
+    * @okouai/core bumped to 8.714.0
+    * @okouai/db bumped to 1.308.5
+    * @okouai/pi-agent-runtime bumped to 1.40.37
+
 ## [1.686.4](https://github.com/okou-ai/okou/compare/api-v1.686.3...api-v1.686.4) (2026-09-28)
 
 

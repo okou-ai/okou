@@ -39,6 +39,10 @@ import {
   ConnectorEntryStatus,
 } from "../okou-page/components/settings/connector-entry-card.tsx";
 import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.tsx";
+import {
+  launchConnectorConnect,
+  type ConnectorConnectHandlers,
+} from "../okou-page/components/settings/launch-connector-connect.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
@@ -59,9 +63,13 @@ type SourcesConnectorSetupProps = ConnectorSetupBaseProps & {
   readonly variant: "sources";
 };
 
-/** The list layouts of the workflow run and template pages. */
+/**
+ * The list layouts of the workflow run and template pages. `sheet` is the
+ * template link's list on the source-first flow's sheet, drawn with the
+ * source step's cards.
+ */
 type ListConnectorSetupProps = ConnectorSetupBaseProps & {
-  readonly variant?: "workflow" | "prompt";
+  readonly variant?: "workflow" | "prompt" | "sheet";
 };
 
 type ConnectorSetupProps = SourcesConnectorSetupProps | ListConnectorSetupProps;
@@ -76,7 +84,7 @@ function parseConnectorSlugs(values: readonly string[]): ConnectorSlug[] {
 /**
  * The source step's card: the connector directory's own entry card, showing the
  * catalog description until the source is connected and an account status strip
- * after that.
+ * after that. Without `onActivate` the card only reports its status.
  */
 function SourceConnectorCard({
   connectorSlug,
@@ -86,12 +94,16 @@ function SourceConnectorCard({
   onActivate,
 }: {
   readonly connectorSlug: ConnectorSlug;
-  readonly connector: PlatformConnectorCatalogConnectItem;
+  readonly connector: Pick<
+    PlatformConnectorCatalogConnectItem,
+    "icon" | "label" | "description"
+  >;
   readonly connected: boolean;
   readonly busy: boolean;
-  readonly onActivate: () => void;
+  readonly onActivate?: () => void;
 }) {
   const { t } = useTranslation();
+  const interactive = !busy && onActivate !== undefined;
 
   return (
     <ConnectorEntryCard
@@ -99,7 +111,7 @@ function SourceConnectorCard({
       label={connector.label}
       description={connector.description}
       showDescription={!connected}
-      interactive={!busy}
+      interactive={interactive}
       indicator={
         connected ? null : (
           <span
@@ -129,7 +141,7 @@ function SourceConnectorCard({
         ) : null
       }
       trailingAction={
-        connected ? (
+        connected && onActivate ? (
           <span
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground"
             aria-hidden="true"
@@ -139,19 +151,21 @@ function SourceConnectorCard({
         ) : null
       }
       action={
-        <button
-          type="button"
-          aria-label={t(
-            ($) => {
-              return $.connectors.card.connectAria;
-            },
-            { connector: connector.label },
-          )}
-          data-connector-slug={connectorSlug}
-          className="absolute inset-0 z-10 rounded-[inherit] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          disabled={busy}
-          onClick={onActivate}
-        />
+        onActivate ? (
+          <button
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.connectors.card.connectAria;
+              },
+              { connector: connector.label },
+            )}
+            data-connector-slug={connectorSlug}
+            className="absolute inset-0 z-10 rounded-[inherit] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            disabled={busy}
+            onClick={onActivate}
+          />
+        ) : null
       }
     />
   );
@@ -340,11 +354,64 @@ function SourcesConnectorGrid({
   );
 }
 
-/** The two list layouts this component still renders. */
+/** The list layouts this component renders. */
 function listLayout(
   variant: ListConnectorSetupProps["variant"],
-): "workflow" | "prompt" {
-  return variant === "prompt" ? "prompt" : "workflow";
+): "workflow" | "prompt" | "sheet" {
+  return variant ?? "workflow";
+}
+
+/**
+ * How a list card connects its tool: the connect modal when the tool needs
+ * one, and the tool's own browser or no-auth connection otherwise.
+ */
+function useListConnectHandlers(
+  setSelectedConnectorSlug: (slug: ConnectorSlug | null) => void,
+): (
+  connectorSlug: ConnectorSlug,
+  item: PlatformConnectorCatalogStatusItem | undefined,
+) => ConnectorConnectHandlers | undefined {
+  const pageSignal = useGet(pageSignal$);
+  const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
+  const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
+
+  return (connectorSlug, item) => {
+    const accountOptions = defaultBuiltinConnectorAccountOptions(item);
+    return item && accountOptions
+      ? {
+          openModal: () => {
+            setSelectedConnectorSlug(connectorSlug);
+          },
+          connectBrowserAuth: (authMethod) => {
+            return connect(
+              connectorSlug,
+              authMethod,
+              {
+                connectorLabel: item.label,
+                connectorIcon: item.icon,
+                authorizeVisibleAgents: true,
+                ...accountOptions,
+              },
+              pageSignal,
+            );
+          },
+          connectNoAuth: (authMethod) => {
+            return connectNoAuth(
+              {
+                connectorSlug,
+                authMethod,
+                options: {
+                  connectorLabel: item.label,
+                  authorizeVisibleAgents: true,
+                  ...accountOptions,
+                },
+              },
+              pageSignal,
+            );
+          },
+        }
+      : undefined;
+  };
 }
 
 function ListConnectorSetup({
@@ -357,19 +424,17 @@ function ListConnectorSetup({
   // Each layout belongs to one page, whose few connectors are looked up by
   // slug: the workflow run page's workflow, the template link's connectors.
   const connectorItems$ =
-    layout === "prompt"
-      ? onboardingMakeConnectorItems$
-      : onboardingWorkflowConnectorItems$;
+    layout === "workflow"
+      ? onboardingWorkflowConnectorItems$
+      : onboardingMakeConnectorItems$;
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const requiredSet = new Set(
     parseConnectorSlugs(requiredConnectorSlugs ?? []),
   );
-  const pageSignal = useGet(pageSignal$);
   const connectorCatalogItemsLoadable = useLastLoadable(connectorItems$);
-  const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
-  const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
   const { selectedConnector, setSelectedConnectorSlug } =
     useSelectedConnector();
+  const connectHandlersFor = useListConnectHandlers(setSelectedConnectorSlug);
   const connectFlowSlug = useGet(builtinConnectFlowSlug$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
@@ -394,6 +459,7 @@ function ListConnectorSetup({
           layout === "workflow" &&
             "mt-5 rounded-3xl border border-border bg-background px-6 pb-6",
           layout === "prompt" && "mt-6 flex flex-col gap-3",
+          layout === "sheet" && "grid grid-cols-1 gap-3",
         )}
       >
         {validConnectorSlugs.map((connectorSlug) => {
@@ -406,7 +472,35 @@ function ListConnectorSetup({
             connectFlowSlug === connectorSlug ||
             pollingAuthCodeSlug === connectorSlug ||
             pollingDeviceAuthSlug === connectorSlug;
-          const accountOptions = defaultBuiltinConnectorAccountOptions(item);
+          const connectHandlers = connectHandlersFor(connectorSlug, item);
+
+          if (layout === "sheet") {
+            // The sheet's card draws only once the catalog knows the tool. It
+            // connects exactly as the list's Connect button does, and once
+            // connected it only reports that.
+            if (!item) {
+              return null;
+            }
+            return (
+              <SourceConnectorCard
+                key={connectorSlug}
+                connectorSlug={connectorSlug}
+                connector={item}
+                connected={connected}
+                busy={connecting}
+                onActivate={
+                  connected || !connectHandlers
+                    ? undefined
+                    : () => {
+                        launchConnectorConnect({
+                          connector: item,
+                          ...connectHandlers,
+                        });
+                      }
+                }
+              />
+            );
+          }
 
           return (
             <ConnectorCard
@@ -419,42 +513,7 @@ function ListConnectorSetup({
               loading={loading}
               layout={layout}
               required={requiredSet.has(connectorSlug)}
-              connect={
-                item && accountOptions
-                  ? {
-                      openModal: () => {
-                        setSelectedConnectorSlug(connectorSlug);
-                      },
-                      connectBrowserAuth: (authMethod) => {
-                        return connect(
-                          connectorSlug,
-                          authMethod,
-                          {
-                            connectorLabel: item.label,
-                            connectorIcon: item.icon,
-                            authorizeVisibleAgents: true,
-                            ...accountOptions,
-                          },
-                          pageSignal,
-                        );
-                      },
-                      connectNoAuth: (authMethod) => {
-                        return connectNoAuth(
-                          {
-                            connectorSlug,
-                            authMethod,
-                            options: {
-                              connectorLabel: item.label,
-                              authorizeVisibleAgents: true,
-                              ...accountOptions,
-                            },
-                          },
-                          pageSignal,
-                        );
-                      },
-                    }
-                  : undefined
-              }
+              connect={connectHandlers}
             />
           );
         })}

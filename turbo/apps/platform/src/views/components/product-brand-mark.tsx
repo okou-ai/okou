@@ -7,7 +7,7 @@ import {
 import { BRAND_NAME } from "../../signals/branding.ts";
 import { theme$ } from "../../signals/theme.ts";
 
-type ProductBrandMarkSize = "default" | "compact" | "small";
+type ProductBrandMarkSize = "hero" | "default" | "compact" | "small";
 
 export function ProductBrandMark({
   decorative = false,
@@ -19,11 +19,13 @@ export function ProductBrandMark({
   const theme = useGet(theme$);
 
   const dimensions =
-    size === "default"
-      ? { width: 91, height: 24 }
-      : size === "compact"
-        ? { width: 76, height: 20 }
-        : { width: 60, height: 16 };
+    size === "hero"
+      ? { width: 152, height: 40 }
+      : size === "default"
+        ? { width: 91, height: 24 }
+        : size === "compact"
+          ? { width: 76, height: 20 }
+          : { width: 60, height: 16 };
 
   return (
     <img

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.98.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.13...guest-agent-v0.98.14) (2026-09-28)
+
+
+### Bug Fixes
+
+* **guest-agent:** checkpoint bounded pi compact history ([#37106](https://github.com/okou-ai/okou/issues/37106)) ([06b651a](https://github.com/okou-ai/okou/commit/06b651ad612ab9d0002f54bd87ad281447407c26))
+
+
+### Refactoring
+
+* **runner:** chat queue release 6 - steer endpoints and sandbox-first pi ([#37175](https://github.com/okou-ai/okou/issues/37175)) ([2ccafb0](https://github.com/okou-ai/okou/commit/2ccafb0e9add22ecefebd62785e7ecafe05a8ea7))
+
 ## [0.98.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.12...guest-agent-v0.98.13) (2026-09-28)
 
 ## [0.98.12](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.11...guest-agent-v0.98.12) (2026-09-27)

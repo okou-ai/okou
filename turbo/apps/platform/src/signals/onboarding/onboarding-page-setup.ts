@@ -9,6 +9,7 @@ import {
 } from "../../views/onboarding/onboarding-data.ts";
 import { i18n } from "../../i18n/index.ts";
 import { OnboardingMakePage } from "../../views/onboarding/onboarding-make-page.tsx";
+import { OnboardingSourcesFirstPromptPage } from "../../views/onboarding-sources-first/onboarding-prompt-page.tsx";
 import { OnboardingWorkflowPickerPage } from "../../views/onboarding/onboarding-workflow-picker-page.tsx";
 import { OnboardingWorkflowRunPage } from "../../views/onboarding/onboarding-workflow-run-page.tsx";
 import {
@@ -185,6 +186,25 @@ export const setupOnboardingMakePage$ = createOnboardingPageSetup({
   },
   Page: OnboardingMakePage,
 });
+
+/**
+ * The same prompt handoff as the make page, in the source-first flow's look,
+ * for a visitor whose switch sends everyone else through that flow.
+ */
+export const setupOnboardingSourcesFirstPromptPage$ = createOnboardingPageSetup(
+  {
+    step: "make",
+    title: (brandName) => {
+      return i18n.t(
+        ($) => {
+          return $.onboarding.documentTitles.make;
+        },
+        { brandName },
+      );
+    },
+    Page: OnboardingSourcesFirstPromptPage,
+  },
+);
 
 export const setupOnboardingWorkflowPickerPage$ = createOnboardingPageSetup({
   step: "workflow-picker",

@@ -4,14 +4,21 @@ import { useTranslation } from "react-i18next";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import { surfaceVariants, Button } from "@okouai/ui";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
+import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import {
+  connectStartCardSubscription$,
   startCardKinds$,
+  startCardSubscriptionPinned$,
+  type StartCardSubscriptionProvider,
   startCardWorkflowConnectorIcons$,
   startCardWorkflowTemplate$,
   type StartCardConnectorIcon,
   type StartCardKind,
 } from "../../signals/okou-page/start-cards.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
+import { ProviderIcon } from "./components/settings/provider-icons.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 
 // Every kind draws into the same square slot so the row reads as one family.
@@ -226,6 +233,128 @@ function WorkflowArt({ accent }: { accent: string }) {
   );
 }
 
+// The subscription card draws the providers' own marks, so its tile takes the
+// neutral accent and leaves the colour to them.
+const SUBSCRIPTION_ACCENT = "#97918A";
+
+function SubscriptionArt() {
+  const edge = { borderColor: `${SUBSCRIPTION_ACCENT}${LINE_ALPHA}` };
+  return (
+    <div className="relative h-[34px] w-[50px]">
+      <span
+        className={`absolute left-0 top-0 grid size-[28px] -rotate-6 place-items-center ${NODE_CLASS}`}
+        style={edge}
+      >
+        <ProviderIcon type="claude-code-oauth-token" size={16} />
+      </span>
+      <span
+        className={`absolute bottom-0 right-0 grid size-[28px] rotate-6 place-items-center ${NODE_CLASS}`}
+        style={edge}
+      >
+        <ProviderIcon type="codex-oauth-token" size={16} />
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Pinned ahead of the rotating kinds: it connects a personal Claude or Codex
+ * subscription through the same device-auth dialogs as Settings > Models, both
+ * of which the chat landing page already mounts.
+ */
+function SubscriptionStartCard() {
+  const { t } = useTranslation();
+  const connectSubscription = useSet(connectStartCardSubscription$);
+  const openSettingsAt = useSet(openSettingsDialogAt$);
+  const pageSignal = useGet(pageSignal$);
+
+  const connect = (provider: StartCardSubscriptionProvider) => {
+    detach(connectSubscription(provider, pageSignal), Reason.DomCallback);
+  };
+
+  const providers = [
+    {
+      type: "codex-oauth-token",
+      label: t(($) => {
+        return $.chat.startCards.subscription.codex;
+      }),
+    },
+    {
+      type: "claude-code-oauth-token",
+      label: t(($) => {
+        return $.chat.startCards.subscription.claude;
+      }),
+    },
+  ] as const;
+
+  // The layout mirrors `StartCard` so the pinned card reads as one of the row;
+  // only the targets differ.
+  return (
+    <div
+      data-testid="start-card-subscription"
+      className={surfaceVariants({
+        className: "group relative flex flex-col justify-center p-4",
+      })}
+    >
+      {/* The card itself lands on Settings > Models, where every connected
+          account is listed; the provider buttons skip straight to sign-in. */}
+      <button
+        type="button"
+        className="absolute inset-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={t(($) => {
+          return $.chat.startCards.subscription.openSettingsAria;
+        })}
+        onClick={() => {
+          detach(openSettingsAt("model", pageSignal), Reason.DomCallback);
+        }}
+      />
+      <div className="pointer-events-none flex items-center gap-3">
+        <div
+          className={THUMBNAIL_CLASS}
+          style={{
+            backgroundColor: `${SUBSCRIPTION_ACCENT}${TILE_ALPHA}`,
+          }}
+        >
+          <SubscriptionArt />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">
+            {t(($) => {
+              return $.chat.startCards.subscription.title;
+            })}
+          </p>
+          <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+            {t(($) => {
+              return $.chat.startCards.subscription.description;
+            })}
+          </p>
+        </div>
+      </div>
+      {/* Both buttons are short brand names, so unlike `StartCard` neither is
+          dropped on a narrow card. */}
+      <div className="pointer-events-none absolute inset-x-4 bottom-4 flex h-14 items-end gap-1 bg-gradient-to-t from-card from-[57%] to-transparent opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 group-focus-within:[&>button]:pointer-events-auto group-hover:[&>button]:pointer-events-auto">
+        {providers.map((provider) => {
+          return (
+            <Button
+              key={provider.type}
+              type="button"
+              size="xs"
+              variant="outline"
+              className="min-w-0 flex-1 gap-1.5 text-xs"
+              onClick={() => {
+                connect(provider.type);
+              }}
+            >
+              <ProviderIcon type={provider.type} size={12} />
+              <span className="truncate">{provider.label}</span>
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 interface StartCardContent {
   readonly title: string;
   readonly description: string;
@@ -352,7 +481,15 @@ export function StartCards({
   onSelectPrompt: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
-  const kinds = useGet(startCardKinds$);
+  // Held back until the account list resolves: a member who already has an
+  // account must not see the card flash in, and a failed lookup keeps the row
+  // as it was.
+  const subscriptionPinned =
+    useLastResolved(startCardSubscriptionPinned$) ?? false;
+  const drawnKinds = useGet(startCardKinds$);
+  // The pinned card takes the first slot, so one drawn kind makes way for it
+  // and the row keeps its length.
+  const kinds = subscriptionPinned ? drawnKinds.slice(0, -1) : drawnKinds;
   const workflowTemplate = useGet(startCardWorkflowTemplate$);
   const composerSignals = useGet(agentChatComposerSignals$);
   const setTemplateCategory = useSet(
@@ -421,6 +558,7 @@ export function StartCards({
         data-testid="start-cards"
         className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
       >
+        {subscriptionPinned && <SubscriptionStartCard />}
         {kinds.map((kind) => {
           return (
             <StartCard

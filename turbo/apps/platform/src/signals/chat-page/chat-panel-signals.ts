@@ -1,4 +1,4 @@
-import type { ThinkingSummaries } from "./thread-activity-summary.ts";
+import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import type { Root } from "hast";
 import type { Command, Computed } from "ccstate";
 import type {
@@ -41,13 +41,17 @@ export interface RecommendedFollowupSource {
   readonly followups: readonly RecommendedFollowup[];
 }
 
-export type ThinkingIndicatorMode =
-  | "waiting"
-  | "waiting-queued"
-  | "running"
-  | "running-queued"
-  | "finished"
-  | null;
+/**
+ * What the status row of the latest assistant turn shows while the thread is
+ * active: waiting in the server queue, or thinking with the run's summaries.
+ */
+export type ThinkingIndicators =
+  | { readonly kind: "queued" }
+  | {
+      readonly kind: "thinking";
+      readonly runId: string | null;
+      readonly messages: readonly ThinkingMessage[];
+    };
 
 export interface EventImageGroupProjection {
   readonly role: ChatEventGroup["role"];
@@ -91,7 +95,8 @@ export interface MessageListSignals {
   readonly browserSessionSignals: BrowserSessionSignals;
   readonly subscribeBrowserSessions$: Command<void, [AbortSignal]>;
   readonly hasEvents$: Computed<Promise<boolean>>;
-  readonly thinkingIndicatorMode$: Computed<Promise<ThinkingIndicatorMode>>;
+  readonly thinkingIndicators$: Computed<Promise<ThinkingIndicators | null>>;
+  readonly runFinished$: Computed<Promise<boolean>>;
   readonly recommendedFollowupSource$: Computed<
     Promise<RecommendedFollowupSource | null>
   >;
@@ -214,9 +219,8 @@ export interface ChatPanelSignals {
   readonly eventImageGroups$: Computed<Promise<EventImageGroupProjection[]>>;
   readonly browserSessionSignals: BrowserSessionSignals;
   readonly hasEvents$: Computed<Promise<boolean>>;
-  readonly thinkingIndicatorMode$: Computed<Promise<ThinkingIndicatorMode>>;
-  readonly thinkingSummaries$: Computed<Promise<ThinkingSummaries | null>>;
-  readonly thinkingRunId$: Computed<string | null>;
+  readonly thinkingIndicators$: Computed<Promise<ThinkingIndicators | null>>;
+  readonly runFinished$: Computed<Promise<boolean>>;
   readonly recommendedFollowupSource$: Computed<
     Promise<RecommendedFollowupSource | null>
   >;

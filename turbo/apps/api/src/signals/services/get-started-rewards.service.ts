@@ -23,6 +23,14 @@ import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 export type GetStartedClaimRow = typeof getStartedClaims.$inferSelect;
 
+/**
+ * Every custom connector a user connects shares this one connector-quest
+ * source. Custom connector identity is user-controlled (any user can create,
+ * delete, and recreate connectors with the same credentials), so a per-connector
+ * source would let one user farm the reward without limit.
+ */
+export const CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY = "custom";
+
 /** Resolve the same registry and persisted overrides used by the App. */
 export async function getStartedRewardsEnabled(
   db: Pick<Db, "select">,

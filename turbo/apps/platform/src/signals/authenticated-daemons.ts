@@ -1,18 +1,12 @@
 import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { command } from "ccstate";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
 import { setAuthenticatedIdentity$ } from "./auth-context.ts";
 import { initializeChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
 import { setupModelPolicyRealtime$ } from "./external/model-policy-realtime.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
-import {
-  setRealtimeDegradedNotifier$,
-  setSharedWorkerRealtimeBridge$,
-  setupRealtime$,
-} from "./realtime.ts";
-import { i18n } from "../i18n/index.ts";
+import { setSharedWorkerRealtimeBridge$, setupRealtime$ } from "./realtime.ts";
 import { setupBillingRealtime$ } from "./okou-page/billing.ts";
 import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-library.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
@@ -76,13 +70,6 @@ const initializeAuthenticatedRealtime$ = command(
         email: user.primaryEmailAddress?.emailAddress,
       }),
     );
-    set(setRealtimeDegradedNotifier$, () => {
-      toast.error(
-        i18n.t(($) => {
-          return $.global.realtime.degraded;
-        }),
-      );
-    });
 
     await get(bridgeConnected$);
     signal.throwIfAborted();
