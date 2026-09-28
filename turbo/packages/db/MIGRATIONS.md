@@ -103,9 +103,12 @@ operator tool and its two documented reader fallbacks.
 - `scripts/test-integration-dm-single-thread.ts` protects migration
   `1278_integration_dm_single_thread_routes`: all six integration identities
   consolidate by last thread use, canonical-key collisions converge, the
-  retained main thread loses its model pin, and reply threads, detached history
-  and retired Telegram routes remain unchanged. It runs from migration
-  consistency against transaction-owned clones of the migrated table shapes.
+  retained main thread loses its model pin with canonical reset events and
+  contiguous per-user/org sequence allocation, and reply threads, detached
+  history and retired Telegram routes remain unchanged. Agentless and already
+  unpinned threads emit no reset events, and replay does not advance event
+  sequences. It runs from migration consistency against transaction-owned
+  clones of the migrated table shapes.
 
 - `scripts/test-pi-inference-lifecycle.ts` protects migrations
   `1134_pi_inference_lifecycle` and `1135_validate_pi_inference_launch` (#34242):
