@@ -229,7 +229,7 @@ SELECT
   NULL,
   NULL,
   false,
-  now()
+  timezone('UTC', now())
 FROM "events"
 JOIN "reserved" USING ("user_id", "org_id")
 JOIN "counts" USING ("user_id", "org_id");

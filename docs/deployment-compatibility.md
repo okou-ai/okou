@@ -158,8 +158,10 @@ unreachable by release 6:
   `pi-sandbox-handoff.service.ts`, the completion-time handoff object deletion
   and the `pi-api-first-turn/` sweep in the sandbox cleanup cron; the Guest
   reads the installed-CLI requirement only from `piInstalledCliRequirement` and
-  no longer parses the startup record, and the Runner validates the launch
-  config against the generated type without the slot; `okou run usage` accepts
+  no longer parses the startup record or launch config. The Runner's generated
+  `PiLaunchConfig` has no `deny_unknown_fields`, so it tolerates the removed
+  slot; only the installed release 7 CLI's strict launch schema rejects it.
+  `okou run usage` accepts
   only the `sandboxProxy` source.
 - `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` rises to the first CLI release without
   the slot, because release 6 installed CLIs parse the launch config strictly
@@ -203,7 +205,8 @@ preinstalled in the Runner image):
 `resolve-production-rollback-target.sh`. Earlier APIs write `apiFirstTurn` and
 the old CLI floor on every Pi run: a release 7 Guest would launch its
 preinstalled release 7 CLI, which rejects the slot, so every Pi run fails until
-the Runners are rolled back as well. Earlier APIs also require the slot when
+the Runners are rolled back as well. This rejection comes from the installed
+CLI, not the Runner's generated type or the Guest. Earlier APIs also require the slot when
 they decode contexts queued by this release. The release 6 Runner protocol is the minimum supported predecessor; the
 stricter release 7 API floor subsumes it.
 

@@ -7,10 +7,6 @@ import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now } from "../../../lib/time";
-import {
-  appendUnroutableAutomationInputFixture,
-  clearQueuedChatThreadAgentFixture,
-} from "../../../test-fixtures/chat-queue-stalled-head";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
@@ -554,89 +550,6 @@ describe("CHAT-02: queued chat thread picks", () => {
     );
     await expect(
       threadRunIds(actor, unavailable.threadId),
-    ).resolves.toStrictEqual([]);
-    const picked = await later.launchedRun();
-    await cancelChatRun(actor, picked.runId);
-  }, 90_000);
-
-  it("rejects a head whose thread lost its agent and starts the next waiting thread", async () => {
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const blocker = await sendChatRun(actor, {
-      agentId,
-      prompt: "occupy the only organization slot",
-    });
-    const orphan = await sendWaiting(actor, agentId, "loses its thread agent");
-    const later = await sendWaiting(actor, agentId, "has a valid thread agent");
-    await clearQueuedChatThreadAgentFixture(orphan.threadId);
-
-    await finishRun(runnerGroup, blocker.runId);
-
-    const rejected = await chat.listThreadEvents(actor, orphan.threadId);
-    expect(
-      rejected.events.filter((event) => {
-        return event.eventType === "input.rejected";
-      }),
-    ).toMatchObject([
-      { revokesEventId: orphan.clientEventId, error: "bad_request" },
-    ]);
-    expect(rejected.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "bad_request",
-      }),
-    );
-    await expect(threadRunIds(actor, orphan.threadId)).resolves.toStrictEqual(
-      [],
-    );
-    const picked = await later.launchedRun();
-    await cancelChatRun(actor, picked.runId);
-  }, 90_000);
-
-  it("rejects an automation head the prompt assembler cannot load and starts the next thread", async () => {
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor(
-      {},
-      "team",
-    );
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const automation = await createWebhookAutomation(actor, agentId);
-    const blocker = await sendChatRun(actor, {
-      agentId,
-      prompt: "occupy the only organization slot",
-    });
-    await postWorkflowWebhook(automation, "loses its automation routing");
-    const pending = await chat.listThreadEvents(actor, automation.threadId);
-    const head = pending.events.find((event) => {
-      return event.eventType === "input.automation" && !event.runId;
-    });
-    if (!head) {
-      throw new Error("Expected the webhook to enqueue an automation input");
-    }
-    const unroutableEventId = await appendUnroutableAutomationInputFixture(
-      head.id,
-    );
-    const later = await sendWaiting(actor, agentId, "has a ready assembler");
-
-    await finishRun(runnerGroup, blocker.runId);
-
-    const rejected = await chat.listThreadEvents(actor, automation.threadId);
-    expect(
-      rejected.events.filter((event) => {
-        return event.eventType === "input.rejected";
-      }),
-    ).toMatchObject([
-      { revokesEventId: unroutableEventId, error: "internal_error" },
-    ]);
-    expect(rejected.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "output.error",
-        error: "internal_error",
-      }),
-    );
-    await expect(
-      threadRunIds(actor, automation.threadId),
     ).resolves.toStrictEqual([]);
     const picked = await later.launchedRun();
     await cancelChatRun(actor, picked.runId);

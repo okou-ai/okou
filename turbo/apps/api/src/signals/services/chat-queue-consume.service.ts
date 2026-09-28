@@ -1,7 +1,7 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -55,10 +55,14 @@ async function loadChatQueueHeadContext(
   readonly contextType: string | null;
   readonly contextId: string | null;
   readonly userId: string;
-  readonly agentId: string | null;
+  readonly agentId: string;
 } | null> {
   const [thread] = await db
-    .select({ userId: chatThreads.userId, agentId: chatThreads.agentId })
+    .select({
+      userId: chatThreads.userId,
+      // Every queue ingress requires an agent; deleting it cascades the thread.
+      agentId: sql<string>`${chatThreads.agentId}`,
+    })
     .from(chatThreads)
     .where(eq(chatThreads.id, head.chatThreadId))
     .limit(1);
@@ -225,9 +229,7 @@ const rejectChatQueueHead$ = command(
   async (
     { set },
     args: {
-      readonly head: Omit<ChatQueueHeadContext, "agentId"> & {
-        readonly agentId: string | null;
-      };
+      readonly head: ChatQueueHeadContext;
       readonly rejection: ChatQueueHeadRejection;
     },
     signal: AbortSignal,
@@ -305,14 +307,13 @@ const rejectChatQueueHead$ = command(
     signal.throwIfAborted();
     await publishChatQueueHeadConsumed(head);
     signal.throwIfAborted();
-    const agentId = head.agentId;
     const deliver =
       rejection.deliver ??
-      (rejection.error.code === "INTERNAL_ERROR" && agentId !== null
+      (rejection.error.code === "INTERNAL_ERROR"
         ? (assistantEventId: string, deliverySignal: AbortSignal) => {
             return set(
               deliverUnexpectedQueuedPromptRejection$,
-              { head: { ...head, agentId }, assistantEventId },
+              { head, assistantEventId },
               deliverySignal,
             );
           }
@@ -363,16 +364,10 @@ export const rejectUnconsumedChatQueueHead$ = command(
         },
         rejection: {
           userId: loaded.userId,
-          error:
-            loaded.agentId === null
-              ? {
-                  code: "BAD_REQUEST",
-                  message: "The thread no longer has an agent",
-                }
-              : {
-                  code: "INTERNAL_ERROR",
-                  message: "The input could not be started",
-                },
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "The input could not be started",
+          },
         },
       },
       signal,
@@ -404,7 +399,7 @@ export const consumeChatQueueHead$ = command(
       chatThreadId: input.chatThreadId,
     });
     signal.throwIfAborted();
-    if (!loaded || loaded.agentId === null) {
+    if (!loaded) {
       return { kind: "passed" };
     }
     const head: ChatQueueHeadContext = {
