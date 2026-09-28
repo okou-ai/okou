@@ -32,6 +32,8 @@ import {
 
 const L = logger("ChatThreadQueue");
 
+export type EnqueueChatInputStep = "transaction" | "callback" | "queue_upsert";
+
 export interface EnqueueChatInput {
   readonly chatThreadId: string;
   readonly orgId: string;
@@ -44,6 +46,21 @@ export interface EnqueueChatInput {
   readonly appendInput: (tx: Tx) => Promise<string | null>;
   /** The producer's own write that commits with the input, when it has one. */
   readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
+  /** Optional, fail-open observation for the workflow producer; no other ingress opts in. */
+  readonly measureStep?: <T>(
+    step: EnqueueChatInputStep,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
+}
+
+async function measureEnqueueStep<T>(
+  input: EnqueueChatInput,
+  step: EnqueueChatInputStep,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return input.measureStep
+    ? await input.measureStep(step, operation)
+    : await operation();
 }
 
 /**
@@ -58,17 +75,23 @@ export async function enqueueChatInput(
   db: Db,
   input: EnqueueChatInput,
 ): Promise<string | null> {
-  return await db.transaction(async (tx) => {
-    const eventId = await input.appendInput(tx);
-    if (eventId === null) {
-      return null;
-    }
-    await input.persistSourceTransition?.(tx, eventId);
-    await markChatThreadQueued(tx, {
-      chatThreadId: input.chatThreadId,
-      orgId: input.orgId,
+  return await measureEnqueueStep(input, "transaction", async () => {
+    return await db.transaction(async (tx) => {
+      return await measureEnqueueStep(input, "callback", async () => {
+        const eventId = await input.appendInput(tx);
+        if (eventId === null) {
+          return null;
+        }
+        await input.persistSourceTransition?.(tx, eventId);
+        await measureEnqueueStep(input, "queue_upsert", async () => {
+          await markChatThreadQueued(tx, {
+            chatThreadId: input.chatThreadId,
+            orgId: input.orgId,
+          });
+        });
+        return eventId;
+      });
     });
-    return eventId;
   });
 }
 

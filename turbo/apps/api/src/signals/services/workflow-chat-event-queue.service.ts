@@ -15,6 +15,7 @@ import {
   loadRunAutonomyBudget,
 } from "./autonomy-budget.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listPendingChatInputs } from "./chat-event-queue.service";
 import {
   insertChatEvent,
@@ -42,6 +43,7 @@ import type {
 import { assembleWorkflowAutomationRun } from "./workflow-automation-launch.service";
 import { buildWorkflowAutomationQueuedLaunchMaterial } from "./workflow-automation-queued-launch-context.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
+import { measureWorkflowAdmissionStep } from "./workflow-queue-admission-timing.service";
 
 export type WorkflowQueueAdmissionTransaction = Tx;
 
@@ -94,6 +96,7 @@ interface WorkflowAutomationQueueEventArgs {
   readonly connectorSourceId?: string;
   readonly chatThreadId: string;
   readonly triggerBrief: string | undefined;
+  readonly timing?: ApiDispatchTimingCollector;
 }
 
 /**
@@ -106,11 +109,17 @@ export async function workflowAutomationQueueEventWriter(
   args: WorkflowAutomationQueueEventArgs,
 ): Promise<(tx: Db | Tx) => Promise<string | null>> {
   const { automation } = args;
-  const [workflow] = await db
-    .select({ displayName: workflows.displayName })
-    .from(workflows)
-    .where(eq(workflows.id, automation.workflowId))
-    .limit(1);
+  const [workflow] = await measureWorkflowAdmissionStep(
+    args.timing,
+    "api_dispatch_workflow_enqueue_display_name",
+    async () => {
+      return await db
+        .select({ displayName: workflows.displayName })
+        .from(workflows)
+        .where(eq(workflows.id, automation.workflowId))
+        .limit(1);
+    },
+  );
   if (!workflow) {
     throw new Error(`Workflow not found: ${automation.workflowId}`);
   }
@@ -150,11 +159,23 @@ export async function workflowAutomationQueueEventWriter(
       connectorSourceId: args.connectorSourceId,
       triggerBrief: args.triggerBrief ?? null,
     };
-    await insertChatEventContext(tx, values);
-    const inserted = await insertChatEvent(
-      tx,
-      values,
-      args.queueEventId === undefined ? "none" : "id",
+    await measureWorkflowAdmissionStep(
+      args.timing,
+      "api_dispatch_workflow_enqueue_event_context_insert",
+      async () => {
+        await insertChatEventContext(tx, values);
+      },
+    );
+    const inserted = await measureWorkflowAdmissionStep(
+      args.timing,
+      "api_dispatch_workflow_enqueue_event_insert",
+      async () => {
+        return await insertChatEvent(
+          tx,
+          values,
+          args.queueEventId === undefined ? "none" : "id",
+        );
+      },
     );
     if (!inserted && args.queueEventId === undefined) {
       throw new Error("Workflow queue event insert returned no row");

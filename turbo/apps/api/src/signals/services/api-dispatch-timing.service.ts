@@ -146,6 +146,17 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_pre_create_agent_teams_create_run"
   | "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap"
   | "api_dispatch_pre_create_agent_workflow_automation_queue_admission"
+  | "api_dispatch_workflow_enqueue_display_name"
+  | "api_dispatch_workflow_enqueue_transaction"
+  | "api_dispatch_workflow_enqueue_transaction_callback"
+  | "api_dispatch_workflow_enqueue_event_context_insert"
+  | "api_dispatch_workflow_enqueue_event_insert"
+  | "api_dispatch_workflow_enqueue_queue_upsert"
+  | "api_dispatch_workflow_enqueue_schedule_claim"
+  | "api_dispatch_workflow_enqueue_event_binding"
+  | "api_dispatch_workflow_enqueue_replace_pending_ticks"
+  | "api_dispatch_workflow_enqueue_source_transition"
+  | "api_dispatch_workflow_event_created_to_consume_start"
   | "api_dispatch_workflow_admission_display_name"
   | "api_dispatch_workflow_admission_transaction"
   | "api_dispatch_workflow_admission_transaction_callback"
@@ -431,7 +442,10 @@ export class ApiDispatchTimingCollector {
    * Emit the records of work that ends before any run exists, such as an
    * enqueue whose pick runs in the background.
    */
-  flushWithoutRun(dimensions?: ApiDispatchTimingDimensions): void {
+  flushWithoutRun(
+    dimensions?: ApiDispatchTimingDimensions,
+    success = true,
+  ): void {
     const records = this.records.splice(0);
     const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
     recordApiOperationTimings(
@@ -439,7 +453,7 @@ export class ApiDispatchTimingCollector {
         return {
           actionType: record.actionType,
           durationMs: record.durationMs,
-          success: true,
+          success,
           timestamp: record.timestamp,
           dimensions: {
             ...dimensions,

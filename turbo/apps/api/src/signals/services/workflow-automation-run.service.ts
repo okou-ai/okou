@@ -3,7 +3,7 @@ import { command } from "ccstate";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
-import { settle } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import {
   revokePendingScheduleTicks,
   ScheduleOccurrenceUnavailableError,
@@ -48,6 +48,7 @@ function queueAdmissionSourceTransition(args: {
   readonly replacePendingTicks:
     | { readonly chatThreadId: string; readonly automationId: string }
     | undefined;
+  readonly timing: ApiDispatchTimingCollector;
 }): {
   readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
 } {
@@ -58,22 +59,48 @@ function queueAdmissionSourceTransition(args: {
   return {
     persistSourceTransition: async (tx, eventId) => {
       if (scheduleClaim) {
-        const claim = await scheduleClaim.claim(tx);
+        const claim = await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_schedule_claim",
+          async () => {
+            return await scheduleClaim.claim(tx);
+          },
+        );
         if (claim.kind === "unavailable") {
           throw new ScheduleOccurrenceUnavailableError();
         }
-        await scheduleClaim.bindQueueEvent(tx, {
-          claimId: claim.claimId,
-          queueEventId: eventId,
-        });
+        await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_event_binding",
+          async () => {
+            await scheduleClaim.bindQueueEvent(tx, {
+              claimId: claim.claimId,
+              queueEventId: eventId,
+            });
+          },
+        );
       }
       if (replacePendingTicks) {
-        await revokePendingScheduleTicks(tx, {
-          ...replacePendingTicks,
-          excludeEventId: eventId,
-        });
+        await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_replace_pending_ticks",
+          async () => {
+            await revokePendingScheduleTicks(tx, {
+              ...replacePendingTicks,
+              excludeEventId: eventId,
+            });
+          },
+        );
       }
-      await persistSourceTransition?.(tx);
+      if (persistSourceTransition) {
+        await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_source_transition",
+          async () => {
+            await persistSourceTransition(tx);
+          },
+        );
+      }
     },
   };
 }
@@ -124,6 +151,7 @@ export const runWorkflowAutomationNow$ = command(
       connectorSourceId: args.connectorSourceId,
       chatThreadId,
       triggerBrief: args.triggerBrief,
+      timing,
     });
     signal.throwIfAborted();
 
@@ -145,10 +173,24 @@ export const runWorkflowAutomationNow$ = command(
               chatThreadId,
               orgId: automation.orgId,
               appendInput,
+              measureStep: (step, operation) => {
+                const action = {
+                  transaction: "api_dispatch_workflow_enqueue_transaction",
+                  callback:
+                    "api_dispatch_workflow_enqueue_transaction_callback",
+                  queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
+                } as const;
+                return measureWorkflowAdmissionStep(
+                  timing,
+                  action[step],
+                  operation,
+                );
+              },
               ...queueAdmissionSourceTransition({
                 scheduleClaim,
                 persistSourceTransition,
                 replacePendingTicks,
+                timing,
               }),
             }),
           );
@@ -172,13 +214,23 @@ export const runWorkflowAutomationNow$ = command(
       () => {
         return admissionOutcome;
       },
-    );
+    ).finally(async () => {
+      // Failure or cancellation must not discard completed steps. The sink
+      // cannot replace the admission result, including a DB/abort error.
+      await settleIncludingAbort(() => {
+        timing.flushWithoutRun(
+          {
+            schedule_path: schedulePath,
+            admission_outcome: admissionOutcome,
+            ...(args.triggerSource
+              ? { trigger_source: args.triggerSource }
+              : {}),
+          },
+          admissionOutcome !== "failed",
+        );
+      });
+    });
     signal.throwIfAborted();
-    // The entry's timing ends at the enqueue commit; the background pick and
-    // the launch are measured by the pick itself.
-    timing.flushWithoutRun(
-      args.triggerSource ? { trigger_source: args.triggerSource } : undefined,
-    );
 
     // A superseded occurrence adds no queue item; the claim plan's owner
     // records why.
