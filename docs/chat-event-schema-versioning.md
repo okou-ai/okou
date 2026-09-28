@@ -43,9 +43,10 @@ branch after the last old-writer acceptance plus drain; #37276). Existing
 messages are never inferred or retroactively labeled.
 
 Before activating the writer, verify that the prepared reader is serving from
-every current API/App and history/snapshot path, enforce the Web client floor at
-`0.982.0` or newer (the first reader-capable App), and let outstanding old CLI
-contexts drain through their queue, execution and finalization bounds. A
+every current API/App and history/snapshot path, independently deploy and
+verify the Web client floor at `0.982.0` or newer (the first reader-capable App;
+#37277 / PR #37278), and let outstanding old CLI contexts drain through their
+queue, execution and finalization bounds. A
 merged reader PR, newer `main`, or production release tag alone does not prove
 this gate. Older rollback artifacts are expressly unsupported for this change;
 restoring one after source-bearing events exist requires a separate coordinated
