@@ -402,14 +402,6 @@ function useQuestState(
         )}`
       : counts;
   }
-  if (quest.key === "connector" && quest.claimedCount > 0) {
-    return t(
-      ($) => {
-        return $.chat.agentPage.getStarted.addedState;
-      },
-      { amount: formatLocalizedNumber(quest.claimedCount) },
-    );
-  }
   return null;
 }
 
@@ -971,30 +963,23 @@ function GetStartedPanel({
       : null;
   };
 
-  // 420px with a 16px outer radius and an 8px tray. The totals are the panel
-  // talking about the whole list rather than about any one quest, so they take
-  // a header line on the tray and leave every row on one grid: one tile
-  // column, one title column, one 76px trailing slot, one content edge.
+  // 420px with a 16px outer radius and an 8px tray. The total is the panel
+  // talking about the whole list rather than about any one quest, so it takes
+  // a header line on the tray and leaves every row on one grid: one tile
+  // column, one title column, one 76px trailing slot, one content edge. Only
+  // what is still claimable is stated: an earned total summed every reward the
+  // user ever claimed, across workspaces and past its expiry, so it never
+  // matched the balance.
   return (
     <DropdownMenuContent align="end" className="w-[420px] rounded-[16px] p-2">
-      <div className="flex items-baseline justify-between gap-3 px-3 pb-2 pt-1.5">
-        <p className="min-w-0 truncate text-[13px] font-semibold tabular-nums">
-          {t(
-            ($) => {
-              return $.chat.agentPage.getStarted.toGo;
-            },
-            { amount: formatLocalizedNumber(summary.remainingCredits) },
-          )}
-        </p>
-        <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {t(
-            ($) => {
-              return $.chat.agentPage.getStarted.earned;
-            },
-            { amount: formatLocalizedNumber(summary.earnedCredits) },
-          )}
-        </p>
-      </div>
+      <p className="min-w-0 truncate px-3 pb-2 pt-1.5 text-[13px] font-semibold tabular-nums">
+        {t(
+          ($) => {
+            return $.chat.agentPage.getStarted.toGo;
+          },
+          { amount: formatLocalizedNumber(summary.remainingCredits) },
+        )}
+      </p>
       <div>
         {orderedQuests.map((quest) => {
           return (

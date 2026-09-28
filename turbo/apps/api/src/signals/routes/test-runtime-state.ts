@@ -1739,6 +1739,7 @@ const specializedRuntimeFixtureAction$ = command(
         runId: body.run_id,
         owner: { userId: body.user_id, orgId: body.org_id },
         now: body.now ? new Date(body.now) : nowDate(),
+        purpose: "issue",
       });
       signal.throwIfAborted();
       return {

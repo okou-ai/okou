@@ -27,6 +27,14 @@ state creation inside React render. Artifact resources use the same registration
 boundary while preserving the Markdown link or image syntax that chooses their
 presentation.
 
+For a provisional streaming `output.message`, do not promote a bare action URL
+at the current text tail into a card: later deltas can still extend its path or
+query. Promote it once a following boundary arrives (such as whitespace), and
+promote a syntactically closed Markdown link or artifact image as soon as it is
+complete. When the durable event replaces the provisional event under the same
+ID, re-evaluate even if its text is identical: a final bare URL needs no
+following boundary.
+
 ### Keep the URL usable outside Web Chat
 
 Only Web Chat upgrades recognized URLs into cards. In Slack and other surfaces,

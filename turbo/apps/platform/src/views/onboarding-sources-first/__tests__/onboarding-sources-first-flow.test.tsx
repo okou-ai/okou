@@ -5,7 +5,6 @@ import {
   onboardingRecommendationContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -28,11 +27,6 @@ import {
 const context = testContext();
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
-
-const MAKE_QUESTION = "What do you want to make first";
 const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Connect a work tool";
 const MARKETING_FIELD = "Marketing & content";
@@ -63,7 +57,7 @@ function mockOnboardingNeeded(): void {
 }
 
 /**
- * What the API answers an invited member with the switch on who has neither
+ * What the API answers an invited member who has neither
  * finished their own run nor started using the workspace: onboarding is
  * theirs to do, while `onboardingComplete` stays the organization's answer —
  * here the owner has already set the workspace up.
@@ -140,18 +134,7 @@ function fieldRadio(name: string): HTMLElement {
   return radio;
 }
 
-test("The source-first steps stay unreachable while the switch is off", async () => {
-  mockOnboardingNeeded();
-
-  await setupPage({ context, locale: "en-US", path: ROUTES.onboardingSources });
-
-  await expect(
-    screen.findByRole("heading", { name: MAKE_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(ROUTES.onboarding);
-});
-
-test("The switch opens the field question on /onboarding and continues to the sources step", async () => {
+test("/onboarding opens the field question and continues to the sources step", async () => {
   mockOnboardingNeeded();
   mockCatalog();
 
@@ -159,7 +142,6 @@ test("The switch opens the field question on /onboarding and continues to the so
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -216,7 +198,6 @@ test("The first step introduces Okou and its compliance progress", async () => {
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -264,7 +245,6 @@ test.each([
       context,
       locale,
       path: ROUTES.onboardingSources,
-      featureSwitches: SOURCES_FIRST_ON,
     });
 
     await waitFor(() => {
@@ -284,7 +264,6 @@ test("A later step returns to the entry until a source is connected", async () =
     context,
     locale: "en-US",
     path: ROUTES.onboardingReady,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -335,7 +314,6 @@ test("Connected account context replaces the static starting prompt", async () =
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   click(fieldRadio(MARKETING_FIELD));
@@ -402,7 +380,6 @@ test("The ready step shows the generated request once the shared context result 
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   click(fieldRadio(MARKETING_FIELD));
@@ -443,7 +420,6 @@ test("A failed recommendation leaves the preset request on the ready step", asyn
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   click(fieldRadio(MARKETING_FIELD));
@@ -499,7 +475,6 @@ test("The ready step completes onboarding once, before it runs the first request
     context,
     locale: "en-US",
     path: ROUTES.onboardingReady,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -561,7 +536,6 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
     context,
     locale: "en-US",
     path: ROUTES.onboardingReady,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -603,7 +577,6 @@ test("A member runs every step but the invite, then completes their own onboardi
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   click(fieldRadio(MARKETING_FIELD));
@@ -650,7 +623,6 @@ test("A step keeps the redeem code it arrived with", async () => {
     context,
     locale: "en-US",
     path: `${ROUTES.onboarding}?redeemCode=LAUNCH50`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -678,7 +650,6 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
     context,
     locale: "en-US",
     path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -702,38 +673,6 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
   ).not.toBeInTheDocument();
 });
 
-test("With the switch off, a prompt keeps the make-something page's look", async () => {
-  mockOnboardingNeeded();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&connector=google-ads`,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: PROMPT_TITLE }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
-    HANDOFF_PROMPT,
-  );
-  // The make-something page's segmented track and its list card's plain
-  // Connect button, not the source-first sheet.
-  expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  expect(screen.queryByText(PROMPT_INTRO)).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("region", { name: COMPLIANCE_TITLE }),
-  ).not.toBeInTheDocument();
-  await waitFor(() => {
-    expect(getButtonByName("Connect")).toBeEnabled();
-  });
-  expect(
-    queryAllByRoleFast("button").some((button) => {
-      return button.getAttribute("aria-label") === "Connect Google Ads";
-    }),
-  ).toBeFalsy();
-});
-
 test("A prompt that asks for a connector shows its Connect card", async () => {
   mockOnboardingNeeded();
 
@@ -741,7 +680,6 @@ test("A prompt that asks for a connector shows its Connect card", async () => {
     context,
     locale: "en-US",
     path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Review last week's Google Ads campaign performance")}&connector=google-ads`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -783,7 +721,6 @@ test("The sheet's connector card connects the tool the prompt link names", async
     context,
     locale: "en-US",
     path: `${ROUTES.onboarding}?prompt=${encodeURIComponent("Track keyword rankings")}&connector=ahrefs`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   click(
@@ -819,7 +756,6 @@ test("A prompt with a showcase carries the showcase into the chat", async () => 
     context,
     locale: "en-US",
     path: `${ROUTES.onboarding}?${params.toString()}`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -842,7 +778,6 @@ test("A later source-first step opened with a prompt goes back to the prompt pag
     context,
     locale: "en-US",
     path: `${ROUTES.onboardingSources}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -862,7 +797,6 @@ test("An invited member who brings a prompt still runs the source-first flow", a
     context,
     locale: "en-US",
     path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -878,7 +812,6 @@ test("A blank prompt still opens the source-first flow", async () => {
     context,
     locale: "en-US",
     path: `${ROUTES.onboarding}?prompt=%20%20`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -899,7 +832,6 @@ test("An already-onboarded visitor is forwarded with the prompt they brought", a
     context,
     locale: "en-US",
     path: `${ROUTES.onboardingSources}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await waitFor(() => {

@@ -1,5 +1,4 @@
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -20,10 +19,6 @@ import {
 const context = testContext();
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const stepStorage = localStorageSignals("onboarding:sources-first-step");
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
-
 // A fresh app receives browser storage from its previous lifetime, including
 // foreign or invalid progress that cannot be created through the current UI.
 function seedProgress(
@@ -74,7 +69,6 @@ test.each([ROUTES.home, ROUTES.onboarding])(
       context,
       locale: "en-US",
       path: `${path}?redeemCode=LAUNCH50`,
-      featureSwitches: SOURCES_FIRST_ON,
     });
 
     await screen.findByRole("heading", { name: "Connect a work tool" });
@@ -107,7 +101,6 @@ test("An explicit step URL takes precedence over saved progress", async () => {
     context,
     locale: "en-US",
     path: ROUTES.onboardingSources,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await screen.findByRole("heading", { name: "Connect a work tool" });
@@ -126,7 +119,6 @@ test("Resuming a later step rechecks its connected-source requirement", async ()
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await screen.findByRole("heading", { name: "What kind of work do you do?" });
@@ -151,7 +143,6 @@ test.each([
       context,
       locale: "en-US",
       path: ROUTES.onboarding,
-      featureSwitches: SOURCES_FIRST_ON,
     });
 
     await screen.findByRole("heading", {
@@ -178,7 +169,6 @@ test.each([
       context,
       locale: "en-US",
       path: ROUTES.onboarding,
-      featureSwitches: SOURCES_FIRST_ON,
     });
 
     await screen.findByRole("heading", {
@@ -193,7 +183,7 @@ test.each([ROUTES.home, ROUTES.onboarding])(
   async (path) => {
     seedProgress("ready");
 
-    await setupPage({ context, path, featureSwitches: SOURCES_FIRST_ON });
+    await setupPage({ context, path });
 
     await expect(
       screen.findByRole("textbox", { name: "Message" }),
@@ -221,7 +211,6 @@ test("A failed completion keeps the ready step and edited request available for 
     context,
     locale: "en-US",
     path: ROUTES.onboarding,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await screen.findByRole("heading", {

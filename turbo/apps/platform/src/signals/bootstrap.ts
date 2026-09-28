@@ -61,16 +61,6 @@ import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
 import {
-  setupOnboardingImageRunPage$,
-  setupOnboardingImageTemplatePage$,
-  setupOnboardingPresentationRunPage$,
-  setupOnboardingPresentationTemplatePage$,
-  setupOnboardingVideoRunPage$,
-  setupOnboardingVideoTemplatePage$,
-  setupOnboardingWorkflowPickerPage$,
-  setupOnboardingWorkflowRunPage$,
-} from "./onboarding/onboarding-page-setup.ts";
-import {
   setupOnboardingEntryPage$,
   setupOnboardingExperiencePage$,
   setupOnboardingSourcesPage$,
@@ -463,38 +453,6 @@ const ROUTE_CONFIG = [
     path: ROUTES.onboardingReady,
     setup: setupAuthPageWrapper(setupOnboardingReadyPage$),
     pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
-  },
-  {
-    path: ROUTES.onboardingWorkflowPicker,
-    setup: setupAuthPageWrapper(setupOnboardingWorkflowPickerPage$),
-  },
-  {
-    path: ROUTES.onboardingWorkflowRun,
-    setup: setupAuthPageWrapper(setupOnboardingWorkflowRunPage$),
-  },
-  {
-    path: ROUTES.onboardingPresentationTemplate,
-    setup: setupAuthPageWrapper(setupOnboardingPresentationTemplatePage$),
-  },
-  {
-    path: ROUTES.onboardingPresentationRun,
-    setup: setupAuthPageWrapper(setupOnboardingPresentationRunPage$),
-  },
-  {
-    path: ROUTES.onboardingImageTemplate,
-    setup: setupAuthPageWrapper(setupOnboardingImageTemplatePage$),
-  },
-  {
-    path: ROUTES.onboardingImageRun,
-    setup: setupAuthPageWrapper(setupOnboardingImageRunPage$),
-  },
-  {
-    path: ROUTES.onboardingVideoTemplate,
-    setup: setupAuthPageWrapper(setupOnboardingVideoTemplatePage$),
-  },
-  {
-    path: ROUTES.onboardingVideoRun,
-    setup: setupAuthPageWrapper(setupOnboardingVideoRunPage$),
   },
   {
     path: ROUTES.signInToken,

@@ -209,7 +209,7 @@ stricter release 7 API floor subsumes it.
 
 ### Integration DM threads and org default agent
 
-- **DM routes (migration 1278).** The main direct-message conversation of each
+- **DM routes (migration 1279).** The main direct-message conversation of each
   integration identity now maps to one chat thread through the fixed route key
   `direct-message:main` (Slack `thread_ts`, Feishu and Teams `thread_id`,
   Discord `session_key`, official Telegram and AgentPhone `root_message_id`).

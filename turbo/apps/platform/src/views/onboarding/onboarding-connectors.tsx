@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Loader2, Plus } from "lucide-react";
@@ -23,17 +22,13 @@ import {
 } from "../../signals/okou-page/settings/connectors.ts";
 import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
-import {
-  onboardingMakeConnectorItems$,
-  onboardingWorkflowConnectorItems$,
-} from "../../signals/onboarding/onboarding-connector-items.ts";
+import { onboardingMakeConnectorItems$ } from "../../signals/onboarding/onboarding-connector-items.ts";
 import type {
   PlatformConnectorCatalogConnectItem,
   PlatformConnectorCatalogStatusItem,
 } from "../../signals/connector-domain.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ConnectModal } from "../okou-page/components/settings/add-connection-dialog.tsx";
-import { ConnectorCard } from "../okou-page/components/settings/connector-card.tsx";
 import {
   ConnectorEntryCard,
   ConnectorEntryStatus,
@@ -48,14 +43,12 @@ import { detach, Reason } from "../../signals/utils.ts";
 
 interface ConnectorSetupBaseProps {
   readonly connectorSlugs: readonly string[];
-  readonly requiredConnectorSlugs?: readonly string[];
   /**
    * The sources grid reports its own funnel events. The list layouts belong to
    * other flows and pass neither.
    */
   readonly onConnectStart?: (connectorSlug: ConnectorSlug) => void;
   readonly onConnected?: (connectorSlug: ConnectorSlug) => void;
-  readonly children?: ReactNode;
 }
 
 /** The source step's grid: its connectors come from the onboarding sources. */
@@ -64,12 +57,11 @@ type SourcesConnectorSetupProps = ConnectorSetupBaseProps & {
 };
 
 /**
- * The list layouts of the workflow run and template pages. `sheet` is the
- * template link's list on the source-first flow's sheet, drawn with the
+ * The prompt handoff's sheet: the connectors its link names, drawn with the
  * source step's cards.
  */
 type ListConnectorSetupProps = ConnectorSetupBaseProps & {
-  readonly variant?: "workflow" | "prompt" | "sheet";
+  readonly variant: "sheet";
 };
 
 type ConnectorSetupProps = SourcesConnectorSetupProps | ListConnectorSetupProps;
@@ -318,7 +310,7 @@ function SourcesConnectorGrid({
             return null;
           }
           const connected =
-            item.connected || justConnectedSlugs.has(connectorSlug);
+            item.connected === true || justConnectedSlugs.has(connectorSlug);
           return (
             <SourceConnectorCard
               key={connectorSlug}
@@ -352,13 +344,6 @@ function SourcesConnectorGrid({
       ) : null}
     </>
   );
-}
-
-/** The list layouts this component renders. */
-function listLayout(
-  variant: ListConnectorSetupProps["variant"],
-): "workflow" | "prompt" | "sheet" {
-  return variant ?? "workflow";
 }
 
 /**
@@ -414,24 +399,12 @@ function useListConnectHandlers(
   };
 }
 
-function ListConnectorSetup({
-  connectorSlugs,
-  requiredConnectorSlugs,
-  variant,
-  children,
-}: ListConnectorSetupProps) {
-  const layout = listLayout(variant);
-  // Each layout belongs to one page, whose few connectors are looked up by
-  // slug: the workflow run page's workflow, the template link's connectors.
-  const connectorItems$ =
-    layout === "workflow"
-      ? onboardingWorkflowConnectorItems$
-      : onboardingMakeConnectorItems$;
+function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
+  // The handoff's few connectors are looked up by the slugs its link names.
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
-  const requiredSet = new Set(
-    parseConnectorSlugs(requiredConnectorSlugs ?? []),
+  const connectorCatalogItemsLoadable = useLastLoadable(
+    onboardingMakeConnectorItems$,
   );
-  const connectorCatalogItemsLoadable = useLastLoadable(connectorItems$);
   const { selectedConnector, setSelectedConnectorSlug } =
     useSelectedConnector();
   const connectHandlersFor = useListConnectHandlers(setSelectedConnectorSlug);
@@ -440,7 +413,7 @@ function ListConnectorSetup({
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
 
-  if (validConnectorSlugs.length === 0 && children === undefined) {
+  if (validConnectorSlugs.length === 0) {
     return null;
   }
 
@@ -450,74 +423,47 @@ function ListConnectorSetup({
       : [];
   const selectedAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
-  const loading = connectorCatalogItemsLoadable.state === "loading";
 
   return (
     <>
-      <section
-        className={cn(
-          layout === "workflow" &&
-            "mt-5 rounded-3xl border border-border bg-background px-6 pb-6",
-          layout === "prompt" && "mt-6 flex flex-col gap-3",
-          layout === "sheet" && "grid grid-cols-1 gap-3",
-        )}
-      >
+      <section className="grid grid-cols-1 gap-3">
         {validConnectorSlugs.map((connectorSlug) => {
           const item = connectorCatalogItems.find((candidate) => {
             return candidate.slug === connectorSlug;
           });
+          // A card draws only once the catalog knows the tool. It connects
+          // through the tool's own flow, and once connected it only reports
+          // that.
+          if (!item) {
+            return null;
+          }
           const connected =
-            item?.connected === true || justConnectedSlugs.has(connectorSlug);
+            item.connected === true || justConnectedSlugs.has(connectorSlug);
           const connecting =
             connectFlowSlug === connectorSlug ||
             pollingAuthCodeSlug === connectorSlug ||
             pollingDeviceAuthSlug === connectorSlug;
           const connectHandlers = connectHandlersFor(connectorSlug, item);
-
-          if (layout === "sheet") {
-            // The sheet's card draws only once the catalog knows the tool. It
-            // connects exactly as the list's Connect button does, and once
-            // connected it only reports that.
-            if (!item) {
-              return null;
-            }
-            return (
-              <SourceConnectorCard
-                key={connectorSlug}
-                connectorSlug={connectorSlug}
-                connector={item}
-                connected={connected}
-                busy={connecting}
-                onActivate={
-                  connected || !connectHandlers
-                    ? undefined
-                    : () => {
-                        launchConnectorConnect({
-                          connector: item,
-                          ...connectHandlers,
-                        });
-                      }
-                }
-              />
-            );
-          }
-
           return (
-            <ConnectorCard
+            <SourceConnectorCard
               key={connectorSlug}
-              variant="onboarding"
               connectorSlug={connectorSlug}
               connector={item}
               connected={connected}
               busy={connecting}
-              loading={loading}
-              layout={layout}
-              required={requiredSet.has(connectorSlug)}
-              connect={connectHandlers}
+              onActivate={
+                connected || !connectHandlers
+                  ? undefined
+                  : () => {
+                      launchConnectorConnect({
+                        connector: item,
+                        ...connectHandlers,
+                      });
+                    }
+              }
             />
           );
         })}
-        {children}
       </section>
       {selectedConnector && selectedAccountOptions ? (
         <ConnectModal

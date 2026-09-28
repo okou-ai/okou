@@ -1,7 +1,6 @@
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -87,9 +86,6 @@ async function openSlackStep(): Promise<void> {
     context,
     locale: "en-US",
     path: ROUTES.onboardingSlack,
-    featureSwitches: {
-      [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-    },
   });
 
   await expect(

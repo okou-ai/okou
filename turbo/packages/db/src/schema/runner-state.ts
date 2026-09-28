@@ -4,6 +4,7 @@ import {
   varchar,
   integer,
   bigint,
+  boolean,
   jsonb,
   timestamp,
   index,
@@ -55,6 +56,10 @@ export const runnerState = pgTable(
       .default([])
       .notNull(),
     mode: varchar("mode", { length: 20 }).notNull().default("running"),
+    /** Host-local WSS ingress service observation; not public DNS/TLS reachability. */
+    wssIngressServiceActive: boolean("wss_ingress_service_active")
+      .notNull()
+      .default(false),
     lastSeenAt: timestamp("last_seen_at").notNull(),
   },
   (table) => {

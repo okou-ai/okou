@@ -6,8 +6,9 @@ import { and, eq, gt, inArray, like, lte } from "drizzle-orm";
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
 import type { ReadonlyDb } from "../external/db";
 
-// Three missed 10-second routine heartbeats. A snapshot is NOT a socket or
-// browser-ingress health proof: #37027 must check live local-run ownership.
+// Three missed 10-second routine heartbeats. Host-local WSS ingress service
+// status filters only new ticket issuance, NOT public WSS health or redemption:
+// #37027 must independently check live local-run ownership.
 const WSS_RUNNER_FRESH_MS = 30_000;
 const MAX_CLOCK_LEAD_MS = 5000;
 
@@ -16,7 +17,7 @@ export interface RunnerWssTarget {
   readonly runId: string;
   readonly runnerId: string;
   readonly publicOrigin: string;
-  /** This service does not inspect DNS, browser TLS, Caddy or the listener. */
+  /** A local ingress service observation is not public WSS verification. */
   readonly ingressVerification: "not-observed";
   readonly observedMode: "running" | "draining";
   readonly observedAt: Date;
@@ -33,8 +34,17 @@ export async function resolveRunnerWssTarget(
     readonly runId: string;
     readonly owner: { readonly orgId: string; readonly userId: string };
     readonly now: Date;
+    /** Local ingress service availability filters issuance, not redemption. */
+    readonly purpose: "issue" | "consume";
   },
 ): Promise<RunnerWssTarget | null> {
+  // The sole writer stores status and lastSeenAt in the same ordered heartbeat
+  // upsert; missing or untrusted observations clear status. The lastSeenAt
+  // bounds below therefore also bound the age of a positive observation.
+  const ingressServiceAvailability =
+    args.purpose === "issue"
+      ? eq(runnerState.wssIngressServiceActive, true)
+      : undefined;
   const [row] = await db
     .select({
       runId: agentRuns.id,
@@ -67,6 +77,7 @@ export async function resolveRunnerWssTarget(
         eq(agentRuns.status, "running"),
         like(agentRuns.runnerGroup, "vm0/%"),
         inArray(runnerState.mode, ["running", "draining"]),
+        ingressServiceAvailability,
         gt(
           runnerState.lastSeenAt,
           new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),

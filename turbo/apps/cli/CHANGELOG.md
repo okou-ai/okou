@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.370.0](https://github.com/okou-ai/okou/compare/cli-v9.369.0...cli-v9.370.0) (2026-09-28)
+
+
+### Features
+
+* **cli:** unify messaging command flags and output ([#37212](https://github.com/okou-ai/okou/issues/37212)) ([f276160](https://github.com/okou-ai/okou/commit/f276160290b1c7a4dd7e5fe5e09ecc8143ceb1cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.521.0
+    * @okouai/core bumped to 8.716.1
+    * @okouai/pi-agent-runtime bumped to 1.40.40
+
 ## [9.369.0](https://github.com/okou-ai/okou/compare/cli-v9.368.1...cli-v9.369.0) (2026-09-28)
 
 

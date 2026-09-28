@@ -285,7 +285,7 @@ export async function validateIntegrationDmSingleThread(
     }
     const migration = await readFile(
       new URL(
-        "../src/migrations/1278_integration_dm_single_thread_routes.sql",
+        "../src/migrations/1279_integration_dm_single_thread_routes.sql",
         import.meta.url,
       ),
       "utf8",

@@ -791,6 +791,10 @@ export function generatePresignedPutUrl(
     readonly metadata?: Readonly<Record<string, string>>;
     /** Base64 SHA-256 digest bound into the storage authorization. */
     readonly checksumSha256?: string;
+    /** Bind a browser File PUT to the declared byte length as well. */
+    readonly contentLength?: number;
+    /** Short-lived upload permissions may override the shared artifact URL lifetime. */
+    readonly expiresInSeconds?: number;
   },
   signal?: AbortSignal,
 ): Computed<Promise<string>> {
@@ -977,6 +981,8 @@ function generatePresignedPutUrlWithClient(
     readonly contentType: string;
     readonly metadata?: Readonly<Record<string, string>>;
     readonly checksumSha256?: string;
+    readonly contentLength?: number;
+    readonly expiresInSeconds?: number;
   },
   signal?: AbortSignal,
 ): Computed<Promise<string>> {
@@ -999,12 +1005,16 @@ function generatePresignedPutUrlWithClient(
       ContentType: contentType,
       Metadata: options.metadata,
       ChecksumSHA256: options.checksumSha256,
+      ContentLength: options.contentLength,
     });
     return getSignedUrl(client, command, {
-      expiresIn: PRESIGNED_URL_TTL_SECONDS,
-      ...(metadataHeaders
+      expiresIn: options.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
+      ...(metadataHeaders || options.checksumSha256
         ? {
-            unhoistableHeaders: new Set(Object.keys(metadataHeaders)),
+            unhoistableHeaders: new Set([
+              ...Object.keys(metadataHeaders ?? {}),
+              ...(options.checksumSha256 ? ["x-amz-checksum-sha256"] : []),
+            ]),
           }
         : {}),
     });

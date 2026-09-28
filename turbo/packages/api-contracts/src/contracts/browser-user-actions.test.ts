@@ -156,7 +156,7 @@ describe("Browser user-action contracts", () => {
       name: "note.txt",
       type: "text/plain",
       size: 4,
-      contentBase64: "dGVzdA==",
+      sha256: "a".repeat(64),
     };
     for (const entry of [
       { ...base, operation: "replace", files: [file] },
@@ -168,6 +168,31 @@ describe("Browser user-action contracts", () => {
           .success,
       ).toBe(true);
     }
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({
+        values: [
+          {
+            ...base,
+            operation: "replace",
+            files: [{ ...file, size: 10 * 1024 * 1024 }],
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      browserUserActionApplyRequestSchema.safeParse({
+        values: [
+          {
+            ...base,
+            operation: "replace",
+            files: [
+              { ...file, size: 5 * 1024 * 1024 + 1 },
+              { ...file, size: 5 * 1024 * 1024 },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
     for (const entry of [
       { ...base, operation: "replace", files: [] },
       { ...base, operation: "keep", files: [file] },
@@ -175,7 +200,13 @@ describe("Browser user-action contracts", () => {
       {
         ...base,
         operation: "replace",
-        files: [{ ...file, contentBase64: "A".repeat(1_500_000) }],
+        files: [{ ...file, size: 10 * 1024 * 1024 + 1 }],
+      },
+      { ...base, operation: "replace", files: [{ ...file, sha256: "bad" }] },
+      {
+        ...base,
+        operation: "replace",
+        files: [{ ...file, contentBase64: "dGVzdA==" }],
       },
       { ...base, operation: "replace", files: [file], value: "fakepath" },
     ]) {

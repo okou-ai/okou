@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::future::BoxFuture;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::{Instrument, info};
 
@@ -33,6 +34,9 @@ pub struct HeartbeatProfile {
     pub workspace_disk_mb: u32,
 }
 
+/// Host-local WSS ingress service state sampled for each heartbeat, never a browser reachability proof.
+pub type WssIngressServiceProbe = Arc<dyn Fn() -> BoxFuture<'static, bool> + Send + Sync>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum HeartbeatError {
     #[error("heartbeat wait requires an active send")]
@@ -59,6 +63,7 @@ pub struct HeartbeatContext {
     workspace_cache: Option<WorkspaceImageCache>,
     active_runs: ActiveRuns,
     workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
+    wss_ingress_service_probe: WssIngressServiceProbe,
 }
 
 pub struct HeartbeatContextInit<'a> {
@@ -71,6 +76,7 @@ pub struct HeartbeatContextInit<'a> {
     pub workspace_cache: Option<WorkspaceImageCache>,
     pub active_runs: &'a ActiveRuns,
     pub workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
+    pub wss_ingress_service_probe: WssIngressServiceProbe,
 }
 
 impl HeartbeatContext {
@@ -85,6 +91,7 @@ impl HeartbeatContext {
             workspace_cache: init.workspace_cache,
             active_runs: init.active_runs.clone(),
             workspace_cache_snapshot: init.workspace_cache_snapshot,
+            wss_ingress_service_probe: init.wss_ingress_service_probe,
         }
     }
 }
@@ -360,6 +367,7 @@ async fn send_heartbeat(
         );
         return;
     }
+    state.wss_ingress_service_active = (hb.wss_ingress_service_probe)().await;
     info!(
         mode = ?mode,
         running = state.running_count,
@@ -556,6 +564,7 @@ pub fn collect_heartbeat_state(
         held_sandbox_states: idle_pool.held_sandbox_states(),
         held_workspace_states: Vec::new(),
         active_reuse_producers: Vec::new(),
+        wss_ingress_service_active: false,
         mode: match mode {
             RunnerMode::Starting => "starting".to_string(),
             RunnerMode::Running => "running".to_string(),
@@ -901,6 +910,51 @@ mod tests {
         assert!(state.admittable_profiles.is_empty());
     }
 
+    #[tokio::test]
+    async fn each_heartbeat_observes_wss_ingress_transitions_while_running_or_draining() {
+        let active = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let wss_ingress_service_probe: WssIngressServiceProbe = {
+            let active = Arc::clone(&active);
+            Arc::new(move || {
+                let active = Arc::clone(&active);
+                Box::pin(async move { active.load(std::sync::atomic::Ordering::SeqCst) })
+            })
+        };
+        let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
+            max_idle: 0,
+        })));
+        let profiles = test_profiles();
+        let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
+        let provider = Arc::new(RecordingProvider::default());
+        let active_runs = test_active_runs();
+        let hb = HeartbeatContext::new(HeartbeatContextInit {
+            idle_pool: &idle_pool,
+            runner_identity: test_runner_identity(),
+            group: "vm0/test",
+            profiles: &profiles,
+            budget: &budget,
+            provider: provider.clone(),
+            workspace_cache: None,
+            active_runs: &active_runs,
+            workspace_cache_snapshot: WorkspaceCacheStateSnapshot::new(),
+            wss_ingress_service_probe,
+        });
+
+        send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;
+        active.store(true, std::sync::atomic::Ordering::SeqCst);
+        send_heartbeat(&hb, RunnerMode::Draining, 2, HeartbeatRequest::ordinary()).await;
+        active.store(false, std::sync::atomic::Ordering::SeqCst);
+        send_heartbeat(&hb, RunnerMode::Running, 3, HeartbeatRequest::ordinary()).await;
+        let sent = provider.heartbeats.lock().unwrap();
+        assert_eq!(
+            sent.iter()
+                .map(|s| s.wss_ingress_service_active)
+                .collect::<Vec<_>>(),
+            vec![false, true, false]
+        );
+        assert_eq!(sent[1].mode, "draining");
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn send_heartbeat_logs_state_counts_without_raw_reuse_state() {
         let reuse_key = "thread:sensitive-heartbeat-17975";
@@ -933,6 +987,7 @@ mod tests {
             workspace_cache: Some(cache),
             active_runs: &active_runs,
             workspace_cache_snapshot: workspace_cache_snapshot.clone(),
+            wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
         let ((), events) = capture_heartbeat_events(send_heartbeat(
@@ -1022,6 +1077,7 @@ mod tests {
             workspace_cache: Some(cache),
             active_runs: &active_runs,
             workspace_cache_snapshot,
+            wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
         send_heartbeat(
@@ -1097,6 +1153,7 @@ mod tests {
             workspace_cache: None,
             active_runs: &active_runs,
             workspace_cache_snapshot: WorkspaceCacheStateSnapshot::new(),
+            wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
         send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;

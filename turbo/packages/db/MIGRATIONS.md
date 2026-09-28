@@ -101,7 +101,7 @@ operator tool and its two documented reader fallbacks.
 ### Active transition validators
 
 - `scripts/test-integration-dm-single-thread.ts` protects migration
-  `1278_integration_dm_single_thread_routes`: all six integration identities
+  `1279_integration_dm_single_thread_routes`: all six integration identities
   consolidate by last thread use, canonical-key collisions converge, the
   retained main thread loses its model pin with canonical reset events and
   contiguous per-user/org sequence allocation, and reply threads, detached

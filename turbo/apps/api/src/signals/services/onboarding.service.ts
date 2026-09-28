@@ -6,8 +6,6 @@ import type {
 } from "@okouai/api-contracts/contracts/onboarding";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -21,7 +19,6 @@ import { logger } from "../../lib/log";
 import { db$, writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
-import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import {
   ensureMorningBriefDefaultEnabled$,
   type EnsureMorningBriefDefaultEnabledResult,
@@ -57,8 +54,8 @@ async function markOnboardingComplete(
   userId: string,
 ): Promise<boolean> {
   const updatedAt = nowDate();
-  // An unanswered field leaves the column alone: the make-something flow never
-  // asks the question, and it must not erase an answer the org already gave.
+  // An unanswered field leaves the column alone: the prompt handoff never asks
+  // the question, and it must not erase an answer the org already gave.
   const industryWrite =
     industry === undefined ? {} : { onboardingIndustry: industry };
   return await db.transaction(async (tx) => {
@@ -209,7 +206,7 @@ function onboardingComplete(orgId: string): Computed<Promise<boolean>> {
 
 /**
  * Whether a non-admin member still has the source-first onboarding ahead of
- * them. It is personal, and only offered where the switch is on for them.
+ * them. It is personal.
  *
  * Nobody who already uses the workspace is pulled into it: a member who has
  * started an ordinary chat in this org is treated as onboarded, just like one
@@ -221,17 +218,6 @@ function memberNeedsOnboarding(
   userId: string,
 ): Computed<Promise<boolean>> {
   return computed(async (get): Promise<boolean> => {
-    const overrides = await get(userFeatureSwitchOverrides(orgId, userId));
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.OnboardingSourcesFirst, {
-        orgId,
-        userId,
-        overrides,
-      })
-    ) {
-      return false;
-    }
-
     const db = get(db$);
     const [completion] = await db
       .select({ completedAt: orgMembersMetadata.onboardingCompletedAt })

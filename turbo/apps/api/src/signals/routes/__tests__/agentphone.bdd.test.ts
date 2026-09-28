@@ -2134,8 +2134,48 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       );
     });
 
-    // Resetting the canonical route makes prior message history insufficient
-    // to resolve the group owner.
+    // A mention from an unlinked sender in a conversation the linked user
+    // already started never borrows the linked user's account.
+    const beforeBorrowAttempt = sends.messages.length;
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: stranger,
+      body: "@Okou run this on the owner's account",
+      conversationId,
+      isGroup: true,
+    });
+    const borrowPrompt = await waitForSendMatching(
+      sends,
+      beforeBorrowAttempt,
+      (send) => {
+        return (
+          send.toNumber === bddGroupId(conversationId) &&
+          (send.body?.includes("message this number directly") ?? false)
+        );
+      },
+    );
+    expect(borrowPrompt.body).not.toContain("/agentphone/connect?");
+    await runs.heartbeatRunner(runnerGroup);
+    const borrowIdle = await runs.pollRunner(runnerGroup);
+    expect(borrowIdle.body.job).toBeNull();
+    const ownerGroupEvents = await createChatFilesBddApi(
+      context,
+    ).listThreadEvents(actor, groupThreadId);
+    expect(
+      ownerGroupEvents.events.some((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.userMessage.parts.some((part) => {
+            return (
+              part.type === "text" &&
+              part.text === "@Okou run this on the owner's account"
+            );
+          })
+        );
+      }),
+    ).toBeFalsy();
+
+    // The linked sender can still run account commands in the group.
     const beforeSessionReset = sends.messages.length;
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
@@ -2150,29 +2190,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         send.body === "New session started."
       );
     });
-
-    const beforeColdCutoverPrompt = sends.messages.length;
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: stranger,
-      body: "@Okou resume the old group",
-      conversationId,
-      isGroup: true,
-    });
-    const coldCutoverPrompt = await waitForSendMatching(
-      sends,
-      beforeColdCutoverPrompt,
-      (send) => {
-        return (
-          send.toNumber === bddGroupId(conversationId) &&
-          (send.body?.includes("message this number directly") ?? false)
-        );
-      },
-    );
-    expect(coldCutoverPrompt.body).not.toContain("/agentphone/connect?");
-    await runs.heartbeatRunner(runnerGroup);
-    const coldCutoverIdle = await runs.pollRunner(runnerGroup);
-    expect(coldCutoverIdle.body.job).toBeNull();
   });
 
   it("preserves a mention-only iMessage prompt with the preceding task", async () => {

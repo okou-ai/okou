@@ -323,9 +323,6 @@ test("An admin sees every step and what each one pays", async () => {
   // affordance instead of collapsing to the completion check.
   const connectorRow = screen.getByTestId("get-started-quest-connector");
   expect(normalizedText(connectorRow)).toContain("100");
-
-  // Personal earnings exclude Slack; another OAuth connector can still earn a reward.
-  expect(within(panel).getByText("400 earned")).toBeInTheDocument();
 });
 
 test("A member is only offered the steps they can finish themselves", async () => {
@@ -345,8 +342,6 @@ test("A member is only offered the steps they can finish themselves", async () =
   expect(screen.getByTestId("get-started-quest-share")).toBeInTheDocument();
   expect(within(panel).queryByText("Invite your team")).not.toBeInTheDocument();
   expect(within(panel).queryByText("Add to Slack")).not.toBeInTheDocument();
-  // The earned total counts only the quests this role was offered.
-  expect(within(panel).getByText("400 earned")).toBeInTheDocument();
 });
 
 test("A workflow reward still with the reviewer stops offering the step again", async () => {
@@ -481,9 +476,13 @@ test("Sharing on X restores pending state and an Ably review notification update
     canEarnMore: false,
   });
   context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
-  await expect(
-    within(afterReview).findByText("2,400 earned"),
-  ).resolves.toBeInTheDocument();
+  // The granted post leaves a finished row, with nothing left to open.
+  await waitFor(() => {
+    expect(screen.getByTestId("get-started-quest-share")).not.toHaveAttribute(
+      "role",
+      "menuitem",
+    );
+  });
   expect(within(afterReview).queryByText("In review")).not.toBeInTheDocument();
 });
 
@@ -614,13 +613,11 @@ test("A phone linked before the quest existed reads as done, without credits", a
     return screen.getByTestId("get-started-entry");
   });
   expect(normalizedText(entry)).toBe("Get more credits3/5");
-  const panel = await openQuestPanel();
+  await openQuestPanel();
   const row = screen.getByTestId("get-started-quest-imessage");
   // Finished: a status line with the completion check, nothing to press.
   expect(row.getAttribute("role")).not.toBe("menuitem");
   expect(within(row).queryByText("Add")).not.toBeInTheDocument();
-  // No claim was ever granted, so the earned total is unchanged.
-  expect(within(panel).getByText("400 earned")).toBeInTheDocument();
 });
 
 test("Slack installed before the quest existed reads as done, without credits", async () => {
@@ -641,8 +638,6 @@ test("Slack installed before the quest existed reads as done, without credits", 
   const row = screen.getByTestId("get-started-quest-slack");
   expect(row.getAttribute("role")).not.toBe("menuitem");
   expect(within(row).queryByText("Add")).not.toBeInTheDocument();
-  // No claim was ever granted, so the earned total is unchanged.
-  expect(within(panel).getByText("400 earned")).toBeInTheDocument();
 });
 
 test("Slack not yet installed keeps the step and its reward on offer", async () => {
@@ -721,7 +716,6 @@ test("Invitation progress separates successful rewards from pending members and 
     within(panel).getByText("3 pending", { exact: false }),
   ).toBeInTheDocument();
   expect(screen.getByTestId("get-started-quest-invite")).toBeInTheDocument();
-  expect(within(panel).getByText("1,200 earned")).toBeInTheDocument();
 });
 
 test("A rejected X claim can be replaced and survives opening the task panel", async () => {
@@ -760,10 +754,7 @@ test("Daily rewards are claimed by selecting check in", async () => {
     context,
     path: questChatPath(),
   });
-  const panel = await openQuestPanel();
-  await expect(
-    within(panel).findByText("300 earned"),
-  ).resolves.toBeInTheDocument();
+  await openQuestPanel();
   const checkinRow = screen.getByTestId("get-started-quest-checkin");
   expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
   expect(normalizedText(checkinRow)).toContain("Check in daily+100Check in");
@@ -777,13 +768,12 @@ test("Daily rewards are claimed by selecting check in", async () => {
   click(buttonNamed("Back to work", dialog));
 
   const updatedPanel = await openQuestPanel();
-  await expect(
-    within(updatedPanel).findByText("400 earned"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByTestId("get-started-quest-checkin")).not.toHaveAttribute(
-    "role",
-    "menuitem",
-  );
+  await waitFor(() => {
+    expect(screen.getByTestId("get-started-quest-checkin")).not.toHaveAttribute(
+      "role",
+      "menuitem",
+    );
+  });
   expect(within(updatedPanel).queryByText("Check in")).not.toBeInTheDocument();
 });
 

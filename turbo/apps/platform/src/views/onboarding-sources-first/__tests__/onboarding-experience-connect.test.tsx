@@ -1,7 +1,6 @@
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -19,10 +18,6 @@ import {
 } from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
-
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
 
 const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
 const SKILLS_QUESTION = "Bring your existing skills into Okou";
@@ -107,7 +102,6 @@ async function openExperienceStep(fromStart = false): Promise<void> {
     context,
     locale: "en-US",
     path: fromStart ? ROUTES.onboarding : ROUTES.onboardingExperience,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   if (fromStart) {

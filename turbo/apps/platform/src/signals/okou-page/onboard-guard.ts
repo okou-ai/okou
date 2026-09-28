@@ -90,8 +90,7 @@ export const redirectToConfiguredOnboarding$ = command(
  * wait for onboarding status.
  *
  * The API decides who still has onboarding ahead of them: an admin whose org
- * has not finished setting up, and, behind the source-first switch, an invited
- * member who has neither finished their own run nor started using the
+ * has not finished setting up, and an invited member who has neither finished their own run nor started using the
  * workspace.
  *
  * When the backend cannot resolve the current org (e.g. it was deleted) but the

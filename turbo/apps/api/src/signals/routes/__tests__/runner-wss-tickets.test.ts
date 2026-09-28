@@ -66,6 +66,7 @@ describe("direct Runner WSS ticket boundary", () => {
       group,
       mode: "running",
       snapshotSequence: 1,
+      wssIngressServiceActive: true,
     });
     return {
       bdd,
@@ -117,6 +118,85 @@ describe("direct Runner WSS ticket boundary", () => {
     const res = await accept(bootstrap(f), [200]);
     expect(res.body.wssUrl).toBe(`${origin}/ws/${f.runnerId}`);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("does not issue a ticket when WSS ingress is absent, down or reported active by a PAT", async () => {
+    const f = await setup();
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      snapshotSequence: 2,
+    });
+    const missing = await accept(bootstrap(f), [404]);
+    expect(missing.headers.get("Cache-Control")).toBe("no-store");
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      mode: "running",
+      snapshotSequence: 3,
+      wssIngressServiceActive: false,
+    });
+    const down = await accept(bootstrap(f), [404]);
+    expect(down.headers.get("Cache-Control")).toBe("no-store");
+    expect(down.body.error.code).toBe("NOT_FOUND");
+
+    const pat = await f.api.createCliToken(f.actor);
+    await f.api.requestHeartbeatRunnerAs(`Bearer ${pat.token}`, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      snapshotSequence: 4,
+      wssIngressServiceActive: true,
+    });
+    await accept(bootstrap(f), [404]);
+    const digests = await accept(
+      testState().action({
+        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
+      }),
+      [200],
+    );
+    expect(digests.body.wss_ticket_digests).toStrictEqual([]);
+
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      snapshotSequence: 5,
+      wssIngressServiceActive: true,
+    });
+    await accept(bootstrap(f), [200]);
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("denies new tickets on inactive WSS ingress without recalling an issued ticket", async () => {
+    const f = await setup();
+    const issued = await accept(bootstrap(f), [200]);
+    const before = await accept(
+      testState().action({
+        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
+      }),
+      [200],
+    );
+    expect(before.body.wss_ticket_digests).toHaveLength(1);
+
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      snapshotSequence: 2,
+      wssIngressServiceActive: false,
+    });
+    const denied = await accept(bootstrap(f), [404]);
+    expect(denied.body.error.code).toBe("NOT_FOUND");
+    expect(denied.headers.get("Cache-Control")).toBe("no-store");
+    const after = await accept(
+      testState().action({
+        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
+      }),
+      [200],
+    );
+    expect(after.body.wss_ticket_digests).toStrictEqual(
+      before.body.wss_ticket_digests,
+    );
+    await accept(consume(f, issued.body.ticket), [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
@@ -215,6 +295,7 @@ describe("direct Runner WSS ticket boundary", () => {
       group: f.group,
       mode: "running",
       snapshotSequence: 3,
+      wssIngressServiceActive: true,
     });
     mockNow(now() + 31_000);
     await accept(bootstrap(f), [404]);

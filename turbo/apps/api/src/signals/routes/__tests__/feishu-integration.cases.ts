@@ -194,13 +194,7 @@ const EXPECTED_FEISHU_OAUTH_SCOPES = [
   "contact:user.id:readonly",
   "contact:user:search",
   "im:chat",
-  "im:chat:create_by_user",
   "im:chat.members:read",
-  "im:chat.members:write_only",
-  "im:message",
-  "im:message.p2p_msg:get_as_user",
-  "im:message.group_msg:get_as_user",
-  "im:message.send_as_user",
   "im:message.reactions:read",
   "im:message.reactions:write_only",
   "im:resource",
@@ -2563,6 +2557,9 @@ export function registerFeishuIntegrationTests(
         expect(managedConnector.skillMarkdown).toContain(
           "does not grant whiteboard node update or delete scopes",
         );
+        expect(managedConnector.skillMarkdown).toContain(
+          `okou ${platform} message`,
+        );
         const managedSkillStorageName = getCustomConnectorSkillStorageName(
           managedConnector.id,
         );
@@ -2573,10 +2570,10 @@ export function registerFeishuIntegrationTests(
         const skillMarkdown = uploadedSkillMarkdown();
         expect(skillMarkdown).toContain(`---\nname: ${platform}\n`);
         expect(skillMarkdown).toContain(
-          `description: ${provider.name} OpenAPI for user-authorized messaging, people search, cloud`,
+          `description: ${provider.name} OpenAPI for user-authorized people search, cloud documents,`,
         );
         expect(skillMarkdown).toContain(
-          `documents, calendars, and tasks. Use when the user asks to work with ${provider.name}.`,
+          `calendars, and tasks. Use when the user asks to work with ${provider.name}.`,
         );
         expect(skillMarkdown).not.toContain("Okou Feishu");
         expect(skillMarkdown).not.toContain(managedConnector.id);

@@ -547,7 +547,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Low");
   });
-  for (const effort of ["Medium", "High", "Xhigh", "Max"]) {
+  for (const effort of ["Medium", "High", "xHigh", "Max"]) {
     await user.keyboard("{ArrowRight}");
     await waitFor(() => {
       expect(slider).toHaveAttribute("aria-valuetext", effort);
@@ -598,7 +598,7 @@ test("Select the default effort on an existing thread without changing Fast", as
   slider.focus();
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
+    expect(slider).toHaveAttribute("aria-valuetext", "xHigh");
   });
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
@@ -864,7 +864,7 @@ test.each([
     model: "deepseek-v4-flash",
     providerType: "openrouter-codex",
     first: "High",
-    last: "Xhigh",
+    last: "xHigh",
   },
 ] as const)(
   "Offer $model efforts for $providerType with Pi enabled",

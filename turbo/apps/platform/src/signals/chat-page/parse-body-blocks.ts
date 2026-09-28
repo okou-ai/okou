@@ -129,6 +129,8 @@ type OpenMarkdownFence = {
 
 interface ParseBodyBlocksOptions {
   readonly previews?: boolean;
+  /** A streaming bare URL needs a following boundary before becoming a card. */
+  readonly requireUrlTerminator?: boolean;
   readonly chatActionContext?: ChatActionContext;
 }
 
@@ -879,10 +881,36 @@ function retainedActionLabel(tokens: readonly Token[]): string {
     .join("");
 }
 
+function hasStreamingUrlBoundary(source: string, end: number): boolean {
+  // A bare URL at the current stream tail can still gain a path or query.
+  // Whitespace and closing wrappers terminate it; punctuation such as `.`
+  // alone does not, even when Marked excludes it from an autolink token.
+  const remaining = source.slice(end);
+  return (
+    /^[\s)）\]}>]/u.test(remaining) ||
+    /^[.,，。；;:：!！?？]+\s/u.test(remaining)
+  );
+}
+
+function isTerminatedActionLink(
+  token: Tokens.Link,
+  source: string,
+  offset: number,
+  requireUrlTerminator: boolean,
+): boolean {
+  return (
+    !requireUrlTerminator ||
+    token.raw.startsWith("[") ||
+    token.raw.startsWith("<") ||
+    hasStreamingUrlBoundary(source, offset + token.raw.length)
+  );
+}
+
 function actionLinksFromTokens(
   source: string,
   tokens: readonly Token[],
   chatActionContext: ChatActionContext | undefined,
+  requireUrlTerminator: boolean,
 ): ActionText {
   const matches: ActionLinkMatch[] = [];
   const parts: string[] = [];
@@ -904,7 +932,10 @@ function actionLinksFromTokens(
       const candidate = isBareLink
         ? new RegExp(`^${URL_TOKEN_PATTERN}`).exec(token.raw)?.[0]
         : token.href;
-      if (candidate !== undefined) {
+      if (
+        candidate !== undefined &&
+        isTerminatedActionLink(token, source, offset, requireUrlTerminator)
+      ) {
         const url = trimPreviewUrl(candidate);
         const block = createActionBlockFromUrl(url, chatActionContext);
         if (block) {
@@ -924,6 +955,7 @@ function actionLinksFromTokens(
         token.text,
         token.tokens,
         chatActionContext,
+        false, // A complete emphasis token closes the contained URL.
       );
       matches.push(...inner.matches);
       if (inner.matches.length > 0) {
@@ -945,7 +977,11 @@ function actionLinksFromTokens(
       retained = token.raw.replace(
         new RegExp(URL_TOKEN_PATTERN, "g"),
         (match: string, index: number) => {
-          if (!hasUrlTokenBoundary(source, offset + index)) {
+          if (
+            !hasUrlTokenBoundary(source, offset + index) ||
+            (requireUrlTerminator &&
+              !hasStreamingUrlBoundary(source, offset + index + match.length))
+          ) {
             return match;
           }
           const url = trimPreviewUrl(match);
@@ -967,6 +1003,7 @@ function actionLinksFromTokens(
 function actionLinksFromMarkdown(
   source: string,
   chatActionContext: ChatActionContext | undefined,
+  requireUrlTerminator: boolean,
 ): ActionText {
   if (!new RegExp(URL_TOKEN_PATTERN).test(source)) {
     return { markdown: source, matches: [] };
@@ -976,6 +1013,7 @@ function actionLinksFromMarkdown(
     source,
     Lexer.lexInline(source, getDefaults()),
     chatActionContext,
+    requireUrlTerminator,
   );
 }
 
@@ -1244,7 +1282,12 @@ function parseBodyBlocks(
       lineIndex = inlineBlockEnd;
     }
     const actionLine = previews
-      ? actionLinksFromMarkdown(actionSource, options.chatActionContext)
+      ? actionLinksFromMarkdown(
+          actionSource,
+          options.chatActionContext,
+          options.requireUrlTerminator === true &&
+            lineIndex === lines.length - 1,
+        )
       : null;
     if (actionLine && actionLine.matches.length > 0) {
       const retainedMarkdown = retainedActionMarkdown(actionSource, actionLine);

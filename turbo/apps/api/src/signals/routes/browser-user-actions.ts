@@ -10,6 +10,7 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   applyBrowserUserAction$,
+  prepareBrowserUserFileUpload$,
   cancelBrowserUserAction$,
   createBrowserUserAction$,
   preflightBrowserUserAction$,
@@ -62,6 +63,12 @@ const preflightParams$ = pathParamsOf(browserUserActionsContract.preflight);
 const preflightBody$ = bodyResultOf(browserUserActionsContract.preflight);
 const applyParams$ = pathParamsOf(browserUserActionsContract.apply);
 const applyBody$ = bodyResultOf(browserUserActionsContract.apply);
+const prepareFileParams$ = pathParamsOf(
+  browserUserActionsContract.prepareFileUpload,
+);
+const prepareFileBody$ = bodyResultOf(
+  browserUserActionsContract.prepareFileUpload,
+);
 const cancelParams$ = pathParamsOf(browserUserActionsContract.cancel);
 const cancelBody$ = bodyResultOf(browserUserActionsContract.cancel);
 
@@ -143,6 +150,32 @@ const applyInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     : { status: 200 as const, body: result.value };
 });
 
+const prepareFileInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  if (!(await set(browserNativeInputEnabled$))) {
+    return disabled;
+  }
+  signal.throwIfAborted();
+  const body = await get(prepareFileBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const result = await set(
+    prepareBrowserUserFileUpload$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      requestToken: get(prepareFileParams$).requestToken,
+      input: body.data,
+    },
+    signal,
+  );
+  return result.kind === "error"
+    ? errorResponse(result)
+    : { status: 200 as const, body: result.value };
+});
+
 const preflightInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const enabled = await set(browserNativeInputEnabled$);
@@ -207,6 +240,10 @@ export const browserUserActionRoutes: readonly RouteEntry[] = [
   {
     route: browserUserActionsContract.preflight,
     handler: authRoute(authOptions, preflightInner$),
+  },
+  {
+    route: browserUserActionsContract.prepareFileUpload,
+    handler: authRoute(authOptions, prepareFileInner$),
   },
   {
     route: browserUserActionsContract.apply,

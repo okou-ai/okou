@@ -1,11 +1,61 @@
+import { useGet, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { Textarea, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
+import {
+  onboardingDraft$,
+  updateOnboardingDraft$,
+} from "../../signals/onboarding/onboarding-state.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { searchParams$ } from "../../signals/route.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
-import { usePromptOnboarding } from "../onboarding/onboarding-make-page.tsx";
+import { useOnboardingNavigation } from "../onboarding/onboarding-navigation.ts";
 import { ONBOARDING_TEXTAREA_CLASS } from "../onboarding/onboarding-shell.tsx";
 import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
+
+/**
+ * What the prompt handoff does: the prompt the visitor brought stays editable,
+ * the tools its link names can be connected, and running it completes
+ * onboarding before the first request.
+ */
+function usePromptOnboarding() {
+  const draft = useGet(onboardingDraft$);
+  const setDraft = useSet(updateOnboardingDraft$);
+  const [completeLoadable, complete] = useLoadableSet(completeOnboarding$);
+  const searchParams = useGet(searchParams$);
+  const pageSignal = useGet(pageSignal$);
+  const { runPrompt } = useOnboardingNavigation();
+  const template = searchParams.get("template")?.trim() || undefined;
+  const connectorSlugs = (searchParams.get("connector") ?? "")
+    .split(",")
+    .map((value) => {
+      return value.trim();
+    })
+    .filter(Boolean);
+
+  const run = (): void => {
+    const redeemCode = searchParams.get("redeemCode")?.trim() || null;
+    const completeAndRun = async (): Promise<void> => {
+      await complete(redeemCode, pageSignal);
+      runPrompt(draft.prompt, template);
+    };
+    detach(completeAndRun(), Reason.DomCallback);
+  };
+
+  return {
+    prompt: draft.prompt,
+    setPrompt: (prompt: string) => {
+      setDraft({ prompt });
+    },
+    connectorSlugs,
+    run,
+    busy: completeLoadable.state === "loading",
+  };
+}
 
 /**
  * The prompt handoff in the source-first flow's look. A visitor who brings a

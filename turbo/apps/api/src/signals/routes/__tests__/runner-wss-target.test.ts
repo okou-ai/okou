@@ -98,13 +98,17 @@ async function heartbeat(
   runnerId: string,
   mode: "running" | "draining" | "starting" | "stopping",
   sequence: number,
-  group = f.runnerGroup,
+  options: {
+    readonly group?: string;
+    readonly wssIngressServiceActive?: boolean;
+  } = {},
 ) {
   await f.api.requestHeartbeatRunner(true, [200], {
     runnerId,
-    group,
+    group: options.group ?? f.runnerGroup,
     mode,
     snapshotSequence: sequence,
+    wssIngressServiceActive: options.wssIngressServiceActive ?? true,
   });
 }
 
@@ -182,9 +186,38 @@ describe("internal WSS target via guarded test API route", () => {
     await expect(
       readTarget(run.runId, f.actor, new Date(observed.getTime() - 5001)),
     ).resolves.toBeNull();
-    await heartbeat(f, runnerId, "stopping", 3);
+    await heartbeat(f, runnerId, "draining", 3, {
+      wssIngressServiceActive: false,
+    });
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
-    await heartbeat(f, runnerId, "running", 4, "vm0/other");
+    await heartbeat(f, runnerId, "stopping", 4);
+    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    await heartbeat(f, runnerId, "running", 5, { group: "vm0/other" });
+    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    await f.api.requestCancelRun(f.actor, run.runId, [200]);
+  });
+
+  it("denies a missing or inactive WSS ingress observation and rejects an older true snapshot", async () => {
+    const f = await setup();
+    const run = await createRun(f);
+    const runnerId = randomUUID();
+    await claimRun(f, run.runId, { runnerId, hostname: inventoryHostname });
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId,
+      group: f.runnerGroup,
+      mode: "running",
+      snapshotSequence: 1,
+    });
+    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    await heartbeat(f, runnerId, "running", 2);
+    await expect(readTarget(run.runId, f.actor)).resolves.toMatchObject({
+      runnerId,
+    });
+    await heartbeat(f, runnerId, "running", 3, {
+      wssIngressServiceActive: false,
+    });
+    await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
+    await heartbeat(f, runnerId, "running", 2);
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });

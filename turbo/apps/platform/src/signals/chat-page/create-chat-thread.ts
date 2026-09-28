@@ -154,6 +154,7 @@ import {
 import {
   chatEventTreeContent,
   chatEventTreePlan,
+  isTransientOutputMessage,
 } from "./chat-event-body-blocks.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
 import type { Root } from "hast";
@@ -1735,6 +1736,8 @@ function createCardRefRegistrar({
 
 interface EventTree {
   readonly content: string;
+  /** The same text and ID can switch from a streaming URL tail to final. */
+  readonly requireUrlTerminator: boolean;
   readonly tree: Root | undefined;
   readonly error: boolean;
   /** Diagram sources this event shows, prepared when it becomes visible. */
@@ -1746,6 +1749,7 @@ interface RichEventTreePlan {
   readonly content: string;
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
+  readonly requireUrlTerminator: boolean;
 }
 
 function createEventTreeParser(registries: EventTreeRegistries) {
@@ -1804,7 +1808,15 @@ function planEventTreeUpdates(
   const richPlans: RichEventTreePlan[] = [];
   for (const event of events) {
     const content = chatEventTreeContent(event);
-    if (content === null || current.get(event.id)?.content === content) {
+    if (content === null) {
+      continue;
+    }
+    const requireUrlTerminator = isTransientOutputMessage(event);
+    const cached = current.get(event.id);
+    if (
+      cached?.content === content &&
+      cached.requireUrlTerminator === requireUrlTerminator
+    ) {
       continue;
     }
     // Raw-row projection already checked every 1094 provenance field. Keep
@@ -1821,6 +1833,7 @@ function planEventTreeUpdates(
       next ??= new Map(current);
       next.set(event.id, {
         content,
+        requireUrlTerminator,
         tree: literalHistoryTree(content),
         error: false,
       });
@@ -1837,6 +1850,7 @@ function planEventTreeUpdates(
     if (plainTree !== null) {
       next.set(event.id, {
         content: plan.content,
+        requireUrlTerminator: plan.requireUrlTerminator,
         tree: plainTree,
         error: false,
       });
@@ -1846,6 +1860,7 @@ function planEventTreeUpdates(
     // body loads. This pending identity also deduplicates concurrent ensures.
     next.set(event.id, {
       content: plan.content,
+      requireUrlTerminator: plan.requireUrlTerminator,
       tree: undefined,
       error: false,
     });
@@ -1863,6 +1878,7 @@ function markPendingEventTreesFailed(
     const entry = current.get(plan.eventId);
     if (
       entry?.content === plan.content &&
+      entry.requireUrlTerminator === plan.requireUrlTerminator &&
       entry.tree === undefined &&
       !entry.error
     ) {
@@ -1972,6 +1988,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         const pendingEntry = pending.get(plan.eventId);
         if (
           pendingEntry?.content !== plan.content ||
+          pendingEntry.requireUrlTerminator !== plan.requireUrlTerminator ||
           pendingEntry.tree !== undefined ||
           pendingEntry.error
         ) {
@@ -1981,6 +1998,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         parsed ??= new Map(pending);
         parsed.set(plan.eventId, {
           content: plan.content,
+          requireUrlTerminator: plan.requireUrlTerminator,
           tree,
           error: false,
           diagramCodes,

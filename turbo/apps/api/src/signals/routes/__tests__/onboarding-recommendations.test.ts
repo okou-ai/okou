@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { onboardingRecommendationContract } from "@okouai/api-contracts/contracts/onboarding";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -17,7 +16,6 @@ import {
   mockGitHubConnectorOAuth,
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { onboardingRecommendationRoutes } from "../onboarding-recommendations";
 
@@ -43,14 +41,6 @@ function apiClient() {
   );
 }
 
-async function enableRecommendations(userId: string, orgId: string) {
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId, orgId },
-    { [FeatureSwitchKey.OnboardingSourcesFirst]: true },
-  );
-}
-
 function rawStartRequest(body: Record<string, unknown>) {
   return setupRawAppRequest({
     context,
@@ -63,34 +53,9 @@ function rawStartRequest(body: Record<string, unknown>) {
 }
 
 describe("onboarding recommendations", () => {
-  it("keeps job creation and status behind the source-first switch", async () => {
-    const userId = `user_onboarding_recommendation_disabled_${randomUUID()}`;
-    const orgId = `org_onboarding_recommendation_disabled_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const started = await accept(
-      apiClient().start({
-        headers: authHeaders(),
-        body: { industry: "operations", locale: "en-US" },
-      }),
-      [403],
-    );
-    const status = await accept(
-      apiClient().get({
-        headers: authHeaders(),
-        params: { jobId: randomUUID() },
-      }),
-      [403],
-    );
-
-    expect(started.body.error.code).toBe("FORBIDDEN");
-    expect(status.body.error.code).toBe("FORBIDDEN");
-  });
-
   it("starts an owned durable job and exposes only its bounded status", async () => {
     const userId = `user_onboarding_recommendation_${randomUUID()}`;
     const orgId = `org_onboarding_recommendation_${randomUUID()}`;
-    await enableRecommendations(userId, orgId);
     mocks.clerk.session(userId, orgId);
 
     const started = await accept(
@@ -120,7 +85,6 @@ describe("onboarding recommendations", () => {
     expect(status.body).not.toHaveProperty("error");
 
     const otherUserId = `user_onboarding_recommendation_other_${randomUUID()}`;
-    await enableRecommendations(otherUserId, orgId);
     mocks.clerk.session(otherUserId, orgId);
     const hidden = await accept(
       apiClient().get({
@@ -148,7 +112,6 @@ describe("onboarding recommendations", () => {
     if (!onboarding.defaultAgentId) {
       throw new Error("Expected onboarding to create a default agent");
     }
-    await enableRecommendations(actor.userId, actor.orgId);
 
     mockGmailConnectorOAuth({
       accessToken: "gmail-context-access-token",
@@ -350,7 +313,6 @@ describe("onboarding recommendations", () => {
   it("rejects a well-formed locale that is not supported by the app", async () => {
     const userId = `user_onboarding_recommendation_locale_${randomUUID()}`;
     const orgId = `org_onboarding_recommendation_locale_${randomUUID()}`;
-    await enableRecommendations(userId, orgId);
     mocks.clerk.session(userId, orgId);
 
     const response = await rawStartRequest({
@@ -367,7 +329,6 @@ describe("onboarding recommendations", () => {
   it("does not reveal another or nonexistent job", async () => {
     const userId = `user_onboarding_recommendation_missing_${randomUUID()}`;
     const orgId = `org_onboarding_recommendation_missing_${randomUUID()}`;
-    await enableRecommendations(userId, orgId);
     mocks.clerk.session(userId, orgId);
 
     const response = await accept(

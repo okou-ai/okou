@@ -7,6 +7,7 @@ import {
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   browserUserActionsContract,
   type BrowserUserActionApplyRequest,
+  type BrowserUserActionPrepareFileUploadRequest,
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -20,7 +21,9 @@ import {
 } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
-import { apiClient$ } from "../api-client.ts";
+import { ApiError } from "../../lib/api-error.ts";
+import { fetchResource } from "../../lib/resource-fetch.ts";
+import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
 import {
@@ -1005,21 +1008,21 @@ export function fileDraftIsValid(
   );
 }
 
-async function encodeBrowserFile(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
+async function hashBrowserFile(file: File): Promise<string> {
+  const bytes = await file.arrayBuffer();
   if (bytes.byteLength !== file.size) {
     throw new Error("File changed while reading");
   }
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 8192) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
-  }
-  return btoa(binary);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(digest, (byte) => {
+    return byte.toString(16).padStart(2, "0");
+  }).join("");
 }
 
 async function browserFileSubmissionValue(
   field: BrowserInputAction["fields"][number],
   draft: BrowserFileDraft | undefined,
+  upload: (fieldKey: string, file: File, index: number) => Promise<string>,
 ): Promise<
   | Extract<BrowserUserActionApplyRequest["values"][number], { files: unknown }>
   | null
@@ -1044,12 +1047,12 @@ async function browserFileSubmissionValue(
     files:
       draft.operation === "replace"
         ? await Promise.all(
-            draft.files.map(async (file) => {
+            draft.files.map(async (file, index) => {
               return {
                 name: file.name,
                 type: file.type,
                 size: file.size,
-                contentBase64: await encodeBrowserFile(file),
+                sha256: await upload(field.key, file, index),
               };
             }),
           )
@@ -1137,8 +1140,75 @@ function browserScalarSubmissionValue(
   return { key: field.key, value };
 }
 
+async function uploadBrowserInputFile(
+  fieldKey: string,
+  file: File,
+  index: number,
+  prepare: (body: BrowserUserActionPrepareFileUploadRequest) => Promise<{
+    readonly uploadUrl: string;
+    readonly uploadHeaders: { readonly "x-amz-checksum-sha256": string };
+  }>,
+  signal: AbortSignal,
+): Promise<string> {
+  const sha256 = await hashBrowserFile(file);
+  signal.throwIfAborted();
+  const signed = await prepare({
+    key: fieldKey,
+    index,
+    size: file.size,
+    sha256,
+  });
+  signal.throwIfAborted();
+  const uploaded = await fetchResource(
+    signed.uploadUrl,
+    {
+      method: "PUT",
+      body: file,
+      headers: {
+        "content-type": "application/octet-stream",
+        ...signed.uploadHeaders,
+      },
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!uploaded.ok) {
+    throw new Error("Browser file upload failed");
+  }
+  return sha256;
+}
+
+function browserFileUploader(
+  clientFactory: ApiClientFactory,
+  requestToken: string,
+  signal: AbortSignal,
+): (fieldKey: string, file: File, index: number) => Promise<string> {
+  const client = clientFactory(browserUserActionsContract);
+  return (fieldKey, file, index) => {
+    return uploadBrowserInputFile(
+      fieldKey,
+      file,
+      index,
+      async (body) => {
+        const result = await accept(
+          client.prepareFileUpload({
+            params: { requestToken },
+            body,
+            fetchOptions: { signal },
+          }),
+          [200],
+          signal,
+        );
+        return result.body;
+      },
+      signal,
+    );
+  };
+}
+
 async function browserInputSubmissionValues(
   action: BrowserInputAction,
+  upload: (fieldKey: string, file: File, index: number) => Promise<string>,
   drafts: {
     readonly draft: ReadonlyMap<string, string>;
     readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
@@ -1178,6 +1248,7 @@ async function browserInputSubmissionValues(
       const file = await browserFileSubmissionValue(
         field,
         fileDraft.get(field.key),
+        upload,
       );
       if (file === null) {
         return null;
@@ -1256,6 +1327,12 @@ function entryActionMatches(
   return !entryAction || actionMatches(entryAction, descriptor);
 }
 
+function browserInputSubmissionError(error: unknown): Error {
+  return error instanceof ApiError
+    ? error
+    : new Error("Browser file could not be read or uploaded");
+}
+
 function createSubmitSignal({
   descriptor,
   request$,
@@ -1311,30 +1388,33 @@ function createSubmitSignal({
       { once: true },
     );
     const prepared = await settle(
-      browserInputSubmissionValues(action, {
-        draft: get(draft$),
-        choiceDraft: get(choiceDraft$),
-        checkboxDraft: get(checkboxDraft$),
-        radioDraft: get(radioDraft$),
-        rangeDraft: get(rangeDraft$),
-        colorDraft: get(colorDraft$),
-        fileDraft: get(fileDraft$),
-      }),
+      browserInputSubmissionValues(
+        action,
+        browserFileUploader(get(apiClient$), descriptor.requestToken, signal),
+        {
+          draft: get(draft$),
+          choiceDraft: get(choiceDraft$),
+          checkboxDraft: get(checkboxDraft$),
+          radioDraft: get(radioDraft$),
+          rangeDraft: get(rangeDraft$),
+          colorDraft: get(colorDraft$),
+          fileDraft: get(fileDraft$),
+        },
+      ),
     );
     signal.throwIfAborted();
     if (!prepared.ok) {
       set(activeMutation$, false);
-      throw new Error("Browser file could not be read");
+      throw browserInputSubmissionError(prepared.error);
     }
-    const values = prepared.value;
-    if (!values) {
+    if (!prepared.value) {
       set(activeMutation$, false);
       return;
     }
     const result = await accept(
       get(apiClient$)(browserUserActionsContract).apply({
         params: { requestToken: descriptor.requestToken },
-        body: { values },
+        body: { values: prepared.value },
         fetchOptions: { signal },
       }),
       [200, 403, 404, 409, 410],

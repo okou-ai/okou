@@ -18,6 +18,7 @@ pub mod process;
 pub mod runner_dirname;
 pub mod runner_process_identity;
 pub mod state_file;
+pub mod wss_ingress_service_status;
 
 #[cfg(test)]
 mod test_support;

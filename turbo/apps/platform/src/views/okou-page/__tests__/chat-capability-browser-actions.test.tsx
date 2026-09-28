@@ -10,6 +10,7 @@ import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { compile } from "tailwindcss";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import {
@@ -1017,6 +1018,33 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
     return respond(200, fileAction(true));
   });
+  const digest =
+    "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+  const uploadUrl = "https://uploads.example.test/inline-browser-file";
+  context.mocks.api(
+    browserUserActionsContract.prepareFileUpload,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual({
+        key: "document",
+        index: 0,
+        size: 4,
+        sha256: digest,
+      });
+      return respond(200, {
+        uploadUrl,
+        uploadHeaders: {
+          "x-amz-checksum-sha256":
+            "n4bQgYhMfWWaL+qgxVrQFaO/Txs7C4Is0V1sFbDwCgg=",
+        },
+      });
+    },
+  );
+  let directlyUploaded = false;
+  context.mocks.http.put(uploadUrl, ({ request }) => {
+    expect(request.credentials).toBe("omit");
+    directlyUploaded = true;
+    return new HttpResponse(null, { status: 200 });
+  });
   context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
     expect(body.values).toStrictEqual([
       {
@@ -1028,11 +1056,12 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
             name: "note.txt",
             type: "text/plain",
             size: 4,
-            contentBase64: "dGVzdA==",
+            sha256: digest,
           },
         ],
       },
     ]);
+    expect(directlyUploaded).toBeTruthy();
     uploaded = true;
     state = "succeeded";
     return respond(200, fileAction(false));
