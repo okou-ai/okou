@@ -16,7 +16,10 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import { createAgentRun$ } from "./agent-run-create.service";
+import {
+  createAgentRun$,
+  type PersistProducerRunBinding,
+} from "./agent-run-create.service";
 import { dispatchRunCallbacks } from "./agent-run-callback.service";
 import {
   PiMemoryPhase2CredentialError,
@@ -206,6 +209,32 @@ async function checkNewAttemptQuotaAdmission(
   return true;
 }
 
+function createPiMemoryProducerRunBinding(
+  claim: ClaimedPiMemoryPhase2Job,
+  credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
+  selectionDigest: string,
+): PersistProducerRunBinding {
+  // Pi memory's own same-transaction admission fence and claim binding.
+  // A failed launch only re-validates; binding it would strand the job.
+  return async (tx, run) => {
+    await credential.validate(tx);
+    if (run.status === "pending") {
+      await bindPiMemoryPhase2MaintenanceRun(tx, {
+        runId: run.runId,
+        binding: {
+          memoryStorageId: claim.memoryStorageId,
+          orgId: claim.orgId,
+          userId: claim.userId,
+          leaseToken: claim.leaseToken,
+          claimedRevision: claim.claimedRevision,
+          claimedBaseVersionId: claim.baseVersion.versionId,
+          selectionDigest,
+        },
+      });
+    }
+  };
+}
+
 const dispatchClaim$ = command(
   async (
     { set },
@@ -270,25 +299,11 @@ const dispatchClaim$ = command(
         modelProviderCredentialScope:
           credential.pin.modelProviderCredentialScope,
         agentRunModelPin: credential.pin,
-        // Pi memory's own same-transaction admission fence and claim binding.
-        // A failed launch only re-validates; binding it would strand the job.
-        persistProducerRunBinding: async (tx, run) => {
-          await credential.validate(tx);
-          if (run.status === "pending") {
-            await bindPiMemoryPhase2MaintenanceRun(tx, {
-              runId: run.runId,
-              binding: {
-                memoryStorageId: maintenance.memoryStorageId,
-                orgId: claim.orgId,
-                userId: claim.userId,
-                leaseToken: maintenance.leaseToken,
-                claimedRevision: maintenance.claimedRevision,
-                claimedBaseVersionId: maintenance.claimedBaseVersionId,
-                selectionDigest: maintenance.selectionDigest,
-              },
-            });
-          }
-        },
+        persistProducerRunBinding: createPiMemoryProducerRunBinding(
+          claim,
+          credential,
+          selectionDigest,
+        ),
         selectedModelOverride: credential.pin.selectedModel,
         builtInModelRuntimeRoute: credential.route,
         callbacks: [

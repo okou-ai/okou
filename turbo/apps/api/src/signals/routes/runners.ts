@@ -1575,7 +1575,7 @@ function assertClaimConnectorIdentity(
     storedContext.connectorRuntimeTargets.length > 0
   ) {
     throw new Error(
-      "Private Pi memory maintenance run cannot use connector runtime targets",
+      "Runs without an agent cannot use connector runtime targets",
     );
   }
 }
