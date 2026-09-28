@@ -8,7 +8,8 @@
     "*.ts",
     "../chat-event-sequences/*.ts",
     "../chat-event-context/*.ts",
-    "../chat-event-auxiliary/*.ts"
+    "../chat-event-auxiliary/*.ts",
+    "../chat-event-v8-snapshot-dry-run/*.ts"
   ],
   "references": [
     {
