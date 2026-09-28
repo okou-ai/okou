@@ -756,7 +756,7 @@ test("A bare relative exact reconnect link remains actionable without losing its
   ).toBe("Continue the account-specific task");
 });
 
-test("An exact reconnect card uses the target account status, not the default account", async () => {
+test("A connected exact account still allows explicit reconnection instead of using the default", async () => {
   mockExactReconnectAccount("connected");
   await setupChat(
     `[Reconnect the work account](${exactReconnectUrl().toString()})`,
@@ -764,8 +764,20 @@ test("An exact reconnect card uses the target account status, not the default ac
 
   const card = await screen.findByTestId("connector-action-card");
   expect(card).toHaveTextContent("GitHub · Work GitHub");
-  expect(queryAllByRoleFast("button", card)[0]).toBeDisabled();
-  expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+  expect(card).toHaveTextContent("Connected");
+  const reconnect = queryAllByRoleFast("button", card).find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  expect(reconnect).toBeEnabled();
+  click(reconnect!);
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(
+      `/connectors/github/reconnect/${EXACT_CONNECTION_ID}`,
+    );
+  });
+  expect(
+    new URLSearchParams(window.location.search).get("callbackPrompt"),
+  ).toBe("Continue the account-specific task");
 });
 
 test("Malformed or context-mismatched exact reconnect links are inert", async () => {

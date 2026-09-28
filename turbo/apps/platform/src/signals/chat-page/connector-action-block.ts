@@ -107,7 +107,6 @@ export type ExactReconnectConnectorSignals =
             readonly kind: "ready";
             readonly account: ConnectorAccountConnection;
             readonly catalogItem: PlatformConnectorCatalogStatusItem;
-            readonly authorized: boolean;
           }
       >
     >;
@@ -417,27 +416,17 @@ function createExactReconnectConnectorSignals(
     if (result.status === 404) {
       return { kind: "unavailable" as const };
     }
-    const authorized = await get(
-      isAgentConnectorAuthorized({
-        agentId: descriptor.agentId,
-        connectorSlug: descriptor.connectorSlug,
-      }),
-    );
     return {
       kind: "ready" as const,
       account: result.body,
       catalogItem,
-      authorized,
     };
   });
 
   const activate$ = command(async ({ get, set }, signal: AbortSignal) => {
     const status = await get(status$);
     signal.throwIfAborted();
-    if (
-      status.kind !== "ready" ||
-      (status.account.connectionStatus === "connected" && status.authorized)
-    ) {
+    if (status.kind !== "ready") {
       return;
     }
     set(detachedNavigateTo$, ROUTES.directedReconnect, {

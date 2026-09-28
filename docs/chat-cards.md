@@ -564,11 +564,14 @@ connector `resourceKey` in the thread observe the same computed graph.
 An exact-account reconnect URL reuses the connector card appearance but not the
 catalog default-account activation. It validates the account ID and chat claims,
 reads the account scoped to the builtin connector, and displays that account's
-identity and connection status. A missing or wrong-target account is unavailable;
-other lookup errors retain a retry action. Activating it navigates to the existing
-exact-account directed reconnect route, which revalidates the target, uses its
-auth method, and runs any callback only after successful reconnection. The card
-never substitutes another account or starts the callback during navigation.
+identity and connection status. Because this is an explicit reconnect action,
+the Reconnect button remains available even when that account is already
+connected; the direct route likewise permits proactive reconnection. A missing
+or wrong-target account is unavailable; other lookup errors retain a retry
+action. Activating it navigates to the existing exact-account directed reconnect
+route, which revalidates the target, uses its auth method, and runs any callback
+only after successful reconnection. The card never substitutes another account
+or starts the callback during navigation.
 
 ### Complex shared data: permission card
 

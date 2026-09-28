@@ -580,8 +580,14 @@ function ExactReconnectConnectorActionCard({
     status.account,
     status.catalogItem.label,
   );
-  const complete =
-    status.account.connectionStatus === "connected" && status.authorized;
+  const connectionState =
+    status.account.connectionStatus === "connected"
+      ? t(($) => {
+          return $.connectors.card.connected;
+        })
+      : t(($) => {
+          return $.connectors.accounts.reconnectRequired;
+        });
   return (
     <ConnectorCard
       variant="action"
@@ -594,10 +600,10 @@ function ExactReconnectConnectorActionCard({
           ? accountLabel
           : `${status.catalogItem.label} · ${accountLabel}`
       }
-      description={status.catalogItem.description}
-      connected
-      complete={complete}
-      reconnectRequired={!complete}
+      description={`${connectionState} · ${status.catalogItem.description}`}
+      connected={status.account.connectionStatus === "connected"}
+      complete={false}
+      reconnectRequired
       busy={activateLoadable.state === "loading"}
       onActivate={() => {
         detach(activate(pageSignal), Reason.DomCallback);
