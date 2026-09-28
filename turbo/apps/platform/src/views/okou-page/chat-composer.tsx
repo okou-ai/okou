@@ -24,7 +24,6 @@ import {
 import {
   ComposerAddMenu,
   type ComposerAddMenuGroup,
-  type ComposerAddMenuItem,
 } from "./composer-add-menu.tsx";
 import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
@@ -8632,8 +8631,8 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
  * Exactly the three toolbar buttons the `+` replaces, in their old left-to-right
  * order. The rule is separate because the first two add content to the message
  * while the third rewrites the draft into a workflow prompt. Importing skills
- * sits beside it behind its own switch: it also brings workflows in, from the
- * user's Claude Code or Codex.
+ * sits beside it: it also brings workflows in, from the user's Claude Code or
+ * Codex.
  *
  * Starting a presentation, image, video, website or visualization deliberately
  * stays out: the task chips sit directly under the composer and already reach
@@ -8647,18 +8646,8 @@ function useComposerAddMenuGroups(
   const fileInput = useGet(signals.draft.composerFileInput$);
   const template = useTemplatePickerTrigger(signals);
   const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
-  const skillImportEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.WorkflowSkillImport] === true;
   const openSkillImportDialog = useSet(openSkillImportDialog$);
   const pageSignal = useGet(pageSignal$);
-  const createWorkflow: ComposerAddMenuItem = {
-    id: "workflow",
-    Icon: Route,
-    label: t(($) => {
-      return $.chat.composer.createWorkflow;
-    }),
-    onSelect: onCreateWorkflowPrompt,
-  };
   return [
     [
       {
@@ -8679,21 +8668,26 @@ function useComposerAddMenuGroups(
         onPrewarm: template.prewarm,
       },
     ],
-    skillImportEnabled
-      ? [
-          createWorkflow,
-          {
-            id: "import-skills",
-            Icon: Download,
-            label: t(($) => {
-              return $.workflows.skillImport.action;
-            }),
-            onSelect: () => {
-              detach(openSkillImportDialog(pageSignal), Reason.DomCallback);
-            },
-          },
-        ]
-      : [createWorkflow],
+    [
+      {
+        id: "workflow",
+        Icon: Route,
+        label: t(($) => {
+          return $.chat.composer.createWorkflow;
+        }),
+        onSelect: onCreateWorkflowPrompt,
+      },
+      {
+        id: "import-skills",
+        Icon: Download,
+        label: t(($) => {
+          return $.workflows.skillImport.action;
+        }),
+        onSelect: () => {
+          detach(openSkillImportDialog(pageSignal), Reason.DomCallback);
+        },
+      },
+    ],
   ];
 }
 

@@ -568,8 +568,11 @@ test("The step can be left with nothing imported", async () => {
 test("A session that cannot be opened leaves the step passable", async () => {
   mockAgentWorkflows();
   context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
-    return respond(403, {
-      error: { message: "Skill import is not enabled", code: "FORBIDDEN" },
+    return respond(404, {
+      error: {
+        message: "This organization has no default agent to import into",
+        code: "NOT_FOUND",
+      },
     });
   });
 

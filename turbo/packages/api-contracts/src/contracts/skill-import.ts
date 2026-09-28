@@ -19,8 +19,7 @@ const c = initContract();
  * skill per request with the session token.
  *
  * The routes serve the onboarding skills step and the workflows page's import
- * dialog, so they answer while either `FeatureSwitchKey.OnboardingSourcesFirst`
- * or `FeatureSwitchKey.WorkflowSkillImport` is on, and `403` otherwise.
+ * dialog.
  *
  * Binary content is deliberately out of scope for this version. A later version
  * can add an explicit encoding to the upload body without touching the shared
