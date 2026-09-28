@@ -5575,23 +5575,15 @@ async function createClaimedChatRun(
   agentId: string,
   prompt: string,
 ) {
-  const sent = await chat.requestSendEvent(
-    actor,
-    {
-      agentId,
-      prompt,
-      cloudBrowserEnabled: true,
-    },
-    [201],
-  );
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected a chat run");
-  }
+  const sent = await chat.sendAndLaunch(actor, {
+    agentId,
+    prompt,
+    cloudBrowserEnabled: true,
+  });
   return {
-    sent,
-    runId: sent.body.runId,
-    threadId: sent.body.threadId,
-    claim: await claimChatRun(runs, actor, sent.body.runId),
+    runId: sent.runId,
+    threadId: sent.threadId,
+    claim: await claimChatRun(runs, actor, sent.runId),
   };
 }
 
@@ -5630,19 +5622,12 @@ describe("okou browser route", () => {
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserNativeInput]: true,
     });
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Try to open a managed browser without enabling it",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected a chat run");
-    }
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Try to open a managed browser without enabling it",
+    });
     await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.body.runId);
+    const claim = await runs.claimRunnerJob(sent.runId);
     expect(claim.appendSystemPrompt ?? "").toContain(
       "Okou Browser is currently off for this chat thread",
     );
@@ -5654,7 +5639,7 @@ describe("okou browser route", () => {
     );
     const browserToken = runs.okouTokenForRunWithCapabilities(
       actor,
-      sent.body.runId,
+      sent.runId,
       ["browser:read", "browser:write"],
     );
 
@@ -5672,21 +5657,14 @@ describe("okou browser route", () => {
 
   it("omits native input guidance when the switch is disabled", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Open a managed browser",
-        cloudBrowserEnabled: true,
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected a chat run");
-    }
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Open a managed browser",
+      cloudBrowserEnabled: true,
+    });
 
     await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.body.runId);
+    const claim = await runs.claimRunnerJob(sent.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain(
       "Okou Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser",
@@ -5709,21 +5687,14 @@ describe("okou browser route", () => {
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.BrowserNativeInput]: true,
     });
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Sign in to a website",
-        cloudBrowserEnabled: true,
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected a chat run");
-    }
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Sign in to a website",
+      cloudBrowserEnabled: true,
+    });
 
     await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.body.runId);
+    const claim = await runs.claimRunnerJob(sent.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain(
       "prefer `okou browser input-request` over direct Browser takeover",
@@ -5747,24 +5718,17 @@ describe("okou browser route", () => {
 
   it("disables cloud browser when a computer host is selected", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Open a managed browser before selecting this computer",
-        cloudBrowserEnabled: true,
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected a chat run");
-    }
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Open a managed browser before selecting this computer",
+      cloudBrowserEnabled: true,
+    });
     const host = await computerUse.startComputerUseHost(actor);
 
     await accept(
       chatThreadComputerUseHostClient().update({
         headers: { authorization: "Bearer clerk-session" },
-        params: { id: sent.body.threadId },
+        params: { id: sent.threadId },
         body: { computerUseHostId: host.hostId },
       }),
       [204],
@@ -5772,7 +5736,7 @@ describe("okou browser route", () => {
 
     const browserToken = runs.okouTokenForRunWithCapabilities(
       actor,
-      sent.body.runId,
+      sent.runId,
       ["browser:read", "browser:write"],
     );
     const rejected = await requestBrowserUse({
@@ -5790,18 +5754,11 @@ describe("okou browser route", () => {
   it("uses the configured app URL for browser authorization from run tokens", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Ask the user to enable a cloud browser",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected a chat run");
-    }
-    const sandboxRunToken = runs.sandboxTokenForRun(actor, sent.body.runId);
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Ask the user to enable a cloud browser",
+    });
+    const sandboxRunToken = runs.sandboxTokenForRun(actor, sent.runId);
     const sandboxCreated = await accept(
       authorizationClient().create({
         headers: { authorization: `Bearer ${sandboxRunToken}` },
@@ -5814,7 +5771,7 @@ describe("okou browser route", () => {
     );
     const okouRunToken = runs.okouTokenForRunWithCapabilities(
       actor,
-      sent.body.runId,
+      sent.runId,
       [],
     );
     const createdOnOkouApi = await accept(
@@ -5869,7 +5826,7 @@ describe("okou browser route", () => {
     expect(events.body.events).toContainEqual(
       expect.objectContaining({
         kind: "computer_use_host_updated",
-        chatThreadId: sent.body.threadId,
+        chatThreadId: sent.threadId,
         computerUseHostId: null,
         cloudBrowserEnabled: true,
       }),
@@ -6584,25 +6541,18 @@ describe("okou browser route", () => {
     // browser admission then meets the original limit.
     async function createCandidate(prompt: string) {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "3");
-      const sentCandidate = await chat.requestSendEvent(
-        actor,
-        {
-          agentId: agent.agentId,
-          prompt,
-          cloudBrowserEnabled: true,
-        },
-        [201],
-      );
+      const sentCandidate = await chat.sendAndLaunch(actor, {
+        agentId: agent.agentId,
+        prompt,
+        cloudBrowserEnabled: true,
+      });
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "2");
-      if (sentCandidate.status !== 201 || sentCandidate.body.runId === null) {
-        throw new Error("Expected a browser admission candidate run");
-      }
       return {
-        threadId: sentCandidate.body.threadId,
+        threadId: sentCandidate.threadId,
         browserHeaders: {
           authorization: `Bearer ${runs.okouTokenForRunWithCapabilities(
             actor,
-            sentCandidate.body.runId,
+            sentCandidate.runId,
             ["browser:read", "browser:write"],
           )}`,
         },
@@ -7017,19 +6967,12 @@ describe("okou browser route", () => {
 
     await runs.heartbeatRunner(runnerGroup);
     mockNow(STARTED_AT_MS + 5 * MINUTE_MS);
-    const followup = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        threadId: first.threadId,
-        prompt: "Continue in the same browser",
-      },
-      [201],
-    );
-    if (followup.status !== 201 || followup.body.runId === null) {
-      throw new Error("Expected the follow-up message to start a run");
-    }
-    const followupRunId = followup.body.runId;
+    const followup = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      threadId: first.threadId,
+      prompt: "Continue in the same browser",
+    });
+    const followupRunId = followup.runId;
     const followupClaim = await claimChatRun(runs, actor, followupRunId);
 
     // The next run attaches to the very same provider instance.

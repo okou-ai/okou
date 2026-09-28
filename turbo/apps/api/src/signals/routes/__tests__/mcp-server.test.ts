@@ -854,6 +854,42 @@ async function cancelRun(token: string, runId: string) {
   return mcpCancelRunOutputSchema.parse(result.structuredContent);
 }
 
+/**
+ * A send only enqueues its input; a background pick launches its run. Poll
+ * the input's status until it names that run.
+ */
+async function waitForInputRunId(
+  token: string,
+  inputRef: McpChatInputRef,
+): Promise<string> {
+  let runId: string | undefined;
+  await expect
+    .poll(async () => {
+      runId = (await getStatus(token, { inputRef })).messages?.arguments.runId;
+      return runId;
+    })
+    .toBeDefined();
+  if (runId === undefined) {
+    throw new Error("Expected the submitted input to launch a run");
+  }
+  return runId;
+}
+
+/**
+ * A send only enqueues its input; without credits the background pick
+ * rejects it. Poll the input's status until that rejection is visible.
+ */
+async function waitForRejectedInput(
+  token: string,
+  inputRef: McpChatInputRef,
+): Promise<void> {
+  await expect
+    .poll(async () => {
+      return (await getStatus(token, { inputRef })).lifecycle.outcome;
+    })
+    .toBe("rejected");
+}
+
 function expectFixedMcpTimestamp(value: string): void {
   expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u);
 }
@@ -881,14 +917,25 @@ async function messageFixture() {
     threadId?: string,
     userMessage?: UserMessageDocument,
   ) {
+    const clientEventId = randomUUID();
     const response = await f.chat.requestSendEvent(
       f.actor,
-      { agentId: f.agent.agentId, prompt, threadId, userMessage },
+      {
+        agentId: f.agent.agentId,
+        prompt,
+        threadId,
+        userMessage,
+        clientEventId,
+      },
       [201],
     );
-    if (response.status !== 201 || response.body.runId !== null) {
-      throw new Error("Expected a canonical no-credit message without a run");
+    if (response.status !== 201) {
+      throw new Error("Expected an accepted canonical message");
     }
+    // A send only enqueues; the background pick rejects this no-credit input
+    // without a run. Finish it so later reads, including reads after the
+    // history moves into a snapshot, see the rejection.
+    await flushWaitUntilForTest();
     return response.body;
   }
   return { ...f, send };
@@ -1445,8 +1492,6 @@ describe("MCP chat discovery and creation", () => {
       replayed: false,
       input: {
         inputRef: { threadId: args.requestId, eventId: expect.any(String) },
-        disposition: "associated",
-        runId: expect.any(String),
       },
       nextAction: {
         tool: "get_chat_status",
@@ -1459,13 +1504,19 @@ describe("MCP chat discovery and creation", () => {
     expect(combined.nextAction.arguments.inputRef).toStrictEqual(
       combined.input.inputRef,
     );
+    // The message is only enqueued; its run starts in a background pick.
+    expect(["queued", "associated"]).toContain(combined.input.disposition);
+    const runId = await waitForInputRunId(
+      token,
+      combined.nextAction.arguments.inputRef,
+    );
     const status = await getStatus(token, combined.nextAction.arguments);
     expect(status).toMatchObject({
       threadId: args.requestId,
       messages: {
         arguments: {
           threadId: args.requestId,
-          runId: combined.input.runId,
+          runId,
           limit: 20,
         },
       },
@@ -1507,8 +1558,9 @@ describe("MCP chat discovery and creation", () => {
       replayed: true,
       input: {
         inputRef: combined.input.inputRef,
+        acceptedAt: combined.input.acceptedAt,
         disposition: "associated",
-        runId: combined.input.runId,
+        runId,
       },
     });
     expect(
@@ -2045,6 +2097,9 @@ describe("MCP chat discovery and creation", () => {
         f.auth.token({ scope: defaultScopes }),
         args,
       );
+      // Settle a combined message's background pick before the thread moves
+      // through replay, expiry, and deletion.
+      await flushWaitUntilForTest();
       const token = f.auth.token({
         scope: defaultScopes,
         exp: Math.floor((Date.parse(created.retryUntil) + 60_000) / 1000),
@@ -2285,10 +2340,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "PRIVATE_STATUS_PROMPT: summarize the findings",
     });
-    if (!sent.runId) {
-      throw new Error("Expected the submitted input to launch a run");
-    }
-    const runId = sent.runId;
+    const runId = await waitForInputRunId(token, sent.inputRef);
     onTestFinished(async () => {
       await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
     });
@@ -2449,10 +2501,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Wait for the canonical result",
     });
-    if (!sent.runId) {
-      throw new Error("Expected the submitted input to launch a run");
-    }
-    const runId = sent.runId;
+    const runId = await waitForInputRunId(token, sent.inputRef);
     onTestFinished(async () => {
       context.mocks.signalTimers.delay.mockReset();
       await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
@@ -2528,10 +2577,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Finish after the bounded wait",
     });
-    if (!sent.runId) {
-      throw new Error("Expected the submitted input to launch a run");
-    }
-    const runId = sent.runId;
+    const runId = await waitForInputRunId(token, sent.inputRef);
     onTestFinished(async () => {
       context.mocks.signalTimers.delay.mockReset();
       await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
@@ -2621,10 +2667,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Keep bounded waiters pending",
     });
-    if (!sent.runId) {
-      throw new Error("Expected the submitted input to launch a run");
-    }
-    const runId = sent.runId;
+    const runId = await waitForInputRunId(token, sent.inputRef);
     onTestFinished(async () => {
       context.mocks.signalTimers.delay.mockReset();
       await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
@@ -2695,10 +2738,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Keep running after the waiter disconnects",
     });
-    if (!sent.runId) {
-      throw new Error("Expected the submitted input to launch a run");
-    }
-    const runId = sent.runId;
+    const runId = await waitForInputRunId(token, sent.inputRef);
     const controller = new AbortController();
     onTestFinished(async () => {
       controller.abort();
@@ -2856,15 +2896,9 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Fail before producing output",
     });
-    if (!sent.runId) {
-      throw new Error("Expected the submitted input to launch a run");
-    }
-    const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
-    await f.failChatRun(
-      sent.runId,
-      claimed.sandboxHeaders,
-      "PRIVATE_RAW_ERROR",
-    );
+    const runId = await waitForInputRunId(token, sent.inputRef);
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    await f.failChatRun(runId, claimed.sandboxHeaders, "PRIVATE_RAW_ERROR");
     await flushWaitUntilForTest();
     const status = await getStatus(token, {
       inputRef: sent.inputRef,
@@ -3031,6 +3065,7 @@ describe("MCP chat status", () => {
       requestId: randomUUID(),
       text: "Retain my original input reference",
     });
+    await waitForRejectedInput(token, sent.inputRef);
     const args = { inputRef: sent.inputRef };
     const before = await getStatus(token, args);
     // Infrastructure exception: public sends cannot backdate acceptance past
@@ -3117,12 +3152,18 @@ describe("MCP chat mutations", () => {
       inputRef: { threadId: thread.id, eventId: requestId },
       replayed: false,
     });
+    await waitForRejectedInput(token, accepted.inputRef);
     const replay = await sendMessage(token, {
       threadId: thread.id,
       requestId,
       text,
     });
-    expect(replay).toStrictEqual({ ...accepted, replayed: true });
+    expect(replay).toStrictEqual({
+      ...accepted,
+      disposition: "rejected",
+      runId: null,
+      replayed: true,
+    });
     expect(
       (await getMessages(token, { threadId: thread.id })).messages,
     ).toMatchObject([{ text }]);
@@ -3145,9 +3186,10 @@ describe("MCP chat mutations", () => {
     expect(result).toMatchObject({
       inputRef: { threadId: thread.id, eventId: requestId },
       replayed: false,
-      disposition: "rejected",
       runId: null,
     });
+    // The send only enqueues; the background pick rejects the input.
+    await waitForRejectedInput(token, result.inputRef);
     expectFixedMcpTimestamp(result.acceptedAt);
     expectFixedMcpTimestamp(result.retryUntil);
     expect(Date.parse(result.retryUntil) - Date.parse(result.acceptedAt)).toBe(
@@ -3235,11 +3277,12 @@ describe("MCP chat mutations", () => {
       activityBeforeMetadataUpdate,
     );
 
-    await sendMessage(token, {
+    const later = await sendMessage(token, {
       threadId: thread.id,
       text: "Later activity marker",
       requestId: randomUUID(),
     });
+    await waitForRejectedInput(token, later.inputRef);
     const afterLaterActivity = await getThread(token, thread.id);
     expect(afterLaterActivity.thread.metadataUpdatedAt).toBe(
       afterMetadataUpdate.thread.metadataUpdatedAt,
@@ -3265,7 +3308,12 @@ describe("MCP chat mutations", () => {
       text,
       requestId,
     });
-    expect(replay).toStrictEqual({ ...result, replayed: true });
+    expect(replay).toStrictEqual({
+      ...result,
+      disposition: "rejected",
+      runId: null,
+      replayed: true,
+    });
     expect(
       (await f.chat.listThreadEvents(f.actor, thread.id)).events,
     ).toStrictEqual(beforeReplayEvents);
@@ -3313,6 +3361,7 @@ describe("MCP chat mutations", () => {
     };
     const token = f.auth.token({ scope: defaultScopes });
     const receipt = await sendMessage(token, args);
+    await waitForRejectedInput(token, receipt.inputRef);
     for (const threadId of [first.id, second.id]) {
       await f.chat.patchThread(f.actor, threadId, {
         draftUserMessage: {
@@ -3329,8 +3378,10 @@ describe("MCP chat mutations", () => {
       { ...args, threadId: second.id },
     ]) {
       const failed = await callTool(token, "send_chat_message", changed);
-      expect(failed.isError).toBeTruthy();
-      structuredToolError(failed);
+      expect(structuredToolError(failed)).toMatchObject({
+        code: "request_id_conflict",
+        retryable: false,
+      });
     }
     await expect(
       f.chat.listThreadEvents(f.actor, first.id),
@@ -3366,6 +3417,7 @@ describe("MCP chat mutations", () => {
       },
       [201],
     );
+    await flushWaitUntilForTest();
     const before = await f.chat.listThreadEvents(f.actor, thread.id);
     const original = before.events.find((event) => {
       return event.id === requestId;
@@ -3432,6 +3484,7 @@ describe("MCP chat mutations", () => {
         },
         [201],
       );
+      await flushWaitUntilForTest();
       const before = await f.chat.listThreadEvents(f.actor, thread.id);
       const failed = await callTool(
         f.auth.token({ scope: defaultScopes }),
@@ -3442,8 +3495,10 @@ describe("MCP chat mutations", () => {
           requestId,
         },
       );
-      expect(failed.isError).toBeTruthy();
-      structuredToolError(failed);
+      expect(structuredToolError(failed)).toMatchObject({
+        code: "request_id_conflict",
+        retryable: false,
+      });
       await expect(
         f.chat.listThreadEvents(f.actor, thread.id),
       ).resolves.toStrictEqual(before);
@@ -3544,6 +3599,10 @@ describe("MCP chat mutations", () => {
       f.auth.token({ scope: defaultScopes }),
       args,
     );
+    await waitForRejectedInput(
+      f.auth.token({ scope: defaultScopes }),
+      receipt.inputRef,
+    );
     // Clerk validates real wall time while the receipt uses scoped app time.
     // Keep this credential valid across both clocks to isolate receipt expiry.
     const expiryToken = f.auth.token({
@@ -3553,13 +3612,20 @@ describe("MCP chat mutations", () => {
     const before = await f.chat.listThreadEvents(f.actor, thread.id);
     await withMockNowForTest(Date.parse(receipt.retryUntil) - 1, async () => {
       const replay = await sendMessage(expiryToken, args);
-      expect(replay).toStrictEqual({ ...receipt, replayed: true });
+      expect(replay).toStrictEqual({
+        ...receipt,
+        disposition: "rejected",
+        runId: null,
+        replayed: true,
+      });
     });
     await withMockNowForTest(Date.parse(receipt.retryUntil) + 1, async () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const expired = await callTool(expiryToken, "send_chat_message", args);
-        expect(expired.isError).toBeTruthy();
-        structuredToolError(expired);
+        expect(structuredToolError(expired)).toMatchObject({
+          code: "request_expired",
+          retryable: false,
+        });
         expect(expired.content[0]?.text).toContain("expired");
       }
     });
@@ -3580,6 +3646,7 @@ describe("MCP chat mutations", () => {
     };
     const token = f.auth.token({ scope: defaultScopes });
     const submitted = await sendMessage(token, args);
+    await waitForRejectedInput(token, submitted.inputRef);
     const strangers = [
       f.bdd.user({ orgId: f.auth.orgId }),
       f.bdd.user({ userId: f.auth.userId }),
@@ -3766,21 +3833,17 @@ describe("MCP chat mutations", () => {
     "withdraws pending input exactly once without cancelling its active run (%s UUIDs)",
     async (letterCase) => {
       const f = await chatRunFixture();
-      const active = await f.chat.requestSendEvent(
+      const active = await createChatEventsFixture(context).sendChatRun(
         f.actor,
         { agentId: f.agent.agentId, prompt: "Keep this run active" },
-        [201],
       );
-      if (active.status !== 201 || !active.body.runId) {
-        throw new Error("Expected an active run");
-      }
-      const runId = active.body.runId;
+      const runId = active.runId;
       onTestFinished(async () => {
         await f.runs.requestCancelRun(f.actor, runId, [200]);
       });
       const token = f.auth.token({ scope: defaultScopes });
       const args = {
-        threadId: active.body.threadId,
+        threadId: active.threadId,
         text: "Withdraw only this pending input",
         requestId: randomUUID(),
       };
@@ -3867,21 +3930,24 @@ describe("MCP chat mutations", () => {
       agentId: f.agent.agentId,
     });
     const token = f.auth.token({ scope: defaultScopes });
-    const sent = await sendMessage(token, {
+    const args = {
       threadId: thread.id,
       text: "Start through the normal run scheduler",
       requestId: randomUUID(),
-    });
-    if (!sent.runId) {
-      throw new Error(
-        "Expected the MCP submission to be associated with a run",
-      );
-    }
-    const runId = sent.runId;
+    };
+    const sent = await sendMessage(token, args);
+    // The send only enqueues; the background pick starts the run.
+    expect(["queued", "associated"]).toContain(sent.disposition);
+    const runId = await waitForInputRunId(token, sent.inputRef);
     onTestFinished(async () => {
       await f.runs.requestCancelRun(f.actor, runId, [200]);
     });
-    expect(sent.disposition).toBe("associated");
+    await expect(sendMessage(token, args)).resolves.toMatchObject({
+      inputRef: sent.inputRef,
+      replayed: true,
+      disposition: "associated",
+      runId,
+    });
     await expect(f.runs.readRun(f.actor, runId)).resolves.toMatchObject({
       status: "pending",
     });
@@ -3936,10 +4002,10 @@ describe("MCP chat mutations", () => {
       requestId: randomUUID(),
       text: "Active steer target",
     });
-    if (!initial.runId) {
-      throw new Error("Expected MCP input to start the steer target");
-    }
-    const active = { threadId: thread.id, runId: initial.runId };
+    const active = {
+      threadId: thread.id,
+      runId: await waitForInputRunId(token, initial.inputRef),
+    };
     onTestFinished(async () => {
       await f.cancelChatRun(actor.actor, active.runId);
     });
@@ -4444,27 +4510,23 @@ describe("MCP canonical message reads", () => {
 
   it("recalls queued input from the visible stream and invalidates its previous reference", async () => {
     const f = await chatRunFixture();
-    const sent = await f.chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agent.agentId, prompt: "Active request" },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected active run");
-    }
+    const active = await createChatEventsFixture(context).sendChatRun(f.actor, {
+      agentId: f.agent.agentId,
+      prompt: "Active request",
+    });
     await flushWaitUntilForTest();
     const queued = await f.chat.requestSendEvent(
       f.actor,
       {
         agentId: f.agent.agentId,
-        threadId: sent.body.threadId,
+        threadId: active.threadId,
         prompt: `Recall this queued request\n${"😀".repeat(6000)}`,
       },
       [201],
     );
     expect(queued.status).toBe(201);
     const token = f.auth.token();
-    const before = await getMessages(token, { threadId: sent.body.threadId });
+    const before = await getMessages(token, { threadId: active.threadId });
     const target = before.messages.find((message) => {
       return message.text.startsWith("Recall this queued request\n");
     });
@@ -4476,19 +4538,19 @@ describe("MCP canonical message reads", () => {
       f.actor,
       {
         agentId: f.agent.agentId,
-        threadId: sent.body.threadId,
+        threadId: active.threadId,
         revokesEventId: target.ref.eventId,
       },
       [201],
     );
-    const after = await getMessages(token, { threadId: sent.body.threadId });
+    const after = await getMessages(token, { threadId: active.threadId });
     expect(
       after.messages.some((message) => {
         return message.ref.eventId === target.ref.eventId;
       }),
     ).toBeFalsy();
     const staleContent = await callTool(token, "get_chat_messages", {
-      threadId: sent.body.threadId,
+      threadId: active.threadId,
       cursor: target.nextContentCursor,
     });
     expect(staleContent.isError).toBeTruthy();
@@ -4496,12 +4558,12 @@ describe("MCP canonical message reads", () => {
     expect(
       (
         await callTool(token, "get_chat_messages", {
-          threadId: sent.body.threadId,
+          threadId: active.threadId,
           around: { eventId: target.ref.eventId },
         })
       ).isError,
     ).toBeTruthy();
-    await f.runs.requestCancelRun(f.actor, sent.body.runId, [200]);
+    await f.runs.requestCancelRun(f.actor, active.runId, [200]);
     await flushWaitUntilForTest();
   });
 
@@ -5697,23 +5759,16 @@ describe("MCP message search", () => {
 
   it("never returns stale revoked or replaced inputs before the index catches up", async () => {
     const f = await chatRunFixture();
-    const active = await f.chat.requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agent.agentId,
-        prompt: "Active unrelated task",
-      },
-      [201],
-    );
-    if (active.status !== 201 || active.body.runId === null) {
-      throw new Error("Expected an active run for queued edits");
-    }
-    const runId = active.body.runId;
+    const { runId, threadId } = await createChatEventsFixture(
+      context,
+    ).sendChatRun(f.actor, {
+      agentId: f.agent.agentId,
+      prompt: "Active unrelated task",
+    });
     onTestFinished(async () => {
       await f.runs.requestCancelRun(f.actor, runId, [200]);
       await flushWaitUntilForTest();
     });
-    const threadId = active.body.threadId;
     for (const prompt of [
       "staleneedle recall",
       "staleneedle replace",
@@ -6719,9 +6774,13 @@ describe("external MCP entry", () => {
       expect(receipt).toMatchObject({
         inputRef: { threadId: sent.threadId, eventId: requestId },
         replayed: false,
-        disposition: "rejected",
         runId: null,
       });
+      // The send only enqueues; the background pick rejects the input.
+      await waitForRejectedInput(
+        auth.token({ scope: defaultScopes }),
+        receipt.inputRef,
+      );
       const status = await sdk.callTool({
         name: "get_chat_status",
         arguments: receipt.nextAction.arguments,
@@ -7455,18 +7514,12 @@ describe("external MCP entry", () => {
 
   it("shares the App's active and unread indicators without changing read state", async () => {
     const f = await chatRunFixture();
-    const sent = await f.chat.requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agent.agentId,
-        prompt: "Track shared indicators",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected a started run");
-    }
-    const threadId = sent.body.threadId;
+    const { runId, threadId } = await createChatEventsFixture(
+      context,
+    ).sendChatRun(f.actor, {
+      agentId: f.agent.agentId,
+      prompt: "Track shared indicators",
+    });
     await flushWaitUntilForTest();
     const active = await getIndicators(f.auth.token());
     expect(active).toStrictEqual(await f.chat.listIndicators(f.actor));
@@ -7483,16 +7536,13 @@ describe("external MCP entry", () => {
       expect(oldActive.threads[threadId]).toBe("active");
     });
 
-    await f.runs.requestCancelRun(f.actor, sent.body.runId, [200]);
+    await f.runs.requestCancelRun(f.actor, runId, [200]);
     await flushWaitUntilForTest();
     await expect
       .poll(async () => {
         return (await f.chat.listThreadEvents(f.actor, threadId)).events.some(
           (event) => {
-            return (
-              event.eventType === "run.cancelled" &&
-              event.runId === sent.body.runId
-            );
+            return event.eventType === "run.cancelled" && event.runId === runId;
           },
         );
       })
@@ -7606,7 +7656,6 @@ describe("external MCP entry", () => {
     const auth = await fixture();
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
-    const chat = createChatFilesBddApi(context);
     const callbacks = createChatCallbacksApi(context);
     runs.configureRunnerGroup();
     runs.acceptStorageDownloads();
@@ -7626,15 +7675,11 @@ describe("external MCP entry", () => {
         displayName: "MCP organization activity",
         visibility: "private",
       });
-      const sent = await chat.requestSendEvent(
-        actor,
-        { agentId: agent.agentId, prompt: "Check organization activity" },
-        [201],
-      );
-      if (sent.status !== 201) {
-        throw new Error("Expected an active chat thread");
-      }
-      expected.push({ threadId: sent.body.threadId, agentId: agent.agentId });
+      const sent = await createChatEventsFixture(context).sendChatRun(actor, {
+        agentId: agent.agentId,
+        prompt: "Check organization activity",
+      });
+      expected.push({ threadId: sent.threadId, agentId: agent.agentId });
     }
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: actors.map((actor) => {

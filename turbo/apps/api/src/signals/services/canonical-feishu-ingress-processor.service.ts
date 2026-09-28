@@ -1,4 +1,4 @@
-import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
+import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
@@ -33,9 +33,10 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { settle } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
-import { markChatThreadQueued } from "./queued-chat-thread.service";
+import {
+  enqueueChatInput,
+  scheduleEnqueuedChatThreadPick$,
+} from "./chat-thread-queue-drain.service";
 import {
   isFeishuInstallationEnabled,
   buildFeishuChatOpenUrl,
@@ -46,7 +47,7 @@ import {
   resolveIntegrationModelRouteForUser$,
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
-import { insertChatEvent } from "./chat-event.service";
+import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
@@ -443,59 +444,47 @@ const persistCanonicalFeishuIngress$ = command(
         : prompt;
     }, args.message.promptText);
 
-    // Queue row before the input event, so input is never left unqueued.
-    await markChatThreadQueued(args.db, {
+    const chatOpenUrl = buildFeishuChatOpenUrl(
+      args.message.chatId,
+      args.message.platform,
+    );
+    const values = {
+      id: args.ingress.ingressId,
+      chatThreadId: route.chatThreadId,
+      eventType: "input.prompt",
+      userMessage: feishuInboundUserMessage(args.message, chatOpenUrl, assets),
+      runId: null,
+      feishuContext: {
+        ...args.launchContext,
+        messageText,
+      },
+      createdAt: args.ingress.createdAt,
+    } as const;
+    await insertChatEventContext(args.db, values);
+    signal.throwIfAborted();
+    await enqueueChatInput(args.db, {
       chatThreadId: route.chatThreadId,
       orgId: args.installation.orgId,
+      appendInput: async (tx) => {
+        const inserted = await insertChatEvent(tx, values, "id");
+        await tx
+          .update(feishuChatIngress)
+          .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+          .where(
+            and(
+              eq(feishuChatIngress.id, args.ingress.ingressId),
+              eq(feishuChatIngress.status, "processing"),
+            ),
+          );
+        return inserted?.id ?? null;
+      },
     });
     signal.throwIfAborted();
-    const persist = async (tx: Db, touchThread: () => Promise<void>) => {
-      const chatOpenUrl = buildFeishuChatOpenUrl(
-        args.message.chatId,
-        args.message.platform,
-      );
-      await insertChatEvent(
-        tx,
-        {
-          id: args.ingress.ingressId,
-          chatThreadId: route.chatThreadId,
-          eventType: "input.prompt",
-          userMessage: feishuInboundUserMessage(
-            args.message,
-            chatOpenUrl,
-            assets,
-          ),
-          runId: null,
-          feishuContext: {
-            ...args.launchContext,
-            messageText,
-          },
-          createdAt: args.ingress.createdAt,
-        },
-        "id",
-      );
-      signal.throwIfAborted();
-      await touchThread();
-      signal.throwIfAborted();
-      await tx
-        .update(feishuChatIngress)
-        .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-        .where(
-          and(
-            eq(feishuChatIngress.id, args.ingress.ingressId),
-            eq(feishuChatIngress.status, "processing"),
-          ),
-        );
-    };
-    await withNativeChatEventThreadTouch(
-      args.db,
-      {
-        chatThreadId: route.chatThreadId,
-        createdAt: args.ingress.createdAt,
-        eventId: args.ingress.ingressId,
-      },
-      persist,
-    );
+    await touchNativeChatThread(args.db, {
+      chatThreadId: route.chatThreadId,
+      createdAt: args.ingress.createdAt,
+      eventId: args.ingress.ingressId,
+    });
     signal.throwIfAborted();
     return {
       orgId: args.installation.orgId,
@@ -783,36 +772,28 @@ export const processCanonicalFeishuIngress$ = command(
       orgId: result.value.orgId,
     });
     signal.throwIfAborted();
-    const picked = await set(
-      pickEnqueuedChatThread$,
-      {
-        chatThreadId: result.value.chatThreadId,
-        orgId: result.value.orgId,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+    const persisted = result.value;
+    set(scheduleEnqueuedChatThreadPick$, {
+      chatThreadId: persisted.chatThreadId,
+      afterPick: async (pick, pickSignal) => {
+        await notifyFeishuChatQueueWait(
+          {
+            db,
+            ingressId: args.ingressId,
+            message: persisted.message,
+            reason: pick.reason,
+          },
+          pickSignal,
+        );
       },
-      signal,
-    );
-    signal.throwIfAborted();
-    // A launch publishes this input together with its run. Publishing
-    // it before the pick would show it as queued until the launch lands.
-    if (picked.reason !== "launched") {
-      await publishChatThreadMessageCreatedSafely({
-        userId: result.value.userId,
-        orgId: result.value.orgId,
-        threadId: result.value.chatThreadId,
-      });
-      signal.throwIfAborted();
-    }
-    await notifyFeishuChatQueueWait(
-      {
-        db,
-        ingressId: args.ingressId,
-        message: result.value.message,
-        reason: picked.reason,
+      publish: async () => {
+        await publishChatThreadMessageCreatedSafely({
+          userId: persisted.userId,
+          orgId: persisted.orgId,
+          threadId: persisted.chatThreadId,
+        });
       },
-      signal,
-    );
-    signal.throwIfAborted();
+    });
     return true;
   },
 );

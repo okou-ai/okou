@@ -12,7 +12,6 @@ import { chatCommand } from "../index";
 const THREAD_ID = "00000000-0000-4000-8000-000000000001";
 const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000002";
 const AGENT_ID = "00000000-0000-4000-8000-000000000010";
-const RUN_ID = "00000000-0000-4000-8000-000000000020";
 const SEND_URL = "http://localhost:3000/api/chat/events";
 
 function metadataUrl(threadId: string): string {
@@ -52,7 +51,7 @@ describe("okou chat send command", () => {
     vi.unstubAllEnvs();
   });
 
-  it("constructs a text UserMessageDocument and dispatches an idle thread", async () => {
+  it("constructs a text UserMessageDocument and prints the sent event as JSON", async () => {
     let sentEventId: string | undefined;
     server.use(
       http.get(metadataUrl(THREAD_ID), () => {
@@ -85,9 +84,8 @@ describe("okou chat send command", () => {
         );
         return HttpResponse.json(
           {
-            runId: RUN_ID,
+            runId: null,
             threadId: THREAD_ID,
-            status: "pending",
             createdAt: "2026-07-29T10:00:00.000Z",
           },
           { status: 201 },
@@ -108,16 +106,14 @@ describe("okou chat send command", () => {
       {
         threadId: THREAD_ID,
         eventId: sentEventId,
-        runId: RUN_ID,
-        status: "pending",
         createdAt: "2026-07-29T10:00:00.000Z",
-        messageQueued: false,
       },
     );
   });
 
-  it("reports a message that remains queued and honors --thread-id", async () => {
+  it("reports a sent message with next steps and honors --thread-id", async () => {
     vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
+    let sentEventId: string | undefined;
     server.use(
       http.get(metadataUrl(OTHER_THREAD_ID), () => {
         return HttpResponse.json({
@@ -130,6 +126,7 @@ describe("okou chat send command", () => {
       http.post(SEND_URL, async ({ request }) => {
         const body = (await request.json()) as Record<string, unknown>;
         expect(body.threadId).toBe(OTHER_THREAD_ID);
+        sentEventId = String(body.clientEventId);
         return HttpResponse.json(
           {
             runId: null,
@@ -152,10 +149,17 @@ describe("okou chat send command", () => {
     ]);
 
     const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("Chat message queued");
+    expect(output).toContain("✓ Chat message sent");
     expect(output).toContain(`Thread: ${OTHER_THREAD_ID}`);
-    expect(output).toContain("Event:");
+    expect(output).toContain(`Event:  ${sentEventId}`);
+    expect(output).toContain(
+      `okou chat messages --thread-id ${OTHER_THREAD_ID} --output-dir <directory>`,
+    );
+    expect(output).toContain(
+      `okou chat cancel --thread-id ${OTHER_THREAD_ID} --event-id ${sentEventId}`,
+    );
     expect(output).not.toContain("Run:");
+    expect(output).not.toContain("Status:");
   });
 
   it("rejects whitespace-only message text before calling the API", async () => {
@@ -207,9 +211,8 @@ describe("okou chat send command", () => {
         });
         return HttpResponse.json(
           {
-            runId: RUN_ID,
+            runId: null,
             threadId: THREAD_ID,
-            status: "pending",
             createdAt: "2026-07-30T10:00:00.000Z",
           },
           { status: 201 },
@@ -225,9 +228,9 @@ describe("okou chat send command", () => {
       writeUserMessageFile(document),
     ]);
 
-    const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("Chat message dispatched");
-    expect(output).toContain(`Run:    ${RUN_ID}`);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Chat message sent",
+    );
   });
 
   it("reports a file-only document as having no text content", async () => {
@@ -274,7 +277,7 @@ describe("okou chat send command", () => {
     ]);
 
     expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-      "Chat message queued",
+      "Chat message sent",
     );
   });
 

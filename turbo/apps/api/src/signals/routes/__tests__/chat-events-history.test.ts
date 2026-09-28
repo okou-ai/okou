@@ -345,10 +345,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       [201],
     );
     expect(retriedFollowup.body).toStrictEqual(normalFollowup.body);
-    const normalFollowupRunId = normalFollowup.body.runId;
-    if (normalFollowupRunId === null) {
-      throw new Error("Expected recommended follow-up send to create a run");
-    }
+    expect(normalFollowup.body.runId).toBeNull();
     const afterFollowup = await waitForThreadMessages(
       actor,
       first.threadId,
@@ -356,11 +353,19 @@ describe("CHAT-02: prior rounds and thread titles", () => {
         return userMessages(messages).some((message) => {
           return (
             message.revokesEventId === recommendedFollowupQueueEventId &&
-            message.runId === normalFollowupRunId
+            message.runId !== undefined
           );
         });
       },
     );
+    const normalFollowupRunId = userMessages(afterFollowup.events).find(
+      (message) => {
+        return message.revokesEventId === recommendedFollowupQueueEventId;
+      },
+    )?.runId;
+    if (normalFollowupRunId === undefined) {
+      throw new Error("Expected the recommended follow-up to launch a run");
+    }
     expect(afterFollowup.events).toContainEqual(
       expect.objectContaining({
         id: recommendedFollowupQueueEventId,

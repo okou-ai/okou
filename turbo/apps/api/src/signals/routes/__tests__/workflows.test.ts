@@ -138,6 +138,50 @@ function chatThreadConnectorSelectionsClient() {
   );
 }
 
+/**
+ * Runs read back from a workflow thread. A workflow run only enqueues its
+ * slash command; background picks bind launched inputs to their runs.
+ */
+async function readLaunchedWorkflowRunIds(
+  actor: ApiTestUser,
+  chatThreadId: string,
+): Promise<readonly string[]> {
+  await flushWaitUntilForTest();
+  const { events } = await chat.listThreadEvents(actor, chatThreadId);
+  return [
+    ...new Set(
+      events.flatMap((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined
+          ? [event.runId]
+          : [];
+      }),
+    ),
+  ];
+}
+
+async function runWorkflowAndLaunch(
+  actor: ApiTestUser,
+  workflowId: string,
+): Promise<{ readonly chatThreadId: string; readonly runId: string }> {
+  const sent = await accept(
+    detailClient().run({
+      headers: authHeaders(actor),
+      params: { workflowId },
+    }),
+    [200],
+  );
+  expect(sent.body.runId).toBeNull();
+  const runIds = await readLaunchedWorkflowRunIds(
+    actor,
+    sent.body.chatThreadId,
+  );
+  const runId = runIds.at(-1);
+  if (runId === undefined) {
+    throw new Error("Expected the workflow run to launch");
+  }
+  return { chatThreadId: sent.body.chatThreadId, runId };
+}
+
 function storageStateClient() {
   return setupApp({
     context,
@@ -526,20 +570,8 @@ describe("workflows", () => {
       [200],
     );
 
-    const run = await accept(
-      detailClient().run({
-        headers: authHeaders(actor),
-        params: { workflowId: created.body.id },
-      }),
-      [200],
-    );
-
-    expect(run.body.chatThreadId).toStrictEqual(expect.any(String));
-    expect(run.body.runId).toStrictEqual(expect.any(String));
-    if (!run.body.runId) {
-      throw new Error("Expected an idle workflow invocation to create a run");
-    }
-    expect(run.body.chatThreadId).toBe(prepared.body.chatThreadId);
+    const run = await runWorkflowAndLaunch(actor, created.body.id);
+    expect(run.chatThreadId).toBe(prepared.body.chatThreadId);
 
     const queued = await accept(
       detailClient().run({
@@ -549,16 +581,20 @@ describe("workflows", () => {
       [200],
     );
     expect(queued.body).toStrictEqual({
-      chatThreadId: run.body.chatThreadId,
+      chatThreadId: run.chatThreadId,
       runId: null,
     });
+    // The busy thread keeps the second invocation queued behind the first run.
+    await expect(
+      readLaunchedWorkflowRunIds(actor, run.chatThreadId),
+    ).resolves.toStrictEqual([run.runId]);
 
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.body.runId);
+    const claim = await api.claimRunnerJob(run.runId);
     expect(claim.cliAgentType).toBe("codex");
     expect(claim.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
     expect(claim.environment?.ANTHROPIC_MODEL).toBeUndefined();
-    await api.requestCancelRun(actor, run.body.runId, [200]);
+    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("resolves concurrent first workflow runs to one automation thread", async () => {
@@ -601,14 +637,13 @@ describe("workflows", () => {
         }),
       ).size,
     ).toBe(1);
-    const runIds = [
-      ...new Set(
-        runs.flatMap((run) => {
-          return run.body.runId ? [run.body.runId] : [];
-        }),
-      ),
-    ];
-    expect(runIds.length).toBeGreaterThan(0);
+    const [firstRun] = runs;
+    const runIds = await readLaunchedWorkflowRunIds(
+      actor,
+      firstRun.body.chatThreadId,
+    );
+    // The shared thread launches one run; the other invocation queues behind it.
+    expect(runIds).toHaveLength(1);
     for (const runId of runIds) {
       await api.requestCancelRun(actor, runId, [200]);
     }
@@ -633,16 +668,10 @@ describe("workflows", () => {
       instruction: "# public run workflow",
     });
 
-    const publicRun = await accept(
-      detailClient().run({
-        headers: authHeaders(member),
-        params: { workflowId: publicWorkflow.body.id },
-      }),
-      [200],
+    const publicRun = await runWorkflowAndLaunch(
+      member,
+      publicWorkflow.body.id,
     );
-    if (!publicRun.body.runId) {
-      throw new Error("Expected the public workflow to create a run");
-    }
 
     const privateAgent = await createAgent(owner, {
       displayName: "Hidden Private Workflow Agent",
@@ -663,7 +692,7 @@ describe("workflows", () => {
     );
     expect(hidden.body.error.code).toBe("NOT_FOUND");
 
-    await api.requestCancelRun(member, publicRun.body.runId, [200]);
+    await api.requestCancelRun(member, publicRun.runId, [200]);
   });
 
   it("requires agent write-permission to create public workflows under an agent", async () => {
@@ -2468,23 +2497,14 @@ describe("workflows", () => {
       sourceAutomation.body.id,
       2,
     );
-    const sourceRun = await accept(
-      detailClient().run({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    if (!sourceRun.body.runId) {
-      throw new Error("Expected the source workflow run to start");
-    }
+    const sourceRun = await runWorkflowAndLaunch(actor, workflow.body.id);
     const sourceToken = api.okouTokenForRunWithCapabilities(
       actor,
-      sourceRun.body.runId,
+      sourceRun.runId,
       ["agent:write"],
     );
 
-    await setRunAutonomyBudgetFixture(context, sourceRun.body.runId, 10);
+    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 10);
     const copied = await accept(
       detailClient().copy({
         headers: { authorization: `Bearer ${sourceToken}` },
@@ -2508,7 +2528,7 @@ describe("workflows", () => {
       readWorkflowAutomationAutonomyFixture(context, copiedAutomation.id),
     ).resolves.toMatchObject({ autonomyBudget: 9 });
 
-    await setRunAutonomyBudgetFixture(context, sourceRun.body.runId, 0);
+    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 0);
     const blockedTargetAgent = await createAgent(actor, {
       displayName: "Exhausted Copy Target Agent",
       visibility: "private",
@@ -2533,7 +2553,7 @@ describe("workflows", () => {
     expect(names(blockedTargetWorkflows.body)).not.toContain(
       workflow.body.name,
     );
-    await api.requestCancelRun(actor, sourceRun.body.runId, [200]);
+    await api.requestCancelRun(actor, sourceRun.runId, [200]);
   });
 
   it("reuses and repairs immutable workflow volume versions without moving HEAD during preparation", async () => {
@@ -3111,16 +3131,7 @@ test("awards the workflow creator only after a queued user workflow really succe
     });
   };
   await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
-  const first = await accept(
-    detailClient().run({
-      headers: authHeaders(actor),
-      params: { workflowId: workflow.body.id },
-    }),
-    [200],
-  );
-  if (!first.body.runId) {
-    throw new Error("Expected first Run");
-  }
+  const first = await runWorkflowAndLaunch(actor, workflow.body.id);
   const queued = await accept(
     detailClient().run({
       headers: authHeaders(actor),
@@ -3131,16 +3142,16 @@ test("awards the workflow creator only after a queued user workflow really succe
   expect(queued.body.runId).toBeNull();
   const webhooks = createWebhookCallbackApi(context);
   await webhooks.requestAgentComplete(
-    { runId: first.body.runId, exitCode: 1, error: "Synthetic failure" },
+    { runId: first.runId, exitCode: 1, error: "Synthetic failure" },
     {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, first.body.runId)}`,
+      authorization: `Bearer ${api.sandboxTokenForRun(actor, first.runId)}`,
     },
     [200],
   );
   await flushWaitUntilForTest();
-  const events = await chat.listThreadEvents(actor, first.body.chatThreadId);
+  const events = await chat.listThreadEvents(actor, first.chatThreadId);
   const next = events.events.find((event) => {
-    return event.runId && event.runId !== first.body.runId;
+    return event.runId && event.runId !== first.runId;
   });
   if (!next?.runId) {
     throw new Error("Expected the queued workflow to start after failure");

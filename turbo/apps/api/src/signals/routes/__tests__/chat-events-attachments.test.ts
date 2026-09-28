@@ -4,6 +4,8 @@ import type {
   GenerationTemplateRequest,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
+import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
@@ -12,17 +14,22 @@ import {
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
 import { avatarTemplateStylePresetId } from "@okouai/core/avatar-template";
-import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  formatUserPresentationTemplateId,
+  userPresentationTemplateDirectory,
+} from "@okouai/core/presentation-template-selection";
+import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import {
   buildArtifactKeyV2,
   buildArtifactPrefixV2,
 } from "../../../lib/file-url";
-import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
-import { expectApiError } from "./helpers/api-bdd";
+import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
@@ -32,6 +39,15 @@ import {
   eventBackedContents,
   assistantEvent,
 } from "./helpers/chat-events-fixture";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  installS3Fixture,
+  tarGz,
+  uploadTemplateFile,
+} from "./helpers/template-publish-fixture";
+import { presentationTemplatesRoutes } from "../presentation-templates";
+import { userTemplatesRoutes } from "../user-templates";
 
 const context = testContext();
 const {
@@ -40,7 +56,6 @@ const {
   chat,
   chatCallbacks,
   entitledChatActor: createEntitledChatActor,
-  seedBuiltInModelKey,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
@@ -64,6 +79,88 @@ async function entitledChatActor() {
     },
   ]);
   return result;
+}
+
+/**
+ * A send only enqueues its input; the background pick replaces it with an
+ * `input.prompt` that carries the launched run.
+ */
+async function waitForLaunchedRunId(
+  actor: ApiTestUser,
+  threadId: string,
+  clientEventId: string,
+): Promise<string> {
+  const messages = await waitForThreadMessages(actor, threadId, (items) => {
+    return userMessages(items).some((message) => {
+      return (
+        message.revokesEventId === clientEventId && message.runId !== undefined
+      );
+    });
+  });
+  const runId = userMessages(messages.events).find((message) => {
+    return message.revokesEventId === clientEventId;
+  })?.runId;
+  if (runId === undefined) {
+    throw new Error("Expected the picked input to launch a run");
+  }
+  return runId;
+}
+
+async function publishPrivateChatTemplates(actor: ApiTestUser) {
+  const fixture = installS3Fixture(context);
+  const sourceFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "brand.pdf", contentType: "application/pdf" },
+    Buffer.from("%PDF-1.7 brand source"),
+  );
+  const pageFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "page-001.png", contentType: "image/png" },
+    Buffer.from("cover"),
+  );
+  const packageFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "package.tar.gz", contentType: "application/gzip" },
+    tarGz([
+      { path: "SKILL.md", content: "# Apply this brand\n" },
+      { path: "design-system.md", content: "Ink on warm paper.\n" },
+    ]),
+  );
+  const body = {
+    title: "Private brand",
+    sourceFileId,
+    pageFileIds: [pageFileId],
+    packageFileId,
+  };
+  const headers = { authorization: "Bearer clerk-session" };
+  const presentations = setupApp({
+    context,
+    routes: presentationTemplatesRoutes,
+  })(presentationTemplatesContract);
+  const customs = setupApp({ context, routes: userTemplatesRoutes })(
+    userTemplatesContract,
+  );
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  const presentation = await accept(
+    presentations.publish({ headers, body }),
+    [200],
+  );
+  const custom = await accept(
+    customs.publish({ headers, body: { ...body, kind: "presentation" } }),
+    [200],
+  );
+  return {
+    presentations,
+    customs,
+    presentationId: presentation.body.id,
+    customId: custom.body.id,
+  };
 }
 
 describe("CHAT-02: generation templates and attachments", () => {
@@ -269,6 +366,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     const expectedPrompt =
       'The user forwarded this from the chat "Source launch plan":\n\n' +
       "> The deployment window is fifteen minutes.";
+    const forwardedEventId = randomUUID();
     const forwarded = await chat.requestSendEvent(
       actor,
       {
@@ -277,21 +375,28 @@ describe("CHAT-02: generation templates and attachments", () => {
         prompt: "legacy fallback",
         userMessage,
         sourceRunId: source.runId,
+        clientEventId: forwardedEventId,
       },
       [201],
     );
-    if (forwarded.status !== 201 || !forwarded.body.runId) {
-      throw new Error("Expected the forwarded passage to launch a run");
-    }
+    expect(forwarded.body).toMatchObject({
+      runId: null,
+      threadId: targetThread.id,
+    });
+    const forwardedRunId = await waitForLaunchedRunId(
+      actor,
+      targetThread.id,
+      forwardedEventId,
+    );
 
-    const run = await api.readRun(actor, forwarded.body.runId);
+    const run = await api.readRun(actor, forwardedRunId);
     expect(run.prompt).toBe(expectedPrompt);
     const messages = await chat.listThreadEvents(actor, targetThread.id);
     const forwardedMessage = userMessages(messages.events).find(
       (message): message is PromptMessage => {
         return (
           message.eventType === "input.prompt" &&
-          message.runId === forwarded.body.runId
+          message.runId === forwardedRunId
         );
       },
     );
@@ -305,7 +410,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
 
-    await cancelChatRun(actor, forwarded.body.runId);
+    await cancelChatRun(actor, forwardedRunId);
     await cancelChatRun(actor, source.runId);
   }, 90_000);
 
@@ -411,6 +516,7 @@ describe("CHAT-02: generation templates and attachments", () => {
 
     for (const scenario of cases) {
       const targetThread = await chat.createThread(actor, { agentId });
+      const forwardedEventId = randomUUID();
       const forwarded = await chat.requestSendEvent(
         actor,
         {
@@ -419,21 +525,28 @@ describe("CHAT-02: generation templates and attachments", () => {
           prompt: "legacy fallback",
           userMessage: scenario.userMessage,
           sourceRunId: source.runId,
+          clientEventId: forwardedEventId,
         },
         [201],
       );
-      if (forwarded.status !== 201 || !forwarded.body.runId) {
-        throw new Error(`Expected ${scenario.name} to launch a run`);
-      }
+      expect(forwarded.body, scenario.name).toMatchObject({
+        runId: null,
+        threadId: targetThread.id,
+      });
+      const forwardedRunId = await waitForLaunchedRunId(
+        actor,
+        targetThread.id,
+        forwardedEventId,
+      );
 
-      const run = await api.readRun(actor, forwarded.body.runId);
+      const run = await api.readRun(actor, forwardedRunId);
       expect(run.prompt).toBe(scenario.expectedPrompt);
       const messages = await chat.listThreadEvents(actor, targetThread.id);
       const forwardedMessage = userMessages(messages.events).find(
         (message): message is PromptMessage => {
           return (
             message.eventType === "input.prompt" &&
-            message.runId === forwarded.body.runId
+            message.runId === forwardedRunId
           );
         },
       );
@@ -448,7 +561,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         ]),
       );
 
-      await cancelChatRun(actor, forwarded.body.runId);
+      await cancelChatRun(actor, forwardedRunId);
     }
     await cancelChatRun(actor, source.runId);
   }, 90_000);
@@ -787,59 +900,6 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
     await cancelChatRun(actor, video.runId);
 
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-
-    // Run options are the composer's channel for video parameters now. They
-    // ride one message, reach no table, and only enter the agent prompt when the
-    // user moved a value off the effective model's default -- and they enter
-    // it as defaults this run's message can override, not as instructions.
-    const videoRunOptions = await sendChatRun(actor, {
-      agentId,
-      prompt: "make a clip from this brief",
-      runOptions: {
-        video: {
-          aspectRatio: "9:16",
-          duration: "6s",
-          resolution: "480p",
-          generateAudio: false,
-        },
-      },
-    });
-    const videoRunOptionsRun = await api.readRun(actor, videoRunOptions.runId);
-    const videoRunOptionsPrompt = videoRunOptionsRun.prompt;
-    expect(videoRunOptionsPrompt).toContain("# Video Generation Defaults");
-    expect(videoRunOptionsPrompt).toContain("- Aspect ratio: 9:16");
-    expect(videoRunOptionsPrompt).toContain("- Duration: 6s");
-    expect(videoRunOptionsPrompt).toContain("- Resolution: 480p");
-    expect(videoRunOptionsPrompt).toContain("- Audio: off");
-    // Stated as defaults the message outranks, not as requirements: the chip
-    // was set before the message was written, so "make it square" has to win.
-    expect(videoRunOptionsPrompt).toContain(
-      "the message wins, for that parameter only",
-    );
-    expect(videoRunOptionsPrompt).toMatch(/\n\nmake a clip from this brief$/);
-    // Values only. A pre-assembled flag string is a ready-made answer that
-    // stops being correct as soon as the message overrides one value.
-    expect(videoRunOptionsPrompt).not.toContain("--aspect-ratio");
-    expect(videoRunOptionsPrompt).not.toContain("--no-audio");
-    expect(videoRunOptionsRun.appendSystemPrompt ?? "").not.toContain(
-      "# Video Generation Defaults",
-    );
-    await cancelChatRun(actor, videoRunOptions.runId);
-
-    // Most runs never generate a video, so a send that set nothing carries no
-    // trace of the block at all.
-    const withoutVideoRunOptions = await sendChatRun(actor, {
-      agentId,
-      prompt: "answer a plain question",
-    });
-    expect(
-      (await api.readRun(actor, withoutVideoRunOptions.runId)).prompt,
-    ).not.toContain("# Video Generation Defaults");
-    await cancelChatRun(actor, withoutVideoRunOptions.runId);
-
     const avatarId = 81;
     const avatarVoiceId = "en-US-ChristopherNeural";
     const avatar = await sendChatRun(actor, {
@@ -1115,40 +1175,178 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, followUp.runId);
   }, 120_000);
 
-  it("rejects a private presentation template the caller cannot read", async () => {
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Private template agent",
-    });
-    // Well formed and syntactically a row id, but no such row exists for this
-    // owner. A deleted template and someone else's template are the same
-    // answer on purpose: neither may be distinguished from the outside.
-    const templateId = formatUserPresentationTemplateId(randomUUID());
-    const selection: GenerationTemplateRequest = {
-      type: "presentation",
-      selection: { templateId },
-    };
-
-    const rejected = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "use my own deck",
-        userMessage: userMessageWithTemplate("use my own deck", selection),
-      },
-      [400],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toBe("Presentation template not found");
-
-    // Rejected before dispatch: no event is persisted and no run starts.
-    const events = await chat.requestThreadEvents(actor, {}, [200]);
-    expect(events.status).toBe(200);
-    if (events.status !== 200) {
-      throw new Error("Expected chat thread events to load");
+  it("rejects unavailable templates at pick and launches all templates once they are shared", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected a chat organization");
     }
-    expect(events.body.events).toStrictEqual([]);
+    const owner = bdd.user({ orgId });
+    for (const user of [actor, owner]) {
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: user.userId, orgId },
+        { [FeatureSwitchKey.CustomTemplates]: true },
+      );
+    }
+    const { presentations, customs, presentationId, customId } =
+      await publishPrivateChatTemplates(owner);
+    const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
+    if (!style) {
+      throw new Error("Expected an illustration template");
+    }
+    const illustration: GenerationTemplateRequest = {
+      type: "illustration",
+      selection: { illustrationStyleId: style.illustrationStyleId },
+    };
+    const presentation: GenerationTemplateRequest = {
+      type: "presentation",
+      selection: {
+        templateId: formatUserPresentationTemplateId(presentationId),
+      },
+    };
+    const custom: GenerationTemplateRequest = {
+      type: "custom",
+      selection: { userTemplateId: customId },
+    };
+    const arms: readonly {
+      readonly template: GenerationTemplateRequest;
+      readonly message: string;
+    }[] = [
+      { template: presentation, message: "Presentation template not found" },
+      {
+        template: {
+          type: "presentation",
+          selection: {
+            templateId: formatUserPresentationTemplateId(randomUUID()),
+          },
+        },
+        message: "Presentation template not found",
+      },
+      { template: custom, message: "Custom template not found" },
+      {
+        template: {
+          type: "custom",
+          selection: { userTemplateId: randomUUID() },
+        },
+        message: "Custom template not found",
+      },
+    ];
+    const credits = (await api.readBillingStatus(actor)).credits;
+    for (const arm of arms) {
+      const clientEventId = randomUUID();
+      const rejected = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          clientEventId,
+          prompt: "use both selected templates",
+          userMessage: {
+            version: 1,
+            parts: [
+              {
+                type: "template",
+                titleSnapshot: style.title,
+                template: illustration,
+              },
+              {
+                type: "template",
+                titleSnapshot: "Selected brand",
+                template: arm.template,
+              },
+              { type: "text", text: "use both selected templates" },
+            ],
+          },
+        },
+        [201],
+      );
+      if (rejected.status !== 201) {
+        throw new Error("Expected the selection to enqueue before pick");
+      }
+      expect(rejected.body.runId).toBeNull();
+      const settled = await waitForThreadMessages(
+        actor,
+        rejected.body.threadId,
+        (events) => {
+          return events.some((event) => {
+            return (
+              event.eventType === "input.rejected" &&
+              event.revokesEventId === clientEventId
+            );
+          });
+        },
+      );
+      expect(settled.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "input.rejected",
+          revokesEventId: clientEventId,
+          error: "bad_request",
+        }),
+      );
+      expect(settled.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "output.error",
+          content: arm.message,
+          error: "bad_request",
+        }),
+      );
+      expect(
+        settled.events.some((event) => {
+          return event.runId !== undefined;
+        }),
+      ).toBeFalsy();
+    }
+    expect((await api.readBillingStatus(actor)).credits).toBe(credits);
+
+    // Sharing through the owner APIs makes both packages readable. The same
+    // pick must now preserve every selected template, including the built-in.
+    createRouteMocks(context).clerk.session(owner.userId, orgId);
+    const headers = { authorization: "Bearer clerk-session" };
+    await accept(
+      presentations.update({
+        headers,
+        params: { templateId: presentationId },
+        body: { visibility: "public" },
+      }),
+      [200],
+    );
+    await accept(
+      customs.update({
+        headers,
+        params: { templateId: customId },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+    const sent = await sendChatRun(actor, {
+      agentId,
+      prompt: "use all three selected templates",
+      userMessage: {
+        version: 1,
+        parts: [
+          ...[illustration, presentation, custom].map((template) => {
+            return {
+              type: "template" as const,
+              titleSnapshot: "Selected template",
+              template,
+            };
+          }),
+          { type: "text", text: "use all three selected templates" },
+        ],
+      },
+    });
+    const systemPrompt = (await api.readRun(actor, sent.runId))
+      .appendSystemPrompt;
+    expect(systemPrompt).toContain("# Inline Templates");
+    expect(systemPrompt).toContain(style.illustrationStyleId);
+    expect(systemPrompt).toContain(
+      `./${userPresentationTemplateDirectory(presentationId)}/SKILL.md`,
+    );
+    expect(systemPrompt).toContain(
+      `./${userTemplateDirectory(customId)}/SKILL.md`,
+    );
+    await cancelChatRun(actor, sent.runId);
   }, 60_000);
 
   it("rejects unknown generation template selections", async () => {
@@ -1245,228 +1443,48 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(events.body.events).toStrictEqual([]);
   }, 60_000);
 
-  it("overlaps attachment metadata with thread model reconciliation", async () => {
-    const { actor, agentId, providerId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-fable-5-1",
-        isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
-    const thread = await chat.createThread(actor, {
-      agentId,
-      model: "claude-fable-5-1",
-    });
-
-    await seedBuiltInModelKey("gpt-6-astra");
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-6-astra",
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
-
-    const files = Array.from({ length: 2 }, (_, index) => {
-      return {
-        id: randomUUID(),
-        filename: `overlap-${index + 1}.txt`,
-        contentType: "text/plain",
-        size: 40 + index,
-      };
-    });
-    const objectsByKey = new Map(
-      files.map((file) => {
-        return [buildArtifactKeyV2(file.id, file.filename), file];
-      }),
-    );
-    const releaseHeads = createDeferredPromise<void>(context.signal);
-    let startedHeads = 0;
-    let activeHeads = 0;
-    context.mocks.s3.send.mockImplementation(
-      async (command: unknown): Promise<unknown> => {
-        if (command instanceof HeadObjectCommand) {
-          const key = command.input.Key;
-          const file =
-            typeof key === "string" ? objectsByKey.get(key) : undefined;
-          if (!file) {
-            return {};
-          }
-          startedHeads += 1;
-          activeHeads += 1;
-          await releaseHeads.promise;
-          activeHeads -= 1;
-          return {
-            ContentLength: file.size,
-            ContentType: file.contentType,
-            LastModified: new Date("2026-09-03T00:00:00.000Z"),
-            Metadata: {
-              "artifact-id": file.id,
-              filename: encodeURIComponent(file.filename),
-              "user-id": encodeURIComponent(actor.userId),
-            },
-          };
-        }
-        return { Contents: [] };
-      },
-    );
-
-    const threadLock = await holdChatThreadRowLockFixture({
-      threadId: thread.id,
-      signal: context.signal,
-    });
-    const prompt = "read attachments during model recovery";
-    const send = chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: thread.id,
-        prompt,
-        userMessage: {
-          version: 1,
-          parts: [
-            ...files.map((file) => {
-              return {
-                type: "file" as const,
-                fileId: file.id,
-                filenameSnapshot: file.filename,
-                contentType: file.contentType,
-              };
-            }),
-            { type: "text", text: prompt },
-          ],
-        },
-      },
-      [201],
-    );
-    onTestFinished(async () => {
-      if (!releaseHeads.settled()) {
-        releaseHeads.resolve(undefined);
-      }
-      threadLock.release();
-      await threadLock.done;
-      const response = await send;
-      if (response.status === 201 && response.body.runId) {
-        await cancelChatRun(actor, response.body.runId);
-      }
-    });
-
-    await expect
-      .poll(threadLock.firstBlockedStatementKind)
-      .toBe("select_for_update");
-    await expect
-      .poll(() => {
-        return startedHeads;
-      })
-      .toBe(files.length);
-    expect(activeHeads).toBe(files.length);
-
-    releaseHeads.resolve(undefined);
-    threadLock.release();
-    await threadLock.done;
-    const sent = await send;
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected attachment overlap send to create a run");
-    }
-    const run = await api.readRun(actor, sent.body.runId);
-    const promptPositions = files.map((file) => {
-      return run.prompt.indexOf(`[ID] ${file.id}`);
-    });
-    expect(
-      promptPositions.every((position) => {
-        return position >= 0;
-      }),
-    ).toBeTruthy();
-    expect(promptPositions).toStrictEqual(
-      [...promptPositions].sort((a, b) => {
-        return a - b;
-      }),
-    );
-  }, 90_000);
-
-  it("preserves a later thread failure when attachment lookup rejects", async () => {
+  it("rejects an unknown thread before looking up attachments", async () => {
     const { actor, agentId } = await entitledChatActor();
     const fileId = randomUUID();
-    const filename = "speculative-rejection.txt";
+    const filename = "unknown-thread.txt";
     const exactKey = buildArtifactKeyV2(fileId, filename);
-    const releaseHead = createDeferredPromise<void>(context.signal);
     let startedHeads = 0;
-    let rejectedHeads = 0;
     context.mocks.s3.send.mockImplementation(
-      async (command: unknown): Promise<unknown> => {
+      (command: unknown): Promise<unknown> => {
         if (
           command instanceof HeadObjectCommand &&
           command.input.Key === exactKey
         ) {
           startedHeads += 1;
-          await releaseHead.promise;
-          rejectedHeads += 1;
-          throw new Error("speculative attachment lookup failed");
         }
-        return { Contents: [] };
+        return Promise.resolve({ Contents: [] });
       },
     );
 
-    let responseSettled = false;
-    const responsePromise = chat
-      .requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: randomUUID(),
-          prompt: "preserve the missing thread failure",
-          userMessage: {
-            version: 1,
-            parts: [
-              {
-                type: "file",
-                fileId,
-                filenameSnapshot: filename,
-                contentType: "text/plain",
-              },
-              { type: "text", text: "preserve the missing thread failure" },
-            ],
-          },
+    const response = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: randomUUID(),
+        prompt: "report the missing thread",
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "file",
+              fileId,
+              filenameSnapshot: filename,
+              contentType: "text/plain",
+            },
+            { type: "text", text: "report the missing thread" },
+          ],
         },
-        [404],
-      )
-      .then((response) => {
-        responseSettled = true;
-        return response;
-      });
-    onTestFinished(async () => {
-      if (!releaseHead.settled()) {
-        releaseHead.resolve(undefined);
-      }
-      await responsePromise;
-    });
-
-    await expect
-      .poll(() => {
-        return startedHeads;
-      })
-      .toBe(1);
-    await expect
-      .poll(() => {
-        return responseSettled;
-      })
-      .toBeTruthy();
-    const response = await responsePromise;
+      },
+      [404],
+    );
     expectApiError(response.body);
     expect(response.body.error.message).toBe("Chat thread not found");
-
-    releaseHead.resolve(undefined);
-    await expect
-      .poll(() => {
-        return rejectedHeads;
-      })
-      .toBe(1);
+    expect(startedHeads).toBe(0);
   }, 30_000);
 
   it("resolves attachment metadata in ordered waves of four", async () => {
@@ -1556,11 +1574,13 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
 
     const prompt = "read the bounded attachment set";
+    const clientEventId = randomUUID();
     const send = chat.requestSendEvent(
       actor,
       {
         agentId,
         prompt,
+        clientEventId,
         userMessage: {
           version: 1,
           parts: [
@@ -1582,10 +1602,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       if (!releaseFirstWave.settled()) {
         releaseFirstWave.resolve(undefined);
       }
-      const response = await send;
-      if (response.status === 201 && response.body.runId) {
-        await cancelChatRun(actor, response.body.runId);
-      }
+      await send;
     });
 
     await firstWaveStarted.promise;
@@ -1595,15 +1612,20 @@ describe("CHAT-02: generation templates and attachments", () => {
     releaseFirstWave.resolve(undefined);
 
     const sent = await send;
-    expect(sent.status).toBe(201);
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected the bounded attachment send to create a run");
+    if (sent.status !== 201) {
+      throw new Error("Expected the bounded attachment send to be accepted");
     }
+    expect(sent.body.runId).toBeNull();
     expect(startedHeads).toBe(5);
     expect(peakActiveHeads).toBe(4);
     expect(matchingListRequests).toBe(0);
 
-    const run = await api.readRun(actor, sent.body.runId);
+    const runId = await waitForLaunchedRunId(
+      actor,
+      sent.body.threadId,
+      clientEventId,
+    );
+    const run = await api.readRun(actor, runId);
     const promptPositions = files.map((file) => {
       return run.prompt.indexOf(`[ID] ${file.id}`);
     });
@@ -1630,6 +1652,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       expect(resolved.publicUrl).toContain(objectName);
       expect(resolved.url).toContain(objectName);
     }
+    await cancelChatRun(actor, runId);
   }, 60_000);
 
   it("falls back to v2 listing when the attachment filename hint is stale", async () => {

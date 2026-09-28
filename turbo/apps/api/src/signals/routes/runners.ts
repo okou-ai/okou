@@ -96,11 +96,14 @@ import {
 import { generateSandboxToken } from "../auth/tokens";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
 import {
-  neverStartedRunIds,
-  releaseActiveAgentRuns,
+  releaseNeverStartedRunSlots,
   transitionAgentRunsToTerminal,
+  type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
-import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
+import {
+  dispatchCompleteSideEffects$,
+  scheduleReleasedSlotPicks$,
+} from "../services/agent-run-lifecycle.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "../services/history-generation-run";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import { reportBuiltInModelProviderFailure } from "../services/built-in-model-provider-failure.service";
@@ -216,7 +219,7 @@ interface ClaimFailedSideEffectArgs {
   readonly runId: string;
   readonly orgId: string;
   readonly error: string;
-  readonly slotReleased: boolean;
+  readonly releasedSlots: readonly ReleasedRunSlot[];
 }
 
 class ResumeSessionHistoryLoadError extends Error {
@@ -1230,7 +1233,10 @@ async function transitionClaimedJobToRunning(
 }
 
 type PoisonJobResult =
-  | { readonly status: "failed"; readonly slotReleased: boolean }
+  | {
+      readonly status: "failed";
+      readonly releasedSlots: readonly ReleasedRunSlot[];
+    }
   | { readonly status: "job-not-found" }
   | { readonly status: "run-not-found" };
 type FailedPoisonJobResult = Exclude<
@@ -1285,11 +1291,8 @@ async function failPoisonQueuedJob(
 
     await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
     signal.throwIfAborted();
-    const released = await releaseActiveAgentRuns(
-      tx,
-      neverStartedRunIds(transitions),
-    );
-    return { status: "failed" as const, slotReleased: released.length > 0 };
+    const releasedSlots = await releaseNeverStartedRunSlots(tx, transitions);
+    return { status: "failed" as const, releasedSlots };
   });
 }
 
@@ -2383,6 +2386,7 @@ function claimTimingOperation(
 
 const scheduleClaimFailedSideEffects$ = command(
   ({ set }, args: ClaimFailedSideEffectArgs): void => {
+    set(scheduleReleasedSlotPicks$, args.releasedSlots);
     const backgroundSignal = new AbortController().signal;
     waitUntil(
       tapError(
@@ -2394,7 +2398,6 @@ const scheduleClaimFailedSideEffects$ = command(
             orgId: args.orgId,
             status: "failed",
             error: args.error,
-            ...(args.slotReleased ? { slotReleased: true as const } : {}),
           },
           backgroundSignal,
         ),
@@ -2442,7 +2445,7 @@ async function failClaimForResumeSessionHistoryLoad(
     runId: args.runId,
     orgId: args.orgId,
     error: args.errorMessage,
-    slotReleased: poisonResult.slotReleased,
+    releasedSlots: poisonResult.releasedSlots,
   });
   return badRequestMessage(args.errorMessage);
 }
@@ -2471,7 +2474,7 @@ async function failClaimForInvalidStoredExecutionContext(
     runId: args.runId,
     orgId: args.orgId,
     error: INVALID_EXECUTION_CONTEXT_ERROR,
-    slotReleased: poisonResult.slotReleased,
+    releasedSlots: poisonResult.releasedSlots,
   });
   return badRequestMessage("Job missing execution context");
 }

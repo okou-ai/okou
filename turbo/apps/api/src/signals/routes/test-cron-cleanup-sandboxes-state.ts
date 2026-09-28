@@ -40,8 +40,7 @@ import {
   writeRunMetadata,
 } from "../services/agent-run-metadata-write.service";
 import {
-  neverStartedRunIds,
-  releaseActiveAgentRuns,
+  releaseNeverStartedRunSlots,
   transitionAgentRunsToTerminal,
 } from "../services/agent-run-terminal-transition.service";
 import { deleteArtifactCatalogForHostedSiteId } from "../services/artifact-catalog-deletion.service";
@@ -937,7 +936,7 @@ async function transitionRunTerminalForAction(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    await releaseActiveAgentRuns(tx, neverStartedRunIds(transitions));
+    await releaseNeverStartedRunSlots(tx, transitions);
     return transitions[0];
   });
   signal.throwIfAborted();

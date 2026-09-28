@@ -1,4 +1,4 @@
-import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
+import { touchNativeChatThread } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { command, computed } from "ccstate";
@@ -76,18 +76,18 @@ import {
   type IntegrationModelRoutePin,
 } from "./integration-model-route.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
-import { markChatThreadQueued } from "./queued-chat-thread.service";
+import {
+  enqueueChatInput,
+  scheduleEnqueuedChatThreadPick$,
+} from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
-import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import {
   bindTelegramReplyMessageRoute,
   createTelegramChatThread,
   ensureTelegramChatThreadRoute,
   type TelegramOwnerLink,
 } from "./telegram-chat-ingress.service";
-import { insertChatEvent } from "./chat-event.service";
+import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import {
@@ -276,10 +276,6 @@ interface TelegramUserInfoExtras {
   readonly telegramUserId?: string;
   readonly telegramLanguage?: string;
 }
-
-type TelegramMessageDispatchResult =
-  | { readonly kind: "ignored" }
-  | { readonly kind: "picked"; readonly reason: ChatQueueWaitReason };
 
 function apiError<Status extends 400 | 403 | 404 | 409 | 500 | 502>(
   status: Status,
@@ -1949,60 +1945,49 @@ const persistTelegramChatMessage$ = command(
       });
       signal.throwIfAborted();
     }
-    // Queue row before the input event, so input is never left unqueued.
-    await markChatThreadQueued(args.source.db, {
+    const values = {
+      id: chatEventId,
+      chatThreadId: binding.chatThreadId,
+      eventType: "input.prompt",
+      content: null,
+      userMessage: createUserMessageDocument({
+        text: canonicalAsset ? runPrompt.text : args.prompt,
+        files: integrationInputMessageFiles(assets),
+        nonContentPart: createChatEventSourcePart({
+          kind: "telegram",
+          chatId: args.chatId,
+          messageId: String(args.source.message.message_id),
+          isDm: args.source.isDM,
+          botUsername: args.source.botUsername,
+        }),
+      }),
+      runId: null,
+      telegramContext: telegramLaunchContext({
+        ...args,
+        prompt: runPrompt.prompt,
+      }),
+      createdAt: currentTime,
+    } as const;
+    await insertChatEventContext(args.source.db, values);
+    signal.throwIfAborted();
+    const eventId = await enqueueChatInput(args.source.db, {
       chatThreadId: binding.chatThreadId,
       orgId: args.source.orgId,
+      appendInput: async (tx) => {
+        return (await insertChatEvent(tx, values, "id"))?.id ?? null;
+      },
     });
     signal.throwIfAborted();
-    const persist = async (tx: Db, touchThread: () => Promise<void>) => {
-      const event = await insertChatEvent(
-        tx,
-        {
-          id: chatEventId,
-          chatThreadId: binding.chatThreadId,
-          eventType: "input.prompt",
-          content: null,
-          userMessage: createUserMessageDocument({
-            text: canonicalAsset ? runPrompt.text : args.prompt,
-            files: integrationInputMessageFiles(assets),
-            nonContentPart: createChatEventSourcePart({
-              kind: "telegram",
-              chatId: args.chatId,
-              messageId: String(args.source.message.message_id),
-              isDm: args.source.isDM,
-              botUsername: args.source.botUsername,
-            }),
-          }),
-          runId: null,
-          telegramContext: telegramLaunchContext({
-            ...args,
-            prompt: runPrompt.prompt,
-          }),
-          createdAt: currentTime,
-        },
-        "id",
-      );
-      signal.throwIfAborted();
-      if (!event) {
-        return false;
-      }
-      await touchThread();
-      return true;
-    };
-    const inserted = await withNativeChatEventThreadTouch(
-      args.source.db,
-      {
-        chatThreadId: binding.chatThreadId,
-        createdAt: currentTime,
-        eventId: chatEventId,
-      },
-      persist,
-    );
+    if (eventId === null) {
+      return { inserted: false };
+    }
+    await touchNativeChatThread(args.source.db, {
+      chatThreadId: binding.chatThreadId,
+      createdAt: currentTime,
+      eventId: chatEventId,
+    });
     signal.throwIfAborted();
-    return inserted
-      ? { inserted: true, chatThreadId: binding.chatThreadId, chatEventId }
-      : { inserted: false };
+    return { inserted: true, chatThreadId: binding.chatThreadId, chatEventId };
   },
 );
 
@@ -2019,7 +2004,7 @@ const runAgentForTelegram$ = command(
       readonly modelRoute: ModelRoutePin | undefined;
     },
     signal: AbortSignal,
-  ): Promise<TelegramMessageDispatchResult> => {
+  ): Promise<void> => {
     const persisted = await set(
       persistTelegramChatMessage$,
       {
@@ -2029,7 +2014,7 @@ const runAgentForTelegram$ = command(
     );
     signal.throwIfAborted();
     if (!persisted.inserted) {
-      return { kind: "ignored" };
+      return;
     }
 
     await publishThreadListChangedSafely({
@@ -2037,27 +2022,27 @@ const runAgentForTelegram$ = command(
       orgId: args.source.orgId,
     });
     signal.throwIfAborted();
-    const picked = await set(
-      pickEnqueuedChatThread$,
-      {
-        chatThreadId: persisted.chatThreadId,
-        orgId: args.source.orgId,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+    set(scheduleEnqueuedChatThreadPick$, {
+      chatThreadId: persisted.chatThreadId,
+      afterPick: async (pick) => {
+        const notice = chatQueueWaitNotice(pick.reason);
+        if (notice) {
+          await postTelegramMessage({
+            botToken: args.source.botToken,
+            chatId: args.chatId,
+            text: notice,
+            replyToMessageId: args.source.message.message_id,
+          });
+        }
       },
-      signal,
-    );
-    signal.throwIfAborted();
-    // A launch publishes this input together with its run. Publishing
-    // it before the pick would show it as queued until the launch lands.
-    if (picked.reason !== "launched") {
-      await publishChatThreadMessageCreatedSafely({
-        userId: args.source.userLink.userId,
-        orgId: args.source.orgId,
-        threadId: persisted.chatThreadId,
-      });
-      signal.throwIfAborted();
-    }
-    return { kind: "picked", reason: picked.reason };
+      publish: async () => {
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.source.userLink.userId,
+          orgId: args.source.orgId,
+          threadId: persisted.chatThreadId,
+        });
+      },
+    });
   },
 );
 
@@ -2133,7 +2118,7 @@ const handleTelegramAgentMessage$ = command(
     signal.throwIfAborted();
 
     const runPrompt = buildTelegramAgentPrompt(args);
-    const result = await set(
+    await set(
       runAgentForTelegram$,
       {
         source: args,
@@ -2147,18 +2132,6 @@ const handleTelegramAgentMessage$ = command(
       signal,
     );
     signal.throwIfAborted();
-
-    const notice =
-      result.kind === "picked" ? chatQueueWaitNotice(result.reason) : null;
-    if (notice) {
-      await postTelegramMessage({
-        botToken: args.botToken,
-        chatId,
-        text: notice,
-        replyToMessageId: args.message.message_id,
-      });
-      signal.throwIfAborted();
-    }
   },
 );
 

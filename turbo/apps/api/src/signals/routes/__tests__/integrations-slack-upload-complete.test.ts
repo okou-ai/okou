@@ -301,23 +301,16 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     const agent = await bdd.createAgent(actor, {
       displayName: `Slack upload ${randomUUID().slice(0, 8)}`,
     });
-    const sent = await chatApi.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "Create a run for Slack upload completion",
-        model: "claude-fable-5-1",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected chat send to create a run for Slack upload");
-    }
+    const sent = await chatApi.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Create a run for Slack upload completion",
+      model: "claude-fable-5-1",
+    });
     return {
       orgId: base.orgId,
       userId: base.userId,
-      runId: sent.body.runId,
-      threadId: sent.body.threadId,
+      runId: sent.runId,
+      threadId: sent.threadId,
       runnerGroup,
       agentId: agent.agentId,
     };

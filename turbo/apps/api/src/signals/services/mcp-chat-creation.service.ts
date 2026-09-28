@@ -1,8 +1,8 @@
 import type {
   McpCreateChatWithMessageInput,
-  McpCreateChatWithMessageOutput,
   McpCreateChatThreadInput,
   McpCreateChatThreadOutput,
+  McpCreateEmptyChatThreadOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
@@ -21,16 +21,12 @@ import {
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
-import { logger } from "../../lib/log";
 import { now } from "../../lib/time";
+import type { ApiOrgRole } from "../../types/auth";
 import { writeDb$, type Db } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { settle, settleIncludingAbort } from "../utils";
+import { settle } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import { appendMcpQueuedUserMessageInTransaction } from "./chat-events.command";
-import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
-import { markChatThreadQueued } from "./queued-chat-thread.service";
 import { createChatThreadInTransaction } from "./chat-thread.service";
 import { chatThreadServiceTierFromCodex } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
@@ -38,11 +34,7 @@ import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service"
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
-import { mcpInputDisposition } from "./mcp-chat-send.service";
-import {
-  MCP_SUBMISSION_RETRY_MS,
-  resolveMcpSubmission,
-} from "./mcp-chat-submission.service";
+import { submitMcpChatInput$ } from "./mcp-chat-send.service";
 import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   resolveModelSelectionPin,
@@ -52,12 +44,15 @@ import {
 const CREATION_RETRY_MS = 24 * 60 * 60 * 1000;
 const CREATION_NAMESPACE = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
 const COMBINED_INPUT_NAMESPACE = "c2559c1c-a5f8-4d43-88a6-9738ef189420";
-const L = logger("McpChatCreation");
 
 interface Principal {
   readonly userId: string;
   readonly orgId: string;
+  readonly orgRole: ApiOrgRole;
 }
+
+/** The creation output without the combined input's receipt. */
+type McpCreatedChatThread = Omit<McpCreateEmptyChatThreadOutput, "nextAction">;
 
 class McpThreadCreationError extends Error {
   constructor(
@@ -272,33 +267,7 @@ async function readCreation(
       "The 24-hour creation retry window has expired. Inspect the original conversation before creating new work; this request was not applied again.",
     );
   }
-  if (!isCombinedCreation(input)) {
-    return { thread, acceptedAt: event.createdAt };
-  }
-  const inputId = combinedInputId(input);
-  const submission = await resolveMcpSubmission(
-    tx,
-    { requestId: inputId, text: input.message },
-    {
-      userId: principal.userId,
-      orgId: principal.orgId,
-      threadId: input.requestId,
-    },
-  );
-  if (submission.kind === "expired") {
-    throw new McpThreadCreationError(
-      "request_expired",
-      "The 24-hour creation retry window has expired. Inspect the original conversation and input before creating new work; this request was not applied again.",
-    );
-  }
-  if (submission.kind !== "accepted") {
-    creationConflict();
-  }
-  return {
-    thread,
-    acceptedAt: event.createdAt,
-    submission: submission.receipt,
-  };
+  return { thread, acceptedAt: event.createdAt };
 }
 
 async function initializeThread(
@@ -357,7 +326,8 @@ async function initializeThread(
           return effort.modelSettings;
         })();
   const created = await createChatThreadInTransaction(tx, {
-    ...principal,
+    userId: principal.userId,
+    orgId: principal.orgId,
     agentId,
     title: input.title,
     clientThreadId: input.requestId,
@@ -372,25 +342,7 @@ async function initializeThread(
   if (created.kind === "invalid_connector_selection") {
     throw new McpThreadCreationError("invalid_state", created.message);
   }
-  if (created.kind !== "created") {
-    return false;
-  }
-  if (isCombinedCreation(input)) {
-    // Queue row before the input event, once the thread row exists.
-    await markChatThreadQueued(tx, {
-      chatThreadId: input.requestId,
-      orgId: principal.orgId,
-    });
-    signal.throwIfAborted();
-    await appendMcpQueuedUserMessageInTransaction(tx, {
-      ...principal,
-      threadId: input.requestId,
-      inputId: combinedInputId(input),
-      text: input.message,
-    });
-    signal.throwIfAborted();
-  }
-  return true;
+  return created.kind === "created";
 }
 
 async function createInTransaction(
@@ -398,7 +350,7 @@ async function createInTransaction(
   principal: Principal,
   input: McpCreateChatThreadInput,
   signal: AbortSignal,
-): Promise<McpCreateChatThreadOutput> {
+): Promise<McpCreatedChatThread> {
   // Concurrent requests for one requestId race on the chat_threads primary
   // key: the loser's INSERT waits for the winner, observes the conflict, and
   // replays (or conflicts on) the committed creation below.
@@ -410,8 +362,7 @@ async function createInTransaction(
   if (!creation) {
     replayed = !(await initializeThread(tx, principal, input, agentId, signal));
     // appendChatThreadEvent tolerates event-ID duplicates. Never commit a
-    // newly inserted thread unless its exact initial event and optional input
-    // were also written.
+    // newly inserted thread unless its exact initial event was also written.
     creation = await readCreation(tx, principal, input);
     if (!creation) {
       throw new Error("Canonical creation did not persist its identity");
@@ -443,41 +394,6 @@ async function createInTransaction(
     retryUntil: formatMcpChatTimestamp(
       new Date(acceptedAt.getTime() + CREATION_RETRY_MS),
     ),
-    ...(isCombinedCreation(input)
-      ? (() => {
-          const submission = creation.submission;
-          if (submission === undefined) {
-            throw new Error("Created thread input receipt is missing");
-          }
-          const inputRef = {
-            threadId: thread.id,
-            eventId: submission.requestId,
-            seqId: submission.inputSeqId,
-          };
-          return {
-            input: {
-              inputRef,
-              acceptedAt: formatMcpChatTimestamp(submission.acceptedAt),
-              retryUntil: formatMcpChatTimestamp(
-                new Date(
-                  submission.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS,
-                ),
-              ),
-              disposition: "queued" as const,
-              runId: null,
-            },
-            nextAction: {
-              tool: "get_chat_status" as const,
-              arguments: { inputRef },
-            },
-          };
-        })()
-      : {
-          nextAction: {
-            tool: "send_chat_message" as const,
-            arguments: { threadId: thread.id },
-          },
-        }),
   };
 }
 
@@ -488,97 +404,20 @@ async function createChatThread(
     readonly input: McpCreateChatThreadInput;
   },
   signal: AbortSignal,
-): Promise<McpCreateChatThreadOutput> {
+): Promise<McpCreatedChatThread> {
   signal.throwIfAborted();
   return await args.db.transaction(async (tx) => {
     return await createInTransaction(tx, args.principal, args.input, signal);
   });
 }
 
-async function finishCombinedCreation(
-  args: {
-    readonly db: Db;
-    readonly principal: Principal;
-    readonly input: McpCreateChatWithMessageInput;
-    readonly output: McpCreateChatWithMessageOutput;
-    readonly drain: () => Promise<unknown>;
-  },
-  signal: AbortSignal,
-): Promise<McpChatMutationResult<McpCreateChatThreadOutput>> {
-  const drain = await settleIncludingAbort(args.drain());
-  if (!drain.ok) {
-    L.warn("Failed to drain initial MCP chat input after commit", {
-      threadId: args.output.threadId,
-      inputId: args.output.input.inputRef.eventId,
-      error: drain.error,
-    });
-  }
-  signal.throwIfAborted();
-
-  const resolved = await resolveMcpSubmission(
-    args.db,
-    {
-      requestId: args.output.input.inputRef.eventId,
-      text: args.input.message,
-    },
-    {
-      ...args.principal,
-      threadId: args.output.threadId,
-    },
-  );
-  signal.throwIfAborted();
-  if (resolved.kind !== "accepted") {
-    return {
-      kind: "error",
-      code: "submission_unavailable",
-      message:
-        "The accepted initial input could not be resolved. Retry the identical create request within 24 hours.",
-      retryable: true,
-    };
-  }
-  const disposition = await mcpInputDisposition(
-    args.db,
-    args.output.threadId,
-    resolved.receipt.requestId,
-  );
-  signal.throwIfAborted();
-  if (disposition.disposition === "unavailable") {
-    return {
-      kind: "error",
-      code: "submission_unavailable",
-      message:
-        "The accepted initial input disposition is unavailable. Retry the identical create request within 24 hours.",
-      retryable: true,
-    };
-  }
-  const inputRef = {
-    threadId: args.output.threadId,
-    eventId: resolved.receipt.requestId,
-    seqId: resolved.receipt.inputSeqId,
-  };
-  return {
-    kind: "ok",
-    data: {
-      ...args.output,
-      input: {
-        inputRef,
-        acceptedAt: formatMcpChatTimestamp(resolved.receipt.acceptedAt),
-        retryUntil: formatMcpChatTimestamp(
-          new Date(
-            resolved.receipt.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS,
-          ),
-        ),
-        ...disposition,
-      },
-      nextAction: {
-        tool: "get_chat_status",
-        arguments: { inputRef },
-      },
-    },
-  };
-}
-
-/** Finite mutation ownership belongs to the MCP route, not its response wait. */
+/**
+ * Create a chat thread, and for a combined request send its first message
+ * through the same direct send as `send_chat_message`. The thread creation
+ * is replayable by requestId; the message's client event id is derived from
+ * it, so a retried combined request re-sends idempotently after a partial
+ * failure.
+ */
 export const createMcpChatThread$ = command(
   async (
     { set },
@@ -620,31 +459,45 @@ export const createMcpChatThread$ = command(
     }
     await publishThreadListChanged(args.principal);
     signal.throwIfAborted();
+    const created = result.value;
     if (!isCombinedCreation(args.input)) {
-      return { kind: "ok", data: result.value };
-    }
-    if (!("input" in result.value)) {
-      throw new Error("Combined creation output is missing input receipt");
-    }
-    return await finishCombinedCreation(
-      {
-        db,
-        principal: args.principal,
-        input: args.input,
-        output: result.value,
-        drain: () => {
-          return set(
-            pickEnqueuedChatThread$,
-            {
-              chatThreadId: result.value.threadId,
-              orgId: args.principal.orgId,
-              dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-            },
-            operationSignal,
-          );
+      return {
+        kind: "ok",
+        data: {
+          ...created,
+          nextAction: {
+            tool: "send_chat_message",
+            arguments: { threadId: created.threadId },
+          },
         },
+      };
+    }
+    const submitted = await set(
+      submitMcpChatInput$,
+      {
+        principal: args.principal,
+        threadId: created.threadId,
+        agentId: created.agentId,
+        inputId: combinedInputId(args.input),
+        text: args.input.message,
       },
       signal,
     );
+    signal.throwIfAborted();
+    if (submitted.kind === "error") {
+      return submitted;
+    }
+    const { receipt } = submitted.data;
+    return {
+      kind: "ok",
+      data: {
+        ...created,
+        input: receipt,
+        nextAction: {
+          tool: "get_chat_status",
+          arguments: { inputRef: receipt.inputRef },
+        },
+      },
+    };
   },
 );

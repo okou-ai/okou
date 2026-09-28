@@ -253,7 +253,7 @@ function buildWebChatPriorRunsContext(
  * emit dozens of intermediate assistant messages, and replaying its narration
  * tells the next run nothing the final answer does not already say.
  */
-function lastRunMessageSeqIds(
+export function lastRunMessageSeqIds(
   db: Pick<Db, "select">,
   threadId: string,
   runIds: readonly string[],

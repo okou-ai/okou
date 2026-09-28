@@ -683,22 +683,15 @@ describe("X daily resource usage webhook", () => {
       agentId: owner.agentId,
       title: "X resource thread",
     });
-    const sent = await chat.requestSendEvent(
-      owner.actor,
-      {
-        agentId: owner.agentId,
-        threadId: thread.id,
-        prompt: "Read an X resource",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected a run for the chat thread");
-    }
+    const sent = await chat.sendAndLaunch(owner.actor, {
+      agentId: owner.agentId,
+      threadId: thread.id,
+      prompt: "Read an X resource",
+    });
     const threaded = {
       ...owner,
-      runId: sent.body.runId,
-      authorization: `Bearer ${runs.sandboxTokenForRun(owner.actor, sent.body.runId)}`,
+      runId: sent.runId,
+      authorization: `Bearer ${runs.sandboxTokenForRun(owner.actor, sent.runId)}`,
     };
     const id = resourceId();
     await accept(submit(threaded, [observation([id])]), [200]);

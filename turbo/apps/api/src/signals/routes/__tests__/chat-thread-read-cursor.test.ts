@@ -77,18 +77,13 @@ async function createUnreadCursorFixture(): Promise<CursorFixture> {
     displayName: `Read cursor unread ${randomUUID().slice(0, 8)}`,
     visibility: "private",
   });
-  const sent = await chat.requestSendEvent(
-    actor,
-    { agentId: agent.agentId, prompt: `read cursor ${randomUUID()}` },
-    [201],
-  );
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected the entitled Chat send to create a Run");
-  }
-  await runs.requestCancelRun(actor, sent.body.runId, [200]);
+  const { runId, threadId } = await chat.sendAndLaunch(actor, {
+    agentId: agent.agentId,
+    prompt: `read cursor ${randomUUID()}`,
+  });
+  await runs.requestCancelRun(actor, runId, [200]);
   await flushWaitUntilForTest();
 
-  const { threadId } = sent.body;
   await expect
     .poll(async () => {
       return await chat.listUnreadChatThreadIds(actor);

@@ -3,7 +3,7 @@ import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 
 import { logger } from "../../lib/log";
-import { apiStartTime$, authorization$ } from "../context/hono";
+import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
@@ -12,7 +12,10 @@ import {
   dispatchRequiredTerminalChatCallback$,
   type RequiredTerminalChatCallbackResult,
 } from "../services/agent-webhook-complete.service";
-import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
+import {
+  dispatchCompleteSideEffects$,
+  scheduleReleasedSlotPicks$,
+} from "../services/agent-run-lifecycle.service";
 import { settle, tapError } from "../utils";
 import {
   getSandboxAuthForRun,
@@ -38,6 +41,9 @@ const completeAgentRunRoute$ = command(
     }
 
     const result = await set(completeAgentRun$, { auth, body }, signal);
+    if (result.status === 200) {
+      set(scheduleReleasedSlotPicks$, result.releasedSlots);
+    }
     signal.throwIfAborted();
 
     if (result.status === 200 && result.sideEffects?.kind === "terminal") {
@@ -66,11 +72,7 @@ const completeAgentRunRoute$ = command(
         tapError(
           set(
             dispatchCompleteSideEffects$,
-            {
-              ...result.sideEffects,
-              apiStartTime: get(apiStartTime$),
-              skipChatCallback: true,
-            },
+            { ...result.sideEffects, skipChatCallback: true },
             backgroundSignal,
           ),
           (error) => {
@@ -91,11 +93,7 @@ const completeAgentRunRoute$ = command(
     } else if (result.status === 200 && result.sideEffects) {
       waitUntil(
         tapError(
-          set(
-            dispatchCompleteSideEffects$,
-            { ...result.sideEffects, apiStartTime: get(apiStartTime$) },
-            signal,
-          ),
+          set(dispatchCompleteSideEffects$, result.sideEffects, signal),
           (error) => {
             L.error("dispatchCompleteSideEffects failed", {
               runId: result.sideEffects?.runId,

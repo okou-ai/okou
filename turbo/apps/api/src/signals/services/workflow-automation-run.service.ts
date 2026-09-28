@@ -17,7 +17,10 @@ import {
   type WorkflowAdmissionOutcome,
   type WorkflowAdmissionSchedulePath,
 } from "./workflow-queue-admission-timing.service";
-import { enqueueChatInput$ } from "./chat-thread-queue-drain.service";
+import {
+  enqueueChatInput,
+  scheduleEnqueuedChatThreadPick$,
+} from "./chat-thread-queue-drain.service";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   persistedWorkflowAutomationEventPayload,
@@ -30,12 +33,12 @@ import type {
 
 /**
  * The producer-owned write that commits with the queue event: claim and bind
- * a journaled schedule occurrence, then persist any trigger-source transition.
- * Neither present means the event is admitted without a caller-owned write.
+ * a journaled schedule occurrence, coalesce this automation's older
+ * unconsumed ticks, then persist any trigger-source transition.
  *
- * A journaled tick replaces this automation's older pending ticks only after
- * its own claim succeeded, in the same transaction and excluding its new
- * event, so a tick that loses the occurrence never revokes the winner's event.
+ * Coalescing runs after the new tick's own claim succeeded, in its insert
+ * transaction and excluding its new event, so a tick that loses the
+ * occurrence never revokes the winner's event.
  */
 function queueAdmissionSourceTransition(args: {
   readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
@@ -49,7 +52,7 @@ function queueAdmissionSourceTransition(args: {
   readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
 } {
   const { scheduleClaim, persistSourceTransition, replacePendingTicks } = args;
-  if (!scheduleClaim && !persistSourceTransition) {
+  if (!scheduleClaim && !persistSourceTransition && !replacePendingTicks) {
     return {};
   }
   return {
@@ -63,12 +66,12 @@ function queueAdmissionSourceTransition(args: {
           claimId: claim.claimId,
           queueEventId: eventId,
         });
-        if (replacePendingTicks) {
-          await revokePendingScheduleTicks(tx, {
-            ...replacePendingTicks,
-            excludeEventId: eventId,
-          });
-        }
+      }
+      if (replacePendingTicks) {
+        await revokePendingScheduleTicks(tx, {
+          ...replacePendingTicks,
+          excludeEventId: eventId,
+        });
       }
       await persistSourceTransition?.(tx);
     },
@@ -76,11 +79,13 @@ function queueAdmissionSourceTransition(args: {
 }
 
 /**
- * Automation-event producer. Producer-owned state stays here: an automated
- * schedule tick first revokes this automation's still-pending tick, and a
+ * Workflow entry for every trigger. Entry-owned state stays here: an automated
+ * schedule tick coalesces this automation's older unconsumed ticks, and a
  * journaled Morning Brief occurrence and any trigger-source transition commit
- * with the queue event. The event then goes through the single chat enqueue
- * entry like every other input.
+ * with the queue event. The event and its automation context then go through
+ * the single chat enqueue, and the thread is picked in the background: no
+ * trigger waits for a launch, and a launch rejection appears in the thread as
+ * `input.rejected`.
  */
 export const runWorkflowAutomationNow$ = command(
   async (
@@ -105,13 +110,6 @@ export const runWorkflowAutomationNow$ = command(
       args.replacePendingScheduleTick !== false
         ? { chatThreadId, automationId: automation.id }
         : undefined;
-    // An unjournaled tick's occurrence was already claimed by the cron before
-    // this call, so it may replace older ticks up front. A journaled tick
-    // replaces them only after its own claim succeeds (see above).
-    if (replacePendingTicks && !scheduleClaim) {
-      await revokePendingScheduleTicks(db, replacePendingTicks);
-      signal.throwIfAborted();
-    }
 
     const appendInput = await workflowAutomationQueueEventWriter(db, {
       automation,
@@ -143,33 +141,26 @@ export const runWorkflowAutomationNow$ = command(
         "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
         async () => {
           const attempt = await settle(
-            set(
-              enqueueChatInput$,
-              {
-                chatThreadId,
-                orgId: automation.orgId,
-                apiStartTime: args.apiStartTime,
-                dispatchFailedCallbacks: args.dispatchFailedCallbacks,
-                automationTiming: timing,
-                appendInput,
-                ...queueAdmissionSourceTransition({
-                  scheduleClaim,
-                  persistSourceTransition,
-                  replacePendingTicks,
-                }),
-              },
-              signal,
-            ),
+            enqueueChatInput(db, {
+              chatThreadId,
+              orgId: automation.orgId,
+              appendInput,
+              ...queueAdmissionSourceTransition({
+                scheduleClaim,
+                persistSourceTransition,
+                replacePendingTicks,
+              }),
+            }),
           );
           if (!attempt.ok) {
             if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {
               admissionOutcome = "superseded";
-              return null;
+              return false;
             }
             throw attempt.error;
           }
           admissionOutcome = "inserted";
-          return attempt.value;
+          return true;
         },
         () => {
           return {
@@ -183,33 +174,25 @@ export const runWorkflowAutomationNow$ = command(
       },
     );
     signal.throwIfAborted();
+    // The entry's timing ends at the enqueue commit; the background pick and
+    // the launch are measured by the pick itself.
+    timing.flushWithoutRun(
+      args.triggerSource ? { trigger_source: args.triggerSource } : undefined,
+    );
 
-    // A superseded occurrence starts no run and adds no queue item; the claim
-    // plan's owner records why.
-    if (!enqueued) {
-      return { kind: "enqueued" };
-    }
-    await publishChatThreadMessageCreatedSafely({
-      userId: automation.ownerUserId,
-      orgId: automation.orgId,
-      threadId: chatThreadId,
-    });
-    signal.throwIfAborted();
-
-    const { eventId, pick } = enqueued;
-    if (eventId === null || pick.eventId !== eventId) {
-      return { kind: "enqueued" };
-    }
-    if (pick.reason === "launched" && pick.runId !== undefined) {
-      return { kind: "ok", runId: pick.runId };
-    }
-    if (pick.reason === "rejected") {
-      return (
-        pick.rejection ?? {
-          kind: "conflict",
-          message: "Workflow queue event was rejected",
-        }
-      );
+    // A superseded occurrence adds no queue item; the claim plan's owner
+    // records why.
+    if (enqueued) {
+      set(scheduleEnqueuedChatThreadPick$, {
+        chatThreadId,
+        publish: async () => {
+          await publishChatThreadMessageCreatedSafely({
+            userId: automation.ownerUserId,
+            orgId: automation.orgId,
+            threadId: chatThreadId,
+          });
+        },
+      });
     }
     return { kind: "enqueued" };
   },

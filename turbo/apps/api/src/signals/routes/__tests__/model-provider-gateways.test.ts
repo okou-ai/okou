@@ -409,23 +409,12 @@ describe("custom model provider gateway routes", () => {
       },
     ]);
 
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        clientEventId: randomUUID(),
-        agentId: agent.agentId,
-        prompt: "exercise the custom gateway",
-        model: "claude-fable-5-1",
-      },
-      [201],
-    );
-    if ("error" in sent.body) {
-      throw new Error("Expected the custom gateway chat send to succeed");
-    }
-    const runId = sent.body.runId;
-    if (!runId) {
-      throw new Error("Expected the custom gateway chat send to create a run");
-    }
+    const { runId } = await chat.sendAndLaunch(actor, {
+      clientEventId: randomUUID(),
+      agentId: agent.agentId,
+      prompt: "exercise the custom gateway",
+      model: "claude-fable-5-1",
+    });
     await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(runId);
 
@@ -474,27 +463,12 @@ describe("custom model provider gateway routes", () => {
         modelProviderSurfaceId: responsesSurface.id,
       },
     ]);
-    const codexSent = await chat.requestSendEvent(
-      actor,
-      {
-        clientEventId: randomUUID(),
-        agentId: agent.agentId,
-        prompt: "exercise the custom Responses gateway",
-        model: "gpt-6-astra",
-      },
-      [201],
-    );
-    if ("error" in codexSent.body) {
-      throw new Error(
-        "Expected the custom Responses gateway chat send to succeed",
-      );
-    }
-    const codexRunId = codexSent.body.runId;
-    if (!codexRunId) {
-      throw new Error(
-        "Expected the custom Responses gateway chat send to create a run",
-      );
-    }
+    const { runId: codexRunId } = await chat.sendAndLaunch(actor, {
+      clientEventId: randomUUID(),
+      agentId: agent.agentId,
+      prompt: "exercise the custom Responses gateway",
+      model: "gpt-6-astra",
+    });
     await runs.heartbeatRunner(runnerGroup);
     const codexClaim = await runs.claimRunnerJob(codexRunId);
 

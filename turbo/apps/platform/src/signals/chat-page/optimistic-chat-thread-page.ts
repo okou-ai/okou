@@ -5,7 +5,6 @@ import type { ImageModel } from "@okouai/core/image-model-catalog";
 import type { VideoModel } from "@okouai/core/video-model-catalog";
 import {
   chatThreadsContract,
-  type ChatRunVideoOptionsRequest,
   type GenerationTemplateRequest,
   type ResolvedAttachFile,
   type UserMessageDocument,
@@ -83,7 +82,6 @@ interface SendNewThreadMessageRequest {
   cloudBrowserEnabled?: boolean;
   imageModel?: ImageModel;
   videoModel?: VideoModel;
-  videoRunOptions?: ChatRunVideoOptionsRequest;
   /** What the composer was set to make, for the thread this send creates. */
   composerTask?: ComposerTaskSelection;
   routeSearchParams?: URLSearchParams;
@@ -186,7 +184,6 @@ function newThreadSendBody({
   userMessage,
   computerUseHostId,
   cloudBrowserEnabled,
-  videoRunOptions,
   sourceRunId,
 }: {
   agentId: string;
@@ -198,13 +195,9 @@ function newThreadSendBody({
   userMessage: UserMessageDocument;
   computerUseHostId?: string | null;
   cloudBrowserEnabled?: boolean;
-  videoRunOptions?: ChatRunVideoOptionsRequest;
   sourceRunId?: string;
 }) {
-  const runOptions = runOptionsFromModelProviderSelection(
-    modelSelection,
-    videoRunOptions,
-  );
+  const runOptions = runOptionsFromModelProviderSelection(modelSelection);
   return {
     agentId,
     prompt: prepared.prompt,
@@ -620,7 +613,6 @@ const sendNewThreadMessage$ = command(
       userMessage: annotatedUserMessage,
       computerUseHostId,
       cloudBrowserEnabled,
-      videoRunOptions: request.videoRunOptions,
       sourceRunId: request.forward?.runId,
     });
     const sendResult = (async (): Promise<void> => {

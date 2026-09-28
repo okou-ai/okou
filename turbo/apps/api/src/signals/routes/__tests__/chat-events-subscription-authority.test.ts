@@ -10,7 +10,6 @@ import { now } from "../../../lib/time";
 import { holdThreadSessionConversationClearFixture } from "../../../test-fixtures/chat-events";
 import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settleIncludingAbort } from "../../utils";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
@@ -33,18 +32,18 @@ const {
   configureOrganizationGptModel,
   configureSubscriptionPiModel,
   sendChatRun,
+  sendWaitingChatInput,
   claimChatRun,
   waitForThreadMessages,
   completeChatRunOk,
   cancelChatRun,
-  requestSendEventRaw,
   requestSendEventWithBearer,
   mockPiCheckpointObjectStore,
   completeSandboxFirstPiRun,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
-function jsonHttpException(status: 409 | 422, message: string) {
+function jsonHttpException(status: 422, message: string) {
   return new HTTPException(status, {
     res: new Response(JSON.stringify({ error: { message } }), {
       status,
@@ -53,34 +52,9 @@ function jsonHttpException(status: 409 | 422, message: string) {
   });
 }
 
-function observePendingSend<T>(send: Promise<T>) {
-  const result = settleIncludingAbort(send);
-  const phases: Promise<unknown>[] = [];
-
-  async function beforeSettlement(phase: PromiseLike<unknown>) {
-    const work = Promise.resolve(phase);
-    phases.push(work);
-    await Promise.race([
-      work,
-      result.then((settled) => {
-        if (!settled.ok) {
-          throw settled.error;
-        }
-        throw new Error(
-          "Chat send completed before its held subscription preparation phase",
-        );
-      }),
-    ]);
-  }
-
-  async function joinPhases() {
-    await Promise.allSettled(phases);
-  }
-
-  return { result, beforeSettlement, joinPhases };
-}
-
 describe("CHAT-02: run-level model overrides", () => {
+  // A send only enqueues its input; the background pick prepares the run, so
+  // these holds pause the pick while the input waits in the thread.
   describe("subscription account preparation", () => {
     async function prepareSubscriptionThread() {
       const { actor, agentId } = await entitledChatActor();
@@ -97,17 +71,69 @@ describe("CHAT-02: run-level model overrides", () => {
       return { actor, agentId, captured, thread, preparation };
     }
 
+    async function sendHeldInput(
+      f: Awaited<ReturnType<typeof prepareSubscriptionThread>>,
+      clientEventId: string,
+      prompt: string,
+    ): Promise<void> {
+      const sent = await chat.requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          threadId: f.thread.id,
+          model: "gpt-5.6-terra",
+          prompt,
+          clientEventId,
+        },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the send to be accepted");
+      }
+      expect(sent.body).toMatchObject({ runId: null, threadId: f.thread.id });
+    }
+
+    /** The held pick has neither launched nor rejected the input yet. */
+    async function expectInputNotConsumed(
+      actor: Awaited<ReturnType<typeof entitledChatActor>>["actor"],
+      threadId: string,
+      clientEventId: string,
+    ): Promise<void> {
+      const page = await chat.listThreadEvents(actor, threadId);
+      expect(
+        userMessages(page.events).filter((message) => {
+          return message.revokesEventId === clientEventId;
+        }),
+      ).toStrictEqual([]);
+    }
+
+    async function waitForRejection(
+      f: Awaited<ReturnType<typeof prepareSubscriptionThread>>,
+    ) {
+      const messages = await waitForThreadMessages(
+        f.actor,
+        f.thread.id,
+        (items) => {
+          return items.some((event) => {
+            return event.eventType === "output.error";
+          });
+        },
+      );
+      return messages.events;
+    }
+
     it("overlaps account capture with thread observation and keeps captured identity", async () => {
       const f = await prepareSubscriptionThread();
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
-      const send = sendChatRun(f.actor, {
+      const clientEventId = randomUUID();
+      const waiting = await sendWaitingChatInput(f.actor, {
         agentId: f.agentId,
         threadId: f.thread.id,
         model: "gpt-5.6-terra",
         prompt: "overlap subscription capture with thread preparation",
+        clientEventId,
       });
-      const observed = observePendingSend(send);
 
       await Promise.all([
         f.preparation.arrival("subscription-account"),
@@ -117,17 +143,15 @@ describe("CHAT-02: run-level model overrides", () => {
         f.preparation.hasArrived("post-authorization-context"),
       ).toBeFalsy();
       f.preparation.release("subscription-account");
-      await observed.beforeSettlement(
-        f.preparation.arrival("post-authorization-context"),
-      );
+      await f.preparation.arrival("post-authorization-context");
+      await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
       expect(f.preparation.arrivalCount("subscription-account")).toBe(1);
       expect(f.preparation.arrivalCount("thread-session")).toBe(1);
       f.preparation.release("post-authorization-context");
       f.preparation.release("thread-session");
       f.preparation.releaseAll();
 
-      const run = await send;
-      await observed.joinPhases();
+      const run = await waiting.launchedRun();
       await expect(api.readRun(f.actor, run.runId)).resolves.toMatchObject({
         source: {
           providerType: "codex-oauth-token",
@@ -139,26 +163,19 @@ describe("CHAT-02: run-level model overrides", () => {
     it("rejects an account disconnected after capture before environment preparation", async () => {
       const f = await prepareSubscriptionThread();
       const clientEventId = randomUUID();
-      const prompt = "reject a disconnected captured account";
-      const send = requestSendEventRaw(f.actor, {
-        agentId: f.agentId,
-        threadId: f.thread.id,
-        model: "gpt-5.6-terra",
-        prompt,
+      await sendHeldInput(
+        f,
         clientEventId,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-        hasTextContent: true,
-      });
-      const observed = observePendingSend(send);
+        "reject a disconnected captured account",
+      );
 
       await Promise.all([
         f.preparation.arrival("subscription-account"),
         f.preparation.arrival("thread-session"),
       ]);
       f.preparation.release("subscription-account");
-      await observed.beforeSettlement(
-        f.preparation.arrival("post-authorization-context"),
-      );
+      await f.preparation.arrival("post-authorization-context");
+      await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
       await authDeviceSupport.deletePersonalModelProviderAccount(
         f.actor,
         f.captured.accountSourceId,
@@ -167,20 +184,19 @@ describe("CHAT-02: run-level model overrides", () => {
       f.preparation.release("thread-session");
       f.preparation.releaseAll();
 
-      await expect(send).resolves.toMatchObject({
-        status: 503,
-        body: { error: { code: "PROVIDER_UNAVAILABLE" } },
-      });
-      await observed.joinPhases();
-      const events = await chat.listThreadEvents(f.actor, f.thread.id);
-      expect(events.events).toStrictEqual([
+      await expect(waitForRejection(f)).resolves.toStrictEqual([
         expect.objectContaining({
           eventType: "input.prompt",
           id: clientEventId,
         }),
         expect.objectContaining({
-          eventType: "control.revoke",
+          eventType: "input.rejected",
           revokesEventId: clientEventId,
+          error: "provider_unavailable",
+        }),
+        expect.objectContaining({
+          eventType: "output.error",
+          error: "provider_unavailable",
         }),
       ]);
     });
@@ -224,7 +240,7 @@ describe("CHAT-02: run-level model overrides", () => {
         orgId: requireOrgId(actor),
         signal: context.signal,
       });
-      const secondPromise = sendChatRun(actor, {
+      const waiting = await sendWaitingChatInput(actor, {
         agentId,
         threadId: first.threadId,
         model: "gpt-5.6-terra",
@@ -254,7 +270,7 @@ describe("CHAT-02: run-level model overrides", () => {
 
       conversationClear.release();
       await conversationClear.done;
-      const second = await secondPromise;
+      const second = await waiting.launchedRun();
       expect(preparation.arrivalCount("subscription-account")).toBe(1);
       expect(preparation.arrivalCount("thread-session")).toBe(2);
       await expect(api.readRun(actor, second.runId)).resolves.toMatchObject({
@@ -270,17 +286,11 @@ describe("CHAT-02: run-level model overrides", () => {
     it("keeps an unavailable capture ahead of a speculative thread failure", async () => {
       const f = await prepareSubscriptionThread();
       const clientEventId = randomUUID();
-      const prompt = "prefer unavailable capture over thread failure";
-      const send = requestSendEventRaw(f.actor, {
-        agentId: f.agentId,
-        threadId: f.thread.id,
-        model: "gpt-5.6-terra",
-        prompt,
+      await sendHeldInput(
+        f,
         clientEventId,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-        hasTextContent: true,
-      });
-      const observed = observePendingSend(send);
+        "prefer unavailable capture over thread failure",
+      );
 
       await Promise.all([
         f.preparation.arrival("subscription-account"),
@@ -294,147 +304,32 @@ describe("CHAT-02: run-level model overrides", () => {
         "thread-session",
         jsonHttpException(422, "session preparation failed"),
       );
-      await observed.beforeSettlement(
-        f.preparation.departure("thread-session"),
-      );
+      await f.preparation.departure("thread-session");
+      // The thread failure alone does not settle the input while the capture
+      // is still held.
+      await expectInputNotConsumed(f.actor, f.thread.id, clientEventId);
       f.preparation.release("subscription-account");
 
-      await expect(send).resolves.toStrictEqual({
-        status: 409,
-        body: {
-          error: {
-            code: "CONFLICT",
-            message:
-              "The selected subscription account is unavailable. Reconnect it before starting another run.",
-          },
-        },
-      });
-      await observed.joinPhases();
+      const events = await waitForRejection(f);
       expect(
         f.preparation.hasArrived("post-authorization-context"),
       ).toBeFalsy();
       f.preparation.releaseAll();
-      const events = await chat.listThreadEvents(f.actor, f.thread.id);
-      expect(events.events).toStrictEqual([
+      expect(events).toStrictEqual([
         expect.objectContaining({
           eventType: "input.prompt",
           id: clientEventId,
         }),
         expect.objectContaining({
-          eventType: "control.revoke",
+          eventType: "input.rejected",
           revokesEventId: clientEventId,
+          error: "conflict",
         }),
-      ]);
-    });
-
-    it("keeps post-authorization failure ahead of thread failure after capture", async () => {
-      const f = await prepareSubscriptionThread();
-      const clientEventId = randomUUID();
-      const prompt = "preserve subscription preparation error order";
-      const send = requestSendEventRaw(f.actor, {
-        agentId: f.agentId,
-        threadId: f.thread.id,
-        model: "gpt-5.6-terra",
-        prompt,
-        clientEventId,
-        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
-        hasTextContent: true,
-      });
-      const observed = observePendingSend(send);
-
-      await Promise.all([
-        f.preparation.arrival("subscription-account"),
-        f.preparation.arrival("thread-session"),
-      ]);
-      f.preparation.release("subscription-account");
-      await f.preparation.arrival("post-authorization-context");
-      f.preparation.reject(
-        "thread-session",
-        jsonHttpException(422, "session preparation failed"),
-      );
-      await observed.beforeSettlement(
-        f.preparation.departure("thread-session"),
-      );
-      f.preparation.reject(
-        "post-authorization-context",
-        jsonHttpException(409, "authorization preparation failed"),
-      );
-
-      await expect(send).resolves.toStrictEqual({
-        status: 409,
-        body: { error: { message: "authorization preparation failed" } },
-      });
-      await observed.joinPhases();
-      f.preparation.releaseAll();
-      const events = await chat.listThreadEvents(f.actor, f.thread.id);
-      expect(events.events).toStrictEqual([
         expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
-        }),
-      ]);
-    });
-
-    it("settles capture and thread branches before surfacing cancellation", async () => {
-      const { actor, agentId } = await entitledChatActor();
-      await configureSubscriptionPiModel(actor, {
-        accountId: `cancelled-subscription-${randomUUID()}`,
-      });
-
-      const thread = await chat.createThread(actor, { agentId });
-      const controller = new AbortController();
-      const requestSignal = AbortSignal.any([
-        controller.signal,
-        context.signal,
-      ]);
-      const preparation = holdPiContextPreparationStagesFixture({
-        userId: actor.userId,
-        orgId: requireOrgId(actor),
-        signal: requestSignal,
-        gateSignal: context.signal,
-      });
-      const clientEventId = randomUUID();
-      const prompt = "cancel held subscription preparation";
-      const send = requestSendEventRaw(
-        actor,
-        {
-          agentId,
-          threadId: thread.id,
-          model: "gpt-5.6-terra",
-          prompt,
-          clientEventId,
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: prompt }],
-          },
-          hasTextContent: true,
-        },
-        requestSignal,
-      );
-      const observed = observePendingSend(send);
-
-      await Promise.all([
-        preparation.arrival("subscription-account"),
-        preparation.arrival("thread-session"),
-      ]);
-      controller.abort(
-        new DOMException("cancelled by subscription route test", "AbortError"),
-      );
-      preparation.release("thread-session");
-      await observed.beforeSettlement(preparation.departure("thread-session"));
-      preparation.release("subscription-account");
-
-      const response = await send;
-      expect(response.status).toBe(500);
-      await observed.joinPhases();
-      await preparation.departure("subscription-account");
-      expect(preparation.hasArrived("post-authorization-context")).toBeFalsy();
-      preparation.releaseAll();
-      const events = await chat.listThreadEvents(actor, thread.id);
-      expect(events.events).toStrictEqual([
-        expect.objectContaining({
-          eventType: "input.prompt",
-          id: clientEventId,
+          eventType: "output.error",
+          error: "conflict",
+          content:
+            "The selected subscription account is unavailable. Reconnect it before starting another run.",
         }),
       ]);
     });
@@ -800,8 +695,10 @@ describe("CHAT-02: run-level model overrides", () => {
       await cancelChatRun(actor, promoted.runId, promotedClaim.sandboxHeaders);
       await expectNoBuiltInModelUsage(promoted.runId);
 
+      const immediateId = randomUUID();
       const immediateBody = {
         agentId,
+        clientEventId: immediateId,
         prompt: "immediate Terra Fast",
         model: route.selectedModel,
         runOptions: { codexServiceTier: "fast" as const },
@@ -810,23 +707,36 @@ describe("CHAT-02: run-level model overrides", () => {
         origin === "agent"
           ? await requestSendEventWithBearer(token, immediateBody, [201])
           : await chat.requestSendEvent(actor, immediateBody, [201]);
-      if (immediate.status !== 201 || !immediate.body.runId) {
+      if (immediate.status !== 201) {
+        throw new Error("Expected immediate subscription send");
+      }
+      // The idle new thread's input is picked in the background.
+      const immediateMessages = await waitForThreadMessages(
+        actor,
+        immediate.body.threadId,
+        (events) => {
+          return userMessages(events).some((event) => {
+            return (
+              event.revokesEventId === immediateId && event.runId !== undefined
+            );
+          });
+        },
+      );
+      const immediateRunId = userMessages(immediateMessages.events).find(
+        (event) => {
+          return event.revokesEventId === immediateId;
+        },
+      )?.runId;
+      if (!immediateRunId) {
         throw new Error("Expected immediate subscription run");
       }
-      const immediateClaim = await claimChatRun(
-        runnerGroup,
-        immediate.body.runId,
-      );
+      const immediateClaim = await claimChatRun(runnerGroup, immediateRunId);
       expect(immediateClaim.claim.piModelConfig).toMatchObject({
         model: route.runtimeModel,
         serviceTier: fastTier,
       });
-      await cancelChatRun(
-        actor,
-        immediate.body.runId,
-        immediateClaim.sandboxHeaders,
-      );
-      await expectNoBuiltInModelUsage(immediate.body.runId);
+      await cancelChatRun(actor, immediateRunId, immediateClaim.sandboxHeaders);
+      await expectNoBuiltInModelUsage(immediateRunId);
       await cancelChatRun(actor, source.runId);
     },
     90_000,

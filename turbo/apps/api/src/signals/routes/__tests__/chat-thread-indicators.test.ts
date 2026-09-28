@@ -97,29 +97,26 @@ async function createCancelledThread(args: {
   readonly agentId: string;
   readonly prompt: string;
 }): Promise<SeededThread> {
-  const sent = await chat.requestSendEvent(
-    args.actor,
-    { agentId: args.agentId, prompt: args.prompt, model: "claude-fable-5-1" },
-    [201],
-  );
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected the entitled Chat send to create a Run");
-  }
-  await api.requestCancelRun(args.actor, sent.body.runId, [200]);
+  const sent = await chat.sendAndLaunch(args.actor, {
+    agentId: args.agentId,
+    prompt: args.prompt,
+    model: "claude-fable-5-1",
+  });
+  await api.requestCancelRun(args.actor, sent.runId, [200]);
   await flushWaitUntilForTest();
 
   let finished: ReturnType<typeof terminalEvent>;
   await expect
     .poll(async () => {
-      const page = await chat.listThreadEvents(args.actor, sent.body.threadId);
-      finished = terminalEvent(page.events, sent.body.runId ?? "");
+      const page = await chat.listThreadEvents(args.actor, sent.threadId);
+      finished = terminalEvent(page.events, sent.runId);
       return finished?.createdAt ?? null;
     })
     .not.toBeNull();
   if (!finished) {
     throw new Error("Expected the cancelled Run to append a terminal event");
   }
-  return { threadId: sent.body.threadId, unreadAt: finished.createdAt };
+  return { threadId: sent.threadId, unreadAt: finished.createdAt };
 }
 
 function okouToken(args: {
@@ -294,14 +291,11 @@ describe("GET /api/indicators", () => {
       agentId,
       prompt: "Still unread indicator thread",
     });
-    const followUp = await chat.requestSendEvent(
-      actor,
-      { agentId, threadId: rerun.threadId, prompt: "Follow-up active Run" },
-      [201],
-    );
-    if (followUp.status !== 201 || followUp.body.runId === null) {
-      throw new Error("Expected the follow-up to create an active Run");
-    }
+    await chat.sendAndLaunch(actor, {
+      agentId,
+      threadId: rerun.threadId,
+      prompt: "Follow-up active Run",
+    });
     await seedMembership(actor);
 
     const indicators = await accept(
@@ -340,27 +334,16 @@ describe("GET /api/indicators", () => {
       displayName: "Hidden active indicator agent",
       visibility: "public",
     });
-    const visible = await chat.requestSendEvent(
-      actor,
-      { agentId: visibleAgentId, prompt: "Visible active indicator" },
-      [201],
-    );
-    if (visible.status !== 201 || visible.body.runId === null) {
-      throw new Error("Expected a visible active Run");
-    }
+    const visible = await chat.sendAndLaunch(actor, {
+      agentId: visibleAgentId,
+      prompt: "Visible active indicator",
+    });
 
     for (let index = 0; index < 50; index += 1) {
-      const hidden = await chat.requestSendEvent(
-        actor,
-        {
-          agentId: hiddenAgent.agentId,
-          prompt: `Later hidden active indicator ${index}`,
-        },
-        [201],
-      );
-      if (hidden.status !== 201 || hidden.body.runId === null) {
-        throw new Error("Expected a hidden active Run");
-      }
+      await chat.sendAndLaunch(actor, {
+        agentId: hiddenAgent.agentId,
+        prompt: `Later hidden active indicator ${index}`,
+      });
     }
     await bdd.updateAgent(peer, hiddenAgent.agentId, {
       visibility: "private",
@@ -380,7 +363,7 @@ describe("GET /api/indicators", () => {
     );
     expect(indicators.body).toStrictEqual({
       agents: { [visibleAgentId]: "active" },
-      threads: { [visible.body.threadId]: "active" },
+      threads: { [visible.threadId]: "active" },
       unreadAt: {},
     });
   }, 180_000);

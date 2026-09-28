@@ -569,26 +569,18 @@ async function completeWebContinuation(args: {
   readonly resumeCliAgentSessionId: string;
   readonly prompt: string;
 }): Promise<string> {
-  const web = await chatApi.requestSendEvent(
-    actorForFixture(args.fixture),
-    {
-      agentId: args.fixture.composeId,
-      threadId: args.chatThreadId,
-      prompt: args.prompt,
-    },
-    [201],
-  );
-  expect(web.status).toBe(201);
-  if (web.status !== 201 || web.body.runId === null) {
-    throw new Error("Expected web continuation to create a run");
-  }
+  const web = await chatApi.sendAndLaunch(actorForFixture(args.fixture), {
+    agentId: args.fixture.composeId,
+    threadId: args.chatThreadId,
+    prompt: args.prompt,
+  });
   const webState = await telegramPostRunState(args.fixture, args.prompt);
   expect(webState.run?.sessionId).toBe(args.applicationSessionId);
   expect(webState.agentRun?.chatThreadId).toBe(args.chatThreadId);
-  const webClaim = await claimTelegramRun(web.body.runId, args.runnerGroup);
+  const webClaim = await claimTelegramRun(web.runId, args.runnerGroup);
   expect(webClaim.resumeSession?.sessionId).toBe(args.resumeCliAgentSessionId);
   return await completeCanonicalChatRun({
-    runId: web.body.runId,
+    runId: web.runId,
     sandboxToken: webClaim.sandboxToken,
   });
 }

@@ -37,7 +37,6 @@ import {
   publishThreadListChanged,
 } from "../external/realtime";
 import { safeJsonParse, settle } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import {
   canonicalInputContentType,
   canonicalInputMessageFiles,
@@ -53,10 +52,13 @@ import {
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
   insertChatEvent,
+  insertChatEventContext,
   type DiscordChatEventContext,
 } from "./chat-event.service";
-import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
-import { markChatThreadQueued } from "./queued-chat-thread.service";
+import {
+  enqueueChatInput,
+  scheduleEnqueuedChatThreadPick$,
+} from "./chat-thread-queue-drain.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
@@ -350,7 +352,13 @@ const requireIngressAccess$ = command(
   },
 );
 
-async function persistMessage(
+/**
+ * Enqueue the accepted input in one transaction with the claim's
+ * acknowledgement. The claim is fenced by a conditional update, so a
+ * reclaimed ingress appends nothing; the Discord context row commits with the
+ * input it belongs to.
+ */
+async function enqueueMessage(
   db: Db,
   args: {
     readonly ingress: ClaimedIngress;
@@ -362,86 +370,74 @@ async function persistMessage(
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  // Queue row before the input event, so input is never left unqueued.
-  await markChatThreadQueued(db, {
+  const values = {
+    id: args.ingress.id,
+    chatThreadId: args.ingress.chatThreadId,
+    eventType: "input.prompt",
+    runId: null,
+    userMessage: createUserMessageDocument({
+      text: args.context.messageText,
+      files: canonicalInputMessageFiles(args.assets),
+      nonContentPart: createChatEventSourcePart({
+        kind: "discord",
+        messagePermalink: args.messagePermalink,
+      }),
+    }),
+    discordContext: args.context,
+    createdAt: args.ingress.createdAt,
+  } as const;
+  const eventId = await enqueueChatInput(db, {
     chatThreadId: args.ingress.chatThreadId,
     orgId: args.orgId,
+    appendInput: async (tx) => {
+      const [claimed] = await tx
+        .update(discordChatIngress)
+        .set({
+          status: "processed",
+          claimToken: null,
+          claimedAt: null,
+          retryAt: null,
+          lastErrorClass: null,
+          lastError: null,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(discordChatIngress.id, args.ingress.id),
+            eq(discordChatIngress.status, "processing"),
+            eq(discordChatIngress.claimToken, args.claimToken),
+            eq(discordChatIngress.routeId, args.ingress.routeId),
+          ),
+        )
+        .returning({ id: discordChatIngress.id });
+      if (!claimed) {
+        return null;
+      }
+      await insertChatEventContext(tx, values);
+      return (await insertChatEvent(tx, values, "id"))?.id ?? null;
+    },
   });
   signal.throwIfAborted();
-  // Claim ownership and acknowledgement remain atomic with the accepted input.
-  const persisted = await db.transaction(async (tx) => {
-    const [claimed] = await tx
-      .select({ id: discordChatIngress.id })
-      .from(discordChatIngress)
-      .where(
-        and(
-          eq(discordChatIngress.id, args.ingress.id),
-          eq(discordChatIngress.status, "processing"),
-          eq(discordChatIngress.claimToken, args.claimToken),
-          eq(discordChatIngress.routeId, args.ingress.routeId),
-        ),
-      )
-      .for("update");
-    signal.throwIfAborted();
-    if (!claimed) {
-      return false;
-    }
-    await insertChatEvent(
-      tx,
-      {
-        id: args.ingress.id,
-        chatThreadId: args.ingress.chatThreadId,
-        eventType: "input.prompt",
-        runId: null,
-        userMessage: createUserMessageDocument({
-          text: args.context.messageText,
-          files: canonicalInputMessageFiles(args.assets),
-          nonContentPart: createChatEventSourcePart({
-            kind: "discord",
-            messagePermalink: args.messagePermalink,
-          }),
-        }),
-        discordContext: args.context,
-        createdAt: args.ingress.createdAt,
-      },
-      "id",
-    );
-    signal.throwIfAborted();
-    await tx
-      .update(discordChatIngress)
-      .set({
-        status: "processed",
-        claimToken: null,
-        claimedAt: null,
-        retryAt: null,
-        lastErrorClass: null,
-        lastError: null,
-        updatedAt: nowDate(),
-      })
-      .where(eq(discordChatIngress.id, args.ingress.id));
-    signal.throwIfAborted();
-    return true;
-  });
-  signal.throwIfAborted();
-  if (persisted) {
-    await attemptChatEventSideEffect(
-      "thread_touch",
-      args.ingress.chatThreadId,
-      () => {
-        return touchChatThreadLastMessageAtIndependently(
-          db,
-          args.ingress.chatThreadId,
-          {
-            touchedAt: args.ingress.createdAt,
-            eventId: args.ingress.id,
-            authorizedScope: { userId: args.ingress.userId, orgId: args.orgId },
-          },
-        );
-      },
-    );
-    signal.throwIfAborted();
+  if (eventId === null) {
+    return false;
   }
-  return persisted;
+  await attemptChatEventSideEffect(
+    "thread_touch",
+    args.ingress.chatThreadId,
+    () => {
+      return touchChatThreadLastMessageAtIndependently(
+        db,
+        args.ingress.chatThreadId,
+        {
+          touchedAt: args.ingress.createdAt,
+          eventId: args.ingress.id,
+          authorizedScope: { userId: args.ingress.userId, orgId: args.orgId },
+        },
+      );
+    },
+  );
+  signal.throwIfAborted();
+  return true;
 }
 
 type IngressAccess = Pick<
@@ -640,11 +636,6 @@ const materializeIngressAttachments$ = command(
             "Discord attachment is no longer available",
           );
         }
-        await set(
-          requireIngressAccess$,
-          { ...accessArgs, channelId: message.channel_id, mode: "read" },
-          signal,
-        );
         const asset = await set(
           materializeIngressAttachment$,
           { accessArgs, message, attachment, chatThreadId },
@@ -784,14 +775,12 @@ const persistClaimedIngress$ = command(
       userId: binding.userId,
       guildId: binding.guildId,
     };
+    // Route admission verified both channels; this one check binds the
+    // source channel's current access to this claim. The pick revalidates
+    // the route before it launches.
     const source = await set(
       requireIngressAccess$,
       { ...accessArgs, channelId: message.channel_id, mode: "view" },
-      signal,
-    );
-    await set(
-      requireIngressAccess$,
-      { ...accessArgs, channelId: ingress.destinationChannelId, mode: "write" },
       signal,
     );
     const conversationContext = await set(
@@ -813,17 +802,6 @@ const persistClaimedIngress$ = command(
       },
       signal,
     );
-    // Imports and provider reads can outlive a disconnect; fence admission again.
-    await set(
-      requireIngressAccess$,
-      { ...accessArgs, channelId: message.channel_id, mode: "view" },
-      signal,
-    );
-    const destination = await set(
-      requireIngressAccess$,
-      { ...accessArgs, channelId: ingress.destinationChannelId, mode: "write" },
-      signal,
-    );
     const context = createIngressContext({
       binding,
       ingress,
@@ -833,7 +811,7 @@ const persistClaimedIngress$ = command(
       conversationContext,
       assets,
     });
-    const persisted = await persistMessage(
+    const persisted = await enqueueMessage(
       db,
       {
         ingress,
@@ -851,7 +829,7 @@ const persistClaimedIngress$ = command(
     );
     if (persisted) {
       scheduleDiscordAdmissionTyping({
-        botToken: destination.botToken,
+        botToken: source.botToken,
         channelId: ingress.destinationChannelId,
       });
     }
@@ -1189,39 +1167,31 @@ export const processCanonicalDiscordIngress$ = command(
       orgId: ingress.orgId,
     });
     signal.throwIfAborted();
-    const picked = await set(
-      pickEnqueuedChatThread$,
-      {
-        chatThreadId: ingress.chatThreadId,
-        orgId: ingress.orgId,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+    set(scheduleEnqueuedChatThreadPick$, {
+      chatThreadId: ingress.chatThreadId,
+      afterPick: async (pick, pickSignal) => {
+        const notice = chatQueueWaitNotice(pick.reason);
+        if (notice) {
+          await sendDiscordIngressNotice(
+            db,
+            {
+              ingressId: args.ingressId,
+              connectionId: ingress.connectionId,
+              channelId: ingress.destinationChannelId,
+              content: notice,
+            },
+            pickSignal,
+          );
+        }
       },
-      signal,
-    );
-    signal.throwIfAborted();
-    // A launch publishes this input together with its run. Publishing
-    // it before the pick would show it as queued until the launch lands.
-    if (picked.reason !== "launched") {
-      await publishChatThreadMessageCreatedSafely({
-        userId: ingress.userId,
-        orgId: ingress.orgId,
-        threadId: ingress.chatThreadId,
-      });
-      signal.throwIfAborted();
-    }
-    const notice = chatQueueWaitNotice(picked.reason);
-    if (notice) {
-      await sendDiscordIngressNotice(
-        db,
-        {
-          ingressId: args.ingressId,
-          connectionId: ingress.connectionId,
-          channelId: ingress.destinationChannelId,
-          content: notice,
-        },
-        signal,
-      );
-    }
+      publish: async () => {
+        await publishChatThreadMessageCreatedSafely({
+          userId: ingress.userId,
+          orgId: ingress.orgId,
+          threadId: ingress.chatThreadId,
+        });
+      },
+    });
     return true;
   },
 );

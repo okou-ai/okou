@@ -36,6 +36,7 @@ import {
   updateChatEventSnapshotHead,
 } from "./helpers/runtime-state";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -126,9 +127,11 @@ async function sendNoCreditMessage(
 ): Promise<string> {
   await api.ensureOrgModelProvider(actor);
   const sent = await chat.requestSendEvent(actor, body, [201]);
-  if (sent.status !== 201 || sent.body.runId !== null) {
-    throw new Error("Expected a no-credit send without a run");
+  if (sent.status !== 201) {
+    throw new Error("Expected the no-credit send to be accepted");
   }
+  // The background pick rejects the input; let it settle before reading.
+  await flushWaitUntilForTest();
   return sent.body.threadId;
 }
 

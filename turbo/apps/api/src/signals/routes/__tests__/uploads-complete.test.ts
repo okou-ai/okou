@@ -108,18 +108,11 @@ async function createRunUploadFixture(
 
   let runId: string;
   if (options.chatThread) {
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "produce a thread-linked uploaded artifact",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected chat send to create a thread-linked run");
-    }
-    runId = sent.body.runId;
+    const sent = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "produce a thread-linked uploaded artifact",
+    });
+    runId = sent.runId;
   } else {
     const run = await runsApi.createRun(actor, {
       agentId: agent.agentId,

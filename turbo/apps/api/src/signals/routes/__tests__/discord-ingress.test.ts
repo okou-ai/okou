@@ -101,8 +101,9 @@ interface PublicThreadPermissionCase {
   }[];
 }
 
-function recover(actor: ConnectedDiscordActor) {
-  return accept(
+/** Run the recovery sweep; recovered input is picked in the background. */
+async function recover(actor: ConnectedDiscordActor) {
+  const recovered = await accept(
     setupApp({ context, routes: testDiscordIngressRoutes })(
       testDiscordIngressContract,
     ).recover({
@@ -110,6 +111,8 @@ function recover(actor: ConnectedDiscordActor) {
     }),
     [200],
   );
+  await flushWaitUntilForTest();
+  return recovered;
 }
 
 async function selectDmOrganization(actor: ConnectedDiscordActor) {
@@ -1797,6 +1800,76 @@ describe("canonical Discord ingress", () => {
     const inputs = currentInputs(await events(actor, thread.id));
     expect(inputs).toHaveLength(1);
     expect(inputs[0]?.runId).toStrictEqual(expect.any(String));
+  });
+
+  it("tells the Discord thread when the org is at its concurrent run limit and starts it once a slot frees up", async () => {
+    // One active run fills the org, independent of the plan's own limit.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+
+    // With capacity, the first mention starts a run without a wait notice.
+    const active = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> occupy the only org run slot`,
+    });
+    provider.messages.set(active.id, active);
+    expect((await postDiscordMessage(context, active)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    expect(provider.sentMessages).toHaveLength(0);
+    const [activeThread] = await discordChatThreads(context, actor);
+    if (!activeThread) {
+      throw new Error("Expected the active canonical Discord thread");
+    }
+    const activeRun = await launchedRun(actor, activeThread.id);
+
+    // A second top-level mention opens its own thread, held only by the limit.
+    const waiting = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> wait for an org run slot`,
+    });
+    provider.messages.set(waiting.id, waiting);
+    expect((await postDiscordMessage(context, waiting)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+
+    expect(provider.sentMessages).toStrictEqual([
+      expect.objectContaining({
+        channel_id: waiting.id,
+        content:
+          "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
+      }),
+    ]);
+    const waitingThread = (await discordChatThreads(context, actor)).find(
+      (thread) => {
+        return thread.id !== activeThread.id;
+      },
+    );
+    if (!waitingThread) {
+      throw new Error("Expected the waiting canonical Discord thread");
+    }
+    const [waitingInput] = currentInputs(await events(actor, waitingThread.id));
+    expect(waitingInput?.userMessage.parts).toContainEqual({
+      type: "text",
+      text: "@Okou wait for an org run slot",
+    });
+    expect(waitingInput?.runId).toBeUndefined();
+
+    // Freeing the slot picks the waiting thread and launches its input.
+    await runsApi.requestCancelRun(actor.actor, activeRun.runId, [200]);
+    await flushWaitUntilForTest();
+    const waitingRun = await launchedRun(actor, waitingThread.id);
+    expect(waitingRun.prompt).toBe("@Okou wait for an org run slot");
+    // The cancelled run may reply in its own thread; the notice is not resent.
+    expect(
+      provider.sentMessages.filter((message) => {
+        return message.channel_id === waiting.id;
+      }),
+    ).toHaveLength(1);
+    await runsApi.requestCancelRun(actor.actor, waitingRun.runId, [200]);
   });
 
   it("suppresses input and delivery when the sender disconnects during context import", async () => {

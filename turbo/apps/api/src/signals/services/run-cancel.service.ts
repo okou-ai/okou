@@ -17,10 +17,13 @@ import {
   dispatchRunCallbacks$,
   undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
-import { handOffReleasedSlot$ } from "./agent-run-lifecycle.service";
+import { scheduleReleasedSlotPicks$ } from "./agent-run-lifecycle.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 import { cancelLockedRun } from "./agent-run-cancellation-transition.service";
-import { releaseActiveAgentRuns } from "./agent-run-terminal-transition.service";
+import {
+  releaseRunSlots,
+  type ReleasedRunSlot,
+} from "./agent-run-terminal-transition.service";
 import { lockPiMemoryPhase2MaintenanceCleanupProtection } from "./pi-memory-phase2-maintenance.service";
 
 const L = logger("RunCancel");
@@ -38,8 +41,6 @@ export interface CancelRunResult {
   readonly runnerCancellationMode: RunnerCancellationMode | null;
   readonly runnerCancellationChanged: boolean;
   readonly alreadyCancelled: boolean;
-  /** The cancel transaction deleted the run's active row. */
-  readonly slotReleased: boolean;
 }
 
 type NotFoundResponse = ReturnType<typeof notFound>;
@@ -88,6 +89,7 @@ export const cancelRun$ = command(
     const runId = args.runId.toLowerCase();
     const writeDb = set(writeDb$);
 
+    let releasedSlots: readonly ReleasedRunSlot[] = [];
     const transition = writeDb.transaction(async (tx) => {
       const [run] = await tx
         .select({
@@ -141,7 +143,6 @@ export const cancelRun$ = command(
             : run.runnerCancellationMode,
           runnerCancellationChanged,
           alreadyCancelled: true,
-          slotReleased: false,
         };
       }
 
@@ -177,7 +178,7 @@ export const cancelRun$ = command(
         runnerCancellationMode,
       });
       // A started run keeps its slot until the Runner reports its end.
-      const released = await releaseActiveAgentRuns(tx, releasableRunIds);
+      releasedSlots = await releaseRunSlots(tx, releasableRunIds);
 
       return {
         apiStartTime,
@@ -192,11 +193,13 @@ export const cancelRun$ = command(
         runnerCancellationMode,
         runnerCancellationChanged: true,
         alreadyCancelled: false,
-        slotReleased: released.length > 0,
       };
     });
     const result = await transition;
     signal.throwIfAborted();
+    // Only a committed cancellation reaches here: a never-started run's slot
+    // goes back to its organization before any other side effect.
+    set(scheduleReleasedSlotPicks$, releasedSlots);
 
     return result;
   },
@@ -263,9 +266,6 @@ async function publishRunnerCancellation(
  * Post-cancel side effects:
  *  - Notify the runner group to halt the cancelled run (if it was
  *    running on a runner).
- *  - Hand off the slot when the cancel released it (a never-started run).
- *    A started run keeps its slot until the Runner reports its end, and
- *    that completion hands it off.
  *  - Reconcile credits via `processOrgUsageEvents$`. The transactional
  *    invariant (events marked processed iff credit deduction succeeds) is
  *    preserved by `processOrgUsageEvents$`.
@@ -335,24 +335,6 @@ export const dispatchCancelSideEffects$ = command(
 
     if (recoveryRedrive) {
       return;
-    }
-
-    if (result.slotReleased) {
-      await tapError(
-        set(
-          handOffReleasedSlot$,
-          { runId: result.runId, orgId: result.orgId },
-          signal,
-        ),
-        (error) => {
-          L.error("Failed to hand off cancelled run slot", {
-            runId: result.runId,
-            orgId: result.orgId,
-            error,
-          });
-        },
-      );
-      signal.throwIfAborted();
     }
 
     // A fresh cancellation always came from pending or running, so the

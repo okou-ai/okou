@@ -67,12 +67,6 @@ export interface DefaultModelFirstPin extends ModelFirstPin {
   readonly serviceTier: ChatThreadServiceTier | null;
 }
 
-interface PersistedModelFirstRouteResolution {
-  readonly route: ResolvedModelFirstPolicyRoute | null;
-  readonly selectedModelChanged: boolean;
-  readonly orgPlanCapabilities: OrgPlanCapabilities | null;
-}
-
 const modelRoutingFactsSource = Symbol("modelRoutingFactsSource");
 
 /**
@@ -289,42 +283,6 @@ async function resolveWorkspaceDefaultModelFirstRoute(params: {
         selectedModel: policy.model,
       })
     : null;
-}
-
-export async function resolvePersistedModelFirstRoute(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly selectedModel: string | null;
-}): Promise<PersistedModelFirstRouteResolution> {
-  const facts = await prepareModelRoutingFacts(params);
-  const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
-  const currentRoute = params.selectedModel
-    ? await resolveValidPolicyRoute({
-        facts,
-        capabilities,
-        selectedModel: params.selectedModel,
-      })
-    : null;
-  if (currentRoute) {
-    return {
-      route: currentRoute,
-      selectedModelChanged: false,
-      orgPlanCapabilities: facts.orgPlanCapabilities,
-    };
-  }
-
-  const defaultRoute = await resolveWorkspaceDefaultModelFirstRoute({
-    facts,
-    capabilities,
-  });
-  return {
-    route: defaultRoute,
-    selectedModelChanged:
-      defaultRoute !== null &&
-      defaultRoute.selectedModel !== params.selectedModel,
-    orgPlanCapabilities: facts.orgPlanCapabilities,
-  };
 }
 
 async function loadAvailableModelProviderPin(params: {

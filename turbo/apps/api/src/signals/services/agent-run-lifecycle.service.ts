@@ -1,109 +1,48 @@
 import { command } from "ccstate";
 
 import { logger } from "../../lib/log";
+import { waitUntil } from "../context/wait-until";
 import { tapError } from "../utils";
-import { writeDb$ } from "../external/db";
 import {
   dispatchCompleteSideEffectsCore$,
   type DispatchCompleteSideEffectsInput,
 } from "./agent-webhook-complete.service";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
-import {
-  pickOrgQueuedChatThreads$,
-  pickQueuedChatThread$,
-  queueThreadIdForRun,
-} from "./chat-thread-queue-drain.service";
+import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 
 const L = logger("RunLifecycle");
 
-/** Hand newly available org capacity to queued chat threads. */
-export const drainOrgQueueToCapacity$ = command(
-  async (
-    { set },
-    args: { readonly orgId: string },
-    signal: AbortSignal,
-  ): Promise<number> => {
-    const drained = await set(
-      pickOrgQueuedChatThreads$,
-      {
-        orgId: args.orgId,
-        untilFull: true,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return drained;
-  },
-);
-
 /**
- * A run's active row was just deleted, so its organization slot is free. The
- * slot goes to the run's own thread first, then to the organization's oldest
- * waiting thread. Every run-end transaction that deletes an active row
- * (Runner completion, cancel, claim failure, cron timeout) calls this after
- * commit and after the run's terminal callbacks, so no end path owns a wakeup
- * of its own. Bulk revocations (membership removal, user deletion or ban) hand
- * off through `handOffReleasedSlots$`; the stale-terminal sweep leaves waiting
- * threads to the cron drain. Every enqueue records its thread as queued, so
- * both picks go through the queued-thread lease and its thread and capacity
- * checks, and the launch's final admission stays authoritative.
+ * After a transaction that called `releaseRunSlots` commits: org-pick each
+ * organization that got a slot back, in its own background task per
+ * organization, independent of the path's other side effects. Call it before
+ * those effects so a failing or slow terminal callback cannot delay it.
  */
-export const handOffReleasedSlot$ = command(
-  async (
-    { set },
-    args: { readonly runId: string; readonly orgId: string },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const chatThreadId = await queueThreadIdForRun(set(writeDb$), args.runId);
-    signal.throwIfAborted();
-    if (chatThreadId) {
-      const own = await set(
-        pickQueuedChatThread$,
-        { chatThreadId, dispatchFailedCallbacks: dispatchFailedRunCallbacks },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (own.reason === "launched") {
-        return;
-      }
-    }
-    await set(
-      pickOrgQueuedChatThreads$,
-      {
-        orgId: args.orgId,
-        untilFull: false,
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-      },
-      signal,
+export const scheduleReleasedSlotPicks$ = command(
+  ({ set }, slots: readonly ReleasedRunSlot[]): void => {
+    const orgIds = new Set(
+      slots.map((slot) => {
+        return slot.orgId;
+      }),
     );
-    signal.throwIfAborted();
-  },
-);
-
-/** Hand off every slot a bulk revocation released, once per released run.
- * A failed hand-off is logged and left to the cron drain. */
-export const handOffReleasedSlots$ = command(
-  async (
-    { set },
-    slots: readonly ReleasedRunSlot[],
-    signal: AbortSignal,
-  ): Promise<void> => {
-    for (const slot of slots) {
-      await tapError(set(handOffReleasedSlot$, slot, signal), (error) => {
-        L.error("Failed to hand off revoked run slot", {
-          runId: slot.runId,
-          orgId: slot.orgId,
-          error,
-        });
-      });
-      signal.throwIfAborted();
+    for (const orgId of orgIds) {
+      const backgroundSignal = new AbortController().signal;
+      waitUntil(
+        tapError(
+          set(pickOrgQueuedChatThreads$, { orgId }, backgroundSignal),
+          (error) => {
+            L.error("Failed to pick organization after slot release", {
+              orgId,
+              error,
+            });
+          },
+        ),
+      );
     }
   },
 );
 
-/** Dispatch terminal effects and hand off a released slot. */
+/** Dispatch terminal effects. */
 export const dispatchCompleteSideEffects$ = command(
   async (
     { set },
@@ -111,24 +50,6 @@ export const dispatchCompleteSideEffects$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     await set(dispatchCompleteSideEffectsCore$, input, signal);
-    signal.throwIfAborted();
-    if (!input.slotReleased) {
-      return;
-    }
-    await tapError(
-      set(
-        handOffReleasedSlot$,
-        { runId: input.runId, orgId: input.orgId },
-        signal,
-      ),
-      (error) => {
-        L.error("Failed to hand off released run slot", {
-          runId: input.runId,
-          orgId: input.orgId,
-          error,
-        });
-      },
-    );
     signal.throwIfAborted();
   },
 );

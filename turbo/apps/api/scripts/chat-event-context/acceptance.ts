@@ -5,11 +5,14 @@ import { randomUUID } from "node:crypto";
 import { mock } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { Client } from "pg";
+import { Client, Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { createUserMessageDocument } from "../../src/signals/services/chat-user-message.service";
-import { insertChatEvent } from "../../src/signals/services/chat-event.service";
-import { withNativeChatEventThreadTouch } from "../../src/signals/services/native-chat-event-write.service";
+import {
+  insertChatEvent,
+  insertChatEventContext,
+} from "../../src/signals/services/chat-event.service";
+import { touchNativeChatThread } from "../../src/signals/services/native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "../../src/signals/services/queued-launch-enrichment.service";
 import { flushLogs } from "../../src/lib/log";
 
@@ -30,6 +33,13 @@ databaseUrl.pathname = `/${databaseName}`;
 const admin = new Client({ connectionString: process.env.DATABASE_URL });
 const client = new Client({ connectionString: databaseUrl.toString() });
 const schema = `chat_context_${suffix}`;
+// The API writers take the pooled database type; one connection keeps the
+// isolated schema on its search path.
+const pool = new Pool({
+  connectionString: databaseUrl.toString(),
+  max: 1,
+  options: `-c search_path=${schema},public`,
+});
 const userId = `context-user-${suffix}`;
 const orgId = `context-org-${suffix}`;
 const agentId = randomUUID();
@@ -88,6 +98,15 @@ function agentphoneInput(id: string, chatThreadId: string) {
   } as const;
 }
 
+/** An entry writes its own context row before it appends the input. */
+async function appendEntryInput(
+  db: ReturnType<typeof drizzle<Record<string, never>, Pool>>,
+  input: ReturnType<typeof agentphoneInput>,
+) {
+  await insertChatEventContext(db, input);
+  return await insertChatEvent(db, input, "id");
+}
+
 async function count(sql: string, values: readonly unknown[]) {
   const result = await client.query<{ count: number }>(sql, [...values]);
   return result.rows[0]?.count;
@@ -135,7 +154,7 @@ try {
     "INSERT INTO agents(id,org_id,owner,name) VALUES($1,$2,$3,'context-acceptance')",
     [agentId, orgId, userId],
   );
-  const db = drizzle(client);
+  const db = drizzle(pool);
 
   const controller = new AbortController();
   const failOptionalLookup = () => {
@@ -180,7 +199,7 @@ try {
   const splitThread = await thread();
   const splitEventId = randomUUID();
   await assert.rejects(
-    insertChatEvent(db, agentphoneInput(splitEventId, splitThread), "id"),
+    appendEntryInput(db, agentphoneInput(splitEventId, splitThread)),
     contextStorageFailure,
   );
   assert.equal(
@@ -198,16 +217,15 @@ try {
   );
 
   await client.query("DROP TRIGGER reject_context ON chat_agentphone_context");
-  const redelivered = await insertChatEvent(
+  const redelivered = await appendEntryInput(
     db,
     agentphoneInput(splitEventId, splitThread),
-    "id",
   );
   assert.equal(redelivered?.id, splitEventId, "redelivery is accepted");
   assert.equal(await eventCount(splitEventId), 1);
   assert.equal(await contextCount(splitEventId), 1);
   assert.equal(
-    await insertChatEvent(db, agentphoneInput(splitEventId, splitThread), "id"),
+    await appendEntryInput(db, agentphoneInput(splitEventId, splitThread)),
     null,
     "a duplicate delivery after acceptance is idempotent",
   );
@@ -221,23 +239,15 @@ try {
   await client.query(
     `CREATE TRIGGER reject_thread_touch BEFORE UPDATE ON chat_threads FOR EACH ROW EXECUTE FUNCTION ${schema}.reject_thread_touch()`,
   );
-  const committed = await withNativeChatEventThreadTouch(
+  const committed = await appendEntryInput(
     db,
-    {
-      chatThreadId: touchThreadId,
-      createdAt: new Date(),
-      eventId: committedEventId,
-    },
-    async (writer, touchThread) => {
-      const appended = await insertChatEvent(
-        writer,
-        agentphoneInput(committedEventId, touchThreadId),
-        "id",
-      );
-      await touchThread();
-      return appended;
-    },
+    agentphoneInput(committedEventId, touchThreadId),
   );
+  await touchNativeChatThread(db, {
+    chatThreadId: touchThreadId,
+    createdAt: new Date(),
+    eventId: committedEventId,
+  });
   assert.equal(
     await count(
       "SELECT count(*)::int AS count FROM chat_thread_events WHERE chat_thread_id=$1 AND kind='sort_touched'",
@@ -257,6 +267,7 @@ try {
   );
 } finally {
   await flushLogs();
+  await pool.end();
   await client.end();
   await admin.query(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
   await admin.end();

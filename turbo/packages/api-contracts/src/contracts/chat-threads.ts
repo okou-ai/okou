@@ -1173,14 +1173,13 @@ const chatThreadModelSelectionUpdateBodySchema = z.object({
 });
 
 /**
- * Text-to-video parameters chosen for this send only.
- *
- * Deliberately not persisted as structured settings: the API renders them into
- * the run's agent prompt, so a reload starts from the effective model's
- * defaults again. The model itself is absent because it is already resolved
- * from the thread pin and the member default the run carries.
+ * Text-to-video parameters the composer renders into a message's agent-only
+ * additional info. Not a send field: they are never persisted as structured
+ * settings, so a reload starts from the effective model's defaults again. The
+ * model itself is absent because it is already resolved from the thread pin
+ * and the member default the run carries.
  */
-const chatRunVideoOptionsRequestSchema = z
+export const chatRunVideoOptionsRequestSchema = z
   .object({
     aspectRatio: z.enum(VIDEO_ASPECT_RATIOS),
     duration: z.enum(VIDEO_DURATIONS),
@@ -1193,7 +1192,6 @@ const chatRunOptionsRequestSchema = z.object({
   /** Update the selected model's effort. */
   reasoningEffort: reasoningEffortSchema.optional(),
   codexServiceTier: codexServiceTierSchema.optional(),
-  video: chatRunVideoOptionsRequestSchema.optional(),
 });
 
 const chatNormalSendBodyShape = {
@@ -1884,8 +1882,15 @@ export const chatEventsContract = c.router({
     ]),
     responses: {
       201: z.object({
+        /**
+         * Always null: a send enqueues its input and returns without waiting
+         * for a run. The key stays because older clients require it. The run,
+         * or an `input.rejected` event explaining why none started, appears
+         * in the thread's event stream.
+         */
         runId: z.string().nullable(),
         threadId: z.string(),
+        /** Only returned by API versions that created the run synchronously. */
         status: runStatusSchema.optional(),
         createdAt: z.string().optional(),
       }),
@@ -1899,7 +1904,8 @@ export const chatEventsContract = c.router({
       429: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Append a chat event and dispatch input when applicable",
+    summary:
+      "Append a chat event; user input is enqueued and picked into a run asynchronously",
   },
 });
 

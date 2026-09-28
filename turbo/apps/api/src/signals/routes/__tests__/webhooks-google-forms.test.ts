@@ -405,6 +405,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       "responses(responseId,createTime,lastSubmittedTime,respondentEmail),nextPageToken",
     );
 
+    await flushWaitUntilForTest();
     const events = await workflows.readThreadEvents(chatThreadId);
     const visibleEvent = events.find((event) => {
       return (
@@ -627,6 +628,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       },
     });
 
+    await flushWaitUntilForTest();
     const firstAutomation = createdAutomations[0];
     const secondAutomation = createdAutomations[1];
     if (!firstAutomation || !secondAutomation) {
@@ -662,7 +664,6 @@ describe("Google Forms Pub/Sub webhook", () => {
         return event.eventType === "input.prompt";
       }),
     ).toBeFalsy();
-    await flushWaitUntilForTest();
   });
 
   async function setupGoogleFormsMultiAccountAutomations() {
@@ -826,6 +827,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       status: 200,
       body: { watchStates: 1, dispatched: 1 },
     });
+    await flushWaitUntilForTest();
     const firstEvents = await workflows.readThreadEvents(first.chatThreadId);
     const secondEvents = await workflows.readThreadEvents(second.chatThreadId);
     expect(
@@ -838,7 +840,6 @@ describe("Google Forms Pub/Sub webhook", () => {
         return event.eventType === "input.prompt";
       }),
     ).toHaveLength(0);
-    await flushWaitUntilForTest();
   });
 
   it("routes the selected account with exact credentials", async () => {
@@ -858,6 +859,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       "Bearer google-forms-second-access-token",
     );
 
+    await flushWaitUntilForTest();
     const firstEvents = await workflows.readThreadEvents(first.chatThreadId);
     const secondEvents = await workflows.readThreadEvents(second.chatThreadId);
     expect(
@@ -1215,6 +1217,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       expect(formsApi.authorizationHeaders).toContain(
         "Bearer google-forms-readded-access-token",
       );
+      await flushWaitUntilForTest();
       const firstEvents = await workflows.readThreadEvents(first.chatThreadId);
       const secondEvents = await workflows.readThreadEvents(
         second.chatThreadId,

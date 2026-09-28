@@ -121,8 +121,7 @@ actor ChatService {
     do {
       let result: ChatSendResponse = try await client.request(
         "/api/chat/events", method: "POST", body: JSONEncoder().encode(body))
-      return SendReceipt(
-        threadID: result.threadId, runID: result.runId, clientEventID: clientEventID)
+      return SendReceipt(threadID: result.threadId, clientEventID: clientEventID)
     } catch is CancellationError {
       throw CancellationError()
     } catch let error as APIClientError {

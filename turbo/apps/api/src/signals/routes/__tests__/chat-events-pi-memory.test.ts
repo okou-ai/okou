@@ -686,15 +686,19 @@ describe("CHAT-02: model-first provider policies", () => {
         return apiTestS3PresignedUrl(command);
       },
     );
-    const sending = sendChatRun(
+    // The send only enqueues; the background pick prepares the launch.
+    const resumeEventId = randomUUID();
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
         threadId: first.threadId,
         prompt: "resume the frozen canonical memory",
         model: "gpt-5.6-terra",
+        clientEventId: resumeEventId,
       },
-      pricing,
+      [201],
+      { usagePricingResolution: pricing },
     );
     await archiveEntered.promise;
     expect((await api.pollRunner(runnerGroup)).body.job).toBeNull();
@@ -1285,10 +1289,35 @@ describe("CHAT-02: model-first provider policies", () => {
       usagePricingResolution,
     );
     expect(delegated.status).toBe(201);
-    if (delegated.status !== 201 || delegated.body.runId === null) {
+    if (delegated.status !== 201) {
+      throw new Error("Expected the delegated Pi prompt to be accepted");
+    }
+    expect(delegated.body).toStrictEqual({
+      runId: null,
+      threadId: targetThread.id,
+      createdAt: expect.any(String),
+    });
+    // The background pick launches the delegated input on its thread.
+    const delegatedMessages = await waitForThreadMessages(
+      actor,
+      targetThread.id,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === delegatedEventId &&
+            message.runId !== undefined
+          );
+        });
+      },
+    );
+    const delegatedRunId = userMessages(delegatedMessages.events).find(
+      (message) => {
+        return message.revokesEventId === delegatedEventId;
+      },
+    )?.runId;
+    if (delegatedRunId === undefined) {
       throw new Error("Expected the delegated Pi prompt to launch a run");
     }
-    const delegatedRunId = delegated.body.runId;
     const delegatedRun = { runId: delegatedRunId, threadId: targetThread.id };
     await completeSandboxFirstPiRun({
       actor,

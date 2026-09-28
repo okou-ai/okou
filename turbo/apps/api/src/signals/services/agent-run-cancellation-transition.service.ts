@@ -11,7 +11,7 @@ import {
 
 /** The caller owns the run row lock and has classified its current status.
  * Returns the never-started run IDs whose active rows the caller must release
- * with `releaseActiveAgentRuns` as the last statement of its transaction.
+ * with `releaseRunSlots` as the last statement of its transaction.
  */
 export async function cancelLockedRun(
   tx: Tx,

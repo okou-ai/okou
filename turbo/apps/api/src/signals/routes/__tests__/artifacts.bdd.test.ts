@@ -238,11 +238,8 @@ async function sendChatRun(
     readonly threadId?: string;
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
-  const sent = await chat.requestSendEvent(actor, body, [201]);
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected chat send to create a run");
-  }
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
+  const sent = await chat.sendAndLaunch(actor, body);
+  return { runId: sent.runId, threadId: sent.threadId };
 }
 
 async function claimChatRun(

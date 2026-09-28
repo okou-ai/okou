@@ -192,7 +192,20 @@ async function startWatchedChatRun(
     },
     [201],
   );
-  if (sent.status !== 201 || sent.body.runId === null) {
+  if (sent.status !== 201) {
+    throw new Error("Expected the chat send to be accepted");
+  }
+  // The send only enqueues; its background pick launches the run.
+  await flushWaitUntilForTest();
+  const page = await chat.listThreadEvents(fixture.actor, sent.body.threadId);
+  const runId = page.events
+    .flatMap((event) => {
+      return event.eventType === "input.prompt" && event.runId
+        ? [event.runId]
+        : [];
+    })
+    .at(-1);
+  if (!runId) {
     throw new Error("Expected the chat send to create a run");
   }
   await chat.renameThread(
@@ -200,7 +213,7 @@ async function startWatchedChatRun(
     sent.body.threadId,
     WATCHED_THREAD_TITLE,
   );
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
+  return { runId, threadId: sent.body.threadId };
 }
 
 async function claimChatRun(

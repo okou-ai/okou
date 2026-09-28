@@ -26,11 +26,9 @@ import {
 } from "../external/realtime";
 import { safeSync, tapError } from "../utils";
 import {
-  dispatchFailedRunCallbacks,
   dispatchRunCallbacks$,
   undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
-import { pickEnqueuedChatThread$ } from "./chat-thread-queue-drain.service";
 import { expireRunTimeBudgetInput } from "./active-input-delivery.service";
 import { projectLegacyCheckpointStorage } from "./storage-legacy-projection.service";
 import { maybeEmitRunUsageEvent$ } from "./chat-usage-event.service";
@@ -44,8 +42,9 @@ import {
 } from "./agent-webhook-checkpoints.service";
 import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
 import {
-  releaseActiveAgentRuns,
+  releaseRunSlots,
   transitionAgentRunsToTerminal,
+  type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
 import {
   logAgentRunFailure,
@@ -94,25 +93,12 @@ export interface DeliveryFinalizationSideEffectsInput {
   readonly chatEventsAppended: boolean;
 }
 
-/** A completion that only released the run's slot. */
-interface SlotReleaseSideEffectsInput {
-  readonly kind: "slot-release";
-  readonly runId: string;
-  readonly orgId: string;
-}
-
-export type CompleteSideEffectsInput = (
+export type CompleteSideEffectsInput =
   | TerminalSideEffectsInput
   | CancellationRecoverySideEffectsInput
-  | DeliveryFinalizationSideEffectsInput
-  | SlotReleaseSideEffectsInput
-) & {
-  /** The committing transaction deleted the run's active row. */
-  readonly slotReleased?: true;
-};
+  | DeliveryFinalizationSideEffectsInput;
 
 export type DispatchCompleteSideEffectsInput = CompleteSideEffectsInput & {
-  readonly apiStartTime?: number;
   readonly skipChatCallback?: true;
 };
 
@@ -122,6 +108,9 @@ interface CompletionSuccessResponse {
     readonly success: true;
     readonly status: TerminalStatus;
   };
+  /** Slots the completion transaction released. The caller schedules
+   * `scheduleReleasedSlotPicks$` for them before any side effect. */
+  readonly releasedSlots: readonly ReleasedRunSlot[];
   readonly sideEffects?: CompleteSideEffectsInput;
 }
 
@@ -177,7 +166,7 @@ type CompletionTransactionResult =
   | { readonly kind: "committed"; readonly commit: CompletionCommit };
 
 type ReleasedCompletionCommit = CompletionCommit & {
-  readonly slotReleased: boolean;
+  readonly releasedSlots: readonly ReleasedRunSlot[];
 };
 
 const L = logger("webhook:complete");
@@ -652,15 +641,11 @@ function completionResponse(
       chatThreadId: commit.run.chatThreadId,
       chatEventsAppended: commit.finalization.chatEventsAppended,
     };
-  } else if (commit.slotReleased) {
-    sideEffects = { kind: "slot-release", runId, orgId: commit.run.orgId };
-  }
-  if (sideEffects && commit.slotReleased) {
-    sideEffects = { ...sideEffects, slotReleased: true };
   }
   return {
     status: 200,
     body: { success: true, status: commit.responseStatus },
+    releasedSlots: commit.releasedSlots,
     ...(sideEffects ? { sideEffects } : {}),
   };
 }
@@ -672,6 +657,7 @@ function settledRunCompletionResponse(run: RunRecord): CompletionResponse {
       success: true,
       status: run.status === "completed" ? "completed" : "failed",
     },
+    releasedSlots: [],
   };
 }
 
@@ -682,8 +668,7 @@ export type RequiredTerminalChatCallbackResult =
 /**
  * Finish the canonical chat projection before the completion webhook is
  * acknowledged. Other callbacks and accounting remain background side
- * effects, but this durable callback owns the lifecycle marker. The released
- * slot is handed off afterwards by the background side effects.
+ * effects, but this durable callback owns the lifecycle marker.
  */
 export const dispatchRequiredTerminalChatCallback$ = command(
   async (
@@ -793,7 +778,6 @@ export const dispatchCompleteSideEffectsCore$ = command(
     input: DispatchCompleteSideEffectsInput,
     signal: AbortSignal,
   ): Promise<void> => {
-    const apiStartTime = input.apiStartTime ?? now();
     if (input.kind === "cancellation-recovery") {
       if (input.chatThreadId !== null) {
         await publishChatThreadDetailChangedSafely(
@@ -812,9 +796,6 @@ export const dispatchCompleteSideEffectsCore$ = command(
       }
       return;
     }
-    if (input.kind === "slot-release") {
-      return;
-    }
     if (input.kind === "delivery-finalization") {
       if (input.chatEventsAppended) {
         await publishChatThreadMessageCreatedSafely({
@@ -824,26 +805,8 @@ export const dispatchCompleteSideEffectsCore$ = command(
         });
         signal.throwIfAborted();
       }
-      // Finalization returned undelivered input to the thread's queue.
-      await tapError(
-        set(
-          pickEnqueuedChatThread$,
-          {
-            chatThreadId: input.chatThreadId,
-            orgId: input.orgId,
-            dispatchFailedCallbacks: dispatchFailedRunCallbacks,
-            apiStartTime,
-          },
-          signal,
-        ),
-        (error) => {
-          L.error("Failed to drain chat thread queue after delivery", {
-            runId: input.runId,
-            error,
-          });
-        },
-      );
-      signal.throwIfAborted();
+      // Undelivered input stays queued; the released slot's org pick or the
+      // cron picks it.
       return;
     }
     await set(dispatchTerminalCompleteSideEffects$, input, signal);
@@ -969,10 +932,10 @@ export const completeAgentRun$ = command(
         }
         // The runner reported completion, so the active row is released
         // whether or not the run ever started. Must stay last in the tx.
-        const released = await releaseActiveAgentRuns(tx, [input.body.runId]);
+        const releasedSlots = await releaseRunSlots(tx, [input.body.runId]);
         return {
           kind: transition.kind,
-          commit: { ...transition.commit, slotReleased: released.length > 0 },
+          commit: { ...transition.commit, releasedSlots },
         };
       });
       signal.throwIfAborted();
