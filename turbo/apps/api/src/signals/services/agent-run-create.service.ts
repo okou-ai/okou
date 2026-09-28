@@ -8696,7 +8696,9 @@ async function commitPendingPreparedLaunch(
 async function validateCapturedSubscriptionAccount(
   tx: Tx,
   args: PreparedCommitPreparedLaunchArgs,
-) {
+): Promise<
+  CreateRunErrorResult | { readonly identity: string | null } | undefined
+> {
   const provider = args.context.modelProvider;
   if (
     provider &&
