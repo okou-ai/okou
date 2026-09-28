@@ -1275,6 +1275,10 @@ async fn execute_cli_inner(
                 http.clone(),
                 runtime.run_id.as_ref(),
                 runtime.pi_session_id.as_ref(),
+                pi_session_output::FirstSessionOutputTiming {
+                    pi_startup_succeeded_at: pi_startup.map(PiStartupTiming::success_boundary),
+                    api_start_time: runtime.api_start_time.to_string(),
+                },
             )
         })
         .flatten();

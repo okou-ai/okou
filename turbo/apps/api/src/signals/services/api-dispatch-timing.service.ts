@@ -290,13 +290,15 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_phase_pre_create"
   | "api_dispatch_phase_prepare_context"
   | "api_dispatch_phase_prepare_launch"
-  | "api_dispatch_phase_queue_insert";
+  | "api_dispatch_phase_queue_insert"
+  | "api_dispatch_phase_commit";
 
 type ApiDispatchPhaseActionType =
   | "api_dispatch_phase_pre_create"
   | "api_dispatch_phase_prepare_context"
   | "api_dispatch_phase_prepare_launch"
-  | "api_dispatch_phase_queue_insert";
+  | "api_dispatch_phase_queue_insert"
+  | "api_dispatch_phase_commit";
 
 interface ApiDispatchPhaseRecord {
   readonly actionType: ApiDispatchPhaseActionType;

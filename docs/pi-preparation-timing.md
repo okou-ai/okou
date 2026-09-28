@@ -175,7 +175,9 @@ including failures and first-tool readiness, before/after an authorized release.
 
 [`committedAtomicLaunchResponse`](../turbo/apps/api/src/signals/services/agent-run-create.service.ts)
 still checkpoints `api_dispatch_phase_queue_insert` at `runnerJobCreatedAt`, the
-logical row creation time. It is not commit completion. Existing `api_to_*`,
+logical row creation time. It is not commit completion; the following
+`api_dispatch_phase_commit` ends at the launch transaction's return (see
+[chat-first-output-latency.md](chat-first-output-latency.md)). Existing `api_to_*`,
 first-assistant publication and dispatch phase definitions are unchanged.
 
 [`runner-dispatch.service.ts`](../turbo/apps/api/src/signals/services/runner-dispatch.service.ts)

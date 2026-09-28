@@ -14,6 +14,7 @@
 //! CLI produces nothing.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use guest_telemetry::telemetry::record_sandbox_op;
@@ -22,6 +23,7 @@ use guest_telemetry::telemetry::record_sandbox_op;
 pub struct PiStartupTiming {
     started_at: Instant,
     completed: AtomicBool,
+    succeeded_at: Arc<OnceLock<Instant>>,
 }
 
 impl PiStartupTiming {
@@ -31,7 +33,14 @@ impl PiStartupTiming {
         Self {
             started_at: Instant::now(),
             completed: AtomicBool::new(false),
+            succeeded_at: Arc::new(OnceLock::new()),
         }
+    }
+
+    /// The first-output boundary, set once startup completes successfully.
+    /// `pi_first_session_output` measures from this instant.
+    pub(super) fn success_boundary(&self) -> Arc<OnceLock<Instant>> {
+        Arc::clone(&self.succeeded_at)
     }
 
     /// Complete startup successfully at the time first output was observed.
@@ -47,6 +56,9 @@ impl PiStartupTiming {
     fn record_at(&self, completed_at: Instant, success: bool) {
         if self.completed.swap(true, Ordering::Relaxed) {
             return;
+        }
+        if success {
+            let _ = self.succeeded_at.set(completed_at);
         }
 
         record_sandbox_op(
