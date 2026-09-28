@@ -112,6 +112,59 @@ test("Reconcile live text with the durable assistant event", async () => {
   expect(screen.getAllByText("The complete report")).toHaveLength(1);
 });
 
+test("A growing action URL stays text until the durable message provides its card", async () => {
+  const events = activeRun();
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await subscribed();
+
+  const prefix = "https://app.okou.ai/computer-use/authorize/";
+  let url = `${prefix}abcdefghijklmnopqrstuvwxyz`;
+  push(0, url);
+  await expect(screen.findByText(url)).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Computer Use authorization")).toBeNull();
+
+  for (const [index, delta] of [
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "0123456789",
+  ].entries()) {
+    url += delta;
+    push(index + 1, delta);
+    await expect(screen.findByText(url)).resolves.toBeInTheDocument();
+    expect(screen.queryByText("Computer Use authorization")).toBeNull();
+  }
+
+  events.push(
+    assistantEvent({ id: EVENT_ID, runId: RUN_ID, seqId: 2, text: url }),
+  );
+  publishRunUpdate();
+  await expect(
+    screen.findByText("Computer Use authorization"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
+  expect(screen.queryByText(url)).toBeNull();
+});
+
+test("An explicit artifact preview waits for the durable message", async () => {
+  const events = activeRun();
+  await setupPage({ context, path: RUN_PATH });
+  await subscribed();
+
+  const content = "![Brief preview](https://a.okou.io/a1b2c3d4e5.pdf)";
+  push(0, content);
+  await expect(
+    screen.findByAltText("Brief preview"),
+  ).resolves.toBeInTheDocument();
+  const cardLabel = "Open pdf preview for a1b2c3d4e5.pdf";
+  expect(screen.queryByLabelText(cardLabel)).toBeNull();
+
+  events.push(
+    assistantEvent({ id: EVENT_ID, runId: RUN_ID, seqId: 2, text: content }),
+  );
+  publishRunUpdate();
+  await expect(screen.findByLabelText(cardLabel)).resolves.toBeInTheDocument();
+  expect(screen.getAllByLabelText(cardLabel)).toHaveLength(1);
+});
+
 test("Unsubscribe from output after the durable run completes", async () => {
   const events = await setupActiveOutputStream();
   publishDurableReport(events);

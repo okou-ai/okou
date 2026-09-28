@@ -53,6 +53,11 @@ function skipsEventBodyRendering(event: ChatEvent): boolean {
   );
 }
 
+/** Provisional assistant text has no authoritative URL/card boundary yet. */
+export function isTransientOutputMessage(event: ChatEvent): boolean {
+  return event.eventType === "output.message" && event.seqId === undefined;
+}
+
 /** Whether the event carries an assistant body rendered as markdown. */
 export function hasChatEventBodyContent(event: ChatEvent): boolean {
   return chatEventTreeContent(event) !== null;
@@ -80,6 +85,7 @@ interface ChatEventTreePlan {
   readonly content: string;
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
+  readonly previews: boolean;
 }
 
 /**
@@ -93,13 +99,15 @@ export function chatEventTreePlan(
   if (content === null) {
     return null;
   }
+  const previews = !isTransientOutputMessage(event);
   const plan = eventBodyPlan(content, {
-    previews: true,
+    previews,
     chatActionContext,
   });
   return {
     content,
     treeSource: plan.treeSource,
     descriptors: plan.descriptors,
+    previews,
   };
 }
