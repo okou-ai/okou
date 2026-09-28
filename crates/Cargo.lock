@@ -3382,6 +3382,7 @@ dependencies = [
  "guest-storage-apply",
  "hex",
  "httpmock",
+ "hyper",
  "libc",
  "nix",
  "rcgen",

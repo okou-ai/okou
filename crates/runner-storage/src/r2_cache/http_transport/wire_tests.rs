@@ -1403,6 +1403,40 @@ async fn cdata_error_code_cannot_authorize_retry_or_a_get_miss() {
 }
 
 #[tokio::test]
+async fn fake_code_in_comment_or_unknown_child_cannot_retry_writes() {
+    // Only the root's direct Code field is modeled by Smithy. A raw XML
+    // search used to pick up the CDATA in either fake nested tag and then
+    // replay Create, UploadPart, Complete and Abort after InvalidPart.
+    for body in [
+        "<Error><Code>InvalidPart</Code><!-- <Code>InternalError<![CDATA[ignored]]></Code> --></Error>",
+        "<Error><Code>InvalidPart</Code><Unknown><Code>InternalError<![CDATA[ignored]]></Code></Unknown></Error>",
+    ] {
+        for operation in ["create", "part", "complete", "abort"] {
+            let server = MockServer::start_async().await;
+            let response = server
+                .mock_async(|when, then| {
+                    when.path("/test-bucket/runner-templates/h.tar.zst");
+                    then.status(200).header("etag", "tag").body(body);
+                })
+                .await;
+            let c = client(&server);
+            let key = "runner-templates/h.tar.zst";
+            let result = match operation {
+                "create" => c.create_multipart(key).await.map(|_| ()),
+                "part" => c
+                    .upload_part(key, "id", 1, Bytes::from_static(b"part"))
+                    .await
+                    .map(|_| ()),
+                "complete" => c.complete_multipart(key, "id", &[]).await,
+                _ => c.abort_multipart(key, "id").await,
+            };
+            assert!(result.is_err(), "{operation}: {body}");
+            response.assert_calls_async(1).await;
+        }
+    }
+}
+
+#[tokio::test]
 async fn cdata_message_does_not_hide_a_plain_retryable_code() {
     // Smithy reads the first ordinary text token, skipping CDATA before it
     // and ignoring CDATA after it. All three responses have InternalError.
@@ -1410,6 +1444,7 @@ async fn cdata_message_does_not_hide_a_plain_retryable_code() {
         "<Error><Code>InternalError</Code><Message><![CDATA[retry]]></Message></Error>",
         "<Error><Code>InternalError<![CDATA[ignored]]></Code></Error>",
         "<Error><Code><![CDATA[ignored]]>InternalError</Code></Error>",
+        "<Error><Code><![CDATA[</Code>]]>InternalError</Code></Error>",
     ] {
         let (url, server) = scripted_server(vec![
             mock_reply("200 OK", body, "x-amz-retry-after: 0\r\n"),
@@ -1483,6 +1518,72 @@ async fn malformed_embedded_error_retries_all_four_nonstreaming_operations() {
             Operation::Abort => c.abort_multipart(key, "id").await.unwrap(),
         }
         assert_eq!(server.await.unwrap().len(), 2, "{operation:?}");
+    }
+}
+
+#[tokio::test]
+async fn malformed_http_header_is_not_a_retryable_request_error() {
+    // The pinned SDK does not replay an operation after a syntactically bad
+    // HTTP header. reqwest calls this a request error, just like a premature
+    // connection close, so keep the listener alive to detect an extra send.
+    for operation in ["head", "complete"] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let server = tokio::spawn(async move {
+            let (mut connection, _) = listener.accept().await.unwrap();
+            let mut received = Vec::new();
+            let header_end = loop {
+                let mut chunk = [0u8; 4096];
+                let n = connection.read(&mut chunk).await.unwrap();
+                assert!(n > 0);
+                received.extend_from_slice(&chunk[..n]);
+                if let Some(i) = received.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break i + 4;
+                }
+            };
+            let headers = String::from_utf8_lossy(&received[..header_end]);
+            let length = headers
+                .lines()
+                .find(|line| line.to_ascii_lowercase().starts_with("content-length:"))
+                .and_then(|line| line.split_once(':'))
+                .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            while received.len() - header_end < length {
+                let mut chunk = [0u8; 4096];
+                let n = connection.read(&mut chunk).await.unwrap();
+                assert!(n > 0);
+                received.extend_from_slice(&chunk[..n]);
+            }
+            connection
+                .write_all(b"HTTP/1.1 200 OK\r\nBad Header\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .await
+                .unwrap();
+            connection.shutdown().await.unwrap();
+            match tokio::time::timeout(Duration::from_millis(1500), listener.accept()).await {
+                Ok(Ok((mut retry, _))) => {
+                    retry
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                        )
+                        .await
+                        .unwrap();
+                    2
+                }
+                _ => 1,
+            }
+        });
+        let c =
+            R2HttpClient::with_test_endpoint_retry_quota(url, "test-bucket".into(), 500).unwrap();
+        if operation == "head" {
+            assert!(c.head("runner-templates/h.tar.zst").await.is_err());
+        } else {
+            assert!(
+                c.complete_multipart("runner-templates/h.tar.zst", "id", &[])
+                    .await
+                    .is_err()
+            );
+        }
+        assert_eq!(server.await.unwrap(), 1, "{operation}");
     }
 }
 

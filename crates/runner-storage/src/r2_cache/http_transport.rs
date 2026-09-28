@@ -1011,11 +1011,24 @@ fn measure_clock_skew(response: &Response, sent: SystemTime, received: SystemTim
 }
 
 fn retryable_transport(error: &reqwest::Error) -> bool {
-    error.is_timeout()
-        || error.is_connect()
-        || error.is_request()
-        || error.is_body()
-        || error.is_decode()
+    if error.is_timeout() || error.is_connect() || error.is_body() || error.is_decode() {
+        return true;
+    }
+    if !error.is_request() {
+        return false;
+    }
+    // reqwest labels both a truncated response header and a syntactically
+    // invalid one as a request error. The pinned SDK retries the incomplete
+    // message but not a response it cannot parse; replaying Complete here
+    // would add a write attempt the SDK never makes.
+    let mut cause = std::error::Error::source(error);
+    while let Some(source) = cause {
+        if let Some(hyper) = source.downcast_ref::<hyper::Error>() {
+            return !hyper.is_parse();
+        }
+        cause = source.source();
+    }
+    false
 }
 
 fn retry_cost(status: StatusCode, code: Option<&str>) -> u32 {
@@ -1227,25 +1240,46 @@ fn first_code_text(content: &str) -> Option<String> {
 // None: no Code with CDATA; Some(None): uncertain; Some(Some(value)): the
 // Smithy-style first text token of a single Code containing CDATA.
 fn code_cdata_value(body: &[u8]) -> Option<Option<String>> {
-    let Ok(xml) = std::str::from_utf8(body) else {
-        return None;
-    };
+    // parse_xml has already validated the document. Track only top-level
+    // children of its root, skipping comments, CDATA and processing
+    // instructions so a fake <Code> inside any of them cannot authorize a
+    // retry. The tokenizer also skips quoted `>` in element attributes.
+    let xml = std::str::from_utf8(body).ok()?;
     let mut offset = 0;
+    let mut depth = 0usize;
+    let mut code_start = None;
     let mut last = None;
-    while let Some(start) = xml[offset..].find('<') {
-        let start = offset + start + 1;
+    while let Some(relative) = xml[offset..].find('<') {
+        let start = offset + relative;
         let rest = &xml[start..];
-        let Some(name_end) = rest.find(|c: char| c.is_ascii_whitespace() || c == '>' || c == '/')
-        else {
-            break;
-        };
-        let name = &rest[..name_end];
-        offset = start + name_end;
-        if name.rsplit(':').next() != Some("Code") {
+        if let Some(tail) = rest.strip_prefix("<!--") {
+            offset = start + 4 + tail.find("-->")? + 3;
             continue;
         }
+        if let Some(tail) = rest.strip_prefix("<![CDATA[") {
+            offset = start + 9 + tail.find("]]>")? + 3;
+            continue;
+        }
+        if let Some(tail) = rest.strip_prefix("<?") {
+            offset = start + 2 + tail.find("?>")? + 2;
+            continue;
+        }
+        if rest.starts_with("</") {
+            if depth == 2
+                && let Some(content_start) = code_start.take()
+            {
+                let content = &xml[content_start..start];
+                last = content
+                    .contains("<![CDATA[")
+                    .then(|| first_code_text(content));
+            }
+            depth = depth.saturating_sub(1);
+            offset = start + rest.find('>')? + 1;
+            continue;
+        }
+        let tag = rest.strip_prefix('<')?;
         let mut quote = None;
-        let Some(open_end) = rest
+        let end = tag
             .char_indices()
             .find_map(|(index, char)| match (quote, char) {
                 (None, '\'' | '"') => {
@@ -1256,35 +1290,24 @@ fn code_cdata_value(body: &[u8]) -> Option<Option<String>> {
                     quote = None;
                     None
                 }
-                (None, '>') => Some(start + index + 1),
+                (None, '>') => Some(index),
                 _ => None,
-            })
-        else {
-            break;
-        };
-        let closing = format!("</{name}");
-        let Some((end, after_close)) =
-            xml[open_end..]
-                .match_indices(&closing)
-                .find_map(|(relative, _)| {
-                    let start = open_end + relative;
-                    let tail = &xml[start + closing.len()..];
-                    let whitespace = tail.len()
-                        - tail
-                            .trim_start_matches(|c: char| c.is_ascii_whitespace())
-                            .len();
-                    tail[whitespace..]
-                        .starts_with('>')
-                        .then_some((start, start + closing.len() + whitespace + 1))
-                })
-        else {
-            break;
-        };
-        let content = &xml[open_end..end];
-        last = content
-            .contains("<![CDATA[")
-            .then(|| first_code_text(content));
-        offset = after_close;
+            })?;
+        let name = tag[..end]
+            .split(|c: char| c.is_ascii_whitespace() || c == '/')
+            .next()?;
+        let empty = tag[..end].trim_end().ends_with('/');
+        if depth == 1 && name.rsplit(':').next() == Some("Code") {
+            if empty {
+                last = None;
+            } else {
+                code_start = Some(start + 1 + end + 1);
+            }
+        }
+        if !empty {
+            depth += 1;
+        }
+        offset = start + 1 + end + 1;
     }
     last
 }
