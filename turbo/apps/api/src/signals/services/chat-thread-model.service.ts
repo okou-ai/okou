@@ -11,10 +11,6 @@ import { and, eq } from "drizzle-orm";
 
 import { badRequestMessage, type insufficientCredits } from "../../lib/error";
 
-/** Why a thread's stored model cannot run: unavailable, or not in the plan. */
-export type ChatThreadModelError =
-  | ReturnType<typeof badRequestMessage>
-  | ReturnType<typeof insufficientCredits>;
 import type { Db } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
@@ -37,6 +33,11 @@ import {
   type ModelFirstPin,
 } from "./model-selection.service";
 import type { Tx } from "../../lib/db-types";
+
+/** Why a thread's stored model cannot run: unavailable, or not in the plan. */
+export type ChatThreadModelError =
+  | ReturnType<typeof badRequestMessage>
+  | ReturnType<typeof insufficientCredits>;
 
 export function chatThreadModelPinColumns(pin: ModelFirstPin): {
   readonly modelProviderId: null;

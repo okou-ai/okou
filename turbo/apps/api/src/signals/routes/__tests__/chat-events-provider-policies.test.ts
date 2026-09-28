@@ -1,9 +1,6 @@
 import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import { randomUUID } from "node:crypto";
-import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  LIMITED_FREE1_DEFAULT_RUN_MODEL,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -566,39 +563,17 @@ describe("CHAT-02: model-first provider policies", () => {
       supportByok: false,
       restrictedBuiltInModels: false,
     });
-    await seedBuiltInModelKey(LIMITED_FREE1_DEFAULT_RUN_MODEL);
-    await preparePiResourceHandoff(actor, agentId);
+    // The thread keeps its BYOK model; a plan without BYOK rejects the
+    // input instead of moving it to the plan's built-in default.
     const byokDisabled = await sendUntilPicked(actor, {
       agentId,
       threadId: initial.threadId,
-      prompt: "fall back from a BYOK-disabled persisted route",
+      prompt: "reject a BYOK-disabled persisted route",
     });
-    const byokDisabledRunId = byokDisabled.picked.runId;
-    if (byokDisabledRunId === undefined) {
-      throw new Error("Expected BYOK-disabled policy fallback to create a run");
-    }
-    const byokDisabledPolicies = await misc.listModelPolicies(actor);
-    expect(byokDisabledPolicies.policies).toContainEqual(
-      expect.objectContaining({
-        model: LIMITED_FREE1_DEFAULT_RUN_MODEL,
-        isDefault: true,
-        defaultProviderType: "built-in",
-        modelProviderId: null,
-      }),
-    );
-    const byokDisabledClaim = await claimChatRun(
-      runnerGroup,
-      byokDisabledRunId,
-    );
-    expect(byokDisabledClaim.claim.cliAgentType).toBe("pi");
-    expect(byokDisabledClaim.claim.piModelConfig).toMatchObject({
-      model: LIMITED_FREE1_DEFAULT_RUN_MODEL,
+    expect(byokDisabled.picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "insufficient_credits",
     });
-    await cancelChatRun(
-      actor,
-      byokDisabledRunId,
-      byokDisabledClaim.sandboxHeaders,
-    );
 
     await upsertOrgPlanEntitlementFixture({
       orgId,
@@ -998,7 +973,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, second.runId);
   });
 
-  it("recovers a removed thread model through the current workspace route", async () => {
+  it("rejects input on a thread whose model the workspace removed", async () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -1037,34 +1012,17 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     ]);
 
-    // The pick resolves the removed thread model through the current route.
-    const recovered = await sendChatRun(actor, {
+    // The thread keeps its removed model, so the pick rejects the input
+    // rather than moving it to the current workspace default.
+    const rejected = await sendUntilPicked(actor, {
       agentId,
       threadId: first.threadId,
-      prompt: "continue through the current workspace default",
+      prompt: "do not continue through the current workspace default",
     });
-    const recoveredClaim = await claimChatRun(runnerGroup, recovered.runId);
-    expect(recoveredClaim.claim.cliAgentType).toBe("codex");
-    expect(recoveredClaim.claim.resumeSession).toBeNull();
-    const recoveredEnvironment = claimEnvironment(recoveredClaim.claim);
-    expect(recoveredEnvironment.OPENAI_MODEL).toBe("gpt-6-astra");
-    expect(recoveredEnvironment.ANTHROPIC_MODEL).toBeUndefined();
-
-    const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
-    if (threadEvents.status !== 200) {
-      throw new Error("Expected chat thread events to load");
-    }
-    expect(
-      threadEvents.body.events.filter((event) => {
-        return (
-          event.kind === "model_selection_updated" &&
-          event.chatThreadId === first.threadId &&
-          event.selectedModel === "gpt-6-astra"
-        );
-      }),
-    ).toHaveLength(1);
-
-    await cancelChatRun(actor, recovered.runId);
+    expect(rejected.picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "bad_request",
+    });
   }, 90_000);
 
   it("resolves a NULL legacy thread from current defaults without replaying its first run", async () => {
