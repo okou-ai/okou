@@ -106,9 +106,16 @@ describe("skill import prompt", () => {
     const claude = prompt("claudeCode");
     const codex = prompt("codex");
 
-    expect(claude).toContain("stored in your Claude account");
-    expect(claude).toContain("~/.claude/skills/<skill-name>/");
-    expect(codex).not.toContain("stored in your Claude account");
+    expect(claude).toContain("only while Claude Code is\nsigned in");
+    expect(codex).not.toContain("signed in to your claude.ai account");
+  });
+
+  it("imports Claude account skills synced to disk", () => {
+    const claude = prompt("claudeCode");
+
+    expect(claude).toContain("~/.claude/skills/synced/");
+    expect(claude).toContain("label them Personal (account) and import them");
+    expect(prompt("codex")).not.toContain("~/.claude/skills/synced/");
   });
 
   it("renders the session limits rather than fixed defaults", () => {

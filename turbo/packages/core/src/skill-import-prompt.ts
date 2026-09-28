@@ -131,6 +131,15 @@ Scan the following directories when they exist.
 Personal skills:
 - ~/.claude/skills/
 
+Account skills:
+- ~/.claude/skills/synced/
+- Claude Code downloads the skills of my claude.ai account here, including
+  skills I created or uploaded in the Claude app or in Cowork. They are my
+  skills: label them Personal (account) and import them. Do not exclude
+  them as a cache, a sync copy, a plugin, or system skills.
+- When the same skill name also exists elsewhere under ~/.claude/skills/,
+  prefer that local copy over the synced one.
+
 Project skills:
 - <current working directory>/.claude/skills/
 - <Git repository root>/.claude/skills/
@@ -156,17 +165,17 @@ Always exclude:
 - Plugin sources that cannot be identified as personally maintained`;
 
 /**
- * Skills created or uploaded in the Claude app live in the user's Claude
- * account, not on disk, so a local scan cannot see them. Without this, an
+ * Skills created in the Claude app or Cowork reach disk only once a Claude
+ * Code session signed in to claude.ai has synced them. Without this, an
  * import that finds nothing reads as if the user had no skills at all.
  */
 const CLAUDE_NO_SKILLS_NOTE = `
 Then add this note for me:
-"Skills created or uploaded in the Claude app (Customize → Skills) are
-stored in your Claude account, not on this machine, so this import cannot
-see them. To import one, download it from Claude, place its folder under
-~/.claude/skills/<skill-name>/ so that it contains SKILL.md, then run the
-import again with a fresh prompt from Okou."`;
+"Skills created or uploaded in the Claude app or Cowork (Customize →
+Skills) are synced to ~/.claude/skills/synced/ only while Claude Code is
+signed in to your claude.ai account. If yours are missing, sign in, keep
+a Claude Code session open for a minute so the sync can finish, then run
+the import again with a fresh prompt from Okou."`;
 
 export function buildSkillImportPrompt(input: SkillImportPromptInput): string {
   const { limits } = input;
