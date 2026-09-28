@@ -3405,7 +3405,7 @@ function ChatThreadEventGroups({
   // between. Tracking the last group that actually put something on screen
   // keeps the stack from springing open the moment a run finishes.
   let previousVisibleGroup: ChatEventGroup | undefined;
-  const groupKeys = chatEventGroupKeys(groups);
+  const groupKeys = chatEventGroupKeys(groups, runWorkFolding);
 
   return (
     <>
