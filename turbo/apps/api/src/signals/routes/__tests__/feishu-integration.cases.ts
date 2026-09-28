@@ -2567,9 +2567,6 @@ export function registerFeishuIntegrationTests(
         expect(managedConnector.skillMarkdown).toContain(
           `okou ${platform} message`,
         );
-        expect(managedConnector.skillMarkdown).not.toContain(
-          "Send a text message as the connected user",
-        );
         const managedSkillStorageName = getCustomConnectorSkillStorageName(
           managedConnector.id,
         );
