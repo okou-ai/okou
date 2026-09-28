@@ -26,7 +26,9 @@ export async function bindLegacyAgentPhoneThreadFixture(args: {
       ),
     )
     .limit(1);
-  if (!link) throw new Error("Expected a linked AgentPhone identity");
+  if (!link) {
+    throw new Error("Expected a linked AgentPhone identity");
+  }
   await database.insert(agentphoneChatThreadRoutes).values({
     agentphoneUserLinkId: link.id,
     rootMessageId: args.conversationId
