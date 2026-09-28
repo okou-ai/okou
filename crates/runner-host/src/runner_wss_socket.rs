@@ -25,6 +25,15 @@ impl RunnerWssSocket {
     pub fn bind(dir: &Path, runner_id: Uuid) -> io::Result<Self> {
         validate_dir(dir, DirMode::TrustedParent, "runner WSS socket directory")?;
         let directory = std::fs::symlink_metadata(dir)?;
+        // Caddy may traverse this directory but must not list the socket names;
+        // other users must have no access. Do not silently accept a looser
+        // host configuration just because it is not group/other writable.
+        if directory.mode() & 0o7777 != 0o710 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "runner WSS socket directory must have mode 0710",
+            ));
+        }
         let group = nix::unistd::Gid::from_raw(directory.gid());
         if dir == Path::new(HOST_SOCKET_DIR) {
             let expected = nix::unistd::Group::from_name("okou-wss-caddy")?.ok_or_else(|| {
@@ -95,7 +104,11 @@ mod tests {
         std::fs::create_dir(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
         assert!(RunnerWssSocket::bind(&dir, id).is_err());
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o750)).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(RunnerWssSocket::bind(&dir, id).is_err());
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o711)).unwrap();
+        assert!(RunnerWssSocket::bind(&dir, id).is_err());
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o710)).unwrap();
         let first = RunnerWssSocket::bind(&dir, id).unwrap();
         let socket_metadata = std::fs::symlink_metadata(&first.path).unwrap();
         assert_eq!(socket_metadata.mode() & 0o777, 0o660);
@@ -119,6 +132,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("wss");
         std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o710)).unwrap();
         let link = root.path().join("link");
         std::os::unix::fs::symlink(&dir, &link).unwrap();
         assert!(RunnerWssSocket::bind(&link, Uuid::new_v4()).is_err());
@@ -136,6 +150,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("wss");
         std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o710)).unwrap();
         let id = Uuid::new_v4();
         let path = dir.join(format!("{id}.sock"));
         std::os::unix::fs::symlink("target", &path).unwrap();
