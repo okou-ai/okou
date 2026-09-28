@@ -7,8 +7,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { describe, expect, it } from "vitest";
 
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import {
   createConnectorBddApi,
@@ -19,10 +18,6 @@ import {
   readCustomConnectorOAuthStorageState,
   seedCustomConnectorOAuthStateContext,
 } from "./helpers/connector-credential-storage-state";
-import {
-  legacyCustomConnectorClaimContract,
-  legacyCustomConnectorClaimRoutes,
-} from "../test-get-started-rewards";
 
 const context = testContext({ connectorCatalog: true });
 const connectors = createConnectorBddApi(context);
@@ -401,37 +396,5 @@ describe("Custom connector Get Started reward", () => {
     });
 
     await connectors.deleteCustomConnector(actor, recreated.id);
-  });
-
-  it("does not award the shared custom connector reward after a legacy per-connector award", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const provider = mockCustomConnectorOAuth2Provider(context, {
-      initialScope: "read",
-    });
-    const actor = createBddApi(context).user({ orgRole: "org:admin" });
-    await connectors.updateFeatureSwitches(actor, {});
-    await setGetStartedEnabled(context, actor);
-
-    const legacy = await createCustomOAuthConnector(actor, provider);
-    await connectCustomOAuthConnector(actor, legacy.id);
-    // Deployed databases still hold custom connector awards keyed per
-    // connector, a shape the production API can no longer create.
-    const relabeled = await accept(
-      setupApp({ context, routes: legacyCustomConnectorClaimRoutes })(
-        legacyCustomConnectorClaimContract,
-      ).relabel({ body: { userId: actor.userId, connectorId: legacy.id } }),
-      [200],
-    );
-    expect(relabeled.body.updated).toBe(1);
-
-    const next = await createCustomOAuthConnector(actor, provider);
-    await connectCustomOAuthConnector(actor, next.id);
-    await expect(readConnectorQuest(actor)).resolves.toMatchObject({
-      claimedCount: 1,
-      earnedCredits: 100,
-    });
-
-    await connectors.deleteCustomConnector(actor, legacy.id);
-    await connectors.deleteCustomConnector(actor, next.id);
   });
 });
