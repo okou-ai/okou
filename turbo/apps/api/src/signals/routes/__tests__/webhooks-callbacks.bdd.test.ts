@@ -294,23 +294,23 @@ async function sendChatInputAtCapacity(
   return sent.body.threadId;
 }
 
+/**
+ * A concurrency-limit change schedules the organization pick in the
+ * background; flush it, then read the run the pick started for the thread.
+ */
 async function waitForPickedThreadRun(
   actor: ApiTestUser,
   threadId: string,
 ): Promise<string> {
-  const chat = createChatFilesBddApi(context);
-  let runId: string | null = null;
-  await expect
-    .poll(async () => {
-      const { events } = await chat.listThreadEvents(actor, threadId);
-      runId =
-        events.find((event) => {
-          return event.eventType === "input.prompt" && Boolean(event.runId);
-        })?.runId ?? null;
-      return runId;
-    })
-    .not.toBeNull();
-  if (runId === null) {
+  await flushWaitUntilForTest();
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    actor,
+    threadId,
+  );
+  const runId = events.find((event) => {
+    return event.eventType === "input.prompt" && Boolean(event.runId);
+  })?.runId;
+  if (!runId) {
     throw new Error("Expected the picked thread input to start a run");
   }
   return runId;
