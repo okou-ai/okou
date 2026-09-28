@@ -249,7 +249,7 @@ describe("GET /api/integrations/telegram/bots", () => {
 
   it("returns 401 when the authenticated session has no organization", async () => {
     expect.hasAssertions();
-    mocks.clerk.session(`user_${randomUUID()}`, null);
+    context.mocks.clerk.session(`user_${randomUUID()}`, null);
     const client = setupApp({
       context,
       routes: integrationsTelegramRoutes,
@@ -500,7 +500,7 @@ describe("POST /api/integrations/telegram/link", () => {
     const userId = `user_${randomUUID()}`;
     await store.set(seedOrgMembership$, { orgId, userId }, context.signal);
     fixtures.push(freezeTelegramFixture(makeTelegramFixtureBuilder(orgId)));
-    mocks.clerk.session(userId, orgId);
+    context.mocks.clerk.session(userId, orgId);
     return {
       token: "clerk-session",
       orgId,
@@ -995,7 +995,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
   });
 
   it("returns 401 when the authenticated session has no organization", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, null);
+    context.mocks.clerk.session(`user_${randomUUID()}`, null);
 
     const response = await requestDownload({
       search: "?file_id=tg-file-1&bot_id=tg-bot",
