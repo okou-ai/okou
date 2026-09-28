@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   runnerVncContract,
   type RunnerVncResolveRequest,
@@ -16,6 +17,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
+import { chatRemoteAccessRoutes } from "../../chat-remote-access";
 import { runnerVncRoutes } from "../../runner-vnc";
 import { sshAccessRoutes } from "../../ssh-access";
 import { testSshConnectionStateRoutes } from "../../test-ssh-connection-state";
@@ -161,7 +163,7 @@ export function createVncRuntimeApi(context: TestContext) {
           ...runnerIdentity,
           triggerSource: "web",
           status: "running",
-          chat: false,
+          chat: true,
           access: false,
           ...overrides,
         },
@@ -214,6 +216,7 @@ export function createVncRuntimeApi(context: TestContext) {
   async function fixture(
     options: {
       readonly grant?: boolean;
+      readonly defaultEnabled?: boolean;
       readonly runtime?: Partial<RuntimeBody>;
     } = {},
   ) {
@@ -232,6 +235,19 @@ export function createVncRuntimeApi(context: TestContext) {
       }),
       [201],
     );
+    if (options.defaultEnabled !== false) {
+      const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+        chatRemoteAccessContract,
+      );
+      await accept(
+        remote.updateHostDefault({
+          headers: vncSessionHeaders,
+          params: { protocol: "vnc", connectionId: connection.body.id },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+    }
     const running = await runtime(owner, options.runtime);
     const result = {
       ...owner,

@@ -109,7 +109,10 @@ async function createRuntime(
   };
 }
 
-async function fixture(runtimeOverrides: Partial<RuntimeBody> = {}) {
+async function fixture(
+  runtimeOverrides: Partial<RuntimeBody> = {},
+  defaultEnabled = true,
+) {
   const owner = {
     orgId: `org_ssh_jit_${randomUUID()}`,
     userId: `user_ssh_jit_${randomUUID()}`,
@@ -127,6 +130,19 @@ async function fixture(runtimeOverrides: Partial<RuntimeBody> = {}) {
     }),
     [201],
   );
+  if (defaultEnabled) {
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    await accept(
+      remote.updateHostDefault({
+        headers: sessionHeaders,
+        params: { protocol: "ssh", connectionId: connection.body.id },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+  }
   const runtime = await createRuntime(owner, runtimeOverrides);
   return {
     ...owner,
@@ -392,11 +408,14 @@ beforeEach(() => {
 
 describe("chat thread SSH authority", () => {
   it("uses current per-host defaults and overrides, ignores Agent grants, and denies Runs without a chat", async () => {
-    const f = await fixture({
-      chat: true,
-      access: true,
-      runnerGroup: `thread-ssh-${randomUUID()}`,
-    });
+    const f = await fixture(
+      {
+        chat: true,
+        access: true,
+        runnerGroup: `thread-ssh-${randomUUID()}`,
+      },
+      false,
+    );
     if (!f.threadId) {
       throw new Error("Missing fixture chat thread");
     }
@@ -979,27 +998,19 @@ describe("SSH connection observations", () => {
 });
 
 describe("official Runner SSH authority", () => {
-  it("allows an ordinary owner without feature overrides and enforces grant revocation", async () => {
+  it("allows an ordinary owner without feature overrides and ignores legacy grant revocation", async () => {
     const f = await fixture();
     await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
     await expect(pin(f)).resolves.toMatchObject({ outcome: "pinned" });
     expect((await list(f))[0]?.learnedHostKey).toStrictEqual(hostKey);
     await access(f, false);
     const kms = useSecretKmsProbe();
-    await expect(resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    await expect(pin(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect(kms.decryptCalls).toBe(0);
+    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
+    expect(kms.decryptCalls).toBe(2);
   });
 
   it("rechecks authority after waiting for an owner connection lock", async () => {
-    const f = await fixture({
-      triggerSource: "automation-schedule",
-      chat: false,
-    });
+    const f = await fixture({ triggerSource: "automation-schedule" });
     const scope = {
       orgId: f.orgId,
       userId: f.userId,
@@ -1034,7 +1045,18 @@ describe("official Runner SSH authority", () => {
             return (await lock("read-connection-lock")).body.waiting;
           })
           .toBe(true);
-        await access(f, false);
+        authenticate(f);
+        const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+          chatRemoteAccessContract,
+        );
+        await accept(
+          remote.updateHostDefault({
+            headers: sessionHeaders,
+            params: { protocol: "ssh", connectionId: f.connectionId },
+            body: { enabled: false },
+          }),
+          [200],
+        );
       })(),
       releaseLock,
     );
@@ -1200,22 +1222,14 @@ describe("official Runner SSH authority", () => {
   });
 
   it.each([...triggerSourceSchema.options, null])(
-    "resolves and pins an authorized %s Run without a chat thread",
+    "denies a %s Run without a chat thread despite an enabled host default and Agent grant",
     async (triggerSource) => {
       const f = await fixture({ triggerSource, chat: false });
-      await expect(resolve(f)).resolves.toMatchObject({
-        outcome: "resolved",
-        privateKey,
-        learnedHostKey: null,
+      await expect(resolve(f)).resolves.toStrictEqual({
+        outcome: "unavailable",
       });
       await expect(pin(f)).resolves.toStrictEqual({
-        outcome: "pinned",
-        generation: 2,
-      });
-      await expect(resolve(f)).resolves.toMatchObject({
-        outcome: "resolved",
-        learnedHostKey: hostKey,
-        generation: 2,
+        outcome: "unavailable",
       });
     },
   );
@@ -1247,13 +1261,32 @@ describe("official Runner SSH authority", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
-  it("checks current access and credential existence on every call", async () => {
-    const f = await fixture({ triggerSource: "automation-event", chat: false });
+  it("checks current chat access and credential existence on every call", async () => {
+    const f = await fixture({ triggerSource: "automation-event" });
     const kms = useSecretKmsProbe();
-    await access(f, false);
+    authenticate(f);
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    const params = { protocol: "ssh" as const, connectionId: f.connectionId };
+    await accept(
+      remote.updateHostDefault({
+        headers: sessionHeaders,
+        params,
+        body: { enabled: false },
+      }),
+      [200],
+    );
     await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await access(f, true);
+    await accept(
+      remote.updateHostDefault({
+        headers: sessionHeaders,
+        params,
+        body: { enabled: true },
+      }),
+      [200],
+    );
     authenticate(f);
     await accept(
       config().delete({

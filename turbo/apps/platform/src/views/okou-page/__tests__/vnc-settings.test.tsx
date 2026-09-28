@@ -141,11 +141,13 @@ function mockSettings(
     ({ respond }) => {
       return respond(200, {
         ssh: [],
-        vnc: data.connections.map((connection) => ({
-          connectionId: connection.id,
-          displayName: connection.displayName,
-          defaultEnabled: false,
-        })),
+        vnc: data.connections.map((connection) => {
+          return {
+            connectionId: connection.id,
+            displayName: connection.displayName,
+            defaultEnabled: false,
+          };
+        }),
       });
     },
   );

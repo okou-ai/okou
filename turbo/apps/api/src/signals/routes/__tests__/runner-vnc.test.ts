@@ -61,6 +61,7 @@ describe("private Runner VNC authority", () => {
   it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
     const f = await api.fixture({
       grant: false,
+      defaultEnabled: false,
       runtime: { chat: true, access: false },
     });
     if (!f.threadId) {
@@ -163,14 +164,10 @@ describe("private Runner VNC authority", () => {
     expect((await check(f, 2)).body).toStrictEqual({ outcome: "unavailable" });
   });
 
-  it("requires an explicit VNC grant and preserves the exact secret only in the no-store handoff", async () => {
+  it("ignores legacy VNC Agent grants and preserves the exact secret only in the no-store handoff", async () => {
     const f = await api.fixture({ grant: false });
     const kms = useSecretKmsProbe();
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
     expect(kms.decryptCalls).toBe(0);
-    await api.grant(f, true);
     const result = await accept(
       api.runner().resolve({
         headers: vncRunnerHeaders,
@@ -201,13 +198,6 @@ describe("private Runner VNC authority", () => {
     );
     expect(JSON.stringify(listed.body)).not.toContain(vncPassword);
     await api.grant(f, false);
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect((await check(f, first.generation)).body).toStrictEqual({
-      outcome: "unavailable",
-    });
-    await api.grant(f, true);
     expect((await api.resolved(f)).generation).toBe(first.generation);
     expect((await check(f, first.generation)).body).toStrictEqual({
       outcome: "valid",
