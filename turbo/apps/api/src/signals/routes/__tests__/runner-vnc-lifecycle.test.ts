@@ -27,7 +27,7 @@ const mocks = createRouteMocks(context);
 const store = createStore();
 beforeEach(initializeVncRuntimeTest);
 
-test("orders member cleanup with shared-Agent deletion and permits deletion after the queued Run is revoked", async () => {
+test("allows shared-Agent deletion while grant-free member cleanup waits on a host", async () => {
   const creator = await api.fixture({ runtime: { status: "completed" } });
   const consumer = {
     orgId: creator.orgId,
@@ -116,9 +116,9 @@ test("orders member cleanup with shared-Agent deletion and permits deletion afte
           return (await lock("read-connection-lock")).body.waiting;
         })
         .toBe(true);
-      // Member cleanup must fence the shared Agent's queued Run while a
-      // connection lock is held, avoiding a concurrent deletion race.
-      await accept(removeAgent(), [409]);
+      // With no first-host Agent grant, a queued Run and its shared Agent can
+      // be deleted before the waiting member cleanup finishes.
+      await accept(removeAgent(), [204]);
     })(),
     release,
   );
@@ -130,5 +130,4 @@ test("orders member cleanup with shared-Agent deletion and permits deletion afte
   expect(
     (await accept(api.connections().list({ headers }), [200])).body.connections,
   ).toStrictEqual([]);
-  await accept(removeAgent(), [204]);
 });
