@@ -47,19 +47,21 @@ describe("okou host delete command", () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(["demo-site", "https://demo-site.sites.example.com/"])(
-    "deletes the site named by %s",
-    async (input) => {
-      await hostCommand.parseAsync(["node", "cli", "delete", input, "--json"]);
+  it.each([
+    ["demo-site", "demo-site"],
+    ["https://demo-site.sites.example.com/", "demo-site"],
+    // Only dpl-<uuid> is a version address; other dpl- names are sites.
+    ["dpl-report", "dpl-report"],
+  ])("deletes the site named by %s", async (input, slug) => {
+    await hostCommand.parseAsync(["node", "cli", "delete", input, "--json"]);
 
-      expect(deletedSlugs).toStrictEqual(["demo-site"]);
-      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(JSON.parse(stdout)).toMatchObject({
-        publicSlug: "demo-site",
-        offlineUrls: [ALIAS_URL, VERSION_URL],
-      });
-    },
-  );
+    expect(deletedSlugs).toStrictEqual([slug]);
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(stdout)).toMatchObject({
+      publicSlug: "demo-site",
+      offlineUrls: [ALIAS_URL, VERSION_URL],
+    });
+  });
 
   it("lists the offline URLs and how to restore the site", async () => {
     await hostCommand.parseAsync(["node", "cli", "delete", "demo-site"]);

@@ -13,6 +13,10 @@ function jsonOption(options: DeleteOptions, command: Command): boolean {
   return Boolean(options.json || parentOptions?.json);
 }
 
+// Only `dpl-<uuid>` names a version; other `dpl-` names are ordinary sites.
+const VERSION_SLUG_PATTERN =
+  /^dpl-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
 /** Accept the printed site slug or its hosted URL; the first label names the site. */
 function siteSlugFromInput(value: string): string {
   const trimmed = value.trim();
@@ -43,12 +47,13 @@ Notes:
   .action(
     withErrorHandler(
       async (site: string, options: DeleteOptions, command: Command) => {
-        if (site.trim().startsWith("dpl-") || site.includes("://dpl-")) {
+        const slug = siteSlugFromInput(site);
+        if (VERSION_SLUG_PATTERN.test(slug)) {
           throw new Error(
             "Use the site slug or site URL, not a version URL; deleting a site takes every version offline",
           );
         }
-        const result = await deleteHostedSite(siteSlugFromInput(site));
+        const result = await deleteHostedSite(slug);
         if (jsonOption(options, command)) {
           console.log(JSON.stringify(result));
           return;

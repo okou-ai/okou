@@ -218,6 +218,9 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     await enableHostedSiteDelete(owner);
     const capture = api.captureHostedSitesS3();
     const site = `bdd-legacy-${randomUUID().slice(0, 8)}`;
+    // Prepare only allocates current-layout sites, so no endpoint can create a
+    // legacy-layout site. Seed that historical row: refusing to delete what a
+    // redeploy could never restore is the contract under test.
     await insertLegacyHostedSiteFixture({ ...ownedActor(owner), site });
 
     const rejected = await api.requestDeleteHostedSite(owner, site, [400]);
@@ -252,6 +255,9 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
       },
     );
     const site = `bdd-shared-${randomUUID().slice(0, 8)}`;
+    // Private HTML publishing is refused (`prepare/private` returns 403), so
+    // no endpoint can create a shared private publication. Seed that retained
+    // historical identity: its live share link must stop serving on deletion.
     const publication = await insertLegacyHostedSitePublicationFixture({
       orgId,
       userId,
