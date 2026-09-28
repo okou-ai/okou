@@ -109,6 +109,51 @@ async function createRuntime(
   };
 }
 
+async function enableHostDefault(owner: Owner, connectionId: string) {
+  authenticate(owner);
+  const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+    chatRemoteAccessContract,
+  );
+  await accept(
+    remote.updateHostDefault({
+      headers: sessionHeaders,
+      params: { protocol: "ssh", connectionId },
+      body: { enabled: true },
+    }),
+    [200],
+  );
+}
+
+async function setThreadHostOverride(f: Fixture, enabled: boolean | null) {
+  if (!f.threadId) {
+    throw new Error("Missing fixture chat thread");
+  }
+  authenticate(f);
+  const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+    chatRemoteAccessContract,
+  );
+  const params = {
+    threadId: f.threadId,
+    protocol: "ssh" as const,
+    connectionId: f.connectionId,
+  };
+  if (enabled === null) {
+    await accept(
+      remote.clearThreadOverride({ headers: sessionHeaders, params }),
+      [200],
+    );
+  } else {
+    await accept(
+      remote.setThreadOverride({
+        headers: sessionHeaders,
+        params,
+        body: { enabled },
+      }),
+      [200],
+    );
+  }
+}
+
 async function fixture(
   runtimeOverrides: Partial<RuntimeBody> = {},
   defaultEnabled = true,
@@ -131,17 +176,7 @@ async function fixture(
     [201],
   );
   if (defaultEnabled) {
-    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-      chatRemoteAccessContract,
-    );
-    await accept(
-      remote.updateHostDefault({
-        headers: sessionHeaders,
-        params: { protocol: "ssh", connectionId: connection.body.id },
-        body: { enabled: true },
-      }),
-      [200],
-    );
+    await enableHostDefault(owner, connection.body.id);
   }
   const runtime = await createRuntime(owner, runtimeOverrides);
   return {
@@ -319,7 +354,7 @@ describe("SSH authority invalidation", () => {
     ]);
   });
 
-  it("invalidates the affected Agent's whole Run even after its grant is deleted", async () => {
+  it("invalidates legacy grants without removing chat host authority", async () => {
     const f = await fixture({ runnerGroup: `ssh-cache-${randomUUID()}` });
     await createRuntime(f, { runnerGroup: `other-agent-${randomUUID()}` });
     context.mocks.ably.publish.mockClear();
@@ -339,7 +374,7 @@ describe("SSH authority invalidation", () => {
       ["ssh:changed", { orgId: f.orgId }],
       ["ssh-authority-invalidated", { runId: f.runId, connectionId: null }],
     ]);
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
   });
 });
 
@@ -506,6 +541,7 @@ describe("shared credential runtime authority", () => {
       }),
       [201],
     );
+    await enableHostDefault(f, shared.body.id);
     const unrelated = await accept(
       config().create({
         headers: sessionHeaders,
@@ -518,6 +554,7 @@ describe("shared credential runtime authority", () => {
       }),
       [201],
     );
+    await enableHostDefault(f, unrelated.body.id);
     await pin(f);
     const before = await list(f);
     context.mocks.ably.publish.mockClear();
@@ -714,6 +751,7 @@ describe("SSH connection observations", () => {
         }),
         [201],
       );
+      await enableHostDefault(f, additional.body.id);
       const sibling = { ...f, connectionId: additional.body.id };
       expect(sibling.connectionId).not.toBe(f.connectionId);
       const siblingCredential = await resolve(sibling);
@@ -918,7 +956,7 @@ describe("SSH connection observations", () => {
     });
   });
 
-  it("requires official authentication and current winning-runner, owner, Run and grant authority", async () => {
+  it("requires official authentication and current winning-runner, owner, Run and chat authority", async () => {
     const f = await fixture();
     const body = {
       connectionId: f.connectionId,
@@ -955,9 +993,9 @@ describe("SSH connection observations", () => {
     await expect(observe(completed)).resolves.toStrictEqual({
       outcome: "unavailable",
     });
-    await access(f, false);
+    await setThreadHostOverride(f, false);
     await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await access(f, true);
+    await setThreadHostOverride(f, null);
     await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
     authenticate(f);
     expect(
@@ -1045,18 +1083,7 @@ describe("official Runner SSH authority", () => {
             return (await lock("read-connection-lock")).body.waiting;
           })
           .toBe(true);
-        authenticate(f);
-        const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
-          chatRemoteAccessContract,
-        );
-        await accept(
-          remote.updateHostDefault({
-            headers: sessionHeaders,
-            params: { protocol: "ssh", connectionId: f.connectionId },
-            body: { enabled: false },
-          }),
-          [200],
-        );
+        await setThreadHostOverride(f, false);
       })(),
       releaseLock,
     );
@@ -1513,7 +1540,7 @@ describe("official Runner SSH authority", () => {
     };
     await onRejection(
       (async () => {
-        await access(f, false);
+        await setThreadHostOverride(f, false);
         await expect(resolve(f)).resolves.toStrictEqual({
           outcome: "unavailable",
         });

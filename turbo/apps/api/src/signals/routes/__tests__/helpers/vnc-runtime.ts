@@ -213,10 +213,11 @@ export function createVncRuntimeApi(context: TestContext) {
       [200],
     );
   }
-  async function enableDefault(
+  async function setDefault(
     owner: Owner,
     protocol: "ssh" | "vnc",
     connectionId: string,
+    enabled: boolean,
   ) {
     authenticate(owner);
     const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
@@ -226,10 +227,17 @@ export function createVncRuntimeApi(context: TestContext) {
       remote.updateHostDefault({
         headers: vncSessionHeaders,
         params: { protocol, connectionId },
-        body: { enabled: true },
+        body: { enabled },
       }),
       [200],
     );
+  }
+  async function enableDefault(
+    owner: Owner,
+    protocol: "ssh" | "vnc",
+    connectionId: string,
+  ) {
+    await setDefault(owner, protocol, connectionId, true);
   }
   async function fixture(
     options: {
@@ -308,6 +316,7 @@ export function createVncRuntimeApi(context: TestContext) {
     runtime,
     grant,
     grantSsh,
+    setDefault,
     enableDefault,
     fixture,
     resolve,
