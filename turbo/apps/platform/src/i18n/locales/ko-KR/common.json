@@ -2224,6 +2224,13 @@
       },
       "openTemplatesAria": "템플릿 둘러보기",
       "startWithPrompt": "만들기",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "이미 사용 중인 Claude 또는 ChatGPT 요금제로 실행",
+        "openSettingsAria": "모델 설정 열기",
+        "title": "내 구독 연결하기"
+      },
       "templates": "템플릿"
     },
     "taskChips": {

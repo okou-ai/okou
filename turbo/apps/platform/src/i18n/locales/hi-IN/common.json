@@ -2233,6 +2233,13 @@
       },
       "openTemplatesAria": "टेम्पलेट ब्राउज़ करें",
       "startWithPrompt": "बनाएं",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "अपने मौजूदा Claude या ChatGPT प्लान से चलाएँ",
+        "openSettingsAria": "मॉडल सेटिंग्स खोलें",
+        "title": "अपनी सदस्यता जोड़ें"
+      },
       "templates": "टेम्पलेट"
     },
     "taskChips": {

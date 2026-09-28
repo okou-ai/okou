@@ -2224,6 +2224,13 @@
       },
       "openTemplatesAria": "テンプレートを見る",
       "startWithPrompt": "作成",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "お持ちの Claude や ChatGPT のプランで実行する",
+        "openSettingsAria": "モデル設定を開く",
+        "title": "サブスクリプションを使う"
+      },
       "templates": "テンプレート"
     },
     "taskChips": {

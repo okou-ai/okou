@@ -2280,6 +2280,13 @@
       },
       "openTemplatesAria": "Parcourir les modèles",
       "startWithPrompt": "Créer",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Utilisez votre forfait Claude ou ChatGPT existant",
+        "openSettingsAria": "Ouvrir les paramètres des modèles",
+        "title": "Utilisez votre abonnement"
+      },
       "templates": "Modèles"
     },
     "taskChips": {

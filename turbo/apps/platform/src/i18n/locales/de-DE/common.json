@@ -2233,6 +2233,13 @@
       },
       "openTemplatesAria": "Vorlagen durchsuchen",
       "startWithPrompt": "Erstellen",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Nutze deinen bestehenden Claude- oder ChatGPT-Plan",
+        "openSettingsAria": "Modelleinstellungen öffnen",
+        "title": "Eigenes Abo nutzen"
+      },
       "templates": "Vorlagen"
     },
     "taskChips": {

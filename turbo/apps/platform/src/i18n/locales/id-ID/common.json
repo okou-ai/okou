@@ -2224,6 +2224,13 @@
       },
       "openTemplatesAria": "Jelajahi templat",
       "startWithPrompt": "Buat",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Jalankan dengan paket Claude atau ChatGPT yang sudah Anda punya",
+        "openSettingsAria": "Buka pengaturan model",
+        "title": "Pakai langganan Anda"
+      },
       "templates": "Templat"
     },
     "taskChips": {

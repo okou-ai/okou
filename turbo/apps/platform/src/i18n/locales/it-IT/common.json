@@ -2280,6 +2280,13 @@
       },
       "openTemplatesAria": "Sfoglia i modelli",
       "startWithPrompt": "Crea",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Lavora con il tuo piano Claude o ChatGPT attuale",
+        "openSettingsAria": "Apri le impostazioni dei modelli",
+        "title": "Usa il tuo abbonamento"
+      },
       "templates": "Modelli"
     },
     "taskChips": {

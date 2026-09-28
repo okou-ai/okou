@@ -2224,6 +2224,13 @@
       },
       "openTemplatesAria": "浏览模板",
       "startWithPrompt": "创建",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "用你已有的 Claude 或 ChatGPT 套餐来运行",
+        "openSettingsAria": "打开模型设置",
+        "title": "接入你的订阅"
+      },
       "templates": "模板"
     },
     "taskChips": {
