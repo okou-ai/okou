@@ -293,7 +293,7 @@ describe("CHAT effort: thread configuration", () => {
       pi: false,
     },
   ] as const)(
-    "uses current thread settings when a queued message starts with Pi $pi and $requestedEffort effort",
+    "preserves enqueued settings after thread edits and retries with Pi $pi and $requestedEffort effort",
     async ({ requestedEffort, effectiveEffort, pi }) => {
       const { actor, agentId, providerId, runnerGroup } =
         await entitledChatActor();
@@ -336,13 +336,16 @@ describe("CHAT effort: thread configuration", () => {
       await chat.updateThreadModelSelection(
         actor,
         active.threadId,
-        "claude-fable-5-1",
-        { reasoningEffort: "extra" },
+        selectedModel,
+        {
+          reasoningEffort: requestedEffort,
+          ...(pi ? { codexServiceTier: "fast" as const } : {}),
+        },
       );
       const clientEventId = randomUUID();
       const prompt = pi
-        ? "/unknown-command read the current thread settings at launch"
-        : "Read the current thread settings at launch";
+        ? "/unknown-command retain the settings captured at enqueue"
+        : "Retain the settings captured at enqueue";
       const queued = await chat.requestSendEvent(
         actor,
         {
@@ -357,8 +360,8 @@ describe("CHAT effort: thread configuration", () => {
       await chat.updateThreadModelSelection(
         actor,
         active.threadId,
-        selectedModel,
-        { reasoningEffort: requestedEffort },
+        "claude-fable-5-1",
+        { reasoningEffort: "extra", codexServiceTier: null },
       );
       const retry = await chat.requestSendEvent(
         actor,
@@ -367,7 +370,7 @@ describe("CHAT effort: thread configuration", () => {
           threadId: active.threadId,
           prompt,
           clientEventId,
-          runOptions: { reasoningEffort: requestedEffort },
+          runOptions: { reasoningEffort: "extra" },
         },
         [201],
       );
@@ -397,6 +400,7 @@ describe("CHAT effort: thread configuration", () => {
       expect(promoted.userMessage.parts).toContainEqual({
         type: "model",
         selectedModel,
+        ...(pi ? { serviceTier: "priority" } : {}),
       });
       if (pi) {
         await flushWaitUntilForTest();
@@ -404,19 +408,25 @@ describe("CHAT effort: thread configuration", () => {
       const claimed = await claimChatRun(runnerGroup, promoted.runId);
       if (pi) {
         expect(claimed.claim.piModelConfig).toMatchObject({
+          model: selectedModel,
           thinkingLevel: effectiveEffort,
+          serviceTier: "priority",
         });
       }
       expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
         effectiveEffort,
       );
+      expect(claimed.claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe(
+        pi ? "fast" : undefined,
+      );
       await expect(
         chat.readThreadMetadata(actor, active.threadId),
       ).resolves.toMatchObject({
-        selectedModel,
+        selectedModel: "claude-fable-5-1",
+        serviceTier: null,
         modelSettings: {
+          ...(pi ? { [selectedModel]: { effort: requestedEffort } } : {}),
           "claude-fable-5-1": { effort: "extra" },
-          [selectedModel]: { effort: requestedEffort },
         },
       });
       await cancelChatRun(actor, promoted.runId, claimed.sandboxHeaders);
