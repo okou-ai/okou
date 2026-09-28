@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.5.5...runner-remote-v0.6.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+
 ## [0.5.5](https://github.com/okou-ai/okou/compare/runner-remote-v0.5.4...runner-remote-v0.5.5) (2026-09-28)
 
 ## [0.5.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.5.3...runner-remote-v0.5.4) (2026-09-28)

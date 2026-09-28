@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.717.0](https://github.com/okou-ai/okou/compare/core-v8.716.3...core-v8.717.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+* **platform:** add a composer model panel behind a staff switch ([#37229](https://github.com/okou-ai/okou/issues/37229)) ([0f13f20](https://github.com/okou-ai/okou/commit/0f13f2098a51aa91b0b1af1e514197bb576800ec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.523.0
+
 ## [8.716.3](https://github.com/okou-ai/okou/compare/core-v8.716.2...core-v8.716.3) (2026-09-28)
 
 

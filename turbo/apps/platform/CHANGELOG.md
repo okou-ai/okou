@@ -11,6 +11,29 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.980.0](https://github.com/okou-ai/okou/compare/app-v0.979.1...app-v0.980.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+* **platform:** add a composer model panel behind a staff switch ([#37229](https://github.com/okou-ai/okou/issues/37229)) ([0f13f20](https://github.com/okou-ai/okou/commit/0f13f2098a51aa91b0b1af1e514197bb576800ec))
+
+
+### Refactoring
+
+* count concurrency slots as active_agent_runs rows and restore the queue drawer link ([#37239](https://github.com/okou-ai/okou/issues/37239)) ([e7e0b41](https://github.com/okou-ai/okou/commit/e7e0b415823fda96ee635712cf237cd0c8d64cde))
+* **platform:** run onboarding prompts through one command ([#37236](https://github.com/okou-ai/okou/issues/37236)) ([29e23a3](https://github.com/okou-ai/okou/commit/29e23a3758402ffcec514cd87c5a5cf28853b0de))
+* stop retired chat event writers ahead of chat event v8 ([#37225](https://github.com/okou-ai/okou/issues/37225)) ([d687f84](https://github.com/okou-ai/okou/commit/d687f84782c736f451682e7066caffb3696f6306))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.523.0
+    * @okouai/core bumped to 8.717.0
+
 ## [0.979.1](https://github.com/okou-ai/okou/compare/app-v0.979.0...app-v0.979.1) (2026-09-28)
 
 

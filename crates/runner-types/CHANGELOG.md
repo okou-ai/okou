@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-types-v0.2.0...runner-types-v0.3.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+
 ## [0.2.0](https://github.com/okou-ai/okou/compare/runner-types-v0.1.13...runner-types-v0.2.0) (2026-09-28)
 
 

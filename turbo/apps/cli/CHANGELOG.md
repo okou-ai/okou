@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.371.0](https://github.com/okou-ai/okou/compare/cli-v9.370.2...cli-v9.371.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.523.0
+    * @okouai/core bumped to 8.717.0
+    * @okouai/pi-agent-runtime bumped to 1.41.0
+
 ## [9.370.2](https://github.com/okou-ai/okou/compare/cli-v9.370.1...cli-v9.370.2) (2026-09-28)
 
 

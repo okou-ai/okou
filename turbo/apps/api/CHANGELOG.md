@@ -8,6 +8,34 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.691.0](https://github.com/okou-ai/okou/compare/api-v1.690.1...api-v1.691.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+
+
+### Refactoring
+
+* count concurrency slots as active_agent_runs rows and restore the queue drawer link ([#37239](https://github.com/okou-ai/okou/issues/37239)) ([e7e0b41](https://github.com/okou-ai/okou/commit/e7e0b415823fda96ee635712cf237cd0c8d64cde))
+* stop retired chat event writers ahead of chat event v8 ([#37225](https://github.com/okou-ai/okou/issues/37225)) ([d687f84](https://github.com/okou-ai/okou/commit/d687f84782c736f451682e7066caffb3696f6306))
+
+
+### Performance Improvements
+
+* **api:** batch two locked credit lot deductions ([#37228](https://github.com/okou-ai/okou/issues/37228)) ([6e1f028](https://github.com/okou-ai/okou/commit/6e1f0288126e7514f23c568eace53288d4578d28))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.523.0
+    * @okouai/core bumped to 8.717.0
+    * @okouai/db bumped to 1.311.0
+    * @okouai/pi-agent-runtime bumped to 1.41.0
+
 ## [1.690.1](https://github.com/okou-ai/okou/compare/api-v1.690.0...api-v1.690.1) (2026-09-28)
 
 

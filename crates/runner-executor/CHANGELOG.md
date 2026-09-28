@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.20...runner-executor-v0.2.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+
+
+### Bug Fixes
+
+* **runner:** read steerable input only on start, push, and ably reconnect ([#37232](https://github.com/okou-ai/okou/issues/37232)) ([5a4713a](https://github.com/okou-ai/okou/commit/5a4713ab3fbd39ee99a5a6067880ab7538ab359a))
+
 ## [0.1.20](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.19...runner-executor-v0.1.20) (2026-09-28)
 
 ## [0.1.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.18...runner-executor-v0.1.19) (2026-09-28)

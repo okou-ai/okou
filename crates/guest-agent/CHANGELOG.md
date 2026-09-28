@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.100.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.99.0...guest-agent-v0.100.0) (2026-09-28)
+
+
+### Features
+
+* finish the unified chat queue release 7 ([#37200](https://github.com/okou-ai/okou/issues/37200)) ([987a08b](https://github.com/okou-ai/okou/commit/987a08b7ac4b8220c3acc7d9b8fc8a9b4ddb46c8))
+
 ## [0.99.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.14...guest-agent-v0.99.0) (2026-09-28)
 
 
