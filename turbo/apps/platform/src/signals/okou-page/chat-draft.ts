@@ -1119,14 +1119,7 @@ export function createDraftSignals(): DraftSignals {
   });
   const setGenerationTemplate$ = command(
     ({ set }, value: GenerationTemplateRequest | undefined) => {
-      // Video and avatar templates are retired: a saved or copied draft keeps
-      // its text but never re-selects one.
-      set(
-        internalGenerationTemplate$,
-        value?.type === "video" || value?.type === "intro-video"
-          ? undefined
-          : value,
-      );
+      set(internalGenerationTemplate$, value);
     },
   );
 

@@ -18,9 +18,12 @@ a user session; agent and sandbox credentials cannot
 change preferences. Membership removal deletes only that member's workspace
 rows; user and organization deletion remove their respective rows.
 
-The shared catalog includes `web-search`, `people-search`, `scrape`, `finance`,
-`maps`, `seo`, `social`, `image-recognition`, `image-generation`,
-`video-generation`, `voice-generation`, and `avatar-video-generation`.
+The settings catalog (`AVAILABLE_PAID_TOOL_IDS`) includes `web-search`,
+`people-search`, `scrape`, `finance`, `maps`, `seo`, `social`,
+`image-recognition`, and `image-generation`. `PAID_TOOL_IDS` still accepts the
+retired `video-generation`, `voice-generation`, and `avatar-video-generation`
+IDs so stored preferences and older clients keep parsing; no current command
+acts on them.
 
 ## Settings and run semantics
 
@@ -83,18 +86,15 @@ Provider discovery reports when a built-in option is disabled and preserves
 connector alternatives. Free help, prompt compilation, template authoring,
 resource catalogs and existing result observation remain available.
 
-| Tool ID                   | Paid execution covered                                               | Free branches preserved                             |
-| ------------------------- | -------------------------------------------------------------------- | --------------------------------------------------- |
-| `image-generation`        | Built-in image generation, image-batch start and hidden batch worker | Prompt compilation, provider and connector guidance |
-| `video-generation`        | Built-in video generation                                            | Template authoring and provider guidance            |
-| `voice-generation`        | Built-in voice generation                                            | Provider and connector guidance                     |
-| `avatar-video-generation` | Built-in avatar video                                                | Avatar/voice catalogs and connector guidance        |
+| Tool ID            | Paid execution covered                                               | Free branches preserved                             |
+| ------------------ | -------------------------------------------------------------------- | --------------------------------------------------- |
+| `image-generation` | Built-in image generation, image-batch start and hidden batch worker | Prompt compilation, provider and connector guidance |
 
 Checks precede uploads, artifact preparation and execution output writes. A
 disabled batch worker does not create a misleading completion file.
 
 The creation UI explains disabled choices and links to settings. Explicit
-built-in image/video creation checks current owner preferences before sending;
+built-in image creation checks current owner preferences before sending;
 a failed read does not assume the tools are enabled. Selected templates can
 also be discussed without generating anything, so a template alone does not
 block ordinary messages. The CLI checks the actual paid command selected by

@@ -1,3 +1,10 @@
+/**
+ * Rollout fallback: video and avatar submission is retired, so this code only
+ * completes provider jobs the previous API accepted. Surface: provider
+ * callbacks for those jobs; window: old-API drain plus the 30-minute video job
+ * timeout, extended while a pre-retirement API is a rollback target. Remove
+ * under #37249 once no video job can still be queued or running.
+ */
 import { Buffer } from "node:buffer";
 
 import { command, computed, type Computed } from "ccstate";

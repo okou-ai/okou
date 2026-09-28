@@ -65,14 +65,21 @@ Old and new versions during deploy:
   A video or avatar template send is rejected, and its thread video model write
   (`POST /api/chat-threads/:id/video-model`, now removed) fails. Its default
   video model and create-thread `videoModel` fields are stripped by the request
-  schemas and ignored; paid-tool writes keep their contract. Raise the Web
-  client floor to the first App build containing this change in the same
-  release.
+  schemas and ignored; paid-tool writes keep their contract. These failures
+  are limited to retired controls and are accepted until the tab reloads. Do
+  not raise the Web client floor in this release: production promotes the API
+  before the App, so the floor is raised in a follow-up release after this App
+  build is live (#37249).
 - New App with the old API: the App simply stops calling the retired surfaces.
 - Jobs accepted before the deploy: provider webhooks, status reads, artifacts,
   and billing for already accepted video and avatar jobs keep working
-  (`webhooks-built-in-generations`, `built-in-generation`). Remove those paths
-  once no accepted job can still complete.
+  (`webhooks-built-in-generations`, `built-in-generation`). The window is the
+  old API's drain plus the 30-minute video job timeout, extended while a
+  pre-retirement API remains a rollback target (a rollback re-enables
+  submissions). Remove those paths under #37249.
+- Inputs queued before the deploy with a video or avatar template run without
+  that template once picked by the new API; they are not rejected after
+  acceptance.
 
 New threads and runs no longer resolve or store a video model; the member
 default is no longer written or returned. Thread metadata and thread events
@@ -81,8 +88,9 @@ and the `video_model_updated` event kind stays readable for replay.
 
 No database migration is included. Historical usage and credit records keep
 their `video` and `audio` rows and display names. Dropping the thread, member,
-run, and event video model columns is left for a follow-up once the old App is
-outside the client floor.
+run, and event video model columns is left for #37249, after the client floor
+excludes the old App. `video_model_updated` is a strict enum member of
+persisted events, so historical events must be compacted or migrated first.
 
 ## Chat send diagnostics and model admission (release 5)
 

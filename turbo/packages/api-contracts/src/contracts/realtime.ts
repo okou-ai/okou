@@ -72,7 +72,6 @@ export type HomeTaskRecommendationsChangedPayload = z.infer<
  */
 export const userPreferenceKinds = [
   "defaultModel",
-  "defaultVideoModel",
   "defaultImageModel",
   "cloudBrowserEnabledByDefault",
 ] as const;
@@ -93,10 +92,6 @@ function isUserPreferenceKind(kind: string): kind is UserPreferenceKind {
  * added would reject the whole push and silently stop honoring the kinds it
  * does understand. Old web clients stay open for ~2 days
  * (`docs/fallback.md` §7), so every future kind addition needs this.
- *
- * This does not retroactively fix bundles already in browsers — see the
- * `defaultVideoModel` and `defaultImageModel` notes in
- * `user-model-preference.ts`.
  */
 export const userPreferenceChangedPayloadSchema = z.object({
   kinds: z.array(z.string()).transform((kinds) => {

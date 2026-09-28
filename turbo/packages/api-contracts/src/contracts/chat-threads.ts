@@ -21,11 +21,6 @@ import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import { runStatusSchema } from "./runs";
 import { supportedRunModelSchema } from "./model-providers";
 import {
-  VIDEO_ASPECT_RATIOS,
-  VIDEO_DURATIONS,
-  VIDEO_RESOLUTIONS,
-} from "./video-models";
-import {
   avatarVideoAspectRatioSchema,
   avatarVideoVoiceIdSchema,
 } from "./avatar-video";
@@ -1078,22 +1073,6 @@ const chatThreadModelSelectionUpdateBodySchema = z.object({
   serviceTierEventId: chatThreadEventIdSchema.optional(),
 });
 
-/**
- * Text-to-video parameters the composer renders into a message's agent-only
- * additional info. Not a send field: they are never persisted as structured
- * settings, so a reload starts from the effective model's defaults again. The
- * model itself is absent because it is already resolved from the thread pin
- * and the member default the run carries.
- */
-export const chatRunVideoOptionsRequestSchema = z
-  .object({
-    aspectRatio: z.enum(VIDEO_ASPECT_RATIOS),
-    duration: z.enum(VIDEO_DURATIONS),
-    resolution: z.enum(VIDEO_RESOLUTIONS),
-    generateAudio: z.boolean(),
-  })
-  .partial();
-
 const chatRunOptionsRequestSchema = z.object({
   /** Update the selected model's effort. */
   reasoningEffort: reasoningEffortSchema.optional(),
@@ -2037,9 +2016,6 @@ export {
 export type CodexServiceTier = z.infer<typeof codexServiceTierSchema>;
 export type ChatThreadServiceTier = z.infer<typeof chatThreadServiceTierSchema>;
 export type ChatRunOptionsRequest = z.infer<typeof chatRunOptionsRequestSchema>;
-export type ChatRunVideoOptionsRequest = z.infer<
-  typeof chatRunVideoOptionsRequestSchema
->;
 export type GenerationTemplateRequest = z.infer<
   typeof generationTemplateRequestSchema
 >;

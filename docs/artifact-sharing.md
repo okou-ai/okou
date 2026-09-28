@@ -103,9 +103,9 @@ short pointers to `okou artifact --help` and `okou artifact download -h`.
 Command help provides the detailed usage. Existing session/PAT callers remain supported.
 
 Creation commands also accept `--visibility only-me|org|public`: `okou web
-upload-file`, `okou host`, managed image/video/avatar-video/voice generation,
-and `okou generate image-batch start`. HTML, presentation, sprite, and video
-template authoring packets carry the selected visibility into their final
+upload-file`, `okou host`, managed image generation, and
+`okou generate image-batch start`. HTML, presentation, and sprite template
+authoring packets carry the selected visibility into their final
 delivery command. Supporting media keeps its default visibility.
 
 With `privateArtifacts` enabled, new artifacts default to `only-me`. Omitting

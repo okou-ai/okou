@@ -1681,6 +1681,9 @@ const postJoggAiBuiltInGenerationWebhook$ = command(
   },
 );
 
+// The BytePlus, MiniMax, and JoggAI handlers, and the video branch of the fal
+// handler, only complete video and avatar jobs the previous API accepted. This
+// rollout fallback is removed under #37249; see video-generation.service.ts.
 export const webhooksBuiltInGenerationRoutes: readonly RouteEntry[] = [
   {
     route: webhookBuiltInGenerationFalContract.post,

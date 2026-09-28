@@ -26,7 +26,6 @@ export {
 } from "./illustration-template-items";
 export {
   VIDEO_TEMPLATE_ITEMS,
-  findVideoTemplateItem,
   type VideoTemplateItem,
 } from "./video-template-items";
 export {

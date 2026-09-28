@@ -193,19 +193,3 @@ function toVideoTemplateItem(
 /** Historical display metadata; not an available template catalog. */
 export const VIDEO_TEMPLATE_ITEMS: readonly VideoTemplateItem[] =
   RETIRED_VIDEO_TEMPLATES.map(toVideoTemplateItem);
-
-const RETIRED_VIDEO_TEMPLATE_ALIASES: Readonly<Record<string, string>> = {
-  "athletic-motivation": "sports-performance-ad",
-  "imax-epic-cinematic": "epic-grandeur",
-  "luxury-watch-product": "luxury-product",
-};
-
-export function findVideoTemplateItem(
-  id: string,
-): VideoTemplateItem | undefined {
-  const slug = id.replace(/^video-template:/u, "");
-  const canonicalSlug = RETIRED_VIDEO_TEMPLATE_ALIASES[slug] ?? slug;
-  return VIDEO_TEMPLATE_ITEMS.find((item) => {
-    return item.slug === canonicalSlug;
-  });
-}
