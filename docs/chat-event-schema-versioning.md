@@ -73,7 +73,9 @@ Snapshot objects:
    `automation` with a null `contextId`.
 3. A `goal` context on any other row becomes a null `contextType` and
    `contextId`, like ordinary output.
-4. A `github` context becomes `web` with a null `contextId`.
+4. A `github` context becomes `web` with a null `contextId`. An
+   `input.rejected` row without a context also becomes `web`; V7 did not
+   require a context on rejections.
 5. Every userMessage part `{type: "goal", goalBrief}` becomes
    `{type: "text", text: goalBrief}`, keeping the part order.
 

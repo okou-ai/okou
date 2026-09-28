@@ -68,6 +68,7 @@ const ids = {
   retiredNotice: "00000000-0000-4000-8000-000000127915",
   slackPrompt: "00000000-0000-4000-8000-000000127916",
   rejectedGoalPart: "00000000-0000-4000-8000-000000127917",
+  contextlessRejected: "00000000-0000-4000-8000-000000127918",
   goalRun: "00000000-0000-4000-8000-000000127920",
   webRun: "00000000-0000-4000-8000-000000127921",
   sharedThread: "00000000-0000-4000-8000-000000127930",
@@ -250,6 +251,13 @@ async function seedV7(client: Client): Promise<void> {
     eventType: "input.rejected",
     payload: userMessage([{ type: "goal", goalBrief: "Web goal part" }]),
     contextType: "web",
+    contextId: null,
+  });
+  await insertEvent({
+    id: ids.contextlessRejected,
+    eventType: "input.rejected",
+    payload: userMessage([{ type: "text", text: "Context-less rejection" }]),
+    contextType: null,
     contextId: null,
   });
 
@@ -480,6 +488,18 @@ const EXPECTED_EVENTS = [
       },
     },
   },
+  {
+    id: ids.contextlessRejected,
+    eventType: "input.rejected",
+    contextType: "web",
+    contextId: null,
+    payload: {
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "Context-less rejection" }],
+      },
+    },
+  },
 ];
 
 function assertConverged(state: unknown): void {
@@ -520,7 +540,7 @@ function assertConverged(state: unknown): void {
       eventType: "input.rejected",
       contextType: "web",
       contextIdIsNull: true,
-      count: 1,
+      count: 2,
     },
     {
       eventType: "output.message",

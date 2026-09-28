@@ -234,6 +234,17 @@ describe("V7 -> V8 Chat Event Snapshot upgrade", () => {
     );
   });
 
+  it("gives a context-less rejection the web context", () => {
+    const rejected = v7Row(1, {
+      eventType: "input.rejected",
+      payload: { userMessage: textMessage("Too late"), error: "rejected" },
+    });
+
+    expect(upgradeV7([rejected]).rows).toStrictEqual([
+      { ...rejected, contextType: "web", contextId: null },
+    ]);
+  });
+
   it("keeps the retired Goal notice and ordinary rows unchanged", () => {
     const notice = v7Row(1, {
       eventType: "output.message",

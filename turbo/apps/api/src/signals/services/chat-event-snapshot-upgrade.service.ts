@@ -92,6 +92,10 @@ function upgradeV7GoalParts(payload: unknown): unknown {
 function upgradeV7Context(
   row: StoredSnapshotRow,
 ): Pick<ChatEventRow, "contextType" | "contextId"> | null {
+  // V7 allowed a rejection without a context; V8 requires one on every input.
+  if (row.contextType === null && row.eventType === "input.rejected") {
+    return { contextType: "web", contextId: null };
+  }
   switch (row.contextType) {
     case "goal": {
       return isV7InputRow(row.eventType)
@@ -110,8 +114,9 @@ function upgradeV7Context(
 /**
  * V7 -> V8, identical to the hot-table rules of migration 1282: delete the
  * eight retired event types; Goal input rows become automation input with a
- * null context ID; other Goal rows lose their context; GitHub rows become web
- * rows; Goal userMessage parts become text parts. Every other row, including
+ * null context ID; other Goal rows lose their context; GitHub rows and
+ * context-less rejections become web rows; Goal userMessage parts become text
+ * parts. Every other row, including
  * the migration-1094 "Okou Goal retired." notices, is unchanged.
  */
 function upgradeV7SnapshotRow(
@@ -172,9 +177,7 @@ function decodeStoredSnapshotRows(body: Buffer): readonly StoredSnapshotRow[] {
     });
 }
 
-function encodeChatEventSnapshotBody(
-  rows: readonly ChatEventRow[],
-): Buffer {
+function encodeChatEventSnapshotBody(rows: readonly ChatEventRow[]): Buffer {
   return Buffer.from(
     rows
       .map((row) => {

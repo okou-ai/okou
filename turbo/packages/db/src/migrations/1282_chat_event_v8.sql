@@ -131,11 +131,14 @@ BEGIN
 
     -- Goal inputs (input.* and control.revoke) become automation inputs
     -- without a context row, other Goal rows lose the context like ordinary
-    -- output, and GitHub rows become web rows.
+    -- output, and GitHub rows become web rows. V7 allowed a rejection without
+    -- a context; V8 requires one on every input, so it becomes web.
     UPDATE "chat_events"
     SET
       "context_type" = CASE
         WHEN "context_type" = 'github' THEN 'web'
+        WHEN "context_type" IS NULL AND "event_type" = 'input.rejected'
+        THEN 'web'
         WHEN "context_type" = 'goal'
           AND ("event_type" LIKE 'input.%' OR "event_type" = 'control.revoke')
         THEN 'automation'
@@ -158,6 +161,7 @@ BEGIN
     WHERE "id" > last_id AND "id" <= next_id
       AND (
         "context_type" IN ('goal', 'github')
+        OR ("context_type" IS NULL AND "event_type" = 'input.rejected')
         OR "payload" -> 'userMessage' -> 'parts' @> '[{"type":"goal"}]'
       );
 

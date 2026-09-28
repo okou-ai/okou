@@ -21,9 +21,10 @@ value, so an interrupted or completed run can be repeated. The procedures take
 row locks only, under a `1s` lock timeout; the constraint swaps take a brief
 `ACCESS EXCLUSIVE` lock on `chat_events` and `chat_event_snapshots`. On
 2026-09-28 the rewrite covered about 146,000 deleted rows, 63,000 Goal input
-rows, 360,000 other Goal rows and 124,000 Goal runs. The `input.rejected`
-writers still omit a context, so the database check continues to require a
-context only for `input.prompt`, `input.automation` and `input.budget`.
+rows, 360,000 other Goal rows and 124,000 Goal runs. The input context check
+now also covers `input.rejected`. Production rejections replace a queued input
+and inherit its context, so no hot row lacked one; a context-less rejection in
+the table or a V7 Snapshot becomes `web`.
 
 `chat_event_snapshots.archive_schema_version` now accepts 7 and 8 and defaults
 to 8. A thread's V8 pointer is published beside its V7 pointer by the adjacent
