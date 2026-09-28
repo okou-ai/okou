@@ -48,21 +48,6 @@ export function OnboardingIllustration({
 }
 
 /**
- * The cast at work, heading the sheet where the first request waits to be
- * run.
- */
-export function OnboardingCelebration() {
-  return (
-    <img
-      src={`${ILLUSTRATION_BASE}v3-ready-celebrate_640.png`}
-      srcSet={`${ILLUSTRATION_BASE}v3-ready-celebrate_1280.png 2x`}
-      alt=""
-      className="mx-auto h-40 max-w-full object-contain"
-    />
-  );
-}
-
-/**
  * A product mark from the settings icon set. `mark` is the size a mark takes
  * inside a line of text, next to the words it belongs to.
  */

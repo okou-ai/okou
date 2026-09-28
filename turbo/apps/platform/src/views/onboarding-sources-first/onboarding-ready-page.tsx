@@ -29,10 +29,13 @@ import {
   startingPromptFor,
 } from "./onboarding-starting-prompt.ts";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
-import { OnboardingCelebration } from "./onboarding-step-parts.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 const STARTING_PROMPT_MAX_LENGTH = 1000;
+const CELEBRATION_URL =
+  "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_640.png";
+const CELEBRATION_2X_URL =
+  "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_1280.png";
 
 function isOnboardingSourceSlug(slug: string): boolean {
   return ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS.some((sourceSlug) => {
@@ -240,7 +243,12 @@ export function OnboardingReadyPage() {
       {/* One column on the step's own sheet: the welcome, then the request it
           starts with. */}
       <div className="mx-auto flex w-full max-w-[520px] flex-col">
-        <OnboardingCelebration />
+        <img
+          src={CELEBRATION_URL}
+          srcSet={`${CELEBRATION_2X_URL} 2x`}
+          alt=""
+          className="mx-auto h-40 max-w-full object-contain"
+        />
         <StartingPromptPanel
           isLoading={isLoading}
           outcome={outcome}
