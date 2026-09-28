@@ -61,7 +61,11 @@ import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
 import type { ChatQueueWaitReason } from "./chat-queue-wait-reason";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { ensureTeamsChatThreadRoute } from "./teams-chat-ingress.service";
+import {
+  ensureTeamsChatThreadRoute,
+  findTeamsRoutedChatThreadId,
+} from "./teams-chat-ingress.service";
+import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { formatTeamsFileForContext } from "./teams-prompt";
 import { InputFileImportError } from "./canonical-asset.service";
@@ -95,6 +99,10 @@ const TEAMS_CARD_ACTION_KEY = "okouTeamsAction";
 const TEAMS_AGENT_PICKER_ACTION = "switch_agent";
 const TEAMS_MODEL_PICKER_ACTION = "switch_model";
 const TEAMS_MODEL_PICKER_INPUT_ID = "selectedModel";
+// The submit activity replies to the card, so the card carries the route key
+// of the conversation where `/model` was sent.
+const TEAMS_MODEL_PICKER_CONVERSATION_KEY = "routeConversationId";
+const TEAMS_MODEL_PICKER_THREAD_KEY = "routeThreadId";
 const TEAMS_THINKING_REACTION_TYPE = "1f4ad_thoughtballoon";
 const TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE =
   "application/vnd.microsoft.teams.file.download.info";
@@ -336,6 +344,8 @@ function disconnectedNotice(): TeamsMessageDispatchResult {
 function buildTeamsModelPickerCard(args: {
   readonly options: readonly TeamsModelPickerOption[];
   readonly currentSelectedModel: string | null;
+  readonly routeConversationId: string;
+  readonly routeThreadId: string;
 }): TeamsAdaptiveCard {
   const choices = args.options.map((option) => {
     return {
@@ -382,7 +392,11 @@ function buildTeamsModelPickerCard(args: {
       {
         type: "Action.Submit",
         title: "Switch",
-        data: { [TEAMS_CARD_ACTION_KEY]: TEAMS_MODEL_PICKER_ACTION },
+        data: {
+          [TEAMS_CARD_ACTION_KEY]: TEAMS_MODEL_PICKER_ACTION,
+          [TEAMS_MODEL_PICKER_CONVERSATION_KEY]: args.routeConversationId,
+          [TEAMS_MODEL_PICKER_THREAD_KEY]: args.routeThreadId,
+        },
       },
     ],
   };
@@ -1848,6 +1862,7 @@ function missingConnectionNotice(args: {
 
 interface ConnectedCommandBeforeComposeArgs {
   readonly db: Db;
+  readonly activity: TeamsMessageActivity;
   readonly command: TeamsBotCommand | null;
   readonly installation: BoundTeamsInstallation;
   readonly connection: TeamsConnection;
@@ -1923,6 +1938,8 @@ const connectedCommandBeforeCompose$ = command(
           card: buildTeamsModelPickerCard({
             options: picker.options,
             currentSelectedModel: picker.currentSelectedModel,
+            routeConversationId: args.activity.conversationId,
+            routeThreadId: teamsSessionThreadId({ activity: args.activity }),
           }),
         };
       }
@@ -1971,6 +1988,40 @@ const connectedTeamsCardAction$ = command(
       return candidate.model === selected;
     });
     if (!option) {
+      return {
+        kind: "notice",
+        replyText: "You don't have access to that model.",
+      };
+    }
+    const routeConversationId = stringValue(
+      args.activity.value,
+      TEAMS_MODEL_PICKER_CONVERSATION_KEY,
+    );
+    const routeThreadId = stringValue(
+      args.activity.value,
+      TEAMS_MODEL_PICKER_THREAD_KEY,
+    );
+    const chatThreadId =
+      routeConversationId && routeThreadId
+        ? await findTeamsRoutedChatThreadId(args.db, {
+            connectionId: args.connection.id,
+            conversationId: routeConversationId,
+            threadId: routeThreadId,
+            userId: args.connection.userId,
+          })
+        : undefined;
+    signal.throwIfAborted();
+    const threadModel = await set(
+      updateIntegrationChatThreadModel$,
+      {
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+        chatThreadId,
+        model: option.model,
+      },
+      signal,
+    );
+    if (threadModel.kind === "rejected") {
       return {
         kind: "notice",
         replyText: "You don't have access to that model.",
@@ -2166,6 +2217,7 @@ export const dispatchTeamsMessageToAgent$ = command(
       connectedCommandBeforeCompose$,
       {
         db,
+        activity,
         command,
         installation: boundInstallation,
         connection,

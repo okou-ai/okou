@@ -39,6 +39,11 @@ import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
+import {
+  feishuRouteThreadId,
+  findFeishuRoutedChatThreadId,
+} from "./feishu-chat-ingress.service";
+import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import {
   updateUserModelPreference$,
@@ -710,6 +715,22 @@ async function handleDisconnectCommand(
   );
 }
 
+async function replyModelUnavailable(
+  args: ConnectedCommandArgs,
+  signal: AbortSignal,
+): Promise<void> {
+  await replyNotice(
+    {
+      db: args.db,
+      message: args.message,
+      title: "Model unavailable",
+      text: "You don't have access to that model. Use `/model` to list available models.",
+      kind: "error",
+    },
+    signal,
+  );
+}
+
 const handleModelCommand$ = command(
   async (
     { set },
@@ -768,16 +789,28 @@ const handleModelCommand$ = command(
       );
     });
     if (!selected) {
-      await replyNotice(
-        {
-          db: args.db,
-          message: args.message,
-          title: "Model unavailable",
-          text: "You don't have access to that model. Use `/model` to list available models.",
-          kind: "error",
-        },
-        signal,
-      );
+      await replyModelUnavailable(args, signal);
+      return;
+    }
+    const chatThreadId = await findFeishuRoutedChatThreadId(args.db, {
+      connectionId: args.connection.id,
+      chatId: args.message.chatId,
+      threadId: feishuRouteThreadId(args.message),
+      userId: args.connection.userId,
+    });
+    signal.throwIfAborted();
+    const threadModel = await set(
+      updateIntegrationChatThreadModel$,
+      {
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+        chatThreadId,
+        model: selected.model,
+      },
+      signal,
+    );
+    if (threadModel.kind === "rejected") {
+      await replyModelUnavailable(args, signal);
       return;
     }
     await set(

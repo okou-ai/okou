@@ -23,7 +23,8 @@ interface DiscordChatThreadRouteKey {
   readonly userId: string;
 }
 
-export interface DiscordChatThreadRouteBinding extends DiscordChatThreadRouteKey {
+export interface DiscordChatThreadRouteBinding
+  extends DiscordChatThreadRouteKey {
   readonly id: string;
   readonly chatThreadId: string;
   readonly destinationChannelId: string | null;
@@ -105,6 +106,38 @@ export async function findDiscordChatThreadRoute(
   return await loadDiscordChatThreadRoute(db, key);
 }
 
+/**
+ * Read the chat thread behind the Discord channel an interaction came from:
+ * the main DM conversation for a DM, or the server thread whose route session
+ * is that thread channel. Interactions in a parent channel match no route.
+ */
+export async function findDiscordInteractionChatThreadId(
+  db: Pick<Db, "select">,
+  args: {
+    readonly connectionId: string;
+    readonly userId: string;
+    readonly channelId: string;
+    readonly isDm: boolean;
+  },
+): Promise<string | undefined> {
+  const [route] = await db
+    .select({ chatThreadId: discordChatThreadRoutes.chatThreadId })
+    .from(discordChatThreadRoutes)
+    .where(
+      and(
+        eq(discordChatThreadRoutes.connectionId, args.connectionId),
+        eq(discordChatThreadRoutes.userId, args.userId),
+        eq(
+          discordChatThreadRoutes.sessionKey,
+          args.isDm ? INTEGRATION_DM_SESSION_KEY : args.channelId,
+        ),
+        eq(discordChatThreadRoutes.destinationChannelId, args.channelId),
+      ),
+    )
+    .limit(1);
+  return route?.chatThreadId;
+}
+
 async function requireDiscordChatThreadRoute(
   db: Pick<Db, "select" | "update">,
   key: DiscordChatThreadRouteKey,
@@ -118,7 +151,8 @@ async function requireDiscordChatThreadRoute(
   return route;
 }
 
-interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey {
+interface CanonicalDiscordChatThreadRouteArgs
+  extends DiscordChatThreadRouteKey {
   readonly orgId: string;
   readonly agentId: string;
   readonly currentTime: Date;

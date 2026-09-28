@@ -64,8 +64,10 @@ import {
   bindTelegramReplyMessageRoute,
   createTelegramChatThread,
   ensureTelegramChatThreadRoute,
+  findTelegramRoutedChatThreadId,
   type TelegramOwnerLink,
 } from "./telegram-chat-ingress.service";
+import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
@@ -433,9 +435,9 @@ function extractTelegramFileForContext(
 function hasTelegramMessageContextContent(message: TelegramMessage): boolean {
   return Boolean(
     message.text ||
-    message.caption ||
-    extractTelegramFileForContext(message) ||
-    extractEntities(message),
+      message.caption ||
+      extractTelegramFileForContext(message) ||
+      extractEntities(message),
   );
 }
 
@@ -1438,8 +1440,10 @@ const handleModelCommand$ = command(
   async (
     { get, set },
     args: {
+      readonly db: Db;
       readonly botToken: string;
       readonly message: TelegramMessage;
+      readonly ownerLink: TelegramOwnerLink;
       readonly orgId: string;
       readonly userId: string;
     },
@@ -1518,6 +1522,42 @@ const handleModelCommand$ = command(
       return;
     }
 
+    const rootMessageId = rootMessageIdForAgentMessage({
+      isDM: args.message.chat.type === "private",
+      message: args.message,
+      botId: OFFICIAL_TELEGRAM_BOT_ID,
+    });
+    const chatThreadId =
+      rootMessageId === undefined
+        ? undefined
+        : await findTelegramRoutedChatThreadId(args.db, {
+            ownerLink: args.ownerLink,
+            chatId,
+            rootMessageId,
+          });
+    signal.throwIfAborted();
+    const threadModel = await set(
+      updateIntegrationChatThreadModel$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        chatThreadId,
+        model: option.model,
+      },
+      signal,
+    );
+    if (threadModel.kind === "rejected") {
+      await postTelegramMessage({
+        botToken: args.botToken,
+        chatId,
+        text: formatTelegramCommandError(
+          "You don't have access to that model.",
+        ),
+        replyToMessageId,
+      });
+      signal.throwIfAborted();
+      return;
+    }
     await set(
       updateUserModelPreference$,
       {
@@ -1758,8 +1798,10 @@ const handleOfficialCommand$ = command(
       await set(
         handleModelCommand$,
         {
+          db: args.db,
           botToken: args.botToken,
           message: args.message,
+          ownerLink: { kind: "official", id: userLink.id },
           orgId: userLink.orgId,
           userId: userLink.userId,
         },
