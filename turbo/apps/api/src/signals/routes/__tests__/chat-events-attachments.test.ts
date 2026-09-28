@@ -418,7 +418,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
-    const source = await sendChatRun(actor, {
+    const source = await chat.sendAndLaunch(actor, {
       agentId,
       prompt: "source content selected for forwarded mail feedback",
     });
