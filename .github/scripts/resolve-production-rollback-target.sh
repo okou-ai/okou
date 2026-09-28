@@ -39,6 +39,10 @@ readonly UNIFIED_CHAT_QUEUE_RELEASE_COMMIT=553fc566b7e9be2cd4a8c1de314d55939b994
 # Release 6 Runners and their Guests steer only through them, so an earlier API
 # cannot serve a draining release 6 Runner after a rollback.
 readonly RUNNER_STEER_ENDPOINTS_COMMIT=fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da
+# #37242 retired video, voice and talking-avatar generation. Later APIs remove
+# the completion paths for jobs accepted before it, so an earlier API would
+# accept video jobs that can no longer complete after rolling forward.
+readonly VIDEO_GENERATION_RETIREMENT_COMMIT=45b537a596a153a91b76c3bc7223187840f52775
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -112,6 +116,9 @@ if ! git merge-base --is-ancestor "$UNIFIED_CHAT_QUEUE_RELEASE_COMMIT" "$TARGET_
 fi
 if ! git merge-base --is-ancestor "$RUNNER_STEER_ENDPOINTS_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the runner steer endpoints: ${RUNNER_STEER_ENDPOINTS_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$VIDEO_GENERATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the video generation retirement: ${VIDEO_GENERATION_RETIREMENT_COMMIT}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames

@@ -49,8 +49,9 @@ Follow-up to the retirement below, tracked in #37249.
 
 - The API no longer completes video or avatar jobs accepted by a
   pre-retirement API. The BytePlus, MiniMax, and JoggAI webhook routes are
-  removed (callbacks now receive `404`), and a fal callback for a video job is
-  logged and acknowledged without completing the job. Status reads of
+  removed (callbacks now receive `404`). A fal success callback for a video job
+  is logged and acknowledged without completing the job; a fal failure
+  callback still fails it. Status reads of
   finished jobs, existing video artifacts, and historical usage and credit
   records are unchanged. `JOGGAI_API_KEY`, `JOGGAI_WEBHOOK_SECRET`, and the
   API's `MINIMAX_API_KEY` are no longer read.
@@ -63,9 +64,11 @@ Follow-up to the retirement below, tracked in #37249.
   video generation (live in production from release #37254). Older tabs
   receive `426` and reload, so no client still reaches the removed routes and
   controls.
-- Gate before this release: no pre-retirement API remains a rollback target
-  and no `video` job is still within its 30-minute timeout in `queued` or
-  `running` (confirmed with a read-only MaskDB query).
+- The production API rollback resolver now rejects targets that do not contain
+  #37242 (`VIDEO_GENERATION_RETIREMENT_COMMIT`), so a rollback cannot restore
+  an API that accepts video jobs. Before merge, a read-only MaskDB query
+  confirmed no `video` job is within its 30-minute timeout in `queued` or
+  `running`.
 
 Old and new versions during deploy:
 
@@ -122,8 +125,9 @@ Old and new versions during deploy:
 
 New threads and runs no longer resolve or store a video model; the member
 default is no longer written or returned. Thread metadata and thread events
-still expose the historical `selectedVideoModel` value (null for new threads),
-and the `video_model_updated` event kind stays readable for replay.
+still expose the historical `selectedVideoModel` value (null for new threads;
+the follow-up above sends null for all threads), and the `video_model_updated`
+event kind stays readable for replay.
 
 No database migration is included. Historical usage and credit records keep
 their `video` and `audio` rows and display names. Dropping the thread, member,
