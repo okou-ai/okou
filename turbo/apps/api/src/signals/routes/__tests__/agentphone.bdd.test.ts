@@ -46,6 +46,7 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
@@ -154,9 +155,20 @@ async function modelSessionScenario({
       conversationId,
     });
   }
-  async function complete(body: string) {
+  async function complete(
+    body: string,
+    expectedModel: "claude-fable-5-1" | "gpt-6-astra",
+  ) {
     const messageId = await send(body);
     const run = await claimDispatchedRun(runnerGroup);
+    expect(run.cliAgentType).toBe(
+      expectedModel === "gpt-6-astra" ? "codex" : "claude-code",
+    );
+    expect(run.environment).toMatchObject(
+      expectedModel === "gpt-6-astra"
+        ? { OPENAI_MODEL: expectedModel }
+        : { ANTHROPIC_MODEL: expectedModel },
+    );
     await completeSandboxRun(run.sandboxToken, run.runId, 0, {
       cliAgentType: run.cliAgentType,
     });
@@ -171,9 +183,34 @@ async function modelSessionScenario({
       expect(lastSend(sends).toNumber).toBe(phone);
       expect(lastSend(sends).replyToMessageId).toBeUndefined();
     }
-    return await waitForRunSessionIdPresent(actor, run.runId);
+    const sessionId = await waitForRunSessionIdPresent(actor, run.runId);
+    const chat = createChatFilesBddApi(context);
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected AgentPhone thread lifecycle events");
+    }
+    const threads = lifecycle.body.events.filter((event) => {
+      return event.kind === "created";
+    });
+    const thread = threads.at(-1);
+    if (!thread) {
+      throw new Error("Expected AgentPhone to expose its main DM thread");
+    }
+    const events = await chat.listThreadEvents(actor, thread.chatThreadId);
+    expect(events.events).toContainEqual(
+      expect.objectContaining({ eventType: "input.prompt", runId: run.runId }),
+    );
+    expect(
+      (await chat.readThreadMetadata(actor, thread.chatThreadId)).selectedModel,
+    ).toBeNull();
+    return {
+      sessionId,
+      threadId: thread.chatThreadId,
+      threadCount: threads.length,
+      serviceTier: run.serviceTier,
+    };
   }
-  return { send, complete, sends };
+  return { actor, send, complete, sends };
 }
 
 async function claimDispatchedRun(runnerGroup: string): Promise<{
@@ -183,6 +220,8 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
   readonly appendSystemPrompt: string;
   readonly okouToken: string | undefined;
   readonly cliAgentType: "claude-code" | "codex";
+  readonly environment: Record<string, string> | null;
+  readonly serviceTier: string | undefined;
 }> {
   const runs = createRunsApi(context);
   await runs.heartbeatRunner(runnerGroup);
@@ -210,6 +249,8 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
     appendSystemPrompt: claim.appendSystemPrompt ?? "",
     okouToken: claim.platformEnvironment.OKOU_TOKEN,
     cliAgentType: claim.cliAgentType,
+    environment: claim.environment,
+    serviceTier: claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER,
   };
 }
 
@@ -1038,7 +1079,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   });
 
   describe.each(modelResumeScenarios)(
-    "resumes $model in its own $channel DM session (conversation: $withConversation)",
+    "switches $model within one $channel DM thread (conversation: $withConversation)",
     (scenario) => {
       async function prepareScenario() {
         const { send, complete, sends } = await modelSessionScenario(scenario);
@@ -1048,61 +1089,138 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       beforeEach(async () => {
         preparedScenario = await prepareScenario();
       });
-      it("preserves the complete scenario", async () => {
+      it("rotates native sessions while preserving the DM thread", async () => {
         const { send, sends, complete } = preparedScenario;
         if (scenario.model !== "claude-fable-5-1") {
           await send(`/model ${scenario.model}`);
           expect(lastSend(sends).body).toContain("Switched to");
         }
-        const originalSession = await complete(
+        const original = await complete(
           "start the selected model session",
+          scenario.model,
         );
+        expect(original.threadCount).toBe(1);
         await send(`/model ${scenario.otherModel}`);
         expect(lastSend(sends).body).toContain("Switched to");
-        const alternateSession = await complete(
+        const alternate = await complete(
           "start the other model session",
+          scenario.otherModel,
         );
-        expect(alternateSession).not.toBe(originalSession);
+        expect(alternate.sessionId).not.toBe(original.sessionId);
+        expect(alternate.threadId).toBe(original.threadId);
+        expect(alternate.threadCount).toBe(1);
 
         await send(`/model ${scenario.model}`);
-        await expect(
-          complete("return to the selected model session"),
-        ).resolves.toBe(originalSession);
+        const returned = await complete(
+          "return to the selected model session",
+          scenario.model,
+        );
+        expect(returned.sessionId).not.toBe(original.sessionId);
+        expect(returned.sessionId).not.toBe(alternate.sessionId);
+        expect(returned.threadId).toBe(original.threadId);
+        expect(returned.threadCount).toBe(1);
       });
     },
   );
 
   describe.each(modelSessionScenarios)(
-    "resets the selected model's $channel DM session (conversation: $withConversation)",
+    "starts a new $channel DM on request (conversation: $withConversation)",
     (scenario) => {
       async function prepareScenario() {
-        const { send, complete, sends } = await modelSessionScenario(scenario);
-        return { complete, send, sends };
+        return await modelSessionScenario(scenario);
       }
       let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
       beforeEach(async () => {
         preparedScenario = await prepareScenario();
       });
-      it("preserves the complete scenario", async () => {
-        const { complete, send, sends } = preparedScenario;
-        const originalSession = await complete(
+      it("retains the old thread as history after an explicit reset", async () => {
+        const { actor, complete, send, sends } = preparedScenario;
+        const original = await complete(
           "start the default model session",
+          "claude-fable-5-1",
         );
         await send("/model gpt-6-astra");
         expect(lastSend(sends).body).toContain("Switched to");
-        const alternateSession = await complete(
+        const alternate = await complete(
           "start the alternate model session",
+          "gpt-6-astra",
         );
-        expect(alternateSession).not.toBe(originalSession);
+        expect(alternate.sessionId).not.toBe(original.sessionId);
+        expect(alternate.threadId).toBe(original.threadId);
+        expect(alternate.threadCount).toBe(1);
 
         await send("/new_session");
         expect(lastSend(sends).body).toContain("New session started");
-        await expect(
-          complete("start again after resetting the DM"),
-        ).resolves.not.toBe(alternateSession);
+        const reset = await complete(
+          "start again after resetting the DM",
+          "gpt-6-astra",
+        );
+        expect(reset.sessionId).not.toBe(alternate.sessionId);
+        expect(reset.threadId).not.toBe(alternate.threadId);
+        expect(reset.threadCount).toBe(2);
+        const history = await createChatFilesBddApi(context).listThreadEvents(
+          actor,
+          original.threadId,
+        );
+        expect(history.events).toContainEqual(
+          expect.objectContaining({
+            eventType: "input.prompt",
+            userMessage: expect.objectContaining({
+              parts: expect.arrayContaining([
+                { type: "text", text: "start the default model session" },
+              ]),
+            }),
+          }),
+        );
       });
     },
   );
+
+  it("uses the organization default when the saved web default becomes unavailable", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const { actor, complete } = await modelSessionScenario({
+      channel: "sms",
+      withConversation: false,
+    });
+    await integrations.updateUserModelPreference(actor, "gpt-6-astra");
+    const preferred = await complete("use my web default", "gpt-6-astra");
+
+    await createMiscRoutesApi(context).deleteOrgModelProvider(
+      actor,
+      "openai-api-key",
+      [204],
+    );
+    expect(await integrations.readUserModelPreference(actor)).toMatchObject({
+      selectedModel: "gpt-6-astra",
+    });
+    const available = await complete(
+      "use the available workspace default",
+      "claude-fable-5-1",
+    );
+    expect(available.threadId).toBe(preferred.threadId);
+    expect(available.threadCount).toBe(1);
+  });
+
+  it("reads the latest web service tier on each DM pick", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const { actor, complete } = await modelSessionScenario({
+      channel: "sms",
+      withConversation: false,
+    });
+    await integrations.updateUserModelPreference(
+      actor,
+      "gpt-6-astra",
+      "priority",
+    );
+    const fast = await complete("use my web fast preference", "gpt-6-astra");
+    expect(fast.serviceTier).toBe("fast");
+
+    await integrations.updateUserModelPreference(actor, "gpt-6-astra", null);
+    const standard = await complete("use standard service now", "gpt-6-astra");
+    expect(standard.serviceTier).toBeUndefined();
+    expect(standard.threadId).toBe(fast.threadId);
+    expect(standard.threadCount).toBe(1);
+  });
 
   it("shares one canonical session across AgentPhone and web messages on the same thread", async () => {
     const ap = createAgentPhoneBddApi(context);
