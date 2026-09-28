@@ -5913,6 +5913,10 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       prompt: "built-in DeepSeek admission after shared fixture release",
       model: selectedModel,
     });
+    // The pick admitted the built-in route and created the run.
+    await expect(api.readRun(actor, sent.runId)).resolves.toMatchObject({
+      status: "pending",
+    });
     await api.requestCancelRun(actor, sent.runId, [200]);
   });
 
