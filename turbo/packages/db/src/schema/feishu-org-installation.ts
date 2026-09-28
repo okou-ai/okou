@@ -1,26 +1,10 @@
-import {
-  foreignKey,
-  index,
-  pgTable,
-  uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
-import { agents } from "./agent";
+import { foreignKey, index, pgTable, uniqueIndex } from "drizzle-orm/pg-core";
 import { orgCustomConnectors } from "./org-custom-connector";
 import { feishuOrgInstallationColumns } from "../columns/feishu-org-installation";
 
 export const feishuOrgInstallations = pgTable(
   "feishu_org_installations",
-  {
-    ...feishuOrgInstallationColumns(),
-    // Retain the physical column until a later deployment can contract it.
-    defaultAgentId: uuid("default_agent_id").references(
-      () => {
-        return agents.id;
-      },
-      { onDelete: "cascade" },
-    ),
-  },
+  feishuOrgInstallationColumns(),
   (table) => {
     return [
       index("idx_feishu_org_installations_org").on(table.orgId),

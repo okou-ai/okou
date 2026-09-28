@@ -19,7 +19,6 @@ export async function storeTelegramBotMessage(args: {
   await args.db
     .insert(telegramMessages)
     .values({
-      installationId: null,
       officialOrgId: args.scope.orgId,
       officialUserLinkId: args.scope.userLinkId,
       chatId: args.chatId,

@@ -18,7 +18,6 @@ import { imageModelIdSchema } from "./image-models";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { hostedArtifactKindSchema } from "./host";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
-import { runStatusSchema } from "./runs";
 import { supportedRunModelSchema } from "./model-providers";
 import {
   avatarVideoAspectRatioSchema,
@@ -1782,8 +1781,6 @@ export const chatEventsContract = c.router({
          */
         runId: z.string().nullable(),
         threadId: z.string(),
-        /** Only returned by API versions that created the run synchronously. */
-        status: runStatusSchema.optional(),
         createdAt: z.string().optional(),
       }),
       400: apiErrorSchema,

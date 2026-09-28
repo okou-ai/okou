@@ -57,6 +57,19 @@ function routeWhere(key: TelegramChatThreadRouteKey) {
   );
 }
 
+/** Read the chat thread a Telegram conversation already routes to. */
+export async function findTelegramRoutedChatThreadId(
+  db: Pick<Db, "select">,
+  key: TelegramChatThreadRouteKey,
+): Promise<string | undefined> {
+  const [route] = await db
+    .select({ chatThreadId: telegramChatThreadRoutes.chatThreadId })
+    .from(telegramChatThreadRoutes)
+    .where(routeWhere(key))
+    .limit(1);
+  return route?.chatThreadId;
+}
+
 async function loadRoute(
   db: Pick<Db, "select" | "update">,
   key: TelegramChatThreadRouteKey,

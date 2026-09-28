@@ -3596,6 +3596,91 @@ describe("INT-01: Slack app deep webhook flows", () => {
         }),
       );
     });
+
+    it("switches the main Slack DM thread model from the DM model picker", async () => {
+      const {
+        actor,
+        teamId,
+        slackUserId,
+        firstMessageTs,
+        channelId,
+        runnerGroup,
+      } = preparedScenario;
+      await integrations.postSlackEvent(teamId, {
+        type: "message",
+        channel_type: "im",
+        user: slackUserId,
+        text: "start the main Slack DM",
+        ts: firstMessageTs,
+        channel: channelId,
+      });
+      const firstRunId = await pollSlackRun(runnerGroup);
+      const firstClaim = await runs.claimRunnerJob(firstRunId);
+      expect(firstClaim.cliAgentType).toBe("claude-code");
+      await completeSlackTriggeredRun({
+        runId: firstRunId,
+        sandboxToken: firstClaim.sandboxToken,
+        cliAgentType: firstClaim.cliAgentType,
+      });
+      await flushWaitUntilForTest();
+      const chatThreadId = (
+        await integrations.readSlackTestState(teamId)
+      ).chat_thread_routes.find((route) => {
+        return route.channelId === channelId;
+      })?.chatThreadId;
+      if (!chatThreadId) {
+        throw new Error("Expected the main Slack DM thread");
+      }
+
+      const selectModel = await integrations.postSlackInteractive(
+        integrations.modelPickerSubmission({
+          workspaceId: teamId,
+          slackUserId,
+          selectedValue: "gpt-6-astra",
+          channelId,
+        }),
+      );
+      expect(selectModel).toBe("");
+      expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: channelId,
+          user: slackUserId,
+          text: "Switched to *GPT 6 Astra* for this conversation and new Slack threads.",
+        }),
+      );
+      await expect(
+        integrations.readUserModelPreference(actor),
+      ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
+      expect(
+        (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
+      ).toBe("gpt-6-astra");
+      const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
+      if (threadEvents.status !== 200) {
+        throw new Error("Expected Slack thread events to load");
+      }
+      expect(threadEvents.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "model_selection_updated",
+          chatThreadId,
+          selectedModel: "gpt-6-astra",
+        }),
+      );
+
+      await integrations.postSlackEvent(teamId, {
+        type: "message",
+        channel_type: "im",
+        user: slackUserId,
+        text: "continue the main Slack DM",
+        ts: "2950.000400",
+        channel: channelId,
+      });
+      const switchedRunId = await pollSlackRun(runnerGroup);
+      const switchedClaim = await runs.claimRunnerJob(switchedRunId);
+      expect(switchedClaim.cliAgentType).toBe("codex");
+      expect(switchedClaim.environment).toMatchObject({
+        OPENAI_MODEL: "gpt-6-astra",
+      });
+    });
   });
 
   it("forks Slack DM threads without replacing the main session", async () => {

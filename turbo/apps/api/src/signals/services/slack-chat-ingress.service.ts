@@ -99,6 +99,31 @@ export async function findSlackChatThreadRoute(
   return await loadSlackChatThreadRoute(db, key);
 }
 
+/**
+ * Read the main DM chat thread when `channelId` is the connection's DM
+ * channel. Slash commands carry no thread timestamp, so only the main DM
+ * conversation can be identified.
+ */
+export async function findSlackDirectMessageChatThreadId(
+  db: Pick<Db, "select">,
+  key: Omit<SlackChatThreadRouteKey, "threadTs">,
+): Promise<string | undefined> {
+  const [route] = await db
+    .select({ chatThreadId: slackChatThreadRoutes.chatThreadId })
+    .from(slackChatThreadRoutes)
+    .where(
+      and(
+        slackChatThreadRouteWhere({
+          ...key,
+          threadTs: INTEGRATION_DM_SESSION_KEY,
+        }),
+        eq(slackChatThreadRoutes.channelId, key.channelId),
+      ),
+    )
+    .limit(1);
+  return route?.chatThreadId;
+}
+
 async function requireSlackChatThreadRoute(
   db: Pick<Db, "select" | "update">,
   key: SlackChatThreadRouteKey,

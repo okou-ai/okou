@@ -67,6 +67,91 @@ Follow-up cleanup, in order:
    once no supported client reads it, then drop the column in a later release
    after the rollback floor passes the first step.
 
+## Unified chat queue final cleanup (after release 7)
+
+This change contracts what release 7 (#37200, released in #37237) retired and
+removes compatibility that no longer has a reader. It also deletes the
+one-time `019-pi-api-first-turn-cleanup` script, which was run in production on
+2026-09-28 (17 objects deleted, `pi-api-first-turn/` verified empty).
+
+**Migration 1282: retired integration agent tables.** Migration
+`1282_drop_retired_integration_agent_tables` drops
+`slack_user_agent_preferences`, `discord_user_agent_preferences`,
+`feishu_user_agent_preferences`, `feishu_platform_user_agent_preferences`,
+`teams_user_agent_preferences`, `telegram_user_agent_preferences`,
+`agentphone_user_agent_preferences`, `telegram_user_links` and
+`telegram_installations`, and the column
+`feishu_org_installations.default_agent_id`, together with their Drizzle
+declarations. It first deletes the self-hosted Telegram rows from the two
+shared tables, then drops `telegram_chat_thread_routes.telegram_user_link_id`
+and `telegram_messages.installation_id` with their partial indexes and
+one-owner checks, and makes the official owner
+(`telegram_official_user_link_id`, `official_org_id`) `NOT NULL`. The chat
+threads of the deleted self-hosted routes remain as history; self-hosted
+Telegram messages are 30-day context rows. Dropping the foreign keys briefly
+locks `agents` and `discord_org_connections`, and `SET NOT NULL` scans the two
+small Telegram tables, all under the default 1 s `lock_timeout`.
+
+Gate evidence: release 7 removed every read and write of the tables and the
+Feishu/Lark column (the runtime Feishu mapping already omitted it), and no
+fixture, cron, erasure or export list names them. Release 7 is live in
+production (`91223f52`), the last output from an earlier API (`f06f2e0f`) was at
+2026-09-28 13:25:49 UTC, and the API rollback floor is release 7. The one-time
+KMS 013 recovery manifest treats `telegram_installations.encrypted_bot_token`
+as optional, like `agent_run_queue`, so snapshots from either side of the drop
+verify. The 1279 transition validator is retired because 1279 no longer
+replays on the contracted shapes (see `turbo/packages/db/MIGRATIONS.md`).
+
+Release 7 APIs still declare `telegram_messages.installation_id` and
+`telegram_chat_thread_routes.telegram_user_link_id` and name them in Telegram
+message and route inserts. The migration runs before API promotion, so until
+the release 7 API drains its official Telegram message and route inserts
+receive `42703`. This window is accepted, as for `1274`; release at low
+traffic. The other dropped tables and the Feishu column are not named by any
+release 7 statement.
+
+**API rollback floor: this change**, resolved from the first main commit that
+adds `1282_drop_retired_integration_agent_tables.sql` in
+`resolve-production-rollback-target.sh`. Rollback promotes artifacts without
+restoring schema, and every earlier API names the dropped Telegram columns.
+
+**Integration `/model` also switches the current thread.** Integration `/model`
+commands (Slack DM picker, Discord `/okou model`, the Teams model card,
+Feishu/Lark, official Telegram and AgentPhone) now also switch the model of the
+conversation's existing chat thread. They reuse the web thread model-selection
+path, so the thread row and its `model_selection_updated` and
+`service_tier_updated` events are written exactly as a web switch writes them.
+A context without a routed chat thread changes only the member default, and the
+next new thread initializes from it. This is code-only. During the rollout an
+old API instance only updates the member default. Teams model cards now carry
+the route key of the conversation where `/model` was sent; a card posted before
+this change has none and is answered with a notice to send `/model` again,
+without changing any model.
+
+**Chat send response `status` removed.** The `POST /api/chat/events` 201
+response contract no longer declares the optional `status` field. Only APIs
+that created a run synchronously returned it, and every API at or above the
+release 7 floor returns only `runId: null`, `threadId` and `createdAt`. Nothing
+changes on the wire and no App, iOS or CLI build reads the field.
+
+Kept compatibility, with the unmet condition:
+
+- `runId: null` in the chat send response: user-installed CLIs, MCP and token
+  clients have no version floor and may still read the key.
+- `queued` run status and historical `run.queued`/`run.dequeued` rows: persisted
+  data that must still parse; no migration removes it.
+- Nullable `chat_events.model_selection` and pick rejecting inputs without it:
+  historical inputs have no captured model.
+- Legacy `direct-message:<agentId>:<model>` route keys handled by
+  `/new_session`, and the pick-time rebinding of threads bound to a former
+  per-user agent: persisted routes and thread bindings without a data migration.
+- `piInstalledCliRequirement` optional in the execution context: tightening it
+  is a separate Runner/Guest protocol change without a documented deadline.
+- `GET /api/integrations/telegram/bots` for older CLIs: deployed CLIs have no
+  version floor.
+- Official Workflow queue marker decoding (#29908): its writers still write the
+  markers.
+
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)
 
 This is step 1 of the Chat Event V8 plan. It changes no wire protocol: the row
@@ -418,15 +503,12 @@ preinstalled in the Runner image):
   within seconds and the pending timeout bounds the window at five minutes.
   This is accepted; release at low traffic.
 - No reader remains for handoff objects that earlier APIs wrote under
-  `pi-api-first-turn/`. The one-time
-  [`019-pi-api-first-turn-cleanup`](../turbo/packages/db/scripts/migrations/019-pi-api-first-turn-cleanup/README.md)
-  script inventories this fixed prefix in `R2_USER_STORAGES_BUCKET_NAME` by
-  default and deletes it only with `--execute`. Operations runs it after
-  release 7 promotion and old API writer drain; deployment and cron do not
-  invoke it. It paginates, stops on request or per-object errors without
-  retries, and independently verifies the prefix is empty. This PR has not
-  executed remote cleanup; canonical session history outside the prefix is
-  untouched.
+  `pi-api-first-turn/`. The one-time `019-pi-api-first-turn-cleanup` script
+  was run in production on 2026-09-28, after release 7 promotion and the old
+  API writer drain: it deleted 17 objects from that prefix in
+  `vm0-s3-user-storages-prod` and verified the prefix is empty. Canonical
+  session history outside the prefix is untouched. The script has since been
+  removed.
 
 **API rollback floor: this release**, pinned by the marker
 `.github/rollback-floors/pi-api-first-turn-retired` in

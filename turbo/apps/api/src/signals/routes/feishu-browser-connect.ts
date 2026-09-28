@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { feishuBrowserConnectContract } from "@okouai/api-contracts/contracts/feishu-browser-connect";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { env } from "../../lib/env";
