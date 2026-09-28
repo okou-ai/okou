@@ -175,7 +175,8 @@ function createSharedDatabaseEventSignals({
     return { kind: "chat-event", threadId };
   });
   // V7 transition: the projection drops rows of retired event types, so the
-  // read cursor follows rows rather than projected events.
+  // read cursor follows rows rather than projected events. Remove after the V8
+  // migration deletes those rows and snapshots converge (Chat Event V8 PR-3).
   const readRowSeqId$ = state<number | null>(null);
   const advanceReadRowSeqId$ = command(
     ({ set }, rows: readonly ChatEventRow[]) => {

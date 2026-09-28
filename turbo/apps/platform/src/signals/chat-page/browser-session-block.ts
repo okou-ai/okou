@@ -293,7 +293,8 @@ function createStartBrowserSignals({
       accept(
         get(apiClient$)(browserContract).open({
           params: { threadId: descriptor.threadId },
-          // Older APIs still require a lifecycle event ID.
+          // Pre-V8 APIs require a lifecycle event ID. Remove once those APIs
+          // leave the production rollback window (Chat Event V8 PR-3).
           body: { eventId: crypto.randomUUID() },
           fetchOptions: { signal },
         }),
@@ -325,7 +326,8 @@ function createCloseBrowserSignals({
       accept(
         get(apiClient$)(browserContract).close({
           params: { threadId: descriptor.threadId },
-          // Older APIs still require a lifecycle event ID.
+          // Pre-V8 APIs require a lifecycle event ID. Remove once those APIs
+          // leave the production rollback window (Chat Event V8 PR-3).
           body: { eventId: crypto.randomUUID() },
           fetchOptions: { signal },
         }),

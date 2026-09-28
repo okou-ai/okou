@@ -2392,8 +2392,9 @@ export const openBrowserForThread$ = command(
     }
     // The viewer runs in the user's browser, so it only ever learns the live
     // view; the CDP endpoint stays inside the agent runtime. Browser lifecycle
-    // is no longer a chat event; the request eventId is echoed for clients
-    // that still send it.
+    // is no longer a chat event; the request eventId is echoed for older web
+    // clients. Remove once the Web client floor excludes them (Chat Event V8
+    // PR-3).
     return {
       kind: "ok",
       value: {
@@ -2422,8 +2423,9 @@ export const closeBrowserForThread$ = command(
       return accessError;
     }
     // Closing the viewer does not stop the browser. Browser lifecycle is no
-    // longer a chat event; the request eventId is echoed for clients that
-    // still send it.
+    // longer a chat event; the request eventId is echoed for older web
+    // clients. Remove once the Web client floor excludes them (Chat Event V8
+    // PR-3).
     return {
       kind: "ok",
       value: {
