@@ -45,7 +45,9 @@ export async function resolveRunChatThreadModelContext(params: {
       selectedModel: selection.selectedModel,
     },
   });
-  if ("status" in pin) return pin;
+  if ("status" in pin) {
+    return pin;
+  }
   const providerAdmission = await resolveModelFirstProviderAdmission({
     db: params.db,
     orgId: params.orgId,

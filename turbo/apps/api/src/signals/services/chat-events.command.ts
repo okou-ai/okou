@@ -1340,7 +1340,9 @@ export const sendNormalEvent$ = command(
       reasoningEffort: args.body.runOptions?.reasoningEffort,
     });
     signal.throwIfAborted();
-    if ("status" in modelSelection) return modelSelection;
+    if ("status" in modelSelection) {
+      return modelSelection;
+    }
     const event = normalSendEvent({
       modelSelection,
       id: args.body.clientEventId ?? randomUUID(),

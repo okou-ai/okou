@@ -126,6 +126,33 @@ interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey 
   readonly claimToken: string;
 }
 
+/** Read the route already owned by an ingress claim and refresh its destination. */
+async function requireAssignedDiscordChatThreadRoute(
+  db: Pick<Db, "select" | "update">,
+  key: DiscordChatThreadRouteKey,
+  routeId: string,
+): Promise<DiscordChatThreadRouteBinding> {
+  const [assigned] = await db
+    .select()
+    .from(discordChatThreadRoutes)
+    .where(
+      and(
+        eq(discordChatThreadRoutes.id, routeId),
+        eq(discordChatThreadRoutes.connectionId, key.connectionId),
+        eq(discordChatThreadRoutes.userId, key.userId),
+      ),
+    )
+    .limit(1);
+  if (!assigned) {
+    throw new Error("Discord ingress has no assigned route");
+  }
+  return await refreshDiscordDirectMessageRouteDestination(
+    db,
+    assigned,
+    key.channelId,
+  );
+}
+
 export async function ensureCanonicalDiscordChatThreadRoute(
   db: Db,
   args: CanonicalDiscordChatThreadRouteArgs,
@@ -148,24 +175,10 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       return undefined;
     }
     if (claim.routeId) {
-      const [assigned] = await tx
-        .select()
-        .from(discordChatThreadRoutes)
-        .where(
-          and(
-            eq(discordChatThreadRoutes.id, claim.routeId),
-            eq(discordChatThreadRoutes.connectionId, args.connectionId),
-            eq(discordChatThreadRoutes.userId, args.userId),
-          ),
-        )
-        .limit(1);
-      if (!assigned) {
-        throw new Error("Discord ingress has no assigned route");
-      }
-      return await refreshDiscordDirectMessageRouteDestination(
+      return await requireAssignedDiscordChatThreadRoute(
         tx,
-        assigned,
-        args.channelId,
+        args,
+        claim.routeId,
       );
     }
     const existing = await loadDiscordChatThreadRoute(tx, args);

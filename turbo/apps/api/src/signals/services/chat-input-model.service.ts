@@ -66,7 +66,9 @@ export async function resolveChatInputModelSelection(
     requested:
       selectedModel === args.selectedModel ? args.reasoningEffort : undefined,
   });
-  if ("status" in effort) return effort;
+  if ("status" in effort) {
+    return effort;
+  }
   return chatInputModelSelectionSchema.parse({
     selectedModel,
     codexServiceTier: isCodexFastServiceTierSupported({ selectedModel })
@@ -94,12 +96,16 @@ export async function resolveEnqueuedChatInputModel(
     .from(chatThreads)
     .where(eq(chatThreads.id, args.threadId))
     .limit(1);
-  if (!thread) throw new Error("Chat thread not found while enqueuing input");
+  if (!thread) {
+    throw new Error("Chat thread not found while enqueuing input");
+  }
   const selection = await resolveChatInputModelSelection(db, {
     ...args,
     ...thread,
     modelSettings: modelSettingsSchema.parse(thread.modelSettings),
   });
-  if ("status" in selection) throw new Error(selection.body.error.message);
+  if ("status" in selection) {
+    throw new Error(selection.body.error.message);
+  }
   return selection;
 }
