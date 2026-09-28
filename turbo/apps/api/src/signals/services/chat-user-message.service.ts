@@ -13,13 +13,16 @@ import {
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
-import { isRetiredGenerationTemplate } from "../../lib/generation-template-prompt";
+import {
+  isRetiredGenerationTemplate,
+  type LiveGenerationTemplate,
+} from "../../lib/generation-template-prompt";
 
 interface UserMessageProjection {
   readonly agentPrompt: string;
   readonly displayText: string;
-  readonly primaryTemplate: GenerationTemplateRequest | undefined;
-  readonly templates: readonly GenerationTemplateRequest[];
+  readonly primaryTemplate: LiveGenerationTemplate | undefined;
+  readonly templates: readonly LiveGenerationTemplate[];
   readonly hasTextContent: boolean;
 }
 
@@ -376,8 +379,8 @@ export function projectUserMessage(
   let inlinePrompt = "";
   let inlineDisplayText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
-  let primaryTemplate: GenerationTemplateRequest | undefined;
-  const templates: GenerationTemplateRequest[] = [];
+  let primaryTemplate: LiveGenerationTemplate | undefined;
+  const templates: LiveGenerationTemplate[] = [];
   let hasTextContent = false;
   const agentRunSourceTitle = agentRunSourceAnnotation(document)?.titleSnapshot;
 
@@ -418,7 +421,12 @@ export function projectUserMessage(
     feedbackParts = [];
   };
 
+  // A dropped retired template leaves the spaces that surrounded it; the next
+  // text part skips its leading whitespace so the prompt reads naturally.
+  let droppedTemplate = false;
   for (const part of document.parts) {
+    const followsDroppedTemplate = droppedTemplate;
+    droppedTemplate = false;
     if (part.type === "additional_info") {
       additionalInfo.push(part.text);
       continue;
@@ -431,7 +439,10 @@ export function projectUserMessage(
     }
     flushFeedback();
     if (part.type === "text") {
-      inlinePrompt += part.text;
+      inlinePrompt +=
+        followsDroppedTemplate && /\s$/u.test(inlinePrompt)
+          ? part.text.trimStart()
+          : part.text;
       inlineDisplayText += part.text;
       hasTextContent ||= part.text.trim().length > 0;
       continue;
@@ -466,7 +477,9 @@ export function projectUserMessage(
     ) {
       continue;
     }
-    inlinePrompt += registerInlineTemplate(part);
+    const marker = registerInlineTemplate(part);
+    droppedTemplate = marker === "";
+    inlinePrompt += marker;
     inlineDisplayText += `[Template: ${part.titleSnapshot}]`;
   }
   flushFeedback();

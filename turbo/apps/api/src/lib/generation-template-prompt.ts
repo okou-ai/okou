@@ -1,3 +1,4 @@
+import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   buildPresentationRunbookInstructionLines,
   findImageStyle,
@@ -38,15 +39,17 @@ interface PresentationGenerationTemplateInput {
 /**
  * Video, avatar, and Intro Video selections written before those products were
  * retired. `chat_events` is append-only, so the contract keeps both arms
- * readable; a selection that still reaches a send is ignored and the run
- * proceeds without template guidance.
+ * readable; `projectUserMessage` drops them so no prompt builder sees one.
  */
-type RetiredGenerationTemplateInput =
-  | {
-      readonly type: "video";
-      readonly selection: { readonly stylePresetId: string };
-    }
-  | { readonly type: "intro-video" };
+type RetiredGenerationTemplate = Extract<
+  GenerationTemplateRequest,
+  { readonly type: "video" | "intro-video" }
+>;
+
+export type LiveGenerationTemplate = Exclude<
+  GenerationTemplateRequest,
+  RetiredGenerationTemplate
+>;
 
 interface IllustrationGenerationTemplateInput {
   readonly type: "illustration";
@@ -77,7 +80,6 @@ interface CustomGenerationTemplateInput {
 type GenerationTemplateInput =
   | CustomGenerationTemplateInput
   | PresentationGenerationTemplateInput
-  | RetiredGenerationTemplateInput
   | IllustrationGenerationTemplateInput
   | WorkflowGenerationTemplateInput
   | WebsiteGenerationTemplateInput;
@@ -122,9 +124,6 @@ export function buildGenerationTemplatePrompt(
     return { status: "resolved", prompt: "" };
   }
 
-  if (isRetiredGenerationTemplate(generationTemplate)) {
-    return { status: "resolved", prompt: "" };
-  }
   if (generationTemplate.type === "illustration") {
     return buildIllustrationGenerationTemplatePrompt(generationTemplate);
   }
@@ -162,8 +161,8 @@ function stripGenerationTemplateContext(prompt: string): string {
 }
 
 export function isRetiredGenerationTemplate(
-  generationTemplate: GenerationTemplateInput,
-): generationTemplate is RetiredGenerationTemplateInput {
+  generationTemplate: GenerationTemplateRequest,
+): generationTemplate is RetiredGenerationTemplate {
   return (
     generationTemplate.type === "video" ||
     generationTemplate.type === "intro-video"

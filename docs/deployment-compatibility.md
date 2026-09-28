@@ -136,8 +136,10 @@ Old and new versions during deploy:
   Sentry report. The CLI cache discards an unparseable file and rebuilds it
   from the snapshot in the same way. A client whose saved cursor was a deleted
   event receives `410` and reloads the snapshot.
-- iOS keeps its `videoModelUpdated` wire case, and its decoders do not require
-  `selectedVideoModel`. The server no longer sends either.
+- iOS decoders do not require `selectedVideoModel`, and the server no longer
+  sends it or a `video_model_updated` event. iOS decodes thread events only
+  from the server and never persists them, so its `videoModelUpdated` wire
+  case was removed.
 
 Rollback promotes artifacts without restoring schema, so
 `resolve-production-rollback-target.sh` rejects API targets that predate the

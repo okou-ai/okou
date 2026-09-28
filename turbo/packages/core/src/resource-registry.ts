@@ -20,7 +20,6 @@ export type GenerationTarget =
   | "dashboard-design"
   | "mobile-app-design"
   | "poster"
-  | "video"
   | "report"
   | "docs-design";
 

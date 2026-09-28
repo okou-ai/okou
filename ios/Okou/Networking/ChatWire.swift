@@ -60,7 +60,6 @@ struct ThreadEvent: Decodable, Sendable {
     case modelSelectionUpdated = "model_selection_updated"
     case serviceTierUpdated = "service_tier_updated"
     case computerUseHostUpdated = "computer_use_host_updated"
-    case videoModelUpdated = "video_model_updated"
     case imageModelUpdated = "image_model_updated"
     case sortTouched = "sort_touched"
     case archived, unarchived

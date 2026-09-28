@@ -256,7 +256,7 @@ test("A queued Create message keeps its intent separate from user-authored text"
 
 test("Image mode keeps the chat model and sends no image model", async () => {
   setupModels();
-  const creates: { imageModel?: string; videoModel?: string }[] = [];
+  const creates: { imageModel?: string }[] = [];
   mockChatLifecycle(context, {
     onThreadCreate: (body) => {
       creates.push(body);
@@ -279,7 +279,6 @@ test("Image mode keeps the chat model and sends no image model", async () => {
     expect(creates).toHaveLength(1);
   });
   expect(creates[0]?.imageModel).toBeUndefined();
-  expect(creates[0]?.videoModel).toBeUndefined();
 });
 
 const createTemplateScenarios = [

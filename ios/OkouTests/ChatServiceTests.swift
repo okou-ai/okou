@@ -63,7 +63,7 @@ final class ChatServiceTests: XCTestCase {
       case "/api/user-model-preference":
         return ChatHTTPResponse(
           body:
-            "{\"selectedModel\":\"gpt-5.6-sol\",\"serviceTier\":null,\"modelSettings\":{\"gpt-5.6-sol\":{\"effort\":\"high\"}},\"selectedVideoModel\":null,\"selectedImageModel\":null,\"updatedAt\":null}"
+            "{\"selectedModel\":\"gpt-5.6-sol\",\"serviceTier\":null,\"modelSettings\":{\"gpt-5.6-sol\":{\"effort\":\"high\"}},\"selectedImageModel\":null,\"updatedAt\":null}"
         )
       case "/api/model-policies":
         return ChatHTTPResponse(
@@ -447,13 +447,13 @@ private func sampleThread() -> ChatThread {
 }
 
 private func threadJSON(id: String, date: String = fixtureDate) -> String {
-  "{\"id\":\"\(id)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"Original title\",\"sortAt\":\"\(date)\",\"createdAt\":\"\(date)\",\"updatedAt\":\"\(date)\",\"pinnedAt\":null,\"renamedAt\":null,\"selectedModel\":\"gpt-5.6-sol\",\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false,\"selectedVideoModel\":null}"
+  "{\"id\":\"\(id)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"Original title\",\"sortAt\":\"\(date)\",\"createdAt\":\"\(date)\",\"updatedAt\":\"\(date)\",\"pinnedAt\":null,\"renamedAt\":null,\"selectedModel\":\"gpt-5.6-sol\",\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
 }
 
 private func threadEventJSON(seq: Int, kind: String, thread: String, title: String = "New chat")
   -> String
 {
-  "{\"id\":\"\(eventIdentity(seq))\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"\(title)\",\"selectedModel\":\"gpt-5.6-sol\",\"selectedVideoModel\":null,\"createdAt\":\"\(fixtureDate)\"}"
+  "{\"id\":\"\(eventIdentity(seq))\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(thread)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"\(title)\",\"selectedModel\":\"gpt-5.6-sol\",\"createdAt\":\"\(fixtureDate)\"}"
 }
 
 private func eventJSON(seq: Int, type: String, run: String? = fixtureRun, payload: String = "null")
@@ -471,5 +471,5 @@ private func userPayload(_ text: String) -> String {
 }
 
 private func metadataJSON(browser: Bool) -> String {
-  "{\"id\":\"\(fixtureThread)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"Existing chat\",\"selectedModel\":\"claude-sonnet-5\",\"modelSettings\":{},\"serviceTier\":null,\"pinnedAt\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":\(browser),\"selectedVideoModel\":null,\"selectedImageModel\":null}"
+  "{\"id\":\"\(fixtureThread)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"Existing chat\",\"selectedModel\":\"claude-sonnet-5\",\"modelSettings\":{},\"serviceTier\":null,\"pinnedAt\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":\(browser),\"selectedImageModel\":null}"
 }

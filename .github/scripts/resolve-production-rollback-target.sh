@@ -212,7 +212,7 @@ if ! git merge-base --is-ancestor "$retired_preference_columns_drop_commit" "$TA
   fail "Rollback target predates the retired preference column drop: ${retired_preference_columns_drop_commit}."
 fi
 
-# Migration 1282 drops selected_video_model from chat_threads,
+# Migration 1283 drops selected_video_model from chat_threads,
 # org_members_metadata, agent_runs and chat_thread_events and removes the
 # video_model_updated event kind. Earlier APIs still declare the columns, so
 # every insert, bare select and bare returning on those tables names them. This
