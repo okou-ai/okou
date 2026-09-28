@@ -1296,11 +1296,16 @@ describe("CHAT-02: shared user message queue", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const publicationStarted = createDeferredPromise<void>(context.signal);
+    const secondPublicationStarted = createDeferredPromise<void>(
+      context.signal,
+    );
     const releasePublication = createDeferredPromise<void>(context.signal);
     context.mocks.ably.publish.mockImplementation((topic: unknown) => {
       if (topic === "threadListChanged") {
         if (!publicationStarted.settled()) {
           publicationStarted.resolve(undefined);
+        } else if (!secondPublicationStarted.settled()) {
+          secondPublicationStarted.resolve(undefined);
         }
         return releasePublication.promise;
       }
@@ -1370,14 +1375,17 @@ describe("CHAT-02: shared user message queue", () => {
       })
       .toBe(true);
 
+    // The run and its message are visible before the background pick finishes
+    // publishing. Wait for both notifications to start while delivery is still
+    // blocked, rather than racing the pick's second publication.
+    await secondPublicationStarted.promise;
     const threadListPublishes = context.mocks.ably.publish.mock.calls.filter(
       ([topic]) => {
         return topic === "threadListChanged";
       },
     );
-    // One publication for the enqueued input and one for the background pick
-    // that launched it; neither pending publication gated the other.
     expect(threadListPublishes).toHaveLength(2);
+    expect(releasePublication.settled()).toBeFalsy();
     releasePublication.resolve(undefined);
     await cancelChatRun(actor, runId);
   }, 90_000);
