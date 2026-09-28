@@ -1,4 +1,7 @@
-import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
+import {
+  awardCompletedGetStartedQuest,
+  CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
+} from "./get-started-rewards.service";
 import { feishuPlatformFromTokenUrl } from "@okouai/core/feishu-platform";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
@@ -1566,7 +1569,7 @@ export async function storeCustomConnectorOAuth2Connection(
       orgId: args.orgId,
       userId: args.userId,
       questKey: "connector",
-      sourceKey: `custom:${args.connectorId}`,
+      sourceKey: CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY,
     });
     return { kind: "stored", connectionId: connection.id };
   });

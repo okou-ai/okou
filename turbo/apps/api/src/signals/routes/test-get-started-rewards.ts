@@ -5,7 +5,7 @@ import {
 } from "./test-endpoint-helpers";
 import { apiErrorSchema } from "@okouai/api-contracts/contracts/errors";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { initContract } from "@okouai/api-contracts/contracts/base";
 import { z } from "zod";
 import { command } from "ccstate";
@@ -13,6 +13,7 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { processGetStartedClaims } from "../services/get-started-review.service";
+import { CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY } from "../services/get-started-rewards.service";
 
 // Imported only by tests, never registered in the deployed router. The global
 // worker is restricted to claims created by this test through the real API.
@@ -61,4 +62,56 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 export const scopedReviewRoutes: readonly RouteEntry[] = [
   { route: scopedReviewContract.process, handler: process$ },
+];
+
+// Custom connector claims used to be keyed per connector (`custom:<id>`). The
+// production API no longer writes that shape, so this rewrites a user's shared
+// custom connector claim into the historical form a deployed database still
+// contains.
+export const legacyCustomConnectorClaimContract = c.router({
+  relabel: {
+    method: "POST",
+    path: "/test/get-started-legacy-custom-connector-claim",
+    body: z.object({
+      userId: z.string().min(1),
+      connectorId: z.string().uuid(),
+    }),
+    responses: {
+      200: z.object({ updated: z.number() }),
+      400: apiErrorSchema,
+      404: z.string(),
+    },
+  },
+});
+const legacyBody$ = bodyResultOf(legacyCustomConnectorClaimContract.relabel);
+const relabel$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!isTestEndpointAllowed(get(request$))) {
+    return testEndpointNotFoundResponse();
+  }
+  const body = await get(legacyBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const sourceKey = `${CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY}:${body.data.connectorId}`;
+  const updated = await set(writeDb$)
+    .update(getStartedClaims)
+    .set({
+      sourceKey,
+      rewardKey: `connector:${body.data.userId}:${sourceKey}`,
+    })
+    .where(
+      and(
+        eq(getStartedClaims.beneficiaryUserId, body.data.userId),
+        eq(getStartedClaims.questKey, "connector"),
+        eq(getStartedClaims.sourceKey, CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY),
+        eq(getStartedClaims.status, "granted"),
+      ),
+    )
+    .returning({ id: getStartedClaims.id });
+  signal.throwIfAborted();
+  return { status: 200 as const, body: { updated: updated.length } };
+});
+export const legacyCustomConnectorClaimRoutes: readonly RouteEntry[] = [
+  { route: legacyCustomConnectorClaimContract.relabel, handler: relabel$ },
 ];

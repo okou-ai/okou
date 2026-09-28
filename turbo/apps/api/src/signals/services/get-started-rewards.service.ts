@@ -10,7 +10,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { and, count, desc, eq, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, like, or, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { isUniqueViolation } from "../../lib/pg-errors";
@@ -22,6 +22,18 @@ import { grantOrgCredits } from "./onboarding-credit-grants.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 export type GetStartedClaimRow = typeof getStartedClaims.$inferSelect;
+
+/**
+ * Every custom connector a user connects shares this one connector-quest
+ * source. Custom connector identity is user-controlled (any user can create,
+ * delete, and recreate connectors with the same credentials), so a per-connector
+ * source would let one user farm the reward without limit.
+ */
+export const CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY = "custom";
+
+// Before CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY, custom connector claims used
+// `custom:<connectorId>`. A granted legacy claim still uses up the shared one.
+const LEGACY_CUSTOM_CONNECTOR_SOURCE_PATTERN = `${CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY}:%`;
 
 /** Resolve the same registry and persisted overrides used by the App. */
 export async function getStartedRewardsEnabled(
@@ -279,18 +291,48 @@ async function getRewardAvailability(
           eq(getStartedClaims.questKey, claim.questKey),
           eq(getStartedClaims.status, "granted"),
         );
+  const legacyCustomConnectorAwards =
+    claim.questKey === "connector" &&
+    claim.sourceKey === CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY
+      ? and(
+          eq(getStartedClaims.beneficiaryUserId, requiredBeneficiary(claim)),
+          eq(getStartedClaims.questKey, "connector"),
+          eq(getStartedClaims.status, "granted"),
+          like(
+            getStartedClaims.sourceKey,
+            LEGACY_CUSTOM_CONNECTOR_SOURCE_PATTERN,
+          ),
+        )
+      : undefined;
   // Read identity and capacity from the same snapshot so a concurrent grant
   // cannot appear only in the capacity check and hide already_redeemed.
   const awards = await tx
     .select({
       rewardKey: getStartedClaims.rewardKey,
       rewardSlot: getStartedClaims.rewardSlot,
+      questKey: getStartedClaims.questKey,
+      sourceKey: getStartedClaims.sourceKey,
+      status: getStartedClaims.status,
     })
     .from(getStartedClaims)
-    .where(or(eq(getStartedClaims.rewardKey, rewardKey), ownerAwards));
+    .where(
+      or(
+        eq(getStartedClaims.rewardKey, rewardKey),
+        ownerAwards,
+        legacyCustomConnectorAwards,
+      ),
+    );
   if (
     awards.some((award) => {
-      return award.rewardKey === rewardKey;
+      return (
+        award.rewardKey === rewardKey ||
+        (legacyCustomConnectorAwards !== undefined &&
+          award.questKey === "connector" &&
+          award.status === "granted" &&
+          award.sourceKey.startsWith(
+            `${CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY}:`,
+          ))
+      );
     })
   ) {
     return { kind: "ineligible", reason: "already_redeemed" };
