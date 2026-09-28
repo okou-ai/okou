@@ -364,6 +364,75 @@ describe("chat thread generation template contract", () => {
     });
   });
 
+  it("reads bounded MCP client snapshots alongside legacy source annotations", () => {
+    const document = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Check the launch" },
+        {
+          type: "source",
+          kind: "mcp",
+          clientId: "https://claude.ai/oauth/claude-code-client-metadata",
+          clientName: "Claude Code",
+        },
+      ],
+    };
+    expect(userMessageDocumentSchema.parse(document)).toStrictEqual(document);
+    expect(
+      chatEventSchema.parse({
+        id: "mcp-event-1",
+        threadId: "mcp-thread-1",
+        eventType: "input.prompt",
+        content: null,
+        userMessage: document,
+        seqId: 1,
+        createdAt: "2026-09-28T00:00:00.000Z",
+      }),
+    ).toMatchObject({ userMessage: document });
+    expect(
+      userMessageDocumentSchema.safeParse({
+        version: 1,
+        parts: [
+          { type: "text", text: "Unnamed client" },
+          { type: "source", kind: "mcp", clientId: "client_public" },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      userMessageDocumentSchema.safeParse({
+        version: 1,
+        parts: [{ type: "source", kind: "slack" }],
+      }).success,
+    ).toBe(true);
+    // Client-facing input contracts may parse this for backward compatibility;
+    // the API send path rejects it as server-owned provenance.
+    expect(userMessageInputDocumentSchema.safeParse(document).success).toBe(
+      true,
+    );
+  });
+
+  it("rejects malformed MCP source snapshots on read", () => {
+    for (const source of [
+      { kind: "mcp", clientId: "" },
+      { kind: "mcp", clientId: "   " },
+      { kind: "mcp", clientId: "x".repeat(2049) },
+      { kind: "mcp", clientId: "client_public", clientName: "  " },
+      {
+        kind: "mcp",
+        clientId: "client_public",
+        clientName: "x".repeat(121),
+      },
+      { kind: "mcp", clientId: "client_public", href: "https://fake.example" },
+    ]) {
+      expect(
+        userMessageDocumentSchema.safeParse({
+          version: 1,
+          parts: [{ type: "source", ...source }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("accepts an internal agent-run source annotation", () => {
     const runId = "00000000-0000-4000-8000-000000000001";
     const threadId = "00000000-0000-4000-8000-000000000002";

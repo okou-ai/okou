@@ -422,8 +422,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Render links to internal chat threads in chat messages as chat chips",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.HostedSiteDelete]: {
     maintainer: "linghan@okou.ai",
@@ -467,12 +466,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description: "Enable owner-scoped VNC host and credential configuration",
     enabled: false,
-  },
-  [FeatureSwitchKey.ThreadRemoteAccess]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable chat-scoped SSH and VNC host defaults and overrides",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",

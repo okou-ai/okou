@@ -12,11 +12,12 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
+import { computed, type Computed } from "ccstate";
 import { and, eq, gt } from "drizzle-orm";
 
 import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { db$, type Db, type ReadonlyDb } from "../external/db";
 
 export interface BuiltInModelRuntimeRoute {
   readonly selectedModel: string;
@@ -141,10 +142,47 @@ export function isBuiltInModelRuntimeRoutePermitted(
   );
 }
 
+/** Operator-managed key id for each vendor; the vendor column is unique. */
+export type BuiltInModelKeyIdsByVendor = ReadonlyMap<string, string>;
+
+async function loadBuiltInModelKeyIdsByVendor(
+  db: ReadonlyDb,
+): Promise<BuiltInModelKeyIdsByVendor> {
+  const rows = await db
+    .select({ id: builtInModelKeys.id, vendor: builtInModelKeys.vendor })
+    .from(builtInModelKeys);
+  return new Map(
+    rows.map((row) => {
+      return [row.vendor, row.id];
+    }),
+  );
+}
+
+/** Request-scoped, so resolving many policies reads the key table once. */
+export const builtInModelKeyIdsByVendor$: Computed<
+  Promise<BuiltInModelKeyIdsByVendor>
+> = computed(async (get) => {
+  return await loadBuiltInModelKeyIdsByVendor(get(db$));
+});
+
 export async function resolveBuiltInModelRuntimeRoute(
   db: Db,
   selectedModel: string,
   featureSwitchContext: FeatureSwitchContext,
+): Promise<BuiltInModelRuntimeRoute | null> {
+  return await resolveBuiltInModelRuntimeRouteWithKeys(
+    db,
+    selectedModel,
+    featureSwitchContext,
+    await loadBuiltInModelKeyIdsByVendor(db),
+  );
+}
+
+export async function resolveBuiltInModelRuntimeRouteWithKeys(
+  db: Db,
+  selectedModel: string,
+  featureSwitchContext: FeatureSwitchContext,
+  keyIdsByVendor: BuiltInModelKeyIdsByVendor,
 ): Promise<BuiltInModelRuntimeRoute | null> {
   const timestamp = nowDate();
   for (const target of eligibleBuiltInModelRouteCandidates(
@@ -154,12 +192,8 @@ export async function resolveBuiltInModelRuntimeRoute(
     if (runtimeRouteUnavailableForTest(target)) {
       continue;
     }
-    const [key] = await db
-      .select({ id: builtInModelKeys.id })
-      .from(builtInModelKeys)
-      .where(eq(builtInModelKeys.vendor, target.vendor))
-      .limit(1);
-    if (!key) {
+    const keyId = keyIdsByVendor.get(target.vendor);
+    if (keyId === undefined) {
       continue;
     }
 
@@ -187,7 +221,7 @@ export async function resolveBuiltInModelRuntimeRoute(
       continue;
     }
 
-    return routeFromTarget(target, key);
+    return routeFromTarget(target, { id: keyId });
   }
   return null;
 }

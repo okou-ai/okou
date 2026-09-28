@@ -5580,8 +5580,6 @@
     "tryItYourself": "Experimente você mesmo"
   },
   "ssh": {
-    "accessDescription": "Escolha quais agentes podem usar seus hosts SSH.",
-    "accessHelp": "Permitir que este Agent execute comandos em todos os seus hosts SSH configurados, atuais e futuros. Isso é separado das permissões dos conectores.",
     "add": "Adicionar host",
     "cancel": "Cancelar",
     "chooseFile": "Escolher arquivo",
@@ -5672,7 +5670,6 @@
     "label": "SSH",
     "loadFailed": "Não foi possível carregar as configurações SSH. Tente novamente.",
     "loading": "Carregando hosts SSH…",
-    "loadingAccess": "Carregando acesso dos agentes…",
     "manage": "Gerenciar hosts SSH",
     "notLearned": "Chave de host ainda não armazenada",
     "passphrase": "Frase secreta (opcional)",
@@ -5792,8 +5789,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "Escolha quais Agents podem ver e controlar seus desktops VNC. O acesso é separado do SSH.",
-    "accessHelp": "Permita que este Agent veja e controle todos os seus desktops VNC configurados, atuais e futuros.",
     "add": "Adicionar host",
     "cancel": "Cancelar",
     "close": "Fechar",
@@ -5861,7 +5856,6 @@
     "label": "VNC",
     "loadFailed": "Não foi possível carregar a configuração VNC.",
     "loading": "Carregando configuração VNC…",
-    "loadingAccess": "Carregando acesso dos agentes…",
     "manage": "Gerenciar VNC",
     "port": "Porta",
     "retry": "Tentar novamente",

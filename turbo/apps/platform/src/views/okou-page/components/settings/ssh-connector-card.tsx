@@ -1,22 +1,9 @@
 import { Plus, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useGet, useLoadable, useSet } from "ccstate-react";
-import {
-  sshAgentAccessRows$,
-  openSshAccessManagement$,
-} from "../../../../signals/ssh.ts";
-import { pageSignal$ } from "../../../../signals/page-signal.ts";
-import { detach, Reason } from "../../../../signals/utils.ts";
-import {
-  ConnectorAgentAccessButton,
-  connectorAgentAccessStatus,
-} from "./connector-agent-access-button.tsx";
 import { ROUTES } from "../../../../signals/route-paths.ts";
 import { Link } from "../../../router/link.tsx";
 import { ConnectorEntryCard } from "./connector-entry-card.tsx";
 import { SshConnectionSummary } from "../../ssh-connection-status.tsx";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 
 export function SshConnectorCard({
   configuredCount,
@@ -24,11 +11,6 @@ export function SshConnectorCard({
   readonly configuredCount: number;
 }) {
   const { t } = useTranslation();
-  const threadRemoteAccess =
-    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
-  const rows = useLoadable(sshAgentAccessRows$);
-  const open = useSet(openSshAccessManagement$);
-  const signal = useGet(pageSignal$);
   return (
     <ConnectorEntryCard
       icon={<Terminal size={20} aria-hidden="true" />}
@@ -66,33 +48,6 @@ export function SshConnectorCard({
         ) : null
       }
       status={<SshConnectionSummary configuredCount={configuredCount} />}
-      trailingAction={
-        configuredCount > 0 && !threadRemoteAccess ? (
-          <div className="relative z-20 min-w-0 max-w-full">
-            <ConnectorAgentAccessButton
-              agents={
-                rows.state === "hasData"
-                  ? (rows.data ?? [])
-                      .filter((row) => {
-                        return row.enabled;
-                      })
-                      .map((row) => {
-                        return row.agent;
-                      })
-                  : []
-              }
-              status={connectorAgentAccessStatus(rows.state)}
-              allowAccessIncrease
-              connectorLabel={t(($) => {
-                return $.ssh.label;
-              })}
-              onClick={() => {
-                return detach(open(signal), Reason.DomCallback);
-              }}
-            />
-          </div>
-        ) : null
-      }
     />
   );
 }

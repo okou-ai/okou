@@ -28,6 +28,7 @@ import {
 } from "./internal-chat-run-callback.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { assembleQueuedAutomationRun$ } from "./workflow-chat-event-queue.service";
+import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
 import { settleRejectedAutomationInput } from "./workflow-schedule-failure.service";
 import type {
   ChatQueueHeadContext,
@@ -392,7 +393,7 @@ export const consumeChatQueueHead$ = command(
     input: {
       readonly chatThreadId: string;
       readonly orgId: string;
-      readonly head: { readonly id: string };
+      readonly head: { readonly id: string; readonly createdAt: Date };
       readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
     },
     signal: AbortSignal,
@@ -464,6 +465,16 @@ export const consumeChatQueueHead$ = command(
       return { kind: "passed" };
     }
 
+    if (head.contextType === "automation") {
+      // A durable event timestamp survives a background pick on another API
+      // instance. This is queue age at consumption, not commit-to-pick time:
+      // it includes pre-commit time and legitimate time waiting in FIFO.
+      await recordWorkflowAdmissionDuration(
+        assembly.run.timing,
+        "api_dispatch_workflow_event_created_to_consume_start",
+        Math.max(0, apiStartTime - input.head.createdAt.getTime()),
+      );
+    }
     const created = await settle(
       set(createQueueFirstAgentRun$, assembly.run, signal),
       signal,

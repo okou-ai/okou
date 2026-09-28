@@ -355,7 +355,8 @@ test("Preserve the visible message when earlier content grows", async () => {
 });
 
 async function completeRunWhileReadingExpandedWork() {
-  const activeRunId = "scroll-expanded-work-run";
+  // A live run demands activity summaries, whose contract requires a UUID run ID.
+  const activeRunId = "a0000000-0000-4000-a000-000000000937";
   const conversation = mockMutableConversation(
     THREAD_IDS.expandedWork,
     [

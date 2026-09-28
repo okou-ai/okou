@@ -10,7 +10,6 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
@@ -30,7 +29,6 @@ import { runnerSshRoutes } from "../runner-ssh";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { testSshConnectionStateRoutes } from "../test-ssh-connection-state";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -127,9 +125,6 @@ describe("owner SSH grants and live Run inventory", () => {
       throw new Error("Missing fixture chat thread");
     }
     const threadId = f.threadId;
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-    });
     authenticate(f);
     const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
       chatRemoteAccessContract,
@@ -233,6 +228,20 @@ describe("owner SSH grants and live Run inventory", () => {
     );
   }
 
+  async function enableChatDefault(connectionId: string) {
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    await accept(
+      remote.updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+  }
+
   it("automatically grants all visible Agents only on a zero-to-one host transition", async () => {
     const f = await fixture();
     const ownPrivate = await createAgent("private");
@@ -305,15 +314,14 @@ describe("owner SSH grants and live Run inventory", () => {
     expect(
       (await accept(grant().get({ headers, params: f.params }), [200])).body,
     ).toStrictEqual({ enabled: true });
-    expect(
-      (await accept(inventory().list({ headers: f.token() }), [200])).body
-        .hosts,
-    ).toHaveLength(2);
+    // A non-chat Run has no host authority, even when legacy grants exist.
+    await accept(inventory().list({ headers: f.token() }), [404]);
   });
 
-  it("lists both logins at a shared endpoint without restoring a revoked grant", async () => {
-    const f = await fixture();
+  it("lists both chat-enabled logins at a shared endpoint independently of legacy grants", async () => {
+    const f = await fixture({ chat: true });
     const first = await createHost();
+    await enableChatDefault(first.body.id);
     await accept(
       grant().update({ headers, params: f.params, body: { enabled: false } }),
       [200],
@@ -330,11 +338,7 @@ describe("owner SSH grants and live Run inventory", () => {
       }),
       [201],
     );
-    await accept(inventory().list({ headers: f.token() }), [404]);
-    await accept(
-      grant().update({ headers, params: f.params, body: { enabled: true } }),
-      [200],
-    );
+    await enableChatDefault(second.body.id);
     const listed = await accept(
       inventory().list({ headers: f.token() }),
       [200],
@@ -371,13 +375,14 @@ describe("owner SSH grants and live Run inventory", () => {
   });
 
   it("uses only the Run user's hosts for shared Agents and rejects current visibility loss", async () => {
-    const creator = await fixture();
+    const creator = await fixture({ chat: true });
     const shared = await createAgent("public");
     const creatorHost = await createHost("creator.example.com");
     const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
     const user = await fixture({
       orgId: creator.orgId,
       agentId: shared.agentId,
+      chat: true,
       ...runnerIdentity,
     });
     const runnerSecret = "c".repeat(64);
@@ -386,6 +391,7 @@ describe("owner SSH grants and live Run inventory", () => {
       runnerSshContract,
     );
     const host = await createHost("user.example.com");
+    await enableChatDefault(host.body.id);
     expect(
       (
         await accept(inventory().list({ headers: user.token() }), [200])
@@ -450,152 +456,19 @@ describe("owner SSH grants and live Run inventory", () => {
     });
   });
 
-  it("production grant revocation denies Runner resolution and first-use pinning", async () => {
-    const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
-    const f = await fixture(runnerIdentity);
-    const secret = "b".repeat(64);
-    mockEnv("OFFICIAL_RUNNER_SECRET", secret);
-    const runnerHeaders = { authorization: `Bearer vm0_official_${secret}` };
-    const client = setupApp({ context, routes: runnerSshRoutes })(
-      runnerSshContract,
-    );
-    const host = await accept(
-      config().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          displayName: "Deployment",
-          host: "ssh.example.com",
-          credential: inlineSshKey("deploy", "test-private-key"),
-        },
-      }),
-      [201],
-    );
-    const request = {
-      headers: runnerHeaders,
-      params: { runId: f.runId },
-      body: { connectionId: host.body.id, runnerIdentity },
-    };
-    // The first host automatically grants access to this visible Agent.
-    expect((await accept(client.resolve(request), [200])).body.outcome).toBe(
-      "resolved",
-    );
-    await accept(
-      grant().update({ headers, params: f.params, body: { enabled: false } }),
-      [200],
-    );
-    expect((await accept(client.resolve(request), [200])).body).toStrictEqual({
-      outcome: "unavailable",
-    });
-    const pin = await accept(
-      client.pin({
-        ...request,
-        body: {
-          ...request.body,
-          expectedGeneration: 1,
-          observedHostKey: {
-            algorithm: "ssh-ed25519",
-            fingerprint: `SHA256:${Buffer.alloc(32).toString("base64").replace(/=+$/u, "")}`,
-          },
-        },
-      }),
-      [200],
-    );
-    expect(pin.body).toStrictEqual({ outcome: "unavailable" });
-    expect(
-      (await accept(config().list({ headers }), [200])).body.connections[0]
-        ?.learnedHostKey,
-    ).toBeNull();
-  });
   it.each(["web", "automation-schedule", "slack"] as const)(
-    "uses current grants and hosts for %s Runs without a chat thread",
+    "denies %s Runs without a chat thread despite a host default and a legacy Agent grant",
     async (triggerSource) => {
       const f = await fixture({ triggerSource });
-      expect(
-        (await accept(grant().get({ headers, params: f.params }), [200])).body,
-      ).toStrictEqual({ enabled: false });
-      await accept(inventory().list({ headers: f.token() }), [404]);
+      const host = await createHost();
+      await enableChatDefault(host.body.id);
       await accept(
         grant().update({ headers, params: f.params, body: { enabled: true } }),
         [200],
       );
       expect(
-        (await accept(inventory().list({ headers: f.token() }), [200])).body,
-      ).toStrictEqual({ hosts: [] });
-      const connection = await accept(
-        config().create({
-          headers,
-          body: {
-            id: randomUUID(),
-            displayName: "Deployment",
-            host: "ssh.example.com",
-            credential: inlineSshKey(
-              "deploy",
-              " secret-canary\n",
-              " passphrase-canary ",
-            ),
-          },
-        }),
-        [201],
-      );
-      const listed = await accept(
-        inventory().list({ headers: f.token() }),
-        [200],
-      );
-      expect(listed.body).toStrictEqual({
-        hosts: [
-          {
-            id: connection.body.id,
-            displayName: "Deployment",
-            host: "ssh.example.com",
-            username: "deploy",
-            port: 22,
-            learnedHostKey: null,
-            availability: { status: "ready" },
-          },
-        ],
-      });
-      expect(JSON.stringify(listed)).not.toContain("canary");
-      await accept(
-        config().update({
-          headers,
-          params: { connectionId: connection.body.id },
-          body: {
-            expectedGeneration: 1,
-            displayName: "Renamed",
-          },
-        }),
-        [200],
-      );
-      expect(
-        (await accept(inventory().list({ headers: f.token() }), [200])).body
-          .hosts[0]?.displayName,
-      ).toBe("Renamed");
-      await accept(
-        config().delete({
-          headers,
-          params: { connectionId: connection.body.id },
-        }),
-        [204],
-      );
-      expect(
-        (await accept(inventory().list({ headers: f.token() }), [200])).body
-          .hosts,
-      ).toStrictEqual([]);
-      context.mocks.ably.publish.mockClear();
-      await accept(
-        grant().update({ headers, params: f.params, body: { enabled: false } }),
-        [200],
-      );
-      expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
-        ["ssh:changed", { orgId: f.orgId }],
-        ["ssh-authority-invalidated", { runId: f.runId, connectionId: null }],
-      ]);
-      await accept(inventory().list({ headers: f.token() }), [404]);
-      expect(
-        (await accept(grant().get({ headers, params: f.params }), [200])).body
-          .enabled,
-      ).toBeFalsy();
+        (await accept(inventory().list({ headers: f.token() }), [404])).status,
+      ).toBe(404);
     },
   );
 
@@ -670,11 +543,11 @@ describe("owner SSH grants and live Run inventory", () => {
       (await accept(grant().get({ headers, params: f.params }), [200])).body
         .enabled,
     ).toBeTruthy();
-    await accept(inventory().list({ headers: f.token() }), [200]);
+    await accept(inventory().list({ headers: f.token() }), [404]);
   });
 
-  it("allows an ordinary owner's grant and inventory and enforces revocation", async () => {
-    const f = await fixture();
+  it("keeps chat inventory independent of ordinary owner Agent-grant edits", async () => {
+    const f = await fixture({ chat: true });
     await accept(
       grant().update({ headers, params: f.params, body: { enabled: true } }),
       [200],
@@ -693,11 +566,9 @@ describe("owner SSH grants and live Run inventory", () => {
       }),
       [200],
     );
-    const denied = await accept(
-      inventory().list({ headers: f.token() }),
-      [404],
-    );
-    expect(denied.body.error.message).toBe("SSH access is not available");
+    expect(
+      (await accept(inventory().list({ headers: f.token() }), [200])).body,
+    ).toStrictEqual({ hosts: [] });
   });
 
   it("rejects completed Runs despite a current grant", async () => {

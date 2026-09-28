@@ -1192,6 +1192,15 @@ async function prepareNormalSend(
   | CreatedChatEventResponse
   | NormalSendFailure
 > {
+  // MCP attribution is server-owned. Reject a forged source even on an
+  // idempotent retry, before clientEventId can return the prior event.
+  if (
+    args.body.userMessage.parts.some((part) => {
+      return part.type === "source" && part.kind === "mcp";
+    })
+  ) {
+    return badRequestMessage("MCP source annotations are server-managed");
+  }
   const agent = await loadAuthorizedAgent(db, args);
   signal.throwIfAborted();
   if ("status" in agent) {

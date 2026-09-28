@@ -5,13 +5,11 @@ import {
   type ThreadRemoteHostAccess,
   type InitialRemoteAccessOverride,
 } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
 
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { clerk$ } from "./auth.ts";
-import { featureSwitch$ } from "./external/feature-switch.ts";
 import { sshIdentity$, invalidateSsh$ } from "./ssh.ts";
 import { invalidateVnc$ } from "./vnc.ts";
 import {
@@ -28,8 +26,7 @@ const client$ = computed(async (get) => {
     if (
       !identity ||
       !session ||
-      identity !== `${clerk.organization?.id}:${clerk.user?.id}` ||
-      !get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]
+      identity !== `${clerk.organization?.id}:${clerk.user?.id}`
     ) {
       throw new DOMException("Remote access owner changed", "AbortError");
     }
@@ -51,9 +48,6 @@ const client$ = computed(async (get) => {
 
 export const remoteHostDefaults$ = computed(async (get) => {
   get(remoteHostDefaultsReload$);
-  if (!get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]) {
-    return null;
-  }
   const client = await get(client$);
   if (!client.identity) {
     return null;
@@ -94,10 +88,7 @@ export function createPendingRemoteAccessSignals() {
 export function threadRemoteAccess$(threadId: string) {
   return computed(async (get) => {
     get(threadRemoteAccessReload$);
-    if (
-      !threadId ||
-      !get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]
-    ) {
+    if (!threadId) {
       return null;
     }
     const client = await get(client$);

@@ -21,8 +21,6 @@ import type {
   RemoteHostDefault,
   ThreadRemoteHostAccess,
 } from "@okouai/api-contracts/contracts/chat-remote-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   remoteHostDefaults$,
@@ -57,14 +55,10 @@ export function RemoteHostDefaultToggle({
   connectionId: string;
 }) {
   const { t } = useTranslation();
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess];
   const defaults = useLoadable(remoteHostDefaults$);
   const retry = useSet(invalidateRemoteAccess$);
   const [saving, update] = useLoadableSet(setRemoteHostDefault$);
   const signal = useGet(pageSignal$);
-  if (!enabled) {
-    return null;
-  }
   const host =
     defaults.state === "hasData"
       ? defaults.data?.[protocol].find((item) => {

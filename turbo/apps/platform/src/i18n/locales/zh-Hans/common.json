@@ -5494,8 +5494,6 @@
     "tryItYourself": "自己试一试"
   },
   "ssh": {
-    "accessDescription": "选择哪些智能体可以使用你的SSH主机。",
-    "accessHelp": "允许该智能体在你当前和今后配置的所有SSH主机上执行命令。这与连接器权限相互独立。",
     "add": "添加主机",
     "cancel": "取消",
     "chooseFile": "选择文件",
@@ -5580,7 +5578,6 @@
     "label": "SSH",
     "loadFailed": "无法加载SSH设置，请重试。",
     "loading": "正在加载SSH主机…",
-    "loadingAccess": "正在加载智能体访问权限…",
     "manage": "管理SSH主机",
     "notLearned": "尚未记录主机密钥",
     "passphrase": "密钥口令（可选）",
@@ -5697,8 +5694,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "选择哪些智能体可以查看和控制你的VNC桌面。此访问权限与SSH分开管理。",
-    "accessHelp": "允许该智能体查看和控制你当前及今后配置的所有VNC桌面。",
     "add": "添加主机",
     "cancel": "取消",
     "close": "关闭",
@@ -5763,7 +5758,6 @@
     "label": "VNC",
     "loadFailed": "无法加载VNC配置。",
     "loading": "正在加载VNC配置…",
-    "loadingAccess": "正在加载智能体访问权限…",
     "manage": "管理VNC",
     "port": "端口",
     "retry": "重试",

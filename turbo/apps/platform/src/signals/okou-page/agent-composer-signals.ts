@@ -207,11 +207,7 @@ function createAgentSubmitMessage(
       const send = options.forward
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;
-      const initialRemoteAccessOverrides = get(featureSwitch$)[
-        FeatureSwitchKey.ThreadRemoteAccess
-      ]
-        ? get(pendingRemoteAccess.overrides$)
-        : [];
+      const initialRemoteAccessOverrides = get(pendingRemoteAccess.overrides$);
       let connectorSelections: readonly ConnectorAccountSelection[] = [];
       if (connectorPreference.selections.length > 0) {
         const connectorAuthorization = await get(

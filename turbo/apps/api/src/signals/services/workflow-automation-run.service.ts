@@ -3,7 +3,7 @@ import { command } from "ccstate";
 import type { Tx } from "../../lib/db-types";
 import { writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
-import { settle } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import {
   revokePendingScheduleTicks,
   ScheduleOccurrenceUnavailableError,
@@ -40,6 +40,20 @@ import type {
  * transaction and excluding its new event, so a tick that loses the
  * occurrence never revokes the winner's event.
  */
+async function flushWorkflowAdmission<T>(
+  operation: Promise<T>,
+  flush: () => void,
+): Promise<T> {
+  const result = await settleIncludingAbort(operation);
+  // Emit completed steps even when admission fails. Telemetry must never
+  // replace the committed result, original transaction error, or cancellation.
+  await settleIncludingAbort(flush);
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
+}
+
 function queueAdmissionSourceTransition(args: {
   readonly scheduleClaim: WorkflowScheduleClaimPlan | undefined;
   readonly persistSourceTransition:
@@ -48,6 +62,7 @@ function queueAdmissionSourceTransition(args: {
   readonly replacePendingTicks:
     | { readonly chatThreadId: string; readonly automationId: string }
     | undefined;
+  readonly timing: ApiDispatchTimingCollector;
 }): {
   readonly persistSourceTransition?: (tx: Tx, eventId: string) => Promise<void>;
 } {
@@ -58,22 +73,48 @@ function queueAdmissionSourceTransition(args: {
   return {
     persistSourceTransition: async (tx, eventId) => {
       if (scheduleClaim) {
-        const claim = await scheduleClaim.claim(tx);
+        const claim = await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_schedule_claim",
+          async () => {
+            return await scheduleClaim.claim(tx);
+          },
+        );
         if (claim.kind === "unavailable") {
           throw new ScheduleOccurrenceUnavailableError();
         }
-        await scheduleClaim.bindQueueEvent(tx, {
-          claimId: claim.claimId,
-          queueEventId: eventId,
-        });
+        await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_event_binding",
+          async () => {
+            await scheduleClaim.bindQueueEvent(tx, {
+              claimId: claim.claimId,
+              queueEventId: eventId,
+            });
+          },
+        );
       }
       if (replacePendingTicks) {
-        await revokePendingScheduleTicks(tx, {
-          ...replacePendingTicks,
-          excludeEventId: eventId,
-        });
+        await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_replace_pending_ticks",
+          async () => {
+            await revokePendingScheduleTicks(tx, {
+              ...replacePendingTicks,
+              excludeEventId: eventId,
+            });
+          },
+        );
       }
-      await persistSourceTransition?.(tx);
+      if (persistSourceTransition) {
+        await measureWorkflowAdmissionStep(
+          args.timing,
+          "api_dispatch_workflow_enqueue_source_transition",
+          async () => {
+            await persistSourceTransition(tx);
+          },
+        );
+      }
     },
   };
 }
@@ -124,6 +165,7 @@ export const runWorkflowAutomationNow$ = command(
       connectorSourceId: args.connectorSourceId,
       chatThreadId,
       triggerBrief: args.triggerBrief,
+      timing,
     });
     signal.throwIfAborted();
 
@@ -134,51 +176,74 @@ export const runWorkflowAutomationNow$ = command(
           ? "journaled_schedule"
           : "unjournaled_schedule";
     let admissionOutcome: WorkflowAdmissionOutcome = "failed";
-    const enqueued = await censusWorkflowAdmission(
-      schedulePath,
-      measureWorkflowAdmissionStep(
-        timing,
-        "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
-        async () => {
-          const attempt = await settle(
-            enqueueChatInput(db, {
-              chatThreadId,
-              orgId: automation.orgId,
-              appendInput,
-              ...queueAdmissionSourceTransition({
-                scheduleClaim,
-                persistSourceTransition,
-                replacePendingTicks,
+    const enqueued = await flushWorkflowAdmission(
+      censusWorkflowAdmission(
+        schedulePath,
+        measureWorkflowAdmissionStep(
+          timing,
+          "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
+          async () => {
+            const attempt = await settle(
+              enqueueChatInput(db, {
+                chatThreadId,
+                orgId: automation.orgId,
+                appendInput,
+                measureStep: (step, operation) => {
+                  const action = {
+                    transaction: "api_dispatch_workflow_enqueue_transaction",
+                    callback:
+                      "api_dispatch_workflow_enqueue_transaction_callback",
+                    queue_upsert: "api_dispatch_workflow_enqueue_queue_upsert",
+                  } as const;
+                  return measureWorkflowAdmissionStep(
+                    timing,
+                    action[step],
+                    operation,
+                  );
+                },
+                ...queueAdmissionSourceTransition({
+                  scheduleClaim,
+                  persistSourceTransition,
+                  replacePendingTicks,
+                  timing,
+                }),
               }),
-            }),
-          );
-          if (!attempt.ok) {
-            if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {
-              admissionOutcome = "superseded";
-              return false;
+            );
+            if (!attempt.ok) {
+              if (attempt.error instanceof ScheduleOccurrenceUnavailableError) {
+                admissionOutcome = "superseded";
+                return false;
+              }
+              throw attempt.error;
             }
-            throw attempt.error;
-          }
-          admissionOutcome = "inserted";
-          return true;
-        },
+            admissionOutcome = "inserted";
+            return true;
+          },
+          () => {
+            return {
+              schedule_path: schedulePath,
+              admission_outcome: admissionOutcome,
+            };
+          },
+        ),
         () => {
-          return {
-            schedule_path: schedulePath,
-            admission_outcome: admissionOutcome,
-          };
+          return admissionOutcome;
         },
       ),
       () => {
-        return admissionOutcome;
+        timing.flushWithoutRun(
+          {
+            schedule_path: schedulePath,
+            admission_outcome: admissionOutcome,
+            ...(args.triggerSource
+              ? { trigger_source: args.triggerSource }
+              : {}),
+          },
+          admissionOutcome !== "failed",
+        );
       },
     );
     signal.throwIfAborted();
-    // The entry's timing ends at the enqueue commit; the background pick and
-    // the launch are measured by the pick itself.
-    timing.flushWithoutRun(
-      args.triggerSource ? { trigger_source: args.triggerSource } : undefined,
-    );
 
     // A superseded occurrence adds no queue item; the claim plan's owner
     // records why.

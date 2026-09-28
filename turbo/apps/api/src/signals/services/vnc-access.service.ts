@@ -4,12 +4,11 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, asc, eq, isNotNull, or } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
@@ -22,7 +21,6 @@ import {
   runThreadExists,
   runThreadSshAccess,
   runThreadVncAccess,
-  runUsesThreadRemoteAccess,
 } from "./run-thread-remote-access.service";
 
 interface AgentAccessScope extends VncOwner {
@@ -97,7 +95,6 @@ export async function listRunVncHosts(
   owner: VncOwner & { readonly runId: string },
   signal: AbortSignal,
 ) {
-  const threadMode = await runUsesThreadRemoteAccess(db, owner.runId, signal);
   // The left joins preserve an authorized empty inventory in the same snapshot.
   const rows = await db
     .select({
@@ -129,32 +126,11 @@ export async function listRunVncHosts(
       ),
     )
     .leftJoin(
-      agentVncAccess,
-      and(
-        eq(agentVncAccess.agentId, agents.id),
-        eq(agentVncAccess.orgId, agentRuns.orgId),
-        eq(agentVncAccess.userId, agentRuns.userId),
-      ),
-    )
-    .leftJoin(
-      agentSshAccess,
-      and(
-        eq(agentSshAccess.agentId, agents.id),
-        eq(agentSshAccess.orgId, agentRuns.orgId),
-        eq(agentSshAccess.userId, agentRuns.userId),
-      ),
-    )
-    .leftJoin(
       vncConnections,
       and(
         eq(vncConnections.orgId, agentRuns.orgId),
         eq(vncConnections.userId, agentRuns.userId),
-        threadMode
-          ? runThreadVncAccess(db)
-          : or(
-              eq(vncConnections.transportType, "direct"),
-              isNotNull(agentSshAccess.agentId),
-            ),
+        runThreadVncAccess(db),
       ),
     )
     .leftJoin(
@@ -179,7 +155,7 @@ export async function listRunVncHosts(
         eq(agentRuns.orgId, owner.orgId),
         eq(agentRuns.userId, owner.userId),
         eq(agentRuns.status, "running"),
-        threadMode ? runThreadExists(db) : isNotNull(agentVncAccess.agentId),
+        runThreadExists(db),
       ),
     )
     .orderBy(asc(vncConnections.displayName), asc(vncConnections.id));
@@ -192,7 +168,7 @@ export async function listRunVncHosts(
       if (row.id === null) {
         return [];
       }
-      if (threadMode && row.transportType === "ssh" && !row.sshAllowed) {
+      if (row.transportType === "ssh" && !row.sshAllowed) {
         return [];
       }
       // The owner-scoped FK and transport check require this join to exist.

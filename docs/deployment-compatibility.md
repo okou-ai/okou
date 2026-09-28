@@ -85,6 +85,22 @@ No database migration is included. Dropping the columns, the
 after this API is the rollback floor and this App build is the Web client
 floor.
 
+## MCP user-message source reader preparation (#37233)
+
+The API contract and App can parse and display a server-owned MCP source part
+with a bounded OAuth client ID and optional client-name snapshot. Direct chat
+sends reject caller-authored MCP parts. No production `/mcp` message writer
+emits this part in the reader-preparation release; older API/App builds continue
+to receive the previous text-only MCP input shape, and the new readers continue
+to accept historical source kinds.
+
+Strict older V7 Chat Event readers cannot parse an MCP source kind. The writer
+slice (#37234) therefore requires independently verified promotion of prepared
+API/App readers, an enforced Web client floor for older App builds, prepared or
+excluded serving/rollback API readers and persisted-history consumers, and
+completed old CLI context drain. This is a future gate, not satisfied merely by
+merging this PR. See [Chat Event schema versioning](./chat-event-schema-versioning.md).
+
 ## Video, voice, and talking-avatar generation retired
 
 Built-in video, voice (text-to-speech), and talking-avatar video generation are
@@ -5442,9 +5458,12 @@ triggers, and views after that release drains.
 SSH, including Direct and Cloudflare Access, is generally available. The
 `sshAccess` registry entry, overrides consumer, UI gates and API/Run gates are
 retired together. Existing registered-key filtering ignores retired overrides;
-no migration, data deletion or rewrite is needed. Owner isolation, Agent grants,
-winning Run/Runner authority, credential encryption and host trust remain required.
-The existing Run-lifetime authority cache and missed-notification window are unchanged.
+no migration, data deletion or rewrite is needed. At that GA stage, owner
+isolation, Agent grants, winning Run/Runner authority, credential encryption
+and host trust remained required. The later
+[chat remote access](thread-remote-access.md) cutover replaces Agent grants
+with per-chat host permission for Run authority. The Run-lifetime authority
+cache and missed-notification window remain unchanged.
 
 Promote the API before the App. An older API can still enforce its rollout switch;
 the App retains its existing unavailable/error handling for that response, never
@@ -5460,7 +5479,9 @@ The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
 Direct and Cloudflare Access are generally available with no rollout switches;
-the SSH Agent grant still covers both. The initial delivery used the
+at the original delivery, the SSH Agent grant covered both. The later
+[chat remote access](thread-remote-access.md) cutover applies the same per-chat
+host permission to both transports. The initial delivery used the
 [pre-GA policy](fallback.md) and keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
@@ -5472,8 +5493,8 @@ acceptance and the owner-approved evidence boundaries at closure. #36038 added
 the standalone `/connectors/cloudflare-access` entry after SSH and VNC, and
 #36150 / PR #36152 removed the duplicate top-level management tab from
 `/connectors/ssh`. Access is reusable owner configuration, not a separately
-authorized Agent service. SSH remains its first consumer under the existing SSH
-Agent grant; general availability does not replace that permission.
+authorized Agent service. SSH remains its first consumer; current Run access
+requires the chat's effective permission for the exact SSH host.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 

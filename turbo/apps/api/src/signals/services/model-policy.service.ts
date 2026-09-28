@@ -2,7 +2,11 @@ import { createHash } from "node:crypto";
 import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import {
+  builtInModelKeyIdsByVendor$,
+  resolveBuiltInModelRuntimeRouteWithKeys,
+  type BuiltInModelKeyIdsByVendor,
+} from "./built-in-model-runtime-route.service";
 import {
   loadMemberModelRouteContext,
   resolveEffectivePolicyRoute,
@@ -1086,6 +1090,7 @@ async function listOrgModelPolicies(
   db: Db,
   orgId: string,
   userId: string,
+  keyIdsByVendor: BuiltInModelKeyIdsByVendor,
 ): Promise<OrgModelPoliciesResponse> {
   await ensureOrgModelPolicies(db, orgId, userId);
   const persistedRows = await loadRows(db, orgId, true);
@@ -1120,10 +1125,11 @@ async function listOrgModelPolicies(
       const runtimeRoute = isBuiltInModelProviderType(
         policy.defaultProviderType,
       )
-        ? await resolveBuiltInModelRuntimeRoute(
+        ? await resolveBuiltInModelRuntimeRouteWithKeys(
             db,
             policy.model,
             featureSwitchContext,
+            keyIdsByVendor,
           )
         : null;
       const administrative: OrgModelPolicy = isBuiltInModelProviderType(
@@ -1352,7 +1358,7 @@ export async function initializeOnboardingOrgModelPolicies(
 
 export const listOrgModelPolicies$ = command(
   async (
-    { set },
+    { get, set },
     params: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<OrgModelPoliciesResponse> => {
@@ -1361,6 +1367,7 @@ export const listOrgModelPolicies$ = command(
       db,
       params.orgId,
       params.userId,
+      await get(builtInModelKeyIdsByVendor$),
     );
     signal.throwIfAborted();
     return response;
@@ -1369,7 +1376,7 @@ export const listOrgModelPolicies$ = command(
 
 export const updateOrgModelPolicies$ = command(
   async (
-    { set },
+    { get, set },
     params: {
       readonly orgId: string;
       readonly userId: string;
@@ -1444,6 +1451,7 @@ export const updateOrgModelPolicies$ = command(
       db,
       params.orgId,
       params.userId,
+      await get(builtInModelKeyIdsByVendor$),
     );
     signal.throwIfAborted();
     return ok(response);

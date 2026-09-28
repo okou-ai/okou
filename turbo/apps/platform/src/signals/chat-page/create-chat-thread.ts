@@ -1051,7 +1051,9 @@ const registerUserMessageRenderPart$ = command(
               part,
               signals: set(agentReferenceSignals.register$, part.agentId),
             }
-          : { type: part.type, kind: "external", part };
+          : part.kind === "mcp"
+            ? { type: part.type, kind: "mcp", part }
+            : { type: part.type, kind: "external", part };
       }
       case "file": {
         const renderFileId = part.annotatedFileId ?? part.fileId;

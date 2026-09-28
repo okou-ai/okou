@@ -5580,8 +5580,6 @@
     "tryItYourself": "Essayez par vous-même"
   },
   "ssh": {
-    "accessDescription": "Choisissez les agents qui peuvent utiliser vos hôtes SSH.",
-    "accessHelp": "Autoriser cet Agent à exécuter des commandes sur tous vos hôtes SSH configurés, actuels et futurs. Cet accès est distinct des autorisations des connecteurs.",
     "add": "Ajouter un hôte",
     "cancel": "Annuler",
     "chooseFile": "Choisir un fichier",
@@ -5672,7 +5670,6 @@
     "label": "SSH",
     "loadFailed": "Impossible de charger les paramètres SSH. Réessayez.",
     "loading": "Chargement des hôtes SSH…",
-    "loadingAccess": "Chargement des accès des agents…",
     "manage": "Gérer les hôtes SSH",
     "notLearned": "Aucune clé d’hôte mémorisée",
     "passphrase": "Phrase secrète (facultative)",
@@ -5792,8 +5789,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "Choisissez les agents autorisés à afficher et contrôler vos bureaux VNC. Cet accès est indépendant de SSH.",
-    "accessHelp": "Autoriser cet agent à afficher et contrôler tous vos bureaux VNC configurés, actuels et futurs.",
     "add": "Ajouter un hôte",
     "cancel": "Annuler",
     "close": "Fermer",
@@ -5861,7 +5856,6 @@
     "label": "VNC",
     "loadFailed": "Impossible de charger la configuration VNC.",
     "loading": "Chargement de la configuration VNC…",
-    "loadingAccess": "Chargement des accès des agents…",
     "manage": "Gérer VNC",
     "port": "Port",
     "retry": "Réessayer",

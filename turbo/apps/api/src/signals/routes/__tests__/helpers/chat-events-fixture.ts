@@ -824,6 +824,7 @@ export function createChatEventsFixture(context: TestContext) {
     actor: ApiTestUser,
     body: ChatRunSendBody,
     usagePricingResolution?: UsagePricingFixture["resolution"],
+    options?: { readonly awaitEnqueuedPick: boolean },
   ): Promise<{ readonly runId: string; readonly threadId: string }> {
     const { template, ...canonicalBody } = body;
     const requestBody = {
@@ -841,9 +842,12 @@ export function createChatEventsFixture(context: TestContext) {
     }
     let runId: string | null | undefined = sent.body.runId;
     if (runId === null) {
-      // A terminal callback may claim the queued row between enqueue and the
-      // inline dispatch decision. Recover as a refreshed client does: read the
-      // appended replacement instead of retrying the client message id.
+      // Sends enqueue before the background pick creates a run association.
+      // Tests that need the completed pick can await that domain boundary;
+      // other tests may deliberately keep its publication work pending.
+      if (options?.awaitEnqueuedPick) {
+        await flushWaitUntilForTest();
+      }
       const messages = await waitForThreadMessages(
         actor,
         sent.body.threadId,
@@ -864,6 +868,16 @@ export function createChatEventsFixture(context: TestContext) {
       throw new Error("Expected the entitled chat send to create a run");
     }
     return { runId, threadId: sent.body.threadId };
+  }
+
+  async function sendChatRunAfterPick(
+    actor: ApiTestUser,
+    body: ChatRunSendBody,
+    usagePricingResolution?: UsagePricingFixture["resolution"],
+  ): Promise<{ readonly runId: string; readonly threadId: string }> {
+    return await sendChatRun(actor, body, usagePricingResolution, {
+      awaitEnqueuedPick: true,
+    });
   }
 
   /**
@@ -1810,6 +1824,7 @@ export function createChatEventsFixture(context: TestContext) {
     configureSubscriptionPiModel,
     configureBuiltInPiModelOnOpenRouter,
     sendChatRun,
+    sendChatRunAfterPick,
     sendWaitingChatInput,
     expectThreadCreatedModelEvent,
     expectNoThreadModelUpdateEvent,

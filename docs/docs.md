@@ -52,7 +52,7 @@ surface; the index does not replace their detailed rules.
   disposable pinned outer-SSH and inner-VNC production-path acceptance.
 - [X509Plain VNC acceptance](./vnc-x509plain-acceptance.md): head-specific owner,
   Agent, current-Runner, real-server and cleanup evidence.
-- [Runner VNC authority](./runner-vnc-authority.md): explicit Agent grants,
+- [Runner VNC authority](./runner-vnc-authority.md): chat host permissions,
   private typed handoff, current authorization and native sharing modes.
 - [Runner VNC execution](./runner-vnc-execution.md): Run-owned sessions, guest
   RPC, streamed captures, input outcomes and resource cleanup.
