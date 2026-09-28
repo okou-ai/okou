@@ -4407,6 +4407,9 @@
         "copy": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud. Scegli il tuo settore per una prima attività su misura.",
         "title": "Che tipo di lavoro fai?"
       },
+      "prompt": {
+        "intro": "Okou è l’assistente di lavoro per te e il tuo team. Trasforma le informazioni sparse in lavoro fatto, nel cloud."
+      },
       "skills": {
         "copied": "Copiato",
         "copy": "Esegui questo prompt in {{provider}} per importare le skill che hai già creato, così Okou può usarle da subito.",

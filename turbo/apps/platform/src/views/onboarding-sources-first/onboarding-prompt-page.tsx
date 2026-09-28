@@ -3,13 +3,14 @@ import { useTranslation } from "react-i18next";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
 import { usePromptOnboarding } from "../onboarding/onboarding-make-page.tsx";
 import { ONBOARDING_TEXTAREA_CLASS } from "../onboarding/onboarding-shell.tsx";
+import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 
 /**
  * The prompt handoff in the source-first flow's look. A visitor who brings a
  * prompt skips that flow's questions, so this is their whole onboarding: one
- * step, the prompt they brought on the sheet, and the tools its link names
- * above it.
+ * step that introduces Okou as the first question does, the prompt they
+ * brought on the sheet, and the tools its link names above it.
  */
 export function OnboardingSourcesFirstPromptPage() {
   const { t } = useTranslation();
@@ -24,8 +25,14 @@ export function OnboardingSourcesFirstPromptPage() {
         return $.onboarding.make.promptTitle;
       })}
       description={t(($) => {
-        return $.onboarding.make.promptDescription;
+        return $.onboarding.sourcesFirst.prompt.intro;
       })}
+      trustPoints={[
+        t(($) => {
+          return $.onboarding.make.promptDescription;
+        }),
+      ]}
+      supplement={<OnboardingCompliance />}
       primaryLabel={t(($) => {
         return $.onboarding.common.next;
       })}

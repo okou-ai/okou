@@ -4407,6 +4407,9 @@
         "copy": "Okou es el asistente de trabajo para ti y tu equipo. Convierte la información dispersa en trabajo hecho, en la nube. Elige tu área para una primera tarea a tu medida.",
         "title": "¿A qué tipo de trabajo te dedicas?"
       },
+      "prompt": {
+        "intro": "Okou es el asistente de trabajo para ti y tu equipo. Convierte la información dispersa en trabajo hecho, en la nube."
+      },
       "skills": {
         "copied": "Copiado",
         "copy": "Ejecuta este prompt en {{provider}} para importar las skills que ya has creado y que Okou pueda usarlas desde el primer día.",

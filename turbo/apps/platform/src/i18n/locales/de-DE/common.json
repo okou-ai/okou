@@ -4348,6 +4348,9 @@
         "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud. Wähle dein Feld für eine passende erste Aufgabe.",
         "title": "Welche Arbeit machst du?"
       },
+      "prompt": {
+        "intro": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud."
+      },
       "skills": {
         "copied": "Kopiert",
         "copy": "Führe diesen Prompt in {{provider}} aus, um deine vorhandenen Skills zu importieren, damit Okou sie sofort nutzen kann.",

@@ -4331,6 +4331,9 @@
         "copy": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud. Pilih bidang Anda untuk tugas pertama yang pas.",
         "title": "Pekerjaan Anda seperti apa?"
       },
+      "prompt": {
+        "intro": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud."
+      },
       "skills": {
         "copied": "Tersalin",
         "copy": "Jalankan prompt ini di {{provider}} untuk mengimpor skill yang sudah Anda buat, agar Okou dapat langsung menggunakannya.",

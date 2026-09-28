@@ -43,6 +43,9 @@ const FALLBACK_REQUEST =
   "Find recurring customer questions in my Gmail emails from the past week and turn them into five social post ideas.";
 const HANDOFF_PROMPT = "Draft the launch plan";
 const PROMPT_TITLE = "Try this prompt";
+const PROMPT_INTRO =
+  "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud.";
+const COMPLIANCE_TITLE = "Okou’s compliance, built for your trust";
 function generatedProfile() {
   return {
     overview: "Your inbox has several conversations to keep moving.",
@@ -684,6 +687,11 @@ test("A new user who brings a prompt tries it on the source-first flow's single 
   expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(
     HANDOFF_PROMPT,
   );
+  // The first question's introduction and compliance beside the prompt.
+  expect(screen.getByText(PROMPT_INTRO)).toBeInTheDocument();
+  expect(
+    screen.getByRole("region", { name: COMPLIANCE_TITLE }),
+  ).toBeInTheDocument();
   // The source-first flow's filling track, as one step of one.
   expect(
     screen.getAllByRole("progressbar", { name: "Step 1 of 1" }).length,
@@ -712,6 +720,10 @@ test("With the switch off, a prompt keeps the make-something page's look", async
   // The make-something page's segmented track and its list card's plain
   // Connect button, not the source-first sheet.
   expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  expect(screen.queryByText(PROMPT_INTRO)).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("region", { name: COMPLIANCE_TITLE }),
+  ).not.toBeInTheDocument();
   await waitFor(() => {
     expect(getButtonByName("Connect")).toBeEnabled();
   });
