@@ -1281,7 +1281,16 @@ describe("workflow queue", () => {
   it("rejects only the failed webhook trigger and accepts the next event", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
+    const busyRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(automation, "busy"),
+      automation.threadId,
+    );
     mockNow(Date.UTC(2026, 6, 25, 12));
+    // Record the model while it is available; the occupied thread delays pick.
+    expectAccepted(await postWorkflowWebhook(automation, "failed launch"));
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toHaveLength(1);
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
@@ -1290,8 +1299,9 @@ describe("workflow queue", () => {
       [204],
     );
 
-    // The trigger is accepted; the launch rejection appears in the thread.
-    expectAccepted(await postWorkflowWebhook(automation, "fast-failed launch"));
+    // Releasing the thread rejects the queued event's now-unavailable model.
+    await runsApi.requestCancelRun(scenario.actor, busyRunId, [200]);
+    await flushWaitUntilForTest();
 
     await expect(
       pendingAutomationEvents(automation.threadId),
@@ -1350,6 +1360,7 @@ describe("workflow queue", () => {
       automation.threadId,
     );
     await expect(workflowRunIds(automation.threadId)).resolves.toStrictEqual([
+      busyRunId,
       runId,
     ]);
   });
@@ -1405,6 +1416,10 @@ describe("workflow queue", () => {
     mockNow(Date.UTC(2020, 0, 1));
     const scenario = await setup();
     const webhookAutomation = await createWebhookAutomation(scenario);
+    const busyRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(webhookAutomation, "busy"),
+      webhookAutomation.threadId,
+    );
     const created = await accept(
       automationsClient().create({
         headers: authHeaders(),
@@ -1417,6 +1432,13 @@ describe("workflow queue", () => {
     if (!created.body.nextRunAt) {
       throw new Error("Expected a loop automation with a next run");
     }
+    const firedAt = Date.parse(created.body.nextRunAt) + 60_000;
+    mockNow(firedAt);
+    await executeDueWorkflowAutomations(created.body.id);
+    await expect(
+      pendingAutomationEvents(webhookAutomation.threadId),
+    ).resolves.toHaveLength(1);
+
     await accept(
       modelProvidersByTypeClient().delete({
         headers: authHeaders(),
@@ -1424,10 +1446,8 @@ describe("workflow queue", () => {
       }),
       [204],
     );
-
-    const firedAt = Date.parse(created.body.nextRunAt) + 60_000;
-    mockNow(firedAt);
-    await executeDueWorkflowAutomations(created.body.id);
+    await runsApi.requestCancelRun(scenario.actor, busyRunId, [200]);
+    await flushWaitUntilForTest();
 
     // The tick was enqueued, then rejected by the pick: it shows in the
     // thread and the schedule moves on to its next occurrence.
