@@ -40,11 +40,6 @@ const telegramBotSchema = z.object({
     .optional(),
 });
 
-const telegramBotStatusSchema = telegramBotSchema.extend({
-  domainConfigured: z.boolean(),
-  environment: telegramEnvironmentSchema,
-});
-
 const telegramListResponseSchema = z.object({
   bots: z.array(telegramBotSchema),
 });
@@ -227,7 +222,10 @@ export const integrationsTelegramContract = c.router({
 
 export type IntegrationsTelegramContract = typeof integrationsTelegramContract;
 export type TelegramBot = z.infer<typeof telegramBotSchema>;
-export type TelegramBotStatus = z.infer<typeof telegramBotStatusSchema>;
+export type TelegramBotStatus = z.infer<typeof telegramBotSchema> & {
+  readonly domainConfigured: boolean;
+  readonly environment: z.infer<typeof telegramEnvironmentSchema>;
+};
 export type TelegramListResponse = z.infer<typeof telegramListResponseSchema>;
 export type TelegramLinkStatusResponse = z.infer<
   typeof telegramLinkStatusResponseSchema

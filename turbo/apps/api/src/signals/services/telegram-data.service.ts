@@ -1,8 +1,6 @@
 import { computed, type Computed } from "ccstate";
-import { guaranteedConnectorProvidedBindingNames } from "@okouai/api-contracts/contracts/connector-schemas";
 import type {
   TelegramBot,
-  TelegramBotStatus,
   TelegramLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { agents } from "@okouai/db/schema/agent";
@@ -19,9 +17,6 @@ import {
   OFFICIAL_TELEGRAM_BOT_ID,
 } from "../external/telegram-official";
 import { safeUrlParse } from "../utils";
-import { builtinConnectorList } from "./connector-data.service";
-import { userSecrets, userVariables } from "./user-data.service";
-import { userConfiguredAgentEnvironmentRequirements } from "./agent-execution-config";
 
 type TelegramBotListItem = TelegramBot;
 type TelegramConnectedUser = NonNullable<TelegramBot["connectedUser"]>;
@@ -154,74 +149,8 @@ export function telegramBots(args: {
   });
 }
 
-function telegramEnvironment(args: {
-  readonly agent: TelegramAgentRow | null;
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<TelegramBotStatus["environment"]>> {
-  return computed(async (get) => {
-    const { secrets: requiredSecrets, vars: requiredVars } = args.agent
-      ? userConfiguredAgentEnvironmentRequirements(args.agent.name)
-      : { secrets: [], vars: [] };
-
-    const [secretList, variableList, connectorState] = await Promise.all([
-      get(userSecrets({ orgId: args.orgId, userId: args.userId })),
-      get(userVariables({ orgId: args.orgId, userId: args.userId })),
-      get(builtinConnectorList({ orgId: args.orgId, userId: args.userId })),
-    ]);
-    const existingSecretNames = new Set([
-      ...secretList.secrets.map((secret) => {
-        return secret.name;
-      }),
-      ...guaranteedConnectorProvidedBindingNames({
-        bindings: connectorState.connectorProvidedBindings,
-        namespace: "secrets",
-      }),
-    ]);
-    const existingVarNames = new Set([
-      ...variableList.variables.map((variable) => {
-        return variable.name;
-      }),
-      ...guaranteedConnectorProvidedBindingNames({
-        bindings: connectorState.connectorProvidedBindings,
-        namespace: "vars",
-      }),
-    ]);
-
-    return {
-      requiredSecrets,
-      requiredVars,
-      missingSecrets: requiredSecrets.filter((name) => {
-        return !existingSecretNames.has(name);
-      }),
-      missingVars: requiredVars.filter((name) => {
-        return !existingVarNames.has(name);
-      }),
-    };
-  });
-}
-
 function telegramLoginOrigin(): string {
   return new URL(env("APP_URL")).origin;
-}
-
-function officialTelegramBotStatus(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<Promise<TelegramBotStatus>> {
-  return computed(async (get) => {
-    const config = getOfficialTelegramBotConfig();
-    const official = await get(officialCompose(args));
-    const [bot, environment, domainConfigured] = await Promise.all([
-      get(buildOfficialTelegramBot(args)),
-      get(telegramEnvironment({ agent: official.agent, ...args })),
-      config.botId
-        ? checkTelegramDomain(config.botId, telegramLoginOrigin())
-        : Promise.resolve(false),
-    ]);
-
-    return { ...bot, domainConfigured, environment };
-  });
 }
 
 export function telegramIntegrationBots(args: {
@@ -230,19 +159,6 @@ export function telegramIntegrationBots(args: {
 }): Computed<Promise<readonly TelegramBot[]>> {
   return computed(async (get): Promise<readonly TelegramBot[]> => {
     return [await get(buildOfficialTelegramBot(args))];
-  });
-}
-
-export function telegramIntegrationBotStatus(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly botId: string;
-}): Computed<Promise<TelegramBotStatus | null>> {
-  return computed(async (get) => {
-    if (args.botId !== OFFICIAL_TELEGRAM_BOT_ID) {
-      return null;
-    }
-    return await get(officialTelegramBotStatus(args));
   });
 }
 
