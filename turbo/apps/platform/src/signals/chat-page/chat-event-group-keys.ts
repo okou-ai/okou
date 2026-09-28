@@ -9,9 +9,9 @@ import {
 // keeps the identity of its first input's replacement chain, and the assistant
 // turn that answers it derives its identity from that user turn. Neither
 // remounts when the input is replaced or when the reply's first event arrives.
-// An assistant turn without a visible user turn before it, such as a workflow
-// run group, keeps its work section's identity while new results replace the
-// section's anchor.
+// An assistant turn without a visible user turn before it, because its input
+// is folded into a run group or lies outside the render window, keeps its work
+// section's identity while new results replace the section's anchor.
 
 /** The render identity of an event, stable across input replacements. */
 export function chatEventRenderKey(event: EnrichedChatEvent): string {
