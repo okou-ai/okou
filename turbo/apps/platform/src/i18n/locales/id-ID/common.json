@@ -4346,13 +4346,45 @@
         "copy": "Jalankan prompt ini di {{provider}} untuk mengimpor skill yang sudah Anda buat, agar Okou dapat langsung menggunakannya.",
         "copyError": "Prompt tidak dapat disalin.",
         "copyPrompt": "Salin prompt",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Buka aplikasi Claude dan beralih ke tab {{control}}",
+            "openAppNote": "Code berjalan di komputer Anda, jadi bisa membaca folder skill Anda.",
+            "stayLocal": "Tetap gunakan sesi {{control}}",
+            "stayLocalNote": "Chat dan sesi cloud tidak bisa melihat file di komputer Anda."
+          },
+          "codex": {
+            "keepOpen": "Biarkan terbuka sampai skill Anda muncul di bawah",
+            "openApp": "Buka aplikasi Codex dan mulai {{control}}",
+            "openAppNote": "Gunakan aplikasi di komputer Anda agar bisa membaca folder skill Anda."
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "Salin prompt",
+          "label": "Tempat menjalankan prompt",
+          "paste": "Tempel prompt lalu kirim",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "Sembunyikan prompt lengkap",
         "importedCopy": "Diimpor sebagai workflow Okou.",
+        "importedCount_other": "{{count}} diimpor · menunggu lainnya",
         "importedLabel": "Skill yang diimpor",
         "importedTitle": "Skill Anda sudah ada di Okou",
         "preparing": "Membuka sesi impor Anda…",
         "promptCopy": "Ia membaca skill di komputer Anda dan menuliskannya ke Okou.",
         "promptLabel": "Prompt impor skill",
         "promptTitle": "Jalankan ini di {{provider}}",
+        "showFullPrompt": "Tampilkan prompt lengkap",
         "startError": "Sesi impor tidak dapat dibuka.",
         "title": "Bawa skill Anda ke Okou",
         "tryAgain": "Coba lagi",
@@ -7910,9 +7942,7 @@
       "action": "Impor skill",
       "description": "Jalankan prompt ini di tempat skill Anda berada. Setiap skill menjadi alur kerja pribadi.",
       "emptyAction": "Impor dari Claude Code atau Codex",
-      "hidePrompt": "Sembunyikan prompt",
       "providerLabel": "Impor dari",
-      "showPrompt": "Tampilkan prompt",
       "source": {
         "claudeCode": "Diimpor dari Claude Code",
         "codex": "Diimpor dari Codex"

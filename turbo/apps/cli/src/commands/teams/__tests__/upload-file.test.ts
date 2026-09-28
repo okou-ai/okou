@@ -118,12 +118,13 @@ describe("okou teams upload-file command", () => {
       "cli",
       "--file",
       testFilePath,
-      "--conversation-id",
+      "--to",
       "19:thread@thread.tacv2",
-      "--activity-id",
+      "--reply-to",
       "root-activity",
       "--text",
       "Daily report",
+      "--json",
     ]);
 
     expect(putReceivedContentType).toBe("application/pdf");
@@ -136,15 +137,67 @@ describe("okou teams upload-file command", () => {
     });
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    const parsed = JSON.parse(stdout) as Record<string, unknown>;
-    expect(parsed).toMatchObject({
-      conversationId: "19:thread@thread.tacv2",
-      filename: "report.pdf",
-      mimetype: "application/pdf",
-      size: 17,
-      url: expectedUrl,
+    expect(JSON.parse(stdout)).toStrictEqual({
+      integration: "teams",
+      chatId: "19:thread@thread.tacv2",
+      messages: [{ id: activityId, url: null }],
+      file: {
+        name: "report.pdf",
+        contentType: "application/pdf",
+        size: 17,
+        url: expectedUrl,
+      },
     });
-    expect(parsed.activityId).toBe(activityId);
+  });
+
+  it("uploads to the current user's personal conversation with --to me", async () => {
+    let completeBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(UPLOAD_INIT_URL, () => {
+        return HttpResponse.json({
+          uploadId: "00000000-0000-4000-8000-000000000001",
+          uploadUrl: R2_UPLOAD_URL,
+          fileUrl: "https://files.example/report.pdf",
+          filename: "report.pdf",
+          contentType: "application/pdf",
+          size: 17,
+        });
+      }),
+      http.put(R2_UPLOAD_URL, () => {
+        return new HttpResponse(null, { status: 200 });
+      }),
+      http.post(UPLOAD_COMPLETE_URL, async ({ request }) => {
+        completeBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          activityId: "dm-activity",
+          conversationId: "a:personal-conversation",
+          filename: "report.pdf",
+          mimetype: "application/pdf",
+          size: 17,
+          url: "https://files.example/report.pdf",
+        });
+      }),
+    );
+
+    await uploadFileCommand.parseAsync([
+      "node",
+      "cli",
+      "--file",
+      testFilePath,
+      "--to",
+      "me",
+      "--json",
+    ]);
+
+    expect(completeBody).toStrictEqual({
+      uploadId: "00000000-0000-4000-8000-000000000001",
+      user: "me",
+      contentType: "application/pdf",
+    });
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(stdout)).toMatchObject({
+      chatId: "a:personal-conversation",
+    });
   });
 
   it("errors when the file does not exist", async () => {
@@ -154,7 +207,7 @@ describe("okou teams upload-file command", () => {
         "cli",
         "--file",
         join(tmpDir, "missing.pdf"),
-        "--conversation-id",
+        "--to",
         "19:thread@thread.tacv2",
       ]);
     }).rejects.toThrow("process.exit called");

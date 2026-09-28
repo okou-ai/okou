@@ -21,6 +21,7 @@ import { checkTelegramDomain } from "../external/telegram-domain";
 import { getMe, isTelegramApiError } from "../external/telegram-client";
 import {
   getOfficialTelegramBotConfig,
+  isOfficialTelegramBotId,
   OFFICIAL_TELEGRAM_BOT_ID,
 } from "../external/telegram-official";
 import { safeUrlParse, settle } from "../utils";
@@ -232,6 +233,36 @@ function telegramUserLink(args: {
       )
       .limit(1);
     return row ?? null;
+  });
+}
+
+export const telegramAccountNotLinked = Object.freeze({
+  status: 404 as const,
+  body: Object.freeze({
+    error: Object.freeze({
+      message:
+        "No Telegram account linked to the current user for this bot. Link Telegram first.",
+      code: "NOT_FOUND",
+    }),
+  }),
+});
+
+/**
+ * Resolves `chatId: "me"` to the caller's private chat with a bot. A private
+ * chat ID equals the Telegram user ID linked to the caller for that bot: the
+ * official bot links per user/org, custom bots link per installation. Callers
+ * must verify the bot belongs to the org before resolving.
+ */
+export function currentUserTelegramChatId(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly botId: string;
+}): Computed<Promise<string | null>> {
+  return computed(async (get) => {
+    const link = isOfficialTelegramBotId(args.botId)
+      ? await get(officialUserLink({ orgId: args.orgId, userId: args.userId }))
+      : await get(telegramUserLink({ botId: args.botId, userId: args.userId }));
+    return link?.telegramUserId ?? null;
   });
 }
 

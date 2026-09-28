@@ -4363,13 +4363,46 @@
         "copy": "{{provider}} में यह प्रॉम्प्ट चलाकर अपनी बनाई हुई स्किल आयात करें, ताकि Okou पहले दिन से उनका इस्तेमाल कर सके।",
         "copyError": "prompt कॉपी नहीं हो सका।",
         "copyPrompt": "prompt कॉपी करें",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Claude ऐप खोलें और {{control}} टैब पर जाएँ",
+            "openAppNote": "Code आपके कंप्यूटर पर चलता है, इसलिए यह आपके स्किल फ़ोल्डर पढ़ सकता है।",
+            "stayLocal": "सेशन को {{control}} पर ही रखें",
+            "stayLocalNote": "Chat और क्लाउड सेशन आपके कंप्यूटर की फ़ाइलें नहीं देख सकते।"
+          },
+          "codex": {
+            "keepOpen": "जब तक आपकी स्किल नीचे न दिखें, इसे खुला रखें",
+            "openApp": "Codex ऐप खोलें और {{control}} शुरू करें",
+            "openAppNote": "अपने कंप्यूटर वाला ऐप इस्तेमाल करें, ताकि यह आपके स्किल फ़ोल्डर पढ़ सके।"
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "प्रॉम्प्ट कॉपी करें",
+          "label": "प्रॉम्प्ट कहाँ चलाएँ",
+          "paste": "प्रॉम्प्ट पेस्ट करके भेजें",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "पूरा प्रॉम्प्ट छिपाएँ",
         "importedCopy": "Okou workflow के रूप में इम्पोर्ट हुआ।",
+        "importedCount_one": "1 इम्पोर्ट हुई · और का इंतज़ार",
+        "importedCount_other": "{{count}} इम्पोर्ट हुईं · और का इंतज़ार",
         "importedLabel": "इम्पोर्ट हुई skills",
         "importedTitle": "आपकी skills Okou में आ गईं",
         "preparing": "आपका इम्पोर्ट सेशन खोला जा रहा है…",
         "promptCopy": "यह आपकी मशीन की skills पढ़कर Okou में लिख देता है।",
         "promptLabel": "skill इम्पोर्ट prompt",
         "promptTitle": "इसे {{provider}} में चलाएँ",
+        "showFullPrompt": "पूरा प्रॉम्प्ट दिखाएँ",
         "startError": "इम्पोर्ट सेशन नहीं खोला जा सका।",
         "title": "अपनी मौजूदा स्किल Okou में लाएँ",
         "tryAgain": "फिर से कोशिश करें",
@@ -7932,9 +7965,7 @@
       "action": "स्किल्स इम्पोर्ट करें",
       "description": "यह प्रॉम्प्ट वहाँ चलाएँ जहाँ आपकी स्किल्स हैं। हर स्किल एक निजी वर्कफ़्लो बन जाती है।",
       "emptyAction": "Claude Code या Codex से इम्पोर्ट करें",
-      "hidePrompt": "प्रॉम्प्ट छिपाएँ",
       "providerLabel": "यहाँ से इम्पोर्ट करें",
-      "showPrompt": "प्रॉम्प्ट दिखाएँ",
       "source": {
         "claudeCode": "Claude Code से इम्पोर्ट किया गया",
         "codex": "Codex से इम्पोर्ट किया गया"

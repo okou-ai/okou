@@ -4346,13 +4346,45 @@
         "copy": "{{provider}} でこのプロンプトを実行して作成済みのスキルを取り込むと、Okou ですぐに使えます。",
         "copyError": "プロンプトをコピーできませんでした。",
         "copyPrompt": "プロンプトをコピー",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Claude アプリを開き、{{control}} タブに切り替える",
+            "openAppNote": "Code はお使いのコンピューター上で動くため、スキルのフォルダを読み取れます。",
+            "stayLocal": "セッションを {{control}} のままにする",
+            "stayLocalNote": "Chat やクラウドのセッションからは、お使いのコンピューター上のファイルは見えません。"
+          },
+          "codex": {
+            "keepOpen": "スキルが下に表示されるまで開いたままにする",
+            "openApp": "Codex アプリを開き、{{control}} を始める",
+            "openAppNote": "スキルのフォルダを読み取れるよう、お使いのコンピューター上のアプリを使ってください。"
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "プロンプトをコピーする",
+          "label": "プロンプトを実行する場所",
+          "paste": "プロンプトを貼り付けて送信する",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "プロンプト全文を隠す",
         "importedCopy": "Okou のワークフローとしてインポートしました。",
+        "importedCount_other": "{{count}} 件インポート済み · 続きを待っています",
         "importedLabel": "インポートしたスキル",
         "importedTitle": "スキルが Okou に入りました",
         "preparing": "インポートセッションを開いています…",
         "promptCopy": "手元のスキルを読み取り、Okou に書き込みます。",
         "promptLabel": "スキルインポート用プロンプト",
         "promptTitle": "{{provider}} で実行してください",
+        "showFullPrompt": "プロンプト全文を表示",
         "startError": "インポートセッションを開けませんでした。",
         "title": "作成済みのスキルを Okou に取り込む",
         "tryAgain": "もう一度試す",
@@ -7910,9 +7942,7 @@
       "action": "スキルをインポート",
       "description": "スキルがある環境でこのプロンプトを実行してください。各スキルは非公開のワークフローになります。",
       "emptyAction": "Claude Code または Codex からインポート",
-      "hidePrompt": "プロンプトを隠す",
       "providerLabel": "インポート元",
-      "showPrompt": "プロンプトを表示",
       "source": {
         "claudeCode": "Claude Code からインポート",
         "codex": "Codex からインポート"

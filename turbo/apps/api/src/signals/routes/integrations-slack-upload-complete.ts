@@ -16,6 +16,7 @@ import {
 import { completeCanonicalSlackDelivery$ } from "../services/canonical-slack-asset-delivery.service";
 import { recordSlackUploadedFile$ } from "../services/run-uploaded-files.service";
 import { slackOrgInstallation } from "../services/slack-data.service";
+import { resolveSlackTargetChannel$ } from "../services/slack-message-context.service";
 import type { RouteEntry } from "../route-entry";
 
 const noInstallation = Object.freeze({
@@ -30,10 +31,11 @@ const noInstallation = Object.freeze({
 
 function buildSlackUploadMetadata(
   body: SlackUploadCompleteBody,
+  channel: string,
   file: SlackFileInfo | undefined,
 ): Record<string, unknown> {
   return {
-    channel: body.channel,
+    channel,
     ...(body.threadTs ? { threadTs: body.threadTs } : {}),
     ...(body.title ? { title: body.title } : {}),
     ...(body.initialComment ? { initialComment: body.initialComment } : {}),
@@ -99,6 +101,7 @@ const completeCanonicalUpload$ = command(
         body: {
           fileId: body.fileId,
           permalink: "",
+          channel: delivery.channelId,
           assetId: body.canonicalAssetId,
           deliveryStatus: "failed" as const,
           deliveryError: delivery.message,
@@ -113,6 +116,7 @@ const completeCanonicalUpload$ = command(
       body: {
         fileId: delivery.fileId,
         permalink: delivery.permalink,
+        channel: delivery.channelId,
         assetId: body.canonicalAssetId,
         deliveryStatus: "delivered" as const,
       },
@@ -131,9 +135,24 @@ interface DirectCompletionArgs {
 const completeDirectUpload$ = command(
   async ({ set }, args: DirectCompletionArgs, signal: AbortSignal) => {
     const { body, client } = args;
+    const target = await set(
+      resolveSlackTargetChannel$,
+      {
+        client,
+        userId: args.userId,
+        orgId: args.orgId,
+        channel: body.channel,
+        user: body.user,
+      },
+      signal,
+    );
+    if ("status" in target) {
+      return target;
+    }
+    const channel = target.channelId;
     const completeResult = await client.completeUploadExternal({
       fileId: body.fileId,
-      channel: body.channel,
+      channel,
       threadTs: body.threadTs,
       title: body.title,
       initialComment: body.initialComment,
@@ -178,7 +197,7 @@ const completeDirectUpload$ = command(
         sizeBytes: file?.size ?? null,
         url: permalink || null,
         layout: CURRENT_LINK_LAYOUT,
-        metadata: buildSlackUploadMetadata(body, file),
+        metadata: buildSlackUploadMetadata(body, channel, file),
       },
       signal,
     );
@@ -188,6 +207,7 @@ const completeDirectUpload$ = command(
       body: {
         fileId: body.fileId,
         permalink,
+        channel,
       },
     };
   },

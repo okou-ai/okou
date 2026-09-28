@@ -403,12 +403,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Let an attached image be marked up in the composer lightbox — boxes, arrows, freehand, text, highlight and redaction, each able to carry a note — and send a rendered copy carrying the editable marks.",
     enabled: false,
   },
-  [FeatureSwitchKey.GradientColorThemes]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Apply a palette-derived tint across interface surfaces, borders, states, and workspace ambience.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -513,25 +507,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Replace the composer's flat slash menu with a two-pane panel that previews each template type's covers.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.StartCardModelSubscription]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Pin a start card on the chat landing page that connects a personal Claude or Codex subscription in one click.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.GetStartedQuests]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Enable Get started quests, reward progress, and credit rewards.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.GetStartedQuestIntro]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Explain what a Get started quest is worth in an illustrated dialog before it hands the user off, instead of navigating straight to the destination.",
-    enabled: true,
   },
   [FeatureSwitchKey.ComposerTemplateChipCover]: {
     maintainer: "tongx@okou.ai",

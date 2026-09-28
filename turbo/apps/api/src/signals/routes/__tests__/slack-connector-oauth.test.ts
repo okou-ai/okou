@@ -23,10 +23,7 @@ import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
 import { countSlackOrgConnections$ } from "./helpers/slack-connect";
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { readGetStartedStatus } from "./helpers/get-started";
 
 const context = testContext({ connectorCatalog: true });
 const store = createStore();
@@ -257,7 +254,6 @@ test.each(["primary email", "missing user", "provider failure"])(
   "preserves connected OAuth state with a %s profile lookup",
   async (outcome) => {
     const current = actor();
-    await setGetStartedEnabled(context, current);
     if (outcome === "primary email") {
       context.mocks.clerk.users.getUser.mockResolvedValue({
         id: current.userId,
@@ -302,7 +298,6 @@ test.each(["primary email", "missing user", "provider failure"])(
 
 test("installation grants bot and user scopes and connects the OAuth account", async () => {
   const current = actor();
-  await setGetStartedEnabled(context, current);
   const authorization = await startInstall();
   expect(authorization.origin).toBe("https://slack.com");
   expect(parameter(authorization, "scope").split(",")).toContain(
@@ -716,7 +711,6 @@ test("a Slack connect OAuth callback recovers a failed channel confirmation by D
 
 test("an admin binds an anonymously installed workspace through user OAuth", async () => {
   const current = actor();
-  await setGetStartedEnabled(context, current);
   const anonymous = await accept(
     clients()(slackOauthContract).install({ query: {} }),
     [307],

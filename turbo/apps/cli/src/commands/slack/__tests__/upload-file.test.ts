@@ -91,6 +91,7 @@ describe("okou slack upload-file command", () => {
             {
               fileId: "F0123ABC",
               permalink: "https://workspace.slack.com/files/F0123ABC",
+              channel: "C1234567",
             },
             { status: 200 },
           );
@@ -102,17 +103,69 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
       ]);
 
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain("File uploaded");
-      expect(logCalls).toContain("F0123ABC");
-      expect(logCalls).toContain("https://workspace.slack.com/files/F0123ABC");
+      expect(logCalls).toContain("File uploaded (id: F0123ABC)");
+      expect(logCalls).toContain("chat: C1234567");
+      expect(logCalls).toContain(
+        "permalink: https://workspace.slack.com/files/F0123ABC",
+      );
     });
 
-    it("should pass thread, title, and comment to complete", async () => {
+    it("should DM the current user when --to is me", async () => {
+      let capturedInitBody: Record<string, unknown> | undefined;
+      let capturedCompleteBody: Record<string, unknown> | undefined;
+      server.use(
+        http.post(UPLOAD_INIT_URL, async ({ request }) => {
+          capturedInitBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(
+            { uploadUrl: SLACK_PRESIGNED_URL, fileId: "F0123ABC" },
+            { status: 200 },
+          );
+        }),
+        http.post(SLACK_PRESIGNED_URL, () => {
+          return new HttpResponse(null, { status: 200 });
+        }),
+        http.post(UPLOAD_COMPLETE_URL, async ({ request }) => {
+          capturedCompleteBody = (await request.json()) as Record<
+            string,
+            unknown
+          >;
+          return HttpResponse.json(
+            {
+              fileId: "F0123ABC",
+              permalink: "https://workspace.slack.com/files/F0123ABC",
+              channel: "D0DMCHAN",
+            },
+            { status: 200 },
+          );
+        }),
+      );
+
+      await uploadFileCommand.parseAsync([
+        "node",
+        "cli",
+        "--file",
+        testFilePath,
+        "--to",
+        "me",
+        "--json",
+      ]);
+
+      expect(capturedInitBody?.canonical).toMatchObject({ user: "me" });
+      expect(capturedInitBody?.canonical).not.toHaveProperty("channel");
+      expect(capturedCompleteBody).toMatchObject({ user: "me" });
+      expect(capturedCompleteBody).not.toHaveProperty("channel");
+      const output = JSON.parse(
+        mockConsoleLog.mock.calls.flat().join("\n"),
+      ) as Record<string, unknown>;
+      expect(output.chatId).toBe("D0DMCHAN");
+    });
+
+    it("should pass reply-to, title, and text to complete", async () => {
       let capturedCompleteBody: Record<string, unknown> | undefined;
 
       server.use(
@@ -134,6 +187,7 @@ describe("okou slack upload-file command", () => {
             {
               fileId: "F0456DEF",
               permalink: "https://slack.com/files/F0456DEF",
+              channel: "C1234567",
             },
             { status: 200 },
           );
@@ -145,13 +199,13 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
-        "--thread",
+        "--reply-to",
         "1234567890.000000",
         "--title",
         "Daily Report",
-        "--comment",
+        "--text",
         "Here is the report",
       ]);
 
@@ -183,6 +237,7 @@ describe("okou slack upload-file command", () => {
             {
               fileId: "F0789GHI",
               permalink: "https://slack.com/files/F0789GHI",
+              channel: "C1234567",
             },
             { status: 200 },
           );
@@ -194,7 +249,7 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
       ]);
 
@@ -226,6 +281,7 @@ describe("okou slack upload-file command", () => {
               kind: "canonical",
               assetId,
               operationId,
+              channel: "C1234567",
               uploadUrl: CANONICAL_PRESIGNED_URL,
               uploadHeaders: {
                 "x-amz-meta-artifact-id": assetId,
@@ -269,6 +325,7 @@ describe("okou slack upload-file command", () => {
             {
               fileId: "F-CANONICAL",
               permalink: "https://workspace.slack.com/files/F-CANONICAL",
+              channel: "C1234567",
               assetId,
               deliveryStatus: "delivered",
             },
@@ -282,10 +339,11 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
         "--operation-id",
         operationId,
+        "--json",
       ]);
 
       expect(sequence).toStrictEqual([
@@ -315,10 +373,24 @@ describe("okou slack upload-file command", () => {
         canonicalAssetId: assetId,
         operationId,
       });
-      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain(`File published (asset_id: ${assetId})`);
-      expect(logCalls).toContain(`  url: ${expectedUrl}`);
-      expect(logCalls).toContain("Delivered to Slack");
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(stdout)).toStrictEqual({
+        integration: "slack",
+        chatId: "C1234567",
+        messages: [
+          {
+            id: "F-CANONICAL",
+            url: "https://workspace.slack.com/files/F-CANONICAL",
+          },
+        ],
+        file: {
+          name: "test-report.pdf",
+          contentType: "application/pdf",
+          size: 28,
+          url: expectedUrl,
+        },
+        delivery: { status: "delivered", operationId },
+      });
     });
 
     it("keeps canonical publication successful when Slack delivery fails", async () => {
@@ -331,6 +403,7 @@ describe("okou slack upload-file command", () => {
             kind: "canonical",
             assetId,
             operationId,
+            channel: "C1234567",
             uploadUrl: CANONICAL_PRESIGNED_URL,
             url: "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf",
           });
@@ -375,7 +448,7 @@ describe("okou slack upload-file command", () => {
         "cli",
         "--file",
         testFilePath,
-        "--channel",
+        "--to",
         "C1234567",
         "--operation-id",
         operationId,
@@ -386,12 +459,15 @@ describe("okou slack upload-file command", () => {
         operationId,
         uploadError: expect.stringContaining("Slack upload failed"),
       });
-      expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-        `File published (asset_id: ${assetId})`,
+      const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(logCalls).toContain("File uploaded");
+      expect(logCalls).toContain(
+        "url: https://cdn.vm7.io/artifacts/user/asset/test-report.pdf",
       );
-      expect(mockConsoleWarn.mock.calls.flat().join("\n")).toContain(
-        "Slack delivery failed",
-      );
+      expect(logCalls).toContain("delivery: failed");
+      const warnings = mockConsoleWarn.mock.calls.flat().join("\n");
+      expect(warnings).toContain("Slack delivery failed: Slack upload failed");
+      expect(warnings).toContain(`--operation-id ${operationId}`);
     });
   });
 
@@ -403,7 +479,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           "/tmp/nonexistent-file.pdf",
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -423,7 +499,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           emptyFile,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -451,7 +527,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           testFilePath,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -482,7 +558,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           testFilePath,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -514,7 +590,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           testFilePath,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");
@@ -554,7 +630,7 @@ describe("okou slack upload-file command", () => {
           "cli",
           "--file",
           testFilePath,
-          "--channel",
+          "--to",
           "C1234567",
         ]);
       }).rejects.toThrow("process.exit called");

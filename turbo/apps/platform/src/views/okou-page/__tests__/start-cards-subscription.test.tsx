@@ -59,7 +59,6 @@ function installPersonalAccounts(initial: readonly ModelProviderResponse[]): {
 }
 
 async function setupStartCards(
-  subscriptionPinned: boolean,
   accounts: readonly ModelProviderResponse[] = [],
   search = "",
   supportByok = true,
@@ -74,7 +73,6 @@ async function setupStartCards(
     path: `/agents/${AGENT_ID}/chat${search}`,
     featureSwitches: {
       [FeatureSwitchKey.ComposerTaskChips]: false,
-      [FeatureSwitchKey.StartCardModelSubscription]: subscriptionPinned,
     },
   });
   await findComposerEditor();
@@ -138,7 +136,7 @@ function subscriptionButton(label: string): HTMLElement {
 }
 
 test("The subscription card leads the start cards without growing the row", async () => {
-  await setupStartCards(true);
+  await setupStartCards();
   await screen.findByTestId("start-card-subscription");
   const row = screen.getByTestId("start-cards");
   expect(row.children).toHaveLength(3);
@@ -162,7 +160,7 @@ test("The Codex button opens the Codex sign-in from the start card", async () =>
       interval: 1,
     });
   });
-  await setupStartCards(true);
+  await setupStartCards();
   await screen.findByTestId("start-card-subscription");
 
   click(subscriptionButton("Codex"));
@@ -182,20 +180,13 @@ test("The Claude button opens the Claude sign-in from the start card", async () 
       expiresIn: 30,
     });
   });
-  await setupStartCards(true);
+  await setupStartCards();
   await screen.findByTestId("start-card-subscription");
 
   click(subscriptionButton("Claude"));
 
   const inputs = await screen.findAllByTestId("claude-code-device-auth-code");
   expect(inputs).not.toHaveLength(0);
-});
-
-test("The start cards stay unchanged while the subscription card is off", async () => {
-  await setupStartCards(false, [], "?settings=model");
-  await findSettledCodexRow("Connect");
-  expect(screen.getByTestId("start-cards").children).toHaveLength(3);
-  expect(screen.queryByTestId("start-card-subscription")).toBeNull();
 });
 
 test("The subscription card stays out while the account list is in flight", async () => {
@@ -215,7 +206,6 @@ test("The subscription card stays out while the account list is in flight", asyn
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.ComposerTaskChips]: false,
-      [FeatureSwitchKey.StartCardModelSubscription]: true,
     },
   });
   await findComposerEditor();
@@ -226,7 +216,7 @@ test("The subscription card stays out while the account list is in flight", asyn
 });
 
 test("A member with a personal model account does not see the subscription card", async () => {
-  await setupStartCards(true, [connectedCodex()], "?settings=model");
+  await setupStartCards([connectedCodex()], "?settings=model");
   await findSettledCodexRow("Connected (Pro)");
 
   expect(screen.getByTestId("start-cards").children).toHaveLength(3);
@@ -249,7 +239,7 @@ test("Connecting Codex from the card retires it for a regular start card", async
       interval: 1,
     });
   });
-  const { replaceAccounts } = await setupStartCards(true);
+  const { replaceAccounts } = await setupStartCards();
   context.mocks.api(
     codexDeviceAuthContract.complete,
     async ({ respond, withSignal }) => {
@@ -276,7 +266,7 @@ test("Connecting Codex from the card retires it for a regular start card", async
 });
 
 test("A plan without BYOK sends the card's provider buttons to plan comparison", async () => {
-  await setupStartCards(true, [], "", false);
+  await setupStartCards([], "", false);
   await screen.findByTestId("start-card-subscription");
 
   click(subscriptionButton("Codex"));
@@ -288,7 +278,7 @@ test("A plan without BYOK sends the card's provider buttons to plan comparison",
 });
 
 test("The card body opens Settings on Models", async () => {
-  await setupStartCards(true);
+  await setupStartCards();
   await screen.findByTestId("start-card-subscription");
 
   const openSettings = queryAllByRoleFast("button", subscriptionCard()).find(

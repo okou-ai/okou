@@ -18,7 +18,7 @@ export const telegramCommand = new Command()
     `
 Examples:
   List bots:        okou telegram bot list
-  Send a message:   okou telegram message send --bot-id <bot-id> -c <chat-id> -t "Hello!"
-  Upload a file:    okou telegram upload-file -f /tmp/report.pdf --bot-id <bot-id> -c <chat-id>
+  Send a message:   okou telegram message send --as <bot-id> --to <chat-id> -t "Hello!"
+  Upload a file:    okou telegram upload-file -f /tmp/report.pdf --as <bot-id> --to <chat-id>
   Download a file:  okou telegram download-file <file-id> --bot-id <bot-id> -o /tmp/out.jpg`,
   );

@@ -1,32 +1,32 @@
-import { readFileSync } from "fs";
 import { Command } from "commander";
 import type { SendTeamsMessageBody } from "@okouai/api-contracts/contracts/integrations";
-import chalk from "chalk";
 import { sendTeamsMessage } from "../../../lib/api/domains/integrations-teams";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
+import {
+  TO_OPTION_FLAGS,
+  isJsonObject,
+  missingTargetError,
+  parseRichJson,
+  readMessageText,
+  toOptionDescription,
+} from "../../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../../lib/command/message-output";
+import { resolveTeamsDestination } from "./target";
 
 type TeamsCardInput = NonNullable<SendTeamsMessageBody["card"]>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function parseTeamsCard(value: string): TeamsCardInput {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    throw new Error("Invalid JSON for --card flag", {
-      cause: new Error("Provide a valid Adaptive Card JSON object"),
-    });
-  }
-
+  const parsed = parseRichJson(value, "a valid Adaptive Card JSON object");
   if (
-    !isRecord(parsed) ||
+    !isJsonObject(parsed) ||
     parsed.type !== "AdaptiveCard" ||
     typeof parsed.version !== "string"
   ) {
-    throw new Error("Invalid Adaptive Card for --card flag", {
+    throw new Error("Invalid Adaptive Card for --rich", {
       cause: new Error(
         'Provide a JSON object with "type": "AdaptiveCard" and a version',
       ),
@@ -39,97 +39,62 @@ function parseTeamsCard(value: string): TeamsCardInput {
 export const sendCommand = new Command()
   .name("send")
   .description("Send a message to a Microsoft Teams conversation or DM a user")
-  .option("-c, --conversation-id <id>", "Teams conversation ID")
-  .option("-u, --user <id>", 'Teams user ID for DM (use "me" for yourself)')
-  .option("-t, --text <message>", "Message text")
-  .option("--activity-id <id>", "Activity ID to reply to")
-  .option("--thread <id>", "Alias for --activity-id")
-  .option("--card <json>", "Adaptive Card JSON string")
+  .option(TO_OPTION_FLAGS, toOptionDescription("19:… conversation, 29:… user"))
+  .option("-t, --text <message>", "Message text (or pipe it on stdin)")
+  .option("--reply-to <activity-id>", "Activity ID to reply to in thread")
+  .option("--rich <json>", "Adaptive Card JSON string")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
 Examples:
-  Simple message:        okou teams message send -c 19:thread@thread.tacv2 -t "Hello!"
-  DM a user:             okou teams message send -u 29:user-id -t "Hello!"
-  DM yourself:           okou teams message send -u me -t "Hello!"
-  Thread reply:          okou teams message send -c 19:thread@thread.tacv2 --thread root-activity -t "reply"
-  Adaptive Card:         okou teams message send -c 19:thread@thread.tacv2 --card '{"type":"AdaptiveCard","version":"1.4","body":[{"type":"TextBlock","text":"Hello","wrap":true}]}'
+  Simple message:        okou teams message send --to 19:thread@thread.tacv2 -t "Hello!"
+  DM a user:             okou teams message send --to 29:user-id -t "Hello!"
+  DM yourself:           okou teams message send --to me -t "Hello!"
+  Thread reply:          okou teams message send --to 19:thread@thread.tacv2 --reply-to root-activity -t "reply"
+  Adaptive Card:         okou teams message send --to 19:thread@thread.tacv2 --rich '{"type":"AdaptiveCard","version":"1.4","body":[{"type":"TextBlock","text":"Hello","wrap":true}]}'
 
 Notes:
-  - Either --conversation-id or --user is required; they are mutually exclusive
-  - Either --text or --card is required; text can be provided with --text or piped on stdin
+  - --to is required; 29:… IDs open a DM, other IDs are conversations
+  - Either --text or --rich is required; text can be provided with --text or piped on stdin
   - Use the Conversation ID and Activity ID from the current Teams run prompt`,
   )
   .action(
     withErrorHandler(
       async (options: {
-        conversationId?: string;
-        user?: string;
+        to?: string;
         text?: string;
-        activityId?: string;
-        thread?: string;
-        card?: string;
+        replyTo?: string;
+        rich?: string;
+        json?: boolean;
       }) => {
-        let text = options.text;
-        const { conversationId, user, card: cardJson } = options;
-
-        if (!conversationId && !user) {
-          throw new Error(
-            "Either --conversation-id or --user must be provided",
-            {
-              cause: new Error(
-                'Usage: okou teams message send -c CONVERSATION_ID -t "your message"\n       okou teams message send -u USER_ID -t "your message"',
-              ),
-            },
+        if (!options.to) {
+          throw missingTargetError(
+            "Teams",
+            "me, a conversation ID (19:…), or a user ID (29:…)",
           );
         }
-        if (conversationId && user) {
-          throw new Error(
-            "--conversation-id and --user are mutually exclusive",
-            {
-              cause: new Error(
-                "Provide either --conversation-id to send to a conversation or --user to DM a user, not both",
-              ),
-            },
-          );
-        }
+        const destination = resolveTeamsDestination(
+          options.to,
+          options.replyTo,
+        );
 
-        const activityId = options.activityId ?? options.thread;
-        if (user && activityId) {
-          throw new Error(
-            "--activity-id and --thread can only be used with --conversation-id",
-            {
-              cause: new Error(
-                "Thread replies require an existing Teams conversation",
-              ),
-            },
-          );
-        }
-
-        if (!text && !process.stdin.isTTY) {
-          try {
-            text = readFileSync("/dev/stdin", "utf8").trim();
-          } catch {
-            // stdin not readable; fall through to the missing-text validation.
-          }
-        }
-
-        const card = cardJson ? parseTeamsCard(cardJson) : undefined;
+        const text = readMessageText(options.text);
+        const card = options.rich ? parseTeamsCard(options.rich) : undefined;
 
         if (!text && !card) {
           throw new Error(
-            "Either --text, --card, or piped stdin must be provided",
+            "Either --text, --rich, or piped stdin must be provided",
             {
               cause: new Error(
-                'Usage: okou teams message send -c CONVERSATION_ID -t "your message"',
+                'Usage: okou teams message send --to CONVERSATION_ID -t "your message"',
               ),
             },
           );
         }
 
         const body: SendTeamsMessageBody = {
-          ...(conversationId ? { conversationId } : { user }),
-          ...(activityId ? { activityId } : {}),
+          ...destination,
           ...(text ? { text } : {}),
           ...(card ? { card } : {}),
         };
@@ -137,10 +102,16 @@ Notes:
           ...body,
         });
 
-        const activityInfo = result.activityId
-          ? ` (activity_id: ${result.activityId})`
-          : "";
-        console.log(chalk.green(`✓ Message sent${activityInfo}`));
+        printMessageOutput(
+          {
+            integration: "teams",
+            chatId: result.conversationId,
+            messages: result.activityId
+              ? [{ id: result.activityId, url: null }]
+              : [],
+          },
+          options,
+        );
       },
     ),
   );

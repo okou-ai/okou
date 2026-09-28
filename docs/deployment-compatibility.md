@@ -1885,12 +1885,13 @@ iMessage handles normalized to an empty string and every proactive send from
 an email-linked member failed with 404.
 
 CLIs released before this change still send `toNumber`; the API accepts and
-ignores it. The new CLI keeps `--to` as a hidden, ignored option and no longer
-sends `toNumber`. A new CLI talking to an older API (rollout overlap or API
-rollback) is rejected with 400 because the older contract requires
-`toNumber`; the send can be retried after the new API is live. Remove the
-contract field and the hidden `--to` option once CLI versions from before this
-change are no longer in use.
+ignores it. The new CLI no longer sends `toNumber`. A new CLI talking to an
+older API (rollout overlap or API rollback) is rejected with 400 because the
+older contract requires `toNumber`; the send can be retried after the new API
+is live. Remove the contract field once CLI versions from before this change
+are no longer in use. Since the unified messaging flags (#37212), the phone
+commands' `--to` is a visible option that accepts only `me` (the default); a
+phone number there is rejected rather than ignored.
 
 ## Platform and run pipeline public brand retirement (2026-09-25)
 
@@ -2257,7 +2258,7 @@ receipts retain no raw event, account identity, channel history or credential.
 Older strict public ChatEvent readers in the API and App do not recognize the
 new source literal. The CLI raw-history sync already preserves opaque
 `userMessage` payloads and string context types without projecting them.
-`_discordIntegration` and the Gateway remain disabled by default; no production
+`discordIntegration` and the Gateway remain disabled by default; no production
 Discord records or activation are authorized by this implementation. Fixture
 validation uses matching current readers. Enabling the integration later requires
 compatible public ChatEvent readers and a reviewed activation/rollback plan; a
@@ -2348,7 +2349,7 @@ ordinary title, draft and other non-key updates remain legal. Race tests now
 exercise owner changes before the initial pin and observed blocking after it.
 New cleanup/export readers require the migration before API promotion, following
 the existing production release order. There are no historical Discord rows to
-backfill. `_discordIntegration` remains disabled for every organization by
+backfill. `discordIntegration` remains disabled for every organization by
 default, and no Gateway or OAuth onboarding is activated by this change.
 
 Old account-erasure workers do not ignore the new relations: their catalogue
@@ -6425,7 +6426,7 @@ carries an empty classification instead of `unproven_containment`. The
 ## Discord native file delivery (#36646)
 
 Discord file commands use additive upload-init, materialize, complete, and
-identity-based download endpoints behind the default-off `_discordIntegration`
+identity-based download endpoints behind the default-off `discordIntegration`
 switch. Uploads retain one canonical asset and operation ID across provider
 retries. Native member uploads have no Run; Run-scoped uploads retain their actual
 Run source. The API validates the stored bytes before publication, then records

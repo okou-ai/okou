@@ -130,6 +130,8 @@ export type EnrichedChatEvent = ChatEvent & {
   isQueued: boolean;
   /** The user's submission time, preserved across delivery replacement events. */
   inputCreatedAt?: string;
+  /** The first input of a delivery replacement chain, for a stable identity. */
+  inputOriginId?: string;
   userMessageRenderDocument: UserMessageRenderDocument | undefined;
 };
 

@@ -6,6 +6,16 @@ import {
   initTelegramFileUpload,
 } from "../../lib/api/domains/integrations-telegram";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import {
+  TO_OPTION_FLAGS,
+  toOptionDescription,
+} from "../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../lib/command/message-output";
+import { parsePositiveInteger, resolveTelegramChatId } from "./message/target";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".png": "image/png",
@@ -29,35 +39,29 @@ function inferContentType(localPath: string): string {
   return MIME_BY_EXTENSION[ext] ?? "application/octet-stream";
 }
 
-function parseMessageThreadId(value: string | undefined): number | undefined {
-  if (!value) return undefined;
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error("message-thread-id must be a positive integer");
-  }
-  return parsed;
-}
-
 export const uploadFileCommand = new Command()
   .name("upload-file")
   .description("Upload a local file to a Telegram chat as the bot")
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  .requiredOption("--bot-id <bot-id>", "Telegram bot id to send through")
-  .requiredOption("-c, --chat-id <chat-id>", "Telegram chat id or @channel")
-  .option("--caption <text>", "Caption to accompany the file")
-  .option("--message-thread-id <id>", "Forum topic message thread id")
+  .requiredOption("--as <bot-id>", "Telegram bot ID to send as")
+  .requiredOption(TO_OPTION_FLAGS, toOptionDescription("chat ID or @channel"))
+  .option("-t, --text <text>", "Caption to accompany the file")
+  .option("--topic <id>", "Forum topic (message thread) ID")
   .option("--content-type <mime>", "Override inferred content type")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
 Examples:
-  Upload a file:          okou telegram upload-file -f /tmp/report.pdf --bot-id 123456789 -c -1001234567890
-  Upload to a topic:      okou telegram upload-file -f /tmp/log.txt --bot-id 123456789 -c -1001234567890 --message-thread-id 42
-  With a caption:         okou telegram upload-file -f /tmp/data.csv --bot-id 123456789 -c @channel --caption "Daily report"
+  Upload a file:          okou telegram upload-file -f /tmp/report.pdf --as 123456789 --to -1001234567890
+  Upload to a topic:      okou telegram upload-file -f /tmp/log.txt --as 123456789 --to -1001234567890 --topic 42
+  DM yourself:            okou telegram upload-file -f /tmp/report.pdf --as 123456789 --to me
+  With a caption:         okou telegram upload-file -f /tmp/data.csv --as 123456789 --to @channel -t "Daily report"
 
 Output:
-  Prints a JSON object to stdout on success:
-    {"messageId":123,"chatId":"-1001234567890","fileId":"...","filename":"report.pdf","mimetype":"application/pdf","size":12345,"url":"https://..."}
+  Prints "✓ File uploaded" with the message ID, chat ID, and file URL.
+  With --json, prints one JSON object:
+    {"integration":"telegram","chatId":"-1001234567890","messages":[{"id":"123","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}
 
 Notes:
   - Uses the Telegram bot token on the server side
@@ -68,12 +72,17 @@ Notes:
     withErrorHandler(
       async (options: {
         file: string;
-        botId: string;
-        chatId: string;
-        caption?: string;
-        messageThreadId?: string;
+        as: string;
+        to: string;
+        text?: string;
+        topic?: string;
         contentType?: string;
+        json?: boolean;
       }) => {
+        const chatId = resolveTelegramChatId(options.to);
+        const messageThreadId = options.topic
+          ? parsePositiveInteger(options.topic, "--topic")
+          : undefined;
         let fileSize: number;
         try {
           const stat = statSync(options.file);
@@ -94,7 +103,6 @@ Notes:
         const filename = basename(options.file);
         const contentType =
           options.contentType ?? inferContentType(options.file);
-        const messageThreadId = parseMessageThreadId(options.messageThreadId);
 
         const prepared = await initTelegramFileUpload({
           filename,
@@ -120,14 +128,27 @@ Notes:
 
         const result = await completeTelegramFileUpload({
           uploadId: prepared.uploadId,
-          botId: options.botId,
-          chatId: options.chatId,
+          botId: options.as,
+          chatId,
           contentType: prepared.contentType,
-          caption: options.caption,
+          caption: options.text,
           messageThreadId,
         });
 
-        console.log(JSON.stringify(result));
+        printMessageOutput(
+          {
+            integration: "telegram",
+            chatId: result.chatId,
+            messages: [{ id: String(result.messageId), url: null }],
+            file: {
+              name: result.filename,
+              contentType: result.mimetype,
+              size: result.size,
+              url: result.url,
+            },
+          },
+          options,
+        );
       },
     ),
   );

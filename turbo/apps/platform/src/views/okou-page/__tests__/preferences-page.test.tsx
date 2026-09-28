@@ -146,7 +146,6 @@ test("Cookie theme and account-backed color theme are restored and saved", async
     context,
     path: "/settings",
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
   });
 
   await expect(
@@ -200,7 +199,6 @@ test("A workspace without a saved color theme starts on the default palette", as
     context,
     path: "/settings",
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
   });
 
   const colorTheme = await screen.findByRole("group", { name: "Color theme" });
@@ -222,26 +220,6 @@ test("A workspace without a saved color theme starts on the default palette", as
       return update.colorTheme !== undefined;
     }),
   ).toStrictEqual([{ colorTheme: "golden-hour" }]);
-});
-
-test("Gradient color themes stay hidden when the capability is disabled", async () => {
-  mockPreferences({ colorTheme: "blue-horizon" });
-
-  await setupPage({
-    context,
-    path: "/settings",
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: false },
-  });
-
-  await expect(
-    screen.findByText("Your preferred color scheme"),
-  ).resolves.toBeVisible();
-  expect(screen.queryByRole("group", { name: "Color theme" })).toBeNull();
-  expect(document.documentElement).not.toHaveAttribute(
-    "data-gradient-color-themes",
-  );
-  expect(document.documentElement).not.toHaveAttribute("data-color-theme");
 });
 
 test("Chat settings fall back to Preference while the capability is disabled", async () => {

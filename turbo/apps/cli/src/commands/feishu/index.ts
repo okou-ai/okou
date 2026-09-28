@@ -21,10 +21,10 @@ export function createFeishuCommand(platform: FeishuPlatform) {
       "after",
       `
 Examples:
-  Send to a chat:       okou ${platform} message send -c <chat-id> -t "Hello!"
-  Send a DM:            okou ${platform} message send -u <open-id> -t "Hello!"
-  Reply in a thread:    okou ${platform} message send -r <message-id> --thread -t "Reply"
-  Upload a file:        okou ${platform} upload-file -f /tmp/report.pdf -c <chat-id>
+  Send to a chat:       okou ${platform} message send --to <chat-id> -t "Hello!"
+  Send a DM:            okou ${platform} message send --to <open-id> -t "Hello!"
+  Reply in a thread:    okou ${platform} message send --reply-to <message-id> --reply-mode thread -t "Reply"
+  Upload a file:        okou ${platform} upload-file -f /tmp/report.pdf --to <chat-id>
   Download a file:      okou ${platform} download-file <message-id> <file-key> --type file`,
     );
 }

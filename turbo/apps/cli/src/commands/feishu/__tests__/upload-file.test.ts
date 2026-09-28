@@ -110,11 +110,13 @@ describe.each(["feishu", "lark"] as const)(
         "okou",
         "--file",
         filePath,
-        "--installation",
+        "--as",
         "00000000-0000-4000-8000-000000000001",
-        "--reply",
+        "--reply-to",
         "om_parent",
-        "--thread",
+        "--reply-mode",
+        "thread",
+        "--json",
       ]);
 
       expect(completeBody).toStrictEqual({
@@ -125,32 +127,25 @@ describe.each(["feishu", "lark"] as const)(
         contentType: "application/pdf",
       });
       const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(JSON.parse(output)).toMatchObject({
-        messageId: "om_uploaded",
-        fileKey: "file_uploaded",
-        filename: "report.pdf",
-        mimetype: "application/pdf",
-        url: expectedUrl,
+      expect(JSON.parse(output)).toStrictEqual({
+        integration: platform,
+        chatId: "oc_chat",
+        messages: [{ id: "om_uploaded", url: null }],
+        file: {
+          name: "report.pdf",
+          contentType: "application/pdf",
+          size: Buffer.byteLength(FILE_CONTENT),
+          url: expectedUrl,
+        },
       });
     });
 
-    it("requires exactly one Feishu target", async () => {
+    it("requires a Feishu destination", async () => {
       await expect(
-        uploadFileCommand.parseAsync([
-          "node",
-          "okou",
-          "--file",
-          filePath,
-          "--chat",
-          "oc_chat",
-          "--user",
-          "ou_user",
-        ]),
+        uploadFileCommand.parseAsync(["node", "okou", "--file", filePath]),
       ).rejects.toThrow("process.exit called");
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "Exactly one of --chat, --user, or --reply must be provided",
-        ),
+        expect.stringContaining("Missing --to"),
       );
     });
 
@@ -165,7 +160,7 @@ describe.each(["feishu", "lark"] as const)(
           "okou",
           "--file",
           largeFilePath,
-          "--chat",
+          "--to",
           "oc_chat",
         ]),
       ).rejects.toThrow("process.exit called");

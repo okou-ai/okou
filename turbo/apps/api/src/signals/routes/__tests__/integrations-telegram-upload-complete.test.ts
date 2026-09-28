@@ -25,6 +25,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import {
   deleteTelegramFixture$,
   seedTelegramInstallation$,
+  seedTelegramUserLink$,
   type TelegramFixture,
 } from "./helpers/telegram";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
@@ -283,6 +284,106 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
       });
     },
   );
+
+  it("delivers to the caller's private chat when chatId is 'me'", async () => {
+    const fixture = await seedSendableContext();
+    fixtures.push(fixture);
+    await store.set(
+      seedTelegramUserLink$,
+      {
+        installationId: fixture.telegramBotId,
+        userId: fixture.userId,
+        telegramUserId: "777003",
+      },
+      context.signal,
+    );
+
+    const uploadId = randomUUID();
+    mocks.s3.listObjects([
+      {
+        bucket: "test-user-artifacts",
+        key: `artifacts/${fixture.userId}/${uploadId}/report.pdf`,
+        size: 1234,
+      },
+    ]);
+
+    let telegramBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(
+        "https://api.telegram.org/bottest-bot-token/sendDocument",
+        async ({ request }) => {
+          telegramBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({
+            ok: true,
+            result: { message_id: 322, chat: { id: 777_003 } },
+          });
+        },
+      ),
+    );
+
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramUploadCompleteRoutes,
+    })(integrationsTelegramUploadCompleteContract);
+    const response = await accept(
+      client.complete({
+        body: {
+          uploadId,
+          botId: fixture.telegramBotId,
+          chatId: "me",
+          contentType: "application/pdf",
+        },
+        headers: {
+          authorization: `Bearer ${okouToken({
+            userId: fixture.userId,
+            orgId: fixture.orgId,
+            runId: fixture.runId,
+          })}`,
+        },
+      }),
+      [200],
+    );
+
+    expect(telegramBody).toMatchObject({ chat_id: "777003" });
+    expect(response.body).toMatchObject({
+      messageId: 322,
+      chatId: "777003",
+    });
+  });
+
+  it("returns 404 when chatId 'me' has no Telegram link for the bot", async () => {
+    const fixture = await seedSendableContext();
+    fixtures.push(fixture);
+
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramUploadCompleteRoutes,
+    })(integrationsTelegramUploadCompleteContract);
+    const response = await accept(
+      client.complete({
+        body: {
+          uploadId: randomUUID(),
+          botId: fixture.telegramBotId,
+          chatId: "me",
+        },
+        headers: {
+          authorization: `Bearer ${okouToken({
+            userId: fixture.userId,
+            orgId: fixture.orgId,
+            runId: fixture.runId,
+          })}`,
+        },
+      }),
+      [404],
+    );
+    expect(response.body).toStrictEqual({
+      error: {
+        message:
+          "No Telegram account linked to the current user for this bot. Link Telegram first.",
+        code: "NOT_FOUND",
+      },
+    });
+  });
 
   it("returns 404 when the bot id is not owned by the org", async () => {
     const orgId = `org_${randomUUID().slice(0, 8)}`;

@@ -2,7 +2,6 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Coins, PlusCircle } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
   DropdownMenu,
@@ -22,7 +21,6 @@ import {
   billingStatusAsync$,
   usagePackCreditsAsync$,
 } from "../../signals/okou-page/billing.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { getStartedSummary$ } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
@@ -264,17 +262,14 @@ function AdminGrowthEntry() {
 /**
  * Whether Get started will draw a control of its own.
  *
- * The switch alone does not settle it: the server can still withhold the
- * quests, and the entry renders nothing when it has none. Only a pending
- * answer counts as showing, so the corner never offers the split control and
- * then swaps it out once the quests arrive. A failed status request never
- * becomes data, so it hands the corner back rather than emptying it.
+ * The server can still withhold the quests, and the entry renders nothing
+ * when it has none. Only a pending answer counts as showing, so the corner
+ * never offers the split control and then swaps it out once the quests
+ * arrive. A failed status request never becomes data, so it hands the corner
+ * back rather than emptying it.
  */
-function useGetStartedShown(questsEnabled: boolean): boolean {
+function useGetStartedShown(): boolean {
   const summaryLoadable = useLastLoadable(getStartedSummary$);
-  if (!questsEnabled) {
-    return false;
-  }
   if (summaryLoadable.state === "loading") {
     return true;
   }
@@ -284,9 +279,7 @@ function useGetStartedShown(questsEnabled: boolean): boolean {
 export function GrowthEntryHeader() {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin = isAdminLoadable.state === "hasData" && isAdminLoadable.data;
-  const features = useGet(featureSwitch$);
-  const questsEnabled = features[FeatureSwitchKey.GetStartedQuests];
-  const getStartedShown = useGetStartedShown(questsEnabled);
+  const getStartedShown = useGetStartedShown();
   // The corner names one thing. Get started already carries inviting and
   // Slack as its own rows, so wherever it appears it replaces the split
   // control — for every role, since a member can connect, build, share and
@@ -299,12 +292,10 @@ export function GrowthEntryHeader() {
           slot exists from the first render so async role and entry resolution
           cannot move the home content. The corner controls stay absolute. */}
       <div aria-hidden className="hidden h-14 shrink-0 md:block" />
-      {questsEnabled || isAdmin ? (
-        <CornerHeader>
-          {questsEnabled ? <GetStartedEntry /> : null}
-          {showGrowthEntry ? <AdminGrowthEntry /> : null}
-        </CornerHeader>
-      ) : null}
+      <CornerHeader>
+        <GetStartedEntry />
+        {showGrowthEntry ? <AdminGrowthEntry /> : null}
+      </CornerHeader>
     </>
   );
 }

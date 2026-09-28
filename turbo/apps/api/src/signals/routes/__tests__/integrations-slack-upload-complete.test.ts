@@ -42,6 +42,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import {
   deleteSlackIntegrationFixture$,
+  seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
   type SlackIntegrationFixture,
 } from "./helpers/integrations-slack";
@@ -174,6 +175,7 @@ function sandboxToken(args: {
 interface RunScopedContext {
   readonly orgId: string;
   readonly userId: string;
+  readonly slackWorkspaceId: string;
   readonly runId: string;
   readonly threadId: string;
   readonly runnerGroup: string;
@@ -268,6 +270,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   async function seedWithInstallation(): Promise<{
     orgId: string;
     userId: string;
+    slackWorkspaceId: string;
   }> {
     const base = await seedBaseContext();
     const fixture = await store.set(
@@ -276,7 +279,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       context.signal,
     );
     slackFixtures.push(fixture);
-    return base;
+    return { ...base, slackWorkspaceId: fixture.slackWorkspaceId };
   }
 
   async function seedRunScoped(): Promise<RunScopedContext> {
@@ -309,6 +312,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     return {
       orgId: base.orgId,
       userId: base.userId,
+      slackWorkspaceId: base.slackWorkspaceId,
       runId: sent.runId,
       threadId: sent.threadId,
       runnerGroup,
@@ -478,6 +482,155 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       size: 42,
       url: `https://slack.example/files/${fileId}`,
     });
+  });
+
+  it("opens a DM for a direct completion addressed to the current user", async () => {
+    const { orgId, userId, slackWorkspaceId } = await seedWithInstallation();
+    const { slackUserId } = await store.set(
+      seedSlackOrgConnection$,
+      { slackWorkspaceId, userId },
+      context.signal,
+    );
+    context.mocks.slack.conversations.open.mockResolvedValue({
+      ok: true,
+      channel: { id: "D-SELF" },
+    });
+    const fileId = `F-${randomUUID().slice(0, 8)}`;
+    mockSlackFileInfo(fileId);
+    const token = okouToken({ userId, orgId, runId: randomUUID() });
+
+    const client = setupApp({
+      context,
+      routes: integrationsSlackUploadCompleteRoutes,
+    })(integrationsSlackUploadCompleteContract);
+    const response = await accept(
+      client.complete({
+        body: { fileId, user: "me", title: "Self report" },
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      fileId,
+      permalink: `https://slack.example/files/${fileId}`,
+      channel: "D-SELF",
+    });
+    expect(context.mocks.slack.conversations.open).toHaveBeenLastCalledWith({
+      users: slackUserId,
+    });
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).toHaveBeenLastCalledWith({
+      files: [{ id: fileId, title: "Self report" }],
+      channel_id: "D-SELF",
+    });
+  });
+
+  it("persists the current user's DM channel for a canonical upload", async () => {
+    const { orgId, userId, runId, slackWorkspaceId } = await seedRunScoped();
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId, orgId },
+      { [FeatureSwitchKey.PrivateArtifacts]: false },
+    );
+    const { slackUserId } = await store.set(
+      seedSlackOrgConnection$,
+      { slackWorkspaceId, userId },
+      context.signal,
+    );
+    context.mocks.slack.conversations.open.mockClear();
+    context.mocks.slack.conversations.open.mockResolvedValue({
+      ok: true,
+      channel: { id: "D-SELF" },
+    });
+    context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
+      ok: true,
+      upload_url: "https://files.slack.com/upload/v1/self",
+      file_id: "F-SELF",
+    });
+    mockSlackFileInfo("F-SELF");
+    const objectStore = chatCallbacks.acceptChatObjectStorage();
+    const operationId = randomUUID();
+    const token = okouToken({ userId, orgId, runId });
+
+    const initialized = await accept(
+      setupApp({ context, routes: integrationsSlackUploadInitRoutes })(
+        integrationsSlackUploadInitContract,
+      ).init({
+        body: {
+          filename: "report.csv",
+          length: 42,
+          canonical: {
+            operationId,
+            contentType: "text/csv",
+            checksumSha256: "a".repeat(64),
+            user: "me",
+          },
+        },
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+    if (!("kind" in initialized.body)) {
+      throw new Error("Expected canonical Slack upload initialization");
+    }
+    const canonicalAssetId = initialized.body.assetId;
+    expect(initialized.body.channel).toBe("D-SELF");
+    expect(context.mocks.slack.conversations.open).toHaveBeenLastCalledWith({
+      users: slackUserId,
+    });
+
+    objectStore.addObject({
+      bucket: "test-user-artifacts",
+      key: `artifacts/${new URL(initialized.body.url).pathname.replace(/^\/+/u, "")}`,
+      size: 42,
+      body: Buffer.alloc(42, "a"),
+      metadata: {
+        "artifact-id": canonicalAssetId,
+        filename: "report.csv",
+        "public-brand": "okou",
+        "user-id": encodeURIComponent(userId),
+      },
+    });
+    await accept(
+      setupApp({ context, routes: integrationsSlackUploadMaterializeRoutes })(
+        integrationsSlackUploadMaterializeContract,
+      ).materialize({
+        body: { assetId: canonicalAssetId, operationId },
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+
+    const completed = await accept(
+      setupApp({ context, routes: integrationsSlackUploadCompleteRoutes })(
+        integrationsSlackUploadCompleteContract,
+      ).complete({
+        body: {
+          fileId: "F-SELF",
+          user: "me",
+          canonicalAssetId,
+          operationId,
+        },
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [200],
+    );
+
+    expect(completed.body).toMatchObject({
+      fileId: "F-SELF",
+      channel: "D-SELF",
+      assetId: canonicalAssetId,
+      deliveryStatus: "delivered",
+    });
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).toHaveBeenLastCalledWith({
+      files: [{ id: "F-SELF" }],
+      channel_id: "D-SELF",
+    });
+    expect(context.mocks.slack.conversations.open).toHaveBeenCalledTimes(1);
   });
 
   it.each([false, true])(

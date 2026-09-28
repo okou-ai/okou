@@ -16,7 +16,6 @@ import {
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -295,7 +294,6 @@ test("An admin sees every step and what each one pays", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const entry = await waitFor(() => {
@@ -335,7 +333,6 @@ test("A member is only offered the steps they can finish themselves", async () =
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const entry = await waitFor(() => {
@@ -352,25 +349,6 @@ test("A member is only offered the steps they can finish themselves", async () =
   expect(within(panel).getByText("400 earned")).toBeInTheDocument();
 });
 
-test("Building a workflow opens the workflows page", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: false,
-    },
-  });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-workflow"));
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-  });
-});
-
 test("A workflow reward still with the reviewer stops offering the step again", async () => {
   const data = configureQuestPage(context, "admin");
   const workflow = data.quests.find((quest) => {
@@ -385,7 +363,6 @@ test("A workflow reward still with the reviewer stops offering the step again", 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   await openQuestPanel();
@@ -403,7 +380,6 @@ test("The X step opens a blank composer for an original post", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   await openQuestPanel();
@@ -432,7 +408,6 @@ test("Sharing on X restores pending state and an Ably review notification update
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   await openQuestPanel();
@@ -539,7 +514,6 @@ test("Adding iMessage opens the phone connect dialog with its reward", async () 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const entry = await waitFor(() => {
@@ -579,7 +553,6 @@ test("Linking the phone closes the Get started dialog and completes the quest", 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const dialog = await openImessageQuestDialog();
@@ -635,7 +608,6 @@ test("A phone linked before the quest existed reads as done, without credits", a
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const entry = await waitFor(() => {
@@ -656,7 +628,6 @@ test("Slack installed before the quest existed reads as done, without credits", 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const entry = await waitFor(() => {
@@ -688,7 +659,6 @@ test("Slack not yet installed keeps the step and its reward on offer", async () 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const entry = await waitFor(() => {
@@ -715,7 +685,6 @@ test("A failed Slack status read leaves the Slack step as the rewards report it"
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   const entry = await waitFor(() => {
@@ -727,20 +696,6 @@ test("A failed Slack status read leaves the Slack step as the rewards report it"
   expect(
     within(screen.getByTestId("get-started-quest-slack")).getByText("+2,000"),
   ).toBeInTheDocument();
-});
-
-test("The entry stays hidden while the switch is off", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: false },
-  });
-
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByTestId("get-started-entry")).not.toBeInTheDocument();
 });
 
 test("Invitation progress separates successful rewards from pending members and remains actionable below 15", async () => {
@@ -759,7 +714,6 @@ test("Invitation progress separates successful rewards from pending members and 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
   const panel = await openQuestPanel();
   expect(within(panel).getByText("8/15", { exact: false })).toBeInTheDocument();
@@ -787,7 +741,6 @@ test("A rejected X claim can be replaced and survives opening the task panel", a
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
   await openQuestPanel();
   // The reviewer's own reason, not a bare refusal: a reader told only that the
@@ -806,7 +759,6 @@ test("Daily rewards are claimed by selecting check in", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
   const panel = await openQuestPanel();
   await expect(
@@ -841,10 +793,6 @@ test("The connector step says what it costs the user before it hands them off", 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -884,10 +832,6 @@ test("Picking a connector in the dialog starts its authorization", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -934,10 +878,6 @@ test("The Slack step starts the install instead of handing over a list", async (
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -961,10 +901,6 @@ test("The workflow step offers the recommendations rather than one sentence", as
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -995,10 +931,6 @@ test("Picking a workflow hands its sentence to the composer", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -1031,10 +963,6 @@ test("An ordinary day's check-in confirms the reward and streak in a dialog", as
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -1057,7 +985,6 @@ test("A failed check-in does not show a success dialog", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
   await openQuestPanel();
@@ -1078,10 +1005,6 @@ test("Checking in confirms the reward instead of closing silently", async () => 
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();
@@ -1115,10 +1038,6 @@ test("The quest entry leaves the connector catalog unread until the connector st
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   // The intro dialog and its connect flow are mounted beside the entry, but
@@ -1170,10 +1089,6 @@ test("A connector that needs a choice opens its connect dialog from its own cata
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
   });
 
   await openQuestPanel();

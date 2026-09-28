@@ -6127,7 +6127,7 @@ export function registerFeishuIntegrationTests(
           "Chat ID: oc_feishu_group",
         );
         expect(groupClaim.appendSystemPrompt).toContain(
-          `Group ID: oc_feishu_group (same as Chat ID; use it directly as the \`--chat\` value for \`okou ${platform} message send\`)`,
+          `Group ID: oc_feishu_group (same as Chat ID; use it directly as the \`--to\` value for \`okou ${platform} message send\`)`,
         );
         expect(groupClaim.appendSystemPrompt).toContain(
           "# Recent Channel Messages",

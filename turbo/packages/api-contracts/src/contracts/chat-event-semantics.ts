@@ -100,6 +100,8 @@ export interface SemanticChatEventState<TEvent extends ChatEvent = ChatEvent> {
   readonly event: TEvent;
   readonly isQueued: boolean;
   readonly inputCreatedAt?: string;
+  /** The first input a delivery replacement chain started from. */
+  readonly inputOriginId?: string;
 }
 
 export interface SemanticChatEventGroup<
@@ -178,15 +180,21 @@ export function semanticChatEventsFromChatEvents(
     }),
   );
 
-  // Resolve submission times before hiding replaced inputs. Delivery appends a
-  // new event, but does not start another user-facing work interval.
+  // Resolve submission times and origins before hiding replaced inputs.
+  // Delivery appends a new event, but does not start another user-facing work
+  // interval or another user turn.
   const inputCreatedAtById = new Map<string, string>();
+  const inputOriginIdById = new Map<string, string>();
   for (const event of events) {
     if (isChatInputEventType(event.eventType)) {
       const previousCreatedAt = event.revokesEventId
         ? inputCreatedAtById.get(event.revokesEventId)
         : undefined;
+      const previousOriginId = event.revokesEventId
+        ? inputOriginIdById.get(event.revokesEventId)
+        : undefined;
       inputCreatedAtById.set(event.id, previousCreatedAt ?? event.createdAt);
+      inputOriginIdById.set(event.id, previousOriginId ?? event.id);
     }
   }
 
@@ -220,7 +228,12 @@ export function semanticChatEventsFromChatEvents(
       event.runId === undefined &&
       event.optimisticUserMessageAssociation !== "run";
     return [
-      { event, isQueued, inputCreatedAt: inputCreatedAtById.get(event.id) },
+      {
+        event,
+        isQueued,
+        inputCreatedAt: inputCreatedAtById.get(event.id),
+        inputOriginId: inputOriginIdById.get(event.id),
+      },
     ];
   });
 }

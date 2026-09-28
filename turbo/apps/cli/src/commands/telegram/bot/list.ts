@@ -26,7 +26,7 @@ Examples:
   okou telegram bot list
 
 Notes:
-  - Use this to find the --bot-id value before sending Telegram messages.`,
+  - Use this to find the bot ID for --as before sending Telegram messages.`,
   )
   .action(
     withErrorHandler(async () => {

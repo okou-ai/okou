@@ -34,6 +34,27 @@ const DELIVERED = {
   },
 };
 
+function envelope(
+  delivery: Readonly<Record<string, unknown>>,
+  messages: readonly { id: string; url: string }[] = [],
+) {
+  return {
+    integration: "discord",
+    chatId: CHANNEL_ID,
+    messages,
+    file: {
+      name: "report.txt",
+      contentType: "text/plain",
+      size: 13,
+      url: CANONICAL_URL,
+    },
+    delivery: { ...delivery, operationId: OPERATION_ID },
+  };
+}
+const DELIVERED_ENVELOPE = envelope({ status: "delivered" }, [
+  { id: MESSAGE_ID, url: PERMALINK },
+]);
+
 describe("okou discord upload-file", () => {
   const output = vi.spyOn(console, "log").mockImplementation(() => {});
   const warnings = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -67,13 +88,17 @@ describe("okou discord upload-file", () => {
     vi.unstubAllEnvs();
   });
 
+  function printedJson(): unknown {
+    return JSON.parse(String(output.mock.calls.at(-1)?.[0]));
+  }
+
   function upload(extra: readonly string[] = []) {
     return uploadFileCommand.parseAsync([
       "node",
       "okou",
       "--file",
       filePath,
-      "--channel",
+      "--to",
       CHANNEL_ID,
       "--operation-id",
       OPERATION_ID,
@@ -140,13 +165,15 @@ describe("okou discord upload-file", () => {
     await upload([
       "--guild-id",
       GUILD_ID,
-      "--comment",
+      "--text",
       "A weekly update",
       "--content-type",
       "TEXT/PLAIN; charset=utf-8",
+      "--json",
     ]);
 
-    expect(output).toHaveBeenCalledWith(JSON.stringify(DELIVERED));
+    expect(output).toHaveBeenCalledOnce();
+    expect(printedJson()).toStrictEqual(DELIVERED_ENVELOPE);
   });
 
   it("recovers a lost delivery response with the same operation and no second upload", async () => {
@@ -180,16 +207,14 @@ describe("okou discord upload-file", () => {
       }),
     );
 
-    await expect(upload()).rejects.toThrow("process.exit called");
-    expect(output).toHaveBeenCalledWith(
-      JSON.stringify({ ...PUBLISHED, delivery: { status: "pending" } }),
-    );
+    await expect(upload(["--json"])).rejects.toThrow("process.exit called");
+    expect(printedJson()).toStrictEqual(envelope({ status: "pending" }));
     expect(warnings.mock.calls.flat().join("\n")).toContain(
       `check delivery status, reuse the same file and destination with --operation-id ${OPERATION_ID}; delivery will not be resent`,
     );
 
-    await upload();
-    expect(output).toHaveBeenLastCalledWith(JSON.stringify(DELIVERED));
+    await upload(["--json"]);
+    expect(printedJson()).toStrictEqual(DELIVERED_ENVELOPE);
   });
 
   it("retains canonical publication when Discord delivery fails", async () => {
@@ -218,7 +243,11 @@ describe("okou discord upload-file", () => {
 
     await upload();
 
-    expect(output).toHaveBeenCalledWith(JSON.stringify(failed));
+    const printed = output.mock.calls.flat().join("\n");
+    expect(printed).toContain("✓ File uploaded");
+    expect(printed).toContain(`chat: ${CHANNEL_ID}`);
+    expect(printed).toContain(`url: ${CANONICAL_URL}`);
+    expect(printed).toContain("delivery: failed");
     expect(warnings).toHaveBeenLastCalledWith(
       "Discord delivery failed: Discord rate limited delivery",
     );
@@ -238,9 +267,9 @@ describe("okou discord upload-file", () => {
       }),
     );
 
-    await upload();
+    await upload(["--json"]);
 
-    expect(output).toHaveBeenCalledWith(JSON.stringify(pending));
+    expect(printedJson()).toStrictEqual(envelope({ status: "pending" }));
     expect(warnings).toHaveBeenLastCalledWith(
       `Upload operation: ${OPERATION_ID}`,
     );
@@ -279,7 +308,7 @@ describe("okou discord upload-file", () => {
         "okou",
         "-f",
         filePath,
-        "-c",
+        "--to",
         CHANNEL_ID,
       ]),
     ).rejects.toThrow("process.exit called");
