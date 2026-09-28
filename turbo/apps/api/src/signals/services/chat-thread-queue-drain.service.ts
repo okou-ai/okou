@@ -51,7 +51,8 @@ export interface EnqueueChatInput {
  * integrations, and every workflow trigger. One transaction appends the
  * run-less input and upserts the thread's `queued_chat_threads` row, clearing
  * any lease so a picker that read the queue as empty cannot delete the row.
- * Enqueue takes no lock and computes no admission; the pick does.
+ * The entry captures the input's model at enqueue; the pick validates that
+ * decision and performs launch admission. Enqueue adds no explicit row lock.
  */
 export async function enqueueChatInput(
   db: Db,
