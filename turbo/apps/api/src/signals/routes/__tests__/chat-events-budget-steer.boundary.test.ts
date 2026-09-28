@@ -70,7 +70,7 @@ async function startRunAtBudgetBoundary() {
   if (!budget || budget.eventType !== "input.budget") {
     throw new Error("Expected the cron's run-targeted budget warning");
   }
-  expect(budget.runId).toBeNull();
+  expect(budget.runId).toBeUndefined();
   const prompt = chatEventDisplayText(budget);
   expect(prompt).toContain("leaving approximately 5 minutes");
   await expect(

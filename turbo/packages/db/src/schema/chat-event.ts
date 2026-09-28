@@ -1,5 +1,8 @@
 import { sql, type SQL, type SQLWrapper } from "drizzle-orm";
-import type { ChatInputModelSelection } from "@okouai/db/jsonb-contracts/chat-event";
+import type {
+  ChatEventPayload,
+  ChatInputModelSelection,
+} from "@okouai/db/jsonb-contracts/chat-event";
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
@@ -15,7 +18,6 @@ import {
   jsonb,
 } from "drizzle-orm/pg-core";
 import { chatThreads } from "./chat-thread";
-import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 export type {
   ChatEventAttachFileMetadata,
   ChatEventAttachFileMetadataList,

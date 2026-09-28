@@ -163,18 +163,17 @@ async function consumeActiveInputSource(
     return { outcome: "invalid" };
   }
   if (append && source.runId === null) {
+    const steeredInput = {
+      chatThreadId: scope.chatThreadId,
+      runId: scope.runId,
+      userMessage: source.userMessage,
+    };
     const replacement = await replaceLoadedChatEvent(
       db,
       replacementTarget(source),
-      {
-        chatThreadId: scope.chatThreadId,
-        eventType: source.eventType,
-        runId: scope.runId,
-        userMessage: source.userMessage,
-        ...(source.modelSelection === null
-          ? {}
-          : { modelSelection: source.modelSelection }),
-      },
+      source.eventType === "input.budget"
+        ? { ...steeredInput, eventType: "input.budget" }
+        : { ...steeredInput, eventType: "input.prompt" },
     );
     if (replacement) {
       return { outcome: "appended", source };

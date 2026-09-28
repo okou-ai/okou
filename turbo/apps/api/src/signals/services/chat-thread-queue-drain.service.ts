@@ -72,8 +72,9 @@ export async function enqueueChatInput(
 }
 
 /**
- * Tell the thread's running run, if any, that it has a pending prompt to
- * steer, through its runner group. The runner's own poll covers a lost push.
+ * Tell the thread's running run, if any, that it has a pending input to
+ * steer, through its runner group. The runner also reads pending input at
+ * startup and after its Ably subscription reconnects.
  */
 export async function notifyRunningChatRunOfPendingInput(
   db: Db,
