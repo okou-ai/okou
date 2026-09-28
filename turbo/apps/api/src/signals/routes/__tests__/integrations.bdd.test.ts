@@ -20,7 +20,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { installLegacySlackChatCallbackBrandFixture } from "../../../test-fixtures/chat-terminal-retry";
@@ -822,7 +822,7 @@ function readSlackPiSandboxBaseSession(
     return createPiSessionJsonl({
       cwd: CANONICAL_WORKING_DIR,
       sessionId: claim.piSessionId,
-      timestamp: new Date().toISOString(),
+      timestamp: nowDate().toISOString(),
     });
   }
   if (!("historyRef" in resume)) {

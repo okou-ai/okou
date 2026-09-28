@@ -79,6 +79,7 @@ import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
+import { nowDate } from "../../../../lib/time";
 import { createRouteMocks } from "./route-test";
 import {
   readRunLaunchSnapshotFixture,
@@ -1430,7 +1431,7 @@ export function createChatEventsFixture(context: TestContext) {
         createPiSessionJsonl({
           cwd: CANONICAL_WORKING_DIR,
           sessionId: claim.piSessionId,
-          timestamp: new Date().toISOString(),
+          timestamp: nowDate().toISOString(),
         }),
         "utf8",
       );
