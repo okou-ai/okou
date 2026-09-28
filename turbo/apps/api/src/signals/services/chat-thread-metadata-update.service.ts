@@ -6,8 +6,10 @@ import {
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import { supportedRunModelSchema } from "@okouai/api-contracts/contracts/model-providers";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 
@@ -18,6 +20,7 @@ import {
 } from "../../lib/db-structured-result";
 import { now, nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import { settle } from "../utils";
 import {
   ChatThreadEventIdConflictError,
@@ -26,6 +29,8 @@ import {
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
+import { isIntegrationDirectMessageThread } from "./integration-dm-thread.service";
+import { updateUserModelPreferenceInDb } from "./user-data.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
@@ -83,6 +88,7 @@ type ChatThreadMetadataUpdateResult =
       readonly acceptedAt: Date;
       readonly retryUntil: Date;
       readonly replayed: boolean;
+      readonly userDefaultChanged?: boolean;
     }
   | { readonly kind: "not_found" }
   | { readonly kind: "conflict"; readonly message: string }
@@ -424,6 +430,107 @@ async function appendModelEvents(
   }
 }
 
+async function modelStateWithUserDefaultTier(
+  tx: Tx,
+  principal: Principal,
+  current: CurrentModelState,
+): Promise<CurrentModelState> {
+  const [preference] = await tx
+    .select({ serviceTier: orgMembersMetadata.serviceTier })
+    .from(orgMembersMetadata)
+    .where(
+      and(
+        eq(orgMembersMetadata.userId, principal.userId),
+        eq(orgMembersMetadata.orgId, principal.orgId),
+      ),
+    )
+    .limit(1);
+  return {
+    ...current,
+    codexServiceTier: preference?.serviceTier === "priority" ? "fast" : null,
+  };
+}
+
+async function persistUserDefaultModel(
+  tx: Tx,
+  args: ChatThreadMetadataUpdateArgs,
+  columns: ModelColumns | undefined,
+  followsUserDefault: boolean,
+  signal: AbortSignal,
+): Promise<ModelColumns | undefined> {
+  if (!followsUserDefault || !columns) {
+    return columns;
+  }
+  await updateUserModelPreferenceInDb(
+    tx,
+    {
+      ...args.principal,
+      preference: {
+        selectedModel: supportedRunModelSchema
+          .nullable()
+          .parse(columns.selectedModel),
+        serviceTier: chatThreadServiceTierFromCodex(columns.codexServiceTier),
+        ...(columns.modelSettingsPatch
+          ? { modelSettingsPatch: columns.modelSettingsPatch }
+          : {}),
+      },
+    },
+    signal,
+  );
+  return { ...columns, selectedModel: null, codexServiceTier: null };
+}
+
+async function appendFollowUserDefaultEvent(
+  tx: Tx,
+  args: ChatThreadMetadataUpdateArgs,
+  agentId: string,
+  followsUserDefault: boolean,
+  createdAt: Date,
+): Promise<void> {
+  if (!followsUserDefault) {
+    return;
+  }
+  const requestEventId = args.mutationId ?? args.eventIds?.model;
+  // Keep the original selection event as the mutation's replay evidence, then
+  // clear the thread projection: the chosen model belongs to the member default.
+  if (args.patch.model !== null) {
+    await appendChatThreadEvent(tx, {
+      kind: "model_selection_updated",
+      ...args.principal,
+      chatThreadId: args.threadId,
+      agentId,
+      ...(requestEventId
+        ? {
+            eventId: uuidv5(
+              `${requestEventId}:follow-default-model`,
+              MODEL_EVENT_NAMESPACE,
+            ),
+          }
+        : {}),
+      selectedModel: null,
+      createdAt,
+    });
+  }
+  if (!args.emitServiceTierEvent) {
+    await appendChatThreadEvent(tx, {
+      kind: "service_tier_updated",
+      ...args.principal,
+      chatThreadId: args.threadId,
+      agentId,
+      ...(requestEventId
+        ? {
+            eventId: uuidv5(
+              `${requestEventId}:follow-default-tier`,
+              MODEL_EVENT_NAMESPACE,
+            ),
+          }
+        : {}),
+      serviceTier: null,
+      createdAt,
+    });
+  }
+}
+
 async function writeMetadata(
   tx: Tx,
   args: ChatThreadMetadataUpdateArgs,
@@ -456,11 +563,23 @@ async function writeMetadata(
     return await replayMutation(tx, args, existing);
   }
 
-  const model = await resolveModelColumns(tx, args, current, signal);
+  const followsUserDefault =
+    hasModel(args.patch) &&
+    (await isIntegrationDirectMessageThread(tx, args.threadId));
+  const modelState = followsUserDefault
+    ? await modelStateWithUserDefaultTier(tx, args.principal, current)
+    : current;
+  const model = await resolveModelColumns(tx, args, modelState, signal);
   if (model.kind === "response") {
     return model;
   }
-  const modelColumns = model.columns;
+  const modelColumns = await persistUserDefaultModel(
+    tx,
+    args,
+    model.columns,
+    followsUserDefault,
+    signal,
+  );
 
   const updatedAt = nowDate();
   await tx
@@ -476,6 +595,13 @@ async function writeMetadata(
 
   await appendTitleEvent(tx, args, agentId, updatedAt);
   await appendModelEvents(tx, args, agentId, modelColumns, updatedAt);
+  await appendFollowUserDefaultEvent(
+    tx,
+    args,
+    agentId,
+    followsUserDefault,
+    updatedAt,
+  );
   const state = await currentState(tx, args);
   if (!state) {
     throw new Error("Updated chat thread state is missing");
@@ -486,6 +612,7 @@ async function writeMetadata(
     acceptedAt: updatedAt,
     retryUntil: new Date(updatedAt.getTime() + UPDATE_RETRY_MS),
     replayed: false,
+    userDefaultChanged: followsUserDefault,
   };
 }
 
@@ -513,6 +640,12 @@ export async function updateChatThreadMetadata(
       };
     }
     throw outcome.error;
+  }
+  if (outcome.value.kind === "ok" && outcome.value.userDefaultChanged) {
+    await publishUserPreferenceChangedForUserSafely(args.principal.userId, [
+      "defaultModel",
+    ]);
+    signal.throwIfAborted();
   }
   return outcome.value;
 }

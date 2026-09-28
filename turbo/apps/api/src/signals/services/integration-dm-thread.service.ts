@@ -11,7 +11,7 @@ import type { Db } from "../external/db";
 
 /** Main integration DMs keep following the member's current model preference. */
 export async function isIntegrationDirectMessageThread(
-  db: Db,
+  db: Pick<Db, "select">,
   threadId: string,
 ): Promise<boolean> {
   const routes = await db

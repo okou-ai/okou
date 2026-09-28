@@ -111,6 +111,7 @@ interface PersistedChatThreadModelEvaluation {
   readonly modelSettings: ModelSettings;
   readonly modelSettingsPatch: ModelSettingsPatch | undefined;
   readonly pin: ModelFirstPin;
+  readonly persistedSelectedModel: string | null;
   readonly providerAdmission: ModelFirstProviderAdmission;
   readonly runCodexServiceTier: "fast" | undefined;
   readonly persistedCodexServiceTier: CodexServiceTier | null;
@@ -329,15 +330,15 @@ async function evaluatePersistedChatThreadModel(
   thread: PersistedChatThreadModelSnapshot,
 ): Promise<PersistedChatThreadModelEvaluationResult> {
   const modelSettings = modelSettingsSchema.parse(thread.modelSettings);
-  const followsDefaultModel =
-    thread.selectedModel === null &&
-    (await isIntegrationDirectMessageThread(db, params.threadId));
+  const followsDefaultModel = await isIntegrationDirectMessageThread(
+    db,
+    params.threadId,
+  );
   let defaultCodexServiceTier: CodexServiceTier | null = null;
   let pin: ModelFirstPin;
-  let selectedModelChanged: boolean;
   const externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource =
     { kind: "load-current" };
-  if (thread.selectedModel === null) {
+  if (followsDefaultModel || thread.selectedModel === null) {
     const defaultPin = await resolveDefaultModelFirstPin(
       db,
       params.orgId,
@@ -357,7 +358,6 @@ async function evaluatePersistedChatThreadModel(
       modelProviderCredentialScope: defaultPin.modelProviderCredentialScope,
       selectedModel: defaultPin.selectedModel,
     };
-    selectedModelChanged = !followsDefaultModel;
     defaultCodexServiceTier =
       defaultPin.serviceTier === "priority" ? "fast" : null;
   } else {
@@ -376,8 +376,9 @@ async function evaluatePersistedChatThreadModel(
       return { kind: "error", error: selected };
     }
     pin = selected;
-    selectedModelChanged = thread.selectedModel !== pin.selectedModel;
   }
+  const persistedSelectedModel = followsDefaultModel ? null : pin.selectedModel;
+  const selectedModelChanged = persistedSelectedModel !== thread.selectedModel;
   const effort = resolveChatReasoningEffort({
     selectedModel: pin.selectedModel,
     modelSettings,
@@ -400,7 +401,7 @@ async function evaluatePersistedChatThreadModel(
   });
   const tier = resolveCodexTier({
     persistedTier:
-      thread.selectedModel === null
+      followsDefaultModel || thread.selectedModel === null
         ? defaultCodexServiceTier
         : thread.codexServiceTier,
     requestedTier: params.requestedCodexServiceTier,
@@ -423,6 +424,7 @@ async function evaluatePersistedChatThreadModel(
     kind: "resolved",
     evaluation: {
       pin,
+      persistedSelectedModel,
       providerAdmission,
       runCodexServiceTier: tier.runCodexServiceTier,
       persistedCodexServiceTier,
@@ -480,9 +482,7 @@ async function resolvePersistedChatThreadModelInTransaction(
     thread,
     pin: {
       ...evaluation.pin,
-      selectedModel: evaluation.selectedModelChanged
-        ? evaluation.pin.selectedModel
-        : thread.selectedModel,
+      selectedModel: evaluation.persistedSelectedModel,
     },
     persistedCodexServiceTier: evaluation.persistedCodexServiceTier,
     modelSettings: evaluation.modelSettings,

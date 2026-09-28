@@ -26,6 +26,7 @@ import { testDiscordIngressRoutes } from "../test-discord-ingress";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webDownloadRoutes } from "../web-download";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   deleteDiscordFixture,
@@ -1000,6 +1001,88 @@ describe("canonical Discord ingress", () => {
     await runsApi.heartbeatRunner(actor.runnerGroup);
     const claim = await runsApi.claimRunnerJob(input.runId);
     expect(claim.prompt).toBe(next.content);
+    await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
+  });
+
+  it("updates the member default when the web selects a main DM model without pinning its thread", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const chatApi = createChatFilesBddApi(context);
+    const first = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "start the main DM",
+    });
+    provider.messages.set(first.id, first);
+    await postDiscordMessage(context, first);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the main DM thread");
+    }
+    const firstRun = await launchedRun(actor, thread.id);
+    await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+    await flushWaitUntilForTest();
+    const { providerId } = await runsApi.createOrgModelProvider(actor.actor, {
+      type: "openai-api-key",
+      secret: "sk-test-discord-dm-default",
+    });
+    await runsApi.updateOrgModelPolicies(actor.actor, [
+      {
+        model: "gpt-6-astra",
+        isDefault: true,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    await chatApi.updateThreadModelSelection(
+      actor.actor,
+      thread.id,
+      "gpt-6-astra",
+      { codexServiceTier: "fast" },
+    );
+    await expect(
+      chatApi.readThreadMetadata(actor.actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: null, serviceTier: null });
+    expect(await discordChatThreads(context, actor)).toMatchObject([
+      { id: thread.id, selectedModel: null, serviceTier: null },
+    ]);
+    const preference = await accept(
+      setupApp({ context, routes: userModelPreferenceRoutes })(
+        userModelPreferenceContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(preference.body).toMatchObject({
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+    });
+
+    const next = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "use the current member default",
+    });
+    provider.messages.set(next.id, next);
+    await postDiscordMessage(context, next);
+    await flushWaitUntilForTest();
+    const input = currentInputs(await events(actor, thread.id)).find(
+      (candidate) => {
+        return candidate.userMessage.parts.some((part) => {
+          return part.type === "text" && part.text === next.content;
+        });
+      },
+    );
+    if (!input?.runId) {
+      throw new Error(
+        "Expected the DM input to launch with the member default",
+      );
+    }
+    await runsApi.heartbeatRunner(actor.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(input.runId);
+    expect(claim.modelUsageProvider).toBe("gpt-6-astra");
+    expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
     await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
   });
 
