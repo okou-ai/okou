@@ -1,5 +1,5 @@
 {
-  "id": "daca0568-f373-44ed-9a1d-2c2bee46eedf",
+  "id": "fb3b661f-5e2d-4e76-a5f2-2d62a056eebc",
   "prevId": "2e49d406-9973-4f0d-ac61-4606f600c9ab",
   "version": "7",
   "dialect": "postgresql",
@@ -28140,12 +28140,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "wss_ingress_service_observed_at": {
-          "name": "wss_ingress_service_observed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "last_seen_at": {
           "name": "last_seen_at",

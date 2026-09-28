@@ -60,7 +60,6 @@ export const runnerState = pgTable(
     wssIngressServiceActive: boolean("wss_ingress_service_active")
       .notNull()
       .default(false),
-    wssIngressServiceObservedAt: timestamp("wss_ingress_service_observed_at"),
     lastSeenAt: timestamp("last_seen_at").notNull(),
   },
   (table) => {

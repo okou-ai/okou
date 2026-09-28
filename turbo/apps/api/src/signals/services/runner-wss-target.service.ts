@@ -38,19 +38,12 @@ export async function resolveRunnerWssTarget(
     readonly purpose: "issue" | "consume";
   },
 ): Promise<RunnerWssTarget | null> {
+  // The sole writer stores status and lastSeenAt in the same ordered heartbeat
+  // upsert; missing or untrusted observations clear status. The lastSeenAt
+  // bounds below therefore also bound the age of a positive observation.
   const ingressServiceAvailability =
     args.purpose === "issue"
-      ? and(
-          eq(runnerState.wssIngressServiceActive, true),
-          gt(
-            runnerState.wssIngressServiceObservedAt,
-            new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),
-          ),
-          lte(
-            runnerState.wssIngressServiceObservedAt,
-            new Date(args.now.getTime() + MAX_CLOCK_LEAD_MS),
-          ),
-        )
+      ? eq(runnerState.wssIngressServiceActive, true)
       : undefined;
   const [row] = await db
     .select({
