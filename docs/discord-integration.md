@@ -174,7 +174,7 @@ arbitrary-ID binding endpoint.
 
 | Configuration                                                          | Owner and purpose                                                | Required boundary                                                                                                                                                          |
 | ---------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FeatureSwitchKey.DiscordIntegration` / `_discordIntegration`          | A: common API/capability/UI gate.                                | Default false; no production allowlist activation. Frontend visibility does not replace the server gate.                                                                   |
+| `FeatureSwitchKey.DiscordIntegration` / `discordIntegration`           | A: common API/capability/UI gate.                                | Default false; no production allowlist activation. Frontend visibility does not replace the server gate.                                                                   |
 | `DISCORD_APPLICATION_ID`                                               | A: expected application identity; D/E use the same application.  | Validate incoming application identity; do not accept transport-supplied Okou org/user IDs.                                                                                |
 | `DISCORD_BOT_TOKEN`                                                    | A: application-level REST credential; D: Gateway authentication. | Keep in supported secret configuration, never per-guild data or browser responses.                                                                                         |
 | `DISCORD_PUBLIC_KEY`                                                   | A/E: Ed25519 interaction verification.                           | Verify timestamp and exact raw request body before processing interactions.                                                                                                |
@@ -242,7 +242,7 @@ the interface announcement alone is not execution evidence.
   guarded HTTP route and returns the actor, IDs, and connection ID. Mock current
   Clerk membership at its external boundary; cached session roles are not
   binding authority. Configure all four app settings with synthetic values and
-  enable `_discordIntegration` only for the fixture cohort through the existing
+  enable `discordIntegration` only for the fixture cohort through the existing
   feature-switch API.
 
 1. Record the full checkout SHA, compatible provider PRs, and test environment.

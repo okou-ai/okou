@@ -53,7 +53,7 @@ export enum FeatureSwitchKey {
   PersonalModelProviderAccounts = "multipleSubscriptions",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
-  DiscordIntegration = "_discordIntegration",
+  DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
   ThreadRemoteAccess = "threadRemoteAccess",
   PiMemory = "piMemory",
