@@ -59,10 +59,6 @@ on:
         required: false
       HEYGEN_API_KEY:
         required: false
-      JOGGAI_API_KEY:
-        required: false
-      JOGGAI_WEBHOOK_SECRET:
-        required: false
       LANGFUSE_PUBLIC_KEY:
         required: false
       LANGFUSE_SECRET_KEY:
@@ -978,7 +974,6 @@ jobs:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
           FAL_KEY: ${{ secrets.FAL_KEY }}
           BYTEPLUS_API_KEY: ${{ secrets.BYTEPLUS_API_KEY }}
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
           BYTEPLUS_STT_API_KEY: ${{ secrets.BYTEPLUS_STT_API_KEY }}
         run: pnpm vitest run --project=api --shard=${{ matrix.shard }}/8 --coverage.enabled --coverage.reporter=json
       - name: Upload coverage to Codecov

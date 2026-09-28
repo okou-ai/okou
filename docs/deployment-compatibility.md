@@ -43,6 +43,42 @@ production has no writer for them. After this change is released, raise the API
 rollback floor to its main commit so that no rollback target writes the retired
 types; that floor update is a separate follow-up and is not part of this change.
 
+## Video retirement follow-up: accepted-job paths and video model reads removed
+
+Follow-up to the retirement below, tracked in #37249.
+
+- The API no longer completes video or avatar jobs accepted by a
+  pre-retirement API. The BytePlus, MiniMax, and JoggAI webhook routes are
+  removed (callbacks now receive `404`), and a fal callback for a video job is
+  logged and acknowledged without completing the job. Status reads of
+  finished jobs, existing video artifacts, and historical usage and credit
+  records are unchanged. `JOGGAI_API_KEY`, `JOGGAI_WEBHOOK_SECRET`, and the
+  API's `MINIMAX_API_KEY` are no longer read.
+- The API no longer reads or writes the `selected_video_model` columns on
+  threads, thread events, members, or runs. Thread metadata, thread events,
+  and compacted snapshots still send `selectedVideoModel: null`, because Web
+  clients at the current floor require the field. Historical
+  `video_model_updated` events stay readable and replay as no-ops.
+- Gates before this release: the App build from the retirement below is live
+  and the Web client floor is raised to it in this same release, and no
+  pre-retirement API remains a rollback target and no `video` job is still
+  `queued` or `running` (confirmed with a read-only MaskDB query).
+
+Old and new versions during deploy:
+
+- Previous API with the new App: the new App treats `selectedVideoModel` as
+  optional and ignores it, so the historical values the previous API still
+  returns have no effect.
+- New API with the floor-level App: it receives `selectedVideoModel: null`
+  and no video model control reads it.
+- Jobs: a video or avatar job still in flight would not complete; the gate
+  above requires that none remain.
+
+No database migration is included. Dropping the columns, the
+`video_model_updated` kind, and the wire field is the next step under #37249,
+after this API is the rollback floor and this App build is the Web client
+floor.
+
 ## Video, voice, and talking-avatar generation retired
 
 Built-in video, voice (text-to-speech), and talking-avatar video generation are

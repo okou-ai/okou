@@ -306,18 +306,3 @@ export async function deleteChatThreadEventMarkerFixture(args: {
     throw new Error("Expected one chat-thread snapshot marker to be deleted");
   }
 }
-
-/**
- * Pins a thread's video model without a write endpoint. Lets the snapshot
- * compaction test prove the column survives the hand-written jsonb projection,
- * which a null-valued thread cannot show.
- */
-export async function setChatThreadVideoModelFixture(
-  chatThreadId: string,
-  selectedVideoModel: string,
-): Promise<void> {
-  await db()
-    .update(chatThreads)
-    .set({ selectedVideoModel })
-    .where(eq(chatThreads.id, chatThreadId));
-}

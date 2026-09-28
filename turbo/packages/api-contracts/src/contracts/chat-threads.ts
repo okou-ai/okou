@@ -330,9 +330,9 @@ const chatThreadSnapshotProjectionSchema = z.object({
   serviceTier: chatThreadServiceTierSchema.nullable().default(null),
   computerUseHostId: z.string().uuid().nullable().default(null),
   cloudBrowserEnabled: z.boolean().optional(),
-  // Loose rather than the catalog enum so a pin whose model later leaves the
-  // catalog still parses; the strict enum applies on the write path.
-  selectedVideoModel: z.string().nullable(),
+  // Retired with video model selection. The API sends null for Web clients at
+  // the current floor; removal is tracked in #37249.
+  selectedVideoModel: z.string().nullable().optional(),
   // Keep this optional for pre-field browser rows and loose rather than
   // imageModelIdSchema so a stored model that later leaves the catalog remains
   // replayable. New write contracts validate against the shared schema.
@@ -380,7 +380,8 @@ const chatThreadEventSchema = z.object({
   serviceTier: chatThreadServiceTierSchema.nullable().default(null),
   computerUseHostId: z.string().uuid().nullable().default(null),
   cloudBrowserEnabled: z.boolean().optional(),
-  selectedVideoModel: z.string().nullable(),
+  /** Retired; see chatThreadSnapshotProjectionSchema. */
+  selectedVideoModel: z.string().nullable().optional(),
   selectedImageModel: z.string().nullable().optional(),
   createdAt: z.string(),
 });

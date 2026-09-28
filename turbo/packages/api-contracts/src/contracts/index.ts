@@ -234,9 +234,6 @@ export {
   webhookWorkflowAutomationContract,
   webhookStripeContract,
   webhookBuiltInGenerationFalContract,
-  webhookBuiltInGenerationBytePlusContract,
-  webhookBuiltInGenerationMiniMaxContract,
-  webhookBuiltInGenerationJoggAiContract,
   webhookCompleteContract,
   webhookCheckpointsContract,
   webhookCheckpointsPrepareHistoryContract,
@@ -265,8 +262,6 @@ export {
   type WebhookGoogleWorkspaceEventsContract,
   type WebhookStripeContract,
   type WebhookBuiltInGenerationFalContract,
-  type WebhookBuiltInGenerationMiniMaxContract,
-  type WebhookBuiltInGenerationJoggAiContract,
 } from "./webhooks";
 export {
   cliAuthDeviceContract,

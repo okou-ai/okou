@@ -124,11 +124,7 @@ OPENAI_WEBHOOK_SECRET=op://Development/openai/OPENAI_WEBHOOK_SECRET
 # Optional: fal media generation
 FAL_KEY=op://Development/fal/FAL_KEY
 
-# Optional: JoggAI talking-avatar video generation
-JOGGAI_API_KEY=op://Development/joggai/JOGGAI_API_KEY
-JOGGAI_WEBHOOK_SECRET=op://Development/joggai/JOGGAI_WEBHOOK_SECRET
-
-# Optional: BytePlus ModelArk video generation
+# Optional: BytePlus ModelArk image generation
 BYTEPLUS_API_KEY=op://Development/byteplus/BYTEPLUS_API_KEY
 
 # Optional: BytePlus voice input STT
