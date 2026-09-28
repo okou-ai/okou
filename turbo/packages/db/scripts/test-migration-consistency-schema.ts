@@ -178,7 +178,937 @@ async function validateExpandedBrowserSchema(dbUrl: string): Promise<void> {
     // dropped together only after this release has drained.
     assert.deepEqual(retiredColumns.rows, [{ count: 4 }]);
 
-    await client.query("SET search_path TO public, pg_catalog");
+    const primaryKeys = await client.query<{
+      columnName: string;
+      tableName: string;
+    }>(
+      `
+        SELECT
+          "tc"."table_name" AS "tableName",
+          "kcu"."column_name" AS "columnName"
+        FROM "information_schema"."table_constraints" AS "tc"
+        INNER JOIN "information_schema"."key_column_usage" AS "kcu"
+          ON "tc"."constraint_name" = "kcu"."constraint_name"
+          AND "tc"."table_schema" = "kcu"."table_schema"
+        WHERE "tc"."table_schema" = 'public'
+          AND "tc"."constraint_type" = 'PRIMARY KEY'
+          AND "tc"."table_name" IN (
+            'browser_sessions',
+            'browser_thread_profiles'
+          )
+        ORDER BY "tc"."table_name", "kcu"."ordinal_position"
+      `,
+    );
+    // Current code keys every lookup by chat_thread_id, but the physical
+    // primary key stays on the retired identity column for this release.
+    assert.deepEqual(primaryKeys.rows, [
+      { tableName: "browser_sessions", columnName: "id" },
+      { tableName: "browser_thread_profiles", columnName: "id" },
+    ]);
+
+    const lifecycleConstraint = await client.query<{ definition: string }>(
+      `
+        SELECT pg_get_constraintdef("oid") AS "definition"
+        FROM "pg_constraint"
+        WHERE "conname" = 'chat_events_event_type_check'
+      `,
+    );
+    assert.equal(lifecycleConstraint.rows.length, 1);
+    const lifecycleDefinition = lifecycleConstraint.rows[0]?.definition ?? "";
+    // Only the canonical lifecycle values remain after the old API drain.
+    assert.match(lifecycleDefinition, /browser\.open/u);
+    assert.match(lifecycleDefinition, /browser\.close/u);
+    assert.doesNotMatch(lifecycleDefinition, /browser\.started/u);
+    assert.doesNotMatch(lifecycleDefinition, /browser\.stopped/u);
+    assert.match(lifecycleDefinition, /goal\.open/u);
+    assert.match(lifecycleDefinition, /goal\.close/u);
+    assert.doesNotMatch(lifecycleDefinition, /goal\.changed/u);
+    console.log(
+      "   ✅ retired browser tables and identity columns still exist",
+    );
+    console.log(
+      "   ✅ browser lifecycle and goal event constraints are canonical\n",
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+async function validateCanonicalBillingSources(dbUrl: string): Promise<void> {
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+  await client.query("BEGIN");
+
+  try {
+    const sourceConstraint = await client.query<{ validated: boolean }>(`
+      SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'public.billing_run_attribution'::regclass
+        AND conname = 'billing_run_attribution_source_check'
+    `);
+    assert.deepEqual(sourceConstraint.rows, [{ validated: true }]);
+    const sources = await client.query<{
+      triggerSource: string | null;
+      source: string;
+    }>(`
+      SELECT trigger_source AS "triggerSource",
+        billing_usage_source(trigger_source) AS source
+      FROM unnest(ARRAY[
+        'web', 'automation-schedule', 'automation-event', 'goal',
+        'slack', 'discord', 'teams', 'telegram', 'email', 'agentphone',
+        'github', 'agent', 'unsupported', NULL
+      ]::text[]) WITH ORDINALITY AS inputs(trigger_source, position)
+      ORDER BY position
+    `);
+    assert.deepEqual(sources.rows, [
+      { triggerSource: "web", source: "chat" },
+      { triggerSource: "automation-schedule", source: "automation" },
+      { triggerSource: "automation-event", source: "automation" },
+      { triggerSource: "goal", source: "automation" },
+      { triggerSource: "slack", source: "slack" },
+      { triggerSource: "discord", source: "discord" },
+      { triggerSource: "teams", source: "teams" },
+      { triggerSource: "telegram", source: "telegram" },
+      { triggerSource: "email", source: "email" },
+      { triggerSource: "agentphone", source: "agentphone" },
+      { triggerSource: "github", source: "github" },
+      { triggerSource: "agent", source: "agent" },
+      { triggerSource: "unsupported", source: "other" },
+      { triggerSource: null, source: "other" },
+    ]);
+
+    await client.query(`
+      SELECT ensure_billing_run_attribution(
+        '3ae9c61f-3d08-4a8b-9810-3c627ed746de',
+        'discord-source-validation-org', 'discord-source-validation-user',
+        '2026-09-24 00:00:00'::timestamp, billing_usage_source('discord')
+      )
+    `);
+    const attribution = await client.query<{ source: string }>(`
+      SELECT source FROM billing_run_attribution
+      WHERE run_id = '3ae9c61f-3d08-4a8b-9810-3c627ed746de'
+    `);
+    assert.deepEqual(attribution.rows, [{ source: "discord" }]);
+    console.log(
+      "   ✅ Discord billing capture preserves existing source mappings\n",
+    );
+  } finally {
+    await client.query("ROLLBACK");
+    await client.end();
+  }
+}
+
+function databaseErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return undefined;
+  }
+  return typeof error.code === "string" ? error.code : undefined;
+}
+
+async function validateCanonicalChatMessageStorage(
+  client: Client,
+  threadId: string,
+): Promise<void> {
+  const sequenceReservation = await client.query<{ lastSeqId: string }>(
+    `
+      INSERT INTO "chat_event_sequences" ("chat_thread_id", "last_seq_id") VALUES ($1, 2)
+      ON CONFLICT ("chat_thread_id") DO UPDATE SET "last_seq_id" = "chat_event_sequences"."last_seq_id" + 2
+      RETURNING "last_seq_id" AS "lastSeqId"
+    `,
+    [threadId],
+  );
+  const lastSeqId = Number(sequenceReservation.rows[0]?.lastSeqId);
+  assert.ok(Number.isSafeInteger(lastSeqId));
+  const firstSeqId = lastSeqId - 1;
+  const userMessage = {
+    version: 1,
+    parts: [{ type: "text", text: "canonical API migration test" }],
+  };
+  const message = await client.query<{
+    contextType: string | null;
+    id: string;
+    payload: unknown;
+    seqId: string;
+  }>(
+    `
+      INSERT INTO "chat_events" (
+        "chat_thread_id",
+        "context_type",
+        "event_type",
+        "payload",
+        "seq_id"
+      )
+      VALUES (
+        $1,
+        'web',
+        'input.prompt',
+        $3::jsonb,
+        $2
+      )
+      RETURNING
+        "id",
+        "seq_id" AS "seqId",
+        "context_type" AS "contextType",
+        "payload"
+    `,
+    [threadId, firstSeqId, JSON.stringify({ userMessage })],
+  );
+  const messageRow = message.rows[0];
+  if (!messageRow) {
+    throw new Error("Failed to create append-only chat message fixture");
+  }
+  assert.equal(messageRow.seqId, String(firstSeqId));
+  assert.equal(messageRow.contextType, "web");
+  assert.deepEqual(messageRow.payload, { userMessage });
+
+  const nextMessage = await client.query<{
+    payload: unknown;
+    seqId: string;
+  }>(
+    `
+      INSERT INTO "chat_events" (
+        "chat_thread_id",
+        "event_type",
+        "payload",
+        "seq_id"
+      )
+      VALUES (
+        $1,
+        'output.message',
+        '{"content":"second typed API migration test"}'::jsonb,
+        $2
+      )
+      RETURNING
+        "seq_id" AS "seqId",
+        "payload"
+    `,
+    [threadId, lastSeqId],
+  );
+  assert.equal(nextMessage.rows[0]?.seqId, String(lastSeqId));
+  assert.deepEqual(nextMessage.rows[0]?.payload, {
+    content: "second typed API migration test",
+  });
+
+  const sequenceState = await client.query<{ lastSeqId: string }>(
+    `
+      SELECT "last_seq_id" AS "lastSeqId"
+      FROM "chat_event_sequences"
+      WHERE "chat_thread_id" = $1
+    `,
+    [threadId],
+  );
+  assert.equal(sequenceState.rows[0]?.lastSeqId, String(lastSeqId));
+}
+
+async function validateCanonicalDraftStorage(
+  client: Client,
+  threadId: string,
+): Promise<void> {
+  const draftUserMessage = {
+    version: 1,
+    parts: [{ type: "text", text: "canonical API draft" }],
+  };
+  const canonicalDraft = await client.query<{
+    userId: string | null;
+    draftUserMessage: unknown;
+  }>(
+    `
+      INSERT INTO "chat_thread_drafts" (
+        "chat_thread_id", "user_id", "draft_user_message"
+      )
+      VALUES ($1, 'append-only-test-user', $2::jsonb)
+      RETURNING
+        "user_id" AS "userId",
+        "draft_user_message" AS "draftUserMessage"
+    `,
+    [threadId, JSON.stringify(draftUserMessage)],
+  );
+  assert.equal(canonicalDraft.rows[0]?.userId, "append-only-test-user");
+  assert.deepEqual(canonicalDraft.rows[0]?.draftUserMessage, draftUserMessage);
+}
+
+async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
+  console.log("=== Phase 2.5: Validate explicit chat event storage ===\n");
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+
+  const agentId = "00000000-0000-4000-8000-000000074401";
+  let threadId: string | undefined;
+
+  try {
+    await client.query(
+      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
+       VALUES ($1, 'append-only-test-org', 'append-only-test-user',
+         'append-only-migration-test')`,
+      [agentId],
+    );
+
+    const thread = await client.query<{ id: string }>(
+      `
+        INSERT INTO "chat_threads" (
+          "user_id",
+          "agent_id",
+          "title"
+        )
+        VALUES ('append-only-test-user', $1, 'append-only migration test')
+        RETURNING "id"
+      `,
+      [agentId],
+    );
+    threadId = thread.rows[0]?.id;
+    if (!threadId) {
+      throw new Error("Failed to create append-only chat thread fixture");
+    }
+
+    // Insert through the canonical table with application-reserved seq_ids.
+    await validateCanonicalChatMessageStorage(client, threadId);
+    await validateCanonicalDraftStorage(client, threadId);
+
+    await client.query(`
+      INSERT INTO "chat_thread_event_sequences" (
+        "user_id", "org_id", "last_seq_id"
+      ) VALUES ('append-only-test-user', 'append-only-test-org', 1)
+    `);
+    const event = await client.query<{ id: string; seqId: string }>(
+      `
+        INSERT INTO "chat_thread_events" (
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
+        )
+        VALUES (
+          'append-only-test-user', 'append-only-test-org', 1,
+          $1, 'created', $2, 'append-only migration test'
+        )
+        RETURNING "id", "seq_id" AS "seqId"
+      `,
+      [threadId, agentId],
+    );
+    const eventId = event.rows[0]?.id;
+    if (!eventId) {
+      throw new Error("Failed to create append-only chat thread event fixture");
+    }
+    assert.equal(event.rows[0]?.seqId, "1");
+    const threadEventSequenceState = await client.query<{
+      lastSeqId: string;
+    }>(
+      `
+        SELECT "last_seq_id" AS "lastSeqId"
+        FROM "chat_thread_event_sequences"
+        WHERE "user_id" = 'append-only-test-user'
+          AND "org_id" = 'append-only-test-org'
+      `,
+    );
+    assert.equal(threadEventSequenceState.rows[0]?.lastSeqId, "1");
+
+    const advancedSequence = await client.query<{ lastSeqId: string }>(`
+      UPDATE "chat_thread_event_sequences"
+      SET "last_seq_id" = "last_seq_id" + 1
+      WHERE "user_id" = 'append-only-test-user'
+        AND "org_id" = 'append-only-test-org'
+      RETURNING "last_seq_id" AS "lastSeqId"
+    `);
+    assert.equal(advancedSequence.rows[0]?.lastSeqId, "2");
+    const nextEvent = await client.query<{ id: string; seqId: string }>(
+      `
+        INSERT INTO "chat_thread_events" (
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
+        )
+        VALUES (
+          'append-only-test-user', 'append-only-test-org', 2,
+          $1, 'renamed', $2, 'advanced append-only migration test'
+        )
+        RETURNING "id", "seq_id" AS "seqId"
+      `,
+      [threadId, agentId],
+    );
+    const nextEventId = nextEvent.rows[0]?.id;
+    if (!nextEventId) {
+      throw new Error("Failed to create second chat thread event fixture");
+    }
+    assert.equal(nextEvent.rows[0]?.seqId, "2");
+
+    const snapshot = await client.query<{ latestSeqId: string }>(
+      `
+        INSERT INTO "chat_thread_snapshots" (
+          "user_id", "org_id", "latest_event_id", "latest_event_seq_id"
+        )
+        VALUES ('append-only-test-user', 'append-only-test-org', $1, 1)
+        RETURNING "latest_event_seq_id" AS "latestSeqId"
+      `,
+      [eventId],
+    );
+    assert.equal(snapshot.rows[0]?.latestSeqId, "1");
+
+    const advancedSnapshot = await client.query<{ latestSeqId: string }>(
+      `
+        UPDATE "chat_thread_snapshots"
+        SET "latest_event_id" = $1, "latest_event_seq_id" = 2
+        WHERE "user_id" = 'append-only-test-user'
+          AND "org_id" = 'append-only-test-org'
+        RETURNING "latest_event_seq_id" AS "latestSeqId"
+      `,
+      [nextEventId],
+    );
+    assert.equal(advancedSnapshot.rows[0]?.latestSeqId, "2");
+
+    console.log(
+      "   ✅ chat events and snapshots accept explicit seq_ids and cursors\n",
+    );
+  } finally {
+    await client.query(
+      `DELETE FROM "chat_thread_drafts" WHERE "user_id" = 'append-only-test-user'`,
+    );
+    await client.query(
+      `
+        DELETE FROM "chat_thread_snapshots"
+        WHERE "user_id" = 'append-only-test-user'
+          AND "org_id" = 'append-only-test-org'
+      `,
+    );
+    await client.query(
+      `
+        DELETE FROM "chat_thread_events"
+        WHERE "user_id" = 'append-only-test-user'
+          AND "org_id" = 'append-only-test-org'
+      `,
+    );
+    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    await client.end();
+  }
+}
+
+async function validateChatEventContextPointerConstraints(
+  dbUrl: string,
+): Promise<void> {
+  console.log("=== Phase 2.5: Validate chat event context pointer ===\n");
+  const client = new Client({ connectionString: dbUrl });
+  await client.connect();
+
+  const agentId = "00000000-0000-4000-8000-000000074501";
+  const threadId = "00000000-0000-4000-8000-000000074502";
+
+  try {
+    const contextConstraint = await client.query<{ validated: boolean }>(`
+      SELECT convalidated AS validated FROM pg_constraint
+      WHERE conrelid = 'public.chat_events'::regclass
+        AND conname = 'chat_events_context_type_check'
+    `);
+    assert.deepEqual(contextConstraint.rows, [{ validated: true }]);
+    await client.query(
+      `
+        INSERT INTO "agents" ("id", "org_id", "owner", "name")
+        VALUES ($1, 'context-pointer-test-org', 'context-pointer-test-user',
+          'context-pointer-test')
+      `,
+      [agentId],
+    );
+    await client.query(
+      `
+        INSERT INTO "chat_threads" (
+          "id",
+          "user_id",
+          "agent_id",
+          "title"
+        )
+        VALUES (
+          $1,
+          'context-pointer-test-user',
+          $2,
+          'context pointer test'
+        )
+      `,
+      [threadId, agentId],
+    );
+
+    await client.query(
+      "INSERT INTO chat_event_sequences(chat_thread_id, last_seq_id) VALUES($1, 2)",
+      [threadId],
+    );
+
+    const accepted = await client.query<{
+      contextId: string | null;
+      contextType: string | null;
+    }>(
+      `
+        INSERT INTO "chat_events" (
+          "id",
+          "chat_thread_id",
+          "event_type",
+          "context_type",
+          "context_id",
+          "payload",
+          "seq_id"
+        )
+        VALUES
+          (
+            '00000000-0000-4000-8000-000000074510',
+            $1,
+            'output.message',
+            NULL,
+            NULL,
+            NULL,
+            1
+          ),
+          (
+            '00000000-0000-4000-8000-000000074511',
+            $1,
+            'output.message',
+            'slack',
+            '00000000-0000-4000-8000-000000074503',
+            NULL,
+            2
+          ),
+          (
+            '00000000-0000-4000-8000-000000074512',
+            $1,
+            'input.prompt',
+            'web',
+            NULL,
+            '{"userMessage":{"version":1,"parts":[{"type":"text","text":"web discriminator"}]}}'::jsonb,
+            3
+          ),
+          (
+            '00000000-0000-4000-8000-000000074515',
+            $1,
+            'input.rejected',
+            NULL,
+            NULL,
+            '{"userMessage":{"version":1,"parts":[{"type":"text","text":"rejected input"}]}}'::jsonb,
+            4
+          ),
+          (
+            '00000000-0000-4000-8000-000000074517',
+            $1,
+            'input.prompt',
+            'discord',
+            '00000000-0000-4000-8000-000000074506',
+            '{"userMessage":{"version":1,"parts":[{"type":"text","text":"Discord input"},{"type":"source","kind":"discord"}]}}'::jsonb,
+            6
+          )
+        RETURNING
+          "context_type" AS "contextType",
+          "context_id" AS "contextId"
+      `,
+      [threadId],
+    );
+    assert.deepEqual(accepted.rows, [
+      { contextId: null, contextType: null },
+      {
+        contextId: "00000000-0000-4000-8000-000000074503",
+        contextType: "slack",
+      },
+      { contextId: null, contextType: "web" },
+      { contextId: null, contextType: null },
+      {
+        contextId: "00000000-0000-4000-8000-000000074506",
+        contextType: "discord",
+      },
+    ]);
+
+    await expectDatabaseError(client, {
+      code: "23514",
+      messageIncludes: "chat_events_context_pair_check",
+      query: `
+        INSERT INTO "chat_events" (
+          "id",
+          "chat_thread_id",
+          "event_type",
+          "context_id",
+          "seq_id"
+        )
+        VALUES (
+          '00000000-0000-4000-8000-000000074513',
+          $1,
+          'output.message',
+          '00000000-0000-4000-8000-000000074504',
+          3
+        )
+      `,
+      values: [threadId],
+    });
+    await expectDatabaseError(client, {
+      code: "23514",
+      messageIncludes: "chat_events_context_type_check",
+      query: `
+        INSERT INTO "chat_events" (
+          "id",
+          "chat_thread_id",
+          "event_type",
+          "context_type",
+          "context_id",
+          "seq_id"
+        )
+        VALUES (
+          '00000000-0000-4000-8000-000000074514',
+          $1,
+          'output.message',
+          'unsupported',
+          '00000000-0000-4000-8000-000000074505',
+          3
+        )
+      `,
+      values: [threadId],
+    });
+    await expectDatabaseError(client, {
+      code: "23514",
+      messageIncludes: "chat_events_input_context_type_check",
+      query: `
+        INSERT INTO "chat_events" (
+          "id",
+          "chat_thread_id",
+          "event_type",
+          "context_type",
+          "context_id",
+          "payload",
+          "seq_id"
+        )
+        VALUES (
+          '00000000-0000-4000-8000-000000074516',
+          $1,
+          'input.prompt',
+          NULL,
+          NULL,
+          '{"userMessage":{"version":1,"parts":[{"type":"text","text":"missing discriminator"}]}}'::jsonb,
+          5
+        )
+      `,
+      values: [threadId],
+    });
+
+    console.log(
+      "   ✅ Chat event contexts require input discriminators while allowing context-less rejected inputs\n",
+    );
+  } finally {
+    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
+    await client.end();
+  }
+}
+
+async function runNormalizedComparison(
+  dbUrl1: string,
+  dbUrl2: string,
+): Promise<boolean> {
+  console.log(`📸 Running normalized schema comparison...`);
+  try {
+    execCommand(
+      `tsx ${path.join(dirname, "compare-schemas-normalized.ts")} "${dbUrl1}" "${dbUrl2}"`,
+      { cwd: PACKAGE_DIR },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function backupMigrations(): Promise<void> {
+  console.log("📦 Backing up current migrations...");
+  await fs.rm(BACKUP_DIR, { recursive: true, force: true });
+  await fs.cp(MIGRATIONS_DIR, BACKUP_DIR, { recursive: true });
+}
+
+async function restoreMigrations(): Promise<void> {
+  console.log("♻️  Restoring original migrations...");
+  await fs.access(BACKUP_DIR);
+  await fs.rm(RESTORE_DIR, { recursive: true, force: true });
+  await fs.cp(BACKUP_DIR, RESTORE_DIR, { recursive: true });
+  await fs.rm(MIGRATIONS_DIR, { recursive: true, force: true });
+  await fs.rename(RESTORE_DIR, MIGRATIONS_DIR);
+  await fs.rm(BACKUP_DIR, { recursive: true, force: true });
+}
+
+type ExtensionPrelude = {
+  readonly extension: string;
+  readonly label: string;
+  readonly usesExtension: (sql: string) => boolean;
+};
+
+// drizzle-kit does not emit CREATE EXTENSION, so a freshly generated chain
+// needs the extensions that shipped migrations create explicitly.
+const GENERATED_MIGRATION_EXTENSION_PRELUDES: readonly ExtensionPrelude[] = [
+  {
+    extension: "vector",
+    label: "pgvector",
+    usesExtension: (sql) => {
+      return (
+        /\bvector\s*\(/i.test(sql) ||
+        /\bvector_cosine_ops\b/i.test(sql) ||
+        /\bUSING\s+hnsw\b/i.test(sql)
+      );
+    },
+  },
+  {
+    extension: "btree_gin",
+    label: "btree_gin",
+    // Multi-column GIN indexes over scalar columns need btree_gin operator
+    // classes.
+    usesExtension: (sql) => {
+      return /\bUSING\s+gin\s*\(\s*"[^"]+"\s*,/i.test(sql);
+    },
+  },
+];
+
+async function addExtensionPreludesToGeneratedMigrations(): Promise<void> {
+  const sqlFiles = (await fs.readdir(MIGRATIONS_DIR))
+    .filter((file) => {
+      return file.endsWith(".sql");
+    })
+    .sort();
+
+  const sqlByFile = await Promise.all(
+    sqlFiles.map(async (file) => {
+      return {
+        file,
+        sql: await fs.readFile(path.join(MIGRATIONS_DIR, file), "utf-8"),
+      };
+    }),
+  );
+
+  for (const prelude of GENERATED_MIGRATION_EXTENSION_PRELUDES) {
+    const createExtension = new RegExp(
+      `CREATE\\s+EXTENSION\\s+(IF\\s+NOT\\s+EXISTS\\s+)?"?${prelude.extension}"?`,
+      "i",
+    );
+    const hasExtension = sqlByFile.some(({ sql }) => {
+      return createExtension.test(sql);
+    });
+    if (hasExtension) {
+      continue;
+    }
+
+    const firstMigration = sqlByFile.find(({ sql }) => {
+      return prelude.usesExtension(sql);
+    });
+    if (!firstMigration) {
+      continue;
+    }
+
+    firstMigration.sql = `CREATE EXTENSION IF NOT EXISTS ${prelude.extension};--> statement-breakpoint\n${firstMigration.sql}`;
+    await fs.writeFile(
+      path.join(MIGRATIONS_DIR, firstMigration.file),
+      firstMigration.sql,
+    );
+    console.log(
+      `   Added ${prelude.label} extension prelude to generated migration ${firstMigration.file}`,
+    );
+  }
+}
+
+async function generateFreshMigrations(): Promise<void> {
+  console.log("🔨 Generating fresh migrations from schema...");
+
+  // Delete existing migrations
+  await fs.rm(MIGRATIONS_DIR, { recursive: true, force: true });
+  await fs.mkdir(MIGRATIONS_DIR, { recursive: true });
+
+  // Generate new migrations (non-interactive)
+  execCommand("pnpm drizzle-kit generate", { cwd: PACKAGE_DIR });
+  await addExtensionPreludesToGeneratedMigrations();
+}
+
+async function validateSnapshotFiles(): Promise<void> {
+  console.log("=== Phase 0: Validate Snapshot Files ===\n");
+
+  // Count SQL files
+  const files = await fs.readdir(MIGRATIONS_DIR);
+  const sqlFiles = files
+    .filter((f) => {
+      return f.endsWith(".sql");
+    })
+    .sort();
+
+  // Count snapshot files
+  const metaFiles = await fs.readdir(path.join(MIGRATIONS_DIR, "meta"));
+  const snapshotFiles = metaFiles
+    .filter((f) => {
+      return f.endsWith("_snapshot.json");
+    })
+    .sort();
+
+  console.log(`   SQL migrations: ${sqlFiles.length}`);
+  console.log(`   Snapshot files: ${snapshotFiles.length}`);
+
+  // Check if counts match
+  if (sqlFiles.length !== snapshotFiles.length) {
+    console.error(
+      `   ❌ Mismatch: ${sqlFiles.length} SQL files but ${snapshotFiles.length} snapshots`,
+    );
+    throw new Error("Migration count mismatch");
+  }
+
+  // Check each migration has a snapshot
+  const missingSnapshots: string[] = [];
+  for (const sqlFile of sqlFiles) {
+    const match = sqlFile.match(/^(\d{4})_/);
+    if (!match) continue;
+
+    const idx = match[1];
+    const snapshotFile = `${idx}_snapshot.json`;
+
+    if (!snapshotFiles.includes(snapshotFile)) {
+      missingSnapshots.push(sqlFile);
+    }
+  }
+
+  if (missingSnapshots.length > 0) {
+    console.error(
+      `   ❌ Missing snapshots for migrations: ${missingSnapshots.join(", ")}`,
+    );
+    throw new Error("Missing snapshot files");
+  }
+
+  // Validate snapshot chain integrity
+  const journalPath = path.join(MIGRATIONS_DIR, "meta/_journal.json");
+  const journal = JSON.parse(await fs.readFile(journalPath, "utf-8"));
+  const entries = journal.entries as Array<{ idx: number; tag: string }>;
+
+  let prevId: string | undefined;
+  let chainBroken = false;
+  for (const [position, entry] of entries.entries()) {
+    const snapshotPath = path.join(
+      MIGRATIONS_DIR,
+      "meta",
+      `${String(entry.idx).padStart(4, "0")}_snapshot.json`,
+    );
+    const snapshot = JSON.parse(await fs.readFile(snapshotPath, "utf-8"));
+
+    if (position > 0 && snapshot.prevId !== prevId) {
+      console.error(`   ❌ Snapshot ${entry.idx} prevId mismatch:`);
+      console.error(`      Expected: ${prevId}`);
+      console.error(`      Got: ${snapshot.prevId}`);
+      chainBroken = true;
+      break;
+    }
+
+    prevId = snapshot.id;
+  }
+
+  if (chainBroken) {
+    console.error(`\n❌ SNAPSHOT CHAIN BROKEN`);
+    console.error(
+      `\n   This means the snapshot system is corrupted and needs to be rebuilt.`,
+    );
+    console.error(`\n   🔧 How to fix:`);
+    console.error(`      1. Reset database: pnpm -F @okouai/db db:reset`);
+    console.error(`      2. Delete your manual migration file (if any)`);
+    console.error(`      3. Remove migration entry from meta/_journal.json`);
+    console.error(
+      `      4. Generate migration: pnpm -F @okouai/db db:generate`,
+    );
+    console.error(`      5. Apply migration: pnpm -F @okouai/db db:migrate`);
+    console.error(`\n   ⚠️  IMPORTANT: Never manually write migration files!`);
+    console.error(
+      `      Always use 'pnpm -F @okouai/db db:generate' to auto-generate migrations.`,
+    );
+    console.error(`      Manual migrations break the snapshot chain.\n`);
+    throw new Error("Snapshot chain broken");
+  }
+
+  console.log(`   ✅ All ${sqlFiles.length} migrations have snapshots`);
+  console.log(`   ✅ Snapshot chain validated (id/prevId references intact)`);
+  console.log();
+}
+
+async function expectDatabaseError(
+  client: Client,
+  args: {
+    readonly code: string;
+    readonly messageIncludes?: string;
+    readonly query: string;
+    readonly values?: readonly (string | number | null)[];
+  },
+): Promise<void> {
+  try {
+    await client.query(args.query, args.values ? [...args.values] : undefined);
+  } catch (error) {
+    assert.equal(databaseErrorCode(error), args.code);
+    if (args.messageIncludes !== undefined) {
+      assert.ok(error instanceof Error);
+      assert.ok(error.message.includes(args.messageIncludes));
+    }
+    return;
+  }
+  throw new Error(`Expected database error ${args.code}`);
+}
+
+const INTEGRATION_USER_ID_TABLES = [
+  "agentphone_user_links",
+  "feishu_org_connections",
+  "github_user_links",
+  "slack_org_connections",
+  "teams_org_connections",
+  "telegram_official_user_links",
+] as const;
+
+const INTEGRATION_USER_ID_CANONICAL_INDEXES = [
+  {
+    definition:
+      "CREATE UNIQUE INDEX idx_agentphone_user_links_user_org ON public.agentphone_user_links USING btree (user_id, org_id)",
+    isPrimary: false,
+    isUnique: true,
+    name: "idx_agentphone_user_links_user_org",
+    tableName: "agentphone_user_links",
+  },
+  {
+    definition:
+      "CREATE INDEX idx_feishu_org_connections_user_id_installation ON public.feishu_org_connections USING btree (user_id, installation_id)",
+    isPrimary: false,
+    isUnique: false,
+    name: "idx_feishu_org_connections_user_id_installation",
+    tableName: "feishu_org_connections",
+  },
+  {
+    definition:
+      "CREATE INDEX idx_slack_org_connections_user_id_workspace ON public.slack_org_connections USING btree (user_id, slack_workspace_id)",
+    isPrimary: false,
+    isUnique: false,
+    name: "idx_slack_org_connections_user_id_workspace",
+    tableName: "slack_org_connections",
+  },
+  {
+    definition:
+      "CREATE INDEX idx_teams_org_connections_user_id_tenant ON public.teams_org_connections USING btree (user_id, teams_tenant_id)",
+    isPrimary: false,
+    isUnique: false,
+    name: "idx_teams_org_connections_user_id_tenant",
+    tableName: "teams_org_connections",
+  },
+  {
+    definition:
+      "CREATE UNIQUE INDEX idx_telegram_official_user_links_user_org ON public.telegram_official_user_links USING btree (user_id, org_id)",
+    isPrimary: false,
+    isUnique: true,
+    name: "idx_telegram_official_user_links_user_org",
+    tableName: "telegram_official_user_links",
+  },
+] as const;
+
+async function assertCanonicalIntegrationIdentitySchema(
+  client: Client,
+): Promise<void> {
+  const tableNames = [...INTEGRATION_USER_ID_TABLES];
+  const columns = await client.query<{
+    columnName: string;
+    isNullable: "NO" | "YES";
+    tableName: string;
+  }>(
+    [
+      'SELECT "table_name" AS "tableName",',
+      '  "column_name" AS "columnName",',
+      '  "is_nullable" AS "isNullable"',
+      'FROM "information_schema"."columns"',
+      "WHERE \"table_schema\" = 'public'",
+      '  AND "table_name" = ANY($1::text[])',
+      '  AND "column_name" = ANY($2::text[])',
+      'ORDER BY "table_name", "column_name"',
+    ].join("\n"),
+    [tableNames, ["user_id"]],
+  );
+  assert.deepEqual(
+    columns.rows,
+    INTEGRATION_USER_ID_TABLES.map((tableName) => {
+      return { columnName: "user_id", isNullable: "NO", tableName };
+    }),
+  );
+
+  await client.query("SET search_path TO public, pg_catalog");
   const indexes = await client.query<{
     definition: string;
     isPrimary: boolean;
