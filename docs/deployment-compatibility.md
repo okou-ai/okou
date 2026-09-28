@@ -148,9 +148,9 @@ Kept compatibility, with the unmet condition:
 ## Direct PUT checksum removal and Browser file uploads (#37241)
 
 The shared presigner no longer puts `x-amz-checksum-sha256` into a required
-request header or the signed URL. Existing host CLIs can again PUT with their
-original `Content-Type` header; no host prepare/complete workflow changes. The
-same removal also applies to Discord canonical PUTs. This deliberately drops
+request header or the signed URL. The host CLI keeps its original PUT with
+`Content-Type`; no host prepare/complete workflow changes. The same removal
+also applies to Discord canonical PUTs. This deliberately drops
 R2 enforcement of the client-declared byte hash. A holder of a hosted or
 Discord PUT URL can replace its object with different bytes while that URL is
 valid (the host URL expires after 48 hours). The request's `Content-Type` is
@@ -172,10 +172,9 @@ then uses the existing exact target, pending/uncertain, and 15-second CDP
 boundaries. Cancellation attempts object cleanup, but a holder of an unexpired
 PUT URL can recreate a temporary object after cleanup; the 24-hour R2
 lifecycle rule remains the eventual backstop. No production CORS or feature
-switch is changed. Browser API and Platform wire-format changes must be
-rolled out together while the production file-input feature remains disabled;
-older clients expecting `uploadHeaders` are not guaranteed to parse the new
-response.
+switch is changed. The non-GA Browser wire shape changes directly, with no
+legacy compatibility path. Roll out the API and Platform changes together
+while the production file-input feature remains disabled.
 
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)
 
