@@ -1403,6 +1403,35 @@ async fn cdata_error_code_cannot_authorize_retry_or_a_get_miss() {
 }
 
 #[tokio::test]
+async fn create_upload_id_uses_only_ordinary_xml_text() {
+    // The pinned Smithy scalar reader skips CDATA tokens. Never initiate a
+    // multipart upload with an ID that it could not obtain from the response.
+    for (content, expected) in [
+        ("<![CDATA[id]]>", None),
+        ("id<![CDATA[ignored]]>", Some("id")),
+        ("<![CDATA[ignored]]>id", Some("id")),
+    ] {
+        let server = MockServer::start_async().await;
+        let response = server
+            .mock_async(|when, then| {
+                when.method("POST").path("/test-bucket/runner-templates/h.tar.zst");
+                then.status(200).body(format!(
+                    "<InitiateMultipartUploadResult><UploadId>{content}</UploadId></InitiateMultipartUploadResult>"
+                ));
+            })
+            .await;
+        let actual = client(&server)
+            .create_multipart("runner-templates/h.tar.zst")
+            .await;
+        match expected {
+            Some(id) => assert_eq!(actual.unwrap(), id),
+            None => assert!(actual.is_err(), "{content}"),
+        }
+        response.assert_calls_async(1).await;
+    }
+}
+
+#[tokio::test]
 async fn fake_code_in_comment_or_unknown_child_cannot_retry_writes() {
     // Only the root's direct Code field is modeled by Smithy. A raw XML
     // search used to pick up the CDATA in either fake nested tag and then

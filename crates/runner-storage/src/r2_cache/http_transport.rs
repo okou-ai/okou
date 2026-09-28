@@ -685,13 +685,18 @@ impl R2HttpClient {
         // successful request; only the cache-specific UploadId requirement is
         // checked here (the SDK output builder itself permits its absence).
         let document = parse_xml(&body)?;
+        let cdata_id = direct_cdata_value(&body, "UploadId");
         document
             .root_element()
             .children()
             .rfind(|n| n.is_element() && n.tag_name().name() == "UploadId")
             .and_then(|n| n.text())
+            .map(|id| match cdata_id {
+                Some(Some(value)) => value,
+                Some(None) => String::new(),
+                None => id.to_owned(),
+            })
             .filter(|id| !id.is_empty())
-            .map(str::to_owned)
             .ok_or_else(|| R2Error::S3("create_multipart_upload: no upload_id".into()))
     }
 
@@ -1210,12 +1215,11 @@ fn has_error_root_prefix(body: &[u8]) -> bool {
     root[..end].rsplit(':').next() == Some("Error")
 }
 
-// Smithy's `try_data` skips CDATA tokens while reading an error Code; the
-// tree parser merges CDATA with adjacent text. For one Code field, extract
-// the first ordinary text token from its raw content, as Smithy does. Leave
-// ambiguous repeated or nested values unclassified rather than replaying a
-// write or inventing a cache miss.
-fn first_code_text(content: &str) -> Option<String> {
+// Smithy's `try_data` skips CDATA tokens while reading a scalar; the tree
+// parser merges CDATA with adjacent text. Extract the first ordinary text
+// token from the raw field content. Leave ambiguous nested values unclassified
+// rather than replaying a write or inventing a cache miss.
+fn first_scalar_text(content: &str) -> Option<String> {
     let mut rest = content;
     loop {
         if let Some(tail) = rest.strip_prefix("<![CDATA[") {
@@ -1237,17 +1241,17 @@ fn first_code_text(content: &str) -> Option<String> {
     }
 }
 
-// None: no Code with CDATA; Some(None): uncertain; Some(Some(value)): the
-// Smithy-style first text token of a single Code containing CDATA.
-fn code_cdata_value(body: &[u8]) -> Option<Option<String>> {
+// None: no direct field with CDATA; Some(None): uncertain; Some(Some(value)):
+// the Smithy-style first text token of the last direct field with CDATA.
+fn direct_cdata_value(body: &[u8], field_name: &str) -> Option<Option<String>> {
     // parse_xml has already validated the document. Track only top-level
     // children of its root, skipping comments, CDATA and processing
-    // instructions so a fake <Code> inside any of them cannot authorize a
-    // retry. The tokenizer also skips quoted `>` in element attributes.
+    // instructions so fake scalar tags inside them cannot change a modeled
+    // value. The tokenizer also skips quoted `>` in element attributes.
     let xml = std::str::from_utf8(body).ok()?;
     let mut offset = 0;
     let mut depth = 0usize;
-    let mut code_start = None;
+    let mut field_start = None;
     let mut last = None;
     while let Some(relative) = xml[offset..].find('<') {
         let start = offset + relative;
@@ -1266,12 +1270,12 @@ fn code_cdata_value(body: &[u8]) -> Option<Option<String>> {
         }
         if rest.starts_with("</") {
             if depth == 2
-                && let Some(content_start) = code_start.take()
+                && let Some(content_start) = field_start.take()
             {
                 let content = &xml[content_start..start];
                 last = content
                     .contains("<![CDATA[")
-                    .then(|| first_code_text(content));
+                    .then(|| first_scalar_text(content));
             }
             depth = depth.saturating_sub(1);
             offset = start + rest.find('>')? + 1;
@@ -1297,11 +1301,11 @@ fn code_cdata_value(body: &[u8]) -> Option<Option<String>> {
             .split(|c: char| c.is_ascii_whitespace() || c == '/')
             .next()?;
         let empty = tag[..end].trim_end().ends_with('/');
-        if depth == 1 && name.rsplit(':').next() == Some("Code") {
+        if depth == 1 && name.rsplit(':').next() == Some(field_name) {
             if empty {
                 last = None;
             } else {
-                code_start = Some(start + 1 + end + 1);
+                field_start = Some(start + 1 + end + 1);
             }
         }
         if !empty {
@@ -1314,7 +1318,7 @@ fn code_cdata_value(body: &[u8]) -> Option<Option<String>> {
 
 fn xml_code(body: &[u8]) -> Option<String> {
     let doc = parse_xml(body).ok()?;
-    let cdata_value = code_cdata_value(body);
+    let cdata_value = direct_cdata_value(body, "Code");
     // The SDK's generic REST-XML error metadata reads Code and Message from
     // any root (so a SlowDown under ErrorResponse can still be retried).
     // A modeled GetObject NoSuchKey additionally requires the Error root.
