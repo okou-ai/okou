@@ -21,6 +21,7 @@ import {
 } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
+import { ApiError } from "../../lib/api-error.ts";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -1326,6 +1327,12 @@ function entryActionMatches(
   return !entryAction || actionMatches(entryAction, descriptor);
 }
 
+function browserInputSubmissionError(error: unknown): Error {
+  return error instanceof ApiError
+    ? error
+    : new Error("Browser file could not be read or uploaded");
+}
+
 function createSubmitSignal({
   descriptor,
   request$,
@@ -1398,7 +1405,7 @@ function createSubmitSignal({
     signal.throwIfAborted();
     if (!prepared.ok) {
       set(activeMutation$, false);
-      throw new Error("Browser file could not be read");
+      throw browserInputSubmissionError(prepared.error);
     }
     if (!prepared.value) {
       set(activeMutation$, false);

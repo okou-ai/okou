@@ -858,6 +858,88 @@ test("A failed local file read reports an error without applying the Browser act
   expect(button("Add to browser")).toBeEnabled();
 });
 
+test("A rejected Browser file authorization and PUT leave the selection retryable without applying", async () => {
+  let prepares = 0;
+  let directPuts = 0;
+  let applied = false;
+  const uploadUrl = "https://uploads.example.test/rejected-browser-file";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: false }));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, fileAction({ required: true, preflight: true }));
+  });
+  context.mocks.api(
+    browserUserActionsContract.prepareFileUpload,
+    ({ respond }) => {
+      prepares += 1;
+      if (prepares === 1) {
+        return respond(503, {
+          error: {
+            code: "BROWSER_PROVIDER_UNAVAILABLE",
+            message: "Synthetic upload authorization temporarily unavailable",
+          },
+        });
+      }
+      return respond(200, {
+        uploadUrl,
+        uploadHeaders: {
+          "x-amz-checksum-sha256":
+            "n4bQgYhMfWWaL+qgxVrQFaO/Txs7C4Is0V1sFbDwCgg=",
+        },
+      });
+    },
+  );
+  context.mocks.http.put(uploadUrl, () => {
+    directPuts += 1;
+    return new HttpResponse(null, { status: 403 });
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    applied = true;
+    return respond(200, fileAction({ required: true, preflight: false }));
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Enter information in browser",
+  });
+  const input = within(form).getByLabelText(/Document/u);
+  await waitFor(() => {
+    return expect(input).toBeEnabled();
+  });
+  const file = new File(["test"], "synthetic.txt", { type: "text/plain" });
+  Object.defineProperty(file, "arrayBuffer", {
+    value: () => {
+      return Promise.resolve(new Uint8Array([116, 101, 115, 116]).buffer);
+    },
+  });
+  fireEvent.change(input, { target: { files: [file] } });
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await expect(
+    screen.findByText("Synthetic upload authorization temporarily unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(directPuts).toBe(0);
+  expect(applied).toBeFalsy();
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+  click(button("Add to browser"));
+  await waitFor(() => {
+    return expect(directPuts).toBe(1);
+  });
+  expect(applied).toBeFalsy();
+  await waitFor(() => {
+    return expect(button("Add to browser")).toBeEnabled();
+  });
+});
+
 test("An optional file selection leaves existing website files untouched without auxiliary buttons", async () => {
   let sent: unknown = null;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
