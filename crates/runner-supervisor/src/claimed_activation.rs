@@ -283,7 +283,6 @@ async fn recover_claimed_activation_failure(
                 sandbox_id: None,
                 sandbox_reuse_result: Some(reuse_result),
                 workspace_reuse_result: None,
-                active_input_delivery_ids: Vec::new(),
             },
             completion_auth,
         )

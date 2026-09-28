@@ -8,10 +8,7 @@ use uuid::Uuid;
 
 use api_contracts::generated::{
     constants::runners::ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES as ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES_U64,
-    types::runners::runs::active_inputs::{
-        receipt::Response as ActiveInputReceiptResponse,
-        reserve::Response as ActiveInputReserveResponse,
-    },
+    types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
 };
 
 use crate::error::ProviderResult;
@@ -32,11 +29,12 @@ const _: () = assert!(
 );
 
 pub fn identified_active_input_payload_len(text: &str) -> Result<usize, serde_json::Error> {
-    let delivery_id = Uuid::nil().hyphenated().to_string();
-    encoded_active_input_len(&delivery_id, text)
+    let event_id = Uuid::nil().hyphenated().to_string();
+    encoded_active_input_len(&event_id, text)
 }
 
-pub fn local_active_input_delivery_id(run_id: RunId, sequence: u64) -> String {
+/// Stable input identity for a local-queue entry, which has no chat event.
+pub fn local_active_input_event_id(run_id: RunId, sequence: u64) -> String {
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
         format!("vm0:local-active-input:{run_id}:{sequence}").as_bytes(),
@@ -64,16 +62,9 @@ pub struct ApiActiveInputSource {
     consecutive_read_failures: u32,
 }
 
-#[derive(Clone)]
-pub struct ApiActiveInputRecovery {
-    api: ApiClient,
-    run_id: RunId,
-    sandbox_token: String,
-}
-
 pub enum ActiveInputBatch {
     Local(Vec<ActiveInputEntry>),
-    Api(ActiveInputReserveResponse),
+    Api(NextSteerableInputResponse),
 }
 
 const LOCAL_ACTIVE_INPUT_POLL_INTERVAL: Duration = Duration::from_millis(250);
@@ -150,17 +141,6 @@ impl ActiveInputSource {
         })
     }
 
-    pub fn api_recovery(&self) -> Option<ApiActiveInputRecovery> {
-        match self {
-            Self::LocalQueue(_) => None,
-            Self::Api(source) => Some(ApiActiveInputRecovery {
-                api: source.api.clone(),
-                run_id: source.run_id,
-                sandbox_token: source.sandbox_token.clone(),
-            }),
-        }
-    }
-
     pub async fn read(&mut self, min_sequence: u64) -> ProviderResult<ActiveInputBatch> {
         match self {
             Self::LocalQueue(source) => {
@@ -225,23 +205,12 @@ impl ActiveInputSource {
     }
 }
 
-impl ApiActiveInputRecovery {
-    pub async fn record_delivery(
-        &self,
-        delivery_id: &str,
-    ) -> ProviderResult<ActiveInputReceiptResponse> {
-        self.api
-            .record_active_input_delivery(self.run_id, &self.sandbox_token, delivery_id)
-            .await
-    }
-}
-
 async fn read_api_active_input(
     source: &mut ApiActiveInputSource,
 ) -> ProviderResult<ActiveInputBatch> {
     let response = source
         .api
-        .reserve_active_inputs(source.run_id, &source.sandbox_token)
+        .next_steerable_input(source.run_id, &source.sandbox_token)
         .await;
     source.consecutive_read_failures = if response.is_ok() {
         0

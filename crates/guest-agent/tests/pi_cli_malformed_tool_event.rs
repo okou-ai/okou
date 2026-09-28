@@ -21,7 +21,7 @@ async fn missing_pi_tool_result_error_status_terminates_projection()
         &npx,
         r#"#!/bin/sh
 set -eu
-printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":1,"ownershipTransferMode":"pending-tool-continuation"}'
+printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":1,"ownershipTransferMode":"sandbox-first"}'
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;
@@ -73,9 +73,7 @@ done
             &runtime_dir,
             &guest_contracts::env::RunPayload {
                 prompt: "reject malformed Pi tool result".to_string(),
-                pi_launch_config:
-                    r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#
-                        .to_string(),
+                pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
                 pi_model_config: "{}".to_string(),
                 pi_session_id: "11111111-1111-4111-8111-111111111112".to_string(),
                 ..guest_contracts::env::RunPayload::default()

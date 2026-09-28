@@ -437,44 +437,10 @@ function prepareDeepSeekModel(
   });
 }
 
-function prepareTerraModel(
-  session: MemoryPiSession,
-  baseUrl: string,
-  provider: "openai" | "openrouter" | "openai-codex" = "openai",
-): void {
-  session.prepareModelTurn(
-    {
-      id: provider === "openrouter" ? "openai/gpt-5.6-terra" : "gpt-5.6-terra",
-      name: "GPT 5.6 Terra",
-      api:
-        provider === "openai-codex"
-          ? "openai-codex-responses"
-          : "openai-responses",
-      provider,
-      baseUrl,
-      reasoning: true,
-      input: ["text", "image"],
-      cost: {
-        input: 2,
-        output: 12,
-        cacheRead: 0.2,
-        cacheWrite: 2.5,
-      },
-      contextWindow: 272_000,
-      maxTokens: 128_000,
-    },
-    "low",
-  );
-}
-
-async function startOwnershipTransferHost(args: {
+async function startSandboxHost(args: {
   readonly root: string;
-  readonly jsonl: string;
-  readonly mode:
-    | "sandbox-first"
-    | "pending-tool-continuation"
-    | "settled-session-continuation";
-  readonly baseSessionSha256: string | null;
+  /** History the Runner restored from the run's `resumeSession`, if any. */
+  readonly restoredJsonl?: string;
   readonly providerBaseUrl: string;
   readonly model?:
     | "deepseek"
@@ -484,58 +450,21 @@ async function startOwnershipTransferHost(args: {
     | "terra"
     | "codex-terra";
   readonly serviceTier?: "priority" | "fast";
-}): Promise<{
-  readonly host: RpcHost;
-  readonly handoffServer: Server;
-}> {
+}): Promise<RpcHost> {
   const agentDir = join(args.root, ".pi", "agent");
   const sessionDir = join(agentDir, "sessions", "--test--");
-  const manifest = {
-    schemaVersion: 3,
-    outcome: "ownership-transfer",
-    mode: args.mode,
-    baseSession: {
-      sessionId: SESSION_ID,
-      sha256: args.baseSessionSha256,
-    },
-    session: {
-      sessionId: SESSION_ID,
-      sha256: createHash("sha256").update(args.jsonl).digest("hex"),
-      rawSize: Buffer.byteLength(args.jsonl),
-    },
-    sandboxEventSequenceStart: 4,
-  };
-  const handoffServer = createServer((request, response) => {
-    if (request.url === "/manifest.json") {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify(manifest));
-      return;
-    }
-    if (request.url === "/session.jsonl") {
-      response.writeHead(200, {
-        "content-type": "application/x-ndjson",
-        "content-length": String(Buffer.byteLength(args.jsonl)),
-      });
-      response.end(args.jsonl);
-      return;
-    }
-    response.writeHead(404);
-    response.end();
-  });
-  await new Promise<void>((resolve, reject) => {
-    handoffServer.once("error", reject);
-    handoffServer.listen(0, "127.0.0.1", () => {
-      handoffServer.off("error", reject);
-      resolve();
-    });
-  });
-  const address = handoffServer.address();
-  if (address === null || typeof address === "string") {
-    throw new Error("Pi handoff test server has no TCP address");
+  if (args.restoredJsonl !== undefined) {
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(
+      join(sessionDir, `restored-${SESSION_ID}.jsonl`),
+      args.restoredJsonl,
+      { mode: 0o600 },
+    );
   }
-  const handoffBaseUrl = `http://127.0.0.1:${address.port}`;
   const payloadFile = join(args.root, "launch-payload.json");
   await mkdir(agentDir, { recursive: true });
+  // The API keeps writing the retired handoff slot until it is removed from
+  // the launch contract; the sandbox never reads it.
   await writeFile(
     payloadFile,
     JSON.stringify({
@@ -546,13 +475,10 @@ async function startOwnershipTransferHost(args: {
         apiFirstTurn: {
           schemaVersion: 1,
           resourceSnapshotDigest: "a".repeat(64),
-          manifestUrl: `${handoffBaseUrl}/manifest.json`,
-          sessionUrl: `${handoffBaseUrl}/session.jsonl`,
-          deadlineAt: Date.now() + 10_000,
-          baseSession: {
-            sessionId: SESSION_ID,
-            sha256: args.baseSessionSha256,
-          },
+          manifestUrl: "http://127.0.0.1:9/manifest.json",
+          sessionUrl: "http://127.0.0.1:9/session.jsonl",
+          deadlineAt: 1,
+          baseSession: { sessionId: SESSION_ID, sha256: null },
           sandboxEventSequenceStart: 1,
         },
       },
@@ -622,23 +548,15 @@ async function startOwnershipTransferHost(args: {
     CHATGPT_ACCESS_TOKEN: "opaque-access-token-placeholder",
     CHATGPT_ACCOUNT_ID: "opaque-account-id-placeholder",
   };
-  return {
-    host: new RpcHost({ cwd: args.root, agentDir, sessionDir, env }),
-    handoffServer,
-  };
+  return new RpcHost({ cwd: args.root, agentDir, sessionDir, env });
 }
 
-async function closeServer(server: Server): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error);
-      } else {
-        resolve();
-      }
-    });
-  });
-}
+const SANDBOX_STARTUP_BOUNDARY = {
+  type: "vm0_pi_api_first_turn_boundary",
+  schemaVersion: 2,
+  sandboxEventSequenceStart: 1,
+  ownershipTransferMode: "sandbox-first",
+} as const;
 
 describe("sandbox Pi agent loop", () => {
   it("writes the private maintenance attestation only after mounted validation", async () => {
@@ -1285,210 +1203,32 @@ describe("sandbox Pi agent loop", () => {
     }
   });
 
-  it.each([
-    "openrouter-terra",
-    "codex-terra",
-    "deepseek-v41",
-    "openrouter-v41",
-  ] as const)(
-    "restores %s H1, executes its pending tool, and checkpoints H2",
-    async (route) => {
-      const root = await mkdtemp(join(tmpdir(), "okou-pi-terra-handoff-rpc-"));
-      const sourceFile = join(root, "terra-handoff-source.txt");
-      const prompt = "read the Terra handoff source exactly once";
-      const provider = await ProviderHarness.start();
-      const memory = MemoryPiSession.create({ cwd: root, id: SESSION_ID });
-      const v41 = route === "deepseek-v41" || route === "openrouter-v41";
-      const upstreamModel = v41
-        ? route === "deepseek-v41"
-          ? "deepseek-flash"
-          : "deepseek/deepseek-v4.1-flash"
-        : route === "codex-terra"
-          ? "gpt-5.6-terra"
-          : "openai/gpt-5.6-terra";
-      if (v41) {
-        // H1 stores model identity; the child resolves its own real SDK registry.
-        prepareDeepSeekModel(memory, provider.baseUrl, {
-          provider: route === "deepseek-v41" ? "deepseek" : "openrouter",
-          model: upstreamModel,
-        });
-      } else {
-        prepareTerraModel(
-          memory,
-          provider.baseUrl,
-          route === "codex-terra" ? "openai-codex" : "openrouter",
-        );
-      }
-      memory.appendMessage({ role: "user", content: prompt, timestamp: 1 });
-      memory.appendMessage({
-        role: "assistant",
-        content: [
-          {
-            type: "thinking",
-            thinking: "Terra reasoning preserved for the Okou handoff",
-            thinkingSignature: JSON.stringify({
-              type: "reasoning",
-              id: "rs_terra_okou_handoff",
-              content: [
-                {
-                  type: "reasoning_text",
-                  text: "Terra reasoning preserved for the Okou handoff",
-                },
-              ],
-              summary: [],
-            }),
-          },
-          {
-            type: "toolCall",
-            id: "api-terra-read-call",
-            name: "read",
-            arguments: { path: sourceFile },
-          },
-        ],
-        api:
-          route === "codex-terra"
-            ? "openai-codex-responses"
-            : "openai-responses",
-        provider:
-          route === "deepseek-v41"
-            ? "deepseek"
-            : route === "codex-terra"
-              ? "openai-codex"
-              : "openrouter",
-        model: upstreamModel,
-        usage: {
-          input: 5,
-          output: 3,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 8,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: "toolUse",
-        timestamp: 2,
-      });
-      const h1 = memory.toJsonl();
-      let host: RpcHost | undefined;
-      let handoffServer: Server | undefined;
-
-      try {
-        await writeFile(
-          sourceFile,
-          "Terra tool output from the sandbox filesystem",
-        );
-        const started = await startOwnershipTransferHost({
-          root,
-          jsonl: h1,
-          mode: "pending-tool-continuation",
-          baseSessionSha256: null,
-          providerBaseUrl: provider.baseUrl,
-          model: route,
-          serviceTier: v41
-            ? undefined
-            : route === "codex-terra"
-              ? "fast"
-              : "priority",
-        });
-        host = started.host;
-        handoffServer = started.handoffServer;
-
-        const state = await host.state("terra-handoff-state");
-        expect(host.records[0]).toStrictEqual({
-          type: "vm0_pi_api_first_turn_boundary",
-          schemaVersion: 2,
-          sandboxEventSequenceStart: 4,
-          ownershipTransferMode: "pending-tool-continuation",
-        });
-        expect(state).toMatchObject({ sessionId: SESSION_ID, messageCount: 2 });
-        expect(String(state.sessionFile)).toContain("api-first-turn-");
-
-        host.send({ id: "terra-handoff", type: "prompt", message: prompt });
-        const continuationRequest = await provider.nextRequest();
-        const continuationBody = JSON.stringify(continuationRequest.body);
-        expect(continuationBody).toContain(
-          "Terra tool output from the sandbox filesystem",
-        );
-        expect(continuationBody).toContain("rs_terra_okou_handoff");
-        expect(occurrences(continuationBody, prompt)).toBe(1);
-        expect(continuationRequest.body).toMatchObject(
-          v41 ? { model: upstreamModel } : { service_tier: "priority" },
-        );
-        if (v41) {
-          expect(continuationRequest.body).not.toHaveProperty("service_tier");
-        }
-        continuationRequest.respond("Terra Okou handoff complete");
-        await host.waitFor((record) => {
-          return record.type === "agent_settled";
-        });
-        host.send({
-          id: "terra-followup",
-          type: "prompt",
-          message: "answer one more turn",
-        });
-        const nextRequest = await provider.nextRequest();
-        expect(nextRequest.body).toMatchObject(
-          v41 ? { model: upstreamModel } : { service_tier: "priority" },
-        );
-        nextRequest.respond("Terra followup complete");
-        await host.waitFor((record) => {
-          return record.type === "agent_settled";
-        });
-        await host.close();
-        host = undefined;
-
-        expect(provider.requests).toHaveLength(2);
-        const persisted = await readFile(String(state.sessionFile), "utf8");
-        expect(occurrences(persisted, prompt)).toBe(1);
-        expect(persisted).not.toContain("serviceTier");
-        expect(persisted).not.toContain("service_tier");
-        expect(persisted).toContain("api-terra-read-call");
-        expect(persisted).toContain(
-          "Terra tool output from the sandbox filesystem",
-        );
-        expect(persisted).toContain("Terra Okou handoff complete");
-        expect(MemoryPiSession.fromJsonl(persisted).isSettledCheckpoint()).toBe(
-          true,
-        );
-      } finally {
-        await host?.terminate();
-        if (handoffServer) {
-          await closeServer(handoffServer);
-        }
-        await provider.close();
-        await rm(root, { recursive: true, force: true });
-      }
-    },
-    30_000,
-  );
-
   it("keeps standard Terra tierless on the sandbox-first AgentSession call", async () => {
     const root = await mkdtemp(join(tmpdir(), "okou-pi-sandbox-first-rpc-"));
     const prompt = "execute this sandbox-owned first turn once";
     const provider = await ProviderHarness.start();
-    const session = MemoryPiSession.create({ cwd: root, id: SESSION_ID });
     let host: RpcHost | undefined;
-    let handoffServer: Server | undefined;
 
     try {
-      const started = await startOwnershipTransferHost({
+      host = await startSandboxHost({
         root,
-        jsonl: session.toJsonl(),
-        mode: "sandbox-first",
-        baseSessionSha256: null,
         providerBaseUrl: provider.baseUrl,
         model: "openrouter-terra",
       });
-      host = started.host;
-      handoffServer = started.handoffServer;
 
       const state = await host.state("sandbox-first-state");
-      expect(host.records[0]).toStrictEqual({
-        type: "vm0_pi_api_first_turn_boundary",
-        schemaVersion: 2,
-        sandboxEventSequenceStart: 4,
-        ownershipTransferMode: "sandbox-first",
-      });
+      expect(host.records[0]).toStrictEqual(SANDBOX_STARTUP_BOUNDARY);
       expect(state).toMatchObject({ sessionId: SESSION_ID, messageCount: 0 });
+      expect(String(state.sessionFile)).toBe(
+        join(
+          root,
+          ".pi",
+          "agent",
+          "sessions",
+          "--test--",
+          `${SESSION_ID}.jsonl`,
+        ),
+      );
 
       host.send({ id: "sandbox-first", type: "prompt", message: prompt });
       const request = await provider.nextRequest();
@@ -1507,9 +1247,6 @@ describe("sandbox Pi agent loop", () => {
       expect(persisted).toContain("sandbox-first complete");
     } finally {
       await host?.terminate();
-      if (handoffServer) {
-        await closeServer(handoffServer);
-      }
       await provider.close();
       await rm(root, { recursive: true, force: true });
     }
@@ -1544,10 +1281,8 @@ describe("sandbox Pi agent loop", () => {
       const skillDir = join(root, ".pi", "agent", "skills", "handoff-skill");
       const skillFile = join(skillDir, "SKILL.md");
       const skillBody = "Use the mounted handoff skill body for this request.";
-      let h0 = MemoryPiSession.create({ cwd: root, id: SESSION_ID }).toJsonl();
-      let baseSessionSha256: string | null = null;
+      let h0: string | undefined;
       let host: RpcHost | undefined;
-      let handoffServer: Server | undefined;
       try {
         // Use the existing user-skill discovery root, without settings,
         // extensions, templates, or a replacement resource loader.
@@ -1560,16 +1295,12 @@ describe("sandbox Pi agent loop", () => {
           ? `<skill name="handoff-skill" location="${skillFile}">\nReferences are relative to ${skillDir}.\n\n${skillBody}\n</skill>\n\nfirst  argument\nsecond line`
           : prompt;
         for (const turn of [1, 2]) {
-          const started = await startOwnershipTransferHost({
+          host = await startSandboxHost({
             root,
-            jsonl: h0,
-            mode: "sandbox-first",
-            baseSessionSha256,
+            restoredJsonl: h0,
             providerBaseUrl: provider.baseUrl,
             model: "openrouter-terra",
           });
-          host = started.host;
-          handoffServer = started.handoffServer;
           const state = await host.state(`native-input-state-${turn}`);
           expect(state).toMatchObject({
             sessionId: SESSION_ID,
@@ -1579,18 +1310,18 @@ describe("sandbox Pi agent loop", () => {
             // user/assistant pair.
             messageCount: turn === 1 ? 0 : (turn - 1) * 2 + 1,
           });
-          expect(host.records[0]).toStrictEqual({
-            type: "vm0_pi_api_first_turn_boundary",
-            schemaVersion: 2,
-            sandboxEventSequenceStart: 4,
-            ownershipTransferMode: "sandbox-first",
-          });
+          expect(host.records[0]).toStrictEqual(SANDBOX_STARTUP_BOUNDARY);
           const installed = await readFile(String(state.sessionFile), "utf8");
-          // Native startup adds model/thinking metadata to a fresh header.
-          // Resumed H0 is already configured and must remain byte-for-byte intact.
-          if (turn === 1) {
-            expect(installed.startsWith(h0)).toBe(true);
+          // The first turn opens a fresh session; a resumed turn opens the
+          // Runner-restored H0, which must remain byte-for-byte intact.
+          if (h0 === undefined) {
+            expect(String(state.sessionFile)).toMatch(
+              new RegExp(`/${SESSION_ID}\\.jsonl$`),
+            );
           } else {
+            expect(String(state.sessionFile)).toMatch(
+              new RegExp(`/restored-${SESSION_ID}\\.jsonl$`),
+            );
             expect(installed).toBe(h0);
           }
 
@@ -1620,8 +1351,6 @@ describe("sandbox Pi agent loop", () => {
           ).toHaveLength(1);
           await host.close();
           host = undefined;
-          await closeServer(handoffServer);
-          handoffServer = undefined;
 
           h0 = await readFile(String(state.sessionFile), "utf8");
           const persisted = MemoryPiSession.fromJsonl(h0);
@@ -1651,13 +1380,9 @@ describe("sandbox Pi agent loop", () => {
             }),
           );
           expect(provider.requests).toHaveLength(turn);
-          baseSessionSha256 = createHash("sha256").update(h0).digest("hex");
         }
       } finally {
         await host?.terminate();
-        if (handoffServer) {
-          await closeServer(handoffServer);
-        }
         await provider.close();
         await rm(root, { recursive: true, force: true });
       }
@@ -1671,20 +1396,15 @@ describe("sandbox Pi agent loop", () => {
     const provider = await ProviderHarness.start();
     const session = MemoryPiSession.create({ cwd: root, id: SESSION_ID });
     let host: RpcHost | undefined;
-    let handoffServer: Server | undefined;
 
     try {
-      const started = await startOwnershipTransferHost({
+      host = await startSandboxHost({
         root,
-        jsonl: session.toJsonl(),
-        mode: "sandbox-first",
-        baseSessionSha256: null,
+        restoredJsonl: session.toJsonl(),
         providerBaseUrl: provider.baseUrl,
         model: "openrouter-terra",
         serviceTier: "priority",
       });
-      host = started.host;
-      handoffServer = started.handoffServer;
 
       const state = await host.state("retry-state");
       host.send({ id: "retry", type: "prompt", message: prompt });
@@ -1711,9 +1431,6 @@ describe("sandbox Pi agent loop", () => {
       expect(persisted).not.toContain("service_tier");
     } finally {
       await host?.terminate();
-      if (handoffServer) {
-        await closeServer(handoffServer);
-      }
       await provider.close();
       await rm(root, { recursive: true, force: true });
     }
@@ -1783,21 +1500,16 @@ describe("sandbox Pi agent loop", () => {
       timestamp: 4,
     });
     let host: RpcHost | undefined;
-    let handoffServer: Server | undefined;
 
     try {
       const h0 = session.toJsonl();
-      const started = await startOwnershipTransferHost({
+      host = await startSandboxHost({
         root,
-        jsonl: h0,
-        mode: "sandbox-first",
-        baseSessionSha256: createHash("sha256").update(h0).digest("hex"),
+        restoredJsonl: h0,
         providerBaseUrl: provider.baseUrl,
         model: "openrouter-terra",
         serviceTier: "priority",
       });
-      host = started.host;
-      handoffServer = started.handoffServer;
 
       const state = await host.state("compaction-state");
       host.send({ id: "compaction", type: "prompt", message: prompt });
@@ -1878,108 +1590,6 @@ describe("sandbox Pi agent loop", () => {
       ).toBeFalsy();
     } finally {
       await host?.terminate();
-      if (handoffServer) {
-        await closeServer(handoffServer);
-      }
-      await provider.close();
-      await rm(root, { recursive: true, force: true });
-    }
-  }, 20_000);
-
-  it("acknowledges a settled transfer without replaying its original prompt", async () => {
-    const root = await mkdtemp(join(tmpdir(), "okou-pi-settled-rpc-"));
-    const originalPrompt = "the API already completed this prompt";
-    const continuation = "start the newly owned continuation";
-    const provider = await ProviderHarness.start();
-    const session = MemoryPiSession.create({ cwd: root, id: SESSION_ID });
-    prepareDeepSeekModel(session, provider.baseUrl);
-    session.appendMessage({
-      role: "user",
-      content: originalPrompt,
-      timestamp: 1,
-    });
-    session.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: "API-first turn complete" }],
-      api: "openai-responses",
-      provider: "deepseek",
-      model: "deepseek-v4-flash",
-      usage: {
-        input: 5,
-        output: 3,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 8,
-        cost: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          total: 0,
-        },
-      },
-      stopReason: "stop",
-      timestamp: 2,
-    });
-    let host: RpcHost | undefined;
-    let handoffServer: Server | undefined;
-
-    try {
-      const started = await startOwnershipTransferHost({
-        root,
-        jsonl: session.toJsonl(),
-        mode: "settled-session-continuation",
-        baseSessionSha256: null,
-        providerBaseUrl: provider.baseUrl,
-      });
-      host = started.host;
-      handoffServer = started.handoffServer;
-
-      const state = await host.state("settled-state");
-      expect(host.records[0]).toStrictEqual({
-        type: "vm0_pi_api_first_turn_boundary",
-        schemaVersion: 2,
-        sandboxEventSequenceStart: 4,
-        ownershipTransferMode: "settled-session-continuation",
-      });
-      expect(state).toMatchObject({ sessionId: SESSION_ID, messageCount: 2 });
-
-      host.send({
-        id: "settled-startup",
-        type: "prompt",
-        message: originalPrompt,
-      });
-      await host.waitFor((record) => {
-        return record.type === "response" && record.id === "settled-startup";
-      });
-      expect(provider.requests).toHaveLength(0);
-
-      host.send({
-        id: "settled-continuation",
-        type: "prompt",
-        message: continuation,
-      });
-      const request = await provider.nextRequest();
-      const requestBody = JSON.stringify(request.body);
-      expect(occurrences(requestBody, originalPrompt)).toBe(1);
-      expect(occurrences(requestBody, continuation)).toBe(1);
-      request.respond("settled continuation complete");
-      await host.waitFor((record) => {
-        return record.type === "agent_settled";
-      });
-      await host.close();
-      host = undefined;
-
-      expect(provider.requests).toHaveLength(1);
-      const persisted = await readFile(String(state.sessionFile), "utf8");
-      expect(occurrences(persisted, originalPrompt)).toBe(1);
-      expect(occurrences(persisted, continuation)).toBe(1);
-      expect(persisted).toContain("settled continuation complete");
-    } finally {
-      await host?.terminate();
-      if (handoffServer) {
-        await closeServer(handoffServer);
-      }
       await provider.close();
       await rm(root, { recursive: true, force: true });
     }

@@ -295,27 +295,11 @@ async fn run(runtime: GuestRuntime) -> i32 {
     let has_process_control_endpoint = runtime.process_control_endpoint.is_some();
     let active_input_enabled = framework_supports_active_input && has_process_control_endpoint;
     let active_input = if active_input_enabled {
-        let receipt_journal_path =
-            guest_contracts::runtime_paths::active_input_receipt_journal_file(
-                runtime.paths.runtime_dir(),
-            );
-        match guest_agent::active_input::ActiveInputRuntime::new_with_receipts(
+        guest_agent::active_input::ActiveInputRuntime::new_enabled(
             &runtime.config.run_id,
             &runtime.config.prompt,
-            receipt_journal_path,
             http.clone(),
-        ) {
-            Ok(active_input) => active_input,
-            Err(error) => {
-                let message = format!("Active-input receipt initialization failed: {error}");
-                log_error!(LOG_TAG, "{message}");
-                failure_diagnostics::write_guest_error_file(
-                    runtime.paths.checkpoint_error_file(),
-                    &message,
-                );
-                return 1;
-            }
-        }
+        )
     } else {
         guest_agent::active_input::ActiveInputRuntime::new_disabled(
             &runtime.config.run_id,
@@ -520,7 +504,6 @@ async fn execute(
     log_info!(LOG_TAG, "▷ Execution");
     let cli_start = Instant::now();
     let mut last_event_sequence = None;
-    let mut active_input_delivery_ids = Vec::new();
     let mut event_delivery_failure = None;
     let session_metadata = session_metadata::SessionMetadataStore::default();
     let cli_result = cli::execute_cli_with_controls_for_config_started_at(
@@ -551,7 +534,6 @@ async fn execute(
     ) = match cli_result {
         Ok(cli_result) => {
             last_event_sequence = cli_result.last_event_sequence;
-            active_input_delivery_ids = cli_result.active_input_delivery_ids.clone();
             if let Some(event_delivery) = cli_result.event_delivery.clone() {
                 let diagnostic = failure_diagnostics::event_delivery_failure_for_config(
                     config,
@@ -687,7 +669,6 @@ async fn execute(
             last_event_sequence,
             failure_message: (exit_code != 0).then_some(error_message.as_str()),
             failure_diagnostic,
-            active_input_delivery_ids: &active_input_delivery_ids,
             session_metadata: session_metadata.captured(),
         },
         telemetry,
@@ -821,7 +802,6 @@ struct CompletionState<'a> {
     last_event_sequence: Option<u32>,
     failure_message: Option<&'a str>,
     failure_diagnostic: Option<FailureDiagnostic>,
-    active_input_delivery_ids: &'a [String],
     session_metadata: Option<&'a session_metadata::CapturedSessionMetadata>,
 }
 
@@ -892,7 +872,6 @@ async fn complete_execution(
                     None,
                     None,
                     state.last_event_sequence,
-                    state.active_input_delivery_ids,
                     checkpoint,
                 )
                 .await;
@@ -967,7 +946,6 @@ async fn complete_execution(
                                 .and_then(|diagnostic| diagnostic.failure_reason),
                             state.failure_message,
                             state.last_event_sequence,
-                            state.active_input_delivery_ids,
                             checkpoint,
                         )
                         .await
@@ -1002,7 +980,6 @@ async fn complete_execution(
             &config.sandbox_reuse_result,
             &config.workspace_reuse_result,
             state.last_event_sequence,
-            state.active_input_delivery_ids,
         )
         .await;
     }
@@ -1298,7 +1275,6 @@ mod tests {
                 failure_diagnostic: None,
                 control_error: None,
                 cli_termination: Some(termination),
-                active_input_delivery_ids: Vec::new(),
             }
         };
         let successful_cleanup = make_result(
@@ -1794,7 +1770,6 @@ mod tests {
                 last_event_sequence: None,
                 failure_message: (cli_exit_code != 0).then_some(error_message.as_str()),
                 failure_diagnostic,
-                active_input_delivery_ids: &[],
                 session_metadata: None,
             },
             &telemetry,
@@ -1850,7 +1825,6 @@ mod tests {
                 last_event_sequence: None,
                 failure_message: None,
                 failure_diagnostic: None,
-                active_input_delivery_ids: &[],
                 session_metadata: None,
             },
             &telemetry,
@@ -1918,7 +1892,6 @@ mod tests {
                 last_event_sequence: None,
                 failure_message: None,
                 failure_diagnostic: None,
-                active_input_delivery_ids: &[],
                 session_metadata: Some(&session_metadata),
             },
             &telemetry,
@@ -1994,7 +1967,6 @@ mod tests {
                 last_event_sequence: None,
                 failure_message: None,
                 failure_diagnostic: None,
-                active_input_delivery_ids: &[],
                 session_metadata: Some(&session_metadata),
             },
             &telemetry,
@@ -2114,7 +2086,6 @@ mod tests {
                 last_event_sequence: None,
                 failure_message: Some(failure_message),
                 failure_diagnostic: Some(failure_diagnostic.clone()),
-                active_input_delivery_ids: &[],
                 session_metadata: Some(&session_metadata),
             },
             &telemetry,

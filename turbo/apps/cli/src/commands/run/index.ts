@@ -70,14 +70,15 @@ function printUsage(result: RunUsageResult): void {
     );
   }
 
+  // Only Runners before the API-first retirement report this source.
   const api = result.sources.apiFirstTurn;
-  if (api.state === "unavailable") {
+  if (api?.state === "unavailable") {
     console.log(`API first turn: unavailable (${api.reason}).`);
-  } else if (api.state === "no-inference") {
+  } else if (api?.state === "no-inference") {
     console.log(
       `API first turn: no inference before ownership transfer; sampled at ${sampleTime(api.sampledAt)}.`,
     );
-  } else {
+  } else if (api) {
     console.log(
       `API first turn: observed ${api.coverage}; sampled at ${sampleTime(api.sampledAt)}; handoff-time only.`,
     );
@@ -128,7 +129,7 @@ const usageCommand = new Command("usage")
     `
 This read-only query is bound to the current Sandbox assignment. It accepts no Run ID, endpoint or source input and requires no SSH access.
 
-Values are observations, not billing or settlement. Partial values are lower bounds. API-first usage is immutable at ownership transfer and cannot include provider usage first observed later. Source times are independent. The command never falls back to billing rows, logs or history and never retries automatically.`,
+Values are observations, not billing or settlement. Partial values are lower bounds. Source times are independent. The command never falls back to billing rows, logs or history and never retries automatically.`,
   )
   .action(
     withErrorHandler(async (options: { readonly json?: boolean }) => {

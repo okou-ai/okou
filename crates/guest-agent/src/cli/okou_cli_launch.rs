@@ -3,12 +3,13 @@
 //! The runner rootfs may carry a versioned CLI bundle installed at build time
 //! (see `guest_contracts::okou_cli`). It is used only when the launch config
 //! the API captured proves parity with the installed bundle and names a CLI
-//! floor the bundle satisfies: API-first turns hand a half-finished session to
-//! the sandbox, and prompt and tool-schema parity is a byte-equality contract.
-//! Parity is the session-construction digest when the launch config carries
-//! one (it moves only when code feeding the constructed session changes), and
-//! the exact `pi-agent-runtime` version otherwise. Every other case keeps the
-//! commit-addressed `npx` launch, which is always built from the API's commit.
+//! floor the bundle satisfies. Parity is the session-construction digest when
+//! the launch config carries one (it moves only when code feeding the
+//! constructed session changes), and the exact `pi-agent-runtime` version
+//! otherwise. Every other case keeps the commit-addressed `npx` launch, which
+//! is always built from the API's commit. The requirements still travel in the
+//! retired `piLaunchConfig.apiFirstTurn` slot; a launch config without them
+//! uses `npx`.
 
 use std::path::Path;
 

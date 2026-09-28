@@ -213,18 +213,7 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
         context.storage_manifest.as_mut().unwrap().artifacts[0].mount_path = storage_root.into();
         if framework == "pi" {
             context.pi_session_id = Some(session_id.into());
-            context.pi_launch_config = Some(serde_json::json!({
-                "schemaVersion": 2,
-                "apiFirstTurn": {
-                    "schemaVersion": 1,
-                    "resourceSnapshotDigest": "a".repeat(64),
-                    "manifestUrl": server.url(),
-                    "sessionUrl": server.url(),
-                    "deadlineAt": 2_000_000_000_000_u64,
-                    "baseSession": {"sessionId": session_id, "sha256": null},
-                    "sandboxEventSequenceStart": 1
-                }
-            }));
+            context.pi_launch_config = Some(serde_json::json!({ "schemaVersion": 2 }));
             context.pi_model_config = Some(serde_json::json!({
                 "provider": "deepseek",
                 "baseUrl": server.url(),

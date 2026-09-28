@@ -594,7 +594,6 @@ pub(super) struct AgentExecutionResult {
     pub(super) sandbox_reuse_disposition: SandboxReuseDisposition,
     pub(super) stdout_stream_diagnostics: AgentStdoutStreamDiagnostics,
     pub(super) reusable_session_identity: Option<RestoredSessionIdentity>,
-    pub(super) active_input_delivery_ids: Vec<String>,
 }
 
 impl AgentExecutionResult {
@@ -608,7 +607,6 @@ impl AgentExecutionResult {
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             stdout_stream_diagnostics: AgentStdoutStreamDiagnostics::default(),
             reusable_session_identity: None,
-            active_input_delivery_ids: Vec::new(),
         }
     }
 
@@ -622,13 +620,7 @@ impl AgentExecutionResult {
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             stdout_stream_diagnostics: AgentStdoutStreamDiagnostics::default(),
             reusable_session_identity: None,
-            active_input_delivery_ids: Vec::new(),
         }
-    }
-
-    pub(super) fn with_active_input_delivery_ids(mut self, delivery_ids: Vec<String>) -> Self {
-        self.active_input_delivery_ids = delivery_ids;
-        self
     }
 
     pub(super) fn with_stdout_stream_diagnostics(
@@ -3369,10 +3361,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     // Stop locally owned post-spawn work before interpreting terminal process
     // state. Join active input and model prefetch; drain or abort stdout based
     // on the wait outcome.
-    let active_input_delivery_ids = match active_input_forwarder {
-        Some(forwarder) => forwarder.stop(sandbox).await,
-        None => Vec::new(),
-    };
+    if let Some(forwarder) = active_input_forwarder {
+        forwarder.stop().await;
+    }
     // Wait for streaming to finish (channel closes when process exits).
     // When terminal proof is unavailable, close the bounded receiver so the
     // drain can flush accepted chunks without waiting for sender drop.
@@ -3421,8 +3412,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 telemetry.record("agent_execute", t.elapsed(), false, Some(&error));
                 return Ok(AgentExecutionResult::failure(1, error, None)
                     .with_resource_failure_kind(ResourceFailureKind::HostMemoryOomKilled)
-                    .with_stdout_stream_diagnostics(stdout_stream_diagnostics_on_wait_error)
-                    .with_active_input_delivery_ids(active_input_delivery_ids));
+                    .with_stdout_stream_diagnostics(stdout_stream_diagnostics_on_wait_error));
             }
             let error = e.to_string();
             telemetry.record("agent_execute", t.elapsed(), false, Some(&error));
@@ -3441,7 +3431,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     ),
                     stdout_stream_diagnostics: stdout_stream_diagnostics_on_wait_error,
                     reusable_session_identity: None,
-                    active_input_delivery_ids,
                 });
             }
             let resource_diagnostics = if explicit_enospc_evidence([error.as_str()]) {
@@ -3458,8 +3447,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             };
             return Ok(AgentExecutionResult::failure_from_error(error)
                 .with_resource_diagnostics(resource_diagnostics)
-                .with_stdout_stream_diagnostics(stdout_stream_diagnostics_on_wait_error)
-                .with_active_input_delivery_ids(active_input_delivery_ids));
+                .with_stdout_stream_diagnostics(stdout_stream_diagnostics_on_wait_error));
         }
     };
     let mut agent_domain_oom_kill = false;
@@ -3691,14 +3679,12 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             sandbox_reuse_disposition,
             stdout_stream_diagnostics,
             reusable_session_identity: None,
-            active_input_delivery_ids,
         },
         None => AgentExecutionResult {
             failure: None,
             sandbox_reuse_disposition,
             stdout_stream_diagnostics,
             reusable_session_identity,
-            active_input_delivery_ids,
         },
     };
     telemetry.record(

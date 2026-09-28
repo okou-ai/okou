@@ -4,39 +4,12 @@ use serde_json::{json, to_value};
 #[test]
 fn runtime_installs_for_every_context() {
     let run_id = RunId::new_v4();
-    let mut context = crate::test_fixtures::execution_context::execution_context_for_test(run_id);
+    let context = crate::test_fixtures::execution_context::execution_context_for_test(run_id);
     let (proxy, _crash_rx) = runner_network::proxy::MitmProxy::noop();
     let runtime = Runtime::new(MitmUsageHandle::from(&proxy));
 
-    context.pi_launch_config = Some(launch(json!({
-        "schemaVersion": 1,
-        "state": "no-inference",
-        "sampledAt": 0
-    })));
     let owner = runtime.for_context(&context);
     assert_eq!(owner.run_id, run_id);
-    assert_eq!(owner.api, ApiFirstTurnSource::NoInference { sampled_at: 0 });
-}
-
-fn launch(usage: Value) -> Value {
-    json!({
-        "apiFirstTurn": {
-            "continuation": {
-                "mode": "untouched-h0",
-                "apiUsage": usage
-            }
-        }
-    })
-}
-
-fn observed(coverage: &str, tokens: Value) -> Value {
-    json!({
-        "schemaVersion": 1,
-        "state": "observed",
-        "sampledAt": 0,
-        "coverage": coverage,
-        "tokens": tokens
-    })
 }
 
 fn proxy(complete: bool, tokens: TokenTotals) -> SandboxProxySource {
@@ -70,135 +43,25 @@ fn totals(input: u64, cache_read: u64, cache_creation: u64, output: u64) -> Toke
 }
 
 #[test]
-fn captures_missing_invalid_no_inference_and_tolerant_additions() {
+fn combined_usage_is_the_sandbox_proxy_observation() {
     assert_eq!(
-        capture_api_source(None),
-        ApiFirstTurnSource::Unavailable {
-            reason: ApiUnavailableReason::MissingHandoff
+        combine(&proxy(true, totals(5, 6, 7, 8))),
+        Combined::Observed {
+            coverage: Coverage::Complete,
+            observed_tokens: totals(5, 6, 7, 8)
         }
     );
     assert_eq!(
-        capture_api_source(Some(&json!({"apiFirstTurn": {"continuation": {}}}))),
-        ApiFirstTurnSource::Unavailable {
-            reason: ApiUnavailableReason::MissingHandoff
-        }
-    );
-    for value in [
-        json!(null),
-        json!({"apiFirstTurn": null}),
-        json!({"apiFirstTurn": {"continuation": null}}),
-        launch(json!(null)),
-        launch(json!({"schemaVersion": 2, "state": "no-inference", "sampledAt": 0})),
-        launch(
-            json!({"schemaVersion": 1, "state": "no-inference", "sampledAt": MAX_SAFE_INTEGER + 1}),
-        ),
-        launch(json!({"schemaVersion": 1, "state": "no-inference"})),
-    ] {
-        assert_eq!(
-            capture_api_source(Some(&value)),
-            ApiFirstTurnSource::Unavailable {
-                reason: ApiUnavailableReason::InvalidHandoff
-            }
-        );
-    }
-    let value = launch(json!({
-        "schemaVersion": 1,
-        "state": "no-inference",
-        "sampledAt": 0,
-        "future": {"additive": true}
-    }));
-    assert_eq!(
-        capture_api_source(Some(&value)),
-        ApiFirstTurnSource::NoInference { sampled_at: 0 }
-    );
-}
-
-#[test]
-fn validates_observed_coverage_required_nullable_categories_and_safe_integers() {
-    let complete = json!({"input":0,"cacheRead":1,"cacheCreation":2,"output":3});
-    let partial = json!({"input":0,"cacheRead":null,"cacheCreation":null,"output":null});
-    let unavailable = json!({"input":null,"cacheRead":null,"cacheCreation":null,"output":null});
-    for (coverage, tokens) in [
-        ("complete", complete.clone()),
-        ("partial", partial.clone()),
-        ("unavailable", unavailable.clone()),
-    ] {
-        let value = launch(observed(coverage, tokens));
-        assert!(matches!(
-            capture_api_source(Some(&value)),
-            ApiFirstTurnSource::Observed { .. }
-        ));
-    }
-    for (coverage, tokens) in [
-        ("complete", partial.clone()),
-        ("partial", unavailable.clone()),
-        ("unavailable", partial),
-        (
-            "complete",
-            json!({"input":MAX_SAFE_INTEGER + 1,"cacheRead":0,"cacheCreation":0,"output":0}),
-        ),
-        (
-            "complete",
-            json!({"input":0,"cacheRead":0,"cacheCreation":0}),
-        ),
-    ] {
-        let value = launch(observed(coverage, tokens));
-        assert_eq!(
-            capture_api_source(Some(&value)),
-            ApiFirstTurnSource::Unavailable {
-                reason: ApiUnavailableReason::InvalidHandoff
-            }
-        );
-    }
-    let additive = launch(observed(
-        "complete",
-        json!({
-            "input":0,"cacheRead":1,"cacheCreation":2,"output":3,
-            "futureCategory": 100
-        }),
-    ));
-    assert_eq!(
-        to_value(capture_api_source(Some(&additive))).unwrap(),
-        json!({
-            "state":"observed","sampledAt":0,"coverage":"complete",
-            "tokens":{"input":0,"cacheRead":1,"cacheCreation":2,"output":3,"total":6}
-        })
-    );
-}
-
-#[test]
-fn combines_each_known_contribution_once_and_preserves_partial_zero() {
-    let api_value = launch(observed(
-        "partial",
-        json!({"input":5,"cacheRead":null,"cacheCreation":0,"output":null}),
-    ));
-    let api = capture_api_source(Some(&api_value));
-    let sandbox = proxy(false, totals(7, 2, 3, 4));
-    let expected = Combined::Observed {
-        coverage: Coverage::Partial,
-        observed_tokens: totals(12, 2, 3, 4),
-    };
-    assert_eq!(combine(&api, &sandbox), expected);
-    assert_eq!(combine(&api, &sandbox), expected);
-
-    let no_inference = ApiFirstTurnSource::NoInference { sampled_at: 0 };
-    let unavailable = SandboxProxySource::Unavailable {
-        reason: SandboxUnavailableReason::NotObserved,
-    };
-    assert_eq!(
-        combine(&no_inference, &unavailable),
+        combine(&proxy(false, totals(0, 0, 0, 0))),
         Combined::Observed {
             coverage: Coverage::Partial,
             observed_tokens: totals(0, 0, 0, 0)
         }
     );
     assert_eq!(
-        combine(
-            &ApiFirstTurnSource::Unavailable {
-                reason: ApiUnavailableReason::MissingHandoff
-            },
-            &unavailable
-        ),
+        combine(&SandboxProxySource::Unavailable {
+            reason: SandboxUnavailableReason::NotObserved,
+        }),
         Combined::Unavailable {
             reason: CombinedUnavailableReason::NoObservation
         }
@@ -206,48 +69,42 @@ fn combines_each_known_contribution_once_and_preserves_partial_zero() {
 }
 
 #[test]
-fn complete_requires_both_complete_sources_and_overflow_emits_no_totals() {
-    let api_value = launch(observed(
-        "complete",
-        json!({"input":1,"cacheRead":2,"cacheCreation":3,"output":4}),
-    ));
-    let api = capture_api_source(Some(&api_value));
+fn unsafe_proxy_quantities_emit_no_totals() {
+    let half = MAX_SAFE_INTEGER / 2;
     assert_eq!(
-        combine(&api, &proxy(true, totals(5, 6, 7, 8))),
-        Combined::Observed {
-            coverage: Coverage::Complete,
-            observed_tokens: totals(6, 8, 10, 12)
-        }
-    );
-
-    let category_overflow = launch(observed(
-        "complete",
-        json!({"input":MAX_SAFE_INTEGER,"cacheRead":0,"cacheCreation":0,"output":0}),
-    ));
-    assert_eq!(
-        combine(
-            &capture_api_source(Some(&category_overflow)),
-            &proxy(true, totals(1, 0, 0, 0))
-        ),
+        combine(&proxy(true, totals(half, half, 1, 1))),
         Combined::Overflow {
             coverage: Coverage::Complete
         }
     );
+}
 
-    let half = MAX_SAFE_INTEGER / 4;
-    let total_overflow = launch(observed(
-        "complete",
-        json!({"input":half,"cacheRead":half,"cacheCreation":half,"output":half}),
-    ));
+#[test]
+fn result_has_no_api_first_turn_source() {
+    let sandbox_proxy = proxy(true, totals(1, 2, 3, 4));
+    let result = ResultDto {
+        schema_version: 1,
+        run_id: RunId::new_v4(),
+        combined: combine(&sandbox_proxy),
+        sources: Sources { sandbox_proxy },
+    };
+    let value = to_value(&result).unwrap();
     assert_eq!(
-        combine(
-            &capture_api_source(Some(&total_overflow)),
-            &proxy(true, totals(1, 1, 1, 1))
-        ),
-        Combined::Overflow {
-            coverage: Coverage::Complete
-        }
+        value["sources"],
+        json!({
+            "sandboxProxy": {
+                "state": "observed",
+                "sampledAtMs": 1,
+                "revision": 2,
+                "coverage": "complete",
+                "reasons": [],
+                "observedResponses": 1,
+                "outstandingResponses": 0,
+                "tokens": {"input":1,"cacheRead":2,"cacheCreation":3,"output":4,"total":10}
+            }
+        })
     );
+    assert_eq!(value["combined"]["coverage"], "complete");
 }
 
 #[test]

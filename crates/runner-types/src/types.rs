@@ -1818,10 +1818,6 @@ pub struct CompleteRequest {
     /// failed before the runner reached a reliable final decision.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_reuse_result: Option<WorkspaceReuseResult>,
-    /// Active-input deliveries observed in the guest receipt journal but not
-    /// confirmed through the direct receipt route before process exit.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub active_input_delivery_ids: Vec<String>,
 }
 
 /// Outcome of the sandbox-reuse decision made at job dispatch time. `Reused`
@@ -2286,7 +2282,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: Vec::new(),
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json.get("runId").is_some());
@@ -2297,7 +2292,6 @@ mod tests {
         assert!(json.get("sandboxId").is_none());
         assert!(json.get("sandboxReuseResult").is_none());
         assert!(json.get("workspaceReuseResult").is_none());
-        assert!(json.get("activeInputDeliveryIds").is_none());
     }
 
     #[test]
@@ -2312,7 +2306,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: Vec::new(),
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["error"], "timeout");
@@ -2337,7 +2330,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: Vec::new(),
         };
 
         let json = serde_json::to_value(&req).unwrap();
@@ -2358,16 +2350,11 @@ mod tests {
             sandbox_id: Some(sid),
             sandbox_reuse_result: Some(SandboxReuseResult::Reused),
             workspace_reuse_result: Some(WorkspaceReuseResult::SandboxReused),
-            active_input_delivery_ids: vec!["aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".to_string()],
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["sandboxId"], "11111111-2222-3333-4444-555555555555");
         assert_eq!(json["sandboxReuseResult"], "reused");
         assert_eq!(json["workspaceReuseResult"], "sandboxReused");
-        assert_eq!(
-            json["activeInputDeliveryIds"],
-            serde_json::json!(["aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"])
-        );
     }
 
     #[test]

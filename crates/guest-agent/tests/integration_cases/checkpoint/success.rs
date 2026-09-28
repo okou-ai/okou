@@ -54,7 +54,6 @@ async fn pi_checkpoint_reports_full_combined_completion_payload() {
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     guest_agent::paths::write_private(session_id_file(), session_id).unwrap();
-    let active_input_delivery_ids = vec!["11111111-1111-4111-8111-111111111111".to_string()];
 
     let standalone_checkpoint = server.mock(|when, then| {
         when.method(POST).path("/api/webhooks/agent/checkpoints");
@@ -71,7 +70,6 @@ async fn pi_checkpoint_reports_full_combined_completion_payload() {
                     "sandboxId": "00000000-0000-4000-8000-000000000abc",
                     "sandboxReuseResult": "reused",
                     "workspaceReuseResult": "sandboxReused",
-                    "activeInputDeliveryIds": ["11111111-1111-4111-8111-111111111111"],
                     "checkpoint": {
                         "cliAgentType": "pi",
                         "cliAgentSessionId": session_id,
@@ -91,17 +89,9 @@ async fn pi_checkpoint_reports_full_combined_completion_payload() {
         guest_agent::checkpoint::prepare_checkpoint_for_runtime(&runtime, &session_metadata)
             .await
             .unwrap();
-    guest_agent::complete::report_checkpoint_for_run(
-        &runtime,
-        0,
-        None,
-        None,
-        Some(42),
-        &active_input_delivery_ids,
-        checkpoint,
-    )
-    .await
-    .unwrap();
+    guest_agent::complete::report_checkpoint_for_run(&runtime, 0, None, None, Some(42), checkpoint)
+        .await
+        .unwrap();
 
     standalone_checkpoint.assert_calls_async(0).await;
     complete.assert_calls_async(1).await;

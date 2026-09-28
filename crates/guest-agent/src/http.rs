@@ -8,7 +8,6 @@ use api_contracts::generated::constants::client::headers::{
     CLIENT_REQUEST_ID_HEADER, CLIENT_SESSION_ID_HEADER, CLIENT_TYPE_HEADER, CLIENT_VERSION_HEADER,
 };
 use api_contracts::generated::constants::client::types::CLIENT_TYPE_GUEST_AGENT;
-use api_contracts::generated::types::runners::runs::active_inputs::receipt::Response as ActiveInputReceiptResponse;
 use bytes::{Bytes, BytesMut};
 use guest_contracts::diagnostics::{HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic};
 use guest_telemetry::log_warn;
@@ -406,15 +405,11 @@ impl HttpClient {
         Ok(&self.api_config()?.urls.storage_commit)
     }
 
-    fn active_input_receipt_url(
-        &self,
-        run_id: &str,
-        delivery_id: &str,
-    ) -> Result<String, AgentError> {
-        Ok(urls::active_input_receipt_url(
+    fn steered_input_url(&self, run_id: &str, event_id: &str) -> Result<String, AgentError> {
+        Ok(urls::steered_input_url(
             &self.api_config()?.base_url,
             run_id,
-            delivery_id,
+            event_id,
         ))
     }
 }
@@ -706,31 +701,24 @@ impl HttpClient {
         Ok(())
     }
 
-    /// Record one backend-accepted active-input delivery.
+    /// Declare one backend-accepted active input steered into the run.
     ///
-    /// The API operation is idempotent. Retry ownership remains with the
-    /// active-input receipt runtime, so one call performs exactly one bounded
-    /// HTTP attempt.
-    pub async fn post_active_input_receipt(
-        &self,
-        run_id: &str,
-        delivery_id: &str,
-    ) -> Result<ActiveInputReceiptResponse, AgentError> {
-        let url = self.active_input_receipt_url(run_id, delivery_id)?;
-        let response = self
-            .post_json_response(
-                &url,
-                Bytes::from_static(b"{}"),
-                1,
-                None,
-                Some(Duration::from_secs(
-                    constants::ACTIVE_INPUT_RECEIPT_TIMEOUT_SECS,
-                )),
-            )
-            .await?;
-        let body = collect_api_success_body(response).await?;
-        serde_json::from_slice::<ActiveInputReceiptResponse>(&body)
-            .map_err(|error| AgentError::Http(error.to_string()))
+    /// The API operation is idempotent for this run. The steered declaration
+    /// worker owns the single attempt; a `409` is returned as
+    /// [`AgentError::HttpStatus`] for the caller to treat as final.
+    pub async fn post_steered_input(&self, run_id: &str, event_id: &str) -> Result<(), AgentError> {
+        let url = self.steered_input_url(run_id, event_id)?;
+        self.post_json_response(
+            &url,
+            Bytes::from_static(b"{}"),
+            1,
+            None,
+            Some(Duration::from_secs(
+                constants::ACTIVE_INPUT_STEERED_TIMEOUT_SECS,
+            )),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn post_json_response(

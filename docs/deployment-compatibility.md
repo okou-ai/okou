@@ -109,6 +109,51 @@ Old and new versions during deploy:
 
 No API rollback floor is needed.
 
+## Unified chat queue (release 6): Runner, Guest and Sandbox CLI
+
+The Runner reads steerable input from
+`GET /api/runners/runs/:runId/steerable-inputs/next` instead of reserve, and
+the Guest declares each input the CLI backend accepted through
+`POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered` instead of
+receipt. The process-control payload carries the source chat-event ID
+(`eventId`); delivery IDs, the Guest receipt journal, Runner journal recovery
+and `activeInputDeliveryIds` in completion requests are gone. A `409` from the
+steered endpoint is final, and a failed declaration is not retried: the input
+stays queued for the next pick.
+
+The Sandbox Pi CLI no longer waits for the per-run handoff manifest. It opens
+the session the Runner restored from `resumeSession` (inline `sessionHistory`
+or blob `historyRef`) as `restored-<sessionId>.jsonl`, or the file a reused
+sandbox's previous run appended to, and starts a fresh session on a first
+turn. It still writes the private `vm0_pi_api_first_turn_boundary` startup
+record with `sandboxEventSequenceStart: 1` and `sandbox-first`, which every
+Guest release requires; the Guest now rejects the retired continuation modes.
+The Runner validates the launch config without `apiFirstTurn` and `run.usage`
+no longer reports the always-unavailable `apiFirstTurn` source.
+
+Guest binaries ship inside the Runner binary, so Runner and Guest never skew.
+Mixed versions during rollout:
+
+- New Runner with an API below release 4: unsupported. **API rollback floor:
+  release 4**, main commit `fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da`, pinned in
+  `resolve-production-rollback-target.sh`, because a draining release 6 Runner
+  only calls the steer endpoints.
+- Old Runner with this API: unchanged; release 4 and later still serve reserve,
+  receipt and `activeInputDeliveryIds` until release 7 removes them.
+- Old Sandbox CLI (commit-addressed `CLI_PKG_URL` of a run created before this
+  release) with a new Guest: it still waits for the manifest the API keeps
+  publishing and writes the same startup record. Its `okou run usage` rejects
+  the new result without `apiFirstTurn` as `invalid-response`.
+- New Sandbox CLI with an old Guest (a run created after API promotion that an
+  old Runner claims): the CLI writes the startup record the old Guest requires
+  and reads the session the old Runner restored the same way. `okou run usage`
+  accepts results with or without `apiFirstTurn`.
+
+The API keeps writing the manifest and `piLaunchConfig.apiFirstTurn` until
+release 7, which also carries the installed-CLI launch requirements
+(`requiredPiAgentRuntimeVersion`, `minCliVersion`,
+`requiredPiSessionConstructionDigest`) the Guest reads from that slot.
+
 ## Unified chat queue (release 4)
 
 Migration `1273_drop_active_input_delivery_tables` drops

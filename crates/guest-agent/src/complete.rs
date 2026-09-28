@@ -59,17 +59,11 @@ struct CompletePayload<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     workspace_reuse_result: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    active_input_delivery_ids: Option<&'a [String]>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     checkpoint: Option<&'a complete::RequestCheckpoint>,
 }
 
 fn as_optional(value: &str) -> Option<&str> {
     if value.is_empty() { None } else { Some(value) }
-}
-
-fn as_optional_slice(values: &[String]) -> Option<&[String]> {
-    (!values.is_empty()).then_some(values)
 }
 
 /// Atomically persist a prepared checkpoint and complete the run.
@@ -91,7 +85,6 @@ pub async fn report_checkpoint_for_run(
     failure_reason: Option<FailureReason>,
     error: Option<&str>,
     last_event_sequence: Option<u32>,
-    active_input_delivery_ids: &[String],
     checkpoint: PreparedCheckpoint,
 ) -> Result<(), AgentError> {
     let api_started_at = Instant::now();
@@ -103,7 +96,6 @@ pub async fn report_checkpoint_for_run(
             failure_reason,
             error,
             last_event_sequence,
-            active_input_delivery_ids,
             Some(checkpoint.request()),
         ),
         constants::HTTP_MAX_ATTEMPTS,
@@ -134,7 +126,6 @@ pub async fn report_user_cancellation_for_run(
     sandbox_reuse_result: &str,
     workspace_reuse_result: &str,
     last_event_sequence: Option<u32>,
-    active_input_delivery_ids: &[String],
 ) {
     if !http.has_api() {
         return;
@@ -149,7 +140,6 @@ pub async fn report_user_cancellation_for_run(
             sandbox_reuse_result,
             workspace_reuse_result,
             last_event_sequence,
-            active_input_delivery_ids,
         ),
         1,
     )
@@ -170,7 +160,6 @@ fn payload_for_runtime<'a>(
     failure_reason: Option<FailureReason>,
     error: Option<&'a str>,
     last_event_sequence: Option<u32>,
-    active_input_delivery_ids: &'a [String],
     checkpoint: Option<&'a complete::RequestCheckpoint>,
 ) -> CompletePayload<'a> {
     let config = &runtime.config;
@@ -183,7 +172,6 @@ fn payload_for_runtime<'a>(
         sandbox_id: as_optional(&config.sandbox_id),
         sandbox_reuse_result: as_optional(&config.sandbox_reuse_result),
         workspace_reuse_result: as_optional(&config.workspace_reuse_result),
-        active_input_delivery_ids: as_optional_slice(active_input_delivery_ids),
         checkpoint,
     }
 }
@@ -195,7 +183,6 @@ fn checkpointless_payload_for_run<'a>(
     sandbox_reuse_result: &'a str,
     workspace_reuse_result: &'a str,
     last_event_sequence: Option<u32>,
-    active_input_delivery_ids: &'a [String],
 ) -> CompletePayload<'a> {
     CompletePayload {
         run_id,
@@ -206,7 +193,6 @@ fn checkpointless_payload_for_run<'a>(
         sandbox_id: as_optional(sandbox_id),
         sandbox_reuse_result: as_optional(sandbox_reuse_result),
         workspace_reuse_result: as_optional(workspace_reuse_result),
-        active_input_delivery_ids: as_optional_slice(active_input_delivery_ids),
         checkpoint: None,
     }
 }
@@ -236,7 +222,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: None,
             checkpoint: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -254,7 +239,6 @@ mod tests {
             sandbox_id: Some("abc"),
             sandbox_reuse_result: Some("reused"),
             workspace_reuse_result: Some("sandboxReused"),
-            active_input_delivery_ids: None,
             checkpoint: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -274,7 +258,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: None,
             checkpoint: None,
         };
 
@@ -295,7 +278,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: Some("poolMiss"),
             workspace_reuse_result: None,
-            active_input_delivery_ids: None,
             checkpoint: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -314,7 +296,6 @@ mod tests {
             sandbox_id: Some("sid"),
             sandbox_reuse_result: None,
             workspace_reuse_result: Some("cacheMiss"),
-            active_input_delivery_ids: None,
             checkpoint: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -340,7 +321,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: None,
             checkpoint: None,
         };
         let json = serde_json::to_string(&payload).unwrap();

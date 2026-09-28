@@ -6,7 +6,6 @@
 //! values, and filesystem layout helpers both sides must keep in lockstep.
 
 pub mod active_input;
-pub mod active_input_receipts;
 pub mod cli_agent_session_id;
 pub mod cli_stderr_diagnostics;
 pub mod codex_session_cleanup;

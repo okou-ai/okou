@@ -35,6 +35,7 @@ const apiTokens = z
   })
   .strict();
 
+/** Retired source; Runners before its removal still report it. */
 const apiFirstTurn = z
   .discriminatedUnion("state", [
     z
@@ -200,7 +201,7 @@ const runUsageResultBaseSchema = z
     combined,
     sources: z
       .object({
-        apiFirstTurn,
+        apiFirstTurn: apiFirstTurn.optional(),
         sandboxProxy,
       })
       .strict(),
@@ -212,6 +213,7 @@ type RunUsageResultInput = z.infer<typeof runUsageResultBaseSchema>;
 function apiEstablishesObservation(
   api: RunUsageResultInput["sources"]["apiFirstTurn"],
 ): boolean {
+  if (api === undefined) return false;
   if (api.state === "no-inference") return true;
   if (api.state !== "observed") return false;
   return [
@@ -228,7 +230,7 @@ function sourceCategorySums(
   sources: RunUsageResultInput["sources"],
 ): readonly [number, number, number, number] {
   const api =
-    sources.apiFirstTurn.state === "observed"
+    sources.apiFirstTurn?.state === "observed"
       ? [
           sources.apiFirstTurn.tokens.input ?? 0,
           sources.apiFirstTurn.tokens.cacheRead ?? 0,
@@ -279,6 +281,7 @@ function validateCombined(
     return;
   }
   const apiComplete =
+    api === undefined ||
     api.state === "no-inference" ||
     (api.state === "observed" && api.coverage === "complete");
   const proxyComplete =

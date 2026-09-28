@@ -557,55 +557,6 @@ pub mod runners {
     pub mod runs {
         /// Generated decode-path schemas under `runners::runs::by_run_id`.
         pub mod by_run_id {
-            /// Generated decode-path schemas under `runners::runs::by_run_id::active_inputs`.
-            pub mod active_inputs {
-                /// Generated decode-path schemas under `runners::runs::by_run_id::active_inputs::deliveries`.
-                pub mod deliveries {
-                    /// Generated decode-path schemas under `runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id`.
-                    pub mod by_delivery_id {
-                        /// Generated decode-path schemas under `runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt`.
-                        pub mod receipt {
-                            const NODES: &[crate::decode_path::DecodePathNode] = &[
-                                crate::decode_path::DecodePathNode::Object(0, 1),
-                                crate::decode_path::DecodePathNode::Leaf,
-                            ];
-
-                            const FIELDS: &[crate::decode_path::DecodePathField] =
-                                &[crate::decode_path::DecodePathField::new("outcome", 1)];
-
-                            /// Decode-path schema for the active-input receipt response.
-                            pub static RESPONSE: crate::DecodePathSchema =
-                                crate::DecodePathSchema::new(NODES, FIELDS);
-                        }
-                    }
-                }
-
-                /// Generated decode-path schemas under `runners::runs::by_run_id::active_inputs::reserve`.
-                pub mod reserve {
-                    const NODES: &[crate::decode_path::DecodePathNode] = &[
-                        crate::decode_path::DecodePathNode::Object(0, 5),
-                        crate::decode_path::DecodePathNode::Leaf,
-                        crate::decode_path::DecodePathNode::Sequence(3),
-                        crate::decode_path::DecodePathNode::Leaf,
-                        crate::decode_path::DecodePathNode::Leaf,
-                        crate::decode_path::DecodePathNode::Leaf,
-                        crate::decode_path::DecodePathNode::Leaf,
-                    ];
-
-                    const FIELDS: &[crate::decode_path::DecodePathField] = &[
-                        crate::decode_path::DecodePathField::new("deliveryId", 1),
-                        crate::decode_path::DecodePathField::new("eventIds", 2),
-                        crate::decode_path::DecodePathField::new("outcome", 4),
-                        crate::decode_path::DecodePathField::new("prompt", 5),
-                        crate::decode_path::DecodePathField::new("reason", 6),
-                    ];
-
-                    /// Decode-path schema for the active-input reserve response.
-                    pub static RESPONSE: crate::DecodePathSchema =
-                        crate::DecodePathSchema::new(NODES, FIELDS);
-                }
-            }
-
             /// Generated decode-path schemas under `runners::runs::by_run_id::cancellation`.
             pub mod cancellation {
                 const NODES: &[crate::decode_path::DecodePathNode] = &[
@@ -732,6 +683,29 @@ pub mod runners {
                     ];
 
                     /// Decode-path schema for the connector runtime sync response.
+                    pub static RESPONSE: crate::DecodePathSchema =
+                        crate::DecodePathSchema::new(NODES, FIELDS);
+                }
+            }
+
+            /// Generated decode-path schemas under `runners::runs::by_run_id::steerable_inputs`.
+            pub mod steerable_inputs {
+                /// Generated decode-path schemas under `runners::runs::by_run_id::steerable_inputs::next`.
+                pub mod next {
+                    const NODES: &[crate::decode_path::DecodePathNode] = &[
+                        crate::decode_path::DecodePathNode::Object(2, 1),
+                        crate::decode_path::DecodePathNode::Object(0, 2),
+                        crate::decode_path::DecodePathNode::Leaf,
+                        crate::decode_path::DecodePathNode::Leaf,
+                    ];
+
+                    const FIELDS: &[crate::decode_path::DecodePathField] = &[
+                        crate::decode_path::DecodePathField::new("eventId", 2),
+                        crate::decode_path::DecodePathField::new("prompt", 3),
+                        crate::decode_path::DecodePathField::new("input", 1),
+                    ];
+
+                    /// Decode-path schema for the next steerable input response.
                     pub static RESPONSE: crate::DecodePathSchema =
                         crate::DecodePathSchema::new(NODES, FIELDS);
                 }

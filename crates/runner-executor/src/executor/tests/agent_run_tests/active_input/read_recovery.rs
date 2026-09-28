@@ -7,7 +7,7 @@ use tracing::Level;
 use tracing_subscriber::prelude::*;
 
 use super::read_backoff::{observe, retry_delay};
-use super::{DELIVERY_ID, EVENT_ID, api_active_input_source};
+use super::{EVENT_ID, api_active_input_source};
 use crate::error::RunnerResult;
 use crate::executor::agent_run::{AgentExecutionResult, RunControls, RunStart, run_in_sandbox};
 use crate::executor::tests::support::{
@@ -83,9 +83,9 @@ impl RunningInput {
         })
         .await;
         let calls = self.overrides.process_control_calls();
-        assert_eq!(calls[0].message_id, DELIVERY_ID);
+        assert_eq!(calls[0].message_id, EVENT_ID);
         let payload: Value = serde_json::from_slice(&calls[0].payload).unwrap();
-        assert_eq!(payload["deliveryId"], DELIVERY_ID);
+        assert_eq!(payload["eventId"], EVENT_ID);
         assert_eq!(payload["text"], "recovered input");
     }
 
@@ -123,12 +123,10 @@ impl PausedClock {
     }
 }
 
-fn reserved() -> RawHttpAction {
+fn next_input() -> RawHttpAction {
     RawHttpAction::Respond(json_response(
         "200 OK",
-        &format!(
-            r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"recovered input"}}"#,
-        ),
+        &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"recovered input"}}}}"#,),
     ))
 }
 
@@ -150,7 +148,7 @@ async fn run_in_sandbox_recovers_tcp_reset_without_a_warning() {
     let captured = CapturedEvents::default();
     let _subscriber =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
-    let server = RawHttpTestServer::spawn(vec![RawHttpAction::ResetConnection, reserved()]).await;
+    let server = RawHttpTestServer::spawn(vec![RawHttpAction::ResetConnection, next_input()]).await;
     let run = RunningInput::start(&server).await;
     run.expect_delivery().await;
     run.finish(false).await;
@@ -163,13 +161,13 @@ async fn run_in_sandbox_recovers_tcp_reset_without_a_warning() {
     let recoveries = events(&captured, RECOVERED);
     assert_eq!(recoveries.len(), 1);
     assert_eq!(recoveries[0].level, Level::INFO);
-    assert_eq!(recoveries[0].fields["reserve_outcome"], "reserved");
+    assert_eq!(recoveries[0].fields["next_outcome"], "input");
     assert_eq!(recoveries[0].fields["recovered_after_failures"], "1");
     assert_eq!(recoveries[0].fields["was_degraded"], "false");
 }
 
 #[tokio::test]
-async fn run_in_sandbox_recovers_a_real_reserve_request_timeout() {
+async fn run_in_sandbox_recovers_a_real_next_request_timeout() {
     let captured = CapturedEvents::default();
     let _subscriber =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
@@ -180,7 +178,7 @@ async fn run_in_sandbox_recovers_a_real_reserve_request_timeout() {
             // No response bytes: release the timed-out socket before accepting retry.
             response: Vec::new(),
         },
-        reserved(),
+        next_input(),
     ])
     .await;
     let run = RunningInput::start(&server).await;
@@ -201,8 +199,8 @@ async fn run_in_sandbox_recovers_a_real_reserve_request_timeout() {
     assert_eq!(failures[0].fields["failure_cause"], "timeout");
     assert!(events(&captured, DEGRADED).is_empty());
     assert_eq!(
-        events(&captured, RECOVERED)[0].fields["reserve_outcome"],
-        "reserved"
+        events(&captured, RECOVERED)[0].fields["next_outcome"],
+        "input"
     );
 }
 
@@ -216,9 +214,9 @@ async fn run_in_sandbox_warns_on_sustained_reads_and_resets_after_empty() {
         RawHttpAction::ResetConnection,
         RawHttpAction::ResetConnection,
         RawHttpAction::ResetConnection,
-        RawHttpAction::Respond(json_response("200 OK", r#"{"outcome":"empty"}"#)),
+        RawHttpAction::Respond(json_response("200 OK", r#"{"input":null}"#)),
         RawHttpAction::ResetConnection,
-        reserved(),
+        next_input(),
     ])
     .await;
     let clock = PausedClock::start();
@@ -236,13 +234,13 @@ async fn run_in_sandbox_warns_on_sustained_reads_and_resets_after_empty() {
     assert_eq!(warnings[0].fields["consecutive_failures"], "3");
     next_retry(&captured, 3).await;
     next_retry(&captured, 4).await;
-    observe("empty reserve recovery", || {
+    observe("empty next recovery", || {
         (events(&captured, RECOVERED).len() == 1).then_some(())
     })
     .await;
     assert!(run.overrides.process_control_calls().is_empty());
     let recovery = &events(&captured, RECOVERED)[0];
-    assert_eq!(recovery.fields["reserve_outcome"], "empty");
+    assert_eq!(recovery.fields["next_outcome"], "empty");
     assert_eq!(recovery.fields["recovered_after_failures"], "4");
     assert_eq!(recovery.fields["was_degraded"], "true");
     run.notifications.notify(run.run_id);
@@ -272,11 +270,11 @@ async fn run_in_sandbox_warns_on_genuine_read_failures_after_a_transient() {
             "503 Service Unavailable",
             r#"{"error":"unavailable"}"#,
         )),
-        RawHttpAction::Respond(json_response("200 OK", r#"{"outcome":"invalid"}"#)),
+        RawHttpAction::Respond(json_response("200 OK", r#"{"input":"invalid"}"#)),
         RawHttpAction::Disconnect,
     ] {
         let server =
-            RawHttpTestServer::spawn(vec![RawHttpAction::ResetConnection, failure, reserved()])
+            RawHttpTestServer::spawn(vec![RawHttpAction::ResetConnection, failure, next_input()])
                 .await;
         let run = RunningInput::start(&server).await;
         run.expect_delivery().await;
@@ -320,52 +318,4 @@ async fn run_in_sandbox_does_not_claim_read_recovery_on_cancellation() {
     server.cancel_and_reap().await;
     assert!(events(&captured, RECOVERED).is_empty());
     assert!(events(&captured, DEGRADED).is_empty());
-}
-
-#[tokio::test]
-async fn run_in_sandbox_reports_readable_non_delivery_outcomes_truthfully() {
-    for (response, expected) in [
-        (r#"{"outcome":"terminal"}"#.to_string(), "terminal"),
-        (
-            format!(
-                r#"{{"outcome":"held","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"]}}"#
-            ),
-            "held",
-        ),
-        (
-            r#"{"outcome":"rejected","reason":"run_not_running"}"#.to_string(),
-            "rejected_run_not_running",
-        ),
-        (
-            r#"{"outcome":"rejected","reason":"payload_too_large"}"#.to_string(),
-            "rejected_payload_too_large",
-        ),
-    ] {
-        let captured = CapturedEvents::default();
-        let _subscriber =
-            tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
-        let server = RawHttpTestServer::spawn(vec![
-            RawHttpAction::ResetConnection,
-            RawHttpAction::Respond(json_response("200 OK", &response)),
-        ])
-        .await;
-        let run = RunningInput::start(&server).await;
-        observe("readable reserve outcome", || {
-            (!events(&captured, RECOVERED).is_empty()).then_some(())
-        })
-        .await;
-        assert!(run.overrides.process_control_calls().is_empty());
-        run.finish(false).await;
-        server.assert_finished().await;
-        assert_eq!(
-            events(&captured, RECOVERED)[0].fields["reserve_outcome"],
-            expected
-        );
-        if expected == "rejected_payload_too_large" {
-            assert_eq!(
-                events(&captured, "active-input reserve rejected pending input")[0].level,
-                Level::WARN
-            );
-        }
-    }
 }

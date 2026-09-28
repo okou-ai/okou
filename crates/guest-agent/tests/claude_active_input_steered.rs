@@ -1,4 +1,4 @@
-//! Durable active-input acceptance coverage for Claude stream-JSON stdin.
+//! Active-input steered declaration coverage for Claude stream-JSON stdin.
 //!
 //! This test lives in its own binary to isolate process environment and current
 //! directory changes required by the mock Claude integration harness.
@@ -13,10 +13,10 @@ use guest_agent::masker::SecretMasker;
 use httpmock::prelude::*;
 use serde_json::{Value, json};
 
-const DELIVERY_ID: &str = "09065b04-cb85-4dd3-8cde-965e61ab8bfa";
+const EVENT_ID: &str = "09065b04-cb85-4dd3-8cde-965e61ab8bfa";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn claude_receipts_delivery_only_after_follow_up_reaches_stdin()
+async fn claude_declares_steered_only_after_follow_up_reaches_stdin()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
@@ -28,31 +28,22 @@ async fn claude_receipts_delivery_only_after_follow_up_reaches_stdin()
     let runtime = common::guest_runtime_from_process_env()?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
     let run_id = runtime.config.run_id.as_str();
-    let receipt = server.mock(|when, then| {
+    let steered = server.mock(|when, then| {
         when.method(POST)
             .path(format!(
-                "/api/runners/runs/{run_id}/active-inputs/deliveries/{DELIVERY_ID}/receipt"
+                "/api/runners/runs/{run_id}/steerable-inputs/{EVENT_ID}/steered"
             ))
             .header("Authorization", "Bearer test-token")
             .json_body(json!({}));
         then.status(200)
             .header("Content-Type", "application/json")
-            .json_body(json!({ "outcome": "delivered" }));
+            .json_body(json!({ "outcome": "steered" }));
     });
-    let receipt_http =
+    let steer_http =
         HttpClient::with_api_config(server.base_url(), "test-token", "", run_id, Duration::ZERO)?;
-    let journal_path = guest_contracts::runtime_paths::active_input_receipt_journal_file(
-        runtime.paths.runtime_dir(),
-    );
-    let active_input = ActiveInputRuntime::new_with_receipts(
-        run_id,
-        &runtime.config.prompt,
-        &journal_path,
-        receipt_http,
-    )?;
+    let active_input = ActiveInputRuntime::new_enabled(run_id, &runtime.config.prompt, steer_http);
     let controller = active_input.controller();
-    let payload =
-        guest_contracts::active_input::encode_active_input(DELIVERY_ID, "follow-up prompt")?;
+    let payload = guest_contracts::active_input::encode_active_input(EVENT_ID, "follow-up prompt")?;
     assert_eq!(
         controller.handle_control_payload(&payload),
         ActiveInputControlOutcome::Accepted
@@ -76,18 +67,7 @@ async fn claude_receipts_delivery_only_after_follow_up_reaches_stdin()
     .expect("Claude active-input execution should quiesce")?;
 
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
-    assert_eq!(
-        result.active_input_delivery_ids,
-        vec![DELIVERY_ID.to_string()]
-    );
-    receipt.assert_calls(1);
-    assert!(
-        guest_contracts::active_input_receipts::read_active_input_receipt_journal(
-            &journal_path,
-            run_id,
-        )?
-        .is_empty()
-    );
+    steered.assert_calls(1);
 
     let session_id = std::fs::read_to_string(runtime.paths.session_id_file())?;
     let history_path = common::claude_history_path_for_home(
@@ -101,7 +81,7 @@ async fn claude_receipts_delivery_only_after_follow_up_reaches_stdin()
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .filter(|event| event.get("type").and_then(Value::as_str) == Some("user"))
-        .filter(|event| event.get("uuid").and_then(Value::as_str) == Some(DELIVERY_ID))
+        .filter(|event| event.get("uuid").and_then(Value::as_str) == Some(EVENT_ID))
         .collect::<Vec<_>>();
     assert_eq!(delivered_user_frames.len(), 1);
     assert_eq!(

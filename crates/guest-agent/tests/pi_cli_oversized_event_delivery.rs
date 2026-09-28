@@ -474,8 +474,7 @@ async fn deliver_pi_rpc(
         paths.runtime_dir(),
         &guest_contracts::env::RunPayload {
             prompt: "test bounded Pi delivery".into(),
-            pi_launch_config:
-                r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#.into(),
+            pi_launch_config: r#"{"schemaVersion":2}"#.into(),
             pi_model_config: "{}".into(),
             pi_session_id: session_id.clone(),
             secret_values: secrets

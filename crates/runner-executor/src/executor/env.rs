@@ -8,7 +8,10 @@ use api_contracts::generated::constants::runners::{
     PI_MODEL_CONFIG_NATIVE_GENERATION,
 };
 use api_contracts::generated::types::runners::{
-    runs::{CodexRuntimeConfig, PiLaunchConfig, PiModelConfig, PiModelConfigV2, PiModelConfigV3},
+    runs::{
+        CodexRuntimeConfig, PiLaunchConfigMaintenance, PiLaunchConfigMemoryRecall, PiModelConfig,
+        PiModelConfigV2, PiModelConfigV3,
+    },
     storage::ArtifactEntryMissingRootPolicy,
 };
 use guest_contracts::cli_agent_session_id::is_valid_cli_agent_session_id;
@@ -153,56 +156,29 @@ pub(super) fn validate_execution_context_before_sandbox_with_host_env(
     Ok(prepared_run_payload)
 }
 
-fn is_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+/// Runner view of the Pi launch config.
+///
+/// The API still writes the retired `apiFirstTurn` handoff slot; the original
+/// JSON is forwarded untouched and the Sandbox no longer reads it.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PiLaunchConfigView {
+    schema_version: i64,
+    #[serde(default, rename = "memoryRecall")]
+    _memory_recall: Option<PiLaunchConfigMemoryRecall>,
+    #[serde(default, rename = "maintenance")]
+    _maintenance: Option<PiLaunchConfigMaintenance>,
 }
 
 // Generated enums and explicit versions intentionally fail closed. A future
 // enum value or schema version must reach runners before the API emits it;
 // unknown additive object fields remain safe because the original JSON is
 // forwarded after this validation view is discarded.
-fn validate_pi_launch_config(value: &serde_json::Value, session_id: &str) -> Result<(), String> {
-    let launch: PiLaunchConfig = serde_json::from_value(value.clone())
+fn validate_pi_launch_config(value: &serde_json::Value) -> Result<(), String> {
+    let launch: PiLaunchConfigView = serde_json::from_value(value.clone())
         .map_err(|error| format!("Pi launch config v2 is invalid: {error}"))?;
-    if value.pointer("/apiFirstTurn/baseSession/sha256").is_none() {
-        return Err("Pi H0 sha256 must be present".to_string());
-    }
     if launch.schema_version != 2 {
         return Err("Pi launch config schemaVersion must be 2".to_string());
-    }
-    let slot = launch.api_first_turn;
-    if slot.schema_version != 1 {
-        return Err("Pi API first-turn schemaVersion must be 1".to_string());
-    }
-    if !is_sha256(&slot.resource_snapshot_digest) {
-        return Err("Pi resource snapshot digest is invalid".to_string());
-    }
-    for (name, raw) in [
-        ("manifestUrl", &slot.manifest_url),
-        ("sessionUrl", &slot.session_url),
-    ] {
-        let parsed =
-            url::Url::parse(raw).map_err(|_| format!("Pi API first-turn {name} is invalid"))?;
-        if !matches!(parsed.scheme(), "http" | "https") {
-            return Err(format!("Pi API first-turn {name} must use HTTP or HTTPS"));
-        }
-    }
-    if slot.deadline_at <= 0 {
-        return Err("Pi API first-turn deadlineAt must be positive".to_string());
-    }
-    if !(1..=i32::MAX as u64).contains(&slot.sandbox_event_sequence_start) {
-        return Err("Pi Sandbox event sequence start must be between 1 and 2147483647".to_string());
-    }
-    if slot.base_session.session_id != session_id {
-        return Err("Pi H0 session id does not match pi_session_id".to_string());
-    }
-    if let Some(hash) = slot.base_session.sha256
-        && !is_sha256(&hash)
-    {
-        return Err("Pi H0 sha256 must be null or a lowercase SHA-256".to_string());
     }
     Ok(())
 }
@@ -588,7 +564,7 @@ fn validate_pi_execution_context(context: &ExecutionContext) -> Result<(), Strin
         .pi_launch_config
         .as_ref()
         .ok_or_else(|| "Pi execution context is missing pi_launch_config".to_string())?;
-    validate_pi_launch_config(launch_config, session_id)?;
+    validate_pi_launch_config(launch_config)?;
     let model_config = context
         .pi_model_config
         .as_ref()

@@ -53,22 +53,8 @@ fn codex_runtime_config_for_test(model_catalog: Option<serde_json::Value>) -> Co
     }
 }
 
-fn pi_launch_config_for_test(session_id: &str) -> serde_json::Value {
-    json!({
-        "schemaVersion": 2,
-        "apiFirstTurn": {
-            "schemaVersion": 1,
-            "resourceSnapshotDigest": "a".repeat(64),
-            "manifestUrl": "https://storage.example/manifest.json",
-            "sessionUrl": "https://storage.example/session.jsonl",
-            "deadlineAt": 2_000_000_000_000_u64,
-            "baseSession": {
-                "sessionId": session_id,
-                "sha256": null
-            },
-            "sandboxEventSequenceStart": 1
-        }
-    })
+fn pi_launch_config_for_test() -> serde_json::Value {
+    json!({ "schemaVersion": 2 })
 }
 
 fn pi_model_config_for_test() -> serde_json::Value {
@@ -125,9 +111,7 @@ fn pi_context_for_test() -> ExecutionContext {
     let mut context = minimal_context();
     context.cli_agent_type = "pi".to_string();
     context.pi_session_id = Some("22222222-2222-4222-8222-222222222222".to_string());
-    context.pi_launch_config = Some(pi_launch_config_for_test(
-        "22222222-2222-4222-8222-222222222222",
-    ));
+    context.pi_launch_config = Some(pi_launch_config_for_test());
     context.pi_model_config = Some(pi_model_config_for_test());
     context
 }
@@ -1127,9 +1111,13 @@ fn non_pi_execution_contexts_do_not_require_pi_resources() {
 fn pi_execution_context_preserves_additive_fields_in_run_payload() {
     let mut ctx = pi_context_for_test();
     ctx.pi_launch_config.as_mut().unwrap()["futureLaunchField"] = json!("launch-root");
-    ctx.pi_launch_config.as_mut().unwrap()["apiFirstTurn"]["futureFirstTurnField"] =
-        json!("first-turn");
-    ctx.pi_launch_config.as_mut().unwrap()["apiFirstTurn"]["sandboxEventSequenceStart"] = json!(4);
+    // The API keeps writing the retired handoff slot until the launch contract
+    // drops it; the runner forwards it untouched without reading it.
+    ctx.pi_launch_config.as_mut().unwrap()["apiFirstTurn"] = json!({
+        "schemaVersion": 1,
+        "manifestUrl": "https://storage.example/manifest.json",
+        "deadlineAt": 1
+    });
     ctx.pi_model_config.as_mut().unwrap()["catalogModel"] = json!("deepseek-v4-flash");
     ctx.pi_model_config.as_mut().unwrap()["credentialHeader"] = json!({
         "name": "X-Api-Key",
@@ -1154,8 +1142,7 @@ fn pi_execution_context_preserves_additive_fields_in_run_payload() {
     let launch: serde_json::Value = serde_json::from_str(&payload.pi_launch_config).unwrap();
     assert_eq!(launch["schemaVersion"], 2);
     assert_eq!(launch["futureLaunchField"], "launch-root");
-    assert_eq!(launch["apiFirstTurn"]["futureFirstTurnField"], "first-turn");
-    assert_eq!(launch["apiFirstTurn"]["sandboxEventSequenceStart"], 4);
+    assert_eq!(launch["apiFirstTurn"]["deadlineAt"], 1);
     let model: serde_json::Value = serde_json::from_str(&payload.pi_model_config).unwrap();
     assert_eq!(model["provider"], "deepseek");
     assert_eq!(model["apiKeyEnv"], "OPENAI_API_KEY");
@@ -1214,110 +1201,32 @@ fn pi_maintenance_candidates_use_only_the_private_run_payload() {
 }
 
 #[test]
-fn pi_execution_context_rejects_missing_handoff_fields_before_sandbox() {
-    let mut ctx = minimal_context();
-    ctx.cli_agent_type = "pi".to_string();
-    ctx.pi_session_id = Some("22222222-2222-4222-8222-222222222222".to_string());
-    ctx.pi_launch_config = Some(json!({ "schemaVersion": 2 }));
-    ctx.pi_model_config = Some(pi_model_config_for_test());
+fn pi_execution_context_accepts_a_launch_without_the_handoff_slot() {
+    let ctx = pi_context_for_test();
 
-    let error = validate_context_for_test(&ctx).unwrap_err();
-
-    assert!(error.contains("apiFirstTurn"));
+    validate_context_for_test(&ctx).unwrap();
 }
 
 #[test]
-fn pi_execution_context_rejects_mismatched_h0_before_sandbox() {
+fn pi_execution_context_rejects_an_unknown_memory_recall_before_sandbox() {
     let mut ctx = pi_context_for_test();
-    ctx.pi_launch_config = Some(pi_launch_config_for_test(
-        "33333333-3333-4333-8333-333333333333",
-    ));
+    ctx.pi_launch_config.as_mut().unwrap()["memoryRecall"] = json!({
+        "status": "future-status"
+    });
 
     let error = validate_context_for_test(&ctx).unwrap_err();
 
-    assert!(error.contains("H0 session id"));
+    assert!(error.contains("Pi launch config v2 is invalid"));
 }
 
 #[test]
-fn pi_execution_context_rejects_missing_required_base_hash_before_sandbox() {
+fn pi_execution_context_rejects_an_unsupported_launch_schema_before_sandbox() {
     let mut context = pi_context_for_test();
-    context
-        .pi_launch_config
-        .as_mut()
-        .unwrap()
-        .pointer_mut("/apiFirstTurn/baseSession")
-        .unwrap()
-        .as_object_mut()
-        .unwrap()
-        .remove("sha256");
+    context.pi_launch_config.as_mut().unwrap()["schemaVersion"] = json!(3);
 
     let error = validate_context_for_test(&context).unwrap_err();
 
-    assert!(error.contains("H0 sha256 must be present"));
-}
-
-#[test]
-fn pi_execution_context_rejects_invalid_launch_fields_before_sandbox() {
-    let cases = [
-        ("/schemaVersion", json!(3), "schemaVersion must be 2"),
-        (
-            "/apiFirstTurn/schemaVersion",
-            json!(3),
-            "schemaVersion must be 1",
-        ),
-        (
-            "/apiFirstTurn/resourceSnapshotDigest",
-            json!("not-a-digest"),
-            "resource snapshot digest",
-        ),
-        (
-            "/apiFirstTurn/manifestUrl",
-            json!("ftp://storage.example/manifest.json"),
-            "manifestUrl must use HTTP or HTTPS",
-        ),
-        (
-            "/apiFirstTurn/sessionUrl",
-            json!("not a URL"),
-            "sessionUrl is invalid",
-        ),
-        (
-            "/apiFirstTurn/deadlineAt",
-            json!(-1),
-            "deadlineAt must be positive",
-        ),
-        (
-            "/apiFirstTurn/sandboxEventSequenceStart",
-            json!(0),
-            "event sequence start must be between 1 and 2147483647",
-        ),
-        (
-            "/apiFirstTurn/sandboxEventSequenceStart",
-            json!(i64::from(i32::MAX) + 1),
-            "event sequence start must be between 1 and 2147483647",
-        ),
-        (
-            "/apiFirstTurn/baseSession/sha256",
-            json!("not-a-digest"),
-            "H0 sha256",
-        ),
-    ];
-
-    for (pointer, value, expected) in cases {
-        let mut context = pi_context_for_test();
-        *context
-            .pi_launch_config
-            .as_mut()
-            .unwrap()
-            .pointer_mut(pointer)
-            .unwrap() = value;
-
-        let error = validate_context_for_test(&context).unwrap_err();
-
-        assert!(
-            error.contains(expected),
-            "{pointer} produced unexpected error: {error}"
-        );
-    }
+    assert!(error.contains("schemaVersion must be 2"));
 }
 
 #[test]

@@ -35,6 +35,10 @@ readonly QUEUED_RUN_PROMOTION_REMOVAL_COMMIT=84ac71914345b8360f3df43cc2cd47f0a8a
 # writing active_input_deliveries and active_input_delivery_items, which
 # migration 1273 drops. Earlier APIs reserve steered input in those tables.
 readonly UNIFIED_CHAT_QUEUE_RELEASE_COMMIT=553fc566b7e9be2cd4a8c1de314d55939b99490a
+# #37115 (release 4) added the steerable-inputs next and steered endpoints.
+# Release 6 Runners and their Guests steer only through them, so an earlier API
+# cannot serve a draining release 6 Runner after a rollback.
+readonly RUNNER_STEER_ENDPOINTS_COMMIT=fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -104,6 +108,9 @@ if ! git merge-base --is-ancestor "$QUEUED_RUN_PROMOTION_REMOVAL_COMMIT" "$TARGE
 fi
 if ! git merge-base --is-ancestor "$UNIFIED_CHAT_QUEUE_RELEASE_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the unified chat queue release: ${UNIFIED_CHAT_QUEUE_RELEASE_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$RUNNER_STEER_ENDPOINTS_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the runner steer endpoints: ${RUNNER_STEER_ENDPOINTS_COMMIT}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames

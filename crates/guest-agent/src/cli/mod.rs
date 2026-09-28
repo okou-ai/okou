@@ -303,9 +303,6 @@ pub struct CliExecutionResult {
     /// Structured attribution for guest-agent initiated CLI process-group
     /// termination.
     pub cli_termination: Option<CliTerminationDiagnostic>,
-
-    /// Backend-accepted delivery identities settled or recoverable at completion.
-    pub active_input_delivery_ids: Vec<String>,
 }
 
 /// One-shot outcome reported by the heartbeat loop or task while CLI execution is in progress.
@@ -1542,9 +1539,7 @@ async fn execute_cli_inner(
                                             Ok(pipeline) => {
                                                 event_pipeline = Some(pipeline);
                                                 if let Some(sender) = pi_rpc_startup_tx.take() {
-                                                    let _ = sender.send(
-                                                        startup.ownership_transfer_mode,
-                                                    );
+                                                    let _ = sender.send(());
                                                 }
                                             }
                                             Err(error) => {
@@ -2187,15 +2182,13 @@ async fn execute_cli_inner(
         }
     }
 
-    let active_input_delivery_ids = match active_input_controller.finalize_receipts().await {
-        Ok(delivery_ids) => delivery_ids,
-        Err(error) => {
-            if active_input_error.is_none() {
-                active_input_error = Some(error);
-            }
-            Vec::new()
-        }
-    };
+    if let Err(error) = active_input_controller
+        .finalize_steered_declarations()
+        .await
+        && active_input_error.is_none()
+    {
+        active_input_error = Some(error);
+    }
 
     let has_control_error = termination_runtime.has_control_error();
     let event_error = if active_input_error.is_some() {
@@ -2298,7 +2291,6 @@ async fn execute_cli_inner(
         failure_diagnostic,
         control_error,
         cli_termination,
-        active_input_delivery_ids,
     })
 }
 
