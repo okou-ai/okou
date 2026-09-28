@@ -41,6 +41,7 @@ readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migration
 readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1261_drop_chat_thread_snapshot_jsonb.sql
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
+readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -178,6 +179,20 @@ if [[ ! "$chat_event_schema_header_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$chat_event_schema_header_retired_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Chat Event schema header retirement: ${chat_event_schema_header_retired_commit}."
+fi
+
+# Migration 1274 drops chat_threads.reasoning_effort,
+# org_members_metadata.voice_input_model and
+# morning_brief_native_occurrences.collection_facts. Earlier APIs still declare
+# them, so every insert, bare select and bare returning on those tables names
+# the dropped columns.
+retired_preference_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$RETIRED_PREFERENCE_COLUMNS_DROP_PATH" | sed -n '1p')
+if [[ ! "$retired_preference_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged retired preference column drop on main."
+fi
+if ! git merge-base --is-ancestor "$retired_preference_columns_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired preference column drop: ${retired_preference_columns_drop_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

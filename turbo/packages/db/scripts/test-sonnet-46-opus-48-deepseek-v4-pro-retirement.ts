@@ -125,9 +125,9 @@ export async function validateSonnet46Opus48DeepSeekV4ProRetirement(
       await client.query(
         `INSERT INTO chat_threads (
           id, user_id, agent_id, selected_model, model_provider_type,
-          model_provider_credential_scope, reasoning_effort, model_settings,
+          model_provider_credential_scope, model_settings,
           updated_at, last_message_at
-        ) VALUES ($1, $2, $3, $4, 'built-in', 'org', 'high',
+        ) VALUES ($1, $2, $3, $4, 'built-in', 'org',
           '{"claude-sonnet-4-6":{"effort":"max"}}', '2026-09-01', '2026-09-01')`,
         [id, userId, agentId, model],
       );
