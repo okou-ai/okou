@@ -2,7 +2,7 @@
 
 ## Chat send diagnostics and model admission (release 5)
 
-Migration `1276_chat_network_body_captures` adds a sparse table keyed by the
+Migration `1277_chat_network_body_captures` adds a sparse table keyed by the
 input chat-event ID. Only sends requesting `captureNetworkBodies` write a row,
 in the same transaction as the input. The table also records the owning thread
 for cascade cleanup and a creation timestamp; it does not store model choices
