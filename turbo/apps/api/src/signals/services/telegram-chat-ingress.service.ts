@@ -342,7 +342,7 @@ export async function persistTelegramReplyChainRoute(args: {
 }
 
 export async function bindTelegramReplyMessageRoute(
-  db: Pick<Db, "insert" | "select">,
+  db: Pick<Db, "insert" | "select" | "update">,
   args: TelegramChatThreadRouteKey & {
     readonly chatThreadId: string;
     readonly currentTime: Date;
