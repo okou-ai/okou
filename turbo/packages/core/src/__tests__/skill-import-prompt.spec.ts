@@ -102,6 +102,15 @@ describe("skill import prompt", () => {
     expect(text).toContain("binary assets were not imported");
   });
 
+  it("points Claude users to account skills when nothing is found", () => {
+    const claude = prompt("claudeCode");
+    const codex = prompt("codex");
+
+    expect(claude).toContain("stored in your Claude account");
+    expect(claude).toContain("~/.claude/skills/<skill-name>/");
+    expect(codex).not.toContain("stored in your Claude account");
+  });
+
   it("renders the session limits rather than fixed defaults", () => {
     const text = prompt("codex", {
       maxSkillsPerSession: 7,
