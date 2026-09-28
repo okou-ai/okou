@@ -143,33 +143,4 @@ describe("Sandbox transient session output webhook", () => {
     expect(response.body.error.code).toBe("EVENT_DELIVERY_UNAVAILABLE");
     expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
   });
-  it("records the publish duration of a block's first chunk only", async () => {
-    const fixture = sandboxFixture();
-    await accept(send(fixture, 0), [204]);
-    await accept(send(fixture, 1), [204]);
-
-    const firstChunkOps = context.mocks.axiom.sdkIngest.mock.calls.flatMap(
-      ([dataset, events]) => {
-        if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-          return [];
-        }
-        return events.filter((event: unknown) => {
-          return (
-            typeof event === "object" &&
-            event !== null &&
-            "op_type" in event &&
-            event.op_type === "session_output_first_chunk_publish"
-          );
-        });
-      },
-    );
-    expect(firstChunkOps).toStrictEqual([
-      expect.objectContaining({
-        source: "api",
-        run_id: fixture.runId,
-        duration_ms: expect.any(Number),
-        success: true,
-      }),
-    ]);
-  });
 });

@@ -50,6 +50,7 @@ const publishSandboxSessionOutput$ = command(
         publishSignal,
       ),
     );
+    signal.throwIfAborted();
     if (body.chunkIndex === 0) {
       // One row per assistant text block; the earliest per run is the run's
       // first chunk. See docs/chat-first-output-latency.md.
@@ -61,7 +62,6 @@ const publishSandboxSessionOutput$ = command(
         success: result.ok,
       });
     }
-    signal.throwIfAborted();
     if (!result.ok) {
       return eventDeliveryUnavailable(
         "Transient session output publication failed",
