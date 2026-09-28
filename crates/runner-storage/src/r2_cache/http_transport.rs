@@ -223,10 +223,22 @@ impl R2HttpClient {
             // `?uploads=`. Both canonicalize as `uploads=` for SigV4.
             url.set_query(Some("uploads"));
         } else if !query.is_empty() {
-            let mut pairs = url.query_pairs_mut();
-            for (name, value) in query {
-                pairs.append_pair(name, value);
-            }
+            // UploadId is an opaque value supplied by R2. URL form encoding
+            // would turn spaces into `+`, escape `~`, and leave `*` literal;
+            // the pinned S3 serializer instead uses Smithy's RFC 3986 query
+            // encoding for every named query parameter.
+            let encoded = query
+                .iter()
+                .map(|(name, value)| {
+                    format!(
+                        "{}={}",
+                        aws_smithy_http::query::fmt_string(name),
+                        aws_smithy_http::query::fmt_string(value)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("&");
+            url.set_query(Some(&encoded));
         }
         Ok(url)
     }
@@ -261,9 +273,10 @@ impl R2HttpClient {
         if let Some(content_type) = content_type {
             builder = builder.header(CONTENT_TYPE, content_type);
         }
-        if !body.is_empty() {
-            // The SDK signs Content-Length for known, nonempty Bytes bodies.
-            // Letting reqwest add it only after signing changes SignedHeaders.
+        if method == Method::PUT || !body.is_empty() {
+            // The SDK signs the explicit length for UploadPart, even for an
+            // empty Bytes body, and for Complete's nonempty XML. Letting
+            // reqwest add it later changes SignedHeaders.
             builder = builder.header(reqwest::header::CONTENT_LENGTH, body.len().to_string());
         }
         let mut request = builder
@@ -1184,8 +1197,101 @@ fn has_error_root_prefix(body: &[u8]) -> bool {
     root[..end].rsplit(':').next() == Some("Error")
 }
 
+// Smithy's `try_data` skips CDATA tokens while reading an error Code; the
+// tree parser merges CDATA with adjacent text. For one Code field, extract
+// the first ordinary text token from its raw content, as Smithy does. Leave
+// ambiguous repeated or nested values unclassified rather than replaying a
+// write or inventing a cache miss.
+fn first_code_text(content: &str) -> Option<String> {
+    let mut rest = content;
+    loop {
+        if let Some(tail) = rest.strip_prefix("<![CDATA[") {
+            rest = tail.split_once("]]>")?.1;
+        } else if let Some(tail) = rest.strip_prefix("<!--") {
+            rest = tail.split_once("-->")?.1;
+        } else if let Some(tail) = rest.strip_prefix("<?") {
+            rest = tail.split_once("?>")?.1;
+        } else if rest.is_empty() {
+            return Some(String::new());
+        } else if rest.starts_with('<') {
+            return None;
+        } else {
+            let text = rest.split('<').next()?;
+            let wrapped = format!("<value>{text}</value>");
+            let doc = roxmltree::Document::parse(&wrapped).ok()?;
+            return Some(doc.root_element().text().unwrap_or("").to_owned());
+        }
+    }
+}
+
+// None: no Code with CDATA; Some(None): uncertain; Some(Some(value)): the
+// Smithy-style first text token of a single Code containing CDATA.
+fn code_cdata_value(body: &[u8]) -> Option<Option<String>> {
+    let Ok(xml) = std::str::from_utf8(body) else {
+        return None;
+    };
+    let mut offset = 0;
+    let mut last = None;
+    while let Some(start) = xml[offset..].find('<') {
+        let start = offset + start + 1;
+        let rest = &xml[start..];
+        let Some(name_end) = rest.find(|c: char| c.is_ascii_whitespace() || c == '>' || c == '/')
+        else {
+            break;
+        };
+        let name = &rest[..name_end];
+        offset = start + name_end;
+        if name.rsplit(':').next() != Some("Code") {
+            continue;
+        }
+        let mut quote = None;
+        let Some(open_end) = rest
+            .char_indices()
+            .find_map(|(index, char)| match (quote, char) {
+                (None, '\'' | '"') => {
+                    quote = Some(char);
+                    None
+                }
+                (Some(active), _) if active == char => {
+                    quote = None;
+                    None
+                }
+                (None, '>') => Some(start + index + 1),
+                _ => None,
+            })
+        else {
+            break;
+        };
+        let closing = format!("</{name}");
+        let Some((end, after_close)) =
+            xml[open_end..]
+                .match_indices(&closing)
+                .find_map(|(relative, _)| {
+                    let start = open_end + relative;
+                    let tail = &xml[start + closing.len()..];
+                    let whitespace = tail.len()
+                        - tail
+                            .trim_start_matches(|c: char| c.is_ascii_whitespace())
+                            .len();
+                    tail[whitespace..]
+                        .starts_with('>')
+                        .then_some((start, start + closing.len() + whitespace + 1))
+                })
+        else {
+            break;
+        };
+        let content = &xml[open_end..end];
+        last = content
+            .contains("<![CDATA[")
+            .then(|| first_code_text(content));
+        offset = after_close;
+    }
+    last
+}
+
 fn xml_code(body: &[u8]) -> Option<String> {
     let doc = parse_xml(body).ok()?;
+    let cdata_value = code_cdata_value(body);
     // The SDK's generic REST-XML error metadata reads Code and Message from
     // any root (so a SlowDown under ErrorResponse can still be retried).
     // A modeled GetObject NoSuchKey additionally requires the Error root.
@@ -1194,17 +1300,23 @@ fn xml_code(body: &[u8]) -> Option<String> {
     // Message must not turn NoSuchKey into a cache miss. Repeated Code fields
     // overwrite the builder, so the last value determines classification.
     let mut code = None;
+    let mut code_fields = 0;
     for field in doc.root_element().children().filter(|n| n.is_element()) {
         if matches!(field.tag_name().name(), "Code" | "Message") {
             if field.text().is_none() && field.children().any(|n| n.is_element()) {
                 return None;
             }
             if field.tag_name().name() == "Code" {
+                code_fields += 1;
                 code = Some(field.text().unwrap_or("").to_owned());
             }
         }
     }
-    code
+    match cdata_value {
+        Some(value) if code_fields == 1 => value,
+        Some(_) => None,
+        None => code,
+    }
 }
 
 enum BodyReadError {

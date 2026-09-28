@@ -717,6 +717,57 @@ async fn all_six_operations_match_pinned_sdk_request_lines_and_content_types() {
 }
 
 #[tokio::test]
+async fn zero_length_part_signs_its_content_length_like_the_sdk() {
+    let (url, server) = scripted_server(vec![mock_reply("200 OK", "", "ETag: tag\r\n")]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    c.upload_part("runner-templates/h.tar.zst", "id", 1, Bytes::new())
+        .await
+        .unwrap();
+    let requests = server.await.unwrap();
+    assert_eq!(requests.len(), 1);
+    let headers = requests[0].to_ascii_lowercase();
+    assert!(headers.contains("\r\ncontent-length: 0\r\n"));
+    let authorization = headers
+        .lines()
+        .find(|line| line.starts_with("authorization:"))
+        .unwrap();
+    assert!(
+        authorization.contains("signedheaders=content-length;content-type;host;"),
+        "{authorization}"
+    );
+}
+
+#[tokio::test]
+async fn opaque_upload_id_uses_the_sdk_query_encoding_for_each_multipart_request() {
+    // The SDK uses Smithy's percent encoding, not HTML form encoding. The
+    // upload ID is an opaque response value; it need not be base64-only.
+    let (url, server) = scripted_server(vec![
+        mock_reply("200 OK", "", "ETag: tag\r\n"),
+        mock_reply("200 OK", "<CompleteMultipartUploadResult/>", ""),
+        mock_reply("204 No Content", "", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    let key = "runner-templates/h.tar.zst";
+    let id = "a+b/c== a~!*'()";
+    let part = c
+        .upload_part(key, id, 1, Bytes::from_static(b"part"))
+        .await
+        .unwrap();
+    c.complete_multipart(key, id, &[part]).await.unwrap();
+    c.abort_multipart(key, id).await.unwrap();
+    let requests = server.await.unwrap();
+    let suffix = "uploadId=a%2Bb%2Fc%3D%3D%20a~%21%2A%27%28%29 HTTP/1.1";
+    assert_eq!(requests.len(), 3);
+    for request in requests {
+        assert!(
+            request.lines().next().unwrap().ends_with(suffix),
+            "{request}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn multipart_wire_protocol_preserves_query_body_and_etag() {
     let server = MockServer::start_async().await;
     let key = "/test-bucket/runner-templates/h.tar.zst";
@@ -1301,6 +1352,81 @@ async fn nonstreaming_200_embedded_errors_retry_across_sdk_operations() {
             .is_err()
     );
     no_code.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn cdata_error_code_cannot_authorize_retry_or_a_get_miss() {
+    // Smithy's try_data skips CDATA when reading Code. The tree parser merges
+    // it into text, which must not manufacture InternalError or NoSuchKey.
+    let server = MockServer::start_async().await;
+    let part = server
+        .mock_async(|when, then| {
+            when.method("PUT")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(200)
+                .header("etag", "tag")
+                .body("<Error><Code><![CDATA[InternalError]]></Code></Error>");
+        })
+        .await;
+    let spaced_end_tag = server
+        .mock_async(|when, then| {
+            when.method("PUT")
+                .path("/test-bucket/runner-templates/space.tar.zst");
+            then.status(200)
+                .header("etag", "tag")
+                .body("<Error><Code><![CDATA[InternalError]]></Code ></Error>");
+        })
+        .await;
+    let get = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/h.tar.zst");
+            then.status(400)
+                .body("<Error><Code><![CDATA[NoSuchKey]]></Code></Error>");
+        })
+        .await;
+    let c = client(&server);
+    assert!(
+        c.upload_part("runner-templates/h.tar.zst", "id", 1, Bytes::new())
+            .await
+            .is_err()
+    );
+    assert!(
+        c.upload_part("runner-templates/space.tar.zst", "id", 1, Bytes::new())
+            .await
+            .is_err()
+    );
+    assert!(c.get("runner-templates/h.tar.zst").await.is_err());
+    part.assert_calls_async(1).await;
+    spaced_end_tag.assert_calls_async(1).await;
+    get.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn cdata_message_does_not_hide_a_plain_retryable_code() {
+    // Smithy reads the first ordinary text token, skipping CDATA before it
+    // and ignoring CDATA after it. All three responses have InternalError.
+    for body in [
+        "<Error><Code>InternalError</Code><Message><![CDATA[retry]]></Message></Error>",
+        "<Error><Code>InternalError<![CDATA[ignored]]></Code></Error>",
+        "<Error><Code><![CDATA[ignored]]>InternalError</Code></Error>",
+    ] {
+        let (url, server) = scripted_server(vec![
+            mock_reply("200 OK", body, "x-amz-retry-after: 0\r\n"),
+            mock_reply("200 OK", "", "ETag: tag\r\n"),
+        ])
+        .await;
+        let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+        c.upload_part(
+            "runner-templates/h.tar.zst",
+            "id",
+            1,
+            Bytes::from_static(b"part"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(server.await.unwrap().len(), 2, "{body}");
+    }
 }
 
 #[tokio::test]
