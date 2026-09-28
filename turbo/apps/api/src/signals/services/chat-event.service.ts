@@ -1094,16 +1094,19 @@ export async function replaceLoadedChatEvent(
   }
 
   const replacementId = replacement.id ?? randomUUID();
-  // A replacement keeps its target's context pointer and never writes a
-  // context row; entries write context before appending the input.
+  // Claims and rejections retain their input's context. A new input revoking
+  // an output uses the context already written by its entry transaction.
+  const contextPointer =
+    target.contextType !== null || replacement.eventType === "usage.recorded"
+      ? { contextType: target.contextType, contextId: target.contextId }
+      : displayContextPointer(newDisplayContext(replacementId, replacement));
   const prepared: PreparedChatEvent = {
     row: {
       ...canonicalChatEventValues(
         { ...replacement, createdAt },
         {
           id: replacementId,
-          contextType: target.contextType,
-          contextId: target.contextId,
+          ...contextPointer,
         },
       ),
       id: replacementId,
