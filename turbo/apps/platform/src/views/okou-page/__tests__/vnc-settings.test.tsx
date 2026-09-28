@@ -223,7 +223,7 @@ async function choose(dialog: HTMLElement, label: string, name: string) {
     );
     return;
   }
-  await userEvent.click(within(dialog).getByLabelText(label));
+  await userEvent.click(await within(dialog).findByLabelText(label));
   await userEvent.click(await screen.findByRole("option", { name }));
 }
 
