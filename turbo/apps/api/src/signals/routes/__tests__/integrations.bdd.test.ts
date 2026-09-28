@@ -1344,9 +1344,11 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       challenge: "slack-bdd-challenge",
     });
 
-    const missingSignature = await integrations.requestSlackEvent(body, {}, [
-      401,
-    ]);
+    const missingSignature = await integrations.requestSlackEvent(
+      body,
+      {},
+      [401],
+    );
     expect(missingSignature.body).toStrictEqual({
       error: "Missing Slack signature headers",
     });
@@ -1617,9 +1619,10 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       error: { code: "UNAUTHORIZED" },
     });
 
-    const orgStatus = await integrations.requestSlackIntegrationStatus(admin, [
-      200,
-    ]);
+    const orgStatus = await integrations.requestSlackIntegrationStatus(
+      admin,
+      [200],
+    );
     expect(orgStatus.body).toMatchObject({
       isConnected: false,
       isInstalled: false,
@@ -1633,9 +1636,10 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
-    const connectStatus = await integrations.requestSlackConnectStatus(admin, [
-      200,
-    ]);
+    const connectStatus = await integrations.requestSlackConnectStatus(
+      admin,
+      [200],
+    );
     expect(connectStatus.body).toStrictEqual({
       isConnected: false,
       isAdmin: true,
@@ -1672,9 +1676,10 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
-    const missingChannels = await integrations.requestListSlackChannels(admin, [
-      404,
-    ]);
+    const missingChannels = await integrations.requestListSlackChannels(
+      admin,
+      [404],
+    );
     expect(missingChannels.body).toStrictEqual({
       error: {
         message: "No Slack installation found for this org",
@@ -2540,9 +2545,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
         run_session_id: slackBinding.agent_session_id,
       });
 
-      const visibleThreadEvents = await chat.requestThreadEvents(actor, {}, [
-        200,
-      ]);
+      const visibleThreadEvents = await chat.requestThreadEvents(
+        actor,
+        {},
+        [200],
+      );
       expect(visibleThreadEvents.status).toBe(200);
       if (visibleThreadEvents.status !== 200) {
         throw new Error("Expected visible thread events to load");
@@ -4677,9 +4684,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
       expect.objectContaining({ user_id: slackUserId }),
     );
-    const connectStatus = await integrations.requestSlackConnectStatus(actor, [
-      200,
-    ]);
+    const connectStatus = await integrations.requestSlackConnectStatus(
+      actor,
+      [200],
+    );
     expect(connectStatus.body).toMatchObject({ isConnected: false });
 
     const notConnected = await integrations.postSlackCommand({
@@ -4959,15 +4967,17 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
     await expect
       .poll(async () => {
-        const status = await integrations.requestSlackIntegrationStatus(actor, [
-          200,
-        ]);
+        const status = await integrations.requestSlackIntegrationStatus(
+          actor,
+          [200],
+        );
         return "isInstalled" in status.body ? status.body.isInstalled : null;
       })
       .toBe(false);
-    const orgStatus = await integrations.requestSlackIntegrationStatus(actor, [
-      200,
-    ]);
+    const orgStatus = await integrations.requestSlackIntegrationStatus(
+      actor,
+      [200],
+    );
     expect(orgStatus.body).toMatchObject({
       isInstalled: false,
       isConnected: false,
@@ -6110,9 +6120,11 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     await installApiTestConnectorCatalog();
 
     const actor = integrations.user();
-    const response = await integrations.requestGithubOauthConnect(actor, {}, [
-      307,
-    ]);
+    const response = await integrations.requestGithubOauthConnect(
+      actor,
+      {},
+      [307],
+    );
     const location = response.headers.get("location");
     if (!location) {
       throw new Error("Expected GitHub authorization redirect");
@@ -6699,9 +6711,10 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       error: { code: "CONFLICT" },
     });
 
-    const disconnected = await integrations.requestUnlinkAgentPhone(actor, [
-      204,
-    ]);
+    const disconnected = await integrations.requestUnlinkAgentPhone(
+      actor,
+      [204],
+    );
     expect(disconnected.body).toBeUndefined();
 
     const unlinkedStatus = await integrations.getAgentPhoneLinkStatus(actor);
@@ -6711,9 +6724,10 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       configured: true,
     });
 
-    const missingUnlink = await integrations.requestUnlinkAgentPhone(actor, [
-      404,
-    ]);
+    const missingUnlink = await integrations.requestUnlinkAgentPhone(
+      actor,
+      [404],
+    );
     expect(missingUnlink.body).toMatchObject({
       error: { code: "NOT_FOUND" },
     });

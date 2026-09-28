@@ -435,9 +435,9 @@ function extractTelegramFileForContext(
 function hasTelegramMessageContextContent(message: TelegramMessage): boolean {
   return Boolean(
     message.text ||
-      message.caption ||
-      extractTelegramFileForContext(message) ||
-      extractEntities(message),
+    message.caption ||
+    extractTelegramFileForContext(message) ||
+    extractEntities(message),
   );
 }
 

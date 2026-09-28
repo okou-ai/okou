@@ -502,9 +502,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const sends = ap.captureAgentPhoneSends();
     context.mocks.ably.publish.mockResolvedValue(undefined);
 
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(actor, [
-      200,
-    ]);
+    const issued = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
     expect(issued.body.code).toMatch(/^\d{8}$/u);
     expect(Date.parse(issued.body.expiresAt) - now()).toBeGreaterThan(
       9 * 60 * 1000,
@@ -559,9 +560,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const storage = ap.acceptAgentPhoneObjectStorage();
     context.mocks.ably.publish.mockResolvedValue(undefined);
 
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(actor, [
-      200,
-    ]);
+    const issued = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: email,
@@ -626,12 +628,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     const sends = ap.captureAgentPhoneSends();
     context.mocks.ably.publish.mockResolvedValue(undefined);
 
-    const first = await integrations.requestCreateAgentPhoneLinkCode(actor, [
-      200,
-    ]);
-    const second = await integrations.requestCreateAgentPhoneLinkCode(actor, [
-      200,
-    ]);
+    const first = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
+    const second = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
     expect(second.body.code).not.toBe(first.body.code);
 
     await ap.postAgentPhoneInboundMessage({
@@ -668,9 +672,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     context.mocks.ably.publish.mockResolvedValue(undefined);
 
     async function linkWithCode(user: ApiTestUser): Promise<void> {
-      const issued = await integrations.requestCreateAgentPhoneLinkCode(user, [
-        200,
-      ]);
+      const issued = await integrations.requestCreateAgentPhoneLinkCode(
+        user,
+        [200],
+      );
       const beforeLink = sends.messages.length;
       await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
@@ -727,9 +732,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     integrations.configureAgentPhoneWebhook();
     const sends = ap.captureAgentPhoneSends();
 
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(actor, [
-      200,
-    ]);
+    const issued = await integrations.requestCreateAgentPhoneLinkCode(
+      actor,
+      [200],
+    );
     mockNow(Date.parse(issued.body.expiresAt) + 1);
 
     await ap.postAgentPhoneInboundMessage({

@@ -23,8 +23,7 @@ interface DiscordChatThreadRouteKey {
   readonly userId: string;
 }
 
-export interface DiscordChatThreadRouteBinding
-  extends DiscordChatThreadRouteKey {
+export interface DiscordChatThreadRouteBinding extends DiscordChatThreadRouteKey {
   readonly id: string;
   readonly chatThreadId: string;
   readonly destinationChannelId: string | null;
@@ -151,8 +150,7 @@ async function requireDiscordChatThreadRoute(
   return route;
 }
 
-interface CanonicalDiscordChatThreadRouteArgs
-  extends DiscordChatThreadRouteKey {
+interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey {
   readonly orgId: string;
   readonly agentId: string;
   readonly currentTime: Date;
