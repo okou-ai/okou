@@ -333,7 +333,9 @@ test("Show historical goal continuations as copyable text with run logs", async 
   );
   click(buttonIn(actions, "Copy message"));
   const item = await readSingleRichClipboardWrite(clipboard);
-  expect(await readClipboardItemText(item, "text/plain")).toBe(goalBrief);
+  await expect(readClipboardItemText(item, "text/plain")).resolves.toBe(
+    goalBrief,
+  );
 });
 
 test("Keep run logs under the user message when a run fails without output", async () => {

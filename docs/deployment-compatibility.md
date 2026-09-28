@@ -18,6 +18,8 @@ schema, `CHAT_EVENT_TYPES`, the database checks and
   `run.queued`, `run.dequeued`, `output.thinking`, `browser.open`,
   `browser.close`) and no longer derives `runGroupId`. `ChatEvent` is built
   inside each artifact from raw V7 rows and is never sent over the network.
+  MCP chat history reads therefore no longer return thinking, goal or browser
+  events.
 - Platform removes run-group folding, goal cards, queue markers, the thinking
   marker and the browser sidebar auto-open. Historical goal parts render as
   plain text. The Platform read cursor follows raw rows, so a thread whose

@@ -518,7 +518,17 @@ export function mockChatLifecycle(
         seqId: runUserSeqId,
         createdAt: "2026-03-10T00:00:01Z",
       },
-      {
+    ];
+    // The claimed input already marks the run live; like production, the run
+    // writes an assistant row only once it has output, an error or a terminal
+    // failure or cancellation.
+    if (
+      resultContent ||
+      runError !== null ||
+      runStatus === "failed" ||
+      runStatus === "cancelled"
+    ) {
+      events.push({
         id: `msg-assistant-${currentRunId}`,
         role: "assistant",
         content: resultContent || null,
@@ -530,8 +540,8 @@ export function mockChatLifecycle(
             : undefined,
         seqId: assistantSeqId,
         createdAt: "2026-03-10T00:00:02Z",
-      },
-    ];
+      });
+    }
     if (runStatus === "completed") {
       events.push({
         id: `msg-assistant-marker-${currentRunId}`,
