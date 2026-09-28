@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
+import { click } from "../../../__tests__/page-helper.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
@@ -185,15 +186,40 @@ test("Show waiting in queue for a persisted prompt without a run", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  await expect(
-    screen.findByText("Waiting in queue..."),
-  ).resolves.toBeInTheDocument();
+  await expect(findButton("queue...")).resolves.toBeInTheDocument();
+  expect(screen.getByText("Waiting in")).toBeInTheDocument();
   expect(userMessageInHistory("Add the appendix")).not.toBeNull();
   expect(queuedMessageRow()).toBeNull();
   expect(screen.getByText("The rollout draft is ready.")).toBeInTheDocument();
   expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
   expect(queryButton("Stop")).toBeNull();
   expect(queryButton("Send")).not.toBeNull();
+});
+
+test("Open the queue drawer from waiting in queue", async () => {
+  installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: "org-full-drawer-user",
+        seqId: 1,
+        text: "Draft the rollout",
+      }),
+    ],
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  click(await findButton("queue..."));
+
+  const drawer = await screen.findByRole("dialog", {
+    name: "Your agent is waiting in line",
+  });
+  expect(
+    within(drawer).getByText(
+      "See how many concurrent runs are in use and upgrade to skip the wait.",
+    ),
+  ).toBeInTheDocument();
 });
 
 test("Show waiting in queue for a persisted automation event without a run", async () => {
@@ -224,8 +250,7 @@ test("Show waiting in queue for a persisted automation event without a run", asy
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  await expect(
-    screen.findByText("Waiting in queue..."),
-  ).resolves.toBeInTheDocument();
+  await expect(findButton("queue...")).resolves.toBeInTheDocument();
+  expect(screen.getByText("Waiting in")).toBeInTheDocument();
   expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
 });
