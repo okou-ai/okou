@@ -564,7 +564,9 @@ connector `resourceKey` in the thread observe the same computed graph.
 An exact-account reconnect URL reuses the connector card appearance but not the
 catalog default-account activation. It validates the account ID and chat claims,
 reads the account scoped to the builtin connector, and displays that account's
-identity and connection status. Because this is an explicit reconnect action,
+identity and connection status. Unnamed manual accounts use the same auth-method
+label as account management instead of appearing as only the connector name.
+Because this is an explicit reconnect action,
 the Reconnect button remains available even when that account is already
 connected; the direct route likewise permits proactive reconnection. A missing
 or wrong-target account is unavailable; other lookup errors retain a retry

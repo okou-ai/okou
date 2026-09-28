@@ -35,7 +35,10 @@ function exactReconnectUrl(connectionId = EXACT_CONNECTION_ID): URL {
 
 function mockExactReconnectAccount(
   accountStatus: "connected" | "reconnect-required" | "missing",
-  options?: { catalogUnavailableOnce?: boolean },
+  options?: {
+    catalogUnavailableOnce?: boolean;
+    unnamedManualAccount?: boolean;
+  },
 ): void {
   let catalogUnavailable = options?.catalogUnavailableOnce ?? false;
   const github = connectorSlugSchema.parse("github");
@@ -110,13 +113,13 @@ function mockExactReconnectAccount(
       return respond(200, {
         id: EXACT_CONNECTION_ID,
         target: { kind: "builtin", connectorSlug: github },
-        authMethod: "oauth",
-        displayName: "Work GitHub",
+        authMethod: options?.unnamedManualAccount ? "api-token" : "oauth",
+        displayName: options?.unnamedManualAccount ? null : "Work GitHub",
         isDefault: false,
         externalId: null,
         externalUsername: null,
         externalEmail: null,
-        oauthScopes: [],
+        oauthScopes: options?.unnamedManualAccount ? null : [],
         connectionStatus: accountStatus,
         reconnectReason:
           accountStatus === "reconnect-required"
@@ -719,6 +722,18 @@ test("An exact reconnect card targets the non-default account and keeps the call
   expect(new URLSearchParams(window.location.search).get("threadId")).toBe(
     THREAD_ID,
   );
+});
+
+test("An unnamed manual reconnect account uses its account label rather than the catalog default", async () => {
+  mockExactReconnectAccount("reconnect-required", {
+    unnamedManualAccount: true,
+  });
+  await setupChat(exactReconnectUrl().toString());
+
+  const card = await screen.findByTestId("connector-action-card");
+  expect(card).toHaveTextContent("GitHub · API token");
+  expect(card).toHaveTextContent("Reconnect required");
+  expect(queryAllByRoleFast("button", card)[0]).toHaveTextContent("Reconnect");
 });
 
 test("A bare relative exact reconnect link remains actionable without losing its callback", async () => {

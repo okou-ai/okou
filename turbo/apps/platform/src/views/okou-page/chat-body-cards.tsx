@@ -11,7 +11,6 @@ import type {
   ExactReconnectConnectorSignals,
 } from "../../signals/chat-page/connector-action-block.ts";
 import { contentTypeForBodyPreviewKind } from "../../signals/chat-page/parse-body-blocks.ts";
-import { connectorAccountEffectiveLabel } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { PermissionSignals } from "../../signals/chat-page/permission-card-signals.ts";
 import type { PlanUpgradeSignals } from "../../signals/chat-page/plan-upgrade-block.ts";
 import type {
@@ -35,6 +34,7 @@ import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import { builtinConnectorCurrentConnectionStatus } from "../../signals/okou-page/settings/connectors.ts";
 import { PermissionGrantDurationSelect } from "../components/permission-grant-duration-select.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
+import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
@@ -547,6 +547,7 @@ function ExactReconnectConnectorActionCard({
   const status = useLastResolved(signals.status$);
   const [activateLoadable, activate] = useLoadableSet(signals.activate$);
   const refresh = useSet(signals.refresh$);
+  const accountLabelOf = useConnectorAccountLabel();
 
   if (statusLoadable.state === "hasError") {
     return (
@@ -576,10 +577,7 @@ function ExactReconnectConnectorActionCard({
     return <UnavailableActionCard fillFrame />;
   }
 
-  const accountLabel = connectorAccountEffectiveLabel(
-    status.account,
-    status.catalogItem.label,
-  );
+  const accountLabel = accountLabelOf(status.account);
   const connectionState =
     status.account.connectionStatus === "connected"
       ? t(($) => {
