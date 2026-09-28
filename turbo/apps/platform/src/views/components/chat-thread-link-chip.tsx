@@ -22,7 +22,7 @@ export const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFER
  * chip's layered utilities. Restating the chip's own colors as important keeps
  * a chip inside Markdown looking like one in a user message.
  */
-const MARKDOWN_CHIP_RESET_CLASS =
+export const MARKDOWN_CHIP_RESET_CLASS =
   "bg-orange-500/10! text-orange-600! no-underline! " +
   "hover:bg-orange-500/15! active:bg-orange-500/20! " +
   "dark:bg-orange-400/15! dark:text-orange-300! " +

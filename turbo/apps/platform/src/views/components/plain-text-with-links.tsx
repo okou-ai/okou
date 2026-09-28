@@ -4,7 +4,9 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
+import { parseBrowserSessionUrl } from "../../signals/chat-page/browser-session-block.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { BrowserSessionLinkChip } from "./browser-session-link-chip.tsx";
 import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 
 /**
@@ -16,7 +18,8 @@ import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
  * `target`/`rel` pair.
  *
  * `chatThreadChips` is for surfaces inside the signed-in App: there a link to
- * one of its chat threads becomes a chat chip that opens in place. Public
+ * one of its chat threads becomes a chat chip, and a link to a chat thread's
+ * cloud browser becomes a browser chip, both opening in place. Public
  * surfaces such as a shared thread leave it off, since their reader has no
  * thread list to name the chat and may not be able to open it.
  */
@@ -47,6 +50,18 @@ export function PlainTextWithLinks({
               key={key}
               {...chatThreadLink}
               title={segment.value}
+            />
+          );
+        }
+        const browserSession =
+          showChatThreadChips && segment.type === "url"
+            ? parseBrowserSessionUrl(segment.value)
+            : null;
+        if (browserSession !== null) {
+          return (
+            <BrowserSessionLinkChip
+              key={key}
+              threadId={browserSession.threadId}
             />
           );
         }

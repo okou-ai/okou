@@ -630,6 +630,12 @@ its thread-scoped computed reads the browser through
 `/api/chat-threads/:threadId/browser`. A copied card therefore cannot resolve a
 browser owned by a different thread.
 
+Only a link to the current thread's own browser becomes this card, because the
+card opens that thread's sidebar. Any other `/browsers/:threadId` link, such as
+another thread's browser in an assistant reply or a URL a user pastes into a
+message, renders as an inline cloud browser chip that opens the full-page
+viewer in place, like an internal chat thread link.
+
 The message card follows the presentation and website preview treatment. It
 shows a `Cloud browser` header with a simplified `Live` or `Stopped` status,
 then a `16:10` static preview of the latest foreground tab at up to `400px`

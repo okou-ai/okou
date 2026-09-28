@@ -439,7 +439,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ChatThreadLinkChips]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Render links to internal chat threads in chat messages as chat chips",
+      "Render links to internal chat threads and cloud browsers in chat messages as chips",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

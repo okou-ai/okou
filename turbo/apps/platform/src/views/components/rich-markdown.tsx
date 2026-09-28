@@ -23,6 +23,7 @@ import {
   parseMarkdownTree,
 } from "../../lib/markdown/pipeline.ts";
 import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
+import { parseBrowserSessionUrl } from "../../signals/chat-page/browser-session-block.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
@@ -51,6 +52,7 @@ import {
   SitePreviewContent,
   SitePreviewViewport,
 } from "../okou-page/attachment-preview.tsx";
+import { BrowserSessionLinkChip } from "./browser-session-link-chip.tsx";
 import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
@@ -319,14 +321,18 @@ function MediaLinkRenderer(
   const { children, ...rest } = props;
   const features = useLastResolved(featureSwitch$);
   const node = props.node;
-  const chatThreadLink =
+  const chipHref =
     features?.[FeatureSwitchKey.ChatThreadLinkChips] === true &&
     node !== undefined &&
     node.data?.card === undefined &&
     !containsMarkdownImage(node) &&
     typeof props.href === "string"
-      ? parseChatThreadLink(props.href, window.location.origin)
+      ? props.href
       : null;
+  const chatThreadLink =
+    chipHref === null
+      ? null
+      : parseChatThreadLink(chipHref, window.location.origin);
   if (chatThreadLink !== null && node !== undefined) {
     // The chip reads as the link's own text: an autolinked URL shows itself,
     // an authored label such as a serialized chat mention is kept.
@@ -334,6 +340,21 @@ function MediaLinkRenderer(
       <ChatThreadLinkChip
         {...chatThreadLink}
         title={markdownNodeText(node)}
+        insideMarkdown
+      />
+    );
+  }
+  const browserSession =
+    chipHref === null ? null : parseBrowserSessionUrl(chipHref);
+  if (browserSession !== null && chipHref !== null && node !== undefined) {
+    // A browser link the card parser left inline, such as another thread's
+    // browser. An autolinked URL reads as a cloud browser; an authored label
+    // is kept.
+    const text = markdownNodeText(node);
+    return (
+      <BrowserSessionLinkChip
+        threadId={browserSession.threadId}
+        {...(text === chipHref ? {} : { label: text })}
         insideMarkdown
       />
     );
