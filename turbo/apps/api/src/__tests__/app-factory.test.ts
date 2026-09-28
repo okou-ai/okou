@@ -1218,6 +1218,22 @@ describe("createApp", () => {
       },
     );
 
+    it("force-upgrades the pre-MCP-reader App before it can read MCP-sourced events", async () => {
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const response = await app.request("/health", {
+        headers: {
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+          [CLIENT_VERSION_HEADER]: "0.981.0",
+        },
+      });
+
+      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    });
+
     it("force-upgrades prereleases below the supported App release", async () => {
       const app = createApp({
         signal: context.signal,
