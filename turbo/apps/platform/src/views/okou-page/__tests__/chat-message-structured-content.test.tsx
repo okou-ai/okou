@@ -94,7 +94,7 @@ test("MCP messages show the saved client name or generic marker with a local ico
         type: "source",
         kind: "mcp",
         clientId: "https://claude.ai/oauth/claude-code-client-metadata",
-        clientNameSnapshot: "Claude Code",
+        clientName: "Claude Code",
       },
     ],
   } satisfies UserMessageDocument;
@@ -114,7 +114,7 @@ test("MCP messages show the saved client name or generic marker with a local ico
         type: "source",
         kind: "mcp",
         clientId: "client_long",
-        clientNameSnapshot: longName,
+        clientName: longName,
       },
     ],
   } satisfies UserMessageDocument;

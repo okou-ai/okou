@@ -6735,7 +6735,7 @@ function MessageAnnotation({
     );
   }
   if (renderPart.kind === "mcp") {
-    const label = renderPart.part.clientNameSnapshot ?? "MCP";
+    const label = renderPart.part.clientName ?? "MCP";
     return (
       <div className={className}>
         <McpMark size={15} />

@@ -373,7 +373,7 @@ describe("chat thread generation template contract", () => {
           type: "source",
           kind: "mcp",
           clientId: "https://claude.ai/oauth/claude-code-client-metadata",
-          clientNameSnapshot: "Claude Code",
+          clientName: "Claude Code",
         },
       ],
     };
@@ -416,11 +416,11 @@ describe("chat thread generation template contract", () => {
       { kind: "mcp", clientId: "" },
       { kind: "mcp", clientId: "   " },
       { kind: "mcp", clientId: "x".repeat(2049) },
-      { kind: "mcp", clientId: "client_public", clientNameSnapshot: "  " },
+      { kind: "mcp", clientId: "client_public", clientName: "  " },
       {
         kind: "mcp",
         clientId: "client_public",
-        clientNameSnapshot: "x".repeat(121),
+        clientName: "x".repeat(121),
       },
       { kind: "mcp", clientId: "client_public", href: "https://fake.example" },
     ]) {

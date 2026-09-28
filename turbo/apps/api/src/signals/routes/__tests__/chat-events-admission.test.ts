@@ -142,7 +142,7 @@ describe("CHAT-02: web chat send and client ids", () => {
                 type: "source",
                 kind: "mcp",
                 clientId: "https://claude.ai/oauth/claude-code-client-metadata",
-                clientNameSnapshot: "Claude Code",
+                clientName: "Claude Code",
               },
             ],
           },
