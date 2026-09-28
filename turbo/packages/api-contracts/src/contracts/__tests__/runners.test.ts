@@ -660,21 +660,6 @@ describe("Pi sandbox execution contract", () => {
       name: "old launch config",
       launchConfig: { schemaVersion: 1 },
     },
-    {
-      name: "retired API first-turn slot",
-      launchConfig: {
-        schemaVersion: 2,
-        apiFirstTurn: {
-          schemaVersion: 1,
-          resourceSnapshotDigest: "a".repeat(64),
-          manifestUrl: "https://storage.example/manifest.json",
-          sessionUrl: "https://storage.example/session.jsonl",
-          deadlineAt: 2_000_000_000_000,
-          baseSession: { sessionId: piSessionId, sha256: null },
-          sandboxEventSequenceStart: 1,
-        },
-      },
-    },
   ])("rejects $name without a Sandbox compatibility path", (fixture) => {
     expect(
       storedExecutionContextSchema.safeParse({

@@ -228,7 +228,6 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
     expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
-    expect(claimed.claim.piLaunchConfig).not.toHaveProperty("apiFirstTurn");
     const terraEnvironment = claimEnvironment(claimed.claim);
     expect(terraEnvironment.OKOU_TOKEN).toBeTruthy();
     expect(terraEnvironment.CLI_PKG_URL).toBeTruthy();

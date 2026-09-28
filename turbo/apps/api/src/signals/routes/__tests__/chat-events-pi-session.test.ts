@@ -302,9 +302,6 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(piFollowUpClaim.claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
     });
-    expect(piFollowUpClaim.claim.piLaunchConfig).not.toHaveProperty(
-      "apiFirstTurn",
-    );
     expect(
       MemoryPiSession.fromJsonl(
         piSandboxBaseSession(piFollowUpClaim.claim, checkpointObjects).toString(

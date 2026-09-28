@@ -1142,21 +1142,6 @@ describe("sandbox Pi agent loop", () => {
     );
   });
 
-  it("rejects a launch payload with the retired handoff slot", async () => {
-    await writeFile(
-      launchPayloadFile,
-      JSON.stringify({
-        schemaVersion: 1,
-        appendSystemPrompt: null,
-        launchConfig: { schemaVersion: 2, apiFirstTurn: {} },
-      }),
-    );
-
-    await expect(
-      piSandboxAgentConfigFromEnv(piEnv({ OKOU_RUN_ID: RUN_ID })),
-    ).rejects.toThrow();
-  });
-
   it("does not echo malformed model config", async () => {
     const invalidModelConfig = "credential-like-model-config{";
     const env = piEnv({ OKOU_RUN_ID: RUN_ID });

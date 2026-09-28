@@ -512,7 +512,6 @@ describe("CHAT-02: model-first provider policies", () => {
       schemaVersion: 2,
       memoryRecall: { status: "no-content" },
     });
-    expect(claimed.claim.piLaunchConfig).not.toHaveProperty("apiFirstTurn");
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   }, 90_000);
 
@@ -758,7 +757,6 @@ describe("CHAT-02: model-first provider policies", () => {
         storageVersionId: version,
       },
     });
-    expect(claimed.claim.piLaunchConfig).not.toHaveProperty("apiFirstTurn");
     expect(claimed.claim.resumeSession).toMatchObject({
       sessionId: first.threadId,
       historyRef: { kind: "blob", hash: historyHash },

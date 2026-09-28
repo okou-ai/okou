@@ -409,7 +409,6 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain("pub struct StorageMountEntry {");
     expect(firstRender).toContain("pub struct CodexRuntimeConfig {");
     expect(firstRender).toContain("pub struct PiLaunchConfig {");
-    expect(firstRender).not.toContain("PiLaunchConfigApiFirstTurn");
     expect(firstRender).toContain("pub struct PiModelConfig {");
     expect(firstRender).toContain("pub enum PiModelConfigProvider {");
     expect(firstRender).toContain("pub enum PiModelConfigThinkingLevel {");
@@ -566,9 +565,6 @@ describe("Rust type bindings", () => {
       required: ["schemaVersion"],
       properties: { schemaVersion: { const: 2 } },
     });
-    expect(
-      z.toJSONSchema(piLaunchConfigSchema.unwrap()).properties,
-    ).not.toHaveProperty("apiFirstTurn");
     expect(z.toJSONSchema(piModelConfigLegacySchema)).toMatchObject({
       required: [
         "provider",

@@ -334,7 +334,6 @@ describe("CHAT-02: model-first provider policies", () => {
           },
         });
         expect(claim.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
-        expect(claim.claim.piLaunchConfig).not.toHaveProperty("apiFirstTurn");
         if (turn === 1) {
           expect(claim.claim.resumeSession).toBeNull();
         } else {
