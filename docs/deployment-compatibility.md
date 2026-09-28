@@ -233,7 +233,9 @@ stricter release 7 API floor subsumes it.
   main DM thread leaves its model empty and keeps it empty after each pick;
   the pick resolves the current `org_members_metadata.selected_model` and
   `service_tier`, then the workspace default if that preference is unavailable.
-  Existing explicitly selected thread models still reject unavailable routes.
+  Main DM model edits update the shared member preference, leaving the thread
+  model and tier empty. A pick also clears pins written by an older API during
+  promotion. Other threads with an explicit model still reject unavailable routes.
   Native reply threads, channels and platform topics retain their own routes
   and pin their first model at pick. Existing `/model` commands continue to
   update the shared member preference; changing it no longer changes the DM

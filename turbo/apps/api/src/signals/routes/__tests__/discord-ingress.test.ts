@@ -980,7 +980,7 @@ describe("canonical Discord ingress", () => {
     await postDiscordMessage(context, next);
     await flushWaitUntilForTest();
 
-    expect(await discordChatThreads(context, actor)).toMatchObject([
+    await expect(discordChatThreads(context, actor)).resolves.toMatchObject([
       { id: thread.id, selectedModel: null },
     ]);
     const inputs = currentInputs(await events(actor, thread.id));
@@ -1045,7 +1045,7 @@ describe("canonical Discord ingress", () => {
     await expect(
       chatApi.readThreadMetadata(actor.actor, thread.id),
     ).resolves.toMatchObject({ selectedModel: null, serviceTier: null });
-    expect(await discordChatThreads(context, actor)).toMatchObject([
+    await expect(discordChatThreads(context, actor)).resolves.toMatchObject([
       { id: thread.id, selectedModel: null, serviceTier: null },
     ]);
     const preference = await accept(
