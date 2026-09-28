@@ -8,6 +8,35 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.693.0](https://github.com/okou-ai/okou/compare/api-v1.692.0...api-v1.693.0) (2026-09-28)
+
+
+### Features
+
+* **chat:** prepare mcp client source readers ([#37238](https://github.com/okou-ai/okou/issues/37238)) ([b67ad36](https://github.com/okou-ai/okou/commit/b67ad362a42365c040af49fe66224e2aefcaa7eb))
+* finish video retirement cleanup and raise the web client floor to 0.981.0 ([#37256](https://github.com/okou-ai/okou/issues/37256)) ([fbaf632](https://github.com/okou-ai/okou/commit/fbaf632f1d052fd3e956be3434b0bd472c323292))
+
+
+### Refactoring
+
+* remove thread remote access feature switch ([#37235](https://github.com/okou-ai/okou/issues/37235)) ([8f8d0a1](https://github.com/okou-ai/okou/commit/8f8d0a1cbe11213c24bfedd67bc495e00623acc1))
+
+
+### Performance Improvements
+
+* **api:** attribute workflow enqueue and queue age ([#37244](https://github.com/okou-ai/okou/issues/37244)) ([10c385d](https://github.com/okou-ai/okou/commit/10c385dd710ae2877f4254ab11f709bae7897d3a))
+* **api:** read built-in model keys once per model policy list ([#37261](https://github.com/okou-ai/okou/issues/37261)) ([20749f4](https://github.com/okou-ai/okou/commit/20749f45eee904204e7eeab05bd0c969df4f0eff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.525.0
+    * @okouai/core bumped to 8.719.0
+    * @okouai/db bumped to 1.311.2
+    * @okouai/pi-agent-runtime bumped to 1.41.2
+
 ## [1.692.0](https://github.com/okou-ai/okou/compare/api-v1.691.0...api-v1.692.0) (2026-09-28)
 
 

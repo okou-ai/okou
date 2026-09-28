@@ -42,6 +42,19 @@ function routeWhere(key: TeamsChatThreadRouteKey) {
   );
 }
 
+/** Read the chat thread a Teams conversation already routes to. */
+export async function findTeamsRoutedChatThreadId(
+  db: Pick<Db, "select">,
+  key: TeamsChatThreadRouteKey,
+): Promise<string | undefined> {
+  const [route] = await db
+    .select({ chatThreadId: teamsChatThreadRoutes.chatThreadId })
+    .from(teamsChatThreadRoutes)
+    .where(routeWhere(key))
+    .limit(1);
+  return route?.chatThreadId;
+}
+
 async function loadRoute(
   db: Pick<Db, "select" | "update">,
   key: TeamsChatThreadRouteKey,

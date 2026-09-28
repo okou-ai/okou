@@ -83,7 +83,6 @@ test("A new-chat recommendation prefills without sending", async () => {
     return respond(201, {
       runId: "d0000000-0000-4000-a000-000000000001",
       threadId: "b0000000-0000-4000-a000-000000000001",
-      status: "completed",
       createdAt: "2026-09-21T10:00:00.000Z",
     });
   });

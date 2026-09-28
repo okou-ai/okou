@@ -5,7 +5,7 @@ import {
 } from "@okouai/core/feishu-platform";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
 import type { Db } from "./db";
 import { nowDate } from "../../lib/time";

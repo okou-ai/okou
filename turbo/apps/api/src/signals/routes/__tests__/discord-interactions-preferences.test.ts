@@ -37,6 +37,7 @@ import { modelPoliciesRoutes } from "../model-policies";
 import { modelProvidersRoutes } from "../model-providers";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   deleteDiscordFixture,
   mockDiscordMemberships,
@@ -122,6 +123,7 @@ async function enableDiscord(owner: Actor, enabled = true): Promise<void> {
 async function fixture(
   owner = actor(),
   discordUserId = uniqueDiscordSnowflake(),
+  history?: Parameters<typeof seedDiscordFixture>[1]["history"],
 ) {
   mockDiscordMemberships(context, [owner]);
   const binding = await seedDiscordFixture(context, {
@@ -131,6 +133,7 @@ async function fixture(
     botUserId: applicationId,
     discordUserId,
     guildName: `Guild ${owner.orgId}`,
+    ...(history ? { history } : {}),
   });
   onTestFinished(async () => {
     mockDiscordMemberships(context, [owner]);
@@ -138,7 +141,11 @@ async function fixture(
     await deleteFeatureSwitchesForUser(context, owner);
   });
   await enableDiscord(owner);
-  return { owner, binding, channelId: uniqueDiscordSnowflake() };
+  return {
+    owner,
+    binding,
+    channelId: history?.channelId ?? uniqueDiscordSnowflake(),
+  };
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
@@ -410,7 +417,7 @@ async function disconnect(owner: Actor): Promise<void> {
   );
 }
 
-async function configureModelPreferences(scope: Fixture) {
+async function configureModelPreferences(scope: Pick<Fixture, "owner">) {
   await createRunsApi(context).grantProEntitlement(scope.owner);
   const headers = accountApi.authenticate(scope.owner);
   const providers = setupApp({ context, routes: modelProvidersRoutes })(
@@ -585,6 +592,57 @@ describe("Discord account preferences through private controls", () => {
     expect(
       preselected(await discord.send(commandPayload(sender, "model"))),
     ).toStrictEqual(["gpt-6-astra"]);
+  });
+
+  it("switches the routed server thread the model picker runs in", async () => {
+    const owner = actor();
+    mockDiscordMemberships(context, [owner]);
+    const { headers, preference } = await configureModelPreferences({ owner });
+    const agent = await accountApi.createAgent(owner, {
+      displayName: "Discord thread agent",
+    });
+    const chat = createChatFilesBddApi(context);
+    const thread = await chat.createThread(owner, {
+      agentId: agent.agentId,
+      model: "claude-fable-5-1",
+    });
+    // A Discord thread started from a message shares that message's ID.
+    const threadChannelId = uniqueDiscordSnowflake();
+    const scope = await fixture(owner, uniqueDiscordSnowflake(), {
+      chatThreadId: thread.id,
+      channelId: threadChannelId,
+      messageId: threadChannelId,
+      messageText: "Start the routed Discord thread",
+    });
+    const discord = discordHttp([scope]);
+    const sender = guildSender(scope);
+
+    const menu = selectMenu(
+      await discord.send(commandPayload(sender, "model")),
+    );
+    const selected = await discord.send(
+      selectPayload(sender, menu.custom_id, "gpt-6-astra"),
+    );
+
+    expect(selected.content).toContain(
+      "Model selected for this conversation and new conversations",
+    );
+    const after = await accept(preference.get({ headers }), [200]);
+    expect(after.body.selectedModel).toBe("gpt-6-astra");
+    expect(
+      (await chat.readThreadMetadata(owner, thread.id)).selectedModel,
+    ).toBe("gpt-6-astra");
+    const threadEvents = await chat.requestThreadEvents(owner, {}, [200]);
+    if (threadEvents.status !== 200) {
+      throw new Error("Expected Discord thread events to load");
+    }
+    expect(threadEvents.body.events).toContainEqual(
+      expect.objectContaining({
+        kind: "model_selection_updated",
+        chatThreadId: thread.id,
+        selectedModel: "gpt-6-astra",
+      }),
+    );
   });
 
   it("rechecks model policy after a picker is issued and preserves the current allowed preference", async () => {

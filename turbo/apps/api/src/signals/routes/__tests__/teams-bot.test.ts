@@ -2170,6 +2170,8 @@ describe("POST /api/webhooks/teams/bot", () => {
         value: {
           okouTeamsAction: "switch_model",
           selectedModel: "claude-fable-5-1",
+          routeConversationId: `a:personal-${fixture.teamsUserId}`,
+          routeThreadId: "direct-message:main",
         },
       }),
       token: teamsToken(),
@@ -2244,7 +2246,11 @@ describe("POST /api/webhooks/teams/bot", () => {
               {
                 type: "Action.Submit",
                 title: "Switch",
-                data: { okouTeamsAction: "switch_model" },
+                data: {
+                  okouTeamsAction: "switch_model",
+                  routeConversationId: `a:personal-${fixture.teamsUserId}`,
+                  routeThreadId: "direct-message:main",
+                },
               },
             ],
           },
@@ -2411,8 +2417,12 @@ describe("POST /api/webhooks/teams/bot", () => {
           id: activityIds.switchModel,
           text: "",
           value: {
+            // A card sent from the main DM leaves this reply thread's
+            // model unchanged and only updates the member default.
             okouTeamsAction: "switch_model",
             selectedModel: "gpt-6-astra",
+            routeConversationId: `a:personal-${fixture.teamsUserId}`,
+            routeThreadId: "direct-message:main",
           },
         }),
         token: teamsToken(),
@@ -2456,6 +2466,145 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect(switchedModelClaim.modelUsageProvider).toBe("claude-fable-5-1");
       await runsApi.requestCancelRun(actor, switchedModelRunId, [200]);
     });
+  });
+
+  it("switches the main Teams DM thread and the member default from the model card", async () => {
+    const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
+    const anthropic = await runsApi.createOrgModelProvider(actor, {
+      type: "anthropic-api-key",
+      secret: "teams-dm-switch-anthropic-key",
+    });
+    const openai = await runsApi.createOrgModelProvider(actor, {
+      type: "openai-api-key",
+      secret: "teams-dm-switch-openai-key",
+    });
+    await runsApi.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: anthropic.providerId,
+      },
+      {
+        model: "gpt-6-astra",
+        isDefault: false,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: openai.providerId,
+      },
+    ]);
+    teamsGraphHistoryHandlers({
+      fixture,
+      chatMessages: [],
+      channelMessages: [],
+      threadRoots: {},
+      threadReplies: {},
+    });
+
+    const initialResponse = await postTeamsActivity({
+      activity: teamsPersonalMessageActivity({
+        fixture,
+        id: teamsFixtureExternalId(fixture, "activity-dm-switch-initial"),
+        text: "run before the DM model switch",
+      }),
+      token: teamsToken(),
+    });
+    expect(initialResponse.status).toBe(200);
+    await readTeamsBotResponseAndFlush(initialResponse);
+    const initialRunId = await runIdForPrompt(
+      actor,
+      "run before the DM model switch",
+    );
+    await runsApi.heartbeatRunner(runnerGroup);
+    const initialClaim = await runsApi.claimRunnerJob(initialRunId);
+    expect(initialClaim.modelUsageProvider).toBe("claude-fable-5-1");
+    await runsApi.requestCancelRun(actor, initialRunId, [200]);
+    await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
+
+    const switchResponse = await postTeamsActivity({
+      activity: teamsPersonalMessageActivity({
+        fixture,
+        id: teamsFixtureExternalId(fixture, "activity-dm-switch-submit"),
+        text: "",
+        value: {
+          okouTeamsAction: "switch_model",
+          selectedModel: "gpt-6-astra",
+          routeConversationId: `a:personal-${fixture.teamsUserId}`,
+          routeThreadId: "direct-message:main",
+        },
+      }),
+      token: teamsToken(),
+    });
+    expect(switchResponse.status).toBe(200);
+    await readTeamsBotResponseAndFlush(switchResponse);
+    await expect(
+      userConfigApi.readModelPreference(actor),
+    ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const threadEvents = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      ).events({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {},
+      }),
+      [200],
+    );
+    expect(threadEvents.body.events).toContainEqual(
+      expect.objectContaining({
+        kind: "model_selection_updated",
+        selectedModel: "gpt-6-astra",
+      }),
+    );
+
+    const switchedResponse = await postTeamsActivity({
+      activity: teamsPersonalMessageActivity({
+        fixture,
+        id: teamsFixtureExternalId(fixture, "activity-dm-switch-after"),
+        text: "run after the DM model switch",
+      }),
+      token: teamsToken(),
+    });
+    expect(switchedResponse.status).toBe(200);
+    await readTeamsBotResponseAndFlush(switchedResponse);
+    const switchedRunId = await runIdForPrompt(
+      actor,
+      "run after the DM model switch",
+    );
+    await runsApi.heartbeatRunner(runnerGroup);
+    const switchedClaim = await runsApi.claimRunnerJob(switchedRunId);
+    expect(switchedClaim.modelUsageProvider).toBe("gpt-6-astra");
+    await runsApi.requestCancelRun(actor, switchedRunId, [200]);
+  });
+
+  it("asks for a new /model card when the submitted card has no route keys", async () => {
+    const { fixture, actor, outboundRequests } =
+      await setupConnectedTeamsBotActor();
+    const before = await userConfigApi.readModelPreference(actor);
+
+    const response = await postTeamsActivity({
+      activity: teamsPersonalMessageActivity({
+        fixture,
+        id: teamsFixtureExternalId(fixture, "activity-stale-model-card"),
+        text: "",
+        value: {
+          okouTeamsAction: "switch_model",
+          selectedModel: "claude-fable-5-1",
+        },
+      }),
+      token: teamsToken(),
+    });
+    expect(response.status).toBe(200);
+    await readTeamsBotResponseAndFlush(response);
+
+    expect(outboundRequests.at(-1)?.body).toMatchObject({
+      type: "message",
+      text: expect.stringContaining("This model picker is out of date"),
+    });
+    await expect(
+      userConfigApi.readModelPreference(actor),
+    ).resolves.toStrictEqual(before);
   });
 
   describe("queued runs for a connected Teams bot", () => {

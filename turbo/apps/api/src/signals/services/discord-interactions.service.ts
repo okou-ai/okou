@@ -49,6 +49,8 @@ import {
 } from "./discord-config";
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import { findDiscordInteractionChatThreadId } from "./discord-chat-ingress.service";
+import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { resolveDefaultModelFirstPin } from "./model-selection.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { updateUserModelPreferenceInDb } from "./user-data.service";
@@ -74,9 +76,9 @@ const HELP = [
   "`/okou connect` — connection status and setup guidance",
   "`/okou disconnect` — disconnect your account from this workspace",
   "`/okou switch` — show the workspace default agent used in Discord",
-  "`/okou model` — choose an allowed model for new conversations",
+  "`/okou model` — choose an allowed model for this conversation and new ones",
   "`/okou org` — choose the workspace for bot DMs",
-  "Existing server threads keep their agent and model. Long task replies arrive from the bot.",
+  "Existing server threads keep their agent and model unless you run `/okou model` inside them. Long task replies arrive from the bot.",
 ].join("\n");
 
 type AccountInteraction =
@@ -330,10 +332,35 @@ const discordModelPicker$ = command(
         { binding: args.binding, model: option.value },
         signal,
       );
+      if (!saved) {
+        return discordAccountMessage(STALE_CONTROL);
+      }
+      // Only after the connection re-check above does the choice also apply
+      // to the conversation this interaction came from.
+      const chatThreadId = await findDiscordInteractionChatThreadId(
+        set(writeDb$),
+        {
+          connectionId: args.binding.connectionId,
+          userId: args.binding.userId,
+          channelId: args.actor.channelId,
+          isDm: args.actor.guildId === null,
+        },
+      );
+      signal.throwIfAborted();
+      const threadModel = await set(
+        updateIntegrationChatThreadModel$,
+        {
+          orgId: args.binding.orgId,
+          userId: args.binding.userId,
+          chatThreadId,
+          model: option.value,
+        },
+        signal,
+      );
       return discordAccountMessage(
-        saved
-          ? `Model selected for new conversations: ${option.label}. Existing server threads keep their model.`
-          : STALE_CONTROL,
+        threadModel.kind === "updated"
+          ? `Model selected for this conversation and new conversations: ${option.label}.`
+          : `Model selected for new conversations: ${option.label}. Existing server threads keep their model.`,
       );
     }
     // Preselect the model a new Discord conversation would actually run.
@@ -350,7 +377,7 @@ const discordModelPicker$ = command(
       options,
       ...(route.selectedModel ? { selected: route.selectedModel } : {}),
       content:
-        "Choose an allowed model for new conversations. This is your shared workspace model preference.",
+        "Choose an allowed model for this conversation and new conversations. This is your shared workspace model preference.",
     });
   },
 );

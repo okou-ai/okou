@@ -56,14 +56,10 @@ import * as usagePackSubscriptionSchema from "./schema/usage-pack-subscription";
 import * as runBuiltInAdmissionSchema from "./schema/run-built-in-admission";
 import * as githubInstallationSchema from "./schema/github-installation";
 import * as githubUserLinkSchema from "./schema/github-user-link";
-import * as telegramInstallationSchema from "./schema/telegram-installation";
 import * as telegramOfficialUserLinkSchema from "./schema/telegram-official-user-link";
-import * as telegramUserLinkSchema from "./schema/telegram-user-link";
-import * as telegramUserAgentPreferenceSchema from "./schema/telegram-user-agent-preference";
 import * as telegramChatThreadRouteSchema from "./schema/telegram-chat-thread-route";
 import * as telegramMessageSchema from "./schema/telegram-message";
 import * as agentphoneUserLinkSchema from "./schema/agentphone-user-link";
-import * as agentphoneUserAgentPreferenceSchema from "./schema/agentphone-user-agent-preference";
 import * as agentphoneChatThreadRouteSchema from "./schema/agentphone-chat-thread-route";
 import * as agentphoneMessageSchema from "./schema/agentphone-message";
 import * as agentphoneVerificationSendCooldownSchema from "./schema/agentphone-verification-send-cooldown";
@@ -71,23 +67,19 @@ import * as slackOrgInstallationSchema from "./schema/slack-org-installation";
 import * as slackOrgConnectionSchema from "./schema/slack-org-connection";
 import * as slackChatThreadRouteSchema from "./schema/slack-chat-thread-route";
 import * as slackChatIngressSchema from "./schema/slack-chat-ingress";
-import * as slackUserAgentPreferenceSchema from "./schema/slack-user-agent-preference";
 import * as discordOrgInstallationSchema from "./schema/discord-org-installation";
 import * as discordOrgConnectionSchema from "./schema/discord-org-connection";
 import * as discordChatThreadRouteSchema from "./schema/discord-chat-thread-route";
 import * as discordChatIngressSchema from "./schema/discord-chat-ingress";
-import * as discordUserAgentPreferenceSchema from "./schema/discord-user-agent-preference";
 import * as discordUserDmPreferenceSchema from "./schema/discord-user-dm-preference";
 import * as teamsOrgInstallationSchema from "./schema/teams-org-installation";
 import * as teamsOrgConnectionSchema from "./schema/teams-org-connection";
 import * as teamsChatThreadRouteSchema from "./schema/teams-chat-thread-route";
-import * as teamsUserAgentPreferenceSchema from "./schema/teams-user-agent-preference";
-import * as feishuOrgInstallationSchema from "./runtime/feishu-org-installation";
+import * as feishuOrgInstallationSchema from "./schema/feishu-org-installation";
 import * as feishuOrgConnectionSchema from "./schema/feishu-org-connection";
 import * as feishuOrgEventSchema from "./schema/feishu-org-event";
 import * as feishuChatThreadRouteSchema from "./schema/feishu-chat-thread-route";
 import * as feishuChatIngressSchema from "./schema/feishu-chat-ingress";
-import * as feishuUserAgentPreferenceSchema from "./schema/feishu-user-agent-preference";
 import * as orgSchema from "./schema/org-metadata";
 import * as orgPlanEntitlementSchema from "./runtime/org-plan-entitlement";
 import * as orgConcurrencyEntitlementSchema from "./schema/org-concurrency-entitlement";
@@ -211,23 +203,19 @@ export const schema = {
   ...slackOrgConnectionSchema,
   ...slackChatThreadRouteSchema,
   ...slackChatIngressSchema,
-  ...slackUserAgentPreferenceSchema,
   ...discordOrgInstallationSchema,
   ...discordOrgConnectionSchema,
   ...discordChatThreadRouteSchema,
   ...discordChatIngressSchema,
-  ...discordUserAgentPreferenceSchema,
   ...discordUserDmPreferenceSchema,
   ...teamsOrgInstallationSchema,
   ...teamsOrgConnectionSchema,
   ...teamsChatThreadRouteSchema,
-  ...teamsUserAgentPreferenceSchema,
   ...feishuOrgInstallationSchema,
   ...feishuOrgConnectionSchema,
   ...feishuOrgEventSchema,
   ...feishuChatThreadRouteSchema,
   ...feishuChatIngressSchema,
-  ...feishuUserAgentPreferenceSchema,
   ...variableSchema,
   ...composeJobSchema,
   ...connectorSchema,
@@ -248,14 +236,10 @@ export const schema = {
   ...runBuiltInAdmissionSchema,
   ...githubInstallationSchema,
   ...githubUserLinkSchema,
-  ...telegramInstallationSchema,
   ...telegramOfficialUserLinkSchema,
-  ...telegramUserLinkSchema,
-  ...telegramUserAgentPreferenceSchema,
   ...telegramChatThreadRouteSchema,
   ...telegramMessageSchema,
   ...agentphoneUserLinkSchema,
-  ...agentphoneUserAgentPreferenceSchema,
   ...agentphoneChatThreadRouteSchema,
   ...agentphoneMessageSchema,
   ...agentphoneVerificationSendCooldownSchema,

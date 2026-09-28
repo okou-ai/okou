@@ -4,7 +4,7 @@ import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
 import { command } from "ccstate";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
@@ -43,7 +43,10 @@ import {
   isFeishuInstallationEnabled,
   buildFeishuChatOpenUrl,
 } from "./feishu-config";
-import { ensureFeishuChatThreadRoute } from "./feishu-chat-ingress.service";
+import {
+  ensureFeishuChatThreadRoute,
+  feishuRouteThreadId,
+} from "./feishu-chat-ingress.service";
 import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import { insertChatEvent, insertChatEventContext } from "./chat-event.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
@@ -62,7 +65,6 @@ import {
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
 } from "./feishu-dispatch.service";
-import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 
 const L = logger("CanonicalFeishuIngressProcessor");
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
@@ -95,21 +97,6 @@ const feishuInboundMessageSchema = z.object({
 
 interface CanonicalFeishuInboundMessage extends FeishuInboundMessage {
   readonly platform: FeishuPlatform;
-}
-
-function canonicalThreadId(args: {
-  readonly message: CanonicalFeishuInboundMessage;
-}): string {
-  const { message } = args;
-  const replyThreadId =
-    message.rootId ?? message.threadId ?? message.parentId ?? null;
-  if (message.chatType === "p2p") {
-    if (message.threadId) {
-      return `thread:${message.threadId}`;
-    }
-    return INTEGRATION_DM_SESSION_KEY;
-  }
-  return replyThreadId ?? message.messageId;
 }
 
 async function claimIngress(
@@ -394,9 +381,7 @@ const persistCanonicalFeishuIngress$ = command(
     },
     signal: AbortSignal,
   ): Promise<PersistedCanonicalFeishuIngress> => {
-    const routeThreadId = canonicalThreadId({
-      message: args.message,
-    });
+    const routeThreadId = feishuRouteThreadId(args.message);
     const route = await ensureFeishuChatThreadRoute(args.db, {
       connectionId: args.connection.id,
       chatId: args.message.chatId,

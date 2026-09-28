@@ -51,7 +51,8 @@ readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-p
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 readonly PI_API_FIRST_TURN_RETIRED_PATH=.github/rollback-floors/pi-api-first-turn-retired
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
-readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_video_model_columns.sql
+readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
+readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -235,6 +236,20 @@ if [[ ! "$pi_api_first_turn_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$pi_api_first_turn_retired_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Pi API-first turn retirement: ${pi_api_first_turn_retired_commit}."
+fi
+
+# Migration 1282 drops the retired integration agent preference and
+# self-hosted Telegram tables, feishu_org_installations.default_agent_id,
+# telegram_chat_thread_routes.telegram_user_link_id and
+# telegram_messages.installation_id. Earlier APIs still declare those columns,
+# so their Telegram message and route inserts name the dropped columns.
+retired_integration_agent_tables_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH" | sed -n '1p')
+if [[ ! "$retired_integration_agent_tables_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged retired integration agent table drop on main."
+fi
+if ! git merge-base --is-ancestor "$retired_integration_agent_tables_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired integration agent table drop: ${retired_integration_agent_tables_drop_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
