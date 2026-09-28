@@ -154,6 +154,11 @@ type OrganizationAuthContext = AuthContext & { readonly orgId: string };
 interface NormalSendArgs {
   readonly body: NormalSendBody;
   readonly auth: OrganizationAuthContext;
+  /** Only the verified /mcp service supplies this; never read it from the send body. */
+  readonly mcpSource?: Extract<
+    UserMessageDocument["parts"][number],
+    { type: "source"; kind: "mcp" }
+  >;
   readonly userId: string;
   readonly orgId: string;
   readonly preloadedAgent?: AgentForChatSend;
@@ -1245,6 +1250,17 @@ async function prepareNormalSend(
   ) {
     return badRequestMessage("MCP source annotations are server-managed");
   }
+  if (
+    args.mcpSource !== undefined &&
+    (args.auth.tokenType !== "oauth" ||
+      !("clientId" in args.auth) ||
+      args.auth.clientId !== args.mcpSource.clientId ||
+      args.body.userMessage.parts.some((part) => {
+        return part.type !== "text";
+      }))
+  ) {
+    return badRequestMessage("MCP source requires a verified OAuth client");
+  }
   const existingThreadId = args.body.threadId;
   const authorized =
     existingThreadId === undefined
@@ -1384,9 +1400,14 @@ export const sendNormalEvent$ = command(
       id: args.body.clientEventId ?? randomUUID(),
       threadId: thread.threadId,
       userMessage:
-        agentRunSource === null
-          ? args.body.userMessage
-          : withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource),
+        agentRunSource !== null
+          ? withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource)
+          : args.mcpSource === undefined
+            ? args.body.userMessage
+            : {
+                ...args.body.userMessage,
+                parts: [...args.body.userMessage.parts, args.mcpSource],
+              },
       triggerSource: normalSendTriggerSource(args.auth),
       agentRunSource,
       requiredOfficialWorkflowIds: args.requiredOfficialWorkflowIds,

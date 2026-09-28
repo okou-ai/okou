@@ -12,6 +12,7 @@ export const MCP_SUBMISSION_RETRY_MS = 24 * 60 * 60 * 1000;
 export interface McpSubmissionIdentity {
   readonly requestId: string;
   readonly text: string;
+  readonly clientId: string;
 }
 
 interface McpSubmissionOwner {
@@ -48,6 +49,24 @@ export async function resolveMcpSubmission(
   if (!event) {
     return { kind: "missing" } as const;
   }
+  const parts = event.userMessage?.parts ?? [];
+  const text = parts[0];
+  const source = parts[1];
+  const attributedInput =
+    event.userMessage?.version === 1 &&
+    parts.length === 2 &&
+    text?.type === "text" &&
+    text.text === identity.text &&
+    source?.type === "source" &&
+    source.kind === "mcp" &&
+    source.clientId === identity.clientId;
+  // A text-only MCP input accepted by the old writer remains replayable for
+  // its existing 24-hour window. It has no client identity to reconstruct;
+  // never add a source to it on a retry.
+  const legacyInput = isDeepStrictEqual(event.userMessage, {
+    version: 1,
+    parts: [{ type: "text", text: identity.text }],
+  });
   if (
     event.threadId !== owner.threadId ||
     event.userId !== owner.userId ||
@@ -55,10 +74,7 @@ export async function resolveMcpSubmission(
     event.eventType !== "input.prompt" ||
     event.runId !== null ||
     event.revokesEventId !== null ||
-    !isDeepStrictEqual(event.userMessage, {
-      version: 1,
-      parts: [{ type: "text", text: identity.text }],
-    })
+    (!attributedInput && !legacyInput)
   ) {
     return { kind: "conflict" } as const;
   }

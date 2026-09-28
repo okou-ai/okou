@@ -26,7 +26,14 @@ const oauthClaimsSchema = z.object({
   aud: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
   sub: z.string().startsWith("user_").min(6),
   org_id: z.string().startsWith("org_").min(5),
-  client_id: z.string().min(1),
+  // Must fit the persisted MCP source contract before any input is accepted.
+  client_id: z
+    .string()
+    .min(1)
+    .max(2048)
+    .refine((value) => {
+      return value.trim().length > 0;
+    }),
   exp: z.number().int().positive(),
   scope: z.string().optional(),
   scp: z.array(z.string().min(1)).optional(),

@@ -32,13 +32,24 @@ caller-authored MCP source parts; the `/mcp` writer still emits only the old
 text-only input shape in this reader-preparation release.
 
 The new kind is **not** readable by older strict V7 App/API/snapshot readers.
-Before the separate writer activation in #37234, verify that this prepared
-reader has been promoted to every serving API and App, older App builds are
-blocked by an enforced Web client floor, earlier serving/rollback APIs and
-persisted-history readers are excluded or prepared, and outstanding old CLI
-contexts have drained. A merged reader PR or newer `main` alone does not prove
-this gate. Do not let a writer emit the new kind until this compatibility
-boundary is satisfied.
+The #37234 writer appends the source to the same immutable input as MCP text,
+using only the verified OAuth client ID. A bounded, optional name is snapshotted
+from a matching HTTPS CIMD document; the document is self-asserted display
+metadata, not proof of which software is running. Invalid or unavailable
+metadata leaves the name absent and the authorized send succeeds. Replays
+preserve the original name and source; pre-cutover text-only input replays
+remain text-only for their 24-hour retry window. Existing messages are never
+inferred or retroactively labeled.
+
+Before activating the writer, verify that the prepared reader is serving from
+every current API/App and history/snapshot path, enforce the Web client floor at
+`0.982.0` or newer (the first reader-capable App), and let outstanding old CLI
+contexts drain through their queue, execution and finalization bounds. A
+merged reader PR, newer `main`, or production release tag alone does not prove
+this gate. Older rollback artifacts are expressly unsupported for this change;
+restoring one after source-bearing events exist requires a separate coordinated
+compatibility decision. Do not activate the writer until the current-serving
+compatibility boundary is satisfied.
 
 ## V8
 
