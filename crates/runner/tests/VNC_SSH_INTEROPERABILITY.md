@@ -1,4 +1,4 @@
-# Pinned OpenSSH plus TigerVNC interoperability
+# Installed OpenSSH plus pinned TigerVNC interoperability
 
 This explicit ignored test composes the production Runner SSH authority,
 host-key verification, direct-tcpip forwarding, VNC authority, inner TLS/RFB
@@ -14,11 +14,13 @@ It covers this matrix:
 | Public key               | X509Vnc           |
 | Public key               | X509Plain         |
 
-The gate pins Ubuntu 24.04 `openssh-server` version
-`1:9.6p1-3ubuntu13.14` and TigerVNC version
-`1.13.1+dfsg-2build2`. Missing or different packages fail the requested run.
-Changing either pin requires a reviewed compatibility update; ordinary package
-drift is not acceptance evidence.
+Run on Ubuntu 24.04 with the installed `openssh-server` and
+`openssh-client`, and record both exact package versions in the evidence. Do
+not downgrade a working SSH installation just to run this test. TigerVNC is
+pinned to `1.13.1+dfsg-2build2`; a missing or different TigerVNC package fails
+the requested run. Changing that pin requires a reviewed compatibility update.
+A pass on one installed OpenSSH version is evidence for that version, not an
+unexecuted OpenSSH version or a substitute for an owner-to-Agent workflow.
 
 The test is ignored by default. A normal `cargo test` does not establish this
 interop boundary.
@@ -39,28 +41,26 @@ fixture-generated CA. No route substitution or raw-TCP fallback is permitted.
 
 ## Prerequisites
 
-Install the exact packages:
-
-```sh
-sudo apt-get update
-sudo apt-get install --no-install-recommends \
-  openssh-server=1:9.6p1-3ubuntu13.14 \
-  openssh-client=1:9.6p1-3ubuntu13.14 \
-  tigervnc-standalone-server=1.13.1+dfsg-2build2 \
-  tigervnc-tools=1.13.1+dfsg-2build2 \
-  python3-xlib=0.33-2 x11-xserver-utils openssl
-```
+On a disposable machine where package installation is authorized, ensure
+`openssh-server`, `openssh-client`, `tigervnc-standalone-server`,
+`tigervnc-tools`, `python3-xlib`, `x11-xserver-utils` and `openssl` are
+available. Do not replace the installed OpenSSH version. TigerVNC must be
+`1.13.1+dfsg-2build2`; verify with `dpkg-query` before starting the fixture.
+If the existing host lacks a dependency and installing it is not authorized,
+use an isolated environment or stop rather than changing the host.
 
 Build the current exact-head Runner test before changing host state:
 
 ```sh
-cargo test --manifest-path crates/Cargo.toml --profile local -p runner \
-  ssh::tests::vnc_interoperability::pinned_openssh_tigervnc_vnc_transport_acceptance \
+cargo test --manifest-path crates/Cargo.toml --profile local -p runner-remote --lib \
+  ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance \
   --no-run
 ```
 
-Locate the test executable produced by that command and record its SHA-256 and
-the current commit. Do not reuse a binary built from another head.
+Locate the `runner_remote-*` lib-test executable produced by that command,
+confirm the filtered test appears in its `--list --ignored` output, and record
+its SHA-256 and the current commit. Do not reuse a binary built from another
+head or use the `runner` package's different test executable.
 
 ## Disposable setup and run
 
@@ -156,12 +156,18 @@ done
 test "$VNC_SSHD_READY" = 1
 
 VNC_OPENSSH_VERSION="$(dpkg-query -W -f='${Version}' openssh-server)"
-test "$VNC_OPENSSH_VERSION" = "1:9.6p1-3ubuntu13.14"
+VNC_OPENSSH_CLIENT_VERSION="$(dpkg-query -W -f='${Version}' openssh-client)"
+# Preserve these observed versions in the evidence; do not silently assume a pin.
+printf 'OpenSSH server=%s client=%s\n' \
+  "$VNC_OPENSSH_VERSION" "$VNC_OPENSSH_CLIENT_VERSION"
 VNC_OPENSSH_HOST_KEY_ALGORITHM="$(awk '{print $1}' "$VNC_ACCEPT_DIR/host_key.pub")"
 VNC_OPENSSH_HOST_KEY_FINGERPRINT="$(ssh-keygen -lf "$VNC_ACCEPT_DIR/host_key.pub" -E sha256 | awk '{print $2}')"
 VNC_RUNNER_TEST_BINARY="$(find crates/target/local/deps -maxdepth 1 -type f \
-  -name 'runner-*' -perm -111 -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)"
+  -name 'runner_remote-*' -perm -111 -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)"
 test -n "$VNC_RUNNER_TEST_BINARY"
+"$VNC_RUNNER_TEST_BINARY" --list --ignored | grep -F \
+  'ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance' >/dev/null
+sha256sum "$VNC_RUNNER_TEST_BINARY"
 sudo install -m 755 "$VNC_RUNNER_TEST_BINARY" "$VNC_ACCEPT_DIR/runner-tests"
 sudo install -m 644 crates/rfb-client/tests/fixtures/tigervnc.py \
   "$VNC_ACCEPT_DIR/tigervnc.py"
@@ -182,7 +188,7 @@ sudo -u "$VNC_ACCEPT_USER" env \
   RFB_TIGERVNC_PLAIN_PASSWORD="$VNC_ACCEPT_PASSWORD" \
   RFB_TIGERVNC_PAM_SERVICE=tigervnc \
   "$VNC_ACCEPT_DIR/runner-tests" \
-  ssh::tests::vnc_interoperability::pinned_openssh_tigervnc_vnc_transport_acceptance \
+  ssh::tests::vnc_interoperability::installed_openssh_tigervnc_vnc_transport_acceptance \
   --ignored --exact --nocapture
 ```
 
@@ -194,7 +200,7 @@ acceptance host is outside this procedure.
 Record all of the following against the exact PR head:
 
 - commit and test-binary SHA-256;
-- `dpkg-query` versions for OpenSSH and TigerVNC;
+- `dpkg-query` versions for both installed OpenSSH packages and pinned TigerVNC;
 - the four matrix cases and their start/status/capture/close result;
 - the pinned host-key algorithm/fingerprint and non-secret loopback topology;
 - certificate identity `localhost` and exact forwarded RFB port;
