@@ -8,6 +8,7 @@ import type { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   insertChatSearchProjectionCoverageFixture,
   insertSearchableMessageBatchFixture,
@@ -47,6 +48,8 @@ async function requestChatSearchProjection(
 async function projectChatSearchMessages(
   chatThreadIds: readonly string[],
 ): Promise<void> {
+  // Sends only enqueue; let their background picks settle the inputs first.
+  await flushWaitUntilForTest();
   const body = await requestChatSearchProjection(chatThreadIds);
   expect(body.convergence.durableCaughtUpThreads).toBe(chatThreadIds.length);
 }

@@ -3763,6 +3763,8 @@ describe("CHAT-03 run usage events", () => {
 const CHAT_EVENT_SEARCH_CRON_SECRET = "chat-event-search-cron-secret";
 
 async function projectChatEventSearch() {
+  // Sends only enqueue; let their background picks settle the inputs first.
+  await flushWaitUntilForTest();
   mockEnv("CRON_SECRET", CHAT_EVENT_SEARCH_CRON_SECRET);
   const client = setupApp({
     context,
