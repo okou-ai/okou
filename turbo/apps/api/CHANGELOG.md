@@ -8,6 +8,46 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.690.1](https://github.com/okou-ai/okou/compare/api-v1.690.0...api-v1.690.1) (2026-09-28)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.716.3
+    * @okouai/db bumped to 1.310.1
+    * @okouai/pi-agent-runtime bumped to 1.40.42
+
+## [1.690.0](https://github.com/okou-ai/okou/compare/api-v1.689.0...api-v1.690.0) (2026-09-28)
+
+
+### Features
+
+* **browser:** support 10 mib native file input via private direct uploads ([#37125](https://github.com/okou-ai/okou/issues/37125)) ([ad8d418](https://github.com/okou-ai/okou/commit/ad8d4182adf83a2857bae93ff0362248ec6c1ca6))
+* **runner:** gate wss tickets on host ingress heartbeat ([#37192](https://github.com/okou-ai/okou/issues/37192)) ([00b5a33](https://github.com/okou-ai/okou/commit/00b5a334dceacc63b97978c57108d736822fd230))
+
+
+### Bug Fixes
+
+* **api:** resolve agentphone group messages to the sender's own link ([#37219](https://github.com/okou-ai/okou/issues/37219)) ([271faaa](https://github.com/okou-ai/okou/commit/271faaacd803656ef3962732187e60839d90838b))
+* **feishu:** remove im user oauth scopes from feishu and lark connector ([#37220](https://github.com/okou-ai/okou/issues/37220)) ([6ae61dc](https://github.com/okou-ai/okou/commit/6ae61dcd052671eec037aa401b11d34ca5a9bab2))
+
+
+### Refactoring
+
+* remove onboarding sources-first feature switch ([#37216](https://github.com/okou-ai/okou/issues/37216)) ([c136fd9](https://github.com/okou-ai/okou/commit/c136fd9da995a561dd0fa6233b54b0a07c23bde3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.522.0
+    * @okouai/core bumped to 8.716.2
+    * @okouai/db bumped to 1.310.0
+    * @okouai/pi-agent-runtime bumped to 1.40.41
+
 ## [1.689.0](https://github.com/okou-ai/okou/compare/api-v1.688.0...api-v1.689.0) (2026-09-28)
 
 

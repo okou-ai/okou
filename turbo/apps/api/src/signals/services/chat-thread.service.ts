@@ -816,14 +816,15 @@ export async function createChatThreadInTransaction(
     selectedVideoModel: args.selectedVideoModel,
     selectedImageModel: args.selectedImageModel,
   });
-  // Tolerate only the primary key. Each caller owns its replay policy; every
-  // other database fault still propagates and rolls back initialization.
-  const [createdThread] = await insert
-    .onConflictDoNothing({ target: chatThreads.id })
-    .returning({
-      id: chatThreads.id,
-      createdAt: chatThreads.createdAt,
-    });
+  // The primary key and (id, user_id) are both unique. PostgreSQL can detect
+  // either first for concurrent inserts of the same client id, so an id-only
+  // conflict target can leak a 23505 from the composite constraint. These are
+  // the table's only unique constraints; other database faults still propagate.
+  // Each caller resolves a skipped insert according to its own replay policy.
+  const [createdThread] = await insert.onConflictDoNothing().returning({
+    id: chatThreads.id,
+    createdAt: chatThreads.createdAt,
+  });
   if (!createdThread) {
     return { kind: "client_thread_conflict" as const };
   }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/okou-ai/okou/compare/runner-types-v0.1.13...runner-types-v0.2.0) (2026-09-28)
+
+
+### Features
+
+* **runner:** gate wss tickets on host ingress heartbeat ([#37192](https://github.com/okou-ai/okou/issues/37192)) ([00b5a33](https://github.com/okou-ai/okou/commit/00b5a334dceacc63b97978c57108d736822fd230))
+
 ## [0.1.13](https://github.com/okou-ai/okou/compare/runner-types-v0.1.12...runner-types-v0.1.13) (2026-09-28)
 
 

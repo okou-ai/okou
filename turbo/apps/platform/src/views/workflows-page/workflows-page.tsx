@@ -580,8 +580,6 @@ function WorkflowRow({
   readonly displayTimezone: string;
 }) {
   const title = workflowTitle(workflow);
-  const importSourceShown =
-    useGet(featureSwitch$)[FeatureSwitchKey.WorkflowSkillImport] ?? false;
   return (
     <article className="flex items-center gap-3 px-5 py-3.5 text-left text-foreground transition-colors hover:bg-state-hover">
       <WorkflowTooltip workflow={workflow}>
@@ -620,7 +618,7 @@ function WorkflowRow({
                     })}
               </span>
             ) : null}
-            {importSourceShown && workflow.importSource ? (
+            {workflow.importSource ? (
               <Badge className="shrink-0 text-xs font-medium text-muted-foreground">
                 {workflow.importSource === "codex"
                   ? i18n.t(($) => {
@@ -1267,15 +1265,10 @@ function WorkflowFilterBar({
   );
 }
 
-/** Opens the import skills dialog; null while its switch is off. */
-function useImportSkills(): (() => void) | null {
-  const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.WorkflowSkillImport] ?? false;
+/** Opens the import skills dialog. */
+function useImportSkills(): () => void {
   const openSkillImportDialog = useSet(openSkillImportDialog$);
   const pageSignal = useGet(pageSignal$);
-  if (!enabled) {
-    return null;
-  }
   return () => {
     detach(openSkillImportDialog(pageSignal), Reason.DomCallback);
   };
@@ -1286,7 +1279,7 @@ function WorkflowsHeaderActions({
   onImportSkills,
 }: {
   readonly officialWorkflowsEnabled: boolean;
-  readonly onImportSkills: (() => void) | null;
+  readonly onImportSkills: () => void;
 }) {
   const { t } = useTranslation();
   const openCreateWorkflowDialog = useSet(openCreateWorkflowDialog$);
@@ -1307,20 +1300,18 @@ function WorkflowsHeaderActions({
           })}
         </Link>
       ) : null}
-      {onImportSkills ? (
-        <Button
-          type="button"
-          variant="neutral"
-          size="sm"
-          className="h-9 shrink-0 gap-2 rounded-lg"
-          onClick={onImportSkills}
-        >
-          <Download size={14} />
-          {t(($) => {
-            return $.workflows.skillImport.action;
-          })}
-        </Button>
-      ) : null}
+      <Button
+        type="button"
+        variant="neutral"
+        size="sm"
+        className="h-9 shrink-0 gap-2 rounded-lg"
+        onClick={onImportSkills}
+      >
+        <Download size={14} />
+        {t(($) => {
+          return $.workflows.skillImport.action;
+        })}
+      </Button>
       <Button
         type="button"
         variant="neutral"
@@ -1429,9 +1420,7 @@ export function WorkflowsPage() {
                   })
             }
             emptyAction={
-              importSkills &&
-              filter === "all" &&
-              agentFilter === WORKFLOW_ALL_AGENTS ? (
+              filter === "all" && agentFilter === WORKFLOW_ALL_AGENTS ? (
                 <Button
                   type="button"
                   variant="outline"

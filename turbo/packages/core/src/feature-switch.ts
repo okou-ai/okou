@@ -539,13 +539,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
-  [FeatureSwitchKey.WorkflowSkillImport]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Import Claude Code or Codex skills as private workflows from the workflows page, its empty state and the composer's plus menu, and tag each imported workflow with its source.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
 };
 
 interface ResolvedHashes {

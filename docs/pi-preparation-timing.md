@@ -70,6 +70,23 @@ HTTP spans must not be used as a current foreground transport boundary. Runner
 notification is likewise separate from provider start. Inspect the deployed
 revision and actual span contract before making a latency claim.
 
+## Launch commit and first-output boundaries
+
+`committedAtomicLaunchResponse` still checkpoints
+`api_dispatch_phase_queue_insert` at `runnerJobCreatedAt`, the logical row
+creation time. This is not commit completion: `api_dispatch_phase_commit`
+ends when the launch transaction returns. The additive
+`logical_queue_created_at` and `boundary_at` fields on Runner notification
+milestones identify their endpoints; compare boundaries or subtract cumulative
+values instead of summing them. Existing `api_to_*`, first-assistant publication
+and dispatch phase definitions remain unchanged.
+
+Guest startup, first model output, WebSocket delivery and API ingestion have
+separate owners. See [chat-first-output-latency.md](chat-first-output-latency.md)
+for their exact event and observation boundaries. These observations do not
+restore an API-side provider turn; every foreground provider request starts in
+the Sandbox.
+
 ## Observation and historical evidence
 
 The original instrumentation was delivered under

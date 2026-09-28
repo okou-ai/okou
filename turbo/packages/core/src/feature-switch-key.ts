@@ -76,7 +76,6 @@ export enum FeatureSwitchKey {
   PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
-  WorkflowSkillImport = "workflowSkillImport",
   UserMessageLinks = "userMessageLinks",
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",

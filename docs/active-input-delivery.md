@@ -43,9 +43,10 @@ sandbox-token endpoints remain:
   another thread, or neither a prompt nor a budget targeting this run returns
   `404`. Template usage for prompts is logged here.
 
-The Runner reads the next input after a `runner-group` notification or its
-30-second recheck and forwards at most one input at a time to the Guest, which
-declares the input steered once the CLI backend accepts it. A declaration that
+The Runner reads the next input when the run starts, after an `active-input`
+notification for that run, and once for every active run after Ably reconnects.
+There is no periodic poll or read/forward retry. It forwards at most one input
+at a time to the Guest, which declares it steered once the CLI backend accepts it. A declaration that
 fails without a `409` is not retried: the input stays queued, remains the next
 steerable input for the rest of the run. An undeclared prompt is picked after
 the run ends, so the model may see it again; an undeclared budget expires.
@@ -102,8 +103,8 @@ belongs only to its target run and never launches a successor.
 
 Both steer endpoints run without locks or transactions: next is a bounded
 read, and declare steered ends with one replacement insert on the revoke edge.
-Input committed after a read uses the realtime notification path, with the
-30-second poll as notification-loss recovery.
+Input committed after a read uses the realtime notification path; an Ably
+reconnect wakes every active run once to cover a lost notification.
 
 A run's time budget steer that nothing consumed is revoked after the completion
 commit rather than inside it. Steering appends only while the run is running,

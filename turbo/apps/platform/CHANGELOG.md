@@ -11,6 +11,46 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.979.1](https://github.com/okou-ai/okou/compare/app-v0.979.0...app-v0.979.1) (2026-09-28)
+
+
+### Refactoring
+
+* remove workflowSkillImport feature switch ([#37217](https://github.com/okou-ai/okou/issues/37217)) ([f40f999](https://github.com/okou-ai/okou/commit/f40f9991d57bb774c48e4fe77f2f73354c2bca45))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.716.3
+
+## [0.979.0](https://github.com/okou-ai/okou/compare/app-v0.978.0...app-v0.979.0) (2026-09-28)
+
+
+### Features
+
+* **browser:** support 10 mib native file input via private direct uploads ([#37125](https://github.com/okou-ai/okou/issues/37125)) ([ad8d418](https://github.com/okou-ai/okou/commit/ad8d4182adf83a2857bae93ff0362248ec6c1ca6))
+
+
+### Bug Fixes
+
+* **platform:** display xhigh effort as xHigh ([#37221](https://github.com/okou-ai/okou/issues/37221)) ([8d68ab2](https://github.com/okou-ai/okou/commit/8d68ab260c45b85e673ebf5bd7b3512009868c15))
+* **platform:** drop misleading earned total and connector count from get started panel ([#37218](https://github.com/okou-ai/okou/issues/37218)) ([0e9dbca](https://github.com/okou-ai/okou/commit/0e9dbca9f21cafdb9ee2a2a78a2264adfad47cf8))
+
+
+### Refactoring
+
+* remove onboarding sources-first feature switch ([#37216](https://github.com/okou-ai/okou/issues/37216)) ([c136fd9](https://github.com/okou-ai/okou/commit/c136fd9da995a561dd0fa6233b54b0a07c23bde3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.522.0
+    * @okouai/core bumped to 8.716.2
+
 ## [0.978.0](https://github.com/okou-ai/okou/compare/app-v0.977.0...app-v0.978.0) (2026-09-28)
 
 

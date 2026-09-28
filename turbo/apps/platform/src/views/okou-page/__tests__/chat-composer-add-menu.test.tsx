@@ -98,13 +98,13 @@ test("collapses those buttons into the add menu's rows", async () => {
     "Attach",
     "Template",
     "Create workflow",
+    "Import skills",
   ]);
 });
 
 test("adds import skills after create workflow and opens its dialog", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
-    [FeatureSwitchKey.WorkflowSkillImport]: true,
   });
 
   const menu = await openAddMenu(editor);

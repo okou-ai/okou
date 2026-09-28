@@ -10837,6 +10837,10 @@ function committedAtomicLaunchResponse(args: {
     "api_dispatch_phase_queue_insert",
     args.committed.runnerJobCreatedAt.getTime(),
   );
+  args.phaseTiming.checkpoint(
+    "api_dispatch_phase_commit",
+    args.transactionReturnedAt,
+  );
   args.phaseTiming.appendTo(args.timing);
   ingestRunContextSnapshot(args.committed.runContextSnapshot);
   const runContextRegisteredAt = now();
