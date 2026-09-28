@@ -4377,6 +4377,7 @@
         },
         "hideFullPrompt": "Sembunyikan prompt lengkap",
         "importedCopy": "Diimpor sebagai workflow Okou.",
+        "importedCount_other": "{{count}} diimpor · menunggu lainnya",
         "importedLabel": "Skill yang diimpor",
         "importedTitle": "Skill Anda sudah ada di Okou",
         "preparing": "Membuka sesi impor Anda…",

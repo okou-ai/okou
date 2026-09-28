@@ -36,7 +36,7 @@ import { Link } from "../router/link.tsx";
 import {
   ImportedSkillList,
   SkillImportPanel,
-  SkillImportWaiting,
+  SkillImportStatus,
 } from "./skill-import-panel.tsx";
 
 function useProviderName(provider: SkillImportProvider): string {
@@ -175,12 +175,14 @@ export function SkillImportDialog() {
               {/* Until a skill arrives, the footer says the import is
                   waiting; the list takes the room once there is one. */}
               {imported.length > 0 ? (
-                <ImportedSkillList skills={imported} />
+                <div className="border-t border-border/60 pt-4">
+                  <ImportedSkillList skills={imported} scroll />
+                </div>
               ) : null}
             </>
           ) : (
             <>
-              <ImportedSkillList skills={imported} />
+              <ImportedSkillList skills={imported} scroll />
               <SkillImportPromptDisclosure
                 expanded={disclosure === "expanded"}
               />
@@ -188,9 +190,9 @@ export function SkillImportDialog() {
           )}
         </div>
         <DialogFooter>
-          {disclosure === "prompt-first" && imported.length === 0 ? (
+          {disclosure === "prompt-first" ? (
             <div className="mr-auto min-w-0 self-center">
-              <SkillImportWaiting />
+              <SkillImportStatus count={imported.length} />
             </div>
           ) : null}
           <Button
@@ -206,8 +208,10 @@ export function SkillImportDialog() {
           </Button>
           <Link
             pathname={ROUTES.workflows}
-            // Copying the prompt is the dialog's primary action.
-            className={buttonVariants({ variant: "outline" })}
+            // Copying the prompt is the primary action until a skill arrives.
+            className={buttonVariants({
+              variant: imported.length > 0 ? "default" : "outline",
+            })}
             onClick={() => {
               close();
             }}

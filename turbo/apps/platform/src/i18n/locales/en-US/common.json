@@ -4386,6 +4386,8 @@
         },
         "hideFullPrompt": "Hide full prompt",
         "importedCopy": "Imported as an Okou workflow.",
+        "importedCount_one": "{{count}} imported · listening for more",
+        "importedCount_other": "{{count}} imported · listening for more",
         "importedLabel": "Imported skills",
         "importedTitle": "Your skills are in Okou",
         "preparing": "Opening your import session…",

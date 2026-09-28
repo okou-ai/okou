@@ -4394,6 +4394,8 @@
         },
         "hideFullPrompt": "पूरा प्रॉम्प्ट छिपाएँ",
         "importedCopy": "Okou workflow के रूप में इम्पोर्ट हुआ।",
+        "importedCount_one": "1 इम्पोर्ट हुई · और का इंतज़ार",
+        "importedCount_other": "{{count}} इम्पोर्ट हुईं · और का इंतज़ार",
         "importedLabel": "इम्पोर्ट हुई skills",
         "importedTitle": "आपकी skills Okou में आ गईं",
         "preparing": "आपका इम्पोर्ट सेशन खोला जा रहा है…",

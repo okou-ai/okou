@@ -4394,6 +4394,8 @@
         },
         "hideFullPrompt": "Vollständigen Prompt ausblenden",
         "importedCopy": "Als Okou-Workflow importiert.",
+        "importedCount_one": "1 importiert · wartet auf weitere",
+        "importedCount_other": "{{count}} importiert · wartet auf weitere",
         "importedLabel": "Importierte Skills",
         "importedTitle": "Deine Skills sind in Okou",
         "preparing": "Deine Import-Sitzung wird geöffnet…",

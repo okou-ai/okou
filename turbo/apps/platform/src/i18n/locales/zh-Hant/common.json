@@ -4377,6 +4377,7 @@
         },
         "hideFullPrompt": "收合完整提示詞",
         "importedCopy": "已匯入為Okou工作流。",
+        "importedCount_other": "已匯入 {{count}} 個 · 繼續等待",
         "importedLabel": "已匯入的技能",
         "importedTitle": "你的工作流已就緒",
         "preparing": "正在開啟匯入會話…",

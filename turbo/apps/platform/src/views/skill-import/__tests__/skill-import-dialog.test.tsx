@@ -359,6 +359,10 @@ test("Reopening the dialog after an import leads with the imported skills", asyn
   await expect(
     within(dialog).findByText("Weekly report"),
   ).resolves.toBeVisible();
+  // The footer counts what arrived and keeps listening for more.
+  expect(within(dialog).getByRole("status")).toHaveTextContent(
+    "1 imported · listening for more",
+  );
 
   click(getButtonNamed("Close", dialog));
   await waitFor(() => {

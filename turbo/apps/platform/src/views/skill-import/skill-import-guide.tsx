@@ -44,13 +44,11 @@ function GuideControl({
   return (
     <span
       className={cn(
-        "mx-0.5 inline-flex -translate-y-px items-center gap-1 rounded-md border px-1.5 align-middle text-xs font-medium leading-5",
-        highlighted
-          ? "border-[hsl(var(--primary-200))] bg-[hsl(var(--primary-0))] text-[hsl(var(--primary-600))]"
-          : "border-border bg-muted text-foreground",
+        "mx-0.5 inline-flex items-center gap-1 whitespace-nowrap align-bottom font-medium",
+        highlighted ? "text-brand-text" : "text-foreground",
       )}
     >
-      <Icon size={12} aria-hidden="true" />
+      <Icon size={14} aria-hidden="true" />
       {label}
     </span>
   );
@@ -72,26 +70,39 @@ function GuideStep({
   index,
   children,
   note,
+  action,
+  detail,
 }: {
   readonly index: number;
   readonly children: ReactNode;
   readonly note?: string;
+  /** A control that does the step, at the end of its line. */
+  readonly action?: ReactNode;
+  /** Whatever the step opens beneath it. */
+  readonly detail?: ReactNode;
 }) {
   return (
     <li className="flex gap-3">
       <span
-        className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full bg-background text-[11px] font-medium text-muted-foreground ring-1 ring-border"
+        className={cn(
+          "flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-muted-foreground",
+          action ? "mt-1.5" : "mt-0.5",
+        )}
         aria-hidden="true"
       >
         {index}
       </span>
-      <div className="min-w-0">
-        <p className="text-sm leading-6 text-foreground">{children}</p>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm leading-6 text-foreground">{children}</p>
+          {action}
+        </div>
         {note ? (
           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
             {note}
           </p>
         ) : null}
+        {detail}
       </div>
     </li>
   );
@@ -104,15 +115,6 @@ function WindowControls() {
       <i className="size-[9px] rounded-full bg-[#FF5F57]" />
       <i className="size-[9px] rounded-full bg-[#FEBC2E]" />
       <i className="size-[9px] rounded-full bg-[#28C840]" />
-    </span>
-  );
-}
-
-/** The control the first step names, ringed and labelled in the scene. */
-function SceneCallout({ label }: { readonly label: string }) {
-  return (
-    <span className="absolute left-1/2 top-full mt-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-[#242424] px-1.5 py-[3px] text-[10px] font-medium leading-none text-[#ffffff]">
-      {label}
     </span>
   );
 }
@@ -160,14 +162,10 @@ function ClaudeNavItem({
 }
 
 /** The Claude app's top-left corner, with the Code tab ringed. */
-function ClaudeCodeScene() {
+function ClaudeCodeScene({ className }: { readonly className?: string }) {
   const { t } = useTranslation();
-  const codeTab = t(($) => {
-    return $.onboarding.sourcesFirst.skills.guide.controls.codeTab;
-  });
-
   return (
-    <SceneFrame className="bg-[#F9F8F6]">
+    <SceneFrame className={cn("bg-[#F9F8F6]", className)}>
       <div className="flex h-full">
         <div className="w-[204px] shrink-0 border-r border-[#ECEAE6] px-3 pt-3">
           <div className="flex items-center">
@@ -184,7 +182,6 @@ function ClaudeCodeScene() {
               </span>
               <span className="relative flex h-[22px] w-6 items-center justify-center rounded-[5px] bg-[#ffffff] text-[#2B2926] ring-2 ring-[#FFA500] ring-offset-1 ring-offset-[#EFEDE9]">
                 <Code size={12} strokeWidth={2} />
-                <SceneCallout label={codeTab} />
               </span>
             </span>
           </div>
@@ -227,11 +224,11 @@ function ClaudeCodeScene() {
 }
 
 /** The Codex app's top-left corner, with New chat ringed. */
-function CodexScene() {
+function CodexScene({ className }: { readonly className?: string }) {
   const { t } = useTranslation();
 
   return (
-    <SceneFrame className="bg-[#F3F3F3]">
+    <SceneFrame className={cn("bg-[#F3F3F3]", className)}>
       <div className="px-3 pt-3">
         <WindowControls />
       </div>
@@ -383,32 +380,55 @@ function CodexSteps({ first }: { readonly first: number }) {
  */
 export function SkillImportGuide({
   provider,
-  copyStep = false,
+  copyStep,
+  stacked = false,
   className,
 }: {
   readonly provider: SkillImportProvider;
-  /** Leads with copying the prompt, where the copy button follows the steps. */
-  readonly copyStep?: boolean;
+  /**
+   * Leads with copying the prompt: the copy control on the step's line, and
+   * whatever it opens beneath it.
+   */
+  readonly copyStep?: {
+    readonly action: ReactNode;
+    readonly detail: ReactNode;
+  };
+  /** The scene spans the top, with the steps in one column below it. */
+  readonly stacked?: boolean;
   readonly className?: string;
 }) {
   const { t } = useTranslation();
   const first = copyStep ? 2 : 1;
+  const sceneClassName = stacked ? "h-[140px]" : undefined;
 
   return (
     <div
       className={cn(
-        "grid items-center gap-5 sm:grid-cols-[minmax(0,1fr)_236px]",
+        stacked
+          ? "flex flex-col gap-5"
+          : "grid items-center gap-5 sm:grid-cols-[minmax(0,1fr)_236px]",
         className,
       )}
     >
+      {stacked ? (
+        provider === "codex" ? (
+          <CodexScene className={sceneClassName} />
+        ) : (
+          <ClaudeCodeScene className={sceneClassName} />
+        )
+      ) : null}
       <ol
         aria-label={t(($) => {
           return $.onboarding.sourcesFirst.skills.guide.label;
         })}
-        className="flex flex-col gap-3.5"
+        className="flex flex-col gap-4"
       >
         {copyStep ? (
-          <GuideStep index={1}>
+          <GuideStep
+            index={1}
+            action={copyStep.action}
+            detail={copyStep.detail}
+          >
             {t(($) => {
               return $.onboarding.sourcesFirst.skills.guide.copy;
             })}
@@ -420,7 +440,11 @@ export function SkillImportGuide({
           <ClaudeCodeSteps first={first} />
         )}
       </ol>
-      {provider === "codex" ? <CodexScene /> : <ClaudeCodeScene />}
+      {stacked ? null : provider === "codex" ? (
+        <CodexScene />
+      ) : (
+        <ClaudeCodeScene />
+      )}
     </div>
   );
 }

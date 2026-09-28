@@ -4377,6 +4377,7 @@
         },
         "hideFullPrompt": "プロンプト全文を隠す",
         "importedCopy": "Okou のワークフローとしてインポートしました。",
+        "importedCount_other": "{{count}} 件インポート済み · 続きを待っています",
         "importedLabel": "インポートしたスキル",
         "importedTitle": "スキルが Okou に入りました",
         "preparing": "インポートセッションを開いています…",

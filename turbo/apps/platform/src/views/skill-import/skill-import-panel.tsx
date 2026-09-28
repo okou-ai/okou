@@ -1,6 +1,5 @@
 // The skill import prompt and its imported list, shared by the onboarding
 // skills step and the workflows page's import dialog.
-import type { ReactNode } from "react";
 import type { Command } from "ccstate";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -149,12 +148,12 @@ function ImportedSkillRow({ skill }: { readonly skill: WorkflowSummary }) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex w-full items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
+    <div className="flex w-full items-center gap-3 px-3 py-2.5 text-left">
       <span
-        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground"
+        className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
         aria-hidden="true"
       >
-        <FileText size={18} />
+        <FileText size={16} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">
@@ -177,8 +176,11 @@ function ImportedSkillRow({ skill }: { readonly skill: WorkflowSummary }) {
  */
 export function ImportedSkillList({
   skills,
+  scroll = false,
 }: {
   readonly skills: readonly WorkflowSummary[];
+  /** Keeps a long import to a few rows, scrolling within the list. */
+  readonly scroll?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -188,26 +190,39 @@ export function ImportedSkillList({
         {t(($) => {
           return $.onboarding.sourcesFirst.skills.importedLabel;
         })}
+        {skills.length > 0 ? (
+          <span className="ml-1.5 font-normal text-muted-foreground">
+            {skills.length}
+          </span>
+        ) : null}
       </p>
-      <div className="mt-2 flex flex-col gap-2">
-        {skills.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.skills.waiting;
-            })}
-          </p>
-        ) : (
-          skills.map((skill) => {
+      {skills.length === 0 ? (
+        <p className="mt-2 rounded-xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.onboarding.sourcesFirst.skills.waiting;
+          })}
+        </p>
+      ) : (
+        <div
+          className={cn(
+            "mt-2 divide-y divide-border/60 rounded-xl border border-border/60",
+            scroll && "max-h-[228px] overflow-y-auto",
+          )}
+        >
+          {skills.map((skill) => {
             return <ImportedSkillRow key={skill.id} skill={skill} />;
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-/** The import is still waiting for a skill, said in one line. */
-export function SkillImportWaiting() {
+/**
+ * Where the import stands, in one line: waiting for the first skill, then how
+ * many have arrived while it keeps listening for more.
+ */
+export function SkillImportStatus({ count }: { readonly count: number }) {
   const { t } = useTranslation();
 
   return (
@@ -217,73 +232,67 @@ export function SkillImportWaiting() {
     >
       <Loader2 size={14} className="shrink-0 animate-spin" aria-hidden="true" />
       <span className="truncate">
-        {t(($) => {
-          return $.onboarding.sourcesFirst.skills.waiting;
-        })}
+        {count === 0
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.skills.waiting;
+            })
+          : t(
+              ($) => {
+                return $.onboarding.sourcesFirst.skills.importedCount;
+              },
+              { count },
+            )}
       </span>
     </p>
   );
 }
 
-/** Whether the full prompt is shown under its one-line preview. */
+/** Whether the full prompt is shown under the copy step. */
 export interface SkillImportPromptToggle {
   readonly shown: boolean;
   readonly setShown: (shown: boolean) => void;
 }
 
-/**
- * The prompt reduced to its opening line: copying it is all most people need,
- * and the full text stays one click away.
- */
-function SkillImportPromptPreview({
-  prompt,
+/** Copying is all most people need; the full text stays one click away. */
+function SkillImportFullPromptToggle({
   toggle,
-  children,
 }: {
-  readonly prompt: string;
   readonly toggle: SkillImportPromptToggle;
-  readonly children: ReactNode;
 }) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/30 py-2 pl-4 pr-2">
-      <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-        {prompt.split("\n", 1)[0]}
-      </span>
-      <Button
-        type="button"
-        variant="quiet"
-        size="sm"
-        className="shrink-0 gap-1.5"
-        aria-expanded={toggle.shown}
-        onClick={() => {
-          toggle.setShown(!toggle.shown);
-        }}
-      >
-        <ChevronDown
-          size={14}
-          aria-hidden="true"
-          className={cn("transition-transform", toggle.shown && "rotate-180")}
-        />
-        {toggle.shown
-          ? t(($) => {
-              return $.onboarding.sourcesFirst.skills.hideFullPrompt;
-            })
-          : t(($) => {
-              return $.onboarding.sourcesFirst.skills.showFullPrompt;
-            })}
-      </Button>
-      {children}
-    </div>
+    <Button
+      type="button"
+      variant="quiet"
+      size="xs"
+      className="-ml-2.5 gap-1 text-xs"
+      aria-expanded={toggle.shown}
+      onClick={() => {
+        toggle.setShown(!toggle.shown);
+      }}
+    >
+      <ChevronDown
+        size={14}
+        aria-hidden="true"
+        className={cn("transition-transform", toggle.shown && "rotate-180")}
+      />
+      {toggle.shown
+        ? t(($) => {
+            return $.onboarding.sourcesFirst.skills.hideFullPrompt;
+          })
+        : t(($) => {
+            return $.onboarding.sourcesFirst.skills.showFullPrompt;
+          })}
+    </Button>
   );
 }
 
 /**
  * The prompt for one tool, with its copy button and where in the tool to run
  * it, or where it will be while the session opens or after it could not.
- * Given a prompt toggle, the panel is compact: the steps lead with copying,
- * and the prompt is a one-line preview beside the primary copy button.
+ * Given a prompt toggle, the panel is compact: the tool's window leads, and
+ * the steps start with copying, the full prompt folded beneath that step.
  */
 export function SkillImportPanel({
   signals,
@@ -309,29 +318,36 @@ export function SkillImportPanel({
     );
 
   if (promptToggle) {
+    // Until a skill arrives, copying is the one thing to do; after that,
+    // viewing the workflows takes over as the primary action.
     return (
-      <div className="flex flex-col gap-4">
-        <SkillImportGuide provider={provider} copyStep />
-        {state.prompt === null ? (
-          pending
-        ) : (
-          <>
-            <SkillImportPromptPreview
-              prompt={state.prompt}
-              toggle={promptToggle}
-            >
+      <SkillImportGuide
+        provider={provider}
+        stacked
+        copyStep={{
+          action:
+            state.prompt === null ? null : (
               <SkillImportCopyButton
                 copied={state.copied}
                 copyPrompt$={signals.copyPrompt$}
-                primary
+                primary={state.imported.length === 0}
               />
-            </SkillImportPromptPreview>
-            {promptToggle.shown ? (
-              <SkillImportPromptBody prompt={state.prompt} />
-            ) : null}
-          </>
-        )}
-      </div>
+            ),
+          detail:
+            state.prompt === null ? (
+              <div className="mt-2">{pending}</div>
+            ) : (
+              <>
+                <SkillImportFullPromptToggle toggle={promptToggle} />
+                {promptToggle.shown ? (
+                  <div className="mt-2">
+                    <SkillImportPromptBody prompt={state.prompt} />
+                  </div>
+                ) : null}
+              </>
+            ),
+        }}
+      />
     );
   }
 

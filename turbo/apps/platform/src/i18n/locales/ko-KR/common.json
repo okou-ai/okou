@@ -4377,6 +4377,7 @@
         },
         "hideFullPrompt": "전체 프롬프트 숨기기",
         "importedCopy": "Okou 워크플로로 가져왔습니다.",
+        "importedCount_other": "{{count}}개 가져옴 · 더 기다리는 중",
         "importedLabel": "가져온 스킬",
         "importedTitle": "스킬이 Okou에 들어왔습니다",
         "preparing": "가져오기 세션을 여는 중…",
