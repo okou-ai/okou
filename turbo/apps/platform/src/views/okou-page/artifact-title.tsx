@@ -1,4 +1,3 @@
-import { ArrowUpRight } from "lucide-react";
 import type { ArtifactTitleLink } from "./artifact-display.ts";
 
 /**
@@ -24,7 +23,6 @@ export function ArtifactTitle({
       data-testid="artifact-title-link"
     >
       {link.label}
-      <ArrowUpRight size={14} className="ml-0.5 inline align-[-2px]" />
     </a>
   );
 }
