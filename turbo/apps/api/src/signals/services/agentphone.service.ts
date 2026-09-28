@@ -13,7 +13,6 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { agents } from "@okouai/db/schema/agent";
-import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserAgentPreferences } from "@okouai/db/schema/agentphone-user-agent-preference";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
@@ -409,47 +408,16 @@ export async function linkAgentPhoneUser(
   return { ok: false, reason: "conflict" };
 }
 
-async function resolveAgentPhoneUserLinkById(
-  db: ReadonlyDb,
-  userLinkId: string,
-): Promise<AgentPhoneUserLink | null> {
-  const [userLink] = await db
-    .select()
-    .from(agentphoneUserLinks)
-    .where(eq(agentphoneUserLinks.id, userLinkId))
-    .limit(1);
-  return userLink ?? null;
-}
-
-async function resolveAgentPhoneConversationUserLink(
-  db: ReadonlyDb,
-  conversationId: string,
-): Promise<AgentPhoneUserLink | null> {
-  const [route] = await db
-    .select({
-      userLinkId: agentphoneChatThreadRoutes.agentphoneUserLinkId,
-    })
-    .from(agentphoneChatThreadRoutes)
-    .where(eq(agentphoneChatThreadRoutes.conversationId, conversationId))
-    .orderBy(desc(agentphoneChatThreadRoutes.createdAt))
-    .limit(1);
-  return route ? resolveAgentPhoneUserLinkById(db, route.userLinkId) : null;
-}
-
-export async function resolveAgentPhoneUserLinkForEvent(
+/**
+ * The sender's own phone link. Group conversations never borrow another
+ * participant's link: an unlinked sender is treated as unlinked even when the
+ * conversation already has a route owned by someone else.
+ */
+export function resolveAgentPhoneUserLinkForEvent(
   db: Db,
   event: AgentPhoneMessageEvent,
 ): Promise<AgentPhoneUserLink | null> {
-  const direct = await resolveAgentPhoneUserLink(
-    db,
-    event.fromNumber,
-    event.channel,
-  );
-  if (direct || !isAgentPhoneGroupEvent(event) || !event.conversationId) {
-    return direct;
-  }
-
-  return resolveAgentPhoneConversationUserLink(db, event.conversationId);
+  return resolveAgentPhoneUserLink(db, event.fromNumber, event.channel);
 }
 
 /**
@@ -1058,25 +1026,16 @@ async function sendGroupAccountCommandBlockedMessage(
 
 async function blockUnauthorizedGroupAccountCommand(
   args: {
-    readonly db: Db;
     readonly event: AgentPhoneMessageEvent;
     readonly commandText: string | undefined;
     readonly userLink: AgentPhoneUserLink | null;
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  if (!isAgentPhoneGroupAccountCommand(args.event, args.commandText)) {
-    return false;
-  }
-
-  const directUserLink = await resolveAgentPhoneUserLink(
-    args.db,
-    args.event.fromNumber,
-    args.event.channel,
-  );
-  signal.throwIfAborted();
-
-  if (directUserLink && directUserLink.id === args.userLink?.id) {
+  if (
+    !isAgentPhoneGroupAccountCommand(args.event, args.commandText) ||
+    args.userLink
+  ) {
     return false;
   }
 
@@ -1443,7 +1402,6 @@ const handleAgentPhoneCommandIfPresent$ = command(
     if (
       await blockUnauthorizedGroupAccountCommand(
         {
-          db: args.db,
           event: args.event,
           commandText,
           userLink: args.userLink,
