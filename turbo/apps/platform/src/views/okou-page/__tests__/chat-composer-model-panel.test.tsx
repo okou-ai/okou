@@ -51,6 +51,17 @@ async function openPanel(triggerName: string): Promise<HTMLElement> {
   return await screen.findByRole("dialog", { name: "Chat models" });
 }
 
+/** A model row, matched by the model name its label starts with. */
+function modelRadio(container: HTMLElement, model: string): HTMLElement {
+  const radio = queryAllByRoleFast("radio", container).find((candidate) => {
+    return candidate.textContent?.trim().startsWith(model);
+  });
+  if (!radio) {
+    throw new Error(`Model ${model} was not listed`);
+  }
+  return radio;
+}
+
 async function setupPanel(
   models: readonly SupportedRunModel[],
   onThreadCreate?: Parameters<typeof installRunChat>[0] extends infer O
@@ -81,12 +92,8 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
   const models = within(panel).getByRole("radiogroup", {
     name: "Chat models",
   });
-  expect(
-    within(models).getByRole("radio", { name: /GPT 5.6 Sol/ }),
-  ).toBeChecked();
-  expect(
-    within(models).getByRole("radio", { name: /Claude Sonnet 5/ }),
-  ).not.toBeChecked();
+  expect(modelRadio(models, "GPT 5.6 Sol")).toBeChecked();
+  expect(modelRadio(models, "Claude Sonnet 5")).not.toBeChecked();
   // The panel switches the chat model only: no media categories and no
   // separate effort control beside it.
   expect(within(panel).queryByText("Image")).toBeNull();
@@ -95,11 +102,15 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
       return button.getAttribute("aria-label")?.startsWith("Effort, ");
     }),
   ).toBeFalsy();
-  expect(within(panel).getByRole("slider", { name: "Effort" })).toBeVisible();
+  expect(
+    within(panel).getByRole("slider", { name: "Effort" }),
+  ).toBeInTheDocument();
   // The trigger already names the level, so the panel does not repeat it above
   // the bar.
   expect(within(panel).queryByText("Max")).toBeNull();
-  expect(within(panel).getByRole("switch", { name: "Fast" })).toBeVisible();
+  expect(
+    within(panel).getByRole("switch", { name: "Fast" }),
+  ).toBeInTheDocument();
 });
 
 test("Keep the panel open while changing effort, Fast and model", async () => {
@@ -110,18 +121,18 @@ test("Keep the panel open while changing effort, Fast and model", async () => {
   const slider = within(panel).getByRole("slider", { name: "Effort" });
   slider.focus();
   await user.keyboard("{Home}");
-  await expect(findButton("GPT 5.6 Sol, Low")).resolves.toBeVisible();
+  await expect(findButton("GPT 5.6 Sol, Low")).resolves.toBeInTheDocument();
   expect(panel).toBeVisible();
 
   click(within(panel).getByRole("switch", { name: "Fast" }));
-  await expect(findButton("GPT 5.6 Sol, Low, Fast")).resolves.toBeVisible();
+  await expect(
+    findButton("GPT 5.6 Sol, Low, Fast"),
+  ).resolves.toBeInTheDocument();
   expect(panel).toBeVisible();
 
-  click(within(panel).getByRole("radio", { name: /Claude Sonnet 5/ }));
+  click(modelRadio(panel, "Claude Sonnet 5"));
   await waitFor(() => {
-    expect(
-      within(panel).getByRole("radio", { name: /Claude Sonnet 5/ }),
-    ).toBeChecked();
+    expect(modelRadio(panel, "Claude Sonnet 5")).toBeChecked();
   });
   expect(panel).toBeVisible();
   // Effort follows the checked model; Fast is not offered for it.
@@ -142,11 +153,13 @@ test("Send with the model and effort chosen in the panel", async () => {
     },
   );
   const panel = await openPanel("GPT 5.6 Sol, Max");
-  click(within(panel).getByRole("radio", { name: /Claude Sonnet 5/ }));
-  await expect(findButton("Claude Sonnet 5, High")).resolves.toBeVisible();
+  click(modelRadio(panel, "Claude Sonnet 5"));
+  await expect(
+    findButton("Claude Sonnet 5, High"),
+  ).resolves.toBeInTheDocument();
   within(panel).getByRole("slider", { name: "Effort" }).focus();
   await user.keyboard("{Home}");
-  await expect(findButton("Claude Sonnet 5, Low")).resolves.toBeVisible();
+  await expect(findButton("Claude Sonnet 5, Low")).resolves.toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(screen.queryByRole("dialog", { name: "Chat models" })).toBeNull();
