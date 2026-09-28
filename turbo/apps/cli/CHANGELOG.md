@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.369.0](https://github.com/okou-ai/okou/compare/cli-v9.368.1...cli-v9.369.0) (2026-09-28)
+
+
+### Features
+
+* **api:** enqueue once and pick in the background for every chat input ([#37116](https://github.com/okou-ai/okou/issues/37116)) ([a4aaee6](https://github.com/okou-ai/okou/commit/a4aaee679a34922e1069146d265190e43a627b31))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.520.0
+    * @okouai/core bumped to 8.716.0
+    * @okouai/pi-agent-runtime bumped to 1.40.39
+
 ## [9.368.1](https://github.com/okou-ai/okou/compare/cli-v9.368.0...cli-v9.368.1) (2026-09-28)
 
 

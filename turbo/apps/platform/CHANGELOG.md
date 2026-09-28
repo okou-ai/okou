@@ -11,6 +11,22 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.977.0](https://github.com/okou-ai/okou/compare/app-v0.976.0...app-v0.977.0) (2026-09-28)
+
+
+### Features
+
+* **api:** enqueue once and pick in the background for every chat input ([#37116](https://github.com/okou-ai/okou/issues/37116)) ([a4aaee6](https://github.com/okou-ai/okou/commit/a4aaee679a34922e1069146d265190e43a627b31))
+* **core:** enable get started quests for all users ([#37198](https://github.com/okou-ai/okou/issues/37198)) ([73e172c](https://github.com/okou-ai/okou/commit/73e172cdbbb5a149284f8a534a3de9e3fb447887))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.520.0
+    * @okouai/core bumped to 8.716.0
+
 ## [0.976.0](https://github.com/okou-ai/okou/compare/app-v0.975.0...app-v0.976.0) (2026-09-28)
 
 
