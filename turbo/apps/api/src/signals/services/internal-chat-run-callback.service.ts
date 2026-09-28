@@ -4738,73 +4738,84 @@ const unexpectedQueuedRejectionChannelLoaders: Readonly<
  * Recover only its authorized source routing from the original event after
  * rejection has committed; none of the model or run assembly is repeated.
  */
+interface QueuedPromptRejectionDelivery {
+  readonly head: Pick<
+    ChatQueueHeadContext,
+    "id" | "chatThreadId" | "orgId" | "userId" | "agentId" | "contextType"
+  >;
+  readonly assistantEventId: string;
+}
+
+async function deliverQueuedPromptRejection(
+  db: Db,
+  dependencies: ChatCallbackDependencies,
+  args: QueuedPromptRejectionDelivery,
+  signal: AbortSignal,
+): Promise<void> {
+  const { head } = args;
+  const contextType = head.contextType;
+  switch (contextType) {
+    case "slack":
+    case "feishu":
+    case "teams":
+    case "discord":
+    case "telegram":
+    case "agentphone": {
+      break;
+    }
+    default: {
+      return;
+    }
+  }
+  const featureSwitchContext = await loadUserFeatureSwitchContext(
+    db,
+    head.orgId,
+    head.userId,
+  );
+  signal.throwIfAborted();
+  const channel = await unexpectedQueuedRejectionChannelLoaders[contextType](
+    {
+      db,
+      dependencies,
+      source: {
+        eventId: head.id,
+        chatThreadId: head.chatThreadId,
+        orgId: head.orgId,
+        userId: head.userId,
+        featureSwitchContext,
+      },
+      delivery: {
+        chatThreadId: head.chatThreadId,
+        orgId: head.orgId,
+        userId: head.userId,
+        agentId: head.agentId,
+      },
+    },
+    signal,
+  );
+  if (!channel) {
+    return;
+  }
+  signal.throwIfAborted();
+  await deliverQueuedAdmissionFailureToChannel(
+    {
+      channel,
+      threadId: head.chatThreadId,
+      chatEventId: args.assistantEventId,
+    },
+    signal,
+  );
+}
+
 export const deliverUnexpectedQueuedPromptRejection$ = command(
   async (
     { set },
-    args: {
-      readonly head: Pick<
-        ChatQueueHeadContext,
-        "id" | "chatThreadId" | "orgId" | "userId" | "agentId" | "contextType"
-      >;
-      readonly assistantEventId: string;
-    },
+    args: QueuedPromptRejectionDelivery,
     signal: AbortSignal,
   ): Promise<void> => {
-    const { head } = args;
-    const contextType = head.contextType;
-    switch (contextType) {
-      case "slack":
-      case "feishu":
-      case "teams":
-      case "discord":
-      case "telegram":
-      case "agentphone": {
-        break;
-      }
-      default: {
-        return;
-      }
-    }
     const db = set(writeDb$);
     const dependencies = set(buildChatCallbackDependencies$, { db });
-    const featureSwitchContext = await loadUserFeatureSwitchContext(
-      db,
-      head.orgId,
-      head.userId,
-    );
-    signal.throwIfAborted();
-    const channel = await unexpectedQueuedRejectionChannelLoaders[contextType](
-      {
-        db,
-        dependencies,
-        source: {
-          eventId: head.id,
-          chatThreadId: head.chatThreadId,
-          orgId: head.orgId,
-          userId: head.userId,
-          featureSwitchContext,
-        },
-        delivery: {
-          chatThreadId: head.chatThreadId,
-          orgId: head.orgId,
-          userId: head.userId,
-          agentId: head.agentId,
-        },
-      },
-      signal,
-    );
-    if (!channel) {
-      return;
-    }
-    signal.throwIfAborted();
-    await deliverQueuedAdmissionFailureToChannel(
-      {
-        channel,
-        threadId: head.chatThreadId,
-        chatEventId: args.assistantEventId,
-      },
-      signal,
-    );
+    await deliverQueuedPromptRejection(db, dependencies, args, signal);
   },
 );
 
@@ -4843,6 +4854,7 @@ export const assembleQueuedPromptRun$ = command(
     });
     const agent = await resolveIntegrationChatThreadAgent(db, head);
     signal.throwIfAborted();
+    const dependencies = set(buildChatCallbackDependencies$, { db });
     if (!agent) {
       return {
         kind: "rejected",
@@ -4853,8 +4865,9 @@ export const assembleQueuedPromptRun$ = command(
             message: "The organization default agent is unavailable",
           },
           deliver: (assistantEventId, deliverySignal) => {
-            return set(
-              deliverUnexpectedQueuedPromptRejection$,
+            return deliverQueuedPromptRejection(
+              db,
+              dependencies,
               { head, assistantEventId },
               deliverySignal,
             );
@@ -4862,7 +4875,6 @@ export const assembleQueuedPromptRun$ = command(
         },
       };
     }
-    const dependencies = set(buildChatCallbackDependencies$, { db });
     const prepared = await settle(
       measureChatCallbackPreCreateTiming(
         timing,
