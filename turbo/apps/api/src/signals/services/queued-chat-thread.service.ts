@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
-import { and, asc, eq, gt, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
@@ -167,6 +167,23 @@ export async function listQueuedChatThreadOrgIds(
     )
     .orderBy(asc(queuedChatThreads.orgId))
     .limit(args.limit);
+  return rows.map(({ orgId }) => {
+    return orgId;
+  });
+}
+
+/** Organizations of the given threads' queued rows, for fixture-scoped passes. */
+export async function listQueuedChatThreadOrgIdsFor(
+  db: ReadDb,
+  chatThreadIds: readonly string[],
+): Promise<readonly string[]> {
+  if (chatThreadIds.length === 0) {
+    return [];
+  }
+  const rows = await db
+    .selectDistinct({ orgId: queuedChatThreads.orgId })
+    .from(queuedChatThreads)
+    .where(inArray(queuedChatThreads.chatThreadId, [...chatThreadIds]));
   return rows.map(({ orgId }) => {
     return orgId;
   });

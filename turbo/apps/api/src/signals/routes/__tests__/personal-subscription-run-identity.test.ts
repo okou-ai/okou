@@ -1491,13 +1491,13 @@ describe("personal effective provider entitlement", () => {
       });
       await deleteOrgPlanEntitlementFixture(f.actor.orgId);
       // Missing canonical entitlement is an invariant error, not permission to
-      // run: the pick rejects the head rather than leaving it queued.
+      // run: the pick fails before consuming, so the input stays queued.
       const missing = await sendRejectedAtPick(f.actor, {
         agentId: f.agentId,
         model: f.model,
         prompt: "missing plan authority",
       });
-      expect(missing.rejected).toBeDefined();
+      expect(missing.rejected).toBeUndefined();
     },
   );
 });

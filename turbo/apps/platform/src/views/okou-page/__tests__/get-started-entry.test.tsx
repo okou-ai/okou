@@ -357,7 +357,10 @@ test("Building a workflow opens the workflows page", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: false,
+    },
   });
 
   await openQuestPanel();
@@ -728,7 +731,11 @@ test("A failed Slack status read leaves the Slack step as the rewards report it"
 
 test("The entry stays hidden while the switch is off", async () => {
   configureQuestPage(context, "admin");
-  await setupPage({ context, path: questChatPath() });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: false },
+  });
 
   await expect(
     screen.findByRole("textbox", { name: "Message" }),

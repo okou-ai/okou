@@ -530,15 +530,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ming@okou.ai",
     description:
       "Enable Get started quests, reward progress, and credit rewards.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.GetStartedQuestIntro]: {
     maintainer: "ming@okou.ai",
     description:
       "Explain what a Get started quest is worth in an illustrated dialog before it hands the user off, instead of navigating straight to the destination.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ComposerTemplateChipCover]: {
     maintainer: "tongx@okou.ai",

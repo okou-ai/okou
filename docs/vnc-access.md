@@ -182,9 +182,10 @@ them.
 Select a saved VNC credential or create one. The certificate-verified choices are
 VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
 VeNCrypt X509Plain (certificate-verified TLS plus username/password
-authentication); Mac Screen Sharing has separate SSH-only Apple DH, Apple
-Direct SRP and Apple RSA/SRP choices. Classic passwords must contain 1–8
-printable ASCII characters.
+authentication); Mac VNC has separate SSH-only Apple classic VNC password,
+DH, Direct SRP and RSA/SRP choices. Standalone macOS Screen Sharing is not yet
+verified; these profiles do not establish support for that mode. Classic
+passwords must contain 1–8 printable ASCII characters.
 X509Plain usernames accept 1–255 UTF-8 bytes and passwords accept 1–1023 UTF-8
 bytes. Spaces are significant and embedded NUL is rejected. Changing profiles
 clears draft authentication material and only exact compatible credentials are
@@ -206,14 +207,20 @@ VNC route, switch it explicitly to Direct where that destination is valid, or
 delete it first. The app reports this dependency without cascading, clearing or
 silently converting the VNC route.
 
-For Mac Screen Sharing, choose the exact Apple DH, Apple Direct SRP or Apple
+For a Mac VNC service, choose the exact Apple DH, Apple Direct SRP or Apple
 RSA/SRP profile and a saved, host-key-verified SSH connection terminating on
-that same controlled Mac. Enter `127.0.0.1` or `::1` as the RFB destination.
-The app hides direct transport and X.509 trust fields and offers only
-profile-matching credentials. SSH protects the entire VNC session; neither
-Apple DH nor SRP server proof replaces this transport protection. Saving does
-not verify Screen Sharing settings or prove the SSH server has no downstream
-proxy. A real product session must separately validate saved-host creation,
+that same controlled Mac. The app sets the RFB destination to `127.0.0.1` by
+default; select `::1` explicitly if that Mac uses IPv6 loopback. Port 5900 is
+a default, not a fixed requirement. The Add host dialog follows the SSH form:
+display name first, then security profile, its dependent route/target settings,
+and compatible credentials. Apple profiles have no Direct option or free-form
+RFB destination. For X509 profiles, Direct and saved SSH remain explicit choices;
+a private or loopback IP literal under Direct must be corrected by the owner,
+not automatically rerouted. The app hides X.509 trust fields for Apple and
+offers only profile-matching credentials. SSH protects the entire VNC session;
+neither Apple DH nor SRP server proof replaces this transport protection.
+Saving does not verify Mac VNC settings or prove the SSH server has no
+downstream proxy. A real product session must separately validate saved-host creation,
 Agent grant, screenshot and bounded input before activation.
 
 Adding the first VNC host automatically grants access to every Agent currently

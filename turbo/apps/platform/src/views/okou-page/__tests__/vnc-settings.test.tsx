@@ -213,7 +213,17 @@ test("VNC host settings update the chat default in thread remote access mode", a
 });
 
 async function choose(dialog: HTMLElement, label: string, name: string) {
-  await userEvent.click(within(dialog).getByLabelText(label));
+  if (label === "Connection route") {
+    click(
+      getAction(
+        "radio",
+        name,
+        within(dialog).getByRole("radiogroup", { name: label }),
+      ),
+    );
+    return;
+  }
+  await userEvent.click(await within(dialog).findByLabelText(label));
   await userEvent.click(await screen.findByRole("option", { name }));
 }
 
@@ -346,8 +356,12 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
     "desktop.internal.example.com",
   );
   await choose(dialog, "Connection route", "Through saved SSH host");
-  expect(within(dialog).getByLabelText("SSH host")).toHaveTextContent(
-    "Desktop gateway",
+  await expect(
+    within(dialog).findByLabelText("SSH host"),
+  ).resolves.toHaveTextContent("Desktop gateway");
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Second desktop",
   );
 
   click(getAction("button", "Save", dialog));
@@ -418,7 +432,7 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
         ...host,
         id: tunneledHost.id,
         displayName: tunneledHost.displayName,
-        host: tunneledHost.host,
+        host: "desktop.example.com",
         port: tunneledHost.port,
         security: tunneledHost.security,
         generation: tunneledHost.generation + 1,
@@ -442,14 +456,20 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
 
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog", { name: "Edit host" });
-  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
-    "Through saved SSH host",
-  );
+  expect(getAction("radio", "Through saved SSH host", dialog)).toBeChecked();
   expect(
     within(dialog).getByText(/The selected SSH host is no longer available/u),
   ).toBeInTheDocument();
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   await choose(dialog, "Connection route", "Direct from Runner");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "Private and loopback IP addresses require a saved SSH host",
+  );
+  await fill(
+    within(dialog).getByLabelText("RFB destination host"),
+    "desktop.example.com",
+  );
   expect(getAction("button", "Save", dialog)).toBeEnabled();
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
@@ -461,7 +481,7 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
       body: {
         expectedGeneration: tunneledHost.generation,
         displayName: tunneledHost.displayName,
-        host: tunneledHost.host,
+        host: "desktop.example.com",
         port: tunneledHost.port,
         transport: { type: "direct" },
         credential: { id: tunneledHost.credentialId },
@@ -469,6 +489,96 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
       },
     },
   ]);
+});
+
+test("Editing an Apple IPv6 loopback host preserves its SSH route and custom port", async () => {
+  const appleHost: VncConnectionResponse = {
+    ...host,
+    displayName: "Mac IPv6 desktop",
+    host: "::1",
+    port: 5905,
+    security: { type: "apple_dh" },
+    transport: { type: "ssh", connectionId: sshHost.id },
+  };
+  const appleCredential: VncCredentialResponse = {
+    ...credential,
+    authMethod: "apple_dh_username_password",
+    username: "operator",
+    hosts: [{ id: appleHost.id, displayName: appleHost.displayName }],
+  };
+  mockSettings({
+    connections: [appleHost],
+    credentials: [appleCredential],
+    sshConnections: [sshHost],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    return respond(200, { ...appleHost, generation: appleHost.generation + 1 });
+  });
+  await page();
+  await screen.findByText(appleHost.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Mac IPv6 desktop",
+  );
+  expect(
+    within(dialog).getByLabelText("RFB destination host"),
+  ).toHaveTextContent("::1");
+  expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
+    5905,
+  );
+  await expect(
+    within(dialog).findByLabelText("SSH host"),
+  ).resolves.toHaveTextContent(sshHost.displayName);
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      expectedGeneration: appleHost.generation,
+      displayName: "Mac IPv6 desktop",
+      host: "::1",
+      port: 5905,
+      transport: { type: "ssh", connectionId: sshHost.id },
+      credential: { id: appleCredential.id },
+      security: { type: "apple_dh" },
+    },
+  ]);
+});
+
+test("Direct route explains canonical IPv6 loopback and private mapped literals", async () => {
+  mockSettings({ connections: [], credentials: [credential] });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  const destination = within(dialog).getByLabelText("RFB destination host");
+  for (const address of [
+    "127.0.0.1.",
+    "0:0:0:0:0:0:0:1",
+    "::1.",
+    "::ffff:127.0.0.1",
+    "::ffff:10.2.3.4",
+    "fc00::1",
+    "febf::1",
+  ]) {
+    await fill(destination, address);
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Private and loopback IP addresses require a saved SSH host",
+    );
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+  }
+  await fill(destination, "::ffff:8.8.8.8");
+  expect(within(dialog).queryByRole("alert")).toBeNull();
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
 });
 
 test("Inline password creation preserves spaces and sends the selected custom certificate trust", async () => {
@@ -619,6 +729,41 @@ test("Profile selection filters credentials and clears incompatible choices", as
   );
 });
 
+test("Name stays first and a later profile choice never rewrites the earlier draft", async () => {
+  mockSettings({ connections: [], credentials: [], sshConnections: [sshHost] });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  expect(within(dialog).getAllByRole("textbox")[0]).toHaveAccessibleName(
+    "Display name",
+  );
+  await fill(within(dialog).getByLabelText("Display name"), "Office desktop");
+  await fill(
+    within(dialog).getByLabelText("RFB destination host"),
+    "desktop.example.com",
+  );
+  await choose(dialog, "Security profile", "Mac VNC (Apple DH)");
+  expect(
+    within(dialog).getByText(
+      /Standalone macOS Screen Sharing remains unverified/u,
+    ),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Office desktop",
+  );
+  expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
+  expect(
+    within(dialog).getByLabelText("RFB destination host"),
+  ).toHaveTextContent("127.0.0.1");
+  await choose(dialog, "Security profile", "Encrypted VNC (X509Vnc)");
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Office desktop",
+  );
+  expect(within(dialog).getByLabelText("RFB destination host")).toHaveValue(
+    "desktop.example.com",
+  );
+  expect(getAction("radio", "Through saved SSH host", dialog)).toBeChecked();
+});
+
 test("Mac classic password is an explicit SSH-only profile with risk disclosure and bounded password", async () => {
   mockSettings({
     connections: [],
@@ -638,11 +783,7 @@ test("Mac classic password is an explicit SSH-only profile with risk disclosure 
   });
   await openAddHostPage();
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
-  await choose(
-    dialog,
-    "Security profile",
-    "Mac Screen Sharing (classic VNC password)",
-  );
+  await choose(dialog, "Security profile", "Mac VNC (classic VNC password)");
   expect(
     within(dialog).getByText(/other clients may reach port 5900/u),
   ).toBeInTheDocument();
@@ -652,20 +793,17 @@ test("Mac classic password is an explicit SSH-only profile with risk disclosure 
   expect(
     within(dialog).queryByLabelText("Server certificate trust"),
   ).toBeNull();
-  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
-    "Through saved SSH host",
-  );
-  await userEvent.click(within(dialog).getByLabelText("Connection route"));
   expect(
-    screen.queryByRole("option", { name: "Direct from Runner" }),
+    within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
   ).toBeNull();
-  await userEvent.keyboard("{Escape}");
+  expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
   await choose(dialog, "SSH host", "Desktop gateway · gateway.example.com:22");
   await fill(within(dialog).getByLabelText("Display name"), "Mac classic VNC");
   const destination = within(dialog).getByLabelText("RFB destination host");
-  await fill(destination, "localhost");
-  expect(destination).toBeInvalid();
-  await fill(destination, "127.0.0.1");
+  expect(destination).toHaveTextContent("127.0.0.1");
+  await userEvent.click(destination);
+  expect(screen.queryByRole("option", { name: "localhost" })).toBeNull();
+  await userEvent.keyboard("{Escape}");
   await choose(dialog, "Credential", "Create new credential");
   await fill(
     within(dialog).getByLabelText("Credential name"),
@@ -702,21 +840,21 @@ test.each([
   {
     profile: "apple_dh" as const,
     method: "apple_dh_username_password" as const,
-    label: "Mac Screen Sharing (Apple DH)",
+    label: "Mac VNC (Apple DH)",
     usernameMaxLength: 63,
     usernameHelp: /1–63 UTF-8 bytes/u,
   },
   {
     profile: "apple_srp" as const,
     method: "apple_srp_username_password" as const,
-    label: "Mac Screen Sharing (Apple Direct SRP)",
+    label: "Mac VNC (Apple Direct SRP)",
     usernameMaxLength: 255,
     usernameHelp: /1–255 UTF-8 bytes/u,
   },
   {
     profile: "apple_rsa_srp" as const,
     method: "apple_rsa_srp_username_password" as const,
-    label: "Mac Screen Sharing (Apple RSA/SRP)",
+    label: "Mac VNC (Apple RSA/SRP)",
     usernameMaxLength: 234,
     usernameHelp: /1–234 UTF-8 bytes/u,
   },
@@ -749,14 +887,10 @@ test.each([
     expect(
       within(dialog).queryByLabelText("Server certificate trust"),
     ).toBeNull();
-    expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
-      "Through saved SSH host",
-    );
-    await userEvent.click(within(dialog).getByLabelText("Connection route"));
     expect(
-      screen.queryByRole("option", { name: "Direct from Runner" }),
+      within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
     ).toBeNull();
-    await userEvent.keyboard("{Escape}");
+    expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
     await choose(
       dialog,
       "SSH host",
@@ -767,10 +901,10 @@ test.each([
       "Mac Screen Sharing",
     );
     const destination = within(dialog).getByLabelText("RFB destination host");
-    await fill(destination, "localhost");
-    expect(destination).toBeInvalid();
-    await fill(destination, "127.0.0.1");
-    expect(destination).toBeValid();
+    expect(destination).toHaveTextContent("127.0.0.1");
+    await choose(dialog, "RFB destination host", "::1");
+    expect(destination).toHaveTextContent("::1");
+    await choose(dialog, "RFB destination host", "127.0.0.1");
     await choose(dialog, "Credential", "Create new credential");
     await fill(within(dialog).getByLabelText("Credential name"), "Mac login");
     const usernameField = within(dialog).getByLabelText("Username");

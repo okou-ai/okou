@@ -1033,6 +1033,7 @@ type CreateRunRouteResult =
   | ApiErrorResponse<404, "NOT_FOUND">
   | ApiErrorResponse<409, "CONFLICT">
   | ApiErrorResponse<402, "INSUFFICIENT_CREDITS">
+  | ApiErrorResponse<429, "PI_INFERENCE_BUSY">
   | ApiErrorResponse<503, "PROVIDER_UNAVAILABLE">;
 
 type CreateRunErrorResult = Exclude<

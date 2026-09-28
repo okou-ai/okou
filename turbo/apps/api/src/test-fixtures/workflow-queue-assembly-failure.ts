@@ -34,6 +34,20 @@ export async function withWorkflowQueueAssemblyFailureFixture(
         return Reflect.apply(target, receiver, queryArgs);
       }
       injected = true;
+      const completion = queryArgs.at(-1);
+      if (typeof completion === "function") {
+        // Pool.query owns its Promise and releases the client in this callback.
+        // Preserve that completion path instead of returning an ignored Promise.
+        return Reflect.apply(target, receiver, [
+          "SELECT pg_cancel_backend(pg_backend_pid())",
+          (...callbackArgs: unknown[]) => {
+            cancelled = z
+              .object({ code: z.literal("57014") })
+              .safeParse(callbackArgs[0]).success;
+            return Reflect.apply(completion, receiver, callbackArgs);
+          },
+        ]);
+      }
       return (async () => {
         const outcome = await settleIncludingAbort(
           Reflect.apply(target, receiver, [

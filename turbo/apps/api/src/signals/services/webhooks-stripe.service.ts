@@ -51,7 +51,7 @@ import {
 } from "./billing-payment-method.service";
 import { restoreSubscriptionForOrg } from "./billing-restore.service";
 import { publishBillingChangedForOrg } from "./billing-realtime.service";
-import { scheduleOrgQueuedChatThreadsPick$ } from "./chat-thread-queue-drain.service";
+import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
 import {
   CONCURRENCY_SUBSCRIPTION_PURPOSE,
   isConcurrencyPriceId,
@@ -5030,7 +5030,12 @@ export const reconcilePaidStripeCheckoutSession$ = command(
     }
     await publishBillingChanges(db, orgIds, signal);
     if (result.drainOrgId) {
-      set(scheduleOrgQueuedChatThreadsPick$, { orgId: result.drainOrgId });
+      await set(
+        pickOrgQueuedChatThreads$,
+        { orgId: result.drainOrgId },
+        signal,
+      );
+      signal.throwIfAborted();
     }
     return [...orgIds];
   },
@@ -5053,7 +5058,8 @@ export const reconcilePaidStripeInvoice$ = command(
     }
 
     await publishBillingChanges(db, new Set([orgId]), signal);
-    set(scheduleOrgQueuedChatThreadsPick$, { orgId });
+    await set(pickOrgQueuedChatThreads$, { orgId }, signal);
+    signal.throwIfAborted();
     return orgId;
   },
 );
@@ -5184,7 +5190,8 @@ export const handleStripeWebhookEvent$ = command(
     await publishBillingChanges(db, billingChangedOrgIds, signal);
 
     if (drainOrgId) {
-      set(scheduleOrgQueuedChatThreadsPick$, { orgId: drainOrgId });
+      await set(pickOrgQueuedChatThreads$, { orgId: drainOrgId }, signal);
+      signal.throwIfAborted();
     }
   },
 );

@@ -295,6 +295,7 @@ describe("ORG-01 and ORG-02", () => {
       inviterUserId: admin.userId,
       role: "org:member",
       redirectUrl: "https://app.okou.ai",
+      privateMetadata: { getStartedClaimId: expect.any(String) },
     });
   });
 
@@ -425,6 +426,7 @@ describe("ORG-01 and ORG-02", () => {
       inviterUserId: admin.userId,
       role: "org:member",
       redirectUrl: "http://localhost:3002",
+      privateMetadata: { getStartedClaimId: expect.any(String) },
     });
 
     api.mockClerkOrg(member, {

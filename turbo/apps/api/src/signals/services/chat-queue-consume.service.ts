@@ -40,23 +40,15 @@ const PG_FOREIGN_KEY_VIOLATION = "23503";
 /**
  * How consuming one queue head ended:
  * - `launched`: the head was replaced by its run-bound copy and a run started;
- * - `passed`: the head was rejected as `input.rejected` (every failure,
- *   including an unexpected error), or was not launched by this pick because
- *   another consumer took it, the thread was deleted, or the thread became
- *   busy. The pick tells the last case apart by reading the queue again.
+ * - `waiting`: a 429 left the head queued;
+ * - `passed`: the head was rejected as `input.rejected` (any failure other
+ *   than a 429, including an unexpected error), or was not launched by this
+ *   pick because another consumer took it or the thread became busy.
  */
 export type ChatQueueHeadConsumption =
   | { readonly kind: "launched"; readonly runId: string }
+  | { readonly kind: "waiting" }
   | { readonly kind: "passed" };
-
-/** The head fields a rejection needs; the thread's agent may be gone. */
-type ChatQueueRejectedHead = Omit<
-  ChatQueueHeadContext,
-  "agentId" | "apiStartTime" | "dispatchFailedCallbacks"
-> & { readonly agentId: string | null };
-
-/** The text a rejection shows when its own reason cannot be formatted. */
-const GENERIC_REJECTION_MESSAGE = "The input could not be started";
 
 async function loadChatQueueHeadContext(
   db: Db,
@@ -65,14 +57,14 @@ async function loadChatQueueHeadContext(
   readonly contextType: string | null;
   readonly contextId: string | null;
   readonly userId: string;
-  readonly agentId: string | null;
+  readonly agentId: string;
 } | null> {
   const [thread] = await db
     .select({ userId: chatThreads.userId, agentId: chatThreads.agentId })
     .from(chatThreads)
     .where(eq(chatThreads.id, head.chatThreadId))
     .limit(1);
-  if (!thread) {
+  if (!thread?.agentId) {
     return null;
   }
   const [event] = await db
@@ -229,14 +221,13 @@ function isDirectSendContext(contextType: string | null): boolean {
 /**
  * The single rejection exit of the pick: consume the head as `input.rejected`
  * with a formatted `output.error`, tell the thread's viewers, and deliver the
- * error to the integration the input came from. A reason that cannot be
- * formatted is written with a generic text so the head is still consumed.
+ * error to the integration the input came from.
  */
 const rejectChatQueueHead$ = command(
   async (
     { set },
     args: {
-      readonly head: ChatQueueRejectedHead;
+      readonly head: ChatQueueHeadContext;
       readonly rejection: ChatQueueHeadRejection;
     },
     signal: AbortSignal,
@@ -244,13 +235,16 @@ const rejectChatQueueHead$ = command(
     const { head, rejection } = args;
     // An admission conflict is written for the user as is; any other error
     // is a run error the external-surface formatter explains.
-    const formatted = await settle(
+    const displayError =
       rejection.error.code === "CONFLICT"
-        ? Promise.resolve(rejection.error.message)
+        ? rejection.error.message
         : rejection.error.code === "INSUFFICIENT_CREDITS" &&
             isDirectSendContext(head.contextType)
-          ? directSendInsufficientCreditsMessage(set(writeDb$), head.orgId)
-          : set(
+          ? await directSendInsufficientCreditsMessage(
+              set(writeDb$),
+              head.orgId,
+            )
+          : await set(
               formatIntegrationRunError$,
               {
                 orgId: head.orgId,
@@ -259,20 +253,8 @@ const rejectChatQueueHead$ = command(
                 message: rejection.error.message,
               },
               signal,
-            ),
-      signal,
-    );
-    if (!formatted.ok) {
-      log.warn("Failed to format queued input rejection", {
-        chatThreadId: head.chatThreadId,
-        eventId: head.id,
-        code: rejection.error.code,
-        error: formatted.error,
-      });
-    }
-    const displayError = formatted.ok
-      ? formatted.value
-      : GENERIC_REJECTION_MESSAGE;
+            );
+    signal.throwIfAborted();
     const rejected = await appendChatQueueHeadRejection(set(writeDb$), {
       chatThreadId: head.chatThreadId,
       eventId: head.id,
@@ -306,40 +288,34 @@ const rejectChatQueueHead$ = command(
     signal.throwIfAborted();
     await publishChatQueueHeadConsumed(head);
     signal.throwIfAborted();
-    // An unexpected failure recovers the source channel itself; without the
-    // thread's agent there is no channel to recover.
-    const delivery = rejection.deliver
-      ? rejection.deliver(rejected.assistantEventId, signal)
-      : rejection.error.code === "INTERNAL_ERROR" && head.agentId !== null
-        ? set(
-            deliverUnexpectedQueuedPromptRejection$,
-            {
-              head: { ...head, agentId: head.agentId },
-              assistantEventId: rejected.assistantEventId,
-            },
-            signal,
-          )
-        : undefined;
-    if (!delivery) {
+    const deliver = rejection.deliver;
+    if (!deliver && rejection.error.code !== "INTERNAL_ERROR") {
       return;
     }
-    await tapError(delivery, (error) => {
-      log.warn("Failed to deliver queued input rejection", {
-        chatThreadId: head.chatThreadId,
-        eventId: head.id,
-        error,
-      });
-    });
+    await tapError(
+      deliver
+        ? deliver(rejected.assistantEventId, signal)
+        : set(
+            deliverUnexpectedQueuedPromptRejection$,
+            { head, assistantEventId: rejected.assistantEventId },
+            signal,
+          ),
+      (error) => {
+        log.warn("Failed to deliver queued input rejection", {
+          chatThreadId: head.chatThreadId,
+          eventId: head.id,
+          error,
+        });
+      },
+    );
   },
 );
 
 /**
  * Consume one strict-FIFO queue head into a run. The head's context type
  * selects the assembler that builds the run's parameters; loading the head,
- * creating the run, and mapping its outcome are shared: 201 launches, and
- * every failure takes the single rejection exit. A head is left unconsumed
- * only when another consumer took it, its thread was deleted, or the thread
- * became busy before the launch committed.
+ * creating the run, and mapping its outcome are shared: 201 launched, 429
+ * waits, and every other failure takes the single rejection exit.
  */
 export const consumeChatQueueHead$ = command(
   async (
@@ -360,37 +336,15 @@ export const consumeChatQueueHead$ = command(
     });
     signal.throwIfAborted();
     if (!loaded) {
-      // The thread or the head is gone; nothing is left to consume.
       return { kind: "passed" };
     }
-    const rejectedHead: ChatQueueRejectedHead = {
+    const head: ChatQueueHeadContext = {
       id: input.head.id,
       chatThreadId: input.chatThreadId,
       orgId: input.orgId,
-      ...loaded,
-    };
-    const reject = async (rejection: ChatQueueHeadRejection) => {
-      await set(
-        rejectChatQueueHead$,
-        { head: rejectedHead, rejection },
-        signal,
-      );
-      return { kind: "passed" } as const;
-    };
-    if (loaded.agentId === null) {
-      return await reject({
-        error: {
-          code: "NOT_FOUND",
-          message: "The agent for this chat no longer exists",
-        },
-        userId: loaded.userId,
-      });
-    }
-    const head: ChatQueueHeadContext = {
-      ...rejectedHead,
-      agentId: loaded.agentId,
       apiStartTime,
       dispatchFailedCallbacks: input.dispatchFailedCallbacks,
+      ...loaded,
     };
     // An unexpected failure is a failure like any other: it rejects the head
     // rather than leaving it for the cron to retry every minute.
@@ -402,74 +356,84 @@ export const consumeChatQueueHead$ = command(
         error,
       });
       return {
-        error: { code: "INTERNAL_ERROR", message: GENERIC_REJECTION_MESSAGE },
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "The input could not be started",
+        },
         userId: head.userId,
       };
     };
-    const consumed = await settle(
-      (async (): Promise<ChatQueueHeadConsumption> => {
-        const assembled = await settle(
-          set(
-            head.contextType === "automation"
-              ? assembleQueuedAutomationRun$
-              : assembleQueuedPromptRun$,
-            head,
-            signal,
-          ),
-          signal,
-        );
-        if (!assembled.ok) {
-          return await reject(unexpected(assembled.error));
-        }
-        const assembly = assembled.value;
-        if (assembly.kind === "not-ready") {
-          // The assembler no longer sees this head as the queue head. The
-          // rejection's revoke edge is a no-op when another consumer took it.
-          return await reject(
-            unexpected(new Error("Queued input is no longer the queue head")),
-          );
-        }
-        if (assembly.kind === "rejected") {
-          return await reject(assembly.rejection);
-        }
-
-        const created = await settle(
-          set(createQueueFirstAgentRun$, assembly.run, signal),
-          signal,
-        );
-        if (!created.ok) {
-          // The thread was deleted while its head was being launched.
-          if (
-            isForeignKeyViolation(created.error) &&
-            !(await threadExists(db, head.chatThreadId))
-          ) {
-            return { kind: "passed" };
-          }
-          const rejection = unexpected(created.error);
-          return await reject(assembly.rejection(rejection.error));
-        }
-        const result = created.value;
-        if (isQueueFirstRunClaimLost(result)) {
-          // Another consumer took the head, or the thread became busy; the
-          // pick tells the two apart.
-          return { kind: "passed" };
-        }
-        if (result.status === 201) {
-          await assembly.launched(result.body.runId, signal);
-          signal.throwIfAborted();
-          await publishChatQueueHeadConsumed(head);
-          signal.throwIfAborted();
-          return { kind: "launched", runId: result.body.runId };
-        }
-        return await reject(assembly.rejection(result.body.error));
-      })(),
+    const assembled = await settle(
+      set(
+        head.contextType === "automation"
+          ? assembleQueuedAutomationRun$
+          : assembleQueuedPromptRun$,
+        head,
+        signal,
+      ),
       signal,
     );
-    if (consumed.ok) {
-      return consumed.value;
+    if (!assembled.ok) {
+      await set(
+        rejectChatQueueHead$,
+        { head, rejection: unexpected(assembled.error) },
+        signal,
+      );
+      return { kind: "passed" };
     }
-    // A failure before the rejection was written still consumes the head. If
-    // the head was already consumed, the rejection's revoke edge is a no-op.
-    return await reject(unexpected(consumed.error));
+    const assembly = assembled.value;
+    if (assembly.kind === "not-ready") {
+      return { kind: "passed" };
+    }
+    if (assembly.kind === "rejected") {
+      await set(
+        rejectChatQueueHead$,
+        { head, rejection: assembly.rejection },
+        signal,
+      );
+      return { kind: "passed" };
+    }
+
+    const created = await settle(
+      set(createQueueFirstAgentRun$, assembly.run, signal),
+      signal,
+    );
+    if (!created.ok) {
+      // The thread was deleted while its head was being launched.
+      if (
+        isForeignKeyViolation(created.error) &&
+        !(await threadExists(db, head.chatThreadId))
+      ) {
+        return { kind: "passed" };
+      }
+      const rejection = unexpected(created.error);
+      await set(
+        rejectChatQueueHead$,
+        { head, rejection: assembly.rejection(rejection.error) },
+        signal,
+      );
+      return { kind: "passed" };
+    }
+    const result = created.value;
+    if (isQueueFirstRunClaimLost(result)) {
+      // Another consumer took the head; its unique revoke edge decided.
+      return { kind: "passed" };
+    }
+    if (result.status === 201) {
+      await assembly.launched(result.body.runId, signal);
+      signal.throwIfAborted();
+      await publishChatQueueHeadConsumed(head);
+      signal.throwIfAborted();
+      return { kind: "launched", runId: result.body.runId };
+    }
+    if (result.status === 429) {
+      return { kind: "waiting" };
+    }
+    await set(
+      rejectChatQueueHead$,
+      { head, rejection: assembly.rejection(result.body.error) },
+      signal,
+    );
+    return { kind: "passed" };
   },
 );
