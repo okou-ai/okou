@@ -9,6 +9,13 @@ import type { ReactNode } from "react";
  * size, and the host's clip keeps only the part behind the host. The layer
  * follows the pane through sidebar and viewport changes with no measurement.
  *
+ * The wrapper's own flat fill is a presentational fallback for browsers
+ * without CSS anchor positioning (Safari before 26): there the anchored layer
+ * collapses, and the host keeps occluding scrolled content with the canvas
+ * fill rather than turning transparent. Where anchors work, the opaque layer
+ * covers it. Remove it once the supported browser floor includes anchor
+ * positioning.
+ *
  * Mount it as the first child of a `relative isolate` host; `className` lets
  * the host mask the layer, as the toolbar fade does.
  */
@@ -20,7 +27,7 @@ export function WorkspaceCanvasBackdrop({
   return (
     <div
       aria-hidden="true"
-      className={`pointer-events-none absolute inset-0 -z-1 [clip-path:inset(0)] ${className}`}
+      className={`pointer-events-none absolute inset-0 -z-1 bg-workspace-canvas [clip-path:inset(0)] ${className}`}
     >
       <div className="fixed left-[anchor(left)] top-[anchor(top)] h-[anchor-size(height)] w-[anchor-size(width)] bg-workspace-canvas bg-workspace-canvas-image bg-[length:100%_100%] [position-anchor:--workspace-canvas]" />
     </div>
