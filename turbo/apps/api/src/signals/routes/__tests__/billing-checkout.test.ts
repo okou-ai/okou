@@ -12430,6 +12430,9 @@ describe("usage pack allocation management", () => {
       const billing = await readBillingStatus(fixture);
       expect(billing.status).toBe("active");
       expect(billing.showUsagePack).toBeFalsy();
+      context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
+        { id: `inv_${randomUUID()}` },
+      );
       const invited = await accept(
         setupApp({ context, routes: orgInviteRoutes })(
           orgInviteContract,
