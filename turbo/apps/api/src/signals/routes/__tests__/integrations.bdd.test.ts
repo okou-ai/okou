@@ -2,10 +2,7 @@ import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
 } from "./helpers/integration-input-assets";
-import {
-  seedLegacyMissingDefaultAgentFixture,
-  seedLegacyPrivateDefaultAgentFixture,
-} from "../../../test-fixtures/legacy-default-agent";
+import { seedLegacyMissingDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
 
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
@@ -64,8 +61,6 @@ helper gap:
 - INT-01 Slack channel, message, upload, and download-file happy paths still
   need public API setup journeys for externally observable Slack channel/file
   state without diagnostic fixture routes.
-- INT-02 Telegram linked-bot, message/upload success, internal callback, and
-  cleanup flows still need public API setup helpers for bot installation state.
 - INT-03 GitHub installed-app and AgentPhone linked-send happy paths need public
   setup APIs for provider installation and downstream agent state before they
   can be covered without diagnostic fixture routes.
@@ -345,39 +340,6 @@ function codexFastAuthJson(): string {
       }),
     },
   });
-}
-
-async function configureFastCodexPreference(
-  actor: ReturnType<typeof integrations.user>,
-): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected the Fast Codex actor to have an org");
-  }
-  await runs.grantProEntitlement(actor);
-  await misc.upsertPersonalModelProvider(
-    actor,
-    {
-      type: "codex-oauth-token",
-      authMethod: "auth_json",
-      secrets: { CODEX_AUTH_JSON: codexFastAuthJson() },
-    },
-    [200, 201],
-  );
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "gpt-6-astra",
-      isDefault: true,
-      defaultProviderType: "codex-oauth-token",
-      credentialScope: "member",
-      modelProviderId: null,
-    },
-  ]);
-  await bdd.readOnboardingStatus(actor);
-  await integrations.updateUserModelPreference(
-    actor,
-    "gpt-6-astra",
-    "priority",
-  );
 }
 
 /**
@@ -1263,31 +1225,6 @@ async function expectSlackPiMemoryCandidate(args: {
     }),
   ).resolves.toBe(1);
   return candidate;
-}
-
-function telegramDomainProbe() {
-  return http.head("https://oauth.telegram.org/auth", () => {
-    return new HttpResponse(null, {
-      status: 200,
-      headers: { "content-length": "2001" },
-    });
-  });
-}
-
-function telegramSendMessage(onBody?: (body: unknown) => void) {
-  return http.post(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
-    async ({ request }) => {
-      onBody?.(await request.json());
-      return HttpResponse.json({
-        ok: true,
-        result: {
-          message_id: 321,
-          chat: { id: 12_345 },
-        },
-      });
-    },
-  );
 }
 
 function agentPhoneVerificationSend(

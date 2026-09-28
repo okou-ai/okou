@@ -28,16 +28,12 @@ import {
   seedOfficialUserLink$,
   type TelegramFixture,
 } from "./helpers/telegram";
-import { createRouteMocks } from "./helpers/route-test";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
 const context = testContext();
 const store = createStore();
-const mocks = createRouteMocks(context);
-const storages = createStoragesBddApi(context);
 
 const OFFICIAL_BOT_TOKEN = "9876543210:fake-test-token";
 const OFFICIAL_BOT_USERNAME = "official_okou_bot";

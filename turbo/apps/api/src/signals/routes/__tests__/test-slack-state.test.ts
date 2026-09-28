@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
 import type {
-  TestSlackStateDeleteResponse,
   TestSlackStatePostResponse,
   TestSlackStateResponse,
 } from "@okouai/api-contracts/contracts/test-slack-state";

@@ -5129,16 +5129,15 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "invoice.paid": {
-        const paidDrainOrgId = await handleInvoicePaid(
+        drainOrgId = await handleInvoicePaid(
           db,
           getClerk,
           event.object,
           signal,
         );
         signal.throwIfAborted();
-        drainOrgId = paidDrainOrgId;
-        if (paidDrainOrgId) {
-          billingChangedOrgIds.add(paidDrainOrgId);
+        if (drainOrgId) {
+          billingChangedOrgIds.add(drainOrgId);
         }
         break;
       }
@@ -5193,12 +5192,9 @@ export const handleStripeWebhookEvent$ = command(
     await publishBillingChanges(db, billingChangedOrgIds, signal);
 
     if (drainOrgId) {
+      const queueSignal = new AbortController().signal;
       waitUntil(
-        set(
-          pickOrgQueuedChatThreads$,
-          { orgId: drainOrgId },
-          new AbortController().signal,
-        ),
+        set(pickOrgQueuedChatThreads$, { orgId: drainOrgId }, queueSignal),
       );
     }
   },

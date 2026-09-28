@@ -252,7 +252,7 @@ describe("canonical Discord terminal replies", () => {
 
   it.each([{ agent: "the org default agent", footer: "" }])(
     "delivers a queued admission failure once for $agent without launching another run",
-    async ({ agent, footer }) => {
+    async ({ footer }) => {
       const started = await startDiscordRun({});
       const claim = await claimRun(started.actor, started.runId);
       const followup = discordMessageForTest(started.actor, {

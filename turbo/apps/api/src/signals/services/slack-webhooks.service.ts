@@ -42,7 +42,6 @@ import {
 import { nowDate } from "../../lib/time";
 import {
   OFFICIAL_SLACK_APP_NAME,
-  OFFICIAL_SLACK_PRIMARY_COMMAND,
   officialSlackBotMention,
 } from "../../lib/slack-official-app";
 import { writeDb$, type Db } from "../external/db";
