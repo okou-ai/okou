@@ -3,6 +3,11 @@ import { sendDiscordMessageBodySchema } from "@okouai/api-contracts/contracts/in
 import { sendDiscordMessage } from "../../../lib/api/domains/integrations-discord";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { TO_OPTION_FLAGS } from "../../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../../lib/command/message-output";
 import { resolveDiscordChannelId } from "../target";
 
 export const sendCommand = new Command()
@@ -19,7 +24,7 @@ export const sendCommand = new Command()
     "--guild-id <id>",
     "Optional; must match your organization's bound guild",
   )
-  .option("--json", "Print all delivered message IDs and URLs as JSON")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
@@ -59,16 +64,16 @@ Notes:
           );
         }
         const result = await sendDiscordMessage(parsed.data);
-        if (options.json) {
-          console.log(JSON.stringify(result, null, 2));
-          return;
-        }
-        console.log(
-          `Message sent (${result.messages.length} Discord messages).`,
+        printMessageOutput(
+          {
+            integration: "discord",
+            chatId: result.messages[0]?.channelId ?? null,
+            messages: result.messages.map((message) => {
+              return { id: message.id, url: message.url };
+            }),
+          },
+          options,
         );
-        for (const message of result.messages) {
-          console.log(`${message.id}  ${message.url}`);
-        }
       },
     ),
   );

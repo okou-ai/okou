@@ -18,13 +18,22 @@ import {
   TO_OPTION_FLAGS,
   parseMessageTarget,
   toOptionDescription,
-  unsupportedTargetError,
 } from "../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  type MessageSendOutput,
+  printMessageOutput,
+} from "../../lib/command/message-output";
 import { isSlackUserId } from "./message/send";
+
+type SlackUploadDestination =
+  | { readonly channel: string }
+  | { readonly user: string };
 
 interface UploadFileOptions {
   readonly file: string;
-  readonly channel: string;
+  readonly destination: SlackUploadDestination;
   readonly thread?: string;
   readonly title?: string;
   readonly comment?: string;
@@ -65,11 +74,16 @@ function warnDeliveryRetry(operationId: string): void {
   console.warn(chalk.dim(`  Retry with --operation-id ${operationId}`));
 }
 
+type SlackUploadOutput = Pick<MessageSendOutput, "messages" | "delivery"> & {
+  readonly fileUrl: string | null;
+  readonly chatId?: string | null;
+};
+
 async function uploadDirectlyToSlack(
   initialized: DirectUploadInitialization,
   options: UploadFileOptions,
   fileContent: Buffer,
-): Promise<void> {
+): Promise<SlackUploadOutput> {
   const uploadResponse = await fetch(initialized.uploadUrl, {
     method: "POST",
     body: fileContent,
@@ -81,13 +95,16 @@ async function uploadDirectlyToSlack(
   }
   const result = await completeSlackFileUpload({
     fileId: initialized.fileId,
-    channel: options.channel,
+    ...options.destination,
     threadTs: options.thread,
     title: options.title,
     initialComment: options.comment,
   });
-  console.log(chalk.green(`✓ File uploaded (file_id: ${result.fileId})`));
-  console.log(chalk.dim(`  permalink: ${result.permalink}`));
+  return {
+    chatId: result.channel ?? null,
+    messages: [{ id: result.fileId, url: result.permalink }],
+    fileUrl: result.assetUrl ?? null,
+  };
 }
 
 async function uploadCanonicalBody(
@@ -131,12 +148,22 @@ async function uploadPendingSlackBody(
   }
 }
 
+function failedSlackDelivery(
+  operationId: string,
+  error: string,
+): Pick<MessageSendOutput, "messages" | "delivery"> {
+  console.warn(chalk.yellow(`⚠ Slack delivery failed: ${error}`));
+  warnDeliveryRetry(operationId);
+  return { messages: [], delivery: { status: "failed", error, operationId } };
+}
+
 async function completeCanonicalSlackDelivery(args: {
   readonly initialized: CanonicalUploadInitialization;
   readonly delivery: PendingSlackDelivery;
   readonly options: UploadFileOptions;
   readonly fileContent: Buffer;
-}): Promise<void> {
+}): Promise<Pick<MessageSendOutput, "messages" | "delivery">> {
+  const { operationId } = args.initialized;
   const uploadError = await uploadPendingSlackBody(
     args.delivery,
     args.fileContent,
@@ -145,36 +172,35 @@ async function completeCanonicalSlackDelivery(args: {
   try {
     result = await completeSlackFileUpload({
       fileId: args.delivery.fileId,
-      channel: args.options.channel,
+      ...args.options.destination,
       ...(args.options.thread ? { threadTs: args.options.thread } : {}),
       ...(args.options.title ? { title: args.options.title } : {}),
       ...(args.options.comment ? { initialComment: args.options.comment } : {}),
       canonicalAssetId: args.initialized.assetId,
-      operationId: args.initialized.operationId,
+      operationId,
       ...(uploadError ? { uploadError } : {}),
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
     console.warn(
-      chalk.yellow(
-        `⚠ Slack delivery status could not be recorded: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      ),
+      chalk.yellow(`⚠ Slack delivery status could not be recorded: ${message}`),
     );
-    warnDeliveryRetry(args.initialized.operationId);
-    return;
+    warnDeliveryRetry(operationId);
+    return {
+      messages: [],
+      delivery: { status: "pending", error: message, operationId },
+    };
   }
   if (result.deliveryStatus === "failed") {
-    console.warn(
-      chalk.yellow(
-        `⚠ Slack delivery failed: ${result.deliveryError ?? "Unknown error"}`,
-      ),
+    return failedSlackDelivery(
+      operationId,
+      result.deliveryError ?? "Unknown error",
     );
-    warnDeliveryRetry(args.initialized.operationId);
-    return;
   }
-  console.log(chalk.green(`✓ Delivered to Slack (file_id: ${result.fileId})`));
-  console.log(chalk.dim(`  permalink: ${result.permalink}`));
+  return {
+    messages: [{ id: result.fileId, url: result.permalink }],
+    delivery: { status: "delivered", operationId },
+  };
 }
 
 async function publishCanonicalFile(
@@ -182,39 +208,44 @@ async function publishCanonicalFile(
   options: UploadFileOptions,
   contentType: string,
   fileContent: Buffer,
-): Promise<void> {
+): Promise<SlackUploadOutput> {
   await uploadCanonicalBody(initialized, contentType, fileContent);
   const materialized = await materializeSlackFileUpload({
     assetId: initialized.assetId,
     operationId: initialized.operationId,
   });
-  console.log(
-    chalk.green(`✓ File published (asset_id: ${materialized.assetId})`),
-  );
-  console.log(chalk.dim(`  url: ${materialized.url}`));
+  const fileUrl = materialized.url;
 
   if (materialized.delivery.status === "delivered") {
-    console.log(
-      chalk.green(
-        `✓ Delivered to Slack (file_id: ${materialized.delivery.fileId})`,
-      ),
-    );
-    console.log(chalk.dim(`  permalink: ${materialized.delivery.permalink}`));
-    return;
+    return {
+      fileUrl,
+      messages: [
+        {
+          id: materialized.delivery.fileId,
+          url: materialized.delivery.permalink,
+        },
+      ],
+      delivery: { status: "delivered", operationId: initialized.operationId },
+    };
   }
   if (materialized.delivery.status === "failed") {
-    console.warn(
-      chalk.yellow(`⚠ Slack delivery failed: ${materialized.delivery.message}`),
-    );
-    warnDeliveryRetry(initialized.operationId);
-    return;
+    return {
+      fileUrl,
+      ...failedSlackDelivery(
+        initialized.operationId,
+        materialized.delivery.message,
+      ),
+    };
   }
-  await completeCanonicalSlackDelivery({
-    initialized,
-    delivery: materialized.delivery,
-    options,
-    fileContent,
-  });
+  return {
+    fileUrl,
+    ...(await completeCanonicalSlackDelivery({
+      initialized,
+      delivery: materialized.delivery,
+      options,
+      fileContent,
+    })),
+  };
 }
 
 interface UploadFileCliOptions {
@@ -225,22 +256,19 @@ interface UploadFileCliOptions {
   readonly text?: string;
   readonly contentType?: string;
   readonly operationId?: string;
+  readonly json?: boolean;
 }
 
 function resolveUploadOptions(
   options: UploadFileCliOptions,
 ): UploadFileOptions {
   const target = parseMessageTarget(options.to, isSlackUserId);
-  if (target.kind !== "chat") {
-    throw unsupportedTargetError(
-      "Slack upload-file",
-      target,
-      "Pass a channel or DM conversation ID (C…, G…, or D…)",
-    );
-  }
   return {
     file: options.file,
-    channel: target.id,
+    destination:
+      target.kind === "chat"
+        ? { channel: target.id }
+        : { user: target.kind === "me" ? "me" : target.id },
     thread: options.replyTo,
     title: options.title,
     comment: options.text,
@@ -268,18 +296,38 @@ async function uploadFile(cliOptions: UploadFileCliOptions): Promise<void> {
       operationId,
       contentType,
       checksumSha256,
-      channel: options.channel,
+      ...options.destination,
       threadTs: options.thread,
       title: options.title,
       initialComment: options.comment,
     },
   });
 
-  if ("fileId" in initialized) {
-    await uploadDirectlyToSlack(initialized, options, file.content);
-    return;
-  }
-  await publishCanonicalFile(initialized, options, contentType, file.content);
+  const {
+    fileUrl,
+    chatId: resolvedChannel = "fileId" in initialized
+      ? null
+      : (initialized.channel ?? null),
+    ...delivered
+  } = "fileId" in initialized
+    ? await uploadDirectlyToSlack(initialized, options, file.content)
+    : await publishCanonicalFile(
+        initialized,
+        options,
+        contentType,
+        file.content,
+      );
+  const requestedChannel =
+    "channel" in options.destination ? options.destination.channel : null;
+  printMessageOutput(
+    {
+      integration: "slack",
+      chatId: resolvedChannel ?? requestedChannel,
+      ...delivered,
+      file: { name: filename, contentType, size: file.size, url: fileUrl },
+    },
+    cliOptions,
+  );
 }
 
 export const uploadFileCommand = new Command()
@@ -288,24 +336,32 @@ export const uploadFileCommand = new Command()
   .requiredOption("-f, --file <path>", "Local file path to upload")
   .requiredOption(
     TO_OPTION_FLAGS,
-    toOptionDescription("C… channel or D… DM conversation"),
+    toOptionDescription("C… channel, D… DM, U…/W… user"),
   )
   .option("--reply-to <ts>", "Parent message timestamp to reply in thread")
   .option("--title <title>", "Display title for the file")
   .option("-t, --text <text>", "Initial comment to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
   .option("--operation-id <uuid>", "Reuse a failed upload operation")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
 Examples:
   Upload a file:           okou slack upload-file -f /tmp/report.pdf --to C01234
   Upload to thread:        okou slack upload-file -f /tmp/log.txt --to C01234 --reply-to 1234567890.123456
+  DM yourself:             okou slack upload-file -f /tmp/report.pdf --to me
   With title and comment:  okou slack upload-file -f /tmp/data.csv --to C01234 --title "Daily Report" -t "Here's the report"
 
 Notes:
   - Uses the bot token (not user SLACK_TOKEN), so no files:write permission is needed
   - Run-scoped calls publish to Okou storage before Slack delivery
-  - Returns canonical asset details and Slack delivery status`,
+  - Delivery failures are reported on stderr with an --operation-id retry hint
+
+Output:
+  Prints "✓ File uploaded" with the Slack file ID, permalink, and Okou file URL.
+  With --json, prints one JSON object:
+    {"integration":"slack","chatId":"C01234","messages":[{"id":"F0123","url":"https://..."}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."},"delivery":{"status":"delivered","operationId":"..."}}
+  delivery is present for canonical uploads; status is delivered, pending, or failed.`,
   )
   .action(withErrorHandler(uploadFile));

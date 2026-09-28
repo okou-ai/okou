@@ -258,9 +258,36 @@ describe("okou discord", () => {
 
     expect(body).toStrictEqual({ channelId, guildId, text });
     const printed = output.mock.calls.flat().join("\n");
-    expect(printed).toContain("2 Discord messages");
-    expect(printed).toContain(messageUrl);
-    expect(printed).toContain(secondUrl);
+    expect(printed).toContain("Message sent (2 messages)");
+    expect(printed).toContain(`${messageId}  ${messageUrl}`);
+    expect(printed).toContain(`${before}  ${secondUrl}`);
+  });
+
+  it("prints the message envelope with --json", async () => {
+    server.use(
+      http.post(`${baseUrl}/message`, () => {
+        return HttpResponse.json({
+          messages: [{ id: messageId, channelId, url: messageUrl }],
+        });
+      }),
+    );
+
+    await runDiscordCommand([
+      "message",
+      "send",
+      "--to",
+      channelId,
+      "--text",
+      "Hello",
+      "--json",
+    ]);
+
+    expect(output).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
+      integration: "discord",
+      chatId: channelId,
+      messages: [{ id: messageId, url: messageUrl }],
+    });
   });
 
   it("preserves partial-send receipts and rate-limit guidance without reporting success", async () => {

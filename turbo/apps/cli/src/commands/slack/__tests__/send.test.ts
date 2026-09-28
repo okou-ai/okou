@@ -61,8 +61,36 @@ describe("okou slack message send command", () => {
       ]);
 
       const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(logCalls).toContain("Message sent");
-      expect(logCalls).toContain("ts: 1234567890.123456");
+      expect(logCalls).toContain("Message sent (id: 1234567890.123456)");
+      expect(logCalls).toContain("chat: C1234567");
+    });
+
+    it("should print the message envelope with --json", async () => {
+      server.use(
+        http.post(SLACK_MESSAGE_URL, () => {
+          return HttpResponse.json(
+            { ok: true, ts: "1234567890.123456", channel: "D-dm-channel" },
+            { status: 200 },
+          );
+        }),
+      );
+
+      await sendCommand.parseAsync([
+        "node",
+        "cli",
+        "--to",
+        "me",
+        "--text",
+        "hello",
+        "--json",
+      ]);
+
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(stdout)).toStrictEqual({
+        integration: "slack",
+        chatId: "D-dm-channel",
+        messages: [{ id: "1234567890.123456", url: null }],
+      });
     });
 
     it("should send a DM when --to is a user ID", async () => {

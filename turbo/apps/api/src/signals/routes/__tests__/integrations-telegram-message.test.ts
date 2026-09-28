@@ -354,6 +354,108 @@ describe("POST /api/integrations/telegram/message", () => {
     );
   });
 
+  it("resolves chatId 'me' to the caller's private chat with the bot", async () => {
+    const fixture = await seedSendableContext({});
+    await linkTelegramUser({
+      installationId: fixture.telegramBotId,
+      userId: fixture.userId,
+      telegramUserId: "777002",
+      telegramUsername: "ada_telegram",
+    });
+
+    let telegramBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post(
+        "https://api.telegram.org/bottest-bot-token/sendMessage",
+        async ({ request }) => {
+          telegramBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              message_id: 323,
+              chat: { id: 777_002 },
+              text: telegramBody.text,
+            },
+          });
+        },
+      ),
+    );
+
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramMessageRoutes,
+    })(integrationsTelegramMessageContract);
+    const response = await accept(
+      client.sendMessage({
+        body: {
+          botId: fixture.telegramBotId,
+          chatId: "me",
+          text: "Hello self",
+        },
+        headers: {
+          authorization: `Bearer ${okouToken({
+            userId: fixture.userId,
+            orgId: fixture.orgId,
+            runId: fixture.runId,
+          })}`,
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      ok: true,
+      messageId: 323,
+      chatId: "777002",
+    });
+    expect(telegramBody).toMatchObject({ chat_id: "777002" });
+  });
+
+  it("returns 404 when chatId 'me' has no Telegram link for the bot", async () => {
+    const fixture = await seedSendableContext({});
+    let sendMessageCalled = false;
+    server.use(
+      http.post(
+        "https://api.telegram.org/bottest-bot-token/sendMessage",
+        () => {
+          sendMessageCalled = true;
+          return HttpResponse.json({ ok: false }, { status: 500 });
+        },
+      ),
+    );
+
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramMessageRoutes,
+    })(integrationsTelegramMessageContract);
+    const response = await accept(
+      client.sendMessage({
+        body: {
+          botId: fixture.telegramBotId,
+          chatId: "me",
+          text: "Hello self",
+        },
+        headers: {
+          authorization: `Bearer ${okouToken({
+            userId: fixture.userId,
+            orgId: fixture.orgId,
+            runId: fixture.runId,
+          })}`,
+        },
+      }),
+      [404],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: {
+        message:
+          "No Telegram account linked to the current user for this bot. Link Telegram first.",
+        code: "NOT_FOUND",
+      },
+    });
+    expect(sendMessageCalled).toBeFalsy();
+  });
+
   it("returns 404 when the bot id is not owned by the org", async () => {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;

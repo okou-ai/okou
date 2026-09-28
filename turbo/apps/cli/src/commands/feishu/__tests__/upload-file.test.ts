@@ -116,6 +116,7 @@ describe.each(["feishu", "lark"] as const)(
         "om_parent",
         "--reply-mode",
         "thread",
+        "--json",
       ]);
 
       expect(completeBody).toStrictEqual({
@@ -126,12 +127,16 @@ describe.each(["feishu", "lark"] as const)(
         contentType: "application/pdf",
       });
       const output = mockConsoleLog.mock.calls.flat().join("\n");
-      expect(JSON.parse(output)).toMatchObject({
-        messageId: "om_uploaded",
-        fileKey: "file_uploaded",
-        filename: "report.pdf",
-        mimetype: "application/pdf",
-        url: expectedUrl,
+      expect(JSON.parse(output)).toStrictEqual({
+        integration: platform,
+        chatId: "oc_chat",
+        messages: [{ id: "om_uploaded", url: null }],
+        file: {
+          name: "report.pdf",
+          contentType: "application/pdf",
+          size: Buffer.byteLength(FILE_CONTENT),
+          url: expectedUrl,
+        },
       });
     });
 

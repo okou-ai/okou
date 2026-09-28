@@ -1,8 +1,12 @@
 import { Command } from "commander";
-import chalk from "chalk";
 import { sendPhoneMessage } from "../../lib/api/domains/integrations-phone";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { readMessageText } from "../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../lib/command/message-output";
 import { assertPhoneTarget, phoneToOption } from "./target";
 
 export const messageCommand = new Command()
@@ -14,6 +18,7 @@ export const messageCommand = new Command()
     "Phone agent ID to send as (inferred when omitted)",
   )
   .option("-t, --text <message>", "Message text (or pipe it on stdin)")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
@@ -27,7 +32,12 @@ Notes:
   )
   .action(
     withErrorHandler(
-      async (options: { to: string; as?: string; text?: string }) => {
+      async (options: {
+        to: string;
+        as?: string;
+        text?: string;
+        json?: boolean;
+      }) => {
         assertPhoneTarget(options.to);
         const text = readMessageText(options.text);
         if (!text) {
@@ -41,8 +51,13 @@ Notes:
           agentphoneAgentId: options.as,
         });
 
-        console.log(
-          chalk.green(`✓ Message sent (message_id: ${result.messageId})`),
+        printMessageOutput(
+          {
+            integration: "phone",
+            chatId: result.toNumber,
+            messages: [{ id: result.messageId, url: null }],
+          },
+          options,
         );
       },
     ),

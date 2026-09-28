@@ -1,5 +1,4 @@
 import { Command } from "commander";
-import chalk from "chalk";
 import { sendSlackMessage } from "../../../lib/api/domains/integrations-slack";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import {
@@ -10,6 +9,11 @@ import {
   readMessageText,
   toOptionDescription,
 } from "../../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../../lib/command/message-output";
 
 type SlackBlock = { type: string; [key: string]: unknown };
 
@@ -34,6 +38,7 @@ export const sendCommand = new Command()
   .option("-t, --text <message>", "Message text (or pipe it on stdin)")
   .option("--reply-to <ts>", "Parent message timestamp to reply in thread")
   .option("--rich <json>", "Block Kit blocks JSON array")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
@@ -55,6 +60,7 @@ Notes:
         text?: string;
         replyTo?: string;
         rich?: string;
+        json?: boolean;
       }) => {
         if (!options.to) {
           throw missingTargetError("Slack", "me or a channel/user ID");
@@ -80,8 +86,15 @@ Notes:
           blocks,
         });
 
-        const tsInfo = result.ts ? ` (ts: ${result.ts})` : "";
-        console.log(chalk.green(`✓ Message sent${tsInfo}`));
+        printMessageOutput(
+          {
+            integration: "slack",
+            chatId:
+              result.channel ?? (target.kind === "chat" ? target.id : null),
+            messages: result.ts ? [{ id: result.ts, url: null }] : [],
+          },
+          options,
+        );
       },
     ),
   );

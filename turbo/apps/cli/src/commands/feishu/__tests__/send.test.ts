@@ -72,8 +72,40 @@ describe.each(["feishu", "lark"] as const)(
         text: "Hello Feishu",
       });
       expect(mockConsoleLog).toHaveBeenCalledWith(
-        expect.stringContaining("Message sent (message: om_sent)"),
+        expect.stringContaining("Message sent (id: om_sent)"),
       );
+    });
+
+    it("prints the message envelope with --json", async () => {
+      server.use(
+        http.post(
+          FEISHU_MESSAGE_URL.replace("/feishu/", `/${platform}/`),
+          () => {
+            return HttpResponse.json({
+              ok: true,
+              messageId: "om_sent",
+              chatId: "oc_target",
+            });
+          },
+        ),
+      );
+
+      await sendCommand.parseAsync([
+        "node",
+        "cli",
+        "--to",
+        "oc_target",
+        "--text",
+        "Hello",
+        "--json",
+      ]);
+
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(stdout)).toStrictEqual({
+        integration: platform,
+        chatId: "oc_target",
+        messages: [{ id: "om_sent", url: null }],
+      });
     });
 
     it("sends an interactive card to the current user", async () => {

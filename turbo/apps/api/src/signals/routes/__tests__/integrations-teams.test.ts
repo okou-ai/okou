@@ -341,4 +341,61 @@ describe("Microsoft Teams integration CLI routes", () => {
       ],
     });
   });
+
+  it("sends an uploaded file to the current user's personal conversation", async () => {
+    const fixture = teamsFixture();
+    fixtures.push(fixture);
+    await seedConnectedTeams(fixture);
+    const captured: CapturedTeamsActivity = {};
+    const outgoing = mockOutgoingTeams(fixture, captured);
+
+    const uploadId = randomUUID();
+    mocks.s3.listObjects([
+      {
+        bucket: "test-user-artifacts",
+        key: `artifacts/${fixture.userId}/${uploadId}/report.pdf`,
+        size: 1234,
+      },
+    ]);
+
+    const client = setupApp({
+      context,
+      routes: integrationsTeamsUploadCompleteRoutes,
+    })(integrationsTeamsUploadCompleteContract);
+    const response = await accept(
+      client.complete({
+        body: {
+          uploadId,
+          user: "me",
+          contentType: "application/pdf",
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+
+    expect(response.body).toMatchObject({
+      activityId: outgoing.activityId,
+      conversationId: outgoing.dmConversationId,
+      filename: "report.pdf",
+    });
+    expect(captured.conversationBody).toMatchObject({
+      bot: { id: fixture.teamsBotId, name: "Nova" },
+      members: [{ id: fixture.teamsUserId, name: "Ada Lovelace" }],
+      isGroup: false,
+      channelData: { tenant: { id: fixture.teamsTenantId } },
+    });
+    expect(captured.conversationId).toBe(outgoing.dmConversationId);
+    expect(captured.body).toMatchObject({
+      type: "message",
+      attachments: [
+        {
+          contentType: "application/pdf",
+          contentUrl: response.body.url,
+          name: "report.pdf",
+        },
+      ],
+    });
+    expect(captured.body).not.toHaveProperty("replyToId");
+  });
 });

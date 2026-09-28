@@ -10,6 +10,11 @@ import {
   TO_OPTION_FLAGS,
   toOptionDescription,
 } from "../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../lib/command/message-output";
 import { parsePositiveInteger, resolveTelegramChatId } from "./message/target";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -43,17 +48,20 @@ export const uploadFileCommand = new Command()
   .option("-t, --text <text>", "Caption to accompany the file")
   .option("--topic <id>", "Forum topic (message thread) ID")
   .option("--content-type <mime>", "Override inferred content type")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
 Examples:
   Upload a file:          okou telegram upload-file -f /tmp/report.pdf --as 123456789 --to -1001234567890
   Upload to a topic:      okou telegram upload-file -f /tmp/log.txt --as 123456789 --to -1001234567890 --topic 42
+  DM yourself:            okou telegram upload-file -f /tmp/report.pdf --as 123456789 --to me
   With a caption:         okou telegram upload-file -f /tmp/data.csv --as 123456789 --to @channel -t "Daily report"
 
 Output:
-  Prints a JSON object to stdout on success:
-    {"messageId":123,"chatId":"-1001234567890","fileId":"...","filename":"report.pdf","mimetype":"application/pdf","size":12345,"url":"https://..."}
+  Prints "✓ File uploaded" with the message ID, chat ID, and file URL.
+  With --json, prints one JSON object:
+    {"integration":"telegram","chatId":"-1001234567890","messages":[{"id":"123","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}
 
 Notes:
   - Uses the Telegram bot token on the server side
@@ -69,6 +77,7 @@ Notes:
         text?: string;
         topic?: string;
         contentType?: string;
+        json?: boolean;
       }) => {
         const chatId = resolveTelegramChatId(options.to);
         const messageThreadId = options.topic
@@ -126,7 +135,20 @@ Notes:
           messageThreadId,
         });
 
-        console.log(JSON.stringify(result));
+        printMessageOutput(
+          {
+            integration: "telegram",
+            chatId: result.chatId,
+            messages: [{ id: String(result.messageId), url: null }],
+            file: {
+              name: result.filename,
+              contentType: result.mimetype,
+              size: result.size,
+              url: result.url,
+            },
+          },
+          options,
+        );
       },
     ),
   );

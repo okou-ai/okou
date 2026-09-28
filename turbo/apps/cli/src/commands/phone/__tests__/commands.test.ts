@@ -114,11 +114,11 @@ describe("okou phone commands", () => {
       text: "hello",
     });
     expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-      "Message sent",
+      "Message sent (id: apmsg_sent)",
     );
   });
 
-  it("accepts --to me for the connected phone", async () => {
+  it("accepts --to me for the connected phone and prints the --json envelope", async () => {
     let capturedBody: Record<string, unknown> | undefined;
 
     server.use(
@@ -140,10 +140,18 @@ describe("okou phone commands", () => {
       "me",
       "--text",
       "hello",
+      "--json",
     ]);
 
     expect(capturedBody).not.toHaveProperty("toNumber");
     expect(capturedBody).toMatchObject({ text: "hello" });
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toStrictEqual({
+      integration: "phone",
+      chatId: "someone@example.com",
+      messages: [{ id: "apmsg_sent", url: null }],
+    });
   });
 
   it.each([
@@ -206,6 +214,7 @@ describe("okou phone commands", () => {
       testFilePath,
       "--text",
       "report",
+      "--json",
     ]);
 
     expect(completeBody).not.toHaveProperty("toNumber");
@@ -215,14 +224,18 @@ describe("okou phone commands", () => {
       caption: "report",
     });
 
-    const parsed = JSON.parse(
-      mockConsoleLog.mock.calls.flat().join("\n"),
-    ) as Record<string, unknown>;
-    expect(parsed).toMatchObject({
-      messageId: "apmsg_file",
-      filename: "report.pdf",
-      mimetype: "application/pdf",
-      url: expectedUrl,
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toStrictEqual({
+      integration: "phone",
+      chatId: "+15551234567",
+      messages: [{ id: "apmsg_file", url: null }],
+      file: {
+        name: "report.pdf",
+        contentType: "application/pdf",
+        size: 17,
+        url: expectedUrl,
+      },
     });
   });
 });

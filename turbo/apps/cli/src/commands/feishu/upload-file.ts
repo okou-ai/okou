@@ -18,6 +18,11 @@ import {
   toOptionDescription,
 } from "../../lib/command/message-target";
 import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../lib/command/message-output";
+import {
   type FeishuDestinationOptions,
   replyModeOption,
   resolveFeishuDestination,
@@ -44,6 +49,7 @@ interface UploadFeishuOptions extends FeishuDestinationOptions {
   readonly file: string;
   readonly as?: string;
   readonly contentType?: string;
+  readonly json?: boolean;
 }
 
 function inferContentType(localPath: string): string {
@@ -69,6 +75,7 @@ export function createFeishuUploadCommand(platform: FeishuPlatform) {
     .addOption(replyModeOption())
     .option("--as <installation-id>", `${providerName} installation to send as`)
     .option("--content-type <mime>", "Override inferred content type")
+    .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
     .addHelpText(
       "after",
       `
@@ -79,8 +86,9 @@ Examples:
   Select a custom app: okou ${platform} upload-file -f /tmp/report.pdf --as <installation-id> --to oc_xxx
 
 Output:
-  Prints a JSON object to stdout on success:
-    {"messageId":"om_xxx","chatId":"oc_xxx","fileKey":"file_xxx","filename":"report.pdf","mimetype":"application/pdf","size":12345,"url":"https://..."}
+  Prints "✓ File uploaded" with the message ID, chat ID, and file URL.
+  With --json, prints one JSON object:
+    {"integration":"${platform}","chatId":"oc_xxx","messages":[{"id":"om_xxx","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}
 
 Notes:
   - Exactly one of --to or --reply-to is required
@@ -143,7 +151,20 @@ Notes:
           ...destination,
           contentType: prepared.contentType,
         });
-        console.log(JSON.stringify(result));
+        printMessageOutput(
+          {
+            integration: platform,
+            chatId: result.chatId,
+            messages: [{ id: result.messageId, url: null }],
+            file: {
+              name: result.filename,
+              contentType: result.mimetype,
+              size: result.size,
+              url: result.url,
+            },
+          },
+          options,
+        );
       }),
     );
 }

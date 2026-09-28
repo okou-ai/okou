@@ -1,5 +1,4 @@
 import { Command } from "commander";
-import chalk from "chalk";
 import { sendTelegramMessage } from "../../../lib/api/domains/integrations-telegram";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import {
@@ -7,6 +6,11 @@ import {
   readMessageText,
   toOptionDescription,
 } from "../../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../../lib/command/message-output";
 import { parsePositiveInteger, resolveTelegramChatId } from "./target";
 
 export const sendCommand = new Command()
@@ -17,6 +21,7 @@ export const sendCommand = new Command()
   .option("-t, --text <message>", "Message text (or pipe it on stdin)")
   .option("--reply-to <message-id>", "Message ID to reply to")
   .option("--topic <id>", "Forum topic (message thread) ID")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
@@ -24,10 +29,12 @@ Examples:
   Simple message:      okou telegram message send --as 123456789 --to -1001234567890 -t "Hello!"
   Reply to message:    okou telegram message send --as 123456789 --to -1001234567890 --reply-to 42 -t "reply"
   Forum topic message: okou telegram message send --as 123456789 --to -1001234567890 --topic 7 -t "topic update"
+  DM yourself:         okou telegram message send --as 123456789 --to me -t "Hello!"
 
 Notes:
   - Message text can be provided with --text or piped on stdin
-  - Choose an explicit --as bot. Run "okou telegram bot list" to inspect available bots.`,
+  - Choose an explicit --as bot. Run "okou telegram bot list" to inspect available bots.
+  - --to me requires your Telegram account to be linked to that bot`,
   )
   .action(
     withErrorHandler(
@@ -37,6 +44,7 @@ Notes:
         text?: string;
         replyTo?: string;
         topic?: string;
+        json?: boolean;
       }) => {
         const chatId = resolveTelegramChatId(options.to);
         const text = readMessageText(options.text);
@@ -60,8 +68,13 @@ Notes:
             : undefined,
         });
 
-        console.log(
-          chalk.green(`✓ Message sent (message_id: ${result.messageId})`),
+        printMessageOutput(
+          {
+            integration: "telegram",
+            chatId: result.chatId,
+            messages: [{ id: String(result.messageId), url: null }],
+          },
+          options,
         );
       },
     ),

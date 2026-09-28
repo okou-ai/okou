@@ -59,8 +59,37 @@ describe("okou teams message send command", () => {
       text: "hello Teams",
     });
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("Message sent");
-    expect(logCalls).toContain("activity_id: teams-activity-1");
+    expect(logCalls).toContain("Message sent (id: teams-activity-1)");
+    expect(logCalls).toContain("chat: 19:thread@thread.tacv2");
+  });
+
+  it("prints the message envelope with --json", async () => {
+    server.use(
+      http.post(TEAMS_MESSAGE_URL, () => {
+        return HttpResponse.json({
+          ok: true,
+          activityId: "teams-activity-1",
+          conversationId: "a:dm-conversation",
+        });
+      }),
+    );
+
+    await sendCommand.parseAsync([
+      "node",
+      "cli",
+      "--to",
+      "me",
+      "--text",
+      "hello",
+      "--json",
+    ]);
+
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(JSON.parse(stdout)).toStrictEqual({
+      integration: "teams",
+      chatId: "a:dm-conversation",
+      messages: [{ id: "teams-activity-1", url: null }],
+    });
   });
 
   it("sends a DM with an Adaptive Card", async () => {
@@ -105,7 +134,7 @@ describe("okou teams message send command", () => {
     });
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
     expect(logCalls).toContain("Message sent");
-    expect(logCalls).toContain("activity_id: teams-dm-activity-1");
+    expect(logCalls).toContain("Message sent (id: teams-dm-activity-1)");
   });
 
   it("errors when message text is missing", async () => {

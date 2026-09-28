@@ -2,7 +2,6 @@ import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import chalk from "chalk";
 import { Command } from "commander";
 
 import { sendFeishuMessage } from "../../../lib/api/domains/integrations-feishu";
@@ -15,6 +14,11 @@ import {
   toOptionDescription,
 } from "../../../lib/command/message-target";
 import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../../lib/command/message-output";
+import {
   type FeishuDestinationOptions,
   replyModeOption,
   resolveFeishuDestination,
@@ -24,6 +28,7 @@ interface SendFeishuOptions extends FeishuDestinationOptions {
   readonly as?: string;
   readonly text?: string;
   readonly rich?: string;
+  readonly json?: boolean;
 }
 
 function parseCard(
@@ -56,6 +61,7 @@ export function createFeishuSendCommand(platform: FeishuPlatform) {
     .option("--as <installation-id>", `${providerName} installation to send as`)
     .option("-t, --text <message>", "Message text (or pipe it on stdin)")
     .option("--rich <json>", `${providerName} interactive card JSON`)
+    .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
     .addHelpText(
       "after",
       `
@@ -88,8 +94,13 @@ Notes:
           text,
           card,
         });
-        console.log(
-          chalk.green(`✓ Message sent (message: ${result.messageId})`),
+        printMessageOutput(
+          {
+            integration: platform,
+            chatId: result.chatId,
+            messages: [{ id: result.messageId, url: null }],
+          },
+          options,
         );
       }),
     );

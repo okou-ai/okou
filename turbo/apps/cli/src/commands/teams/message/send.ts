@@ -1,23 +1,23 @@
 import { Command } from "commander";
 import type { SendTeamsMessageBody } from "@okouai/api-contracts/contracts/integrations";
-import chalk from "chalk";
 import { sendTeamsMessage } from "../../../lib/api/domains/integrations-teams";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import {
   TO_OPTION_FLAGS,
   isJsonObject,
   missingTargetError,
-  parseMessageTarget,
   parseRichJson,
   readMessageText,
   toOptionDescription,
 } from "../../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../../lib/command/message-output";
+import { resolveTeamsDestination } from "./target";
 
 type TeamsCardInput = NonNullable<SendTeamsMessageBody["card"]>;
-
-export function isTeamsUserId(id: string): boolean {
-  return id.startsWith("29:");
-}
 
 function parseTeamsCard(value: string): TeamsCardInput {
   const parsed = parseRichJson(value, "a valid Adaptive Card JSON object");
@@ -43,6 +43,7 @@ export const sendCommand = new Command()
   .option("-t, --text <message>", "Message text (or pipe it on stdin)")
   .option("--reply-to <activity-id>", "Activity ID to reply to in thread")
   .option("--rich <json>", "Adaptive Card JSON string")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
@@ -65,6 +66,7 @@ Notes:
         text?: string;
         replyTo?: string;
         rich?: string;
+        json?: boolean;
       }) => {
         if (!options.to) {
           throw missingTargetError(
@@ -72,15 +74,10 @@ Notes:
             "me, a conversation ID (19:…), or a user ID (29:…)",
           );
         }
-        const target = parseMessageTarget(options.to, isTeamsUserId);
-        const activityId = options.replyTo;
-        if (target.kind !== "chat" && activityId) {
-          throw new Error("--reply-to requires a conversation --to target", {
-            cause: new Error(
-              "Thread replies require an existing Teams conversation",
-            ),
-          });
-        }
+        const destination = resolveTeamsDestination(
+          options.to,
+          options.replyTo,
+        );
 
         const text = readMessageText(options.text);
         const card = options.rich ? parseTeamsCard(options.rich) : undefined;
@@ -97,10 +94,7 @@ Notes:
         }
 
         const body: SendTeamsMessageBody = {
-          ...(target.kind === "chat"
-            ? { conversationId: target.id }
-            : { user: target.kind === "me" ? "me" : target.id }),
-          ...(activityId ? { activityId } : {}),
+          ...destination,
           ...(text ? { text } : {}),
           ...(card ? { card } : {}),
         };
@@ -108,10 +102,16 @@ Notes:
           ...body,
         });
 
-        const activityInfo = result.activityId
-          ? ` (activity_id: ${result.activityId})`
-          : "";
-        console.log(chalk.green(`✓ Message sent${activityInfo}`));
+        printMessageOutput(
+          {
+            integration: "teams",
+            chatId: result.conversationId,
+            messages: result.activityId
+              ? [{ id: result.activityId, url: null }]
+              : [],
+          },
+          options,
+        );
       },
     ),
   );
