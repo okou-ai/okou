@@ -155,11 +155,25 @@ Always exclude:
 - Plugin download caches
 - Plugin sources that cannot be identified as personally maintained`;
 
+/**
+ * Skills created or uploaded in the Claude app live in the user's Claude
+ * account, not on disk, so a local scan cannot see them. Without this, an
+ * import that finds nothing reads as if the user had no skills at all.
+ */
+const CLAUDE_NO_SKILLS_NOTE = `
+Then add this note for me:
+"Skills created or uploaded in the Claude app (Customize → Skills) are
+stored in your Claude account, not on this machine, so this import cannot
+see them. To import one, download it from Claude, place its folder under
+~/.claude/skills/<skill-name>/ so that it contains SKILL.md, then run the
+import again with a fresh prompt from Okou."`;
+
 export function buildSkillImportPrompt(input: SkillImportPromptInput): string {
   const { limits } = input;
   const platform = input.provider === "codex" ? "Codex" : "Claude";
   const discovery =
     input.provider === "codex" ? CODEX_DISCOVERY : CLAUDE_DISCOVERY;
+  const noSkillsNote = input.provider === "codex" ? "" : CLAUDE_NO_SKILLS_NOTE;
 
   return `Import my local personal skills into Okou.
 
@@ -535,6 +549,7 @@ Do not count a sent request as a successful import.
 
 If no eligible skills are found, say:
 "No eligible user-managed skills were found in the searched locations."
+${noSkillsNote}
 
 Do not conclude that no skills exist anywhere on the machine.
 `;

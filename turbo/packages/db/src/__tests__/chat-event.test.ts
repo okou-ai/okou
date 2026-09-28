@@ -100,6 +100,7 @@ describe("chatEvents schema", () => {
       "chat_events_revokes_event_id_not_null_unique",
       "chat_events_run_event_seq_unique",
       "chat_events_run_terminal_unique",
+      "chat_events_thread_runless_input_seq_idx",
       "chat_events_thread_seq_unique",
       "idx_chat_events_created_at_id",
       "idx_chat_events_thread_created",

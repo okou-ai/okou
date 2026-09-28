@@ -34,6 +34,18 @@ export function chatEventTerminalPredicate(eventType: SQLWrapper): SQL {
 }
 
 /**
+ * Shared literal predicate for the run-less input partial index. Pending-input
+ * reads must repeat it verbatim so the planner can prove the index applies;
+ * parameterized event types would hide that implication from generic plans.
+ */
+export function chatEventRunlessInputPredicate(
+  runId: SQLWrapper,
+  eventType: SQLWrapper,
+): SQL {
+  return sql`${runId} IS NULL AND ${eventType} IN ('input.prompt', 'input.automation', 'input.budget')`;
+}
+
+/**
  * Physical storage for the immutable ChatEvent stream.
  * Each row is one typed event belonging to a chat_thread.
  *
@@ -131,6 +143,9 @@ export const chatEvents = pgTable(
       index("idx_chat_events_thread_run_terminal_created")
         .on(table.chatThreadId, table.createdAt.desc())
         .where(chatEventTerminalPredicate(table.eventType)),
+      index("chat_events_thread_runless_input_seq_idx")
+        .on(table.chatThreadId, table.seqId)
+        .where(chatEventRunlessInputPredicate(table.runId, table.eventType)),
       uniqueIndex("chat_events_revokes_event_id_not_null_unique")
         .on(table.revokesEventId)
         .where(sql`${table.revokesEventId} IS NOT NULL`),
