@@ -1217,7 +1217,7 @@ describe("Browser user-action route", () => {
     const preflightKey = await stageSyntheticFile(
       preflightCandidate.body.action.requestToken,
     );
-    siteAccept = ".pdf";
+    missingNode = true;
     const preflightStale = await accept(
       userActionClient().preflight({
         headers: { authorization: "Bearer clerk-session" },
@@ -1232,7 +1232,7 @@ describe("Browser user-action route", () => {
     expect(deletedKeys).toContain(preflightKey);
     expect(temporaryObjects.has(preflightKey)).toBeFalsy();
     expect(files).toHaveLength(0);
-    siteAccept = ".txt";
+    missingNode = false;
     files = [];
     const next = await create();
     const nextToken = next.body.action.requestToken;
