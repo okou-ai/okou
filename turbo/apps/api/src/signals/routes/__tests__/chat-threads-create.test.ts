@@ -1369,6 +1369,7 @@ describe("POST /api/chat-threads", () => {
 
   it("uses the member model and priority default and allows an explicit standard override", async () => {
     const fixture = await seedAgent();
+    await api.grantProEntitlement(fixture.actor);
     const { providerId } = await api.ensureOrgModelProvider(fixture.actor);
     const priorityProvider = await api.createOrgModelProvider(fixture.actor, {
       type: "openai-api-key",

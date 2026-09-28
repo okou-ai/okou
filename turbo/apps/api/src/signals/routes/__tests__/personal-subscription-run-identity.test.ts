@@ -1522,6 +1522,7 @@ describe("personal effective provider entitlement", () => {
           agentId: f.agentId,
           model: f.model,
           clientThreadId,
+          prompt: "missing plan authority",
           userMessage: {
             version: 1,
             parts: [{ type: "text", text: "missing plan authority" }],

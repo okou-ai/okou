@@ -422,7 +422,7 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       [201],
     );
-    expect(sent.body.runId).toBeNull();
+    expect(sent).toMatchObject({ status: 201, body: { runId: null } });
     await flushWaitUntilForTest();
     expect(
       (await chat.listThreadEvents(actor, thread.id)).events,
