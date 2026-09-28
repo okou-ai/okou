@@ -135,11 +135,6 @@ export interface ComposerSubmission {
   readonly generationTemplate: GenerationTemplateRequest | undefined;
   readonly editorDocument: WorkflowComposerSubmissionSnapshot["editorDocument"];
   /**
-   * Video parameters for composers outside the Create rollout. Enabled
-   * composers carry their settings in the message's additional_info part.
-   */
-  readonly videoRunOptions: ChatRunVideoOptionsRequest | undefined;
-  /**
    * What the composer is set to make. A send inside a thread keeps it, so a
    * send that creates one hands it to the thread it opens.
    */
@@ -864,8 +859,9 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
 
 /**
  * Resolved at send rather than held settled, so the parameters follow a video
- * model the user changed after setting them. Creative Video sends every
- * displayed parameter, including the model's defaults.
+ * model the user changed after setting them. Creative Video writes every
+ * displayed parameter, including the model's defaults, into the additional
+ * info.
  */
 function createVideoRunOptionsSignal(
   videoModel: ComposerVideoModelSignals | undefined,
@@ -986,12 +982,14 @@ function createSubmitCurrentInput({
         return false;
       }
       const mode = get(create.mode$);
-      const videoRunOptions = get(create.creativeVideo$)
-        ? await set(readVideoRunOptions$, signal)
-        : undefined;
-      signal.throwIfAborted();
       // Keep the new persisted part within the existing Create rollout.
-      const composerAdditionalInfo = get(create.enabled$)
+      const createEnabled = get(create.enabled$);
+      const videoRunOptions =
+        createEnabled && get(create.creativeVideo$)
+          ? await set(readVideoRunOptions$, signal)
+          : undefined;
+      signal.throwIfAborted();
+      const composerAdditionalInfo = createEnabled
         ? buildComposerAdditionalInfo(
             mode,
             videoRunOptions,
@@ -1017,11 +1015,6 @@ function createSubmitCurrentInput({
         prompt: visiblePrompt,
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
-        // Read from the composer's own block rather than the joined text: the
-        // video parameters are only inside that one, so a caller's context
-        // must not be what drops the structured field a composer outside the
-        // rollout still depends on.
-        videoRunOptions: composerAdditionalInfo ? undefined : videoRunOptions,
         taskSelection: {
           task: get(taskChips.task$) ?? mode,
           presentationSlideCount: get(create.presentationSlideCount$),

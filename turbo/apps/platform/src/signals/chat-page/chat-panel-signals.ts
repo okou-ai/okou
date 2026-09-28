@@ -3,7 +3,6 @@ import type { Root } from "hast";
 import type { Command, Computed } from "ccstate";
 import type {
   ChatRecommendedFollowup,
-  ChatRunVideoOptionsRequest,
   GenerationTemplateRequest,
   ChatThreadArtifactRun,
   ChatThreadDraft,
@@ -117,7 +116,6 @@ export interface SendMessageOptions {
   readonly cloudBrowserEnabled?: boolean;
   readonly generationTemplate?: GenerationTemplateRequest;
   readonly editorDocument?: EditorDocumentSnapshot;
-  readonly videoRunOptions?: ChatRunVideoOptionsRequest;
   readonly forward?: ChatForwardContext;
   readonly onOptimisticSend?: () => void;
 }
@@ -127,7 +125,6 @@ export interface QueueMessageOptions {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly generationTemplate: GenerationTemplateRequest | undefined;
   readonly editorDocument: EditorDocumentSnapshot;
-  readonly videoRunOptions?: ChatRunVideoOptionsRequest;
   readonly forward?: ChatForwardContext;
   readonly onOptimisticSend?: () => void;
 }

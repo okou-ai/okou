@@ -64,7 +64,6 @@ import {
   chatThreadArtifactsContract,
   resolveChatEventRecommendedFollowups,
   type ChatRunOptionsRequest,
-  type ChatRunVideoOptionsRequest,
   type GenerationTemplateRequest,
   type ChatEvent as PersistedChatEvent,
   type FeedbackNotePart,
@@ -3192,13 +3191,9 @@ function queueUserMessage(
 function sendRuntimeOptions(
   features: Partial<Record<FeatureSwitchKey, boolean>>,
   modelSelection: ModelProviderSelection | null,
-  videoRunOptions: ChatRunVideoOptionsRequest | undefined,
 ) {
   return {
-    runOptions: runOptionsFromModelProviderSelection(
-      modelSelection,
-      videoRunOptions,
-    ),
+    runOptions: runOptionsFromModelProviderSelection(modelSelection),
     realAgentInPreviewEnabled:
       features[FeatureSwitchKey.RealAgentInPreview] ?? false,
   };
@@ -3327,7 +3322,6 @@ function createPerformSendMessage(deps: SendMessageDeps) {
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
         get(featureSwitch$),
         request.modelSelection,
-        request.options?.videoRunOptions,
       );
       await Promise.all([
         flushDraftForSend(request.options?.forward, () => {
@@ -3431,7 +3425,6 @@ function createQueueMessage(deps: SendMessageDeps) {
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
         features,
         modelSelection,
-        options.videoRunOptions,
       );
       await Promise.all([
         options.forward ? Promise.resolve() : set(flushDraftClear$, signal),
@@ -3725,9 +3718,6 @@ function createThreadSubmitMessageSignal(
                 cloudBrowserEnabled: explicit ? cloudBrowserEnabled : undefined,
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
-                ...(submission.videoRunOptions === undefined
-                  ? {}
-                  : { videoRunOptions: submission.videoRunOptions }),
                 ...(options.forward ? { forward: options.forward } : {}),
                 ...(options.onOptimisticSend
                   ? { onOptimisticSend: options.onOptimisticSend }
@@ -3743,9 +3733,6 @@ function createThreadSubmitMessageSignal(
                 ...(explicit ? { cloudBrowserEnabled } : {}),
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
-                ...(submission.videoRunOptions === undefined
-                  ? {}
-                  : { videoRunOptions: submission.videoRunOptions }),
                 ...(options.forward ? { forward: options.forward } : {}),
                 ...(options.onOptimisticSend
                   ? { onOptimisticSend: options.onOptimisticSend }

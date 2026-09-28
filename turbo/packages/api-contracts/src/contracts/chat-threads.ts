@@ -1173,14 +1173,13 @@ const chatThreadModelSelectionUpdateBodySchema = z.object({
 });
 
 /**
- * Text-to-video parameters chosen for this send only.
- *
- * Deliberately not persisted as structured settings: the API renders them into
- * the run's agent prompt, so a reload starts from the effective model's
- * defaults again. The model itself is absent because it is already resolved
- * from the thread pin and the member default the run carries.
+ * Text-to-video parameters the composer renders into a message's agent-only
+ * additional info. Not a send field: they are never persisted as structured
+ * settings, so a reload starts from the effective model's defaults again. The
+ * model itself is absent because it is already resolved from the thread pin
+ * and the member default the run carries.
  */
-const chatRunVideoOptionsRequestSchema = z
+export const chatRunVideoOptionsRequestSchema = z
   .object({
     aspectRatio: z.enum(VIDEO_ASPECT_RATIOS),
     duration: z.enum(VIDEO_DURATIONS),
@@ -1193,7 +1192,6 @@ const chatRunOptionsRequestSchema = z.object({
   /** Update the selected model's effort. */
   reasoningEffort: reasoningEffortSchema.optional(),
   codexServiceTier: codexServiceTierSchema.optional(),
-  video: chatRunVideoOptionsRequestSchema.optional(),
 });
 
 const chatNormalSendBodyShape = {
