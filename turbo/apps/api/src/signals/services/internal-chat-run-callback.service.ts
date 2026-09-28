@@ -176,9 +176,12 @@ import {
   tapError,
   throwIfAbort,
 } from "../utils";
-import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
+import { buildGenerationTemplatesPrompt } from "../../lib/generation-template-prompt";
 import { logTemplateUsage } from "../../lib/template-usage-log";
-import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
+import {
+  generationTemplateIdentity,
+  type GenerationTemplateIdentity,
+} from "@okouai/core/generation-template-identity";
 import { resolveChatThreadSession } from "./chat-session-continuity.service";
 import { loadComputerUseHostGrantForAutoSend } from "./chat-computer-use-host.service";
 import { resolveRunChatThreadModelContext } from "./chat-run-event.service";
@@ -2972,9 +2975,7 @@ function queuedIntegrationPrompt(args: {
 
 function resolveQueuedMessageGenerationTemplatePrompt(args: {
   readonly input: CreateQueuedChatRunInputArgs;
-  readonly userMessageProjection:
-    | ReturnType<typeof projectUserMessage>
-    | undefined;
+  readonly userMessageProjection: ReturnType<typeof projectUserMessage>;
   readonly mountedUserPresentationTemplateIds: readonly string[];
   readonly mountedUserTemplates: readonly MountedUserTemplate[];
 }) {
@@ -2983,13 +2984,14 @@ function resolveQueuedMessageGenerationTemplatePrompt(args: {
     "api_dispatch_pre_create_agent_chat_callback_auto_send_resolve_template_context",
     "nested",
     () => {
-      return resolveThreadGenerationTemplatePrompt({
-        explicit: args.userMessageProjection?.primaryTemplate,
-        explicitTemplates: args.userMessageProjection?.templates,
-        mountedUserPresentationTemplateIds:
-          args.mountedUserPresentationTemplateIds,
-        mountedUserTemplates: args.mountedUserTemplates,
-      });
+      return buildGenerationTemplatesPrompt(
+        args.userMessageProjection.templates,
+        {
+          mountedUserPresentationTemplateIds:
+            args.mountedUserPresentationTemplateIds,
+          mountedUserTemplates: args.mountedUserTemplates,
+        },
+      );
     },
   );
 }
@@ -3002,6 +3004,8 @@ function resolveQueuedMessageGenerationTemplatePrompt(args: {
  * message. The row can be deleted or made private while the message waits, and
  * a volume this user may not read must never be assembled — so the same lookup
  * decides both what is mounted and what the prompt is allowed to mention.
+ * An unavailable selection rejects the input instead of silently dropping
+ * templates the user explicitly requested.
  */
 async function resolveQueuedMessageTemplateContext(args: {
   readonly db: ReadonlyDb;
@@ -3014,12 +3018,20 @@ async function resolveQueuedMessageTemplateContext(args: {
     typeof resolveQueuedMessageGenerationTemplatePrompt
   >[0]["userMessageProjection"];
   readonly featureSwitchContext: FeatureSwitchContext;
-}): Promise<{
-  readonly generationTemplatePrompt: string;
-  readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
-  readonly presentationTemplateVolumes: readonly PresentationTemplateVolume[];
-}> {
-  const selectedTemplates = args.userMessageProjection?.templates ?? [];
+}): Promise<
+  | {
+      readonly generationTemplatePrompt: string;
+      readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
+      readonly presentationTemplateVolumes: readonly PresentationTemplateVolume[];
+    }
+  | {
+      readonly error: {
+        readonly code: "BAD_REQUEST";
+        readonly message: string;
+      };
+    }
+> {
+  const selectedTemplates = args.userMessageProjection.templates;
   const mountedUserPresentationTemplateIds =
     await authorizedUserPresentationTemplateIds(args.db, {
       orgId: args.orgId,
@@ -3042,9 +3054,16 @@ async function resolveQueuedMessageTemplateContext(args: {
       mountedUserPresentationTemplateIds,
       mountedUserTemplates,
     });
+  if (generationTemplates.status === "invalid") {
+    return {
+      error: { code: "BAD_REQUEST", message: generationTemplates.message },
+    };
+  }
   return {
     generationTemplatePrompt: generationTemplates.prompt,
-    generationTemplateIdentities: generationTemplates.identities,
+    generationTemplateIdentities: selectedTemplates.map(
+      generationTemplateIdentity,
+    ),
     // Both catalogs can be selected in one message while the tables are
     // separate, so the run carries whichever packages it was actually given.
     presentationTemplateVolumes: [
@@ -3174,11 +3193,7 @@ async function buildCreateQueuedChatRunInput(
       routedModel,
       launchMaterial.triggerSource,
     );
-  const {
-    generationTemplatePrompt,
-    generationTemplateIdentities,
-    presentationTemplateVolumes,
-  } = await resolveQueuedMessageTemplateContext({
+  const templateContext = await resolveQueuedMessageTemplateContext({
     db: args.db,
     orgId: args.agent.orgId,
     userId: args.userId,
@@ -3186,6 +3201,18 @@ async function buildCreateQueuedChatRunInput(
     userMessageProjection,
     featureSwitchContext,
   });
+  if ("error" in templateContext) {
+    return queuedMessageAdmissionFailure(
+      args,
+      launchMaterial,
+      templateContext.error,
+    );
+  }
+  const {
+    generationTemplatePrompt,
+    generationTemplateIdentities,
+    presentationTemplateVolumes,
+  } = templateContext;
   const computerUseHostGrant =
     await resolveQueuedMessageComputerUseHostGrant(args);
   const prompt = queuedMessagePrompt({
@@ -4568,6 +4595,180 @@ function queuedMessageRejection(
       : {}),
   };
 }
+
+/**
+ * An unexpected assembly failure can precede the assembler's delivery target.
+ * Recover only its authorized source routing from the original event after
+ * rejection has committed; none of the model or run assembly is repeated.
+ */
+export const deliverUnexpectedQueuedPromptRejection$ = command(
+  async (
+    { set },
+    args: {
+      readonly head: ChatQueueHeadContext;
+      readonly assistantEventId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { head } = args;
+    const contextType = head.contextType;
+    switch (contextType) {
+      case "slack":
+      case "feishu":
+      case "teams":
+      case "discord":
+      case "telegram":
+      case "agentphone": {
+        break;
+      }
+      default: {
+        return;
+      }
+    }
+    const db = set(writeDb$);
+    const dependencies = set(buildChatCallbackDependencies$, { db });
+    const featureSwitchContext = await loadUserFeatureSwitchContext(
+      db,
+      head.orgId,
+      head.userId,
+    );
+    signal.throwIfAborted();
+    const source = {
+      eventId: head.id,
+      chatThreadId: head.chatThreadId,
+      orgId: head.orgId,
+      userId: head.userId,
+      featureSwitchContext,
+    };
+    const delivery = {
+      chatThreadId: head.chatThreadId,
+      orgId: head.orgId,
+      userId: head.userId,
+      agentId: head.agentId,
+    };
+    let channel: QueuedAdmissionFailureChannel;
+    switch (contextType) {
+      case "slack": {
+        const material = await loadSlackQueuedLaunchMaterial(db, source);
+        if (!material) {
+          return;
+        }
+        channel = {
+          name: "Slack",
+          deliver: (chatEventId, deliverySignal) => {
+            return dependencies.deliverSlackAdmissionFailure(
+              { ...delivery, ...material.slackDelivery, chatEventId },
+              deliverySignal,
+            );
+          },
+        };
+        break;
+      }
+      case "feishu": {
+        const material = await loadFeishuQueuedLaunchMaterial(db, source);
+        if (!material) {
+          return;
+        }
+        channel = {
+          name: "Feishu",
+          deliver: (chatEventId, deliverySignal) => {
+            return dependencies.deliverFeishuAdmissionFailure(
+              { ...delivery, target: material.feishuDelivery, chatEventId },
+              deliverySignal,
+            );
+          },
+          clearThinking: (deliverySignal) => {
+            return dependencies.clearFeishuThinkingReaction(
+              material.feishuDelivery,
+              deliverySignal,
+            );
+          },
+        };
+        break;
+      }
+      case "teams": {
+        const material = await loadTeamsQueuedLaunchMaterial(db, source);
+        if (!material) {
+          return;
+        }
+        channel = {
+          name: "Teams",
+          deliver: (chatEventId, deliverySignal) => {
+            return dependencies.deliverTeamsAdmissionFailure(
+              { ...delivery, target: material.teamsDelivery, chatEventId },
+              deliverySignal,
+            );
+          },
+        };
+        break;
+      }
+      case "discord": {
+        const material = await loadDiscordQueuedLaunchMaterial(
+          db,
+          source,
+          signal,
+        );
+        if (!material) {
+          return;
+        }
+        channel = {
+          name: "Discord",
+          deliver: (chatEventId, deliverySignal) => {
+            return dependencies.sendDiscordReply(
+              { ...delivery, target: material.discordDelivery, chatEventId },
+              deliverySignal,
+            );
+          },
+        };
+        break;
+      }
+      case "telegram": {
+        const material = await loadTelegramQueuedLaunchMaterial(db, source);
+        if (!material) {
+          return;
+        }
+        channel = {
+          name: "Telegram",
+          deliver: (chatEventId, deliverySignal) => {
+            return dependencies.deliverTelegramAdmissionFailure(
+              { ...delivery, target: material.telegramDelivery, chatEventId },
+              deliverySignal,
+            );
+          },
+        };
+        break;
+      }
+      case "agentphone": {
+        const material = await loadAgentPhoneQueuedLaunchMaterial(db, source);
+        if (!material) {
+          return;
+        }
+        channel = {
+          name: "AgentPhone",
+          deliver: (chatEventId, deliverySignal) => {
+            return dependencies.deliverAgentPhoneAdmissionFailure(
+              { ...delivery, target: material.agentphoneDelivery, chatEventId },
+              deliverySignal,
+            );
+          },
+        };
+        break;
+      }
+      default: {
+        return unreachableQueuedContextType(contextType);
+      }
+    }
+    signal.throwIfAborted();
+    await deliverQueuedAdmissionFailureToChannel(
+      {
+        channel,
+        threadId: head.chatThreadId,
+        chatEventId: args.assistantEventId,
+      },
+      signal,
+    );
+  },
+);
 
 /**
  * The prompt assembler: build run parameters for a queued `input.prompt`

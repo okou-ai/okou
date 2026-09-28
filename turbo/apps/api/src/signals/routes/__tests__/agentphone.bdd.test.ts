@@ -18,9 +18,9 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   findAgentphoneChatEventByPromptFixture,
-  findPendingChatEventByPromptFixture,
   readChatEventContextFixture,
 } from "../../../test-fixtures/chat-events";
+import { withAgentPhoneQueueAssemblyFailureFixture } from "../../../test-fixtures/agentphone-queue-assembly-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settle } from "../../utils";
 import {
@@ -1333,6 +1333,103 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
   });
 
+  it.each([false, true])(
+    "settles early assembly failure with current AgentPhone authorization (unlinked: %s)",
+    async (unlink) => {
+      const runs = createRunsApi(context);
+      const ap = createAgentPhoneBddApi(context);
+      const chat = createChatFilesBddApi(context);
+      const integrations = createBddIntegrationApi(context);
+      const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+      await integrations.enableOkouDebug(actor);
+
+      await ap.postAgentPhoneInboundMessage({
+        channel: "sms",
+        from: phone,
+        body: "finish before queue assembly",
+      });
+      const activeRun = await claimDispatchedRun(runnerGroup);
+      const queuedPrompt = "reject this input before loading delivery";
+      await ap.postAgentPhoneInboundMessage({
+        channel: "sms",
+        from: phone,
+        body: queuedPrompt,
+      });
+      await flushWaitUntilForTest();
+
+      const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+      if (lifecycle.status !== 200) {
+        throw new Error("Expected AgentPhone thread lifecycle events");
+      }
+      const threads = lifecycle.body.events.filter((event) => {
+        return event.kind === "created";
+      });
+      expect(threads).toHaveLength(1);
+      const thread = threads[0];
+      if (!thread) {
+        throw new Error("Expected an AgentPhone chat thread");
+      }
+      const pendingEvents = await chat.listThreadEvents(
+        actor,
+        thread.chatThreadId,
+      );
+      const pending = pendingEvents.events.find((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.userMessage.parts.some((part) => {
+            return part.type === "text" && part.text === queuedPrompt;
+          })
+        );
+      });
+      if (!pending) {
+        throw new Error("Expected the busy thread to retain the queued input");
+      }
+      expect(pending.runId).toBeUndefined();
+      if (unlink) {
+        await integrations.requestUnlinkAgentPhone(actor, [204]);
+      }
+      const beforeCompletion = sends.messages.length;
+
+      // Infrastructure alone can cancel this SELECT. Target this input's
+      // first context read, before the assembler has any delivery target.
+      await withAgentPhoneQueueAssemblyFailureFixture(pending.id, async () => {
+        await completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0);
+      });
+
+      const settled = await chat.listThreadEvents(actor, thread.chatThreadId);
+      expect(settled.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "input.rejected",
+          revokesEventId: pending.id,
+          error: "internal_error",
+        }),
+      );
+      expect(
+        settled.events.some((event) => {
+          return event.runId !== undefined && event.runId !== activeRun.runId;
+        }),
+      ).toBe(false);
+      const replies = sends.messages.slice(beforeCompletion);
+      if (unlink) {
+        expect(replies).toStrictEqual([]);
+      } else {
+        expect(
+          replies.map((reply) => {
+            return reply.body;
+          }),
+        ).toEqual(
+          expect.arrayContaining([
+            "Task completed successfully.",
+            "Oops, something went wrong. Please try again later.",
+          ]),
+        );
+        expect(replies).toHaveLength(2);
+      }
+      await runs.heartbeatRunner(runnerGroup);
+      expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
+    },
+  );
+
   it("deduplicates repeated provider messages and completion callbacks", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const runs = createRunsApi(context);
@@ -1997,6 +2094,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const runs = createRunsApi(context);
     const ap = createAgentPhoneBddApi(context);
+    const chat = createChatFilesBddApi(context);
     const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
     const orgFullNotice =
       "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.";
@@ -2010,6 +2108,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     const activeRun = await claimDispatchedRun(runnerGroup);
     expect(sends.messages.slice(beforeActive)).toHaveLength(0);
+    const beforeGroup = await chat.requestThreadEvents(actor, {}, [200]);
+    if (beforeGroup.status !== 200) {
+      throw new Error("Expected AgentPhone thread lifecycle events");
+    }
+    const lastEvent = beforeGroup.body.events.at(-1);
+    if (!lastEvent) {
+      throw new Error("Expected the direct message thread to be listed");
+    }
 
     // The group mention is a separate thread, so only the org limit holds it.
     const conversationId = uniqueConversationId();
@@ -2030,12 +2136,47 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         body: orgFullNotice,
       }),
     ]);
-    await expect(
-      findPendingChatEventByPromptFixture({
-        userId: actor.userId,
-        prompt: waitingPrompt,
+    const groupLifecycle = await chat.requestThreadEvents(
+      actor,
+      { sinceSeqId: lastEvent.seqId },
+      [200],
+    );
+    if (groupLifecycle.status !== 200) {
+      throw new Error("Expected the group thread to be listed");
+    }
+    const groupThreads = groupLifecycle.body.events.filter((event) => {
+      return event.kind === "created";
+    });
+    expect(groupThreads).toHaveLength(1);
+    const groupThread = groupThreads[0];
+    if (!groupThread) {
+      throw new Error("Expected the group mention to create a thread");
+    }
+    const groupEvents = await chat.listThreadEvents(
+      actor,
+      groupThread.chatThreadId,
+    );
+    const pending = groupEvents.events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.userMessage.parts.some((part) => {
+          return part.type === "text" && part.text === waitingPrompt;
+        })
+      );
+    });
+    if (!pending) {
+      throw new Error("Expected the group prompt to remain queued");
+    }
+    expect(
+      groupEvents.events.some((event) => {
+        return event.revokesEventId === pending.id;
       }),
-    ).resolves.not.toBeNull();
+    ).toBe(false);
+    expect(
+      groupEvents.events.some((event) => {
+        return "runId" in event && event.runId !== undefined;
+      }),
+    ).toBeFalsy();
     await runs.heartbeatRunner(runnerGroup);
     expect((await runs.pollRunner(runnerGroup)).body.job).toBeNull();
 

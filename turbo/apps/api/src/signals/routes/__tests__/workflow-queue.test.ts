@@ -22,6 +22,7 @@ import {
 } from "../../../test-fixtures/chat-events";
 import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org-model-policies";
 import { readWorkflowRunTriggerSourceFixture } from "../../../test-fixtures/workflow-queue";
+import { withWorkflowQueueAssemblyFailureFixture } from "../../../test-fixtures/workflow-queue-assembly-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
@@ -1426,6 +1427,76 @@ describe("workflow queue", () => {
     expect(automation.nextRunAt).toBe(
       new Date(firedAt + 3600 * 1000).toISOString(),
     );
+  });
+
+  it("re-arms a recurring schedule after an unexpected queue assembly failure", async () => {
+    mockNow(Date.UTC(2020, 0, 1));
+    const scenario = await setup();
+    const webhookAutomation = await createWebhookAutomation(scenario);
+    const busyRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(webhookAutomation, "busy"),
+      webhookAutomation.threadId,
+    );
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+      }),
+      [201],
+    );
+    if (!created.body.nextRunAt) {
+      throw new Error("Expected a loop automation with a next run");
+    }
+    const firedAt = Date.parse(created.body.nextRunAt) + 60_000;
+    mockNow(firedAt);
+    await executeDueWorkflowAutomations(created.body.id);
+    const pending = await pendingAutomationEvents(webhookAutomation.threadId);
+    expect(pending).toHaveLength(1);
+    const queued = pending[0];
+    if (!queued) {
+      throw new Error("Expected the busy thread to retain the scheduled input");
+    }
+
+    // The production API cannot cause a database cancellation. Inject that
+    // infrastructure fault only for this queued input's first context read,
+    // before assembly has loaded any schedule bookkeeping.
+    await withWorkflowQueueAssemblyFailureFixture(queued.id, async () => {
+      await completeRunThroughSandbox(scenario, busyRunId);
+    });
+
+    const events = await wf.readThreadEvents(webhookAutomation.threadId);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        error: "internal_error",
+        revokesEventId: queued.id,
+      }),
+    );
+    await expect(
+      pendingAutomationEvents(webhookAutomation.threadId),
+    ).resolves.toHaveLength(0);
+    await expect(workflowRunIds(webhookAutomation.threadId)).resolves.toEqual([
+      busyRunId,
+    ]);
+    const automation = await wf.readAutomation(created.body.id);
+    expect(automation.enabled).toBeTruthy();
+    expect(automation.nextRunAt).toBe(
+      new Date(firedAt + 3600 * 1000).toISOString(),
+    );
+    if (!automation.nextRunAt) {
+      throw new Error("Expected the rejected recurring schedule to re-arm");
+    }
+
+    mockNow(Date.parse(automation.nextRunAt) + 60_000);
+    await executeDueWorkflowAutomations(created.body.id);
+    const recoveredRunIds = await workflowRunIds(webhookAutomation.threadId);
+    expect(recoveredRunIds).toHaveLength(2);
+    const recoveredRunId = recoveredRunIds[1];
+    if (!recoveredRunId) {
+      throw new Error("Expected the next recurring tick to launch a run");
+    }
+    await completeRunThroughSandbox(scenario, recoveredRunId);
   });
 
   it("drains a queued one-time event through the canonical session", async () => {

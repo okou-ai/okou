@@ -11,8 +11,6 @@ export interface ChatQueueHeadRejection {
     assistantEventId: string,
     signal: AbortSignal,
   ) => Promise<void>;
-  /** The producer's own bookkeeping for a head that will never run. */
-  readonly settle?: (signal: AbortSignal) => Promise<void>;
 }
 
 /** The queue head an assembler builds a run for. */

@@ -4,6 +4,8 @@ import type {
   GenerationTemplateRequest,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
+import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
@@ -12,9 +14,15 @@ import {
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
 import { avatarTemplateStylePresetId } from "@okouai/core/avatar-template";
-import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  formatUserPresentationTemplateId,
+  userPresentationTemplateDirectory,
+} from "@okouai/core/presentation-template-selection";
+import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import {
   buildArtifactKeyV2,
   buildArtifactPrefixV2,
@@ -31,6 +39,15 @@ import {
   eventBackedContents,
   assistantEvent,
 } from "./helpers/chat-events-fixture";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
+import {
+  installS3Fixture,
+  tarGz,
+  uploadTemplateFile,
+} from "./helpers/template-publish-fixture";
+import { presentationTemplatesRoutes } from "../presentation-templates";
+import { userTemplatesRoutes } from "../user-templates";
 
 const context = testContext();
 const {
@@ -87,6 +104,63 @@ async function waitForLaunchedRunId(
     throw new Error("Expected the picked input to launch a run");
   }
   return runId;
+}
+
+async function publishPrivateChatTemplates(actor: ApiTestUser) {
+  const fixture = installS3Fixture(context);
+  const sourceFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "brand.pdf", contentType: "application/pdf" },
+    Buffer.from("%PDF-1.7 brand source"),
+  );
+  const pageFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "page-001.png", contentType: "image/png" },
+    Buffer.from("cover"),
+  );
+  const packageFileId = await uploadTemplateFile(
+    context,
+    actor,
+    fixture,
+    { filename: "package.tar.gz", contentType: "application/gzip" },
+    tarGz([
+      { path: "SKILL.md", content: "# Apply this brand\n" },
+      { path: "design-system.md", content: "Ink on warm paper.\n" },
+    ]),
+  );
+  const body = {
+    title: "Private brand",
+    sourceFileId,
+    pageFileIds: [pageFileId],
+    packageFileId,
+  };
+  const headers = { authorization: "Bearer clerk-session" };
+  const presentations = setupApp({
+    context,
+    routes: presentationTemplatesRoutes,
+  })(presentationTemplatesContract);
+  const customs = setupApp({ context, routes: userTemplatesRoutes })(
+    userTemplatesContract,
+  );
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  const presentation = await accept(
+    presentations.publish({ headers, body }),
+    [200],
+  );
+  const custom = await accept(
+    customs.publish({ headers, body: { ...body, kind: "presentation" } }),
+    [200],
+  );
+  return {
+    presentations,
+    customs,
+    presentationId: presentation.body.id,
+    customId: custom.body.id,
+  };
 }
 
 describe("CHAT-02: generation templates and attachments", () => {
@@ -1101,25 +1175,177 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, followUp.runId);
   }, 120_000);
 
-  it("accepts a private presentation template the caller cannot read without mounting it", async () => {
+  it("rejects unavailable templates at pick and launches all templates once they are shared", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    // Well formed and syntactically a row id, but no such row exists for this
-    // owner. A deleted template and someone else's template are the same
-    // answer on purpose: neither may be distinguished from the outside.
-    const templateId = formatUserPresentationTemplateId(randomUUID());
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected a chat organization");
+    }
+    const owner = bdd.user({ orgId });
+    for (const user of [actor, owner]) {
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: user.userId, orgId },
+        { [FeatureSwitchKey.CustomTemplates]: true },
+      );
+    }
+    const { presentations, customs, presentationId, customId } =
+      await publishPrivateChatTemplates(owner);
+    const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
+    if (!style) {
+      throw new Error("Expected an illustration template");
+    }
+    const illustration: GenerationTemplateRequest = {
+      type: "illustration",
+      selection: { illustrationStyleId: style.illustrationStyleId },
+    };
+    const presentation: GenerationTemplateRequest = {
+      type: "presentation",
+      selection: {
+        templateId: formatUserPresentationTemplateId(presentationId),
+      },
+    };
+    const custom: GenerationTemplateRequest = {
+      type: "custom",
+      selection: { userTemplateId: customId },
+    };
+    const arms: readonly {
+      readonly template: GenerationTemplateRequest;
+      readonly message: string;
+    }[] = [
+      { template: presentation, message: "Presentation template not found" },
+      {
+        template: {
+          type: "presentation",
+          selection: {
+            templateId: formatUserPresentationTemplateId(randomUUID()),
+          },
+        },
+        message: "Presentation template not found",
+      },
+      { template: custom, message: "Custom template not found" },
+      {
+        template: {
+          type: "custom",
+          selection: { userTemplateId: randomUUID() },
+        },
+        message: "Custom template not found",
+      },
+    ];
+    const credits = (await api.readBillingStatus(actor)).credits;
+    for (const arm of arms) {
+      const clientEventId = randomUUID();
+      const rejected = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          clientEventId,
+          prompt: "use both selected templates",
+          userMessage: {
+            version: 1,
+            parts: [
+              {
+                type: "template",
+                titleSnapshot: style.title,
+                template: illustration,
+              },
+              {
+                type: "template",
+                titleSnapshot: "Selected brand",
+                template: arm.template,
+              },
+              { type: "text", text: "use both selected templates" },
+            ],
+          },
+        },
+        [201],
+      );
+      if (rejected.status !== 201) {
+        throw new Error("Expected the selection to enqueue before pick");
+      }
+      expect(rejected.body.runId).toBeNull();
+      const settled = await waitForThreadMessages(
+        actor,
+        rejected.body.threadId,
+        (events) => {
+          return events.some((event) => {
+            return (
+              event.eventType === "input.rejected" &&
+              event.revokesEventId === clientEventId
+            );
+          });
+        },
+      );
+      expect(settled.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "input.rejected",
+          revokesEventId: clientEventId,
+          error: "bad_request",
+        }),
+      );
+      expect(settled.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "output.error",
+          content: arm.message,
+          error: "bad_request",
+        }),
+      );
+      expect(
+        settled.events.some((event) => {
+          return event.runId !== undefined;
+        }),
+      ).toBe(false);
+    }
+    expect((await api.readBillingStatus(actor)).credits).toBe(credits);
 
-    // Template access is checked when the input is picked, not at send: the
-    // run starts without the template's guidance.
+    // Sharing through the owner APIs makes both packages readable. The same
+    // pick must now preserve every selected template, including the built-in.
+    createRouteMocks(context).clerk.session(owner.userId, orgId);
+    const headers = { authorization: "Bearer clerk-session" };
+    await accept(
+      presentations.update({
+        headers,
+        params: { templateId: presentationId },
+        body: { visibility: "public" },
+      }),
+      [200],
+    );
+    await accept(
+      customs.update({
+        headers,
+        params: { templateId: customId },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
     const sent = await sendChatRun(actor, {
       agentId,
-      prompt: "use my own deck",
-      template: { type: "presentation", selection: { templateId } },
+      prompt: "use all three selected templates",
+      userMessage: {
+        version: 1,
+        parts: [
+          ...[illustration, presentation, custom].map((template) => {
+            return {
+              type: "template" as const,
+              titleSnapshot: "Selected template",
+              template,
+            };
+          }),
+          { type: "text", text: "use all three selected templates" },
+        ],
+      },
     });
-    const systemPrompt =
-      (await api.readRun(actor, sent.runId)).appendSystemPrompt ?? "";
-    expect(systemPrompt).not.toContain("# Inline Templates");
-    expect(systemPrompt).not.toContain(templateId);
+    const systemPrompt = (await api.readRun(actor, sent.runId))
+      .appendSystemPrompt;
+    expect(systemPrompt).toContain("# Inline Templates");
+    expect(systemPrompt).toContain(style.illustrationStyleId);
+    expect(systemPrompt).toContain(
+      `./${userPresentationTemplateDirectory(presentationId)}/SKILL.md`,
+    );
+    expect(systemPrompt).toContain(
+      `./${userTemplateDirectory(customId)}/SKILL.md`,
+    );
     await cancelChatRun(actor, sent.runId);
   }, 60_000);
 

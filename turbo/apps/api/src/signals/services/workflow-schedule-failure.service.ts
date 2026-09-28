@@ -1,4 +1,5 @@
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 
@@ -268,7 +269,7 @@ export async function settleJournaledSchedulePreRunFailure(
  * Morning Brief occurrence through its claim, any other tick through the
  * automation's failure count and next run.
  */
-export async function settleRejectedScheduleTick(
+async function settleRejectedScheduleTick(
   db: Db,
   args: {
     readonly automation: AutomationRow;
@@ -295,4 +296,52 @@ export async function settleRejectedScheduleTick(
     return;
   }
   await recordPreRunFailure(db, args.automation, failure, signal);
+}
+
+/**
+ * Recover the producer's settlement from the durable input, even when the
+ * assembler failed before it could read the automation. Only the consumer
+ * that persisted the rejection calls this; a competing consumer does not
+ * advance the same schedule again.
+ */
+export async function settleRejectedAutomationInput(
+  db: Db,
+  args: {
+    readonly contextId: string | null;
+    readonly queueEventId: string;
+    readonly error: { readonly code: string; readonly message: string };
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  if (args.contextId === null) {
+    return;
+  }
+  const [context] = await db
+    .select({ automationId: chatAutomationContext.automationId })
+    .from(chatAutomationContext)
+    .where(
+      and(
+        eq(chatAutomationContext.id, args.contextId),
+        eq(chatAutomationContext.eventType, "schedule"),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (!context) {
+    return;
+  }
+  const [automation] = await db
+    .select(workflowAutomationColumns())
+    .from(workflowAutomations)
+    .where(eq(workflowAutomations.id, context.automationId))
+    .limit(1);
+  signal.throwIfAborted();
+  if (!automation) {
+    return;
+  }
+  await settleRejectedScheduleTick(
+    db,
+    { automation, queueEventId: args.queueEventId, error: args.error },
+    signal,
+  );
 }

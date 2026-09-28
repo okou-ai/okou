@@ -21,9 +21,13 @@ import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.servi
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
-import { assembleQueuedPromptRun$ } from "./internal-chat-run-callback.service";
+import {
+  assembleQueuedPromptRun$,
+  deliverUnexpectedQueuedPromptRejection$,
+} from "./internal-chat-run-callback.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { assembleQueuedAutomationRun$ } from "./workflow-chat-event-queue.service";
+import { settleRejectedAutomationInput } from "./workflow-schedule-failure.service";
 import type {
   ChatQueueHeadContext,
   ChatQueueHeadRejection,
@@ -270,21 +274,40 @@ const rejectChatQueueHead$ = command(
       code: rejection.error.code,
       error: rejection.error.message,
     });
-    await rejection.settle?.(signal);
+    if (head.contextType === "automation") {
+      await settleRejectedAutomationInput(
+        set(writeDb$),
+        {
+          contextId: head.contextId,
+          queueEventId: head.id,
+          error: rejection.error,
+        },
+        signal,
+      );
+    }
     signal.throwIfAborted();
     await publishChatQueueHeadConsumed(head);
     signal.throwIfAborted();
     const deliver = rejection.deliver;
-    if (!deliver) {
+    if (!deliver && rejection.error.code !== "INTERNAL_ERROR") {
       return;
     }
-    await tapError(deliver(rejected.assistantEventId, signal), (error) => {
-      log.warn("Failed to deliver queued input rejection", {
-        chatThreadId: head.chatThreadId,
-        eventId: head.id,
-        error,
-      });
-    });
+    await tapError(
+      deliver
+        ? deliver(rejected.assistantEventId, signal)
+        : set(
+            deliverUnexpectedQueuedPromptRejection$,
+            { head, assistantEventId: rejected.assistantEventId },
+            signal,
+          ),
+      (error) => {
+        log.warn("Failed to deliver queued input rejection", {
+          chatThreadId: head.chatThreadId,
+          eventId: head.id,
+          error,
+        });
+      },
+    );
   },
 );
 

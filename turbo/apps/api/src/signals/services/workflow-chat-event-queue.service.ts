@@ -41,7 +41,6 @@ import type {
 import { assembleWorkflowAutomationRun } from "./workflow-automation-launch.service";
 import { buildWorkflowAutomationQueuedLaunchMaterial } from "./workflow-automation-queued-launch-context.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
-import { settleRejectedScheduleTick } from "./workflow-schedule-failure.service";
 
 export type WorkflowQueueAdmissionTransaction = Tx;
 
@@ -502,32 +501,19 @@ export const assembleQueuedAutomationRun$ = command(
     if (!event) {
       return unreadable("Workflow queue event payload is unreadable");
     }
-    let target = await loadLaunchTarget(db, event.automationId);
+    const loadedTarget = await loadLaunchTarget(db, event.automationId);
     signal.throwIfAborted();
-    if (!target) {
+    if (!loadedTarget) {
       return unreadable("Workflow automation no longer exists");
     }
-    // A rejected schedule tick starts no run, so it settles its schedule here
-    // instead of in the run's completion callback.
+    let target = loadedTarget;
     const rejection = (error: {
       readonly code: string;
       readonly message: string;
     }): ChatQueueHeadRejection => {
-      const automation = target?.automation;
       return {
         error,
-        userId: automation?.ownerUserId ?? head.userId,
-        ...(automation && event.eventType === "schedule"
-          ? {
-              settle: (settleSignal: AbortSignal) => {
-                return settleRejectedScheduleTick(
-                  db,
-                  { automation, queueEventId: event.id, error },
-                  settleSignal,
-                );
-              },
-            }
-          : {}),
+        userId: target.automation.ownerUserId ?? head.userId,
       };
     };
     const conflict = (message: string): ChatQueueRunAssembly => {
