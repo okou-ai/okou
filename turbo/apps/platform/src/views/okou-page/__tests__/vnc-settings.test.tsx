@@ -492,6 +492,67 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
   ]);
 });
 
+test("Editing an Apple IPv6 loopback host preserves its SSH route and custom port", async () => {
+  const appleHost: VncConnectionResponse = {
+    ...host,
+    displayName: "Mac IPv6 desktop",
+    host: "::1",
+    port: 5905,
+    security: { type: "apple_dh" },
+    transport: { type: "ssh", connectionId: sshHost.id },
+  };
+  const appleCredential: VncCredentialResponse = {
+    ...credential,
+    authMethod: "apple_dh_username_password",
+    username: "operator",
+    hosts: [{ id: appleHost.id, displayName: appleHost.displayName }],
+  };
+  mockSettings({
+    connections: [appleHost],
+    credentials: [appleCredential],
+    sshConnections: [sshHost],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    return respond(200, { ...appleHost, generation: appleHost.generation + 1 });
+  });
+  await page();
+  await screen.findByText(appleHost.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Mac IPv6 desktop",
+  );
+  expect(
+    within(dialog).getByLabelText("RFB destination host"),
+  ).toHaveTextContent("::1");
+  expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
+    5905,
+  );
+  expect(await within(dialog).findByLabelText("SSH host")).toHaveTextContent(
+    sshHost.displayName,
+  );
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      expectedGeneration: appleHost.generation,
+      displayName: "Mac IPv6 desktop",
+      host: "::1",
+      port: 5905,
+      transport: { type: "ssh", connectionId: sshHost.id },
+      credential: { id: appleCredential.id },
+      security: { type: "apple_dh" },
+    },
+  ]);
+});
+
 test("Direct route explains canonical IPv6 loopback and private mapped literals", async () => {
   mockSettings({ connections: [], credentials: [credential] });
   await openAddHostPage();
