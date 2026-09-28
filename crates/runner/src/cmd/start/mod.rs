@@ -107,8 +107,8 @@ use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapsh
 use runner_network::proxy::MitmRecovery;
 use runner_supervisor::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use runner_supervisor::heartbeat::{
-    CaddyServiceProbe, HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit,
-    HeartbeatController, HeartbeatSnapshotMetadata, collect_heartbeat_state,
+    HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
+    HeartbeatSnapshotMetadata, WssIngressServiceProbe, collect_heartbeat_state,
     refresh_initial_workspace_cache_snapshot,
 };
 use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
@@ -1032,10 +1032,10 @@ async fn run_start_with_home(
             cancel_tokens,
             cancel,
         },
-        caddy_service_probe: if args.local {
+        wss_ingress_service_probe: if args.local {
             Arc::new(|| Box::pin(async { false }))
         } else {
-            Arc::new(|| Box::pin(runner_host::caddy_service_status::is_active()))
+            Arc::new(|| Box::pin(runner_host::wss_ingress_service_status::is_active()))
         },
         proxy: ProxyState {
             mitm,
@@ -1117,7 +1117,7 @@ struct RunConfig {
     capacity: CapacityPolicy,
     shared: RunnerSharedState,
     provider: ProviderState,
-    caddy_service_probe: CaddyServiceProbe,
+    wss_ingress_service_probe: WssIngressServiceProbe,
     proxy: ProxyState,
     exec_config: Arc<ExecutorConfig>,
     shutdown: ShutdownHandles,
@@ -1790,7 +1790,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         capacity,
         shared,
         provider: provider_state,
-        caddy_service_probe,
+        wss_ingress_service_probe,
         proxy,
         exec_config,
         shutdown,
@@ -2057,7 +2057,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         workspace_cache: exec_config.workspace_cache.clone(),
         active_runs: &active_runs,
         workspace_cache_snapshot: workspace_cache_snapshot.clone(),
-        caddy_service_probe,
+        wss_ingress_service_probe,
     });
     let initial_workspace_cache = refresh_initial_workspace_cache_snapshot(
         &workspace_cache_snapshot,

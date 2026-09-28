@@ -1,7 +1,6 @@
 //! Runner host filesystem, process registry, local control IPC, locks, paths, and logging primitives.
 
 pub mod bounded_command;
-pub mod caddy_service_status;
 pub mod child_cleanup;
 pub mod cleanup_progress;
 pub mod error;
@@ -19,6 +18,7 @@ pub mod process;
 pub mod runner_dirname;
 pub mod runner_process_identity;
 pub mod state_file;
+pub mod wss_ingress_service_status;
 
 #[cfg(test)]
 mod test_support;

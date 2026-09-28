@@ -66,7 +66,7 @@ describe("direct Runner WSS ticket boundary", () => {
       group,
       mode: "running",
       snapshotSequence: 1,
-      caddyServiceActive: true,
+      wssIngressServiceActive: true,
     });
     return {
       bdd,
@@ -121,7 +121,7 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
-  it("does not issue a ticket when Caddy is absent, down or reported active by a PAT", async () => {
+  it("does not issue a ticket when WSS ingress is absent, down or reported active by a PAT", async () => {
     const f = await setup();
     await f.api.requestHeartbeatRunner(true, [200], {
       runnerId: f.runnerId,
@@ -135,7 +135,7 @@ describe("direct Runner WSS ticket boundary", () => {
       group: f.group,
       mode: "running",
       snapshotSequence: 3,
-      caddyServiceActive: false,
+      wssIngressServiceActive: false,
     });
     const down = await accept(bootstrap(f), [404]);
     expect(down.headers.get("Cache-Control")).toBe("no-store");
@@ -146,7 +146,7 @@ describe("direct Runner WSS ticket boundary", () => {
       runnerId: f.runnerId,
       group: f.group,
       snapshotSequence: 4,
-      caddyServiceActive: true,
+      wssIngressServiceActive: true,
     });
     await accept(bootstrap(f), [404]);
     const digests = await accept(
@@ -161,13 +161,13 @@ describe("direct Runner WSS ticket boundary", () => {
       runnerId: f.runnerId,
       group: f.group,
       snapshotSequence: 5,
-      caddyServiceActive: true,
+      wssIngressServiceActive: true,
     });
     await accept(bootstrap(f), [200]);
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
-  it("denies new tickets on inactive Caddy without recalling an issued ticket", async () => {
+  it("denies new tickets on inactive WSS ingress without recalling an issued ticket", async () => {
     const f = await setup();
     const issued = await accept(bootstrap(f), [200]);
     const before = await accept(
@@ -182,7 +182,7 @@ describe("direct Runner WSS ticket boundary", () => {
       runnerId: f.runnerId,
       group: f.group,
       snapshotSequence: 2,
-      caddyServiceActive: false,
+      wssIngressServiceActive: false,
     });
     const denied = await accept(bootstrap(f), [404]);
     expect(denied.body.error.code).toBe("NOT_FOUND");
@@ -295,7 +295,7 @@ describe("direct Runner WSS ticket boundary", () => {
       group: f.group,
       mode: "running",
       snapshotSequence: 3,
-      caddyServiceActive: true,
+      wssIngressServiceActive: true,
     });
     mockNow(now() + 31_000);
     await accept(bootstrap(f), [404]);

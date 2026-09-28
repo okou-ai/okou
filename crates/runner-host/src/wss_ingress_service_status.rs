@@ -10,11 +10,11 @@ use tokio::process::Command;
 use crate::bounded_command::{BoundedCommandOutcome, run_bounded};
 
 const SYSTEMCTL: &str = "/usr/bin/systemctl";
-const CADDY_UNIT: &str = "okou-wss-caddy.service";
+const WSS_INGRESS_UNIT: &str = "okou-wss-caddy.service";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Missing, inactive, failed, unqueryable or timed-out services all fail closed.
-/// The Runner and its other heartbeats must continue even if Caddy is absent.
+/// The Runner and its other heartbeats must continue even if ingress is absent.
 pub async fn is_active() -> bool {
     query_active(Path::new(SYSTEMCTL), PROBE_TIMEOUT).await
 }
@@ -24,7 +24,7 @@ async fn query_active(systemctl: &Path, timeout: Duration) -> bool {
     command
         .arg("is-active")
         .arg("--quiet")
-        .arg(CADDY_UNIT)
+        .arg(WSS_INGRESS_UNIT)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());

@@ -542,12 +542,14 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const currentDate = nowDate();
   // User PAT heartbeats are valid for their existing Runner flows, but cannot
   // assert a host ingress signal used to authorize WSS ticket issuance.
-  const trustedCaddyObservation =
+  const trustedWssIngressObservation =
     auth.type === "official-runner" &&
-    body.data.caddyServiceActive !== undefined;
-  const caddyServiceActive =
-    trustedCaddyObservation && body.data.caddyServiceActive === true;
-  const caddyServiceObservedAt = trustedCaddyObservation ? currentDate : null;
+    body.data.wssIngressServiceActive !== undefined;
+  const wssIngressServiceActive =
+    trustedWssIngressObservation && body.data.wssIngressServiceActive === true;
+  const wssIngressServiceObservedAt = trustedWssIngressObservation
+    ? currentDate
+    : null;
   const snapshotOrder = {
     generation: body.data.snapshotGeneration,
     sequence: body.data.snapshotSequence,
@@ -571,8 +573,8 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       heldWorkspaceStates,
       activeReuseProducers: body.data.activeReuseProducers,
       mode: body.data.mode,
-      caddyServiceActive,
-      caddyServiceObservedAt,
+      wssIngressServiceActive,
+      wssIngressServiceObservedAt,
       lastSeenAt: currentDate,
     })
     .onConflictDoUpdate({
@@ -592,8 +594,8 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         heldWorkspaceStates,
         activeReuseProducers: body.data.activeReuseProducers,
         mode: body.data.mode,
-        caddyServiceActive,
-        caddyServiceObservedAt,
+        wssIngressServiceActive,
+        wssIngressServiceObservedAt,
         lastSeenAt: currentDate,
       },
       setWhere: or(

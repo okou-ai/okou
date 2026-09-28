@@ -56,11 +56,11 @@ export const runnerState = pgTable(
       .default([])
       .notNull(),
     mode: varchar("mode", { length: 20 }).notNull().default("running"),
-    /** Host-local service observation; not public DNS/TLS reachability. */
-    caddyServiceActive: boolean("caddy_service_active")
+    /** Host-local WSS ingress service observation; not public DNS/TLS reachability. */
+    wssIngressServiceActive: boolean("wss_ingress_service_active")
       .notNull()
       .default(false),
-    caddyServiceObservedAt: timestamp("caddy_service_observed_at"),
+    wssIngressServiceObservedAt: timestamp("wss_ingress_service_observed_at"),
     lastSeenAt: timestamp("last_seen_at").notNull(),
   },
   (table) => {

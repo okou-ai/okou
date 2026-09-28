@@ -2587,7 +2587,7 @@ mod tests {
                 }],
             }],
             active_reuse_producers: vec![],
-            caddy_service_active: false,
+            wss_ingress_service_active: false,
             mode: "running".to_string(),
         }
     }

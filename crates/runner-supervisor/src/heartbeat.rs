@@ -34,8 +34,8 @@ pub struct HeartbeatProfile {
     pub workspace_disk_mb: u32,
 }
 
-/// Host-local Caddy state sampled for each heartbeat, never a browser reachability proof.
-pub type CaddyServiceProbe = Arc<dyn Fn() -> BoxFuture<'static, bool> + Send + Sync>;
+/// Host-local WSS ingress service state sampled for each heartbeat, never a browser reachability proof.
+pub type WssIngressServiceProbe = Arc<dyn Fn() -> BoxFuture<'static, bool> + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum HeartbeatError {
@@ -63,7 +63,7 @@ pub struct HeartbeatContext {
     workspace_cache: Option<WorkspaceImageCache>,
     active_runs: ActiveRuns,
     workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
-    caddy_service_probe: CaddyServiceProbe,
+    wss_ingress_service_probe: WssIngressServiceProbe,
 }
 
 pub struct HeartbeatContextInit<'a> {
@@ -76,7 +76,7 @@ pub struct HeartbeatContextInit<'a> {
     pub workspace_cache: Option<WorkspaceImageCache>,
     pub active_runs: &'a ActiveRuns,
     pub workspace_cache_snapshot: WorkspaceCacheStateSnapshot,
-    pub caddy_service_probe: CaddyServiceProbe,
+    pub wss_ingress_service_probe: WssIngressServiceProbe,
 }
 
 impl HeartbeatContext {
@@ -91,7 +91,7 @@ impl HeartbeatContext {
             workspace_cache: init.workspace_cache,
             active_runs: init.active_runs.clone(),
             workspace_cache_snapshot: init.workspace_cache_snapshot,
-            caddy_service_probe: init.caddy_service_probe,
+            wss_ingress_service_probe: init.wss_ingress_service_probe,
         }
     }
 }
@@ -367,7 +367,7 @@ async fn send_heartbeat(
         );
         return;
     }
-    state.caddy_service_active = (hb.caddy_service_probe)().await;
+    state.wss_ingress_service_active = (hb.wss_ingress_service_probe)().await;
     info!(
         mode = ?mode,
         running = state.running_count,
@@ -564,7 +564,7 @@ pub fn collect_heartbeat_state(
         held_sandbox_states: idle_pool.held_sandbox_states(),
         held_workspace_states: Vec::new(),
         active_reuse_producers: Vec::new(),
-        caddy_service_active: false,
+        wss_ingress_service_active: false,
         mode: match mode {
             RunnerMode::Starting => "starting".to_string(),
             RunnerMode::Running => "running".to_string(),
@@ -911,9 +911,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn each_heartbeat_observes_caddy_transitions_while_running_or_draining() {
+    async fn each_heartbeat_observes_wss_ingress_transitions_while_running_or_draining() {
         let active = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let caddy_service_probe: CaddyServiceProbe = {
+        let wss_ingress_service_probe: WssIngressServiceProbe = {
             let active = Arc::clone(&active);
             Arc::new(move || {
                 let active = Arc::clone(&active);
@@ -937,7 +937,7 @@ mod tests {
             workspace_cache: None,
             active_runs: &active_runs,
             workspace_cache_snapshot: WorkspaceCacheStateSnapshot::new(),
-            caddy_service_probe,
+            wss_ingress_service_probe,
         });
 
         send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;
@@ -948,7 +948,7 @@ mod tests {
         let sent = provider.heartbeats.lock().unwrap();
         assert_eq!(
             sent.iter()
-                .map(|s| s.caddy_service_active)
+                .map(|s| s.wss_ingress_service_active)
                 .collect::<Vec<_>>(),
             vec![false, true, false]
         );
@@ -987,7 +987,7 @@ mod tests {
             workspace_cache: Some(cache),
             active_runs: &active_runs,
             workspace_cache_snapshot: workspace_cache_snapshot.clone(),
-            caddy_service_probe: Arc::new(|| Box::pin(async { false })),
+            wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
         let ((), events) = capture_heartbeat_events(send_heartbeat(
@@ -1077,7 +1077,7 @@ mod tests {
             workspace_cache: Some(cache),
             active_runs: &active_runs,
             workspace_cache_snapshot,
-            caddy_service_probe: Arc::new(|| Box::pin(async { false })),
+            wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
         send_heartbeat(
@@ -1153,7 +1153,7 @@ mod tests {
             workspace_cache: None,
             active_runs: &active_runs,
             workspace_cache_snapshot: WorkspaceCacheStateSnapshot::new(),
-            caddy_service_probe: Arc::new(|| Box::pin(async { false })),
+            wss_ingress_service_probe: Arc::new(|| Box::pin(async { false })),
         });
 
         send_heartbeat(&hb, RunnerMode::Running, 1, HeartbeatRequest::ordinary()).await;

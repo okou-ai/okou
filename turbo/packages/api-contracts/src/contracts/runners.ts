@@ -1993,7 +1993,7 @@ export const heartbeatBodySchema = z
     activeReuseProducers: z.array(activeReuseProducerSchema).max(1024),
     // This shared endpoint also accepts PAT and older Runner heartbeats without
     // a host observation. Absence is a first-class unknown, never WSS-eligible.
-    caddyServiceActive: z.boolean().optional(),
+    wssIngressServiceActive: z.boolean().optional(),
     mode: z.enum(["starting", "running", "draining", "stopping"]),
   })
   .superRefine((heartbeat, ctx) => {

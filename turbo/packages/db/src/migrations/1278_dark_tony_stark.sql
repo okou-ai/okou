@@ -1,0 +1,2 @@
+ALTER TABLE "runner_state" ADD COLUMN "wss_ingress_service_active" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "runner_state" ADD COLUMN "wss_ingress_service_observed_at" timestamp;

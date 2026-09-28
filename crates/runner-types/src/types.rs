@@ -1791,8 +1791,8 @@ pub struct HeartbeatState {
     pub held_sandbox_states: Vec<HeldSandboxState>,
     pub held_workspace_states: Vec<HeldWorkspaceState>,
     pub active_reuse_producers: Vec<ActiveReuseProducer>,
-    /// Host-local dedicated Caddy service state, not public WSS reachability.
-    pub caddy_service_active: bool,
+    /// Host-local WSS ingress service state, not public WSS reachability.
+    pub wss_ingress_service_active: bool,
     pub mode: String,
 }
 
@@ -2840,7 +2840,7 @@ mod tests {
                 reuse_key: "thread:thread-abc".into(),
                 profile: "vm0/default".into(),
             }],
-            caddy_service_active: true,
+            wss_ingress_service_active: true,
             mode: "running".into(),
         };
         let json: serde_json::Value = serde_json::to_value(&state).unwrap();
@@ -2879,7 +2879,7 @@ mod tests {
                     "reuseKey": "thread:thread-abc",
                     "profile": "vm0/default"
                 }],
-                "caddyServiceActive": true,
+                "wssIngressServiceActive": true,
                 "mode": "running"
             })
         );
@@ -2921,7 +2921,7 @@ mod tests {
             held_sandbox_states: Vec::new(),
             held_workspace_states: Vec::new(),
             active_reuse_producers: Vec::new(),
-            caddy_service_active: false,
+            wss_ingress_service_active: false,
             mode: "running".into(),
         };
 

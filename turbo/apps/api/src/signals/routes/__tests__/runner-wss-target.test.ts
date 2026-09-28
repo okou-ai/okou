@@ -100,7 +100,7 @@ async function heartbeat(
   sequence: number,
   options: {
     readonly group?: string;
-    readonly caddyServiceActive?: boolean;
+    readonly wssIngressServiceActive?: boolean;
   } = {},
 ) {
   await f.api.requestHeartbeatRunner(true, [200], {
@@ -108,7 +108,7 @@ async function heartbeat(
     group: options.group ?? f.runnerGroup,
     mode,
     snapshotSequence: sequence,
-    caddyServiceActive: options.caddyServiceActive ?? true,
+    wssIngressServiceActive: options.wssIngressServiceActive ?? true,
   });
 }
 
@@ -186,7 +186,9 @@ describe("internal WSS target via guarded test API route", () => {
     await expect(
       readTarget(run.runId, f.actor, new Date(observed.getTime() - 5001)),
     ).resolves.toBeNull();
-    await heartbeat(f, runnerId, "draining", 3, { caddyServiceActive: false });
+    await heartbeat(f, runnerId, "draining", 3, {
+      wssIngressServiceActive: false,
+    });
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
     await heartbeat(f, runnerId, "stopping", 4);
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
@@ -195,7 +197,7 @@ describe("internal WSS target via guarded test API route", () => {
     await f.api.requestCancelRun(f.actor, run.runId, [200]);
   });
 
-  it("denies a missing or inactive Caddy observation and rejects an older true snapshot", async () => {
+  it("denies a missing or inactive WSS ingress observation and rejects an older true snapshot", async () => {
     const f = await setup();
     const run = await createRun(f);
     const runnerId = randomUUID();
@@ -211,7 +213,9 @@ describe("internal WSS target via guarded test API route", () => {
     await expect(readTarget(run.runId, f.actor)).resolves.toMatchObject({
       runnerId,
     });
-    await heartbeat(f, runnerId, "running", 3, { caddyServiceActive: false });
+    await heartbeat(f, runnerId, "running", 3, {
+      wssIngressServiceActive: false,
+    });
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
     await heartbeat(f, runnerId, "running", 2);
     await expect(readTarget(run.runId, f.actor)).resolves.toBeNull();
