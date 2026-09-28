@@ -1885,12 +1885,13 @@ iMessage handles normalized to an empty string and every proactive send from
 an email-linked member failed with 404.
 
 CLIs released before this change still send `toNumber`; the API accepts and
-ignores it. The new CLI keeps `--to` as a hidden, ignored option and no longer
-sends `toNumber`. A new CLI talking to an older API (rollout overlap or API
-rollback) is rejected with 400 because the older contract requires
-`toNumber`; the send can be retried after the new API is live. Remove the
-contract field and the hidden `--to` option once CLI versions from before this
-change are no longer in use.
+ignores it. The new CLI no longer sends `toNumber`. A new CLI talking to an
+older API (rollout overlap or API rollback) is rejected with 400 because the
+older contract requires `toNumber`; the send can be retried after the new API
+is live. Remove the contract field once CLI versions from before this change
+are no longer in use. Since the unified messaging flags (#37212), the phone
+commands' `--to` is a visible option that accepts only `me` (the default); a
+phone number there is rejected rather than ignored.
 
 ## Platform and run pipeline public brand retirement (2026-09-25)
 

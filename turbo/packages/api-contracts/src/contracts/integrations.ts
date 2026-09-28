@@ -660,7 +660,7 @@ const canonicalSlackUploadInitResponseSchema = z.object({
   assetId: z.string().uuid(),
   operationId: z.string().uuid(),
   /** Resolved destination channel ID (a DM channel when `user` was sent). */
-  channel: z.string().optional(),
+  channel: z.string(),
   uploadUrl: z.string().url().optional(),
   uploadHeaders: z.record(z.string(), z.string()).optional(),
   url: artifactUrlSchema,
@@ -1310,7 +1310,7 @@ const slackUploadCompleteResponseSchema = z.object({
   fileId: z.string(),
   permalink: z.string(),
   /** Channel ID the file was shared to (a DM channel when `user` was sent). */
-  channel: z.string().optional(),
+  channel: z.string(),
   assetId: z.string().uuid().optional(),
   assetUrl: z.string().url().optional(),
   deliveryStatus: z.enum(["delivered", "failed"]).optional(),

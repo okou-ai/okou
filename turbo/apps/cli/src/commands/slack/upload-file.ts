@@ -76,14 +76,13 @@ function warnDeliveryRetry(operationId: string): void {
 
 type SlackUploadOutput = Pick<MessageSendOutput, "messages" | "delivery"> & {
   readonly fileUrl: string | null;
-  readonly chatId?: string | null;
 };
 
 async function uploadDirectlyToSlack(
   initialized: DirectUploadInitialization,
   options: UploadFileOptions,
   fileContent: Buffer,
-): Promise<SlackUploadOutput> {
+): Promise<SlackUploadOutput & { readonly chatId: string }> {
   const uploadResponse = await fetch(initialized.uploadUrl, {
     method: "POST",
     body: fileContent,
@@ -101,7 +100,7 @@ async function uploadDirectlyToSlack(
     initialComment: options.comment,
   });
   return {
-    chatId: result.channel ?? null,
+    chatId: result.channel,
     messages: [{ id: result.fileId, url: result.permalink }],
     fileUrl: result.assetUrl ?? null,
   };
@@ -303,26 +302,22 @@ async function uploadFile(cliOptions: UploadFileCliOptions): Promise<void> {
     },
   });
 
-  const {
-    fileUrl,
-    chatId: resolvedChannel = "fileId" in initialized
-      ? null
-      : (initialized.channel ?? null),
-    ...delivered
-  } = "fileId" in initialized
-    ? await uploadDirectlyToSlack(initialized, options, file.content)
-    : await publishCanonicalFile(
-        initialized,
-        options,
-        contentType,
-        file.content,
-      );
-  const requestedChannel =
-    "channel" in options.destination ? options.destination.channel : null;
+  const { chatId, fileUrl, ...delivered } =
+    "fileId" in initialized
+      ? await uploadDirectlyToSlack(initialized, options, file.content)
+      : {
+          chatId: initialized.channel,
+          ...(await publishCanonicalFile(
+            initialized,
+            options,
+            contentType,
+            file.content,
+          )),
+        };
   printMessageOutput(
     {
       integration: "slack",
-      chatId: resolvedChannel ?? requestedChannel,
+      chatId,
       ...delivered,
       file: { name: filename, contentType, size: file.size, url: fileUrl },
     },

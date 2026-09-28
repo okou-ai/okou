@@ -89,8 +89,7 @@ Notes:
         printMessageOutput(
           {
             integration: "slack",
-            chatId:
-              result.channel ?? (target.kind === "chat" ? target.id : null),
+            chatId: result.channel ?? null,
             messages: result.ts ? [{ id: result.ts, url: null }] : [],
           },
           options,

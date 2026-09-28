@@ -91,6 +91,7 @@ describe("okou slack upload-file command", () => {
             {
               fileId: "F0123ABC",
               permalink: "https://workspace.slack.com/files/F0123ABC",
+              channel: "C1234567",
             },
             { status: 200 },
           );
@@ -186,6 +187,7 @@ describe("okou slack upload-file command", () => {
             {
               fileId: "F0456DEF",
               permalink: "https://slack.com/files/F0456DEF",
+              channel: "C1234567",
             },
             { status: 200 },
           );
@@ -235,6 +237,7 @@ describe("okou slack upload-file command", () => {
             {
               fileId: "F0789GHI",
               permalink: "https://slack.com/files/F0789GHI",
+              channel: "C1234567",
             },
             { status: 200 },
           );
@@ -278,6 +281,7 @@ describe("okou slack upload-file command", () => {
               kind: "canonical",
               assetId,
               operationId,
+              channel: "C1234567",
               uploadUrl: CANONICAL_PRESIGNED_URL,
               uploadHeaders: {
                 "x-amz-meta-artifact-id": assetId,
@@ -321,6 +325,7 @@ describe("okou slack upload-file command", () => {
             {
               fileId: "F-CANONICAL",
               permalink: "https://workspace.slack.com/files/F-CANONICAL",
+              channel: "C1234567",
               assetId,
               deliveryStatus: "delivered",
             },
@@ -398,6 +403,7 @@ describe("okou slack upload-file command", () => {
             kind: "canonical",
             assetId,
             operationId,
+            channel: "C1234567",
             uploadUrl: CANONICAL_PRESIGNED_URL,
             url: "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf",
           });
