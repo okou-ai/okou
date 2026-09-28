@@ -1,5 +1,7 @@
 import { command } from "ccstate";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -7,10 +9,12 @@ import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import {
   completeHostedSiteDeployment$,
+  deleteHostedSite$,
   getHostedSiteDeployments$,
   getHostedSiteFiles$,
   prepareHostedSiteDeployment$,
 } from "../services/host.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
 import {
   artifactVisibilityUnavailable,
@@ -179,6 +183,41 @@ const deploymentsInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: result.body };
 });
 
+const deleteSiteParams$ = pathParamsOf(hostContract.deleteSite);
+const deleteSiteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const params = get(deleteSiteParams$);
+  const featureContext = await get(
+    userFeatureSwitchContext(auth.orgId, auth.userId),
+  );
+  signal.throwIfAborted();
+  if (!isFeatureEnabled(FeatureSwitchKey.HostedSiteDelete, featureContext)) {
+    return notFound("Hosted site deletion is not available");
+  }
+
+  const result = await set(
+    deleteHostedSite$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      publicSlug: params.publicSlug,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+
+  if (result.status === "bad_request") {
+    return badRequestMessage(result.message);
+  }
+  if (result.status === "not_found") {
+    return notFound(result.message);
+  }
+  if (result.status === "config_error") {
+    return internalError(result.message);
+  }
+  return { status: 200 as const, body: result.body };
+});
+
 export const hostRoutes: readonly RouteEntry[] = [
   {
     route: hostContract.preparePrivate,
@@ -235,6 +274,17 @@ export const hostRoutes: readonly RouteEntry[] = [
         missingOrganizationStatus: 401,
       },
       deploymentsInner$,
+    ),
+  },
+  {
+    route: hostContract.deleteSite,
+    handler: authRoute(
+      {
+        requiredCapability: "host:write",
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+      },
+      deleteSiteInner$,
     ),
   },
 ];

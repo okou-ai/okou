@@ -88,4 +88,5 @@ export enum FeatureSwitchKey {
   ClaudeCodeUsageReset = "claudeCodeUsageReset",
   AgentResponsibilitySetup = "agentResponsibilitySetup",
   ChatThreadLinkChips = "chatThreadLinkChips",
+  HostedSiteDelete = "hostedSiteDelete",
 }

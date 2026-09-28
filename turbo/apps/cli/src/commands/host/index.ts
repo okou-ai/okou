@@ -8,6 +8,7 @@ import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { publishStaticSite } from "../../lib/host/publish-static-site";
 import { createArtifactPresentation } from "../shared/artifact-return";
 import { cloneHostedSiteCommand } from "./clone";
+import { deleteHostedSiteCommand } from "./delete";
 import { versionsHostedSiteCommand } from "./versions";
 
 interface HostOptions {
@@ -30,7 +31,9 @@ function formatBytes(bytes: number): string {
 
 export const hostCommand = new Command()
   .name("host")
-  .description("Publish, redeploy, inspect, and clone static hosted sites")
+  .description(
+    "Publish, redeploy, inspect, clone, and delete static hosted sites",
+  )
   .argument("<dir>", "Static build directory, for example ./dist")
   .option(
     "--site <slug>",
@@ -46,6 +49,7 @@ export const hostCommand = new Command()
   .option("--json", "Output the result and Markdown return forms as JSON")
   .addCommand(cloneHostedSiteCommand)
   .addCommand(versionsHostedSiteCommand)
+  .addCommand(deleteHostedSiteCommand)
   .addHelpText(
     "after",
     `
@@ -54,6 +58,7 @@ Examples:
   Redeploy the same URL: okou host ./dist --site my-product-demo --spa
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
+  Take a site offline:   okou host delete my-product-demo
   Machine readable:      okou host ./dist --site my-product-demo --spa --json
 
 Notes:
@@ -64,6 +69,7 @@ Notes:
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
   - Hosted sites are public: anyone with the returned URL can open them
   - Reusing --site redeploys that site when you created it: the hosted URL stays the same and serves the new version
+  - okou host delete takes a site and all of its versions offline; redeploying the same --site restores it as a new version
   - A name owned by another chat or another user is rejected; choose a different --site value
   - HTML files may change on every redeploy; every other file must carry a content hash in its name, such as /assets/app-4f3a9c12.js
   - A published non-HTML path keeps its bytes forever. Rename a changed asset with its new content hash instead of republishing the same name

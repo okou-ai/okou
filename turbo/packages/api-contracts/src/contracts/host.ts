@@ -230,6 +230,16 @@ export const hostedSiteDeploymentsResponseSchema = z.object({
   deployments: z.array(hostedSiteDeploymentSummarySchema),
 });
 
+export const hostedSiteDeleteResponseSchema = z.object({
+  siteId: z.string().uuid(),
+  // The --site value that restores the site when redeployed.
+  site: hostedSiteSlugSchema,
+  publicSlug: hostedSitePublicSlugSchema,
+  aliasUrl: z.string().url(),
+  // Every site and version URL that no longer serves the site.
+  offlineUrls: z.array(z.string().url()),
+});
+
 const creationRoute = {
   method: "POST",
   path: "/api/host/deployments/prepare",
@@ -316,6 +326,26 @@ export const hostContract = c.router({
     },
     summary: "List deployment versions for an owned hosted site",
   },
+  deleteSite: {
+    method: "DELETE",
+    path: "/api/host/sites/:publicSlug",
+    pathParams: z.object({
+      publicSlug: hostedSitePublicSlugSchema,
+    }),
+    headers: authHeadersSchema,
+    body: c.noBody(),
+    responses: {
+      200: hostedSiteDeleteResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary:
+      "Take an owned hosted site and all of its versions offline; redeploying restores it",
+  },
 });
 
 export type HostContract = typeof hostContract;
@@ -333,4 +363,7 @@ export type HostedSiteFilesResponse = z.infer<
 >;
 export type HostedSiteDeploymentsResponse = z.infer<
   typeof hostedSiteDeploymentsResponseSchema
+>;
+export type HostedSiteDeleteResponse = z.infer<
+  typeof hostedSiteDeleteResponseSchema
 >;
