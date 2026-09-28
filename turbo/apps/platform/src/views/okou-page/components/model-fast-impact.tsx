@@ -1,70 +1,75 @@
 import {
   isBuiltInModelProviderType,
   type OrgModelPolicy,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
+import { getModelRunOptions } from "@okouai/api-contracts/contracts/model-run-options";
 import { useTranslation } from "react-i18next";
 
 import { formatLocalizedNumber } from "../../../i18n/format.ts";
 
-// ChatGPT speed guidance differs from OpenAI API Fast processing:
-// https://developers.openai.com/codex/speed
-// https://developers.openai.com/codex/changelog (CLI 0.153.2, Astra correction)
-const CHATGPT_FAST_MODEL_SPEED: Readonly<
-  Partial<Record<SupportedRunModel, number>>
-> = Object.freeze({
-  "gpt-6-astra": 2,
-  "gpt-5.6-sol": 1.5,
-  "gpt-5.6-terra": 1.5,
-  "gpt-5.6-luna": 1.5,
-});
-
+/**
+ * Fast's speed and cost on the policy's route. Every multiplier comes from the
+ * model's run options, so a model whose Fast tier costs or gains differently is
+ * configured there rather than here.
+ */
 export function ModelFastImpact({ policy }: { policy: OrgModelPolicy }) {
   const { t } = useTranslation();
   const route = getMemberModelPolicyRoute(policy);
   const builtIn = isBuiltInModelProviderType(route.providerType);
   const provider = route.runtimeProviderType;
+  const fast = getModelRunOptions(policy.model).fast;
   let speed = t(($) => {
     return $.settings.models.picker.fastImpact.providerSpeed;
   });
-  const chatGptSpeed = CHATGPT_FAST_MODEL_SPEED[policy.model];
-  if (provider === "codex-oauth-token" && chatGptSpeed !== undefined) {
+  if (
+    provider === "codex-oauth-token" &&
+    fast?.chatGptSpeedMultiplier !== undefined
+  ) {
     speed = t(
       ($) => {
         return $.settings.models.picker.fastImpact.modelSpeed;
       },
-      { multiplier: formatLocalizedNumber(chatGptSpeed) },
+      { multiplier: formatLocalizedNumber(fast.chatGptSpeedMultiplier) },
     );
   } else if (provider === "openai-api-key") {
-    // Only Sol has a model-specific API speed multiplier in the Fast guide:
-    // https://developers.openai.com/api/docs/guides/fast-mode
     speed =
-      policy.model === "gpt-5.6-sol"
+      fast?.apiSpeedMultiplier === undefined
         ? t(($) => {
-            return $.settings.models.picker.fastImpact.solApiSpeed;
-          })
-        : t(($) => {
             return $.settings.models.picker.fastImpact.fasterResponses;
-          });
+          })
+        : t(
+            ($) => {
+              return $.settings.models.picker.fastImpact.apiSpeed;
+            },
+            { multiplier: formatLocalizedNumber(fast.apiSpeedMultiplier) },
+          );
   }
 
   let usage = t(($) => {
     return $.settings.models.picker.fastImpact.providerUsage;
   });
-  if (builtIn) {
-    // The supported built-in GPT models use 2x Standard token prices for Fast.
-    usage = t(($) => {
-      return $.settings.models.picker.fastImpact.okouCredits;
-    });
-  } else if (provider === "codex-oauth-token") {
-    usage = t(($) => {
-      return $.settings.models.picker.fastImpact.chatGptUsage;
-    });
-  } else if (provider === "openai-api-key") {
-    usage = t(($) => {
-      return $.settings.models.picker.fastImpact.apiCost;
-    });
+  if (fast && builtIn) {
+    usage = t(
+      ($) => {
+        return $.settings.models.picker.fastImpact.okouCredits;
+      },
+      { multiplier: formatLocalizedNumber(fast.builtInCreditMultiplier) },
+    );
+  } else if (fast && provider === "codex-oauth-token") {
+    usage = t(
+      ($) => {
+        return $.settings.models.picker.fastImpact.chatGptUsage;
+      },
+      { multiplier: formatLocalizedNumber(fast.chatGptUsageMultiplier) },
+    );
+  } else if (fast && provider === "openai-api-key") {
+    usage = t(
+      ($) => {
+        return $.settings.models.picker.fastImpact.apiCost;
+      },
+      { multiplier: formatLocalizedNumber(fast.apiCostMultiplier) },
+    );
   }
   return t(
     ($) => {

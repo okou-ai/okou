@@ -274,6 +274,7 @@ import {
   type ModelProviderSelection,
 } from "./components/model-provider-picker.tsx";
 import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
+import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
@@ -9428,19 +9429,64 @@ function composerVideoModelPanelCategory({
   };
 }
 
-function ComposerModelPickerControls({
-  signals,
-  value,
-  onChange,
-  imageModel,
-  videoModel,
-}: {
+interface ComposerModelPickerControlsProps {
   signals: ComposerSignals;
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
   imageModel: ComposerResolvedImageModelPickerState | undefined;
   videoModel: ComposerResolvedVideoModelPickerState | undefined;
-}) {
+}
+
+function ComposerModelPickerControls(props: ComposerModelPickerControlsProps) {
+  const modelPanel =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerModelPanel] === true;
+  return modelPanel ? (
+    <ComposerModelPanelControls
+      signals={props.signals}
+      value={props.value}
+      onChange={props.onChange}
+    />
+  ) : (
+    <ComposerModelMenuControls {...props} />
+  );
+}
+
+/**
+ * The model panel only switches the chat model; it carries effort and Fast
+ * itself, so the effort chip and the media categories have no place beside it.
+ */
+function ComposerModelPanelControls({
+  signals,
+  value,
+  onChange,
+}: Pick<ComposerModelPickerControlsProps, "signals" | "value" | "onChange">) {
+  const { t } = useTranslation();
+  const open = useGet(signals.model.modelPickerOpen$);
+  const setOpen = useSet(signals.model.setModelPickerOpen$);
+  return (
+    <>
+      <ComposerModelPanel
+        value={value}
+        onChange={onChange}
+        placeholder={t(($) => {
+          return $.chat.composer.selectModel;
+        })}
+        triggerClassName={composerModelPickerTriggerClassName()}
+        open={open}
+        onOpenChange={setOpen}
+      />
+      <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
+    </>
+  );
+}
+
+function ComposerModelMenuControls({
+  signals,
+  value,
+  onChange,
+  imageModel,
+  videoModel,
+}: ComposerModelPickerControlsProps) {
   const { t } = useTranslation();
   const videoPickers = useLoadable(videoPickersVisible$);
   const desktopLayout = useGet(signals.model.desktopModelPickerLayout$);

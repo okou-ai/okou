@@ -437,6 +437,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Let a hosted site's owner take the site and all of its versions offline with okou host delete; redeploying restores it.",
     enabled: true,
   },
+  [FeatureSwitchKey.ComposerModelPanel]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Replace the composer's model menu and effort chip with one panel that picks the chat model and sets its effort and Fast mode.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
     description:
