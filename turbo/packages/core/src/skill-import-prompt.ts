@@ -132,13 +132,21 @@ Personal skills:
 - ~/.claude/skills/
 
 Account skills:
-- ~/.claude/skills/synced/
-- Claude Code downloads the skills of my claude.ai account here, including
-  skills I created or uploaded in the Claude app or in Cowork. They are my
+- Skills I created or uploaded in the Claude app or Cowork belong to my
+  claude.ai account and can be loaded into this session from outside the
+  directories above, for example ~/.claude/skills/synced/. They are my
   skills: label them Personal (account) and import them. Do not exclude
   them as a cache, a sync copy, a plugin, or system skills.
-- When the same skill name also exists elsewhere under ~/.claude/skills/,
-  prefer that local copy over the synced one.
+- Compare the skills available to you in this session with what the scan
+  found. For each available skill that is not a Claude system, built-in,
+  or official plugin skill and has no SKILL.md in the scanned directories,
+  locate its SKILL.md: use the path this session reports for it, or search
+  for a SKILL.md whose frontmatter name matches, only under ~/.claude/ and,
+  on macOS, ~/Library/Application Support/Claude/.
+- Locate these files by reading only. Do not invoke or run a skill to find
+  or read it.
+- If no local SKILL.md can be found for such a skill, do not reconstruct
+  it. Report it as "Visible in this session, no local file found".
 
 Project skills:
 - <current working directory>/.claude/skills/
@@ -165,17 +173,18 @@ Always exclude:
 - Plugin sources that cannot be identified as personally maintained`;
 
 /**
- * Skills created in the Claude app or Cowork reach disk only once a Claude
- * Code session signed in to claude.ai has synced them. Without this, an
- * import that finds nothing reads as if the user had no skills at all.
+ * Skills created in the Claude app or Cowork load only into Claude Code
+ * sessions signed in to the same claude.ai account. Without this, an import
+ * that finds nothing reads as if the user had no skills at all.
  */
 const CLAUDE_NO_SKILLS_NOTE = `
 Then add this note for me:
 "Skills created or uploaded in the Claude app or Cowork (Customize →
-Skills) are synced to ~/.claude/skills/synced/ only while Claude Code is
-signed in to your claude.ai account. If yours are missing, sign in, keep
-a Claude Code session open for a minute so the sync can finish, then run
-the import again with a fresh prompt from Okou."`;
+Skills) are only available to Claude Code when it is signed in to the same
+claude.ai account. If yours are missing, sign in, then run the import
+again with a fresh prompt from Okou. For a skill listed as visible without
+a local file, download it from Customize → Skills, place its folder under
+~/.claude/skills/<skill-name>/, and run the import again."`;
 
 export function buildSkillImportPrompt(input: SkillImportPromptInput): string {
   const { limits } = input;
@@ -183,6 +192,19 @@ export function buildSkillImportPrompt(input: SkillImportPromptInput): string {
   const discovery =
     input.provider === "codex" ? CODEX_DISCOVERY : CLAUDE_DISCOVERY;
   const noSkillsNote = input.provider === "codex" ? "" : CLAUDE_NO_SKILLS_NOTE;
+  const sourceTypes =
+    input.provider === "codex"
+      ? "Project / Personal / Personal plugin"
+      : "Project / Personal / Personal (account) / Personal plugin";
+  const duplicatePriority =
+    input.provider === "codex"
+      ? `1. Project skills
+2. Personal skills
+3. Personal plugin skills`
+      : `1. Project skills
+2. Personal skills
+3. Personal (account) skills
+4. Personal plugin skills`;
 
   return `Import my local personal skills into Okou.
 
@@ -209,7 +231,7 @@ Explicitly excluded skills: None.
 
 First, build a local candidate inventory containing:
 - Platform: ${platform} / Shared
-- Source type: Project / Personal / Personal plugin
+- Source type: ${sourceTypes}
 - SKILL.md path
 - Resolved real path
 - Skill name
@@ -279,9 +301,7 @@ or reformat it.
 Deduplicate by real path first, then by skill name.
 
 For duplicate names, prefer:
-1. Project skills
-2. Personal skills
-3. Personal plugin skills
+${duplicatePriority}
 
 Within the same priority:
 - Prefer the current working directory over a different Git repository
@@ -546,6 +566,7 @@ Produce one consolidated summary containing:
 5. Skills not imported
    - Skills left unprocessed because of the ${String(limits.maxSkillsPerSession)}-skill limit,
      429, or 401.
+   - Skills visible in this session with no local file found.
    - The reason for each.
 
 6. Omitted attachments

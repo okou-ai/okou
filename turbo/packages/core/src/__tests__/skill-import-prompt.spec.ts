@@ -106,16 +106,21 @@ describe("skill import prompt", () => {
     const claude = prompt("claudeCode");
     const codex = prompt("codex");
 
-    expect(claude).toContain("only while Claude Code is\nsigned in");
-    expect(codex).not.toContain("signed in to your claude.ai account");
+    expect(claude).toContain("signed in to the same\nclaude.ai account");
+    expect(codex).not.toContain("signed in to the same");
   });
 
-  it("imports Claude account skills synced to disk", () => {
+  it("imports Claude account skills from wherever the session loads them", () => {
     const claude = prompt("claudeCode");
+    const codex = prompt("codex");
 
-    expect(claude).toContain("~/.claude/skills/synced/");
     expect(claude).toContain("label them Personal (account) and import them");
-    expect(prompt("codex")).not.toContain("~/.claude/skills/synced/");
+    expect(claude).toContain(
+      "Compare the skills available to you in this session",
+    );
+    expect(claude).toContain("Do not invoke or run a skill to find");
+    expect(claude).toContain("3. Personal (account) skills");
+    expect(codex).not.toContain("Personal (account)");
   });
 
   it("renders the session limits rather than fixed defaults", () => {
