@@ -117,6 +117,7 @@ describe("integration thread agent changes", () => {
       ...created,
       kind: "sort_touched" as const,
       agentId: "00000000-0000-4000-8000-000000000099",
+      reassignedAgentId: "00000000-0000-4000-8000-000000000099",
       createdAt: "2026-09-09T00:00:04.000Z",
     };
 
@@ -148,6 +149,7 @@ describe("integration thread agent changes", () => {
       ...created,
       kind: "sort_touched" as const,
       agentId: "00000000-0000-4000-8000-000000000099",
+      reassignedAgentId: "00000000-0000-4000-8000-000000000099",
       createdAt: "2026-09-09T00:00:04.000Z",
     };
     expect(
@@ -157,6 +159,40 @@ describe("integration thread agent changes", () => {
       selectedModel: selected.selectedModel,
     });
   });
+
+  it.each(["2026-09-09T00:00:03.000Z", "2026-09-09T00:00:05.000Z"])(
+    "ignores a former agent on a later committed activity touch at %s",
+    (createdAt) => {
+      const rebound = {
+        ...created,
+        seqId: 2,
+        kind: "sort_touched" as const,
+        agentId: "00000000-0000-4000-8000-000000000099",
+        reassignedAgentId: "00000000-0000-4000-8000-000000000099",
+        createdAt: "2026-09-09T00:00:04.000Z",
+      };
+      // The activity writer captured the former agent before reassignment,
+      // then appended after the reassignment transaction committed.
+      const lateActivity = {
+        ...created,
+        seqId: 3,
+        kind: "sort_touched" as const,
+        createdAt,
+      };
+      const expected = {
+        agentId: rebound.reassignedAgentId,
+        sortAt: createdAt > rebound.createdAt ? createdAt : rebound.createdAt,
+      };
+      expect(
+        replayChatThreadEvents([], [created, rebound, lateActivity])[0],
+      ).toMatchObject(expected);
+      expect(
+        replayChatThreadEvents(replayChatThreadEvents([], [created, rebound]), [
+          lateActivity,
+        ])[0],
+      ).toMatchObject(expected);
+    },
+  );
 });
 
 describe("independently committed activity touches", () => {

@@ -153,7 +153,7 @@ function applyEvent(
   if (event.kind === "sort_touched" && event.pinOrder != null) {
     threads.set(event.chatThreadId, {
       ...thread,
-      agentId: event.agentId,
+      agentId: event.reassignedAgentId ?? thread.agentId,
       ...(thread.pinnedAt !== null ? { pinOrder: event.pinOrder } : {}),
     });
     return;
@@ -163,9 +163,12 @@ function applyEvent(
   if (fields === null) {
     threads.set(event.chatThreadId, {
       ...thread,
-      // Activity touches also carry the canonical agent after an integration
-      // moves to its organization's current default agent.
-      agentId: event.kind === "sort_touched" ? event.agentId : thread.agentId,
+      // Ordinary and optimistic activity touches may have captured an older
+      // agent. Only the canonical reassignment event changes this identity.
+      agentId:
+        event.kind === "sort_touched"
+          ? (event.reassignedAgentId ?? thread.agentId)
+          : thread.agentId,
       sortAt: event.createdAt > thread.sortAt ? event.createdAt : thread.sortAt,
     });
     return;

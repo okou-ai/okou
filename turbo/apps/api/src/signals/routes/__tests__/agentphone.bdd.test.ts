@@ -798,6 +798,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       throw new Error("Expected AgentPhone ingress to create its DM thread");
     }
     expect(first.agentId).toBe(originalThread.agentId);
+    expect(
+      before.body.events.filter((event) => {
+        return event.reassignedAgentId !== undefined;
+      }),
+    ).toHaveLength(0);
 
     const replacement = await bdd.createAgent(actor, {
       displayName: "Replacement organization default",
@@ -841,6 +846,24 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         return event.kind === "created";
       }),
     ).toHaveLength(1);
+    const reassignment = after.body.events.find((event) => {
+      return event.reassignedAgentId !== undefined;
+    });
+    expect(reassignment).toMatchObject({
+      kind: "sort_touched",
+      chatThreadId: originalThread.chatThreadId,
+      agentId: replacement.agentId,
+      reassignedAgentId: replacement.agentId,
+    });
+    const incremental = await chat.requestThreadEvents(
+      actor,
+      { sinceSeqId: originalThread.seqId },
+      [200],
+    );
+    if (incremental.status !== 200) {
+      throw new Error("Expected incremental AgentPhone thread events");
+    }
+    expect(incremental.body.events).toContainEqual(reassignment);
     expect(replayChatThreadEvents([], after.body.events)).toContainEqual(
       expect.objectContaining({
         id: originalThread.chatThreadId,

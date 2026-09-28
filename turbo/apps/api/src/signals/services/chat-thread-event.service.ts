@@ -42,6 +42,7 @@ interface ChatThreadEventAppend {
   readonly orgId?: string | null;
   readonly chatThreadId: string;
   readonly agentId: string;
+  readonly reassignedAgentId?: string;
   readonly eventId?: string;
   readonly title?: string | null;
   readonly pinOrder?: string | null;
@@ -94,14 +95,16 @@ async function insertChatThreadEvent(
       RETURNING last_seq_id
     )
     INSERT INTO ${chatThreadEvents} (
-      id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id, title,
+      id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+      reassigned_agent_id, title,
       pin_order, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled,
       selected_video_model, selected_image_model, created_at
     ) SELECT
       ${args.eventId ?? randomUUID()}::uuid, ${args.userId}, ${orgId}, last_seq_id,
       ${args.chatThreadId}::uuid, ${args.kind}::chat_thread_event_kind,
-      ${args.agentId}::uuid, ${args.title ?? null}, ${args.pinOrder ?? null},
+      ${args.agentId}::uuid, ${args.reassignedAgentId ?? null}::uuid,
+      ${args.title ?? null}, ${args.pinOrder ?? null},
       ${args.selectedModel ?? null},
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
       ${args.modelSettingsPatch === undefined ? null : JSON.stringify(args.modelSettingsPatch)}::jsonb,
@@ -184,6 +187,7 @@ type ChatThreadEventRow = {
   readonly kind: ChatThreadEventKind;
   readonly chatThreadId: string;
   readonly agentId: string | null;
+  readonly reassignedAgentId: string | null;
   readonly title: string | null;
   readonly pinOrder: string | null;
   readonly selectedModel: string | null;
@@ -203,6 +207,7 @@ const chatThreadEventSelection = Object.freeze({
   kind: chatThreadEvents.kind,
   chatThreadId: chatThreadEvents.chatThreadId,
   agentId: chatThreadEvents.agentId,
+  reassignedAgentId: chatThreadEvents.reassignedAgentId,
   title: chatThreadEvents.title,
   pinOrder: chatThreadEvents.pinOrder,
   selectedModel: chatThreadEvents.selectedModel,
@@ -222,6 +227,7 @@ const pageChatThreadEventSelection = Object.freeze({
   kind: pageChatThreadEvent.kind,
   chatThreadId: pageChatThreadEvent.chatThreadId,
   agentId: pageChatThreadEvent.agentId,
+  reassignedAgentId: pageChatThreadEvent.reassignedAgentId,
   title: pageChatThreadEvent.title,
   pinOrder: pageChatThreadEvent.pinOrder,
   selectedModel: pageChatThreadEvent.selectedModel,
@@ -256,6 +262,9 @@ function toApiChatThreadEvent(
     kind: row.kind,
     chatThreadId: row.chatThreadId,
     agentId: row.agentId,
+    ...(row.reassignedAgentId === null
+      ? {}
+      : { reassignedAgentId: row.reassignedAgentId }),
     title: row.title,
     pinOrder: row.pinOrder,
     selectedModel: row.selectedModel,

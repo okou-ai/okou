@@ -371,6 +371,8 @@ const chatThreadEventSchema = z.object({
   ]),
   chatThreadId: z.string().uuid(),
   agentId: z.string().uuid(),
+  /** On sort_touched, an explicit canonical agent reassignment. */
+  reassignedAgentId: z.string().uuid().optional(),
   title: z.string().nullable(),
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: z.string().nullable().optional(),

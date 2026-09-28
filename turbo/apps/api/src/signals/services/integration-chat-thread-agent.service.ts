@@ -97,6 +97,7 @@ export async function resolveIntegrationChatThreadAgent(
         userId: input.userId,
         orgId: input.orgId,
         agentId: agent.id,
+        reassignedAgentId: agent.id,
       });
     },
   };

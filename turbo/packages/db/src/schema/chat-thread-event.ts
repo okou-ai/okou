@@ -66,6 +66,8 @@ export const chatThreadEvents = pgTable(
     chatThreadId: uuid("chat_thread_id").notNull(),
     kind: chatThreadEventKind("kind").notNull(),
     agentId: uuid("agent_id"),
+    /** Only canonical agent reassignment carries this identity update. */
+    reassignedAgentId: uuid("reassigned_agent_id"),
     title: text("title"),
     pinOrder: text("pin_order"),
     selectedModel: varchar("selected_model", { length: 255 }),

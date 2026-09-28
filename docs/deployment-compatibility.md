@@ -249,9 +249,27 @@ stricter release 7 API floor subsumes it.
   selections, which were left untouched. Existing integration threads move to
   the current default at pick, in the same transaction as the new run and
   session binding. A changed agent starts a new native/Pi session. The existing
-  `sort_touched` event carries the current agent identity; updated clients replay
-  it into the thread list without resetting other metadata. Older clients can
-  parse this event but display the previous agent until they upgrade.
+  `sort_touched` event carries an explicit optional `reassignedAgentId`;
+  updated clients replay that identity update without resetting other metadata.
+  Ordinary activity and optimistic pin-order events may carry an old `agentId`
+  and never reassign the thread. Older clients ignore the additive field and
+  retain their previous agent until they load a newer canonical snapshot.
+- **Agent reassignment events (migration 1280).** The nullable UUID column
+  `chat_thread_events.reassigned_agent_id` records only canonical reassignment
+  facts, in the same transaction as the thread and run binding. No DM routing
+  table changes. Existing events and outgoing API INSERTs leave the column
+  null; the new API omits it from ordinary event responses. Both full and
+  incremental event reads include it on reassignment events. The migration
+  runs before the new API, so outgoing API statements remain valid; the new
+  API requires the column before promotion. App/SharedWorker/IndexedDB use the
+  optional contract field and keep accepting earlier events without it. An old
+  App may also omit the field from cached events; upgrading does not change
+  those cached facts, and a newer canonical snapshot resolves their identity.
+  This
+  field adds no rollback floor beyond the release 7 API floor above. Keep the
+  column on rollback; older APIs and Apps can ignore it, while snapshots read
+  the canonical thread agent directly. It is a permanent event fact with no
+  compatibility fallback or removal deadline.
 - **Self-hosted Telegram bots retired.** Only the official shared bot remains.
   The API no longer reads or writes `telegram_installations` or
   `telegram_user_links`, and the register, setup-status, bot delete and bot
