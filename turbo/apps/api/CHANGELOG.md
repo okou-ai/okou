@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.686.3](https://github.com/okou-ai/okou/compare/api-v1.686.2...api-v1.686.3) (2026-09-28)
+
+
+### Refactoring
+
+* **api:** chat queue release 4 - drop delivery tables, add steer endpoints, retire pi api-first ([#37115](https://github.com/okou-ai/okou/issues/37115)) ([fd51044](https://github.com/okou-ai/okou/commit/fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da))
+
+
+### Performance Improvements
+
+* **api:** lock allowance windows in one ordered read ([#37122](https://github.com/okou-ai/okou/issues/37122)) ([4a60b6b](https://github.com/okou-ai/okou/commit/4a60b6b1171dfcff29bf5548b6ebbb7e3f0ad334))
+* **billing:** reuse debit returning balance ([#37118](https://github.com/okou-ai/okou/issues/37118)) ([6185e92](https://github.com/okou-ai/okou/commit/6185e921ab473fd3a80333c8196868f1f383ad55))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.518.2
+    * @okouai/core bumped to 8.713.0
+    * @okouai/db bumped to 1.308.3
+    * @okouai/pi-agent-runtime bumped to 1.40.36
+
 ## [1.686.2](https://github.com/okou-ai/okou/compare/api-v1.686.1...api-v1.686.2) (2026-09-27)
 
 
