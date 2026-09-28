@@ -169,7 +169,7 @@ import {
   PrivateNetworkPanel,
   RemoteControlPanel,
 } from "./connectors-remote-panels.tsx";
-import { WORKSPACE_CANVAS_BACKDROP_CLASS } from "./workspace-inset.tsx";
+import { WorkspaceCanvasBackdrop } from "./workspace-inset.tsx";
 
 function withRemoteAccessCategory(
   metadata: PublicConnectorCatalogCategoryMetadata | undefined,
@@ -909,12 +909,8 @@ function ConnectorsDirectoryToolbar({
     // fill alone -- stood out as a block the width of the 900px column,
     // hard-edged against the gradient on both sides.
     <div className="sticky top-0 z-30 -mb-6 -mt-6">
-      <div
-        className={cn(
-          "flex flex-col gap-3 pt-6",
-          WORKSPACE_CANVAS_BACKDROP_CLASS,
-        )}
-      >
+      <div className="relative isolate flex flex-col gap-3 pt-6">
+        <WorkspaceCanvasBackdrop />
         <div className="flex items-center overflow-x-auto">
           <ConnectorsScopeSegment
             scope={scope}
@@ -1069,13 +1065,9 @@ function ConnectorsDirectoryToolbar({
           </div>
         )}
       </div>
-      <div
-        aria-hidden="true"
-        className={cn(
-          "h-6 [-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)] [mask-image:linear-gradient(to_bottom,#000,transparent)]",
-          WORKSPACE_CANVAS_BACKDROP_CLASS,
-        )}
-      />
+      <div aria-hidden="true" className="relative isolate h-6">
+        <WorkspaceCanvasBackdrop className="[-webkit-mask-image:linear-gradient(to_bottom,#000,transparent)] [mask-image:linear-gradient(to_bottom,#000,transparent)]" />
+      </div>
     </div>
   );
 }

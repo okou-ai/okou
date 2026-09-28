@@ -1,17 +1,31 @@
-import { useSet } from "ccstate-react";
 import type { ReactNode } from "react";
-import { workspaceCanvasGeometryRef$ } from "../../signals/okou-page/workspace-canvas-geometry.ts";
 
 /**
- * Repaints the workspace canvas under a surface that has to occlude scrolled
- * content, such as a sticky toolbar. A plain fill cannot stand in for the
- * canvas under a gradient palette, where it is `--card` plus two corner
- * gradients; this paints both, fixed to the viewport and sized and placed at
- * the box `WorkspaceInset` publishes, so the surface matches the pixels it
- * covers in every theme.
+ * Repaints the workspace canvas behind a surface that has to occlude scrolled
+ * content, such as a sticky toolbar. A flat fill cannot stand in for the canvas
+ * under a gradient palette, where it is `--card` plus two corner gradients
+ * sized to the pane. The inner layer is a fixed box anchored to
+ * `WorkspaceInset`, so it paints the canvas at exactly the pane's position and
+ * size, and the host's clip keeps only the part behind the host. The layer
+ * follows the pane through sidebar and viewport changes with no measurement.
+ *
+ * Mount it as the first child of a `relative isolate` host; `className` lets
+ * the host mask the layer, as the toolbar fade does.
  */
-export const WORKSPACE_CANVAS_BACKDROP_CLASS =
-  "bg-workspace-canvas bg-workspace-canvas-image bg-fixed bg-no-repeat bg-position-[var(--okou-workspace-canvas-left)_var(--okou-workspace-canvas-top)] bg-size-[var(--okou-workspace-canvas-width)_var(--okou-workspace-canvas-height)]";
+export function WorkspaceCanvasBackdrop({
+  className = "",
+}: {
+  readonly className?: string;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`pointer-events-none absolute inset-0 -z-1 [clip-path:inset(0)] ${className}`}
+    >
+      <div className="fixed left-[anchor(left)] top-[anchor(top)] h-[anchor-size(height)] w-[anchor-size(width)] bg-workspace-canvas bg-workspace-canvas-image bg-[length:100%_100%] [position-anchor:--workspace-canvas]" />
+    </div>
+  );
+}
 
 /**
  * The workspace sheet: the app's canvas, framed by the chrome around it. The
@@ -26,12 +40,9 @@ export function WorkspaceInset({
   readonly beside?: "chat-list" | "nav-rail" | "nothing";
   readonly children: ReactNode;
 }) {
-  const measureCanvas = useSet(workspaceCanvasGeometryRef$);
-
   return (
     <div
-      ref={measureCanvas}
-      className={`relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] flex min-h-0 min-w-0 flex-1 flex-col bg-background md:m-2 md:overflow-hidden md:rounded-xl md:border md:border-border ${
+      className={`relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] flex min-h-0 min-w-0 flex-1 flex-col bg-background md:m-2 md:overflow-hidden md:rounded-xl md:border md:border-border [anchor-name:--workspace-canvas] ${
         beside === "chat-list" ? "md:ml-0" : ""
       }`}
       data-testid="workspace-inset"
