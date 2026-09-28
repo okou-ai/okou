@@ -622,7 +622,9 @@ const userMessageMcpSourcePartSchema = z
       .string()
       .min(1)
       .max(2048)
-      .refine((value) => value.trim().length > 0),
+      .refine((value) => {
+        return value.trim().length > 0;
+      }),
     /** Display-only snapshot; absent when client metadata was unavailable. */
     clientNameSnapshot: z.string().trim().min(1).max(120).optional(),
   })
