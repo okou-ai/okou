@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
@@ -7,8 +7,6 @@ import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
-import { withModelRoutingQueryReceipt } from "../../../test-fixtures/model-routing-query-receipt";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
@@ -34,7 +32,6 @@ const {
   entitledChatActor,
   entitledNativeChatActor,
   configureSubscriptionPiModel,
-  seedBuiltInModelKey,
   sendChatRun,
   expectThreadCreatedModelEvent,
   claimChatRun,
@@ -221,7 +218,7 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, third.runId);
   }, 90_000);
 
-  it("loads a personal default after the persisted model becomes invalid", async () => {
+  it("rejects input when the persisted model's route is removed", async () => {
     const { actor, agentId, providerId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     await chatCallbacks.updateOrgModelPolicies(actor, [
@@ -238,57 +235,34 @@ describe("CHAT-02: run-level model overrides", () => {
       agentId,
       model: "claude-sonnet-5",
     });
-
-    const { accountSourceId } = await configureSubscriptionPiModel(actor, {
-      accountId: "personal-default-fallback-account",
-    });
-    // Astra keeps the fallback run on the native Codex harness, so the receipt
-    // observes only the pick's admission.
-    await seedBuiltInModelKey("gpt-6-astra");
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        isDefault: false,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-6-astra",
-        isDefault: true,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-        modelProviderId: null,
-      },
-    ]);
     await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
 
-    const captured = await withModelRoutingQueryReceipt(() => {
-      return sendChatRun(actor, {
+    // The thread keeps the user's model; with its route gone the pick rejects
+    // the input instead of moving it to another model.
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
         agentId,
         threadId: thread.id,
-        prompt: "continue through the personal workspace default",
-      });
-    });
-    const followUp = captured.result;
-    // The send only enqueues; the pick that launches the run resolves the
-    // route. Selected-route failure and default fallback share one metadata
-    // load within each of its route reads.
-    expect(captured.receipt.personalMetadataReads).toBe(2);
-    await expect(
-      readRunModelSourceFixture(followUp.runId),
-    ).resolves.toMatchObject({
-      modelProvider: "codex-oauth-token",
-      modelProviderCredentialScope: "member",
-      modelProviderId: accountSourceId,
-      selectedModel: "gpt-6-astra",
-      creditAdmitted: false,
-      builtInModelKeyId: null,
-    });
+        prompt: "do not continue through another model",
+        clientEventId,
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the send to be accepted");
+    }
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, thread.id);
+    expect(
+      events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      }),
+    ).toMatchObject({ eventType: "input.rejected", error: "bad_request" });
     await expect(
       chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
-    await cancelChatRun(actor, followUp.runId);
+    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5" });
   }, 90_000);
 
   it.each(
