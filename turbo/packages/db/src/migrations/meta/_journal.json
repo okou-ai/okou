@@ -1450,6 +1450,13 @@
       "when": 1790610931755,
       "tag": "1284_validate_agent_runs_metadata_presence_check",
       "breakpoints": true
+    },
+    {
+      "idx": 1285,
+      "version": "7",
+      "when": 1790612570470,
+      "tag": "1285_drop_runner_state_last_seen_index",
+      "breakpoints": true
     }
   ]
 }

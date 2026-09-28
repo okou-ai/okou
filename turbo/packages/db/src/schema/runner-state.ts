@@ -63,9 +63,6 @@ export const runnerState = pgTable(
     lastSeenAt: timestamp("last_seen_at").notNull(),
   },
   (table) => {
-    return [
-      index("runner_state_group_idx").on(table.runnerGroup),
-      index("runner_state_last_seen_idx").on(table.lastSeenAt),
-    ];
+    return [index("runner_state_group_idx").on(table.runnerGroup)];
   },
 );
