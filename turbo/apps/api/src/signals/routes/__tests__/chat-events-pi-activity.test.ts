@@ -213,7 +213,6 @@ describe("CHAT-02: model-first provider policies", () => {
         usagePricingResolution,
       );
     });
-    await flushWaitUntilForTest();
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
