@@ -1,5 +1,40 @@
 # Deployment Compatibility
 
+## Retired preference and occurrence columns dropped (2026-09-28)
+
+Migration `1273_drop_retired_voice_reasoning_collection_columns` drops
+`org_members_metadata.voice_input_model`,
+`morning_brief_native_occurrences.collection_facts` and
+`chat_threads.reasoning_effort`, and removes their Drizzle declarations. This
+is the contract step for the voice input model retirement (#36561), the Morning
+Brief collection account retirement (#36719) and the pre-GA thread reasoning
+effort column, whose effort now lives in `model_settings`. No current API reads
+or writes any of the three columns.
+
+Gate evidence: both retirements are ancestors of the current API rollback floor
+(`08c7ad2455c8fcd2b043ba8fe3639b558cb98b48`, #37110) and of the production API
+(`api-v1.686.2`, `218ac4f621983bc708209505bd5f20df3ccda064`). No supported
+rollback target reads or writes the values.
+
+Every API before this change still declares the columns, so Drizzle names them
+in `insert` column lists and in bare `select()`/`returning()` on those three
+tables. As with `1228`, `test:migration-consistency` requires the declaration
+and the physical schema to agree, so declaration removal and the drop ship in
+one release. Migrations run before API promotion. Until the previous API drains,
+its chat thread, member preference and Morning Brief occurrence statements
+receive `42703`. That window (about 20 seconds in the `1228` release) is
+accepted; release this change at low traffic.
+
+Rollback promotes artifacts without restoring schema, so
+`resolve-production-rollback-target.sh` rejects API targets that predate the
+canonical main commit that added `1273`. Recovering past that commit requires a
+forward-fix migration that restores the columns.
+
+The migration replay tests for `1156` (GPT 5.5 retirement) and `1213` clone the
+current schema. The `1156` replay restores `chat_threads.reasoning_effort` in its
+clone because that historical migration still clears the column; the `1213`
+fixture no longer inserts it.
+
 ## Custom API request headers retired (2026-09-27)
 
 The API no longer reads, echoes, or allows these request headers in first-party
@@ -2124,6 +2159,9 @@ Two-release Contract": first remove the Drizzle declaration in its own release,
 then drop the column in a later migration once every API that declares it has
 drained.
 
+Migration `1273` later dropped the column; see
+[Retired preference and occurrence columns dropped](#retired-preference-and-occurrence-columns-dropped-2026-09-28).
+
 ## Discord verified foundation (2026-09-24)
 
 The Discord foundation adds seven new relations, their ownership constraints,
@@ -2261,6 +2299,8 @@ update that carries nothing but this field is rejected as empty. The
 `org_members_metadata.voice_input_model` column is left in place: the new API
 neither reads nor writes it while an older API may still do so. Drop it in a
 separate migration after older API deployments drain.
+Migration `1273` later dropped it; see
+[Retired preference and occurrence columns dropped](#retired-preference-and-occurrence-columns-dropped-2026-09-28).
 
 ## Guest storage batch timing attribution (2026-09-24)
 

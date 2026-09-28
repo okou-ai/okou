@@ -3,7 +3,6 @@ import {
   foreignKey,
   index,
   integer,
-  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -12,7 +11,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import type { JsonValue } from "../jsonb-contracts/shared";
 import { chatThreads } from "./chat-thread";
 
 /**
@@ -278,12 +276,6 @@ export const morningBriefNativeOccurrences = pgTable(
     deferredUntil: timestamp("deferred_until"),
     deferAttempt: integer("defer_attempt").notNull().default(0),
     deferReason: text("defer_reason"),
-
-    /**
-     * Retired per-occurrence collection account. Current APIs neither read nor
-     * write it; drop it after older API deployments drain.
-     */
-    collectionFacts: jsonb("collection_facts").$type<JsonValue>(),
 
     claimedAt: timestamp("claimed_at").notNull(),
     settledAt: timestamp("settled_at"),

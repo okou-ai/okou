@@ -1,4 +1,3 @@
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
   uuid,
   text,
@@ -70,10 +69,6 @@ export function chatThreadColumns() {
       .$type<ModelSettings>()
       .default({})
       .notNull(),
-    /** Legacy pre-GA column. Remove after the model-settings rollout settles. */
-    reasoningEffort: varchar("reasoning_effort", {
-      length: 20,
-    }).$type<ReasoningEffort>(),
     /** Per-thread Codex service tier pin. Null means standard service tier. */
     codexServiceTier: varchar("codex_service_tier", {
       length: 20,
