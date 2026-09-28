@@ -1,0 +1,91 @@
+name: Chat Event V8 Snapshot Dry Run
+
+# Chat Event V8 transition (temporary; deleted by a follow-up PR once the dry
+# run has reported). Read-only production dry run of #37251's V7 -> V8
+# Snapshot upgrade over every `chat-events/` object in the production user
+# storages bucket. The script only lists and gets objects; it never writes to
+# R2 and never connects to a database. Output is counts, keys, thread IDs and
+# schema paths only.
+#
+# The run must start from main: the `production` environment only admits
+# protected branches and requires a reviewer. The job then checks out the
+# exact current head of #37251's branch, which carries the script.
+
+on:
+  workflow_dispatch:
+    inputs:
+      head_sha:
+        description: "Exact current head SHA of the chat-event-v8 branch (#37251)"
+        type: string
+        required: true
+      concurrency:
+        description: "Concurrent object reads (1-64)"
+        type: string
+        default: "16"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chat-event-v8-snapshot-dry-run
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    environment: production
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
+    steps:
+      - name: Verify the requested commit is the chat-event-v8 head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::head_sha must be a full 40-character commit SHA"
+            exit 1
+          fi
+          branch_head=$(curl -fsS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPOSITORY}/branches/chat-event-v8" |
+            jq -r '.commit.sha')
+          if [ "$branch_head" != "$HEAD_SHA" ]; then
+            echo "::error::head_sha ${HEAD_SHA} is not the current chat-event-v8 head (${branch_head})"
+            exit 1
+          fi
+        shell: bash
+
+      - name: Check out the #37251 head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.head_sha }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/toolchain-init
+
+      - name: Run the read-only dry run
+        working-directory: turbo/apps/api
+        env:
+          CHAT_EVENT_DRY_RUN_R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          CHAT_EVENT_DRY_RUN_R2_BUCKET: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          CHAT_EVENT_DRY_RUN_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          CHAT_EVENT_DRY_RUN_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CHAT_EVENT_DRY_RUN_CONCURRENCY: ${{ inputs.concurrency }}
+          CHAT_EVENT_DRY_RUN_OUTPUT_DIR: ${{ runner.temp }}/chat-event-v8-snapshot-dry-run
+        run: pnpm exec tsx scripts/chat-event-v8-snapshot-dry-run/main.ts
+        shell: bash
+
+      - name: Upload the summary
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: chat-event-v8-snapshot-dry-run-${{ github.run_id }}
+          path: ${{ runner.temp }}/chat-event-v8-snapshot-dry-run
+          if-no-files-found: warn
+          retention-days: 30
