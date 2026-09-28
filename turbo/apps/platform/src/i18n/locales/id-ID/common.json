@@ -2227,9 +2227,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Pakai paket Claude Max 5x/20x atau Codex Anda",
+        "description": "Dengan paket Claude Max 5x/20x atau Codex Anda",
         "openSettingsAria": "Buka pengaturan model",
-        "title": "Tanpa kredit Okou"
+        "title": "Jalankan tugas gratis"
       },
       "templates": "Templat"
     },

@@ -2227,9 +2227,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Claude Max 5x/20x や Codex のプランで実行",
+        "description": "Claude Max 5x/20x や Codex のプランで",
         "openSettingsAria": "モデル設定を開く",
-        "title": "Okouクレジット不要"
+        "title": "タスクを無料で実行"
       },
       "templates": "テンプレート"
     },

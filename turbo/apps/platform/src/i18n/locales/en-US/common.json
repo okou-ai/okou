@@ -2236,9 +2236,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Run tasks on your Claude Max 5x/20x or Codex plan",
+        "description": "With your Claude Max 5x/20x or Codex plan",
         "openSettingsAria": "Open model settings",
-        "title": "Skip Okou credits"
+        "title": "Run tasks for free"
       },
       "templates": "Templates"
     },

@@ -2236,9 +2236,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "अपने Claude Max 5x/20x या Codex प्लान से चलाएँ",
+        "description": "अपने Claude Max 5x/20x या Codex प्लान से",
         "openSettingsAria": "मॉडल सेटिंग्स खोलें",
-        "title": "Okou क्रेडिट के बिना"
+        "title": "मुफ़्त में काम चलाएँ"
       },
       "templates": "टेम्पलेट"
     },

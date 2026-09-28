@@ -2227,9 +2227,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "直接用你的 Claude Max 5x/20x 或 Codex 額度",
+        "description": "用你的 Claude Max 5x/20x 或 Codex 方案",
         "openSettingsAria": "開啟模型設定",
-        "title": "不消耗 Okou 點數"
+        "title": "免費執行任務"
       },
       "templates": "模板"
     },

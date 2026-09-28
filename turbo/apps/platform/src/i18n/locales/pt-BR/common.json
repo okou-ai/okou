@@ -2283,9 +2283,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Use seu plano Claude Max 5x/20x ou Codex",
+        "description": "Com seu plano Claude Max 5x/20x ou Codex",
         "openSettingsAria": "Abrir configurações de modelos",
-        "title": "Sem créditos Okou"
+        "title": "Execute tarefas de graça"
       },
       "templates": "Modelos"
     },
