@@ -4,7 +4,6 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
-import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
@@ -94,9 +93,6 @@ function mockExactReconnectAccount(
       enabledConnectorSlugs: [github],
       customConnectorIds: [],
     });
-  });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [github] });
   });
   context.mocks.api(
     connectorAccountsContract.connection,
