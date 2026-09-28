@@ -168,6 +168,40 @@ test("A growing action URL becomes a card as soon as a boundary arrives", async 
   });
 });
 
+test("A completed URL card stays mounted while the message continues and finalizes", async () => {
+  const events = await setupActiveOutputStream();
+  const url =
+    "https://app.okou.ai/computer-use/authorize/abcdefghijklmnopqrstuvwxyz";
+  push(0, `${url} `);
+  const card = await screen.findByTestId("computer-use-authorization-card");
+
+  push(1, "The next sentence");
+  await expect(
+    screen.findByText("The next sentence"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByTestId("computer-use-authorization-card")).toBe(card);
+
+  push(2, "\n\nAnother paragraph");
+  await expect(
+    screen.findByText("Another paragraph"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByTestId("computer-use-authorization-card")).toBe(card);
+
+  events.push(
+    assistantEvent({
+      id: EVENT_ID,
+      runId: RUN_ID,
+      seqId: 2,
+      text: `${url} The next sentence\n\nAnother paragraph finished`,
+    }),
+  );
+  publishRunUpdate();
+  await expect(
+    screen.findByText("Another paragraph finished"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByTestId("computer-use-authorization-card")).toBe(card);
+});
+
 test("Only terminated URLs become cards when two actions share a streaming line", async () => {
   const events = activeRun();
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
