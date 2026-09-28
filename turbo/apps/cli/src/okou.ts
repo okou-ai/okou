@@ -239,7 +239,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
     name: "telegram",
     description:
-      "Inspect bots, send messages, upload files, and download files from Telegram",
+      "Send messages and files through the official Okou Telegram bot",
     load: async () => {
       return (await import("./commands/telegram")).telegramCommand;
     },

@@ -152,7 +152,7 @@ interface ChatEventContextFixture {
   readonly telegramRootMessageId: string | null;
   readonly telegramThinkingMessageId: string | null;
   readonly telegramUserLinkId: string | null;
-  readonly telegramUserLinkKind: "official" | "official" | null;
+  readonly telegramUserLinkKind: "custom" | "official" | null;
   readonly telegramChatType: string | null;
   readonly telegramSenderUserId: string | null;
   readonly telegramSenderDisplayName: string | null;
