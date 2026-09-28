@@ -1190,7 +1190,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       "openai-api-key",
       [204],
     );
-    expect(await integrations.readUserModelPreference(actor)).toMatchObject({
+    await expect(
+      integrations.readUserModelPreference(actor),
+    ).resolves.toMatchObject({
       selectedModel: "gpt-6-astra",
     });
     const available = await complete(

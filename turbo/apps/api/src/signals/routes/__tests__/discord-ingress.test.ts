@@ -18,6 +18,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { integrationsDiscordRoutes } from "../integrations-discord";
@@ -1241,6 +1242,7 @@ describe("canonical Discord ingress", () => {
       { userId: owner.userId, orgId: owner.orgId, orgRole: "org:admin" },
       { userId: member.userId, orgId: member.orgId, orgRole: "org:admin" },
     ]);
+    await seedLegacyPrivateDefaultAgentFixture(owner.defaultAgentId);
     const message = discordMessageForTest(member, {
       channelId: provider.guildChannelId,
       content: `<@${member.botUserId}> summarize this channel`,
