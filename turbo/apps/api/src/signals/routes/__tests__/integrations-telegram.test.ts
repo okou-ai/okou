@@ -840,7 +840,9 @@ describe("POST /api/integrations/telegram/link", () => {
       }),
       [401],
     );
-    expectUnauthorized(response.body);
+    expect(response.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+    });
   });
 
   it("returns 404 when there is no official account to unlink", async () => {

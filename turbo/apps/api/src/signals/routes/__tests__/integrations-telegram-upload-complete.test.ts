@@ -325,7 +325,7 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
     expect(response.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("returns 401 when the token has no organization membership", async () => {
+  it("returns 403 when the token has no organization membership", async () => {
     const userId = `user_${randomUUID().slice(0, 8)}`;
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const runId = `run_${randomUUID()}`;
@@ -341,20 +341,20 @@ describe("POST /api/integrations/telegram/upload-file/complete", () => {
       client.complete({
         body: {
           uploadId: randomUUID(),
-          botId: uniqueBotId(),
+          botId: OFFICIAL_TELEGRAM_BOT_ID,
           chatId: "-1001234567890",
         },
         headers: {
           authorization: `Bearer ${okouToken({ userId, orgId, runId })}`,
         },
       }),
-      [401],
+      [403],
     );
 
     expect(response.body).toStrictEqual({
       error: {
-        message: "Not authenticated",
-        code: "UNAUTHORIZED",
+        message: "Organization context is required",
+        code: "FORBIDDEN",
       },
     });
   });

@@ -111,7 +111,7 @@ async function insertChatThreadEvent(
       ${args.serviceTier ?? null}, ${args.computerUseHostId ?? null}::uuid,
       ${args.cloudBrowserEnabled ?? false}, ${args.selectedVideoModel ?? null},
       ${args.selectedImageModel ?? null},
-      COALESCE(${args.createdAt?.toISOString() ?? null}::timestamp, timezone('UTC', now()))
+      COALESCE(${args.createdAt ? args.createdAt.toISOString() : null}::timestamp, timezone('UTC', now()))
     FROM reserved
     ON CONFLICT (id) DO NOTHING
     RETURNING id`,
