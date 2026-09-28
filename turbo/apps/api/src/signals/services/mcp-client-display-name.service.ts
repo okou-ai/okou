@@ -3,7 +3,7 @@ import { z } from "zod";
 import { safeUrlParse, settle } from "../utils";
 import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 
-const MCP_CLIENT_NAME_LOOKUP_MS = 2_500;
+const MCP_CLIENT_NAME_LOOKUP_MS = 2500;
 const clientMetadataSchema = z.object({
   client_id: z.string(),
   client_name: z.string(),

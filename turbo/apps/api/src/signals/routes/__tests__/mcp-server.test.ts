@@ -3328,7 +3328,7 @@ describe("MCP chat mutations", () => {
         });
       }),
     );
-    expect(await sendMessage(token, args)).toMatchObject({
+    await expect(sendMessage(token, args)).resolves.toMatchObject({
       inputRef: receipt.inputRef,
       replayed: true,
     });
