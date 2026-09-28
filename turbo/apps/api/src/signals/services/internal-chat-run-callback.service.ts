@@ -4726,7 +4726,10 @@ export const deliverUnexpectedQueuedPromptRejection$ = command(
   async (
     { set },
     args: {
-      readonly head: ChatQueueHeadContext;
+      readonly head: Pick<
+        ChatQueueHeadContext,
+        "id" | "chatThreadId" | "orgId" | "userId" | "agentId" | "contextType"
+      >;
       readonly assistantEventId: string;
     },
     signal: AbortSignal,

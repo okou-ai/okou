@@ -638,30 +638,6 @@ function displayContextPointer(
   };
 }
 
-function replacementContext(
-  target: StoredChatEventContextPointer,
-  eventId: string,
-  values: NewChatEvent,
-): {
-  readonly pointer: ChatEventContextPointer | undefined;
-  readonly displayContext: NewDisplayContext | undefined;
-} {
-  if (target.contextType !== null || values.eventType === "usage.recorded") {
-    return {
-      pointer: {
-        contextType: target.contextType,
-        contextId: target.contextId,
-      },
-      displayContext: undefined,
-    };
-  }
-  const displayContext = newDisplayContext(eventId, values);
-  return {
-    pointer: displayContextPointer(displayContext),
-    displayContext,
-  };
-}
-
 async function insertAgentphoneDisplayContext(
   tx: ChatEventWriteTransaction,
   context: Extract<NewDisplayContext, { readonly type: "agentphone" }>,
@@ -1118,29 +1094,24 @@ export async function replaceLoadedChatEvent(
   }
 
   const replacementId = replacement.id ?? randomUUID();
-  const { pointer: contextPointer, displayContext } = replacementContext(
-    target,
-    replacementId,
-    replacement,
-  );
+  // A replacement keeps its target's context pointer and never writes a
+  // context row; entries write context before appending the input.
   const prepared: PreparedChatEvent = {
     row: {
       ...canonicalChatEventValues(
         { ...replacement, createdAt },
         {
           id: replacementId,
-          ...contextPointer,
+          contextType: target.contextType,
+          contextId: target.contextId,
         },
       ),
       id: replacementId,
       createdAt,
       revokesEventId: target.id,
     },
-    displayContext,
+    displayContext: undefined,
   };
-  if (displayContext) {
-    await insertDisplayContext(tx, displayContext, createdAt);
-  }
   return await appendPreparedChatEvent(tx, prepared, "any");
 }
 

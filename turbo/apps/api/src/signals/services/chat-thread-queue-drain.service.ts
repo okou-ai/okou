@@ -48,6 +48,7 @@ export interface EnqueueChatInput {
  * integrations, and every workflow trigger. One transaction appends the
  * run-less input and upserts the thread's `queued_chat_threads` row, clearing
  * any lease so a picker that read the queue as empty cannot delete the row.
+ * An idempotent retry that appended nothing writes no queued row.
  * Enqueue takes no lock and computes no admission; the pick does.
  */
 export async function enqueueChatInput(
@@ -56,9 +57,12 @@ export async function enqueueChatInput(
 ): Promise<string | null> {
   return await db.transaction(async (tx) => {
     const eventId = await input.appendInput(tx);
-    if (eventId !== null && input.persistSourceTransition) {
-      await input.persistSourceTransition(tx, eventId);
+    if (eventId === null) {
+      // An idempotent retry appended nothing; its original enqueue already
+      // committed the queued row with the input.
+      return null;
     }
+    await input.persistSourceTransition?.(tx, eventId);
     await markChatThreadQueued(tx, {
       chatThreadId: input.chatThreadId,
       orgId: input.orgId,
@@ -130,7 +134,8 @@ export interface ChatQueuePick extends ChatQueuePickResult {
  * 2. a busy thread or a full organization releases the lease and ends it;
  * 3. read the strict-FIFO head; an empty queue deletes the row and ends it;
  * 4. consume the head into a run, or reject it as `input.rejected`; only a
- *    429 leaves it waiting (the lease is released and the pick ends);
+ *    thread that became busy leaves the head unconsumed (the lease is
+ *    released, the row kept, and the run's end picks the organization);
  * 5. after a launch, keep the row (clearing the lease) when more input waits,
  *    else delete it; after a consumption without a run, release the lease and
  *    start the next round when more input waits, else delete the row.
@@ -181,20 +186,25 @@ export const pickQueuedChatThread$ = command(
         signal,
       );
       signal.throwIfAborted();
-      if (consumed.kind === "waiting") {
-        await releaseQueuedChatThreadClaim(db, claim);
-        signal.throwIfAborted();
-        return { reason: "org-full", orgId: claim.orgId, eventId: head.id };
-      }
       const next = await loadChatQueueHead(db, claim.chatThreadId);
       signal.throwIfAborted();
       if (consumed.kind === "passed" && next?.id === head.id) {
-        // The head was neither launched nor consumed because the thread
-        // became busy between the check and the launch; the run's end picks
-        // the organization again.
+        // The head was neither launched nor consumed. Only a thread that
+        // became busy between the check and the launch may end the pick this
+        // way; the run's end picks the organization again. Otherwise that run
+        // already ended, so the next round checks the thread again.
         await releaseQueuedChatThreadClaim(db, claim);
         signal.throwIfAborted();
-        return { reason: "thread-busy", orgId: claim.orgId, eventId: head.id };
+        if (await chatThreadHasActiveRun(db, claim.chatThreadId)) {
+          signal.throwIfAborted();
+          return {
+            reason: "thread-busy",
+            orgId: claim.orgId,
+            eventId: head.id,
+          };
+        }
+        signal.throwIfAborted();
+        continue;
       }
       last =
         consumed.kind === "launched"
@@ -327,26 +337,41 @@ export const pickOrgQueuedChatThreads$ = command(
 );
 
 /**
+ * After an organization's concurrency limit changes: org-pick it once in a
+ * background task, so the request that changed the limit does not wait for
+ * the pick. A failed pick is logged; the cron picks the organization again.
+ */
+export const scheduleOrgQueuedChatThreadsPick$ = command(
+  ({ set }, input: { readonly orgId: string }): void => {
+    const backgroundSignal = new AbortController().signal;
+    waitUntil(
+      tapError(
+        set(pickOrgQueuedChatThreads$, input, backgroundSignal),
+        (error) => {
+          L.error("Failed to pick organization after limit change", {
+            orgId: input.orgId,
+            error,
+          });
+        },
+      ),
+    );
+  },
+);
+
+/**
  * Cron pass: org-pick every organization that has a queued row, without a
- * bound, until the table is exhausted or the request ends. `orgIds` narrows
- * the pass for fixture-scoped runs.
+ * bound, until the table is exhausted or the request ends.
  */
 export const pickAllQueuedOrgs$ = command(
-  async (
-    { set },
-    input: { readonly orgIds?: readonly string[] },
-    signal: AbortSignal,
-  ): Promise<number> => {
+  async ({ set }, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
     let launched = 0;
     let after: string | undefined;
     while (true) {
-      const orgIds =
-        input.orgIds ??
-        (await listQueuedChatThreadOrgIds(db, {
-          limit: PICK_PAGE_SIZE,
-          ...(after === undefined ? {} : { after }),
-        }));
+      const orgIds = await listQueuedChatThreadOrgIds(db, {
+        limit: PICK_PAGE_SIZE,
+        ...(after === undefined ? {} : { after }),
+      });
       signal.throwIfAborted();
       for (const orgId of orgIds) {
         const picked = await settle(
@@ -363,11 +388,7 @@ export const pickAllQueuedOrgs$ = command(
         launched += picked.value;
       }
       const last = orgIds.at(-1);
-      if (
-        input.orgIds !== undefined ||
-        orgIds.length < PICK_PAGE_SIZE ||
-        last === undefined
-      ) {
+      if (orgIds.length < PICK_PAGE_SIZE || last === undefined) {
         return launched;
       }
       after = last;

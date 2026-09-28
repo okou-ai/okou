@@ -38,8 +38,10 @@ import {
   dispatchCompleteSideEffects$,
   scheduleReleasedSlotPicks$,
 } from "./agent-run-lifecycle.service";
-import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
-import { listQueuedChatThreadOrgIdsFor } from "./queued-chat-thread.service";
+import {
+  pickAllQueuedOrgs$,
+  pickQueuedChatThread$,
+} from "./chat-thread-queue-drain.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
@@ -596,7 +598,7 @@ const cleanupGlobalMaintenance$ = command(
     // threads they held in the same pass.
     await set(releaseStaleTerminalActiveAgentRuns$, null, signal);
     signal.throwIfAborted();
-    await set(pickAllQueuedOrgs$, {}, signal);
+    await set(pickAllQueuedOrgs$, signal);
     signal.throwIfAborted();
     await tapError(set(drainStaleCanonicalSlackIngress$, signal), (error) => {
       L.error("Failed to drain stale canonical Slack ingress", { error });
@@ -631,12 +633,11 @@ const cleanupFixtureMaintenance$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const orgIds = await listQueuedChatThreadOrgIdsFor(
-      set(writeDb$),
-      scope.chatThreadIds,
-    );
-    signal.throwIfAborted();
-    await set(pickAllQueuedOrgs$, { orgIds }, signal);
+    // A fixture pass picks only its own threads; the global pass org-picks.
+    for (const chatThreadId of scope.chatThreadIds) {
+      await set(pickQueuedChatThread$, { chatThreadId }, signal);
+      signal.throwIfAborted();
+    }
   },
 );
 
