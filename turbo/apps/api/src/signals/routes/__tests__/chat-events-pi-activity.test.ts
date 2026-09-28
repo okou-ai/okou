@@ -42,7 +42,7 @@ const {
   webhooks,
   entitledChatActor,
   configureBuiltInPiModelOnOpenRouter,
-  sendChatRun,
+  sendChatRunAfterPick,
   claimChatRun,
   waitForRunStatus,
   cancelChatRun,
@@ -202,7 +202,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const checkpointObjects = mockPiCheckpointObjectStore();
     const prompt = "use the Okou CLI in the Sandbox";
     const run = await withOpenRouterRoute(async () => {
-      return await sendChatRun(
+      return await sendChatRunAfterPick(
         actor,
         {
           agentId,
@@ -634,7 +634,7 @@ describe("CHAT-02: model-first provider policies", () => {
     ).resolves.toStrictEqual(canonicalConversation);
 
     const failedRun = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
+      return await sendChatRunAfterPick(actor, {
         agentId,
         threadId: run.threadId,
         prompt: "reject a non-native Sandbox H2",
@@ -735,7 +735,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await waitForRunStatus(actor, explicitResume.runId, "cancelled");
 
     const cancelledRun = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
+      return await sendChatRunAfterPick(actor, {
         agentId,
         threadId: run.threadId,
         prompt: "reject H2 after an explicit Pi run is cancelled",
@@ -768,7 +768,7 @@ describe("CHAT-02: model-first provider policies", () => {
     ).resolves.toStrictEqual(canonicalConversation);
 
     const racedRun = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
+      return await sendChatRunAfterPick(actor, {
         agentId,
         threadId: run.threadId,
         prompt: "reject standalone H2 during an early successful completion",
@@ -822,7 +822,7 @@ describe("CHAT-02: model-first provider policies", () => {
     ).resolves.toStrictEqual(canonicalConversation);
 
     const retry = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
+      return await sendChatRunAfterPick(actor, {
         agentId,
         threadId: run.threadId,
         prompt: "resume only the last completed Pi checkpoint",
@@ -865,7 +865,7 @@ describe("CHAT-02: model-first provider policies", () => {
     ).resolves.toStrictEqual(canonicalConversation);
 
     const reportedFailureRun = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
+      return await sendChatRunAfterPick(actor, {
         agentId,
         threadId: run.threadId,
         prompt: "retry one atomically reported Pi failure",
