@@ -23,7 +23,9 @@ use aws_sigv4::{
 };
 use aws_smithy_http::header as smithy_header;
 use aws_smithy_runtime_api::client::identity::Identity;
-use aws_smithy_types::{date_time::Format as SmithyDateFormat, primitive::Parse};
+use aws_smithy_types::{
+    DateTime as SmithyDateTime, date_time::Format as SmithyDateFormat, primitive::Parse,
+};
 use base64::Engine as _;
 use bytes::Bytes;
 use futures_util::StreamExt;
@@ -943,10 +945,12 @@ fn measure_clock_skew(response: &Response, sent: SystemTime, received: SystemTim
         .get(reqwest::header::DATE)?
         .to_str()
         .ok()?;
-    let server: SystemTime = chrono::DateTime::parse_from_rfc2822(date)
-        .ok()?
-        .with_timezone(&chrono::Utc)
-        .into();
+    // Use the same HttpDate parser as aws-runtime's service_clock_skew:
+    // RFC 2822 accepts numeric offsets that the SDK rejects and misses
+    // Smithy's supported subsecond IMF-fixdate responses.
+    let server =
+        SystemTime::try_from(SmithyDateTime::from_str(date, SmithyDateFormat::HttpDate).ok()?)
+            .ok()?;
     let midpoint = sent.checked_add(elapsed / 2)?;
     match server.duration_since(midpoint) {
         Ok(delta) => i64::try_from(delta.as_millis()).ok(),

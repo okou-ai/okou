@@ -804,6 +804,53 @@ async fn sdk_style_clock_skew_retry_requires_trustworthy_date_and_persists() {
 }
 
 #[tokio::test]
+async fn clock_skew_uses_the_pinned_smithy_http_date_parser() {
+    let later = chrono::Utc::now() + chrono::Duration::minutes(10);
+    let prefix = later.format("%a, %d %b %Y %H:%M:%S").to_string();
+    // Chrono's RFC 2822 parser would accept this numeric offset and retry;
+    // the SDK's HttpDate parser does not trust it as an HTTP Date.
+    let server = MockServer::start_async().await;
+    let invalid = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/offset.tar.zst");
+            then.status(403)
+                .header("date", format!("{prefix} +0000"))
+                .body("<Error><Code>RequestTimeTooSkewed</Code></Error>");
+        })
+        .await;
+    let c = client(&server);
+    assert!(c.get("runner-templates/offset.tar.zst").await.is_err());
+    invalid.assert_calls_async(1).await;
+    assert_eq!(c.clock_skew_ms.load(Ordering::Relaxed), 0);
+
+    // Smithy accepts milliseconds before GMT even though Chrono's RFC 2822
+    // parser rejected this response. The follow-up request must be re-signed.
+    let (url, server) = scripted_server(vec![
+        mock_reply(
+            "403 Forbidden",
+            "<Error><Code>RequestTimeTooSkewed</Code></Error>",
+            &format!("Date: {prefix}.123 GMT\r\n"),
+        ),
+        mock_reply("404 Not Found", "<Error><Code>NoSuchKey</Code></Error>", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert!(
+        c.get("runner-templates/millisecond.tar.zst")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let requests = server.await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        (570..=630)
+            .contains(&(signed_date(&requests[1]) - signed_date(&requests[0])).num_seconds())
+    );
+}
+
+#[tokio::test]
 async fn sdk_style_retry_quota_blocks_extra_attempts_and_recovers_on_success() {
     let server = MockServer::start_async().await;
     let unavailable = server
