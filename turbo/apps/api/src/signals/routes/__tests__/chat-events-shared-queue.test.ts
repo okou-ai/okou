@@ -190,7 +190,21 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(replay.body).toStrictEqual(sent.body);
+    if (replay.status !== 201) {
+      throw new Error("Expected the replayed send to be accepted");
+    }
+    // The retry conflicts on the stored input and is accepted as a duplicate
+    // at request time without reading the original send back.
+    expect(replay.body).toStrictEqual({
+      runId: null,
+      threadId: sent.body.threadId,
+      createdAt: expect.any(String),
+    });
+    expect(Date.parse(replay.body.createdAt ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(sent.body.createdAt ?? ""),
+    );
+    const afterReplay = await chat.listThreadEvents(actor, sent.body.threadId);
+    expect(userMessages(afterReplay.events)).toHaveLength(rows.length);
     await expect
       .poll(() => {
         return context.mocks.ably.publish.mock.calls.some((call) => {

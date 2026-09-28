@@ -1246,6 +1246,7 @@ async function prepareNormalSend(
       readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
     }
   | NormalSendFailure
+  | CreatedChatEventResponse
 > {
   // MCP attribution is server-owned. Reject a forged source even on an
   // idempotent retry.
@@ -1296,14 +1297,15 @@ async function prepareNormalSend(
     return thread;
   }
   if (thread.kind === "existing") {
-    const revocationError = await validateNormalRevocationTarget({
+    const revocation = await validateNormalRevocationTarget({
       db,
       threadId: thread.threadId,
       revokesEventId: args.body.revokesEventId,
+      clientEventId: args.body.clientEventId,
     });
     signal.throwIfAborted();
-    if (revocationError) {
-      return revocationError;
+    if (revocation) {
+      return revocation;
     }
   }
   return { thread, agentRunSource: source.source };
@@ -1454,9 +1456,11 @@ export const sendNormalEvent$ = command(
       throw enqueued.error;
     }
     if (enqueued.value === null) {
-      // The follow-up's revoke edge was taken concurrently; any other
-      // conflict is this client event id's earlier send, accepted again.
-      return args.body.revokesEventId
+      // A conflict on the insert is accepted as a duplicate without a
+      // lookup. Only a follow-up with a server-generated id cannot have
+      // collided on its id, so its conflict is the revoke edge taken
+      // concurrently.
+      return args.body.revokesEventId && args.body.clientEventId === undefined
         ? conflict("Recommended follow-up has already been used")
         : acceptedSendResponse(thread.threadId, nowDate(), true);
     }
@@ -1582,11 +1586,17 @@ async function appendRecallChatEvent(params: {
   return { ok: true, createdAt: resolved.createdAt };
 }
 
+/**
+ * A follow-up revocation must target an available recommendation whose edge
+ * is still free. When this client event id already holds the edge, the send
+ * is a retry of that follow-up and is accepted again with its stored time.
+ */
 async function validateNormalRevocationTarget(params: {
   readonly db: Db;
   readonly threadId: string;
   readonly revokesEventId: string | undefined;
-}): Promise<NormalSendFailure | undefined> {
+  readonly clientEventId: string | undefined;
+}): Promise<NormalSendFailure | CreatedChatEventResponse | undefined> {
   if (!params.revokesEventId) {
     return undefined;
   }
@@ -1610,7 +1620,7 @@ async function validateNormalRevocationTarget(params: {
   }
 
   const [existingRevoker] = await params.db
-    .select({ id: chatEvents.id })
+    .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
     .from(chatEvents)
     .where(
       and(
@@ -1620,7 +1630,10 @@ async function validateNormalRevocationTarget(params: {
     )
     .limit(1);
   if (existingRevoker) {
-    return conflict("Recommended follow-up has already been used");
+    // Postgres returns the uuid lowercase; the request may use any case.
+    return existingRevoker.id === params.clientEventId?.toLowerCase()
+      ? acceptedSendResponse(params.threadId, existingRevoker.createdAt, true)
+      : conflict("Recommended follow-up has already been used");
   }
 
   return undefined;

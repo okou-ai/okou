@@ -624,8 +624,24 @@ describe("CHAT-02: dispatch failure", () => {
       },
       [201],
     );
-    expect(replay.body).toStrictEqual(sent.body);
+    if (replay.status !== 201) {
+      throw new Error("Expected the replayed send to be accepted");
+    }
+    // The retry conflicts on the stored input and is accepted as a duplicate
+    // at request time without reading the original send back.
+    expect(replay.body).toStrictEqual({
+      runId: null,
+      threadId,
+      createdAt: expect.any(String),
+    });
+    expect(Date.parse(replay.body.createdAt ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(sent.body.createdAt ?? ""),
+    );
     await flushWaitUntilForTest();
+    const afterReplay = await chat.listThreadEvents(actor, threadId);
+    expect(userMessages(afterReplay.events)).toHaveLength(
+      userMessages(messages.events).length,
+    );
     await api.requestClaimRunnerJob(true, runId, [404]);
     expect(routeRequests()).toBe(0);
   }, 60_000);
@@ -756,7 +772,18 @@ describe("CHAT-02: admission without spendable credits", () => {
       { ...sendBody, threadId: sent.body.threadId },
       [201],
     );
-    expect(retry.body).toStrictEqual(sent.body);
+    if (retry.status !== 201) {
+      throw new Error("Expected the retried send to be accepted");
+    }
+    // The retry is accepted as a duplicate at request time and stores nothing.
+    expect(retry.body).toStrictEqual({
+      runId: null,
+      threadId: sent.body.threadId,
+      createdAt: expect.any(String),
+    });
+    expect(Date.parse(retry.body.createdAt ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(sent.body.createdAt ?? ""),
+    );
     const afterRetry = await chat.listThreadEvents(actor, sent.body.threadId);
     expect(afterRetry.events).toHaveLength(3);
   }, 60_000);

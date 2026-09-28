@@ -374,7 +374,19 @@ describe("CHAT effort: thread configuration", () => {
         },
         [201],
       );
-      expect(retry.body).toStrictEqual(queued.body);
+      if (retry.status !== 201 || queued.status !== 201) {
+        throw new Error("Expected both sends to be accepted");
+      }
+      // The retry conflicts on the stored input and is accepted as a
+      // duplicate at request time; its new settings are not stored.
+      expect(retry.body).toStrictEqual({
+        runId: null,
+        threadId: active.threadId,
+        createdAt: expect.any(String),
+      });
+      expect(Date.parse(retry.body.createdAt ?? "")).toBeGreaterThanOrEqual(
+        Date.parse(queued.body.createdAt ?? ""),
+      );
       if (pi) {
         mockPiCheckpointObjectStore();
       }
@@ -397,6 +409,14 @@ describe("CHAT effort: thread configuration", () => {
       if (!promoted?.runId || promoted.eventType !== "input.prompt") {
         throw new Error("Expected queued input to launch");
       }
+      expect(
+        userMessages(messages.events).filter((message) => {
+          return (
+            message.id === clientEventId ||
+            message.revokesEventId === clientEventId
+          );
+        }),
+      ).toHaveLength(2);
       expect(promoted.userMessage.parts).toContainEqual({
         type: "model",
         selectedModel,
