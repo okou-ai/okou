@@ -1422,6 +1422,13 @@
       "when": 1790591662764,
       "tag": "1280_chat_thread_agent_reassignment",
       "breakpoints": true
+    },
+    {
+      "idx": 1281,
+      "version": "7",
+      "when": 1790594121029,
+      "tag": "1281_chat_input_model_selection",
+      "breakpoints": true
     }
   ]
 }
