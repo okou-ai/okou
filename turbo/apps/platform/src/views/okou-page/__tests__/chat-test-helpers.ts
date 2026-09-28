@@ -113,7 +113,6 @@ interface ThreadListItem {
   modelSettings?: ModelSettings;
   computerUseHostId?: string | null;
   cloudBrowserEnabled?: boolean;
-  selectedVideoModel?: string | null;
 }
 
 const UUID_PATTERN =
@@ -136,7 +135,6 @@ export function threadListSnapshot(threads: readonly ThreadListItem[]) {
       modelSettings: thread.modelSettings ?? {},
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-      selectedVideoModel: thread.selectedVideoModel ?? null,
     };
   });
 }

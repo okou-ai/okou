@@ -113,7 +113,6 @@ function installWorkflowQueueFixture(
       archived: false,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
       selectedImageModel: null,
     });
   });
@@ -136,7 +135,6 @@ function installWorkflowQueueFixture(
             serviceTier: null,
             computerUseHostId: null,
             cloudBrowserEnabled: false,
-            selectedVideoModel: null,
             selectedImageModel: null,
           },
         ],

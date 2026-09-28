@@ -1220,13 +1220,11 @@ describe("POST /api/chat-threads", () => {
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
       selectedImageModel: null,
     });
     await expect(
       readCreatedThreadEvent(response.body.id, token),
     ).resolves.toMatchObject({
-      selectedVideoModel: null,
       selectedImageModel: null,
     });
   });
@@ -1323,7 +1321,6 @@ describe("POST /api/chat-threads", () => {
     await expect(
       readCreatedThreadEvent(inherited.body.id, inheritedToken),
     ).resolves.toMatchObject({
-      selectedVideoModel: null,
       selectedImageModel: null,
     });
   });
@@ -1352,7 +1349,6 @@ describe("POST /api/chat-threads", () => {
     await expect(
       readCreatedThreadEvent(response.body.id, token),
     ).resolves.toMatchObject({
-      selectedVideoModel: null,
       selectedImageModel: null,
     });
   });

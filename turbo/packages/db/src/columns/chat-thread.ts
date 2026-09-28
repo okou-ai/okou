@@ -74,13 +74,6 @@ export function chatThreadColumns() {
       length: 20,
     }).$type<CodexServiceTier>(),
     /**
-     * Per-thread built-in video generation model pin. Null falls through to the
-     * member default and then to the system default. Generation parameters such
-     * as aspect ratio and resolution stay per generation and are never pinned
-     * here, so one thread can still produce more than one format.
-     */
-    selectedVideoModel: varchar("selected_video_model", { length: 255 }),
-    /**
      * Per-thread built-in image generation model default. Null falls through to
      * the member default and then to the system default. Image parameters such
      * as size, aspect ratio, and quality remain per generation.

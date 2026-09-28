@@ -77,7 +77,6 @@ export const agentRuns = pgTable(
             ${table.modelRuntimeModel} IS NULL AND
             ${table.builtInModelKeyId} IS NULL AND
             ${table.codexServiceTier} IS NULL AND
-            ${table.selectedVideoModel} IS NULL AND
             ${table.selectedImageModel} IS NULL AND
             ${table.chatThreadId} IS NULL AND
             ${table.apiStartedAt} IS NULL AND

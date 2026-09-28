@@ -278,8 +278,10 @@ unavailable card instead of a link or command.
 
 Current link-backed card patterns include:
 
-- `/connectors/:connectorSlug/connect` and
-  `/connectors/:connectorSlug/authorize`
+- `/connectors/:connectorSlug/connect`,
+  `/connectors/:connectorSlug/authorize`, and
+  `/connectors/:connectorSlug/reconnect/:connectionId` for an exact builtin account.
+  Both absolute platform URLs and root-relative paths are recognized.
 - `/connectors/custom/proposal?p=...`
 - `/agents/:agentId/permissions?...`
 - `/agents/:agentId/connector-accounts/:connectionId/select?...`
@@ -558,6 +560,22 @@ interface ConnectorSignals extends ConnectorActionDescriptor {
 The React card can show whether the connector is available, connected, and
 authorized, then invoke `activate$` from a user action. All occurrences of that
 connector `resourceKey` in the thread observe the same computed graph.
+
+An exact-account reconnect URL reuses the connector card appearance but not the
+catalog default-account activation. It validates the account ID and chat claims,
+reads the account scoped to the builtin connector, and displays that account's
+identity and connection status. Unnamed manual accounts use the same auth-method
+label as account management instead of appearing as only the connector name.
+Because this is an explicit reconnect action, the Reconnect button remains
+available even when that account is already connected. A missing, wrong-target,
+or unsupported-auth-method account is unavailable; other lookup errors retain a
+retry action. Clicking the card rechecks the exact account and opens the existing
+chat connection dialog, showing that account's label and restricting reconnection
+to its stored auth method and ID without a default-account projection. A callback
+runs only after that exact account reconnects successfully while the same dialog
+is still active; closing it or receiving a late result from an earlier attempt
+must not continue the chat. The direct reconnect URL remains available for
+external navigation and older clients.
 
 ### Complex shared data: permission card
 

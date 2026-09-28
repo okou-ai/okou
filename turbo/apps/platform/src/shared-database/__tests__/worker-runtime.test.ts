@@ -86,7 +86,6 @@ function snapshotThread(title: string): ChatThreadSnapshotProjection {
     selectedModel: null,
     serviceTier: null,
     computerUseHostId: null,
-    selectedVideoModel: null,
   };
 }
 
@@ -101,7 +100,6 @@ function renamedThreadEvent(seqId: number, title: string): ChatThreadEvent {
     selectedModel: null,
     serviceTier: null,
     computerUseHostId: null,
-    selectedVideoModel: null,
     createdAt: CREATED_AT,
   };
 }

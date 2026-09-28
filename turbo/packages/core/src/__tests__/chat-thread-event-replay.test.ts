@@ -11,7 +11,6 @@ const created = chatThreadEventSchema.parse({
   title: null,
   selectedModel: "claude-sonnet-5",
   modelSettings: { "claude-sonnet-5": { effort: "high" } },
-  selectedVideoModel: null,
   createdAt: "2026-09-09T00:00:00.000Z",
 });
 const selected = {

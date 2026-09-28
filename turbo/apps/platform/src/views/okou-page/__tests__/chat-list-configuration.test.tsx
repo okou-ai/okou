@@ -145,15 +145,11 @@ test("Conversation configuration arriving before creation is retained", async ()
         cloudBrowserEnabled: false,
         createdAt: "2026-08-01T02:00:04.000Z",
       }),
-      chatListEvent(4, 5, "video_model_updated", threadId, {
-        selectedVideoModel: "MiniMax-H3",
+      chatListEvent(4, 5, "image_model_updated", threadId, {
+        selectedImageModel: "gpt-image-2",
         createdAt: "2026-08-01T02:00:05.000Z",
       }),
-      chatListEvent(4, 6, "image_model_updated", threadId, {
-        selectedImageModel: "gpt-image-2",
-        createdAt: "2026-08-01T02:00:06.000Z",
-      }),
-      chatListEvent(4, 7, "created", threadId, {
+      chatListEvent(4, 6, "created", threadId, {
         title: "Out-of-order configuration",
         selectedModel: "deepseek-v4-flash",
         createdAt: "2026-08-01T02:00:00.000Z",
@@ -187,17 +183,24 @@ test.each([
   { control: "model menu", panel: false, surface: "menu" as const },
   { control: "model panel", panel: true, surface: "dialog" as const },
 ])(
-  "A thread's stored media models never appear in the $control",
+  "A thread's stored image model never appears in the $control",
   async ({ panel, surface }) => {
     const auth = chatListAuth(6);
-    const thread = chatListThread(38, "Pinned media models", {
+    const thread = chatListThread(38, "Pinned image model", {
       selectedModel: "claude-sonnet-5",
-      selectedVideoModel: "MiniMax-H3",
       selectedImageModel: "gpt-image-1",
     });
     installChatListAgent(context);
     installChatListModelPolicies(context);
-    installChatListStream(context, { caseId: 6, snapshot: [thread] });
+    installChatListStream(context, {
+      caseId: 6,
+      snapshot: [thread],
+      events: [
+        chatListEvent(6, 2, "image_model_updated", thread.id, {
+          selectedImageModel: "gpt-image-2",
+        }),
+      ],
+    });
     installActiveChatBoundaries(context, { metadata: thread });
 
     await setupPage({
@@ -223,10 +226,9 @@ test.each([
     click(trigger);
     const models = await screen.findByRole(surface, { name: "Chat models" });
     // Images follow the member's settings: the control lists chat models only
-    // and never names the thread's stored media models.
+    // and never names the thread's stored image model.
     expect(queryAllByRoleFast("menuitem", models)).toHaveLength(0);
     expect(document.body).not.toHaveTextContent("GPT Image");
-    expect(document.body).not.toHaveTextContent("MiniMax H3");
     expect(document.body).not.toHaveTextContent("Images use");
   },
 );
