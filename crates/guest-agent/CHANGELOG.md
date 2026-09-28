@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.99.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.14...guest-agent-v0.99.0) (2026-09-28)
+
+
+### Features
+
+* **observability:** record chat first-output latency stages ([#37222](https://github.com/okou-ai/okou/issues/37222)) ([2de0ca0](https://github.com/okou-ai/okou/commit/2de0ca0595e1b0d6f8311b5684e2caf103a5b06e))
+
 ## [0.98.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.13...guest-agent-v0.98.14) (2026-09-28)
 
 

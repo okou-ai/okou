@@ -11,6 +11,20 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.979.1](https://github.com/okou-ai/okou/compare/app-v0.979.0...app-v0.979.1) (2026-09-28)
+
+
+### Refactoring
+
+* remove workflowSkillImport feature switch ([#37217](https://github.com/okou-ai/okou/issues/37217)) ([f40f999](https://github.com/okou-ai/okou/commit/f40f9991d57bb774c48e4fe77f2f73354c2bca45))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.716.3
+
 ## [0.979.0](https://github.com/okou-ai/okou/compare/app-v0.978.0...app-v0.979.0) (2026-09-28)
 
 

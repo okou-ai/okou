@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.716.3](https://github.com/okou-ai/okou/compare/core-v8.716.2...core-v8.716.3) (2026-09-28)
+
+
+### Refactoring
+
+* remove workflowSkillImport feature switch ([#37217](https://github.com/okou-ai/okou/issues/37217)) ([f40f999](https://github.com/okou-ai/okou/commit/f40f9991d57bb774c48e4fe77f2f73354c2bca45))
+
 ## [8.716.2](https://github.com/okou-ai/okou/compare/core-v8.716.1...core-v8.716.2) (2026-09-28)
 
 
