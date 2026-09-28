@@ -1,4 +1,4 @@
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   integrationsTelegramContract,
   type TelegramLinkStatusResponse,
@@ -6,18 +6,14 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { searchParams$ } from "../route.ts";
-import { setLoop } from "../utils.ts";
 import { parseTelegramConnectParams } from "./telegram-connect-params.ts";
 import {
   authorizeTelegramBot$,
   linkTelegramAccount$,
 } from "./telegram-authorization.ts";
 
-const internalTelegramConnectLinkStatusReload$ = state(0);
-
 export const telegramConnectLinkStatus$ = computed(
   async (get): Promise<TelegramLinkStatusResponse | null> => {
-    get(internalTelegramConnectLinkStatusReload$);
     const parsed = parseTelegramConnectParams(get(searchParams$));
     if (!parsed.ok) {
       return null;
@@ -36,42 +32,6 @@ export const telegramConnectLinkStatus$ = computed(
     );
 
     return result.body;
-  },
-);
-
-const reloadTelegramConnectLinkStatus$ = command(({ set }) => {
-  set(internalTelegramConnectLinkStatusReload$, (prev) => {
-    return prev + 1;
-  });
-});
-
-export const pollTelegramConnectDomainStatus$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    const parsed = parseTelegramConnectParams(get(searchParams$));
-    if (!parsed.ok || parsed.params.connectSignature) {
-      return;
-    }
-
-    let first = true;
-    setLoop(
-      async (loopSignal) => {
-        if (first) {
-          first = false;
-        } else {
-          set(reloadTelegramConnectLinkStatus$);
-        }
-
-        const status = await get(telegramConnectLinkStatus$);
-        loopSignal.throwIfAborted();
-        return (
-          status === null ||
-          status.linked ||
-          status.installation?.domainConfigured !== false
-        );
-      },
-      3000,
-      signal,
-    );
   },
 );
 

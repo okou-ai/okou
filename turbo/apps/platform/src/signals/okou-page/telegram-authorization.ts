@@ -54,15 +54,8 @@ const connectTelegramInTab$ = command(
       );
       return null;
     }
-    if (status.installation?.domainConfigured === false) {
-      const message = i18n.t(($) => {
-        return $.connectors.providerSettings.errors.telegramDomain;
-      });
-      toast.error(message);
-      throw new Error(message);
-    }
     const loginBotId = status.installation?.loginBotId;
-    if (!loginBotId) {
+    if (!loginBotId || status.installation?.domainConfigured === false) {
       const message = i18n.t(($) => {
         return $.connectors.providerConnect.telegram.errorFallback;
       });

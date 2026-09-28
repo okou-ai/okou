@@ -3574,21 +3574,12 @@
         "alreadyDescriptionNamed": "आप पहले से ही {{bot}} से जुड़े हुए हैं। चैटिंग शुरू करने के लिए Telegram में एक संदेश भेजें।",
         "alreadyTitle": "पहले से ही Telegram से जुड़ा है",
         "back": "Telegram सेटिंग्स पर वापस जाएँ",
-        "botFallback": "यह बॉट",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "कृपया प्रतीक्षा करें जब तक हम आपके Telegram कनेक्शन की जाँच कर रहे हैं।",
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
-        "checkingDomain": "डोमेन स्थिति जाँची जा रही है...",
         "checkingSession": "कृपया तब तक प्रतीक्षा करें जब तक हम आपके {{brandName}} सत्र का सत्यापन नहीं कर लेते।",
         "connectDescription": "अपने खाते को इस Telegram बॉट से लिंक करें ताकि आप Telegram से सीधे अपने एजेंट से बातचीत कर सकें।",
         "connectTitle": "Telegram से कनेक्ट करें",
         "continue": "Telegram के साथ जारी रखें",
-        "domainDescription": "{{bot}} के लिए Telegram वेब लॉगिन सक्षम नहीं है।",
-        "domainIn": "में",
-        "domainInstructionsAfter": ", बॉट चुनें, फिर डोमेन को यहां सेट करें:",
-        "domainKeepOpen": "डोमेन सेव करने के बाद इस पेज को खुला रखें। आप Telegram से /connect से भी जुड़ सकते हैं।",
-        "domainSend": ", भेजना",
-        "domainTitle": "Telegram लॉगिन डोमेन सेट करें",
         "errorFallback": "हम Telegram कनेक्ट नहीं कर सके। Telegram से पुनः प्रयास करें।",
         "invalidSignature": "इस लिंक पर हस्ताक्षर मान्य नहीं हैं।",
         "invalidTimestamp": "इस लिंक पर टाइमस्टैम्प मान्य नहीं है।",
@@ -3598,9 +3589,7 @@
         "linkIncomplete": "Telegram से एक नया /कनेक्ट लिंक खोलें और पुनः प्रयास करें।",
         "linkIncompleteTitle": "कनेक्ट लिंक अधूरा है",
         "open": "Telegram खोलें",
-        "openBotFather": "बॉटफ़ादर खोलें",
         "refresh": "इस पृष्ठ को ताज़ा करें और पुनः प्रयास करें।",
-        "setDomainCommand": "/setdomain",
         "signInButton": "{{brandName}} में साइन इन करें",
         "signInCheckFailed": "साइन-इन की जाँच नहीं की जा सकी",
         "signInDescription": "इस Telegram उपयोगकर्ता को जोड़ने से पहले अपने {{brandName}} खाते का उपयोग करें।",
@@ -3697,8 +3686,7 @@
         }
       },
       "errors": {
-        "githubAuthorizationWindow": "प्राधिकरण विंडो खोलने में विफल",
-        "telegramDomain": "डोमेन अभी तक Telegram को दिखाई नहीं दे रहा है। BotFather की जाँच करें और पुनः प्रयास करें।"
+        "githubAuthorizationWindow": "प्राधिकरण विंडो खोलने में विफल"
       },
       "feishu": {
         "addBot": "बॉट जोड़ें",

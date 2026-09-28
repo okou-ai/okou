@@ -3557,21 +3557,12 @@
         "alreadyDescriptionNamed": "Anda sudah tersambung ke {{bot}}. Kirim pesan di Telegram untuk mulai mengobrol.",
         "alreadyTitle": "Sudah tersambung ke Telegram",
         "back": "Kembali ke pengaturan Telegram",
-        "botFallback": "bot ini",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Harap tunggu saat kami memeriksa koneksi Telegram Anda.",
         "checkingConnectionTitle": "Memeriksa koneksi...",
-        "checkingDomain": "Memeriksa status domain...",
         "checkingSession": "Harap tunggu saat kami memverifikasi sesi {{brandName}} Anda.",
         "connectDescription": "Tautkan akun Anda ke bot Telegram ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Telegram.",
         "connectTitle": "Hubungkan ke Telegram",
         "continue": "Lanjutkan dengan Telegram",
-        "domainDescription": "Login web Telegram belum diaktifkan untuk {{bot}}.",
-        "domainIn": "Di ",
-        "domainInstructionsAfter": ", pilih botnya, lalu atur domain ke:",
-        "domainKeepOpen": "Tetap buka halaman ini setelah menyimpan domain. Anda juga dapat menghubungkan dari Telegram dengan /connect.",
-        "domainSend": ", kirim ",
-        "domainTitle": "Atur domain login Telegram",
         "errorFallback": "Kami tidak dapat menghubungkan Telegram. Coba lagi dari Telegram.",
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
@@ -3581,9 +3572,7 @@
         "linkIncomplete": "Buka tautan /connect baru dari Telegram dan coba lagi.",
         "linkIncompleteTitle": "Tautan koneksi tidak lengkap",
         "open": "Buka Telegram",
-        "openBotFather": "Buka BotFather",
         "refresh": "Muat ulang halaman ini dan coba lagi.",
-        "setDomainCommand": "/setdomain",
         "signInButton": "Masuk ke {{brandName}}",
         "signInCheckFailed": "Tidak dapat memeriksa status masuk",
         "signInDescription": "Gunakan akun {{brandName}} Anda sebelum menghubungkan pengguna Telegram ini.",
@@ -3680,8 +3669,7 @@
         }
       },
       "errors": {
-        "githubAuthorizationWindow": "Gagal membuka jendela otorisasi",
-        "telegramDomain": "Domain belum terlihat oleh Telegram. Periksa BotFather dan coba lagi."
+        "githubAuthorizationWindow": "Gagal membuka jendela otorisasi"
       },
       "feishu": {
         "addBot": "Tambahkan bot",

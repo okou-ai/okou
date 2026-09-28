@@ -4,7 +4,10 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
-import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
+import {
+  integrationsTelegramContract,
+  OFFICIAL_TELEGRAM_BOT_ID,
+} from "@okouai/api-contracts/contracts/integrations-telegram";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -18,7 +21,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { MockTelegramBotStatus } from "../../../mocks/handlers/api-integrations-telegram.ts";
 
 const context = testContext();
-const TELEGRAM_BOT_ID = "bot_connect_test";
+const TELEGRAM_BOT_ID = OFFICIAL_TELEGRAM_BOT_ID;
 const FEISHU_ICON_URL = "https://icons.example.test/lark.svg";
 
 function getAction(role: "button" | "link", name: string): HTMLElement {
@@ -48,10 +51,11 @@ function githubConnectPath(): string {
 function telegramStatus(): MockTelegramBotStatus {
   return {
     id: TELEGRAM_BOT_ID,
+    kind: "official",
     username: "agent_bot",
     avatarUrl: null,
     agent: { id: "c0000000-0000-4000-a000-000000000001", name: "zero" },
-    isOwner: true,
+    isOwner: false,
     isConnected: false,
     connectedUser: null,
     tokenStatus: "valid",
@@ -380,7 +384,7 @@ test("An invalid Telegram connection link is rejected", async () => {
   ).toBeFalsy();
 });
 
-test("A user links their account to a Telegram bot", async () => {
+test("A user links their account to the official Telegram bot", async () => {
   let linkedBody: unknown;
   context.mocks.data.telegramIntegration({ statuses: [telegramStatus()] });
   context.mocks.api(integrationsTelegramContract.link, ({ body, respond }) => {

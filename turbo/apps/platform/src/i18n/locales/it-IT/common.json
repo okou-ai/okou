@@ -3633,21 +3633,12 @@
         "alreadyDescriptionNamed": "Sei già connesso a {{bot}}. Invia un messaggio in Telegram per iniziare a chattare.",
         "alreadyTitle": "Già connesso a Telegram",
         "back": "Torna alle impostazioni Telegram",
-        "botFallback": "questo bot",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Attendi mentre controlliamo la tua connessione Telegram.",
         "checkingConnectionTitle": "Verifica della connessione...",
-        "checkingDomain": "Verifica dello stato del dominio...",
         "checkingSession": "Attendi mentre verifichiamo la tua sessione {{brandName}}.",
         "connectDescription": "Collega il tuo account a questo bot Telegram per interagire con il tuo agente direttamente da Telegram.",
         "connectTitle": "Connetti a Telegram",
         "continue": "Continua con Telegram",
-        "domainDescription": "L'accesso web Telegram non è abilitato per {{bot}}.",
-        "domainIn": "Nel ",
-        "domainInstructionsAfter": ", scegli il bot, quindi imposta il dominio su:",
-        "domainKeepOpen": "Mantieni questa pagina aperta dopo aver salvato il dominio. Puoi anche connetterti da Telegram con /connect.",
-        "domainSend": ", invia ",
-        "domainTitle": "Imposta il dominio di accesso Telegram",
         "errorFallback": "Impossibile connettersi Telegram. Riprova da Telegram.",
         "invalidSignature": "La firma su questo collegamento non è valida.",
         "invalidTimestamp": "Il timestamp su questo collegamento non è valido.",
@@ -3657,9 +3648,7 @@
         "linkIncomplete": "Apri un nuovo link /connect da Telegram e riprova.",
         "linkIncompleteTitle": "Il collegamento di connessione è incompleto",
         "open": "Apri Telegram",
-        "openBotFather": "Apri BotFather",
         "refresh": "Aggiorna questa pagina e riprova.",
-        "setDomainCommand": "/setdomain",
         "signInButton": "Accedi a {{brandName}}",
         "signInCheckFailed": "Impossibile verificare l'accesso",
         "signInDescription": "Utilizza il tuo account {{brandName}} prima di connettere questo utente Telegram.",
@@ -3756,8 +3745,7 @@
         }
       },
       "errors": {
-        "githubAuthorizationWindow": "Impossibile aprire la finestra di autorizzazione",
-        "telegramDomain": "Il dominio non è ancora visibile a Telegram. Controlla BotFather e riprova."
+        "githubAuthorizationWindow": "Impossibile aprire la finestra di autorizzazione"
       },
       "feishu": {
         "addBot": "Aggiungi bot",

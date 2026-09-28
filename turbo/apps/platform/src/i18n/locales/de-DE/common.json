@@ -3574,21 +3574,12 @@
         "alreadyDescriptionNamed": "Sie sind bereits mit {{bot}} verbunden. Senden Sie eine Nachricht in Telegram, um mit dem Chatten zu beginnen.",
         "alreadyTitle": "Bereits mit Telegram verbunden",
         "back": "Zurück zu den Telegram-Einstellungen",
-        "botFallback": "dieser Bot",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Bitte warten Sie, während wir Ihre Telegram-Verbindung überprüfen.",
         "checkingConnectionTitle": "Verbindung prüfen...",
-        "checkingDomain": "Domainstatus wird überprüft...",
         "checkingSession": "Bitte warten Sie, während wir Ihre {{brandName}}-Sitzung überprüfen.",
         "connectDescription": "Verknüpfen Sie Ihr Konto mit diesem Telegram-Bot, damit Sie direkt über Telegram mit Ihrem Agenten interagieren können.",
         "connectTitle": "Stellen Sie eine Verbindung zu Telegram her",
         "continue": "Weiter mit Telegram",
-        "domainDescription": "Die Telegram-Webanmeldung ist für {{bot}} nicht aktiviert.",
-        "domainIn": "In ",
-        "domainInstructionsAfter": ", wählen Sie den Bot aus und legen Sie dann die Domäne fest auf:",
-        "domainKeepOpen": "Lassen Sie diese Seite nach dem Speichern der Domain geöffnet. Sie können sich auch über Telegram mit /connect verbinden.",
-        "domainSend": ", schicken ",
-        "domainTitle": "Legen Sie die Telegram-Anmeldedomäne fest",
         "errorFallback": "Wir konnten Telegram nicht verbinden. Versuchen Sie es erneut über Telegram.",
         "invalidSignature": "Die Signatur auf diesem Link ist ungültig.",
         "invalidTimestamp": "Der Zeitstempel auf diesem Link ist ungültig.",
@@ -3598,9 +3589,7 @@
         "linkIncomplete": "Öffnen Sie einen neuen /connect-Link von Telegram und versuchen Sie es erneut.",
         "linkIncompleteTitle": "Der Connect-Link ist unvollständig",
         "open": "Öffnen Sie Telegram",
-        "openBotFather": "Öffnen Sie BotFather",
         "refresh": "Aktualisieren Sie diese Seite und versuchen Sie es erneut.",
-        "setDomainCommand": "/setdomain",
         "signInButton": "Melden Sie sich bei {{brandName}} an",
         "signInCheckFailed": "Die Anmeldung konnte nicht überprüft werden",
         "signInDescription": "Verwenden Sie Ihr {{brandName}}-Konto, bevor Sie diesen Telegram-Benutzer verbinden.",
@@ -3697,8 +3686,7 @@
         }
       },
       "errors": {
-        "githubAuthorizationWindow": "Das Autorisierungsfenster konnte nicht geöffnet werden",
-        "telegramDomain": "Die Domain ist für Telegram noch nicht sichtbar. Überprüfen Sie BotFather und versuchen Sie es erneut."
+        "githubAuthorizationWindow": "Das Autorisierungsfenster konnte nicht geöffnet werden"
       },
       "feishu": {
         "addBot": "Bot hinzufügen",

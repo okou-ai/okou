@@ -33,7 +33,7 @@ function botStatus(connected = false): MockTelegramBotStatus {
     username: "support_bot",
     avatarUrl: null,
     agent: { id: "compose_1", name: "Support" },
-    isOwner: true,
+    isOwner: false,
     isConnected: connected,
     connectedUser: connected
       ? {
@@ -45,7 +45,7 @@ function botStatus(connected = false): MockTelegramBotStatus {
     tokenStatus: "valid",
     official: {
       configured: true,
-      usesDefaultAgent: false,
+      usesDefaultAgent: true,
       linkedTelegramUserId: connected ? String(AUTH.id) : null,
     },
     domainConfigured: true,
@@ -201,8 +201,7 @@ test.each([
         domainConfigured: false,
       },
     },
-    message:
-      "Domain is not visible to Telegram yet. Check BotFather and try again.",
+    message: "We couldn't connect Telegram. Try again from Telegram.",
   },
   {
     name: "a bot whose installation is no longer available",
@@ -226,6 +225,33 @@ test.each([
     expect(getAction("button", "Connect")).toBeEnabled();
   });
   expect(pathname()).toBe("/settings/telegram");
+});
+
+test("The official connect page reports unavailable login configuration", async () => {
+  mockBot({
+    linked: false,
+    installation: {
+      id: BOT_ID,
+      botUsername: "support_bot",
+      loginBotId: BOT_ID,
+      domainConfigured: false,
+    },
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `/telegram/connect?bot=${BOT_ID}`,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: "Connection failed" }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByText("We couldn't connect Telegram. Try again from Telegram."),
+  ).toBeInTheDocument();
+  expect(getAction("link", "Back to Telegram settings")).toBeInTheDocument();
+  expect(queryAction("button", "Continue with Telegram")).toBeNull();
 });
 
 test("Closing the OAuth tab cancels the attempt and restores Connect", async () => {

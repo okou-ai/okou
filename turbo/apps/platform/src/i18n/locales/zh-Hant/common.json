@@ -3557,21 +3557,12 @@
         "alreadyDescriptionNamed": "你已連線到{{bot}}。在Telegram中傳送訊息，即可開始對話。",
         "alreadyTitle": "已連線到Telegram",
         "back": "返回Telegram設定",
-        "botFallback": "此機器人",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "我們正在檢查你的Telegram連線，請稍候。",
         "checkingConnectionTitle": "正在檢查連線…",
-        "checkingDomain": "正在檢查域名狀態…",
         "checkingSession": "我們正在驗證你的{{brandName}}登入狀態，請稍候。",
         "connectDescription": "把你的帳號關聯到這個Telegram機器人，就可以直接在Telegram裡與你的智能體交流。",
         "connectTitle": "連線到Telegram",
         "continue": "使用Telegram繼續",
-        "domainDescription": "{{bot}}尚未啟用Telegram網頁登入。",
-        "domainIn": "在 ",
-        "domainInstructionsAfter": "，選擇機器人，然後把域名設定為：",
-        "domainKeepOpen": "儲存域名後請保持此頁面開啟。你也可以在Telegram裡傳送/connect來連線。",
-        "domainSend": "中傳送 ",
-        "domainTitle": "設定Telegram登入域名",
         "errorFallback": "我們無法連線Telegram。請從Telegram重試。",
         "invalidSignature": "此連結的簽名無效。",
         "invalidTimestamp": "此連結的時間戳無效。",
@@ -3581,9 +3572,7 @@
         "linkIncomplete": "請從Telegram重新開啟一個/connect連結後再試。",
         "linkIncompleteTitle": "連線連結不完整",
         "open": "開啟Telegram",
-        "openBotFather": "開啟BotFather",
         "refresh": "請重新整理此頁面後重試。",
-        "setDomainCommand": "/setdomain",
         "signInButton": "登入{{brandName}}",
         "signInCheckFailed": "無法檢查登入狀態",
         "signInDescription": "連線此Telegram使用者前，請先登入你的{{brandName}}帳號。",
@@ -3680,8 +3669,7 @@
         }
       },
       "errors": {
-        "githubAuthorizationWindow": "無法開啟授權視窗",
-        "telegramDomain": "Telegram還看不到這個域名。請在BotFather中確認後重試。"
+        "githubAuthorizationWindow": "無法開啟授權視窗"
       },
       "feishu": {
         "addBot": "新增機器人",
