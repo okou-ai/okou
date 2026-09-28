@@ -1126,13 +1126,13 @@ const chatThreadCreateBodySchema = z.object({
     .optional(),
   /**
    * Selected model id. The API resolves the effective model provider from org
-   * policy and available credentials. Omit it to inherit the model of the run
-   * that owns the calling token; callers without a run must send it.
+   * policy and available credentials. Omit it to store the member default, or
+   * the organization default when the member preference is unavailable.
    */
   model: selectedModelRequestSchema.optional(),
   /**
-   * Priority service tier for the new thread. Omit it to inherit the calling
-   * run's chat thread, use `priority` to enable it, or null for standard.
+   * Priority service tier for the new thread. Omit it to use the initial model
+   * preference, use `priority` to enable it, or null for standard.
    */
   serviceTier: chatThreadServiceTierSchema.nullable().optional(),
   /**

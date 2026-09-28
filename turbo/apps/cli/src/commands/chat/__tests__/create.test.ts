@@ -257,7 +257,7 @@ describe("okou chat create command", () => {
     });
   });
 
-  it("passes effort without a model for server-side run inheritance", async () => {
+  it("passes effort without a model for server-side default selection", async () => {
     server.use(
       http.post(CREATE_URL, async ({ request }) => {
         expect(await request.json()).toStrictEqual({
@@ -295,7 +295,7 @@ describe("okou chat create command", () => {
     );
   });
 
-  it("suggests --model for a server 400 when the inherited model cannot accept effort", async () => {
+  it("suggests --model for a server 400 when the default model cannot accept effort", async () => {
     server.use(
       http.post(CREATE_URL, () => {
         return HttpResponse.json(
