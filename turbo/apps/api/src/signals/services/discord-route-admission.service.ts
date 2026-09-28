@@ -21,6 +21,7 @@ import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import {
   ensureCanonicalDiscordChatThreadRoute,
   findDiscordChatThreadRoute,
+  refreshDiscordDirectMessageRouteDestination,
   type DiscordChatThreadRouteBinding,
 } from "./discord-chat-ingress.service";
 import {
@@ -244,7 +245,7 @@ const resolveDiscordAdmissionSource$ = command(
 
 async function loadAssignedDiscordRoute(
   db: Db,
-  { ingress, source: { binding } }: DiscordAdmissionContext,
+  { ingress, source: { binding, routeChannelId } }: DiscordAdmissionContext,
   signal: AbortSignal,
 ): Promise<DiscordChatThreadRouteBinding | undefined> {
   if (!ingress.routeId) {
@@ -265,7 +266,13 @@ async function loadAssignedDiscordRoute(
   if (!assignedRoute) {
     throw new Error("Discord ingress route ownership is inconsistent");
   }
-  return assignedRoute;
+  const route = await refreshDiscordDirectMessageRouteDestination(
+    db,
+    assignedRoute,
+    routeChannelId,
+  );
+  signal.throwIfAborted();
+  return route;
 }
 
 async function terminalAgentUnavailable(

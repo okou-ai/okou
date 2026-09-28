@@ -13,7 +13,10 @@ import {
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { Tx } from "../../lib/db-types";
-import { isIntegrationDmSessionKey } from "../../lib/integration-dm-session";
+import {
+  INTEGRATION_DM_SESSION_KEY,
+  isIntegrationDmSessionKey,
+} from "../../lib/integration-dm-session";
 
 export interface TelegramOwnerLink {
   readonly kind: "official";
@@ -32,6 +35,7 @@ interface TelegramChatThreadBinding {
 
 interface LoadedTelegramChatThreadRoute extends TelegramChatThreadBinding {
   readonly id: string;
+  readonly chatId: string;
   readonly agentId: string;
   readonly selectedModel: string | null;
   readonly codexServiceTier: "fast" | null;
@@ -56,18 +60,21 @@ function ownerWhere(ownerLink: TelegramOwnerLink) {
 function routeWhere(key: TelegramChatThreadRouteKey) {
   return and(
     ownerWhere(key.ownerLink),
-    eq(telegramChatThreadRoutes.chatId, key.chatId),
+    key.rootMessageId === INTEGRATION_DM_SESSION_KEY
+      ? undefined
+      : eq(telegramChatThreadRoutes.chatId, key.chatId),
     eq(telegramChatThreadRoutes.rootMessageId, key.rootMessageId),
   );
 }
 
 async function loadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: TelegramChatThreadRouteKey,
 ): Promise<LoadedTelegramChatThreadRoute | undefined> {
   const [route] = await db
     .select({
       id: telegramChatThreadRoutes.id,
+      chatId: telegramChatThreadRoutes.chatId,
       chatThreadId: telegramChatThreadRoutes.chatThreadId,
       agentId: agents.id,
       selectedModel: chatThreads.selectedModel,
@@ -83,6 +90,21 @@ async function loadRoute(
     .where(routeWhere(key))
     .limit(1)
     .for("update");
+  if (
+    route &&
+    key.rootMessageId === INTEGRATION_DM_SESSION_KEY &&
+    route.chatId !== key.chatId
+  ) {
+    const [updated] = await db
+      .update(telegramChatThreadRoutes)
+      .set({ chatId: key.chatId })
+      .where(and(eq(telegramChatThreadRoutes.id, route.id), routeWhere(key)))
+      .returning({ chatId: telegramChatThreadRoutes.chatId });
+    if (!updated) {
+      throw new Error("Failed to update Telegram DM route destination");
+    }
+    return { ...route, ...updated };
+  }
   return route;
 }
 

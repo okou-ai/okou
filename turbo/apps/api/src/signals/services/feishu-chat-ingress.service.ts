@@ -38,7 +38,7 @@ function routeWhere(key: FeishuChatThreadRouteKey) {
 }
 
 async function loadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: FeishuChatThreadRouteKey,
 ): Promise<FeishuChatThreadRouteBinding | undefined> {
   const [route] = await db
@@ -53,6 +53,21 @@ async function loadRoute(
     .from(feishuChatThreadRoutes)
     .where(routeWhere(key))
     .limit(1);
+  if (
+    route &&
+    key.threadId === INTEGRATION_DM_SESSION_KEY &&
+    route.chatId !== key.chatId
+  ) {
+    const [updated] = await db
+      .update(feishuChatThreadRoutes)
+      .set({ chatId: key.chatId })
+      .where(and(eq(feishuChatThreadRoutes.id, route.id), routeWhere(key)))
+      .returning({ chatId: feishuChatThreadRoutes.chatId });
+    if (!updated) {
+      throw new Error("Failed to update Feishu DM route destination");
+    }
+    return { ...route, ...updated };
+  }
   return route;
 }
 

@@ -40,8 +40,40 @@ function discordChatThreadRouteWhere(key: DiscordChatThreadRouteKey) {
   );
 }
 
+export async function refreshDiscordDirectMessageRouteDestination(
+  db: Pick<Db, "update">,
+  route: DiscordChatThreadRouteBinding,
+  channelId: string,
+): Promise<DiscordChatThreadRouteBinding> {
+  if (
+    route.sessionKey !== INTEGRATION_DM_SESSION_KEY ||
+    (route.channelId === channelId &&
+      (route.destinationChannelId === null ||
+        route.destinationChannelId === channelId))
+  ) {
+    return route;
+  }
+  const [updated] = await db
+    .update(discordChatThreadRoutes)
+    .set({ channelId, destinationChannelId: channelId })
+    .where(
+      and(
+        eq(discordChatThreadRoutes.id, route.id),
+        discordChatThreadRouteWhere(route),
+      ),
+    )
+    .returning({
+      channelId: discordChatThreadRoutes.channelId,
+      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+    });
+  if (!updated) {
+    throw new Error("Failed to update Discord DM route destination");
+  }
+  return { ...route, ...updated };
+}
+
 async function loadDiscordChatThreadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: DiscordChatThreadRouteKey,
 ): Promise<DiscordChatThreadRouteBinding | undefined> {
   const [route] = await db
@@ -57,7 +89,13 @@ async function loadDiscordChatThreadRoute(
     .from(discordChatThreadRoutes)
     .where(discordChatThreadRouteWhere(key))
     .limit(1);
-  return route;
+  return route
+    ? await refreshDiscordDirectMessageRouteDestination(
+        db,
+        route,
+        key.channelId,
+      )
+    : undefined;
 }
 
 export async function findDiscordChatThreadRoute(
@@ -68,7 +106,7 @@ export async function findDiscordChatThreadRoute(
 }
 
 async function requireDiscordChatThreadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: DiscordChatThreadRouteKey,
 ): Promise<DiscordChatThreadRouteBinding> {
   const route = await loadDiscordChatThreadRoute(db, key);
@@ -113,12 +151,22 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       const [assigned] = await tx
         .select()
         .from(discordChatThreadRoutes)
-        .where(eq(discordChatThreadRoutes.id, claim.routeId))
+        .where(
+          and(
+            eq(discordChatThreadRoutes.id, claim.routeId),
+            eq(discordChatThreadRoutes.connectionId, args.connectionId),
+            eq(discordChatThreadRoutes.userId, args.userId),
+          ),
+        )
         .limit(1);
       if (!assigned) {
         throw new Error("Discord ingress has no assigned route");
       }
-      return assigned;
+      return await refreshDiscordDirectMessageRouteDestination(
+        tx,
+        assigned,
+        args.channelId,
+      );
     }
     const existing = await loadDiscordChatThreadRoute(tx, args);
     if (existing) {

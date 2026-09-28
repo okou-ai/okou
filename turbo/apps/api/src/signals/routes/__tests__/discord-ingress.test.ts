@@ -943,6 +943,65 @@ describe("canonical Discord ingress", () => {
     await runsApi.requestCancelRun(actor.actor, nextInput.runId, [200]);
   });
 
+  it("keeps the same DM thread when its connected sender moves to a new physical channel", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const first = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "start in the original DM channel",
+    });
+    provider.messages.set(first.id, first);
+    await postDiscordMessage(context, first);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the original DM thread");
+    }
+    const firstRun = await launchedRun(actor, thread.id);
+    await runsApi.requestCancelRun(actor.actor, firstRun.runId, [200]);
+    await flushWaitUntilForTest();
+
+    const channelId = uniqueDiscordSnowflake();
+    provider.channels.set(channelId, {
+      id: channelId,
+      type: 1,
+      recipients: [{ id: actor.discordUserId, username: "member" }],
+    });
+    provider.channels.delete(provider.dmChannelId);
+    const next = discordMessageForTest(actor, {
+      channelId,
+      guild: false,
+      content: "continue in the current DM channel",
+    });
+    provider.messages.set(next.id, next);
+    await postDiscordMessage(context, next);
+    await flushWaitUntilForTest();
+
+    expect(await discordChatThreads(context, actor)).toMatchObject([
+      { id: thread.id, selectedModel: null },
+    ]);
+    const inputs = currentInputs(await events(actor, thread.id));
+    expect(inputs).toHaveLength(2);
+    const input = inputs.find((candidate) => {
+      return candidate.userMessage.parts.some((part) => {
+        return part.type === "text" && part.text === next.content;
+      });
+    });
+    expect(input?.userMessage.parts).toContainEqual({
+      type: "source",
+      kind: "discord",
+      href: `https://discord.com/channels/@me/${channelId}/${next.id}`,
+    });
+    if (!input?.runId) {
+      throw new Error("Expected the current DM input to launch");
+    }
+    await runsApi.heartbeatRunner(actor.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(input.runId);
+    expect(claim.prompt).toBe(next.content);
+    await runsApi.requestCancelRun(actor.actor, input.runId, [200]);
+  });
+
   it("keeps another organization's DM replies out of a newly selected organization's run", async () => {
     const first = await connected();
     const provider = mockDiscordProvider(first);

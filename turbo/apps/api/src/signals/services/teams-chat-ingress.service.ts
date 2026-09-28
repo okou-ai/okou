@@ -48,7 +48,7 @@ function routeWhere(key: TeamsChatThreadRouteKey) {
 }
 
 async function loadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: TeamsChatThreadRouteKey,
 ): Promise<LoadedTeamsChatThreadRoute | undefined> {
   const [route] = await db
@@ -73,6 +73,21 @@ async function loadRoute(
     .where(routeWhere(key))
     .limit(1)
     .for("update");
+  if (
+    route &&
+    key.threadId === INTEGRATION_DM_SESSION_KEY &&
+    route.conversationId !== key.conversationId
+  ) {
+    const [updated] = await db
+      .update(teamsChatThreadRoutes)
+      .set({ conversationId: key.conversationId })
+      .where(and(eq(teamsChatThreadRoutes.id, route.id), routeWhere(key)))
+      .returning({ conversationId: teamsChatThreadRoutes.conversationId });
+    if (!updated) {
+      throw new Error("Failed to update Teams DM route destination");
+    }
+    return { ...route, ...updated };
+  }
   return route;
 }
 

@@ -55,7 +55,7 @@ function slackChatThreadRouteWhere(key: SlackChatThreadRouteKey) {
 }
 
 async function loadSlackChatThreadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: SlackChatThreadRouteKey,
 ): Promise<SlackChatThreadRouteBinding | undefined> {
   const [route] = await db
@@ -70,6 +70,26 @@ async function loadSlackChatThreadRoute(
     .from(slackChatThreadRoutes)
     .where(slackChatThreadRouteWhere(key))
     .limit(1);
+  if (
+    route &&
+    key.threadTs === INTEGRATION_DM_SESSION_KEY &&
+    route.channelId !== key.channelId
+  ) {
+    const [updated] = await db
+      .update(slackChatThreadRoutes)
+      .set({ channelId: key.channelId })
+      .where(
+        and(
+          eq(slackChatThreadRoutes.id, route.id),
+          slackChatThreadRouteWhere(key),
+        ),
+      )
+      .returning({ channelId: slackChatThreadRoutes.channelId });
+    if (!updated) {
+      throw new Error("Failed to update Slack DM route destination");
+    }
+    return { ...route, ...updated };
+  }
   return route;
 }
 
@@ -81,7 +101,7 @@ export async function findSlackChatThreadRoute(
 }
 
 async function requireSlackChatThreadRoute(
-  db: Pick<Db, "select">,
+  db: Pick<Db, "select" | "update">,
   key: SlackChatThreadRouteKey,
 ): Promise<SlackChatThreadRouteBinding> {
   const route = await loadSlackChatThreadRoute(db, key);
