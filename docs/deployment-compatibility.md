@@ -3,7 +3,9 @@
 ## Unified chat queue final cleanup (after release 7)
 
 This change contracts what release 7 (#37200, released in #37237) retired and
-removes compatibility that no longer has a reader.
+removes compatibility that no longer has a reader. It also deletes the
+one-time `019-pi-api-first-turn-cleanup` script, which was run in production on
+2026-09-28 (17 objects deleted, `pi-api-first-turn/` verified empty).
 
 **Migration 1282: retired integration agent tables.** Migration
 `1282_drop_retired_integration_agent_tables` drops
@@ -81,8 +83,6 @@ Kept compatibility, with the unmet condition:
   version floor.
 - Official Workflow queue marker decoding (#29908): its writers still write the
   markers.
-- The one-time `019-pi-api-first-turn-cleanup` script stays until operations
-  confirms it has run.
 
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)
 
@@ -376,15 +376,12 @@ preinstalled in the Runner image):
   within seconds and the pending timeout bounds the window at five minutes.
   This is accepted; release at low traffic.
 - No reader remains for handoff objects that earlier APIs wrote under
-  `pi-api-first-turn/`. The one-time
-  [`019-pi-api-first-turn-cleanup`](../turbo/packages/db/scripts/migrations/019-pi-api-first-turn-cleanup/README.md)
-  script inventories this fixed prefix in `R2_USER_STORAGES_BUCKET_NAME` by
-  default and deletes it only with `--execute`. Operations runs it after
-  release 7 promotion and old API writer drain; deployment and cron do not
-  invoke it. It paginates, stops on request or per-object errors without
-  retries, and independently verifies the prefix is empty. This PR has not
-  executed remote cleanup; canonical session history outside the prefix is
-  untouched.
+  `pi-api-first-turn/`. The one-time `019-pi-api-first-turn-cleanup` script
+  was run in production on 2026-09-28, after release 7 promotion and the old
+  API writer drain: it deleted 17 objects from that prefix in
+  `vm0-s3-user-storages-prod` and verified the prefix is empty. Canonical
+  session history outside the prefix is untouched. The script has since been
+  removed.
 
 **API rollback floor: this release**, pinned by the marker
 `.github/rollback-floors/pi-api-first-turn-retired` in
