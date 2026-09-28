@@ -23,6 +23,26 @@ impl TicketConsumer for MockTickets {
     }
 }
 
+struct HeldTickets {
+    started: tokio::sync::Notify,
+    resume: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+#[async_trait]
+impl TicketConsumer for HeldTickets {
+    async fn consume(
+        &self,
+        _run_id: RunId,
+        _runner_id: Uuid,
+        _origin: &str,
+        _ticket: &str,
+    ) -> bool {
+        let resume = self.resume.lock().unwrap().take().unwrap();
+        self.started.notify_one();
+        resume.await.is_ok()
+    }
+}
+
 struct EchoGuest {
     run: RunId,
     sandbox: SandboxId,
@@ -186,6 +206,59 @@ async fn admission_echo_replay_cross_run_and_local_run_end() {
             .await
             .is_ok()
     );
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn run_release_during_ticket_consume_denies_auth() {
+    let mut fixture = Fixture::new().await;
+    let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+    let tickets = Arc::new(HeldTickets {
+        started: tokio::sync::Notify::new(),
+        resume: Mutex::new(Some(resume_rx)),
+    });
+    fixture.ctx.consumer = tickets.clone();
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &"A".repeat(43))).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), tickets.started.notified())
+        .await
+        .expect("ticket consumption must start");
+    drop(fixture.guard);
+    resume_tx.send(()).unwrap();
+    denied(&mut ws).await;
+    task.await.unwrap();
+}
+
+#[tokio::test]
+async fn sandbox_reassignment_during_ticket_consume_denies_auth() {
+    let mut fixture = Fixture::new().await;
+    let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+    let tickets = Arc::new(HeldTickets {
+        started: tokio::sync::Notify::new(),
+        resume: Mutex::new(Some(resume_rx)),
+    });
+    fixture.ctx.consumer = tickets.clone();
+    let (client, task) = fixture.connect(&format!("/ws/{}", fixture.runner)).await;
+    let mut ws = client.unwrap();
+    ws.send(first(fixture.run, &"A".repeat(43))).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), tickets.started.notified())
+        .await
+        .expect("ticket consumption must start");
+    fixture
+        .ctx
+        .status
+        .remove_run_if_matching(fixture.run, fixture.sandbox)
+        .await
+        .unwrap();
+    fixture
+        .ctx
+        .status
+        .add_run(fixture.run, SandboxId::new_v4())
+        .await
+        .unwrap();
+    resume_tx.send(()).unwrap();
+    denied(&mut ws).await;
     task.await.unwrap();
 }
 

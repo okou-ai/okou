@@ -47,6 +47,7 @@ async fn listener_starts_before_ready_and_is_removed_after_stop() {
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let dir = env._temp_dir.path().join("wss");
     std::fs::create_dir(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o710)).unwrap();
     let path = dir.join(format!("{}.sock", config.runner.identity.runner_id()));
     enable_wss(&mut config, dir);
     env.handle.block_startup_readiness();
@@ -86,6 +87,7 @@ async fn two_runner_ids_coexist_and_remove_only_their_own_socket() {
     let root = tempfile::tempdir().unwrap();
     let dir = root.path().join("wss");
     std::fs::create_dir(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o710)).unwrap();
     let (mut first, first_env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let (mut second, second_env) = mock_run_config(test_profiles(), 8, 32768, 4);
     second.runner.identity = runner_host::runner_process_identity::RunnerProcessIdentity::new(
@@ -130,6 +132,7 @@ async fn soft_drain_retains_socket_until_active_run_finishes() {
     let (mut config, env) = mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
     let dir = env._temp_dir.path().join("wss");
     std::fs::create_dir(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o710)).unwrap();
     let path = dir.join(format!("{}.sock", config.runner.identity.runner_id()));
     enable_wss(&mut config, dir);
     let status_path = env._temp_dir.path().join("status.json");
@@ -169,6 +172,8 @@ async fn accept_loop_failure_is_fatal_during_readiness_and_after_running() {
         let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
         let dir = env._temp_dir.path().join("wss");
         std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::os::unix::fs::PermissionsExt::from_mode(0o710))
+            .unwrap();
         let path = dir.join(format!("{}.sock", config.runner.identity.runner_id()));
         enable_wss(&mut config, dir);
         let (fail, failed) = tokio::sync::oneshot::channel();
