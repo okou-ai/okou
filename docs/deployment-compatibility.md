@@ -164,8 +164,8 @@ server-owned sealing or cache-policy changes are separately approved.
 
 Browser native file input no longer computes or transports a file SHA-256 and
 apply no longer compares a readback digest. Prepare still requires an exact
-pending request and issues a one-hour temporary PUT URL, extending that
-Browser provider's idle lease for the upload; the provider's absolute timeout
+pending request and issues a ten-minute temporary PUT URL, using the same
+shared ten-minute Browser idle-lease duration; the provider's absolute timeout
 and request/target state can still end the operation earlier. Apply still
 checks downloaded byte length and the 10 MiB aggregate / three-file limits,
 then uses the existing exact target, pending/uncertain, and 15-second CDP

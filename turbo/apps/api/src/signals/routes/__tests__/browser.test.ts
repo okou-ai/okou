@@ -1169,7 +1169,7 @@ describe("Browser user-action route", () => {
         ContentLength: bytes.length,
         ContentType: "application/octet-stream",
       });
-      expect(signing?.[2]).toMatchObject({ expiresIn: 3600 });
+      expect(signing?.[2]).toMatchObject({ expiresIn: 600 });
       expect(signedCommand.input.ChecksumSHA256).toBeUndefined();
       expect(prepared.body).toStrictEqual({
         uploadUrl: expect.stringMatching(/^https?:\/\//u),

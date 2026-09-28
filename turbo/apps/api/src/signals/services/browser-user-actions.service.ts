@@ -130,7 +130,6 @@ function hash(value: string): string {
 
 const FILE_UPLOAD_PREFIX = "browser-native-input/";
 const FILE_UPLOAD_CONTENT_TYPE = "application/octet-stream";
-const FILE_UPLOAD_TTL_SECONDS = 60 * 60;
 
 function temporaryFileKey(
   row: Pick<RequestRow, "requestTokenHash">,
@@ -186,15 +185,15 @@ export const prepareBrowserUserFileUpload$ = command(
         {
           usePublicEndpoint: true,
           contentLength: args.input.size,
-          expiresInSeconds: FILE_UPLOAD_TTL_SECONDS,
+          expiresInSeconds: BROWSER_IDLE_LEASE_MINUTES * 60,
         },
         signal,
       ),
     );
     signal.throwIfAborted();
-    // Keep this provider available for a slow upload; its absolute timeout
-    // and independent request state still gate the subsequent apply.
-    if (!(await touchExactProvider(db, row, FILE_UPLOAD_TTL_SECONDS * 1000))) {
+    // The signed PUT and the provider's idle lease use the same duration.
+    // Its absolute timeout and request state still gate the subsequent apply.
+    if (!(await touchExactProvider(db, row))) {
       return expired();
     }
     signal.throwIfAborted();
@@ -422,17 +421,13 @@ async function requestHasLiveBrowser(
   return live !== undefined;
 }
 
-async function touchExactProvider(
-  db: Db,
-  row: RequestRow,
-  leaseMs = IDLE_LEASE_MS,
-): Promise<boolean> {
+async function touchExactProvider(db: Db, row: RequestRow): Promise<boolean> {
   const now = nowDate();
   const [touched] = await db
     .update(browserSessionInstances)
     .set({
       lastTouchedAt: now,
-      idleExpiresAt: new Date(now.getTime() + leaseMs),
+      idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
       updatedAt: now,
     })
     .where(
