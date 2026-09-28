@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.982.0](https://github.com/okou-ai/okou/compare/app-v0.981.0...app-v0.982.0) (2026-09-28)
+
+
+### Features
+
+* **chat:** prepare mcp client source readers ([#37238](https://github.com/okou-ai/okou/issues/37238)) ([b67ad36](https://github.com/okou-ai/okou/commit/b67ad362a42365c040af49fe66224e2aefcaa7eb))
+* finish video retirement cleanup and raise the web client floor to 0.981.0 ([#37256](https://github.com/okou-ai/okou/issues/37256)) ([fbaf632](https://github.com/okou-ai/okou/commit/fbaf632f1d052fd3e956be3434b0bd472c323292))
+
+
+### Refactoring
+
+* remove thread remote access feature switch ([#37235](https://github.com/okou-ai/okou/issues/37235)) ([8f8d0a1](https://github.com/okou-ai/okou/commit/8f8d0a1cbe11213c24bfedd67bc495e00623acc1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.525.0
+    * @okouai/core bumped to 8.719.0
+
 ## [0.981.0](https://github.com/okou-ai/okou/compare/app-v0.980.0...app-v0.981.0) (2026-09-28)
 
 

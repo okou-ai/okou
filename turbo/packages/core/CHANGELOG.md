@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.719.0](https://github.com/okou-ai/okou/compare/core-v8.718.0...core-v8.719.0) (2026-09-28)
+
+
+### Features
+
+* finish video retirement cleanup and raise the web client floor to 0.981.0 ([#37256](https://github.com/okou-ai/okou/issues/37256)) ([fbaf632](https://github.com/okou-ai/okou/commit/fbaf632f1d052fd3e956be3434b0bd472c323292))
+
+
+### Refactoring
+
+* remove thread remote access feature switch ([#37235](https://github.com/okou-ai/okou/issues/37235)) ([8f8d0a1](https://github.com/okou-ai/okou/commit/8f8d0a1cbe11213c24bfedd67bc495e00623acc1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.525.0
+
 ## [8.718.0](https://github.com/okou-ai/okou/compare/core-v8.717.0...core-v8.718.0) (2026-09-28)
 
 
