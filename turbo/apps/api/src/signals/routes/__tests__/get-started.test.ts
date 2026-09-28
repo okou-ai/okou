@@ -189,6 +189,7 @@ test("the shared getStartedQuests switch gates API rewards and supports the same
     orgId: `org_${randomUUID()}`,
   };
   mocks.clerk.session(actor.userId, actor.orgId);
+  await setGetStartedEnabled(context, actor, false);
   await expect(client().status({ headers })).resolves.toMatchObject({
     status: 403,
   });

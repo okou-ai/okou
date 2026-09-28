@@ -649,6 +649,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     }
 
     // A phone linked before the quest existed is not credited afterwards.
+    await setGetStartedEnabled(context, earlyAdopter, false);
     await linkWithCode(earlyAdopter);
     await setGetStartedEnabled(context, earlyAdopter);
     await expect(imessageQuest(earlyAdopter)).resolves.toMatchObject({
