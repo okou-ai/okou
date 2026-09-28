@@ -243,10 +243,11 @@ impl R2HttpClient {
             // part-level checksum in addition to the SigV4 payload hash.
             let checksum = base64::engine::general_purpose::STANDARD
                 .encode(crc32fast::hash(&body).to_be_bytes());
+            // Match the SDK's per-part read timeout, not a 300-second
+            // whole-request deadline: an active transfer can take longer.
             builder = builder
                 .header("x-amz-sdk-checksum-algorithm", "CRC32")
-                .header("x-amz-checksum-crc32", checksum)
-                .timeout(PART_TIMEOUT);
+                .header("x-amz-checksum-crc32", checksum);
         }
         if let Some(content_type) = content_type {
             builder = builder.header(CONTENT_TYPE, content_type);
@@ -460,6 +461,15 @@ impl R2HttpClient {
                             ));
                         }
                         validate_complete_fields(document.root_element())?;
+                    } else if matches!(expected, ExpectedBody::CreateXml) {
+                        if document.root_element().tag_name().name()
+                            != "InitiateMultipartUploadResult"
+                        {
+                            return Err(R2Error::S3(
+                                "unexpected CreateMultipartUpload response".into(),
+                            ));
+                        }
+                        validate_create_fields(document.root_element())?;
                     }
                 }
                 validate_success_headers(&method, expected, response.headers())?;
@@ -513,6 +523,9 @@ impl R2HttpClient {
                 // cache miss. Do not infer a miss from status alone.
                 if matches!(expected, ExpectedBody::GetMissingXml)
                     && code.as_deref() == Some("NoSuchKey")
+                    && parse_xml(&body)
+                        .ok()
+                        .is_some_and(|doc| doc.root_element().tag_name().name() == "Error")
                 {
                     return Ok(TransportReply {
                         response,
@@ -621,16 +634,14 @@ impl R2HttpClient {
             return Err(status_error("create_multipart_upload", response).await);
         }
         let body = xml.ok_or_else(|| R2Error::S3("missing CreateMultipartUpload XML".into()))?;
+        // execute validated the SDK-modeled Create XML before rewarding a
+        // successful request; only the cache-specific UploadId requirement is
+        // checked here (the SDK output builder itself permits its absence).
         let document = parse_xml(&body)?;
-        if document.root_element().tag_name().name() != "InitiateMultipartUploadResult" {
-            return Err(R2Error::S3(
-                "unexpected CreateMultipartUpload response".into(),
-            ));
-        }
         document
             .root_element()
             .children()
-            .find(|n| n.is_element() && n.tag_name().name() == "UploadId")
+            .rfind(|n| n.is_element() && n.tag_name().name() == "UploadId")
             .and_then(|n| n.text())
             .filter(|id| !id.is_empty())
             .map(str::to_owned)
@@ -1027,33 +1038,54 @@ async fn retry_delay(attempt: usize, retry_after: Option<Duration>) {
     tokio::time::sleep(backoff.mul_f64(fastrand::f64())).await;
 }
 
+fn validate_create_fields(root: roxmltree::Node<'_, '_>) -> Result<(), R2Error> {
+    // A malformed Bucket or Key is a service error in the SDK even though
+    // this cache only consumes UploadId. Do not begin an upload in that case.
+    validate_xml_scalar_fields(
+        root,
+        &["UploadId", "Bucket", "Key"],
+        "create_multipart_upload",
+    )
+}
+
 fn validate_complete_fields(root: roxmltree::Node<'_, '_>) -> Result<(), R2Error> {
-    // The SDK deserializes each modeled scalar field. A well-formed root is
-    // not enough: e.g. <ETag><nested/></ETag> produces a deserialization
-    // error, not a successful Complete (which would disarm the Abort guard).
+    // An element-only known scalar is a deserialization failure in the SDK,
+    // not a successful Complete that may disarm the Abort guard.
+    validate_xml_scalar_fields(
+        root,
+        &[
+            "ETag",
+            "Location",
+            "Bucket",
+            "Key",
+            "ChecksumCRC32",
+            "ChecksumCRC32C",
+            "ChecksumCRC64NVME",
+            "ChecksumSHA1",
+            "ChecksumSHA256",
+            "ChecksumSHA512",
+            "ChecksumType",
+            "ChecksumMD5",
+            "ChecksumXXHASH3",
+            "ChecksumXXHASH64",
+            "ChecksumXXHASH128",
+        ],
+        "complete_multipart_upload",
+    )
+}
+
+fn validate_xml_scalar_fields(
+    root: roxmltree::Node<'_, '_>,
+    names: &[&str],
+    operation: &str,
+) -> Result<(), R2Error> {
     for field in root.children().filter(|node| node.is_element()) {
-        if matches!(
-            field.tag_name().name(),
-            "ETag"
-                | "Location"
-                | "Bucket"
-                | "Key"
-                | "ChecksumCRC32"
-                | "ChecksumCRC32C"
-                | "ChecksumCRC64NVME"
-                | "ChecksumSHA1"
-                | "ChecksumSHA256"
-                | "ChecksumSHA512"
-                | "ChecksumType"
-                | "ChecksumMD5"
-                | "ChecksumXXHASH3"
-                | "ChecksumXXHASH64"
-                | "ChecksumXXHASH128"
-        ) && field.text().is_none()
+        if names.contains(&field.tag_name().name())
+            && field.text().is_none()
             && field.children().any(|node| node.is_element())
         {
             return Err(R2Error::S3(format!(
-                "complete_multipart_upload: invalid {} field",
+                "{operation}: invalid {} field",
                 field.tag_name().name()
             )));
         }
@@ -1079,14 +1111,25 @@ fn parse_xml(body: &[u8]) -> Result<roxmltree::Document<'_>, R2Error> {
 
 fn xml_code(body: &[u8]) -> Option<String> {
     let doc = parse_xml(body).ok()?;
-    if doc.root_element().tag_name().name() != "Error" {
-        return None;
+    // The SDK's generic REST-XML error metadata reads Code and Message from
+    // any root (so a SlowDown under ErrorResponse can still be retried).
+    // A modeled GetObject NoSuchKey additionally requires the Error root.
+    // SDK parse_error_metadata reads all direct Code and Message elements,
+    // failing if a modeled scalar begins with a nested element. A malformed
+    // Message must not turn NoSuchKey into a cache miss. Repeated Code fields
+    // overwrite the builder, so the last value determines classification.
+    let mut code = None;
+    for field in doc.root_element().children().filter(|n| n.is_element()) {
+        if matches!(field.tag_name().name(), "Code" | "Message") {
+            if field.text().is_none() && field.children().any(|n| n.is_element()) {
+                return None;
+            }
+            if field.tag_name().name() == "Code" {
+                code = Some(field.text().unwrap_or("").to_owned());
+            }
+        }
     }
-    let code = doc
-        .root_element()
-        .children()
-        .find(|n| n.is_element() && n.tag_name().name() == "Code")?;
-    code.text().map(str::to_owned)
+    code
 }
 
 enum BodyReadError {

@@ -453,6 +453,137 @@ async fn get_models_nosuchkey_by_xml_code_even_on_non_404_status() {
     malformed.assert_calls_async(1).await;
 }
 
+#[test]
+fn signed_upload_part_has_no_whole_request_deadline() {
+    let c = R2HttpClient::with_test_endpoint(
+        Url::parse("http://127.0.0.1:1").unwrap(),
+        "test-bucket".into(),
+    )
+    .unwrap();
+    let url = c
+        .url(
+            "runner-templates/hash.tar.zst",
+            &[("partNumber", "1"), ("uploadId", "id")],
+        )
+        .unwrap();
+    let request = c
+        .signed_request(Method::PUT, url, Bytes::from_static(b"part"), None)
+        .unwrap();
+    // The pinned SDK sets a 300s read timeout, not a total operation timeout.
+    assert!(request.timeout().is_none());
+    assert!(request.headers().contains_key("x-amz-checksum-crc32"));
+}
+
+#[tokio::test]
+async fn create_deserializes_all_modeled_fields_and_last_upload_id_wins() {
+    let server = MockServer::start_async().await;
+    let bad_bucket = server.mock_async(|when, then| {
+        when.method("POST").path("/test-bucket/runner-templates/bad-bucket.tar.zst");
+        then.status(200).body("<InitiateMultipartUploadResult><UploadId>id</UploadId><Bucket><nested/></Bucket></InitiateMultipartUploadResult>");
+    }).await;
+    let bad_key = server.mock_async(|when, then| {
+        when.method("POST").path("/test-bucket/runner-templates/bad-key.tar.zst");
+        then.status(200).body("<InitiateMultipartUploadResult><UploadId>id</UploadId><Key><nested/></Key></InitiateMultipartUploadResult>");
+    }).await;
+    let repeated = server.mock_async(|when, then| {
+        when.method("POST").path("/test-bucket/runner-templates/repeated.tar.zst");
+        then.status(200).body("<InitiateMultipartUploadResult><UploadId>first</UploadId><UploadId>second</UploadId></InitiateMultipartUploadResult>");
+    }).await;
+    let mut c = client(&server);
+    c.retry_quota = Arc::new(Semaphore::new(499));
+    c.retry_quota_capacity = 500;
+    let err = c
+        .create_multipart("runner-templates/bad-bucket.tar.zst")
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("invalid Bucket field"), "{err}");
+    let err = c
+        .create_multipart("runner-templates/bad-key.tar.zst")
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("invalid Key field"), "{err}");
+    assert_eq!(
+        c.retry_quota.available_permits(),
+        499,
+        "deserialization failures cannot earn retry quota"
+    );
+    assert_eq!(
+        c.create_multipart("runner-templates/repeated.tar.zst")
+            .await
+            .unwrap(),
+        "second"
+    );
+    assert_eq!(c.retry_quota.available_permits(), 500);
+    bad_bucket.assert_calls_async(1).await;
+    bad_key.assert_calls_async(1).await;
+    repeated.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn malformed_error_message_is_not_a_get_miss_and_last_code_wins() {
+    let server = MockServer::start_async().await;
+    let malformed = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/malformed.tar.zst");
+            then.status(404)
+                .body("<Error><Code>NoSuchKey</Code><Message><nested/></Message></Error>");
+        })
+        .await;
+    let repeated = server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/repeated.tar.zst");
+            then.status(404)
+                .body("<Error><Code>SlowDown</Code><Code>NoSuchKey</Code></Error>");
+        })
+        .await;
+    let c = client(&server);
+    assert!(c.get("runner-templates/malformed.tar.zst").await.is_err());
+    assert!(
+        c.get("runner-templates/repeated.tar.zst")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    malformed.assert_calls_async(1).await;
+    repeated.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn unwrapped_error_metadata_retries_even_without_error_root_but_is_not_a_modeled_miss() {
+    let (url, server) = scripted_server(vec![
+        mock_reply(
+            "404 Not Found",
+            "<ErrorResponse><Code>SlowDown</Code></ErrorResponse>",
+            "x-amz-retry-after: 0\r\n",
+        ),
+        mock_reply("404 Not Found", "<Error><Code>NoSuchKey</Code></Error>", ""),
+    ])
+    .await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    assert!(
+        c.get("runner-templates/retry.tar.zst")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(server.await.unwrap().len(), 2);
+
+    let mock_server = MockServer::start_async().await;
+    let wrong_root = mock_server
+        .mock_async(|when, then| {
+            when.method("GET")
+                .path("/test-bucket/runner-templates/wrong-root.tar.zst");
+            then.status(404)
+                .body("<ErrorResponse><Code>NoSuchKey</Code></ErrorResponse>");
+        })
+        .await;
+    let c = client(&mock_server);
+    assert!(c.get("runner-templates/wrong-root.tar.zst").await.is_err());
+    wrong_root.assert_calls_async(1).await;
+}
+
 #[tokio::test]
 async fn multipart_wire_protocol_preserves_query_body_and_etag() {
     let server = MockServer::start_async().await;
