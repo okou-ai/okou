@@ -15,9 +15,10 @@ import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reason
 import type { Tx } from "../../lib/db-types";
 import { isIntegrationDmSessionKey } from "../../lib/integration-dm-session";
 
-export type TelegramOwnerLink =
-  | { readonly kind: "custom"; readonly id: string }
-  | { readonly kind: "official"; readonly id: string };
+export interface TelegramOwnerLink {
+  readonly kind: "official";
+  readonly id: string;
+}
 
 interface TelegramChatThreadRouteKey {
   readonly ownerLink: TelegramOwnerLink;
@@ -49,9 +50,7 @@ interface TelegramChatThreadCreateArgs {
 type TelegramChatThreadTransaction = Tx;
 
 function ownerWhere(ownerLink: TelegramOwnerLink) {
-  return ownerLink.kind === "custom"
-    ? eq(telegramChatThreadRoutes.telegramUserLinkId, ownerLink.id)
-    : eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
+  return eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
 }
 
 function routeWhere(key: TelegramChatThreadRouteKey) {
@@ -60,21 +59,6 @@ function routeWhere(key: TelegramChatThreadRouteKey) {
     eq(telegramChatThreadRoutes.chatId, key.chatId),
     eq(telegramChatThreadRoutes.rootMessageId, key.rootMessageId),
   );
-}
-
-function routeOwnerValues(ownerLink: TelegramOwnerLink): {
-  readonly telegramUserLinkId: string | null;
-  readonly telegramOfficialUserLinkId: string | null;
-} {
-  return ownerLink.kind === "custom"
-    ? {
-        telegramUserLinkId: ownerLink.id,
-        telegramOfficialUserLinkId: null,
-      }
-    : {
-        telegramUserLinkId: null,
-        telegramOfficialUserLinkId: ownerLink.id,
-      };
 }
 
 async function loadRoute(
@@ -202,51 +186,21 @@ async function reconcileExistingRoute(
     return route;
   }
 
-  const selectedModelChanged = existing.selectedModel !== args.selectedModel;
-  const codexServiceTier = args.serviceTier === "priority" ? "fast" : null;
-  const serviceTierChanged = existing.codexServiceTier !== codexServiceTier;
-  if (selectedModelChanged || serviceTierChanged) {
-    const [thread] = await tx
+  if (
+    isIntegrationDmSessionKey(args.rootMessageId) &&
+    (existing.selectedModel !== null || existing.codexServiceTier !== null)
+  ) {
+    await tx
       .update(chatThreads)
       .set({
-        ...(selectedModelChanged
-          ? {
-              modelProviderId: null,
-              modelProviderType: null,
-              modelProviderCredentialScope: null,
-              selectedModel: args.selectedModel,
-            }
-          : {}),
-        codexServiceTier,
+        selectedModel: null,
+        modelProviderId: null,
+        modelProviderType: null,
+        modelProviderCredentialScope: null,
+        codexServiceTier: null,
         updatedAt: args.currentTime,
       })
-      .where(eq(chatThreads.id, existing.chatThreadId))
-      .returning({ id: chatThreads.id });
-    if (!thread) {
-      throw new Error("Failed to update canonical Telegram thread model");
-    }
-    if (selectedModelChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "model_selection_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        selectedModel: args.selectedModel,
-        createdAt: args.currentTime,
-      });
-    }
-    if (serviceTierChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "service_tier_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        serviceTier: args.serviceTier,
-        createdAt: args.currentTime,
-      });
-    }
+      .where(eq(chatThreads.id, existing.chatThreadId));
   }
   return existing;
 }
@@ -279,7 +233,7 @@ export async function ensureTelegramChatThreadRoute(
     const [route] = await tx
       .insert(telegramChatThreadRoutes)
       .values({
-        ...routeOwnerValues(args.ownerLink),
+        telegramOfficialUserLinkId: args.ownerLink.id,
         chatId: args.chatId,
         rootMessageId: args.rootMessageId,
         chatThreadId: thread.id,
@@ -375,7 +329,7 @@ export async function bindTelegramReplyMessageRoute(
   const [inserted] = await db
     .insert(telegramChatThreadRoutes)
     .values({
-      ...routeOwnerValues(args.ownerLink),
+      telegramOfficialUserLinkId: args.ownerLink.id,
       chatId: args.chatId,
       rootMessageId: args.rootMessageId,
       chatThreadId: args.chatThreadId,

@@ -14,10 +14,7 @@ import {
   EllipsisVertical,
   Bot,
 } from "lucide-react";
-import {
-  type TelegramBot,
-  OFFICIAL_TELEGRAM_BOT_ID,
-} from "@okouai/api-contracts/contracts/integrations-telegram";
+import type { TelegramBot } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import {
@@ -49,10 +46,6 @@ import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets
 import { useTranslation } from "react-i18next";
 
 const telegramIconImg = settingsIconAssetUrl("telegram");
-
-function isOfficialTelegramBot(bot: TelegramBot): boolean {
-  return bot.kind === "official" || bot.id === OFFICIAL_TELEGRAM_BOT_ID;
-}
 
 function TelegramSettingsSkeleton() {
   return (
@@ -116,17 +109,6 @@ function telegramConnectedUserLabel(bot: TelegramBot): string | null {
 
 function TelegramStatusBadge({ bot }: { bot: TelegramBot }) {
   const { t } = useTranslation();
-  if (bot.tokenStatus === "invalid") {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/20 bg-destructive/10 px-2 py-1 text-xs font-medium text-destructive">
-        <AlertTriangle className="h-3.5 w-3.5" />
-        {t(($) => {
-          return $.connectors.providerSettings.telegram.tokenInvalid;
-        })}
-      </span>
-    );
-  }
-
   const connected = bot.isConnected;
   if (connected) {
     const connectedUserLabel = telegramConnectedUserLabel(bot);
@@ -359,18 +341,11 @@ function TelegramBotRow({ bot }: { bot: TelegramBot }) {
   const unlinking = unlinkingBotId === bot.id;
   const actionDisabled = unlinking;
   const avatarUrl = resolveTelegramBotAvatarUrl(bot.avatarUrl, apiBase ?? "");
-  const isOfficial = isOfficialTelegramBot(bot);
-  const botTitle = isOfficial
-    ? bot.username
-      ? `@${bot.username}`
-      : t(($) => {
-          return $.connectors.providerSettings.telegram.officialBot;
-        })
-    : bot.username
-      ? `@${bot.username}`
-      : t(($) => {
-          return $.connectors.providerSettings.telegram.botFallback;
-        });
+  const botTitle = bot.username
+    ? `@${bot.username}`
+    : t(($) => {
+        return $.connectors.providerSettings.telegram.officialBot;
+      });
 
   return (
     <div className="flex flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
@@ -383,18 +358,16 @@ function TelegramBotRow({ bot }: { bot: TelegramBot }) {
             </div>
             <TelegramStatusBadge bot={bot} />
           </div>
-          {isOfficial ? (
-            <div className="mt-1 text-sm text-muted-foreground">
-              {t(
-                ($) => {
-                  return $.connectors.providerSettings.telegram
-                    .officialDescription;
-                },
-                { brandName },
-              )}
-            </div>
-          ) : null}
-          {isOfficial && bot.official?.configured === false ? (
+          <div className="mt-1 text-sm text-muted-foreground">
+            {t(
+              ($) => {
+                return $.connectors.providerSettings.telegram
+                  .officialDescription;
+              },
+              { brandName },
+            )}
+          </div>
+          {bot.official?.configured === false ? (
             <div className="mt-1 text-sm text-muted-foreground">
               {t(($) => {
                 return $.connectors.providerSettings.telegram.officialMissing;
@@ -423,14 +396,9 @@ function TelegramBotList({ bots }: { bots: TelegramBot[] }) {
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-[#2AABEE]/10">
           <img src={telegramIconImg} alt="" className="h-8 w-8" />
         </div>
-        <div className="text-sm font-medium text-foreground">
+        <div className="text-sm text-muted-foreground">
           {t(($) => {
-            return $.connectors.providerSettings.telegram.emptyTitle;
-          })}
-        </div>
-        <div className="mt-1 text-sm text-muted-foreground">
-          {t(($) => {
-            return $.connectors.providerSettings.telegram.emptyDescription;
+            return $.connectors.providerSettings.telegram.officialMissing;
           })}
         </div>
       </div>
@@ -460,7 +428,7 @@ function TelegramBotsCard({ bots }: { bots: TelegramBot[] }) {
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
         <h2 className="text-sm font-medium text-foreground">
           {t(($) => {
-            return $.connectors.providerSettings.telegram.bots;
+            return $.connectors.providerSettings.telegram.officialBot;
           })}
         </h2>
       </div>

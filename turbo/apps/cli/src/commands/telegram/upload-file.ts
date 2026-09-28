@@ -40,9 +40,8 @@ function parseMessageThreadId(value: string | undefined): number | undefined {
 
 export const uploadFileCommand = new Command()
   .name("upload-file")
-  .description("Upload a local file to a Telegram chat as the bot")
+  .description("Upload a file through the official Okou Telegram bot")
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  .requiredOption("--bot-id <bot-id>", "Telegram bot id to send through")
   .requiredOption("-c, --chat-id <chat-id>", "Telegram chat id or @channel")
   .option("--caption <text>", "Caption to accompany the file")
   .option("--message-thread-id <id>", "Forum topic message thread id")
@@ -51,16 +50,16 @@ export const uploadFileCommand = new Command()
     "after",
     `
 Examples:
-  Upload a file:          okou telegram upload-file -f /tmp/report.pdf --bot-id 123456789 -c -1001234567890
-  Upload to a topic:      okou telegram upload-file -f /tmp/log.txt --bot-id 123456789 -c -1001234567890 --message-thread-id 42
-  With a caption:         okou telegram upload-file -f /tmp/data.csv --bot-id 123456789 -c @channel --caption "Daily report"
+  Upload a file:          okou telegram upload-file -f /tmp/report.pdf -c -1001234567890
+  Upload to a topic:      okou telegram upload-file -f /tmp/log.txt -c -1001234567890 --message-thread-id 42
+  With a caption:         okou telegram upload-file -f /tmp/data.csv -c @channel --caption "Daily report"
 
 Output:
   Prints a JSON object to stdout on success:
     {"messageId":123,"chatId":"-1001234567890","fileId":"...","filename":"report.pdf","mimetype":"application/pdf","size":12345,"url":"https://..."}
 
 Notes:
-  - Uses the Telegram bot token on the server side
+  - Uses the official Okou Telegram bot
   - Uploads through Okou storage first, then asks Telegram to fetch the file URL
   - Okou does not apply file type or size restrictions before calling Telegram`,
   )
@@ -68,7 +67,6 @@ Notes:
     withErrorHandler(
       async (options: {
         file: string;
-        botId: string;
         chatId: string;
         caption?: string;
         messageThreadId?: string;
@@ -120,7 +118,6 @@ Notes:
 
         const result = await completeTelegramFileUpload({
           uploadId: prepared.uploadId,
-          botId: options.botId,
           chatId: options.chatId,
           contentType: prepared.contentType,
           caption: options.caption,

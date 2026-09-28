@@ -44,8 +44,6 @@ describe("okou telegram message send command", () => {
     await sendCommand.parseAsync([
       "node",
       "cli",
-      "--bot-id",
-      "123456789",
       "--chat-id",
       "-1001234567890",
       "--text",
@@ -57,7 +55,7 @@ describe("okou telegram message send command", () => {
     ]);
 
     expect(capturedBody).toMatchObject({
-      botId: "123456789",
+      botId: "official",
       chatId: "-1001234567890",
       text: "hello world",
       replyToMessageId: 42,
@@ -73,8 +71,6 @@ describe("okou telegram message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--bot-id",
-        "123456789",
         "--chat-id",
         "-1001234567890",
       ]);
@@ -90,8 +86,6 @@ describe("okou telegram message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--bot-id",
-        "123456789",
         "--chat-id",
         "-1001234567890",
         "--text",
@@ -125,8 +119,6 @@ describe("okou telegram message send command", () => {
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--bot-id",
-        "123456789",
         "--chat-id",
         "-1001234567890",
         "--text",

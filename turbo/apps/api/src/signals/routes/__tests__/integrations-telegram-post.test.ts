@@ -164,7 +164,7 @@ function expectOk(response: Response, operation: string): void {
 const TELEGRAM_INTEGRATION_NOTE = [
   "# Integration Note",
   "",
-  "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram bot list` to inspect available bots, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. When sending or uploading, explicitly choose the bot with `--bot-id`; if you do not know which bot to use, ask the user before sending.",
+  "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram message send -h` for extra messages, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. All Telegram commands use the official Okou bot.",
 ].join("\n");
 
 function expectExactSystemPromptFragment(
@@ -560,7 +560,6 @@ async function findTelegramChatThreadRoute(args: {
   const response = await postTelegramStateAction({
     action: "find-chat-thread-route",
     user_link_id: args.userLinkId,
-    owner_kind: "official",
     chat_id: args.chatId,
     root_message_id: args.rootMessageId,
   });
@@ -805,7 +804,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramThreadContext: expect.stringContaining(firstPrompt),
       telegramMessageId: "2202",
       telegramRootMessageId: "direct-message:main",
-      telegramUserLinkKind: "custom",
+      telegramUserLinkKind: "official",
     });
     await setTelegramThinkingMessageIdFixture(queuedParams.eventId, "701");
     await completeCanonicalChatRun({
@@ -1006,10 +1005,27 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       if (botReplyId === undefined) {
         throw new Error("Expected a Telegram DM reply");
       }
+      const snapshot = await chatApi.getThreadSnapshot(actor);
+      let chatThread: (typeof snapshot.chatThreads)[number] | undefined;
+      for (const thread of snapshot.chatThreads) {
+        const { events } = await chatApi.listThreadEvents(actor, thread.id);
+        if (
+          events.some((event) => {
+            return event.eventType === "input.prompt" && event.runId === run.id;
+          })
+        ) {
+          chatThread = thread;
+          break;
+        }
+      }
+      if (!chatThread) {
+        throw new Error("Expected the Telegram input in its canonical thread");
+      }
       return {
         claim,
         sessionId,
         botReplyId,
+        chatThread,
         replyCount: telegram.sentMessageIds.length - replyCount,
       };
     }
@@ -1084,6 +1100,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           branch.botReplyId,
         );
         expect(pinnedReply.claim.modelUsageProvider).toBe("claude-fable-5-1");
+        expect(pinnedReply.chatThread.id).toBe(branch.chatThread.id);
+        expect(pinnedReply.chatThread.selectedModel).toBe("claude-fable-5-1");
         expect(pinnedReply.claim.resumeSession?.sessionId).toBe(
           branchFollowUp.sessionId,
         );
@@ -1092,15 +1110,21 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
       const followUp = await completeDm("continue the main DM", 3502);
       expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
+      expect(followUp.chatThread.id).toBe(main.chatThread.id);
+      expect(followUp.chatThread.selectedModel).toBeNull();
 
       await sendDm("/model gpt-6-astra", 3506);
       const alternate = await completeDm("use the alternate DM model", 3507);
       expect(alternate.claim.modelUsageProvider).toBe("gpt-6-astra");
       expect(alternate.claim.resumeSession).toBeNull();
+      expect(alternate.chatThread.id).toBe(main.chatThread.id);
+      expect(alternate.chatThread.selectedModel).toBeNull();
       await sendDm("/model claude-fable-5-1", 3509);
       const returned = await completeDm("return to the main model", 3510);
-      expect(returned.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
+      expect(returned.claim.resumeSession).toBeNull();
       expect(returned.claim.modelUsageProvider).toBe("claude-fable-5-1");
+      expect(returned.chatThread.id).toBe(main.chatThread.id);
+      expect(returned.chatThread.selectedModel).toBeNull();
     });
   });
 
@@ -1166,7 +1190,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramMessageText: firstPrompt,
       telegramThreadContext: "",
       telegramRootMessageId: null,
-      telegramUserLinkKind: "custom",
+      telegramUserLinkKind: "official",
       telegramChatType: "supergroup",
     });
     expectExactSystemPromptFragment(
@@ -1295,7 +1319,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramMessageText: followUpAgentPrompt,
       telegramThreadContext: expect.stringContaining(firstPrompt),
       telegramRootMessageId: "700",
-      telegramUserLinkKind: "custom",
+      telegramUserLinkKind: "official",
       telegramChatType: "supergroup",
     });
 
@@ -1683,7 +1707,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         "https://example.com/broken-article",
       ),
       telegramRootMessageId: null,
-      telegramUserLinkKind: "custom",
+      telegramUserLinkKind: "official",
       telegramChatType: "supergroup",
       telegramSenderUsername: "@alice",
     });

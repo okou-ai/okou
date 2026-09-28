@@ -2,12 +2,11 @@ import { createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
-  integrationsTelegramBotListContract,
   integrationsTelegramMessageContract,
   integrationsTelegramUploadCompleteContract,
   integrationsTelegramUploadInitContract,
-  type ListTelegramBotsResponse,
   type SendTelegramMessageBody,
   type SendTelegramMessageResponse,
   type TelegramUploadCompleteBody,
@@ -30,26 +29,16 @@ interface DownloadTelegramFileResult {
   size: number;
 }
 
-export async function listTelegramBots(): Promise<ListTelegramBotsResponse> {
-  const config = await getClientConfig();
-  const client = initClient(integrationsTelegramBotListContract, config);
-
-  const result = await client.listBots({ headers: {} });
-
-  if (result.status === 200) {
-    return result.body;
-  }
-
-  handleError(result, "Failed to list Telegram bots");
-}
-
 export async function sendTelegramMessage(
-  body: SendTelegramMessageBody,
+  body: Omit<SendTelegramMessageBody, "botId">,
 ): Promise<SendTelegramMessageResponse> {
   const config = await getClientConfig();
   const client = initClient(integrationsTelegramMessageContract, config);
 
-  const result = await client.sendMessage({ body, headers: {} });
+  const result = await client.sendMessage({
+    body: { ...body, botId: OFFICIAL_TELEGRAM_BOT_ID },
+    headers: {},
+  });
 
   if (result.status === 200) {
     return result.body;
@@ -74,12 +63,15 @@ export async function initTelegramFileUpload(
 }
 
 export async function completeTelegramFileUpload(
-  body: TelegramUploadCompleteBody,
+  body: Omit<TelegramUploadCompleteBody, "botId">,
 ): Promise<TelegramUploadCompleteResponse> {
   const config = await getClientConfig();
   const client = initClient(integrationsTelegramUploadCompleteContract, config);
 
-  const result = await client.complete({ body, headers: {} });
+  const result = await client.complete({
+    body: { ...body, botId: OFFICIAL_TELEGRAM_BOT_ID },
+    headers: {},
+  });
 
   if (result.status === 200) {
     return result.body;
@@ -94,7 +86,6 @@ export async function completeTelegramFileUpload(
  */
 export async function downloadTelegramFile(
   fileId: string,
-  botId: string,
   outPath: string,
 ): Promise<DownloadTelegramFileResult> {
   const baseUrl = await getBaseUrl();
@@ -105,7 +96,7 @@ export async function downloadTelegramFile(
 
   const url = new URL("/api/integrations/telegram/download-file", baseUrl);
   url.searchParams.set("file_id", fileId);
-  url.searchParams.set("bot_id", botId);
+  url.searchParams.set("bot_id", OFFICIAL_TELEGRAM_BOT_ID);
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,

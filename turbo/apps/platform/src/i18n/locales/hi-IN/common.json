@@ -3697,8 +3697,7 @@
       },
       "errors": {
         "githubAuthorizationWindow": "प्राधिकरण विंडो खोलने में विफल",
-        "telegramDomain": "डोमेन अभी तक Telegram को दिखाई नहीं दे रहा है। BotFather की जाँच करें और पुनः प्रयास करें।",
-        "telegramPrivacy": "गोपनीयता मोड अभी भी चालू प्रतीत होता है. इसे BotFather में बंद करें, फिर पुनः प्रयास करें।"
+        "telegramDomain": "डोमेन अभी तक Telegram को दिखाई नहीं दे रहा है। BotFather की जाँच करें और पुनः प्रयास करें।"
       },
       "feishu": {
         "addBot": "बॉट जोड़ें",
@@ -3966,77 +3965,17 @@
         "uninstallTitle": "Lark बॉट अनइंस्टॉल करें?"
       },
       "telegram": {
-        "addBot": "बॉट जोड़ें",
-        "addDescription": "प्रत्येक बोटफादर चरण को पूरा करें, फिर वर्कस्पेस बॉट बनाएं।",
-        "adding": "जोड़ा जा रहा है...",
-        "addTitle": "Telegram बॉट जोड़ें",
         "backToIntegrations": "एकीकरण पर वापस जाएँ",
         "botFallback": "Telegram बॉट",
-        "bots": "Telegram बॉट",
-        "botToken": "बॉट टोकन",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "जाँच हो रही है...",
-        "copied": "नकल की गई!",
-        "copyAria": "{{value}} कॉपी करें",
-        "copyTitle": "कॉपी करने के लिए क्लिक करें",
-        "create": {
-          "description": "{{brandName}} इस बॉट को पंजीकृत करेगा और इसके वेबहुक को कॉन्फ़िगर करेगा। सेटअप के बाद, किसी समूह में बॉट का उल्लेख करें या चयनित एजेंट से बात करने के लिए उसे DM भेजें।",
-          "descriptionNamed": "{{brandName}} {{bot}} को पंजीकृत करेगा और इसके वेबहुक को कॉन्फ़िगर करेगा। सेटअप के बाद, किसी समूह में बॉट का उल्लेख करें या चयनित एजेंट से बात करने के लिए उसे DM भेजें।",
-          "title": "एकीकरण बनाने के लिए तैयार"
-        },
-        "defaultAgent": "डिफ़ॉल्ट एजेंट",
         "disconnectAria": "{{bot}} को डिस्कनेक्ट करें",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "डोमेन का पता चला",
-          "instructionAfter": ", इस बॉट को चुनें, और डोमेन को इस पर सेट करें",
-          "instructionEnd": ". Telegram इस बॉट के लिए कनेक्ट प्रवाह की अनुमति देने के लिए इस डोमेन का उपयोग करता है।",
-          "instructionStart": "{{botFather}} में भेजें",
-          "title": "Telegram लॉगिन डोमेन सेट करें"
-        },
-        "emptyDescription": "किसी एजेंट को Telegram संदेश रूट करना शुरू करने के लिए एक बॉट टोकन जोड़ें।",
-        "emptyTitle": "अभी तक कोई Telegram बॉट नहीं है",
-        "invalidTokenDescription": "BotFather से नए टोकन के साथ बॉट को पुनः स्थापित करें।",
         "loadError": "Telegram सेटिंग लोड नहीं हो सकी.",
         "moreOptions": "{{bot}} के लिए अधिक विकल्प",
-        "newBotToken": "नया बॉट टोकन",
         "notConnected": "जुड़े नहीं हैं",
         "officialBot": "आधिकारिक Telegram बॉट",
         "officialDescription": "{{brandName}} द्वारा प्रदान किया गया आधिकारिक बॉट।",
         "officialMissing": "आधिकारिक बॉट कॉन्फ़िगरेशन अनुपलब्ध है.",
-        "pageDescription": "इस वर्कस्पेस के लिए बॉट रूटिंग प्रबंधित करें",
-        "privacy": {
-          "instructionAfter": ", इस बॉट को चुनें, फिर गोपनीयता मोड को अक्षम करें। इससे एजेंट को उल्लेखों और उत्तरों के आसपास समूह संदर्भ पढ़ने की सुविधा मिलती है।",
-          "instructionStart": "{{botFather}} में भेजें",
-          "off": "गोपनीयता मोड बंद है",
-          "title": "वैकल्पिक: गोपनीयता मोड बंद करें"
-        },
-        "registerAria": "Telegram बॉट पंजीकृत करें",
-        "reinstall": "पुनर्स्थापित",
-        "reinstallDescription": "{{bot}} के लिए ताज़ा BotFather टोकन चिपकाएँ। टोकन इसी बॉट का होना चाहिए.",
-        "reinstalling": "पुनः स्थापित किया जा रहा है...",
-        "reinstallTargetFallback": "यह बॉट",
-        "reinstallTitle": "Telegram बॉट को पुनर्स्थापित करें",
-        "steps": {
-          "back": "पीछे",
-          "create": "बनाएं",
-          "domain": "कार्यक्षेत्र",
-          "next": "अगला",
-          "privacy": "गोपनीयता",
-          "token": "टोकन"
-        },
-        "token": {
-          "instructionAfter": ", एक नाम और उपयोगकर्ता नाम चुनें, फिर नीचे टोकन चिपकाएँ।",
-          "open": "खुला",
-          "send": ", भेजना",
-          "title": "BotFather में एक बॉट टोकन बनाएं",
-          "verified": "टोकन सत्यापित"
-        },
-        "tokenInvalid": "टोकन अमान्य",
-        "uninstallAria": "{{bot}} को अनइंस्टॉल करें",
-        "uninstallDescription": "यह वर्कस्पेस से {{bot}} को हटा देता है और इसका उपयोग करने वाले उपयोगकर्ताओं के लिए Telegram पहुंच को डिस्कनेक्ट कर देता है। इस एक्शन को वापस नहीं किया जा सकता।",
-        "uninstallTargetFallback": "यह बॉट",
-        "uninstallTitle": "Telegram बॉट अनइंस्टॉल करें?"
+        "pageDescription": "इस वर्कस्पेस के लिए बॉट रूटिंग प्रबंधित करें"
       },
       "toasts": {
         "agentphoneConnected": "फ़ोन नंबर कनेक्ट हो गया",
@@ -4052,9 +3991,6 @@
         "teamsInstalled": "Microsoft Teams सफलतापूर्वक स्थापित हुआ",
         "teamsUninstalled": "Microsoft Teams एकीकरण अनइंस्टॉल किया गया",
         "teamsUpdated": "Microsoft Teams अद्यतन किया गया",
-        "telegramBotAdded": "Telegram बॉट जोड़ा गया",
-        "telegramBotReinstalled": "Telegram बॉट पुनः स्थापित किया गया",
-        "telegramBotUninstalled": "Telegram बॉट अनइंस्टॉल किया गया",
         "telegramDisconnected": "Telegram खाता डिस्कनेक्ट किया गया"
       },
       "works": {

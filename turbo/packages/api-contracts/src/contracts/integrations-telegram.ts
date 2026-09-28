@@ -16,7 +16,7 @@ const telegramConnectedUserSchema = z.object({
 
 const telegramBotSchema = z.object({
   id: z.string(),
-  kind: z.enum(["custom", "official"]).optional(),
+  kind: z.literal("official").optional(),
   username: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   agent: z.object({ id: z.string(), name: z.string() }).nullable(),

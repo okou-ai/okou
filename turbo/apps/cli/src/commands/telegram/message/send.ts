@@ -14,8 +14,7 @@ function parsePositiveInteger(value: string, flag: string): number {
 
 export const sendCommand = new Command()
   .name("send")
-  .description("Send a message to a Telegram chat as the bot")
-  .requiredOption("--bot-id <id>", "Telegram bot ID")
+  .description("Send a message through the official Okou Telegram bot")
   .requiredOption("-c, --chat-id <id>", "Telegram chat ID")
   .option("-t, --text <message>", "Message text")
   .option("--reply-to-message-id <id>", "Message ID to reply to")
@@ -24,18 +23,17 @@ export const sendCommand = new Command()
     "after",
     `
 Examples:
-  Simple message:      okou telegram message send --bot-id 123456789 -c -1001234567890 -t "Hello!"
-  Reply to message:    okou telegram message send --bot-id 123456789 -c -1001234567890 --reply-to-message-id 42 -t "reply"
-  Forum topic message: okou telegram message send --bot-id 123456789 -c -1001234567890 --message-thread-id 7 -t "topic update"
+  Simple message:      okou telegram message send -c -1001234567890 -t "Hello!"
+  Reply to message:    okou telegram message send -c -1001234567890 --reply-to-message-id 42 -t "reply"
+  Forum topic message: okou telegram message send -c -1001234567890 --message-thread-id 7 -t "topic update"
 
 Notes:
   - Message text can be provided with --text or piped on stdin
-  - Choose an explicit --bot-id. Run "okou telegram bot list" to inspect available bots.`,
+  - Sends through the official Okou Telegram bot.`,
   )
   .action(
     withErrorHandler(
       async (options: {
-        botId: string;
         chatId: string;
         text?: string;
         replyToMessageId?: string;
@@ -54,13 +52,12 @@ Notes:
         if (!text) {
           throw new Error("Either --text or piped stdin must be provided", {
             cause: new Error(
-              'Usage: okou telegram message send --bot-id BOT_ID -c CHAT_ID -t "your message"',
+              'Usage: okou telegram message send -c CHAT_ID -t "your message"',
             ),
           });
         }
 
         const result = await sendTelegramMessage({
-          botId: options.botId,
           chatId: options.chatId,
           text,
           replyToMessageId: options.replyToMessageId

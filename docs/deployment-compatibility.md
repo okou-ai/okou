@@ -214,11 +214,12 @@ stricter release 7 API floor subsumes it.
   `direct-message:main` (Slack `thread_ts`, Feishu and Teams `thread_id`,
   Discord `session_key`, official Telegram and AgentPhone `root_message_id`).
   The migration keeps the most recently used `direct-message:%` route per
-  connection/link identity (not per channel), rewrites its key to the constant
-  and deletes the other DM route rows; their chat threads and canonical input
-  history remain. The retained main DM thread has its model/provider/tier pins
-  cleared. Discord route deletion also cascades its private launch-context and
-  ingress rows through existing foreign keys. Deploy window:
+  connection/link ID (regardless of older channel IDs), rewrites its key to
+  the constant and clears its thread model, provider and service-tier selection.
+  It deletes the other DM route rows; their chat threads and canonical input
+  messages remain as history. Existing Discord route foreign keys also cascade
+  deletion to the detached route's private launch context and ingress rows.
+  No new table, column or constraint is introduced. Deploy window:
   the migration runs before the new API, so an old API instance that receives a
   DM in that window no longer finds its `direct-message:<agentId>:<model>` key,
   creates a new thread and inserts an old-style route. After promotion the new

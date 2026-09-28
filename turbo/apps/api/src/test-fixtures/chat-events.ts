@@ -152,7 +152,7 @@ interface ChatEventContextFixture {
   readonly telegramRootMessageId: string | null;
   readonly telegramThinkingMessageId: string | null;
   readonly telegramUserLinkId: string | null;
-  readonly telegramUserLinkKind: "custom" | "official" | null;
+  readonly telegramUserLinkKind: "official" | "official" | null;
   readonly telegramChatType: string | null;
   readonly telegramSenderUserId: string | null;
   readonly telegramSenderDisplayName: string | null;
@@ -362,7 +362,7 @@ const annotationProjectionInputs = [
         rootMessageId: null,
         thinkingMessageId: null,
         userLinkId: "00000000-0000-4000-8000-000000000004",
-        userLinkKind: "custom",
+        userLinkKind: "official",
         chatType: "supergroup",
         senderUserId: "123456789",
         senderDisplayName: "Telegram User",
@@ -404,7 +404,7 @@ const annotationProjectionInputs = [
         rootMessageId: null,
         thinkingMessageId: null,
         userLinkId: "00000000-0000-4000-8000-000000000006",
-        userLinkKind: "custom",
+        userLinkKind: "official",
         chatType: "group",
         senderUserId: null,
         senderDisplayName: null,

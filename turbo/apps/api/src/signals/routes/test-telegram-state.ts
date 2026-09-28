@@ -710,7 +710,6 @@ async function findChatThreadRouteForAction(
   }
   const [route] = await db
     .select({
-      telegramUserLinkId: telegramChatThreadRoutes.telegramUserLinkId,
       telegramOfficialUserLinkId:
         telegramChatThreadRoutes.telegramOfficialUserLinkId,
       chatId: telegramChatThreadRoutes.chatId,
@@ -720,15 +719,10 @@ async function findChatThreadRouteForAction(
     .from(telegramChatThreadRoutes)
     .where(
       and(
-        body.owner_kind === "official"
-          ? eq(
-              telegramChatThreadRoutes.telegramOfficialUserLinkId,
-              required.user_link_id!,
-            )
-          : eq(
-              telegramChatThreadRoutes.telegramUserLinkId,
-              required.user_link_id!,
-            ),
+        eq(
+          telegramChatThreadRoutes.telegramOfficialUserLinkId,
+          required.user_link_id!,
+        ),
         eq(telegramChatThreadRoutes.chatId, required.chat_id!),
         eq(telegramChatThreadRoutes.rootMessageId, required.root_message_id!),
       ),

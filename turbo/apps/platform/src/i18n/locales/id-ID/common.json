@@ -3680,8 +3680,7 @@
       },
       "errors": {
         "githubAuthorizationWindow": "Gagal membuka jendela otorisasi",
-        "telegramDomain": "Domain belum terlihat oleh Telegram. Periksa BotFather dan coba lagi.",
-        "telegramPrivacy": "Mode privasi masih tampaknya aktif. Matikan di BotFather, lalu coba lagi."
+        "telegramDomain": "Domain belum terlihat oleh Telegram. Periksa BotFather dan coba lagi."
       },
       "feishu": {
         "addBot": "Tambahkan bot",
@@ -3949,77 +3948,17 @@
         "uninstallTitle": "Uninstall bot Lark?"
       },
       "telegram": {
-        "addBot": "Tambahkan bot",
-        "addDescription": "Selesaikan setiap langkah BotFather, lalu buat bot ruang kerja.",
-        "adding": "Menambahkan...",
-        "addTitle": "Tambahkan bot Telegram",
         "backToIntegrations": "Kembali ke integrasi",
         "botFallback": "Bot Telegram",
-        "bots": "Bot Telegram",
-        "botToken": "Token bot",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "Memeriksa...",
-        "copied": "disalin!",
-        "copyAria": "Salin {{value}}",
-        "copyTitle": "Klik untuk menyalin",
-        "create": {
-          "description": "{{brandName}} akan mendaftarkan bot ini dan mengonfigurasi webhook-nya. Setelah penyiapan, sebut bot di grup atau kirim DM untuk berbicara dengan agen yang dipilih.",
-          "descriptionNamed": "{{brandName}} akan mendaftarkan {{bot}} dan mengonfigurasi webhook-nya. Setelah penyiapan, sebut bot di grup atau kirim DM untuk berbicara dengan agen yang dipilih.",
-          "title": "Siap membuat integrasi"
-        },
-        "defaultAgent": "Agen default",
         "disconnectAria": "Putuskan sambungan {{bot}}",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "Domain terdeteksi",
-          "instructionAfter": ", pilih bot ini, lalu setel domain ke ",
-          "instructionEnd": ". Telegram menggunakan domain ini untuk mengizinkan alur connect untuk bot ini.",
-          "instructionStart": "Di {{botFather}}, kirim ",
-          "title": "Setel domain login Telegram"
-        },
-        "emptyDescription": "Tambahkan token bot untuk mulai merutekan pesan Telegram ke agen.",
-        "emptyTitle": "Belum ada bot Telegram",
-        "invalidTokenDescription": "Pasang ulang bot dengan token baru dari BotFather.",
         "loadError": "Tidak dapat memuat setelan Telegram.",
         "moreOptions": "Opsi lainnya untuk {{bot}}",
-        "newBotToken": "Token bot baru",
         "notConnected": "Tidak terhubung",
         "officialBot": "Bot Telegram resmi",
         "officialDescription": "Bot resmi yang disediakan oleh {{brandName}}.",
         "officialMissing": "Konfigurasi bot resmi tidak ada.",
-        "pageDescription": "Kelola perutean bot untuk ruang kerja ini",
-        "privacy": {
-          "instructionAfter": ", pilih bot ini, lalu nonaktifkan mode privasi. Ini memungkinkan agen membaca konteks grup di sekitar mention dan balasan.",
-          "instructionStart": "Di {{botFather}}, kirim ",
-          "off": "Mode privasi nonaktif",
-          "title": "Opsional: nonaktifkan mode privasi"
-        },
-        "registerAria": "Daftarkan bot Telegram",
-        "reinstall": "Pasang ulang",
-        "reinstallDescription": "Tempel token BotFather yang baru untuk {{bot}}. Token harus milik bot yang sama.",
-        "reinstalling": "Memasang ulang...",
-        "reinstallTargetFallback": "bot ini",
-        "reinstallTitle": "Pasang ulang bot Telegram",
-        "steps": {
-          "back": "Kembali",
-          "create": "Buat",
-          "domain": "Domain",
-          "next": "Lanjut",
-          "privacy": "Privasi",
-          "token": "Token"
-        },
-        "token": {
-          "instructionAfter": ", pilih nama dan nama pengguna, lalu tempel token di bawah.",
-          "open": "Buka ",
-          "send": ", kirim ",
-          "title": "Buat token bot di BotFather",
-          "verified": "Token terverifikasi"
-        },
-        "tokenInvalid": "Token tidak valid",
-        "uninstallAria": "Uninstall {{bot}}",
-        "uninstallDescription": "Ini akan menghapus {{bot}} dari ruang kerja dan memutus akses Telegram untuk pengguna yang memakainya. Tindakan ini tidak dapat dibatalkan.",
-        "uninstallTargetFallback": "bot ini",
-        "uninstallTitle": "Uninstall bot Telegram?"
+        "pageDescription": "Kelola perutean bot untuk ruang kerja ini"
       },
       "toasts": {
         "agentphoneConnected": "Nomor telepon terhubung",
@@ -4035,9 +3974,6 @@
         "teamsInstalled": "Microsoft Teams berhasil diinstal",
         "teamsUninstalled": "Integrasi Microsoft Teams dihapus",
         "teamsUpdated": "Microsoft Teams diperbarui",
-        "telegramBotAdded": "Bot Telegram ditambahkan",
-        "telegramBotReinstalled": "Bot Telegram dipasang ulang",
-        "telegramBotUninstalled": "Bot Telegram dihapus",
         "telegramDisconnected": "Akun Telegram terputus"
       },
       "works": {

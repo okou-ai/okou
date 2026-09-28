@@ -524,7 +524,7 @@ export type IntegrationsPhoneDownloadFileContract =
  * Integration Telegram bot list contract
  * GET /api/integrations/telegram/bots
  *
- * Lists Telegram bots available in the authenticated user's org.
+ * Reports the official Telegram bot for older CLI clients.
  * Requires `telegram:read` capability (via OKOU_TOKEN).
  */
 const telegramBotTokenStatusSchema = z.enum(["valid", "invalid", "unknown"]);
@@ -537,7 +537,7 @@ const telegramConnectedUserSchema = z.object({
 
 const telegramBotListItemSchema = z.object({
   id: z.string(),
-  kind: z.enum(["custom", "official"]).optional(),
+  kind: z.literal("official").optional(),
   username: z.string().nullable(),
   agent: z.object({ id: z.string(), name: z.string() }).nullable(),
   isOwner: z.boolean(),
@@ -572,7 +572,7 @@ export const integrationsTelegramBotListContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "List Telegram bots available in the authenticated user's org",
+    summary: "Get the official Telegram bot status",
   },
 });
 

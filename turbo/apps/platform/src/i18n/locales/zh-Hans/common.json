@@ -3680,8 +3680,7 @@
       },
       "errors": {
         "githubAuthorizationWindow": "无法打开授权窗口",
-        "telegramDomain": "Telegram还看不到这个域名。请在BotFather中确认后重试。",
-        "telegramPrivacy": "隐私模式似乎仍处于开启状态。请在BotFather中关闭后重试。"
+        "telegramDomain": "Telegram还看不到这个域名。请在BotFather中确认后重试。"
       },
       "feishu": {
         "addBot": "添加机器人",
@@ -3949,77 +3948,17 @@
         "uninstallTitle": "卸载Lark机器人？"
       },
       "telegram": {
-        "addBot": "添加机器人",
-        "addDescription": "完成BotFather中的每个步骤，然后创建工作区机器人。",
-        "adding": "添加中…",
-        "addTitle": "添加Telegram机器人",
         "backToIntegrations": "返回集成",
         "botFallback": "Telegram机器人",
-        "bots": "Telegram机器人",
-        "botToken": "机器人令牌",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "检查中…",
-        "copied": "已复制！",
-        "copyAria": "复制{{value}}",
-        "copyTitle": "点击复制",
-        "create": {
-          "description": "{{brandName}}会注册这个机器人并配置它的webhook。完成后，在群里提及该机器人或给它发私信，就能与所选智能体对话。",
-          "descriptionNamed": "{{brandName}}会注册{{bot}}并配置它的webhook。完成后，在群里提及该机器人或给它发私信，就能与所选智能体对话。",
-          "title": "准备创建集成"
-        },
-        "defaultAgent": "默认智能体",
         "disconnectAria": "断开{{bot}}的连接",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "已检测到域名",
-          "instructionAfter": "，选择这个机器人，然后把域名设置为 ",
-          "instructionEnd": "。Telegram会用这个域名来允许此机器人的连接流程。",
-          "instructionStart": "在{{botFather}}中发送 ",
-          "title": "设置Telegram登录域名"
-        },
-        "emptyDescription": "添加机器人令牌，开始把Telegram消息路由给智能体。",
-        "emptyTitle": "还没有Telegram机器人",
-        "invalidTokenDescription": "请用BotFather重新生成的令牌重新安装机器人。",
         "loadError": "无法加载Telegram设置。",
         "moreOptions": "{{bot}}的更多选项",
-        "newBotToken": "新的机器人令牌",
         "notConnected": "未连接",
         "officialBot": "Telegram官方机器人",
         "officialDescription": "由{{brandName}}提供的官方机器人。",
         "officialMissing": "缺少官方机器人配置。",
-        "pageDescription": "管理此工作区的机器人路由",
-        "privacy": {
-          "instructionAfter": "，选择这个机器人，然后关闭隐私模式。这样智能体才能读取提及和回复附近的群聊上下文。",
-          "instructionStart": "在{{botFather}}中发送 ",
-          "off": "隐私模式已关闭",
-          "title": "可选：关闭隐私模式"
-        },
-        "registerAria": "注册Telegram机器人",
-        "reinstall": "重新安装",
-        "reinstallDescription": "粘贴{{bot}}在BotFather中新生成的令牌。该令牌必须属于同一个机器人。",
-        "reinstalling": "重新安装中…",
-        "reinstallTargetFallback": "此机器人",
-        "reinstallTitle": "重新安装Telegram机器人",
-        "steps": {
-          "back": "上一步",
-          "create": "创建",
-          "domain": "域名",
-          "next": "下一步",
-          "privacy": "隐私",
-          "token": "令牌"
-        },
-        "token": {
-          "instructionAfter": "，设置名称和用户名，然后把令牌粘贴到下方。",
-          "open": "打开 ",
-          "send": "，发送 ",
-          "title": "在BotFather中创建机器人令牌",
-          "verified": "令牌已验证"
-        },
-        "tokenInvalid": "令牌无效",
-        "uninstallAria": "卸载{{bot}}",
-        "uninstallDescription": "此操作会从工作区移除{{bot}}，并断开使用它的用户的Telegram访问权限。操作无法撤销。",
-        "uninstallTargetFallback": "这个机器人",
-        "uninstallTitle": "卸载Telegram机器人？"
+        "pageDescription": "管理此工作区的机器人路由"
       },
       "toasts": {
         "agentphoneConnected": "电话号码已连接",
@@ -4035,9 +3974,6 @@
         "teamsInstalled": "Microsoft Teams安装成功",
         "teamsUninstalled": "Microsoft Teams集成已卸载",
         "teamsUpdated": "Microsoft Teams已更新",
-        "telegramBotAdded": "已添加Telegram机器人",
-        "telegramBotReinstalled": "已重新安装Telegram机器人",
-        "telegramBotUninstalled": "已卸载Telegram机器人",
         "telegramDisconnected": "Telegram账号已断开连接"
       },
       "works": {

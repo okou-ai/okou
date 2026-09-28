@@ -616,7 +616,6 @@ describe("verified Discord integration settings", () => {
   it("always reports the organization default agent", async () => {
     const { actor } = createActors();
     const owner = actor();
-    await fixture(owner);
     const api = createBddApi(context);
     api.acceptAgentStorageWrites();
     const ownerProfile = api.user(owner);
@@ -624,6 +623,10 @@ describe("verified Discord integration settings", () => {
       ownerProfile,
       { displayName: "Workspace default" },
     );
+    await api.updateAgentMetadata(ownerProfile, defaultAgentId, {
+      displayName: "Workspace default",
+    });
+    await fixture(owner);
     const ownAgent = await api.createAgent(ownerProfile, {
       visibility: "private",
       displayName: "Personal Discord agent",

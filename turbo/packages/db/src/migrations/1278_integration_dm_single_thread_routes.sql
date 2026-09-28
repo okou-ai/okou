@@ -15,7 +15,7 @@ WITH "ranked" AS (
   SELECT
     "route"."id",
     row_number() OVER (
-      PARTITION BY "route"."connection_id", "route"."channel_id", "route"."user_id"
+      PARTITION BY "route"."connection_id"
       ORDER BY "thread"."last_message_at" DESC, "route"."created_at" DESC, "route"."id" DESC
     ) AS "rank"
   FROM "slack_chat_thread_routes" AS "route"
@@ -34,7 +34,7 @@ WITH "ranked" AS (
   SELECT
     "route"."id",
     row_number() OVER (
-      PARTITION BY "route"."connection_id", "route"."chat_id", "route"."user_id"
+      PARTITION BY "route"."connection_id"
       ORDER BY "thread"."last_message_at" DESC, "route"."created_at" DESC, "route"."id" DESC
     ) AS "rank"
   FROM "feishu_chat_thread_routes" AS "route"
@@ -53,7 +53,7 @@ WITH "ranked" AS (
   SELECT
     "route"."id",
     row_number() OVER (
-      PARTITION BY "route"."connection_id", "route"."conversation_id", "route"."user_id"
+      PARTITION BY "route"."connection_id"
       ORDER BY "thread"."last_message_at" DESC, "route"."created_at" DESC, "route"."id" DESC
     ) AS "rank"
   FROM "teams_chat_thread_routes" AS "route"
@@ -72,7 +72,7 @@ WITH "ranked" AS (
   SELECT
     "route"."id",
     row_number() OVER (
-      PARTITION BY "route"."connection_id", "route"."channel_id", "route"."user_id"
+      PARTITION BY "route"."connection_id"
       ORDER BY "thread"."last_message_at" DESC, "route"."created_at" DESC, "route"."id" DESC
     ) AS "rank"
   FROM "discord_chat_thread_routes" AS "route"
@@ -91,7 +91,7 @@ WITH "ranked" AS (
   SELECT
     "route"."id",
     row_number() OVER (
-      PARTITION BY "route"."telegram_official_user_link_id", "route"."chat_id"
+      PARTITION BY "route"."telegram_official_user_link_id"
       ORDER BY "thread"."last_message_at" DESC, "route"."created_at" DESC, "route"."id" DESC
     ) AS "rank"
   FROM "telegram_chat_thread_routes" AS "route"
@@ -126,3 +126,33 @@ UPDATE "agentphone_chat_thread_routes" AS "route"
 SET "root_message_id" = 'direct-message:main'
 WHERE "route"."root_message_id" LIKE 'direct-message:%'
   AND "route"."root_message_id" <> 'direct-message:main';
+
+--> statement-breakpoint
+-- A main DM thread follows the member's current web preference at pick time.
+-- Keep model choices on all detached historical threads and reply threads.
+UPDATE "chat_threads"
+SET "selected_model" = NULL,
+    "codex_service_tier" = NULL,
+    "model_provider_id" = NULL,
+    "model_provider_type" = NULL,
+    "model_provider_credential_scope" = NULL
+WHERE "id" IN (
+  SELECT "chat_thread_id" FROM "slack_chat_thread_routes"
+  WHERE "thread_ts" = 'direct-message:main'
+  UNION ALL
+  SELECT "chat_thread_id" FROM "feishu_chat_thread_routes"
+  WHERE "thread_id" = 'direct-message:main'
+  UNION ALL
+  SELECT "chat_thread_id" FROM "teams_chat_thread_routes"
+  WHERE "thread_id" = 'direct-message:main'
+  UNION ALL
+  SELECT "chat_thread_id" FROM "discord_chat_thread_routes"
+  WHERE "session_key" = 'direct-message:main'
+  UNION ALL
+  SELECT "chat_thread_id" FROM "telegram_chat_thread_routes"
+  WHERE "root_message_id" = 'direct-message:main'
+    AND "telegram_official_user_link_id" IS NOT NULL
+  UNION ALL
+  SELECT "chat_thread_id" FROM "agentphone_chat_thread_routes"
+  WHERE "root_message_id" = 'direct-message:main'
+);

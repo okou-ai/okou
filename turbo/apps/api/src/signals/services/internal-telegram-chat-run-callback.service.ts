@@ -113,9 +113,7 @@ async function claimTelegramChatDelivery(
 }
 
 function telegramOwnerWhere(ownerLink: TelegramOwnerLink) {
-  return ownerLink.kind === "custom"
-    ? eq(telegramChatThreadRoutes.telegramUserLinkId, ownerLink.id)
-    : eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
+  return eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
 }
 
 async function loadTelegramOwnerBinding(
@@ -129,10 +127,7 @@ async function loadTelegramOwnerBinding(
 ): Promise<TelegramOwnerBinding | undefined> {
   // Self-hosted (custom) Telegram bots are retired; only the official shared
   // bot can deliver run callbacks.
-  if (
-    args.target.userLinkKind !== "official" ||
-    !isOfficialTelegramBotId(args.target.installationId)
-  ) {
+  if (!isOfficialTelegramBotId(args.target.installationId)) {
     return undefined;
   }
   const [link] = await args.db

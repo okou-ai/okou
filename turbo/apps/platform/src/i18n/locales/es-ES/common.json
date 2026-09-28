@@ -3756,8 +3756,7 @@
       },
       "errors": {
         "githubAuthorizationWindow": "No se abrió la ventana de autorización",
-        "telegramDomain": "El dominio aún no es visible para Telegram. Comprueba BotFather y vuelve a intentarlo.",
-        "telegramPrivacy": "El modo de privacidad sigue activado. Desactívalo en BotFather y vuelve a intentarlo."
+        "telegramDomain": "El dominio aún no es visible para Telegram. Comprueba BotFather y vuelve a intentarlo."
       },
       "feishu": {
         "addBot": "Añadir bot",
@@ -4025,77 +4024,17 @@
         "uninstallTitle": "¿Desinstalar el bot de Lark?"
       },
       "telegram": {
-        "addBot": "Añadir bot",
-        "addDescription": "Completa cada paso de BotFather y luego crea el bot de espacio de trabajo.",
-        "adding": "Añadiendo...",
-        "addTitle": "Añadir bot de Telegram",
         "backToIntegrations": "Volver a las integraciones",
         "botFallback": "Bot de Telegram",
-        "bots": "Bots de Telegram",
-        "botToken": "Token de bot",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "Comprobando...",
-        "copied": "¡Copiado!",
-        "copyAria": "Copiar {{value}}",
-        "copyTitle": "Haz clic para copiar",
-        "create": {
-          "description": "{{brandName}} registrará este bot y configurará su webhook. Después de configurarlo, menciona al bot en un grupo o mándale un mensaje privado para que hable con el agente seleccionado.",
-          "descriptionNamed": "{{brandName}} registrará {{bot}} y configurará su webhook. Después de configurarlo, menciona al bot en un grupo o mándale un mensaje privado para que hable con el agente seleccionado.",
-          "title": "Listo para crear la integración"
-        },
-        "defaultAgent": "Agente por defecto",
         "disconnectAria": "Desconectar {{bot}}",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "Dominio detectado",
-          "instructionAfter": ", elige este bot y establece el dominio como",
-          "instructionEnd": ". Telegram utiliza este dominio para permitir el flujo de conexión de este bot.",
-          "instructionStart": "En {{botFather}}, envía",
-          "title": "Configurar el dominio de inicio de sesión de Telegram"
-        },
-        "emptyDescription": "Añade un token de bot para empezar a dirigir los mensajes de Telegram a un agente.",
-        "emptyTitle": "Todavía no hay bots de Telegram",
-        "invalidTokenDescription": "Reinstala el bot con un token nuevo de BotFather.",
         "loadError": "No se pudo cargar la configuración de Telegram.",
         "moreOptions": "Más opciones para {{bot}}",
-        "newBotToken": "Nuevo token de bot",
         "notConnected": "No conectado",
         "officialBot": "Bot oficial de Telegram",
         "officialDescription": "Bot oficial proporcionado por {{brandName}}.",
         "officialMissing": "Falta la configuración oficial del bot.",
-        "pageDescription": "Gestiona el enrutamiento de bots para este espacio de trabajo",
-        "privacy": {
-          "instructionAfter": ", elige este bot y luego desactiva el modo de privacidad. Esto permite al agente leer el contexto del grupo alrededor de las menciones y respuestas.",
-          "instructionStart": "En {{botFather}}, envía",
-          "off": "El modo privacidad está desactivado",
-          "title": "Opcional: desactiva el modo privacidad"
-        },
-        "registerAria": "Registrar Telegram bot",
-        "reinstall": "Reinstalación",
-        "reinstallDescription": "Pega un token nuevo de BotFather para {{bot}}. El token debe pertenecer a este mismo bot.",
-        "reinstalling": "Reinstalando...",
-        "reinstallTargetFallback": "Este bot",
-        "reinstallTitle": "Reinstalar Telegram bot",
-        "steps": {
-          "back": "Volver",
-          "create": "Crear",
-          "domain": "Dominio",
-          "next": "Siguiente",
-          "privacy": "Privacidad",
-          "token": "Token"
-        },
-        "token": {
-          "instructionAfter": ", elige un nombre y un nombre de usuario, luego pega el token a continuación.",
-          "open": "Abrir",
-          "send": ", enviar",
-          "title": "Crear un token de bot en BotFather",
-          "verified": "Token verificado"
-        },
-        "tokenInvalid": "Token inválido",
-        "uninstallAria": "Desinstalar {{bot}}",
-        "uninstallDescription": "Esto elimina {{bot}} del espacio de trabajo y desconecta el acceso a Telegram de los usuarios que lo utilizan. Esta acción no puede deshacerse.",
-        "uninstallTargetFallback": "Este bot",
-        "uninstallTitle": "¿Desinstalar el bot de Telegram?"
+        "pageDescription": "Gestiona el enrutamiento de bots para este espacio de trabajo"
       },
       "toasts": {
         "agentphoneConnected": "Número de teléfono conectado",
@@ -4111,9 +4050,6 @@
         "teamsInstalled": "Microsoft Teams instalado con éxito",
         "teamsUninstalled": "Integración de Microsoft Teams desinstalada",
         "teamsUpdated": "Microsoft Teams actualizado",
-        "telegramBotAdded": "Bot de Telegram añadido",
-        "telegramBotReinstalled": "Bot de Telegram reinstalado",
-        "telegramBotUninstalled": "Bot de Telegram desinstalado",
         "telegramDisconnected": "Cuenta de Telegram desconectada"
       },
       "works": {
