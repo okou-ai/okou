@@ -26,6 +26,9 @@ on:
 permissions:
   contents: read
 
+env:
+  npm_config_audit: "false"
+
 concurrency:
   group: chat-event-v8-snapshot-dry-run
   cancel-in-progress: false
