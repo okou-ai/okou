@@ -32,7 +32,8 @@ export interface ChatQueueHeadContext {
  * - `assembled`: run parameters, how a create failure is told, and what the
  *   producer records once the run exists;
  * - `rejected`: the head can never launch;
- * - `not-ready`: the head this pick read is no longer the queue head.
+ * - `not-ready`: the input could not be assembled. The picker rechecks the
+ *   head and rejects it if it is unchanged and the thread is still idle.
  */
 export type ChatQueueRunAssembly =
   | {
