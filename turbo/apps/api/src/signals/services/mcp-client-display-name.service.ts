@@ -43,7 +43,7 @@ export async function mcpClientDisplayName(
         return undefined;
       }
       const name = parsed.data.client_name.replace(/\s+/gu, " ").trim();
-      return name.length > 0 && name.length <= 120 && !/[\p{Cc}]/u.test(name)
+      return name.length > 0 && name.length <= 120 && !/[\p{C}]/u.test(name)
         ? name
         : undefined;
     })(),

@@ -3413,6 +3413,10 @@ describe("MCP chat mutations", () => {
         client_id: metadataUrl,
         client_name: "x".repeat(121),
       }),
+      HttpResponse.json({
+        client_id: metadataUrl,
+        client_name: "A\u202eB",
+      }),
       new HttpResponse(null, { status: 503 }),
     ]) {
       server.use(
