@@ -130,6 +130,7 @@ function hash(value: string): string {
 
 const FILE_UPLOAD_PREFIX = "browser-native-input/";
 const FILE_UPLOAD_CONTENT_TYPE = "application/octet-stream";
+const FILE_UPLOAD_TTL_SECONDS = 60 * 60;
 
 function temporaryFileKey(
   row: Pick<RequestRow, "requestTokenHash">,
@@ -157,13 +158,9 @@ export const prepareBrowserUserFileUpload$ = command(
       readonly input: BrowserUserActionPrepareFileUploadRequest;
     },
     signal: AbortSignal,
-  ): Promise<
-    ServiceResult<{
-      readonly uploadUrl: string;
-      readonly uploadHeaders: { readonly "x-amz-checksum-sha256": string };
-    }>
-  > => {
-    const row = await loadOwnedRequest(set(writeDb$), args);
+  ): Promise<ServiceResult<{ readonly uploadUrl: string }>> => {
+    const db = set(writeDb$);
+    const row = await loadOwnedRequest(db, args);
     signal.throwIfAborted();
     if (!row) {
       return notFound();
@@ -178,12 +175,9 @@ export const prepareBrowserUserFileUpload$ = command(
     ) {
       return conflict("Browser file upload is not available");
     }
-    if (!(await requestHasLiveBrowser(set(writeDb$), row))) {
+    if (!(await requestHasLiveBrowser(db, row))) {
       return expired();
     }
-    const checksumSha256 = Buffer.from(args.input.sha256, "hex").toString(
-      "base64",
-    );
     const uploadUrl = await get(
       generatePresignedPutUrl(
         env("R2_USER_STORAGES_BUCKET_NAME"),
@@ -191,21 +185,20 @@ export const prepareBrowserUserFileUpload$ = command(
         FILE_UPLOAD_CONTENT_TYPE,
         {
           usePublicEndpoint: true,
-          checksumSha256,
           contentLength: args.input.size,
-          expiresInSeconds: 60,
+          expiresInSeconds: FILE_UPLOAD_TTL_SECONDS,
         },
         signal,
       ),
     );
     signal.throwIfAborted();
-    return {
-      kind: "ok",
-      value: {
-        uploadUrl,
-        uploadHeaders: { "x-amz-checksum-sha256": checksumSha256 },
-      },
-    };
+    // Keep this provider available for a slow upload; its absolute timeout
+    // and independent request state still gate the subsequent apply.
+    if (!(await touchExactProvider(db, row, FILE_UPLOAD_TTL_SECONDS * 1000))) {
+      return expired();
+    }
+    signal.throwIfAborted();
+    return { kind: "ok", value: { uploadUrl } };
   },
 );
 
@@ -429,13 +422,17 @@ async function requestHasLiveBrowser(
   return live !== undefined;
 }
 
-async function touchExactProvider(db: Db, row: RequestRow): Promise<boolean> {
+async function touchExactProvider(
+  db: Db,
+  row: RequestRow,
+  leaseMs = IDLE_LEASE_MS,
+): Promise<boolean> {
   const now = nowDate();
   const [touched] = await db
     .update(browserSessionInstances)
     .set({
       lastTouchedAt: now,
-      idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
+      idleExpiresAt: new Date(now.getTime() + leaseMs),
       updatedAt: now,
     })
     .where(
@@ -1246,10 +1243,7 @@ const materializeBrowserFileChoice$ = command(
         ),
       );
       signal.throwIfAborted();
-      if (
-        buffer.length !== file.size ||
-        createHash("sha256").update(buffer).digest("hex") !== file.sha256
-      ) {
+      if (buffer.length !== file.size) {
         return null;
       }
       files.push({

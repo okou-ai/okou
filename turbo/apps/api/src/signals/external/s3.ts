@@ -789,8 +789,6 @@ export function generatePresignedPutUrl(
   options: {
     readonly usePublicEndpoint?: boolean;
     readonly metadata?: Readonly<Record<string, string>>;
-    /** Base64 SHA-256 digest bound into the storage authorization. */
-    readonly checksumSha256?: string;
     /** Bind a browser File PUT to the declared byte length as well. */
     readonly contentLength?: number;
     /** Short-lived upload permissions may override the shared artifact URL lifetime. */
@@ -980,7 +978,6 @@ function generatePresignedPutUrlWithClient(
     readonly key: string;
     readonly contentType: string;
     readonly metadata?: Readonly<Record<string, string>>;
-    readonly checksumSha256?: string;
     readonly contentLength?: number;
     readonly expiresInSeconds?: number;
   },
@@ -1004,18 +1001,12 @@ function generatePresignedPutUrlWithClient(
       Key: key,
       ContentType: contentType,
       Metadata: options.metadata,
-      ChecksumSHA256: options.checksumSha256,
       ContentLength: options.contentLength,
     });
     return getSignedUrl(client, command, {
       expiresIn: options.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
-      ...(metadataHeaders || options.checksumSha256
-        ? {
-            unhoistableHeaders: new Set([
-              ...Object.keys(metadataHeaders ?? {}),
-              ...(options.checksumSha256 ? ["x-amz-checksum-sha256"] : []),
-            ]),
-          }
+      ...(metadataHeaders
+        ? { unhoistableHeaders: new Set(Object.keys(metadataHeaders)) }
         : {}),
     });
   });
@@ -1025,7 +1016,6 @@ export function generateHostedSitesPresignedPutUrl(
   bucket: string,
   key: string,
   contentType: string,
-  sha256: string,
   usePublicEndpoint = false,
 ): Computed<Promise<string>> {
   return generatePresignedPutUrlWithClient(
@@ -1034,9 +1024,6 @@ export function generateHostedSitesPresignedPutUrl(
       bucket,
       key,
       contentType,
-      // The signed query binds every retry to the same bytes without requiring
-      // new request headers from already-running CLI versions.
-      checksumSha256: Buffer.from(sha256, "hex").toString("base64"),
     },
   );
 }

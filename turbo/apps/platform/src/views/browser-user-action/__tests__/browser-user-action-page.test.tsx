@@ -710,8 +710,6 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
   let state: BrowserUserActionResponse["state"] = "pending";
   let uploaded = false;
   let directPut = false;
-  const digest =
-    "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
   const uploadUrl = "https://uploads.example.test/browser-input-test";
   context.mocks.api(
     browserUserActionsContract.prepareFileUpload,
@@ -720,15 +718,8 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
         key: "document",
         index: 0,
         size: 4,
-        sha256: digest,
       });
-      return respond(200, {
-        uploadUrl,
-        uploadHeaders: {
-          "x-amz-checksum-sha256":
-            "n4bQgYhMfWWaL+qgxVrQFaO/Txs7C4Is0V1sFbDwCgg=",
-        },
-      });
+      return respond(200, { uploadUrl });
     },
   );
   context.mocks.http.put(uploadUrl, ({ request }) => {
@@ -736,7 +727,7 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
     expect(request.headers.get("content-type")).toBe(
       "application/octet-stream",
     );
-    expect(request.headers.get("x-amz-checksum-sha256")).not.toBeNull();
+    expect(request.headers.get("x-amz-checksum-sha256")).toBeNull();
     directPut = true;
     return new HttpResponse(null, { status: 200 });
   });
@@ -766,7 +757,6 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
             name: "note.txt",
             type: "text/plain",
             size: 4,
-            sha256: digest,
           },
         ],
       },
@@ -799,11 +789,6 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
   expect(button("Add to browser")).toBeDisabled();
   expect(within(form).getByText("https://uploads.example.test")).toBeVisible();
   const file = new File(["test"], "note.txt", { type: "text/plain" });
-  Object.defineProperty(file, "arrayBuffer", {
-    value: () => {
-      return Promise.resolve(new Uint8Array([116, 101, 115, 116]).buffer);
-    },
-  });
   fireEvent.change(input, { target: { files: [file] } });
   expect(uploaded).toBeFalsy();
   await waitFor(() => {
@@ -813,49 +798,6 @@ test("A standalone native file input transfers chosen bytes only on confirmed su
   await waitFor(() => {
     return expect(uploaded).toBeTruthy();
   });
-});
-
-test("A failed local file read reports an error without applying the Browser action", async () => {
-  let applied = false;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, fileAction({ required: true, preflight: false }));
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, fileAction({ required: true, preflight: true }));
-  });
-  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
-    applied = true;
-    return respond(200, fileAction({ required: true, preflight: false }));
-  });
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
-  });
-  const input = within(form).getByLabelText(/Document/u);
-  await waitFor(() => {
-    return expect(input).toBeEnabled();
-  });
-  const file = new File(["test"], "note.txt", { type: "text/plain" });
-  Object.defineProperty(file, "arrayBuffer", {
-    value: () => {
-      return Promise.reject(new Error("File is unavailable"));
-    },
-  });
-  fireEvent.change(input, { target: { files: [file] } });
-  await waitFor(() => {
-    return expect(button("Add to browser")).toBeEnabled();
-  });
-  click(button("Add to browser"));
-  await expect(
-    screen.findByText(/Couldn't add the information/u),
-  ).resolves.toBeInTheDocument();
-  expect(applied).toBeFalsy();
-  expect(button("Add to browser")).toBeEnabled();
 });
 
 test("A rejected Browser file authorization and PUT leave the selection retryable without applying", async () => {
@@ -880,13 +822,7 @@ test("A rejected Browser file authorization and PUT leave the selection retryabl
           },
         });
       }
-      return respond(200, {
-        uploadUrl,
-        uploadHeaders: {
-          "x-amz-checksum-sha256":
-            "n4bQgYhMfWWaL+qgxVrQFaO/Txs7C4Is0V1sFbDwCgg=",
-        },
-      });
+      return respond(200, { uploadUrl });
     },
   );
   context.mocks.http.put(uploadUrl, () => {
@@ -907,11 +843,6 @@ test("A rejected Browser file authorization and PUT leave the selection retryabl
     return expect(input).toBeEnabled();
   });
   const file = new File(["test"], "synthetic.txt", { type: "text/plain" });
-  Object.defineProperty(file, "arrayBuffer", {
-    value: () => {
-      return Promise.resolve(new Uint8Array([116, 101, 115, 116]).buffer);
-    },
-  });
   fireEvent.change(input, { target: { files: [file] } });
   await waitFor(() => {
     return expect(button("Add to browser")).toBeEnabled();

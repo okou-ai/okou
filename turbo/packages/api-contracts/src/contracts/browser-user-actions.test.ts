@@ -156,10 +156,14 @@ describe("Browser user-action contracts", () => {
       name: "note.txt",
       type: "text/plain",
       size: 4,
-      sha256: "a".repeat(64),
     };
     for (const entry of [
       { ...base, operation: "replace", files: [file] },
+      {
+        ...base,
+        operation: "replace",
+        files: [{ ...file, sha256: "a".repeat(64) }],
+      },
       { ...base, operation: "keep", files: [] },
       { ...base, operation: "clear", files: [] },
     ]) {

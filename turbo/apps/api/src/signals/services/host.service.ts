@@ -1016,7 +1016,6 @@ export const prepareHostedSiteDeployment$ = command(
               hostedR2.config.bucket,
               fileKey(siteAndDeployment.deployment.r2Prefix, file.path),
               file.contentType,
-              file.sha256,
               true,
             ),
           );
