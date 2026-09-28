@@ -841,9 +841,10 @@ export function createChatEventsFixture(context: TestContext) {
     }
     let runId: string | null | undefined = sent.body.runId;
     if (runId === null) {
-      // A terminal callback may claim the queued row between enqueue and the
-      // inline dispatch decision. Recover as a refreshed client does: read the
-      // appended replacement instead of retrying the client message id.
+      // Sends enqueue the input and pick it in waitUntil work. Wait for that
+      // pick before reading the run-bearing replacement; a short poll can
+      // expire while the pick is still preparing a run under CI load.
+      await flushWaitUntilForTest();
       const messages = await waitForThreadMessages(
         actor,
         sent.body.threadId,
