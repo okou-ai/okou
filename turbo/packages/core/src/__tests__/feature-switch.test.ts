@@ -241,7 +241,6 @@ describe("isFeatureEnabled", () => {
 
   it("should return true for globally enabled switch", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
-    expect(isFeatureEnabled(FeatureSwitchKey.AvatarNeckSweater, {})).toBe(true);
   });
 
   it("should return true for globally enabled switch even with context", () => {
@@ -661,7 +660,7 @@ describe("getFeatureSwitchMetadata", () => {
   it("should classify non-internal switches by rollout audience", () => {
     const metadata = getFeatureSwitchMetadata();
 
-    expect(metadata[FeatureSwitchKey.AvatarNeckSweater].rolloutStage).toBe(
+    expect(metadata[FeatureSwitchKey.MorningBrief].rolloutStage).toBe(
       "released",
     );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");

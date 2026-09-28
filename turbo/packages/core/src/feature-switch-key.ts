@@ -64,7 +64,6 @@ export enum FeatureSwitchKey {
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",
   GradientColorThemes = "gradientColorThemes",
-  AvatarNeckSweater = "avatarNeckSweater",
   AvatarFraming = "avatarFraming",
   AvatarTexture = "avatarTexture",
   ConnectorDirectory = "connectorDirectory",

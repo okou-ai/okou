@@ -362,12 +362,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Trace explicitly opted-in Pi runs across the API-first and Sandbox ownership boundary in Langfuse.",
     enabled: false,
   },
-  [FeatureSwitchKey.AvatarNeckSweater]: {
-    maintainer: "ming@okou.ai",
-    description:
-      "Give composer avatars a shared neck and sweater, scaling each head so every chin meets the same collar.",
-    enabled: true,
-  },
   [FeatureSwitchKey.AvatarFraming]: {
     maintainer: "tongx@okou.ai",
     description:
