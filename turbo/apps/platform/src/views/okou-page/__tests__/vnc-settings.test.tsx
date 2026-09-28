@@ -214,10 +214,11 @@ test("VNC host settings update the chat default in thread remote access mode", a
 
 async function choose(dialog: HTMLElement, label: string, name: string) {
   if (label === "Connection route") {
-    await userEvent.click(
-      within(within(dialog).getByRole("radiogroup", { name: label })).getByRole(
+    click(
+      getAction(
         "radio",
-        { name },
+        name,
+        within(dialog).getByRole("radiogroup", { name: label }),
       ),
     );
     return;
@@ -455,9 +456,7 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
 
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog", { name: "Edit host" });
-  expect(
-    within(dialog).getByRole("radio", { name: "Through saved SSH host" }),
-  ).toBeChecked();
+  expect(getAction("radio", "Through saved SSH host", dialog)).toBeChecked();
   expect(
     within(dialog).getByText(/The selected SSH host is no longer available/u),
   ).toBeInTheDocument();
@@ -751,9 +750,7 @@ test("Name stays first and a later profile choice never rewrites the earlier dra
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
     "Office desktop",
   );
-  expect(
-    within(dialog).queryByRole("radio", { name: "Direct from Runner" }),
-  ).toBeNull();
+  expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
   expect(
     within(dialog).getByLabelText("RFB destination host"),
   ).toHaveTextContent("127.0.0.1");
@@ -764,9 +761,7 @@ test("Name stays first and a later profile choice never rewrites the earlier dra
   expect(within(dialog).getByLabelText("RFB destination host")).toHaveValue(
     "desktop.example.com",
   );
-  expect(
-    within(dialog).getByRole("radio", { name: "Through saved SSH host" }),
-  ).toBeChecked();
+  expect(getAction("radio", "Through saved SSH host", dialog)).toBeChecked();
 });
 
 test("Mac classic password is an explicit SSH-only profile with risk disclosure and bounded password", async () => {
@@ -801,9 +796,7 @@ test("Mac classic password is an explicit SSH-only profile with risk disclosure 
   expect(
     within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
   ).toBeNull();
-  expect(
-    within(dialog).queryByRole("radio", { name: "Direct from Runner" }),
-  ).toBeNull();
+  expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
   await choose(dialog, "SSH host", "Desktop gateway · gateway.example.com:22");
   await fill(within(dialog).getByLabelText("Display name"), "Mac classic VNC");
   const destination = within(dialog).getByLabelText("RFB destination host");
@@ -897,9 +890,7 @@ test.each([
     expect(
       within(dialog).queryByRole("radiogroup", { name: "Connection route" }),
     ).toBeNull();
-    expect(
-      within(dialog).queryByRole("radio", { name: "Direct from Runner" }),
-    ).toBeNull();
+    expect(queryAction("radio", "Direct from Runner", dialog)).toBeNull();
     await choose(
       dialog,
       "SSH host",
