@@ -530,9 +530,9 @@ test("Editing an Apple IPv6 loopback host preserves its SSH route and custom por
   expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
     5905,
   );
-  expect(await within(dialog).findByLabelText("SSH host")).toHaveTextContent(
-    sshHost.displayName,
-  );
+  await expect(
+    within(dialog).findByLabelText("SSH host"),
+  ).resolves.toHaveTextContent(sshHost.displayName);
   await waitFor(() => {
     expect(getAction("button", "Save", dialog)).toBeEnabled();
   });
