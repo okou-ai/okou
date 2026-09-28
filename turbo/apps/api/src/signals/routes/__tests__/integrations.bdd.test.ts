@@ -76,8 +76,6 @@ const misc = createMiscRoutesApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const callbackStore = createStore();
-const TELEGRAM_BOT_ID = 99_887_766;
-const TELEGRAM_BOT_TOKEN = `${TELEGRAM_BOT_ID}:bdd-token`;
 const TELEGRAM_OFFICIAL_WEBHOOK_SECRET = "telegram-official-bdd-secret";
 
 interface SlackEphemeralBody {
@@ -3515,15 +3513,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("keeps Slack DM sessions scoped to the selected agent", async () => {
-      const {
-        teamId,
-        slackUserId,
-        firstMessageTs,
-        channelId,
-        runnerGroup,
-        actor,
-      } = preparedScenario;
+    it("resumes the main Slack DM session with the org default agent", async () => {
+      const { teamId, slackUserId, firstMessageTs, channelId, runnerGroup } =
+        preparedScenario;
       await integrations.postSlackEvent(teamId, {
         type: "message",
         channel_type: "im",

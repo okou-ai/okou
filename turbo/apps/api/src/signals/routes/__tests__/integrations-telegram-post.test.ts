@@ -27,7 +27,7 @@ import {
 import { installTelegramContextFailureFixture } from "../../../test-fixtures/telegram-context-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import { createFixtureTracker } from "./helpers/route-test";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import {
@@ -45,7 +45,6 @@ import { integrationsTelegramRoutes } from "../integrations-telegram";
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);

@@ -118,17 +118,19 @@ async function requireDiscordChatThreadRoute(
   return route;
 }
 
+interface CanonicalDiscordChatThreadRouteArgs extends DiscordChatThreadRouteKey {
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly selectedModel: string | null;
+  readonly serviceTier: ChatThreadServiceTier | null;
+  readonly currentTime: Date;
+  readonly ingressId: string;
+  readonly claimToken: string;
+}
+
 export async function ensureCanonicalDiscordChatThreadRoute(
   db: Db,
-  args: DiscordChatThreadRouteKey & {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: ChatThreadServiceTier | null;
-    readonly currentTime: Date;
-    readonly ingressId: string;
-    readonly claimToken: string;
-  },
+  args: CanonicalDiscordChatThreadRouteArgs,
 ): Promise<DiscordChatThreadRouteBinding | undefined> {
   return await db.transaction(async (tx) => {
     const [claim] = await tx
