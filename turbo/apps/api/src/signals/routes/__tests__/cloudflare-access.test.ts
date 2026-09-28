@@ -1302,7 +1302,7 @@ describe("Cloudflare Access owner configuration", () => {
     ).toStrictEqual([]);
   });
 
-  it("preserves SSH first-host onboarding and manual denials through Access config changes", async () => {
+  it("preserves SSH first-host legacy grant data without removing chat host authority", async () => {
     const f = await fixture();
     const params = { agentId: f.agentId };
     expect(
@@ -1331,8 +1331,8 @@ describe("Cloudflare Access owner configuration", () => {
       expect(
         (await accept(sshGrants().get({ headers, params }), [200])).body,
       ).toStrictEqual({ enabled: false });
-      await expect(resolve(f)).resolves.toStrictEqual({
-        outcome: "unavailable",
+      await expect(resolve(f)).resolves.toMatchObject({
+        outcome: "resolved_access",
       });
     }
   });
@@ -1691,10 +1691,11 @@ describe("protected SSH authority", () => {
     }
   });
 
-  it("invalidates only protected host IDs and preserves recipients after grant revocation", async () => {
+  it("invalidates only protected host IDs and keeps chat authority after legacy grant revocation", async () => {
     const f = await fixture();
     const second = await host(f.config.id);
     const direct = await host();
+    await enableHostDefault(direct.id);
     const otherAgent = await runtime(f, { runnerGroup: "other-agent" });
     const otherOwner = owner({ orgId: f.orgId });
     await runtime(otherOwner, { runnerGroup: "other-owner" });
@@ -1760,7 +1761,9 @@ describe("protected SSH authority", () => {
     expect(notices()).toStrictEqual([
       ["ssh-authority-invalidated", { runId: f.runId, connectionId: null }],
     ]);
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(resolve(f)).resolves.toMatchObject({
+      outcome: "resolved_access",
+    });
     expect(
       (
         await accept(
@@ -1772,7 +1775,7 @@ describe("protected SSH authority", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
+    ).toMatchObject({ outcome: "resolved_password" });
   });
 
   it("commits token replacement even when realtime publication fails", async () => {
@@ -1946,6 +1949,7 @@ describe("protected SSH authority", () => {
   it("preserves an omitted transport binding and rejects a stale editor without affecting Direct hosts", async () => {
     const f = await fixture();
     const direct = await host();
+    await enableHostDefault(direct.id);
     expect(sshConnectionResponseSchema.parse(direct)).toStrictEqual(direct);
     const params = { connectionId: f.host.id };
     const renamed = await accept(
