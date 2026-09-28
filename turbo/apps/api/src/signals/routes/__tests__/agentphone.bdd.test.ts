@@ -364,14 +364,14 @@ function expectIntegrationImmediatelyBeforeRestrictedContent(
     "# Restricted Explicit Content",
   );
   expect(restrictedContentIndex).toBeGreaterThan(-1);
-  // The API appends the default image model section after the caller's own
+  // The API appends the built-in image model section after the caller's own
   // prompt, so the integration block is the last caller-supplied section
   // rather than the last section overall.
-  const defaultImageModelIndex = appendSystemPrompt.lastIndexOf(
-    "\n\n# Default built-in image model",
+  const imageModelIndex = appendSystemPrompt.lastIndexOf(
+    "\n\n# Built-in image model",
   );
-  expect(defaultImageModelIndex).toBeGreaterThan(-1);
-  expect(defaultImageModelIndex).toBeLessThan(restrictedContentIndex);
+  expect(imageModelIndex).toBeGreaterThan(-1);
+  expect(imageModelIndex).toBeLessThan(restrictedContentIndex);
   const expectedTail = [
     expectedIntegration,
     AGENTPHONE_INTEGRATION_NOTE,
@@ -379,7 +379,7 @@ function expectIntegrationImmediatelyBeforeRestrictedContent(
   ].join("\n\n");
   expect(
     appendSystemPrompt
-      .slice(0, defaultImageModelIndex)
+      .slice(0, imageModelIndex)
       .trimEnd()
       .endsWith(expectedTail),
   ).toBeTruthy();
@@ -1227,19 +1227,21 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   });
 
   describe.each(modelResumeScenarios)(
-    "keeps the initial $model in one $channel DM thread (conversation: $withConversation)",
+    "switches the $model $channel DM thread with /model (conversation: $withConversation)",
     (scenario) => {
       async function prepareScenario() {
-        const { send, complete, sends } = await modelSessionScenario(scenario);
-        return { send, sends, complete };
+        return await modelSessionScenario(scenario);
       }
       let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
       beforeEach(async () => {
         preparedScenario = await prepareScenario();
       });
-      it("resumes the existing DM model when the user changes the default", async () => {
-        const { send, sends, complete } = preparedScenario;
+      it("switches the existing DM thread and the member default", async () => {
+        const { actor, send, sends, complete } = preparedScenario;
+        const integrations = createBddIntegrationApi(context);
         if (scenario.model !== "claude-fable-5-1") {
+          // No DM thread exists yet, so only the member default changes and
+          // the new thread initializes from it.
           await send(`/model ${scenario.model}`);
           expect(lastSend(sends).body).toContain("Switched to");
         }
@@ -1247,15 +1249,32 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           "start the selected model session",
           scenario.model,
         );
+        expect(original.selectedModel).toBe(scenario.model);
         expect(original.threadCount).toBe(1);
+
         await send(`/model ${scenario.otherModel}`);
         expect(lastSend(sends).body).toContain("Switched to");
-        const alternate = await complete(
-          "keep the existing model session",
-          scenario.model,
+        await expect(
+          integrations.readUserModelPreference(actor),
+        ).resolves.toMatchObject({ selectedModel: scenario.otherModel });
+        const lifecycle = await createChatFilesBddApi(
+          context,
+        ).requestThreadEvents(actor, {}, [200]);
+        if (lifecycle.status !== 200) {
+          throw new Error("Expected AgentPhone thread lifecycle events");
+        }
+        expect(lifecycle.body.events).toContainEqual(
+          expect.objectContaining({
+            kind: "model_selection_updated",
+            chatThreadId: original.threadId,
+            selectedModel: scenario.otherModel,
+          }),
         );
-        expect(alternate.resumedSessionId).toBe(original.cliAgentSessionId);
-        expect(alternate.selectedModel).toBe(scenario.model);
+        const alternate = await complete(
+          "switch the existing DM model",
+          scenario.otherModel,
+        );
+        expect(alternate.selectedModel).toBe(scenario.otherModel);
         expect(alternate.threadId).toBe(original.threadId);
         expect(alternate.threadCount).toBe(1);
 
@@ -1264,7 +1283,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
           "return to the selected model session",
           scenario.model,
         );
-        expect(returned.resumedSessionId).toBe(alternate.cliAgentSessionId);
         expect(returned.selectedModel).toBe(scenario.model);
         expect(returned.threadId).toBe(original.threadId);
         expect(returned.threadCount).toBe(1);
@@ -1291,11 +1309,10 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         await send("/model gpt-6-astra");
         expect(lastSend(sends).body).toContain("Switched to");
         const alternate = await complete(
-          "keep the existing model after changing the default",
-          "claude-fable-5-1",
+          "continue after switching the DM model",
+          "gpt-6-astra",
         );
-        expect(alternate.resumedSessionId).toBe(original.cliAgentSessionId);
-        expect(alternate.selectedModel).toBe("claude-fable-5-1");
+        expect(alternate.selectedModel).toBe("gpt-6-astra");
         expect(alternate.threadId).toBe(original.threadId);
         expect(alternate.threadCount).toBe(1);
 
@@ -1466,9 +1483,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     if (!thread) {
       throw new Error("Expected AgentPhone ingress to create a chat thread");
     }
-    expect(thread).toMatchObject({
-      selectedVideoModel: null,
-    });
     const phoneEvents = await chat.listThreadEvents(actor, thread.chatThreadId);
     expect(
       phoneEvents.events.some((event) => {

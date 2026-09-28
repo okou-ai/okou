@@ -112,7 +112,7 @@ function upgradeV7Context(
 }
 
 /**
- * V7 -> V8, identical to the hot-table rules of migration 1282: delete the
+ * V7 -> V8, identical to the hot-table rules of migration 1286: delete the
  * eight retired event types; Goal input rows become automation input with a
  * null context ID; other Goal rows lose their context; GitHub rows and
  * context-less rejections become web rows; Goal userMessage parts become text

@@ -1790,7 +1790,6 @@
         "slideCountRange": "{{range}} slides"
       },
       "createWorkflow": "Criar fluxo de trabalho",
-      "imageModelForThisChat": "Modelo de imagem para este chat",
       "message": "Mensagem",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Peça para automatizar fluxos de trabalho, gerenciar tarefas...",
@@ -5016,8 +5015,6 @@
       "picker": {
         "builtInModel": "Modelo integrado",
         "byokHelp": "Usa seu provedor configurado",
-        "categoryChat": "Chat",
-        "categoryImage": "Imagem",
         "chatModels": "Modelos de chat",
         "effort": "Esforço",
         "effortScale": {
@@ -5042,14 +5039,9 @@
           "lowest": "Menor custo por geração",
           "typical": "Custo típico por geração"
         },
-        "imageModels": "Modelos de imagem",
         "inheritDefault": "Herdar o padrão da organização",
         "loadError": "Não foi possível carregar os modelos.",
         "loading": "Carregando modelos...",
-        "menu": {
-          "backToModels": "Voltar aos modelos",
-          "changeModel": "Alterar modelo de {{category}}, {{model}}"
-        },
         "models": "Modelos",
         "noConfiguredModels": "Nenhum modelo configurado",
         "priceTiers": {
@@ -5152,6 +5144,11 @@
     "paidTools": {
       "description": "Estas ferramentas consomem créditos integrados, e o Okou as usa automaticamente enquanto trabalha nas suas tarefas. Desative uma ferramenta para que o Okou não a use.",
       "disabledForCreation": "{{tool}} está desativado para você",
+      "imageModel": {
+        "description": "A geração de imagens integrada usa este modelo nas suas tarefas.",
+        "label": "Modelo",
+        "saveError": "Seu modelo de imagem não foi salvo."
+      },
       "loadError": "Não foi possível carregar suas configurações.",
       "loading": "Carregando suas configurações…",
       "openSettings": "Abrir configurações",
@@ -5648,7 +5645,6 @@
     "editHelp": "Selecionar outra credencial altera apenas este host. Alterações no destino direto apagam a chave de host aprendida; alterações envolvendo Cloudflare Access a preservam.",
     "empty": "Nenhum host SSH configurado. Adicione um host para disponibilizá-lo aos Agents com acesso SSH.",
     "errors": {
-      "agentUnavailable": "Este agente não está mais disponível. Escolha outro agente.",
       "configurationChanged": "Este host mudou durante a edição. Seu rascunho foi preservado. Revise as configurações mais recentes antes de aplicar suas alterações.",
       "credentialChanged": "Esta credencial mudou enquanto você a editava. Seu rascunho foi preservado. Revise as configurações mais recentes e os hosts afetados antes de salvar.",
       "credentialInUse": "Esta credencial está em uso. Selecione outra para os hosts ou exclua esses hosts primeiro.",

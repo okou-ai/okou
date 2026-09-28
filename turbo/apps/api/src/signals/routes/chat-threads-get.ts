@@ -30,7 +30,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       archived: chatThreads.archived,
       computerUseHostId: chatThreads.computerUseHostId,
       cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-      selectedVideoModel: chatThreads.selectedVideoModel,
       selectedImageModel: chatThreads.selectedImageModel,
     })
     .from(chatThreads)
@@ -61,7 +60,6 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       archived: thread.archived,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      selectedVideoModel: thread.selectedVideoModel,
       selectedImageModel: thread.selectedImageModel,
     },
   };

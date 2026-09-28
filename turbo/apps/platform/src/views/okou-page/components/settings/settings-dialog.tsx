@@ -153,9 +153,6 @@ function SettingsDialog({
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
   const showChat = features[FeatureSwitchKey.ChatPreference] ?? false;
-  const showTools =
-    (features[FeatureSwitchKey.SettingsToolsTab] ?? false) &&
-    (features[FeatureSwitchKey.PaidToolControls] ?? false);
 
   const sectionMeta = {
     preference: {
@@ -262,15 +259,11 @@ function SettingsDialog({
           },
         ]
       : []),
-    ...(showTools
-      ? [
-          {
-            id: "tools" as const,
-            label: sectionMeta.tools.title,
-            icon: Wrench,
-          },
-        ]
-      : []),
+    {
+      id: "tools",
+      label: sectionMeta.tools.title,
+      icon: Wrench,
+    },
     { id: "debug", label: sectionMeta.debug.title, icon: Bug },
   ];
   const personalGroup: SidebarGroup = {
@@ -348,7 +341,6 @@ function SettingsDialog({
   const availableSection = resolveAvailableSettingsSection(activeSection, {
     isAdmin,
     chatPreferenceEnabled: showChat,
-    toolsTabEnabled: showTools,
   });
   const resolvedSection: SettingsSection =
     !showDebug && availableSection === "debug"

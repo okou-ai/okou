@@ -1138,7 +1138,6 @@ describe("Browser user-action route", () => {
           name: "note.txt",
           size: 4,
           type: "text/plain",
-          sha256: createHash("sha256").update("test").digest("hex"),
         },
       ],
     };
@@ -1155,7 +1154,6 @@ describe("Browser user-action route", () => {
             key: "document",
             index,
             size: bytes.length,
-            sha256: createHash("sha256").update(bytes).digest("hex"),
           },
         }),
         [200],
@@ -1171,24 +1169,17 @@ describe("Browser user-action route", () => {
         ContentLength: bytes.length,
         ContentType: "application/octet-stream",
       });
-      expect(signing?.[2]).toMatchObject({ expiresIn: 60 });
-      expect(prepared.body.uploadHeaders["x-amz-checksum-sha256"]).toBe(
-        createHash("sha256").update(bytes).digest("base64"),
-      );
+      expect(signing?.[2]).toMatchObject({ expiresIn: 600 });
+      expect(signedCommand.input.ChecksumSHA256).toBeUndefined();
+      expect(prepared.body).toStrictEqual({
+        uploadUrl: expect.stringMatching(/^https?:\/\//u),
+      });
       expect(JSON.stringify(prepared.body)).not.toContain("note.txt");
       const key = `browser-native-input/${browserUserActionTokenHash(requestToken)}/${index.toString()}`;
       temporaryObjects.set(key, bytes);
       return key;
     };
     const firstKey = await stageSyntheticFile(token);
-    const invalid = await userActionClient().apply({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: token },
-      body: {
-        values: [{ ...value, files: [{ ...value.files[0]!, sha256: "bad=" }] }],
-      },
-    });
-    expect(invalid.status).toBe(400);
     const invalidMime = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
       params: { requestToken: token },
@@ -1356,24 +1347,7 @@ describe("Browser user-action route", () => {
     const tamperedKey = await stageSyntheticFile(
       tampered.body.action.requestToken,
     );
-    temporaryObjects.set(tamperedKey, Buffer.from("bad!"));
     const writesBeforeTamper = browserInputWrites().length;
-    const rejected = await userActionClient().apply({
-      headers: { authorization: "Bearer clerk-session" },
-      params: { requestToken: tampered.body.action.requestToken },
-      body: { values: [value] },
-    });
-    expect(rejected.status).toBe(409);
-    expect(browserInputWrites()).toHaveLength(writesBeforeTamper);
-    const pendingAfterReject = await accept(
-      userActionClient().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { requestToken: tampered.body.action.requestToken },
-      }),
-      [200],
-    );
-    expect(pendingAfterReject.body.state).toBe("pending");
-
     temporaryObjects.delete(tamperedKey);
     const missingObject = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
@@ -1394,7 +1368,19 @@ describe("Browser user-action route", () => {
     });
     expect(oversizedObject.status).toBe(409);
     expect(browserInputWrites()).toHaveLength(writesBeforeTamper);
-    temporaryObjects.delete(tamperedKey);
+    // A same-size replacement is now accepted: only size, not SHA, is checked.
+    temporaryObjects.set(tamperedKey, Buffer.from("bad!"));
+    const acceptedChangedBytes = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: tampered.body.action.requestToken },
+        body: { values: [value] },
+      }),
+      [200],
+    );
+    expect(acceptedChangedBytes.body.state).toBe("succeeded");
+    expect(browserInputWrites()).toHaveLength(writesBeforeTamper + 1);
+    files = [];
 
     const maxBytes = Buffer.alloc(10 * 1024 * 1024, 0x61);
     const maxAction = await create();
@@ -1411,7 +1397,6 @@ describe("Browser user-action route", () => {
                 {
                   ...value.files[0]!,
                   size: maxBytes.length,
-                  sha256: createHash("sha256").update(maxBytes).digest("hex"),
                 },
               ],
             },
@@ -1442,7 +1427,6 @@ describe("Browser user-action route", () => {
         name: `part-${index.toString()}.txt`,
         type: "text/plain",
         size: bytes.length,
-        sha256: createHash("sha256").update(bytes).digest("hex"),
       };
     });
     const multiApplied = await accept(

@@ -63,7 +63,7 @@ reader accepts every V8 row.
 
 ### V7 to V8 upgrade rules
 
-Migration `1282_chat_event_v8` applies these rules to the Raw Event table, and
+Migration `1286_chat_event_v8` applies these rules to the Raw Event table, and
 the adjacent V7 to V8 Snapshot migration applies the same rules to stored V7
 Snapshot objects:
 

@@ -274,7 +274,6 @@ export function mockAgent(options?: {
 
 export function mockThread(options?: {
   selectedModel?: string | null;
-  selectedVideoModel?: string | null;
   selectedImageModel?: string | null;
   activeRunIds?: string[];
   messages?: MockChatEventInput[];
@@ -303,7 +302,6 @@ export function mockThread(options?: {
             selectedModel: options?.selectedModel ?? null,
             serviceTier: null,
             computerUseHostId: null,
-            selectedVideoModel: options?.selectedVideoModel ?? null,
             selectedImageModel: options?.selectedImageModel ?? null,
           },
         ],
@@ -397,19 +395,6 @@ export function queryComposerModelTrigger(label: string): HTMLElement | null {
       );
     }) ?? null
   );
-}
-
-/**
- * The same control located by structure instead of by the model it names, for
- * tests that scope the search to one composer rather than to one label.
- */
-export function composerModelTriggerIn(
-  container: ParentNode,
-): HTMLElement | null {
-  const button = container
-    .querySelector('[data-slot="select-value"]')
-    ?.closest("button");
-  return button instanceof HTMLElement ? button : null;
 }
 
 export async function composerModelTrigger(

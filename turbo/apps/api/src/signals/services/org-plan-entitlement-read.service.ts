@@ -1,8 +1,10 @@
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { computed, type Computed } from "ccstate";
 import { eq } from "drizzle-orm";
 
-import type { Db } from "../external/db";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { db$, type Db } from "../external/db";
 
 type ReadDb = Pick<Db, "select">;
 
@@ -102,3 +104,17 @@ export async function loadOrgPlanCapabilities(
     status: runtimeStatusForEntitlement(capabilities.status),
   };
 }
+
+/**
+ * The authenticated organization's plan, request-scoped so one request reads
+ * it once. Only for decisions about that organization; locking reads stay on
+ * `loadOrgPlanCapabilities`.
+ */
+export const organizationPlanCapabilities$: Computed<
+  Promise<OrgPlanCapabilities | null>
+> = computed(async (get) => {
+  return await loadOrgPlanCapabilities(
+    get(db$),
+    get(organizationAuthContext$).orgId,
+  );
+});

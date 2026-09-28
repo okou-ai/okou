@@ -6,10 +6,6 @@ import { and, eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
-import {
-  loadNewChatThreadMediaModels,
-  type NewChatThreadMediaModels,
-} from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { Tx } from "../../lib/db-types";
@@ -48,6 +44,19 @@ function routeWhere(key: AgentPhoneChatThreadRouteKey) {
   );
 }
 
+/** Read the chat thread an AgentPhone conversation already routes to. */
+export async function findAgentPhoneRoutedChatThreadId(
+  db: Pick<Db, "select">,
+  key: AgentPhoneChatThreadRouteKey,
+): Promise<string | undefined> {
+  const [route] = await db
+    .select({ chatThreadId: agentphoneChatThreadRoutes.chatThreadId })
+    .from(agentphoneChatThreadRoutes)
+    .where(routeWhere(key))
+    .limit(1);
+  return route?.chatThreadId;
+}
+
 async function loadRoute(
   db: Pick<Db, "select">,
   key: AgentPhoneChatThreadRouteKey,
@@ -74,7 +83,6 @@ interface CreatedAgentPhoneChatThread {
   readonly serviceTier: ChatThreadServiceTier | null;
   readonly id: string;
   readonly createdAt: Date;
-  readonly mediaModels: NewChatThreadMediaModels;
   readonly modelSettings: ModelSettings;
 }
 
@@ -83,10 +91,6 @@ async function createCanonicalAgentPhoneChatThread(
   args: AgentPhoneChatThreadCreateArgs,
 ): Promise<CreatedAgentPhoneChatThread> {
   const initialModel = await resolveRequiredDefaultChatThreadModelPin(tx, args);
-  const mediaModels = await loadNewChatThreadMediaModels(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
   const modelSettings = await loadNewChatThreadModelSettings(tx, {
     orgId: args.orgId,
     userId: args.userId,
@@ -106,7 +110,6 @@ async function createCanonicalAgentPhoneChatThread(
       lastMessageAt: args.currentTime,
       createdAt: args.currentTime,
       updatedAt: args.currentTime,
-      selectedImageModel: mediaModels.selectedImageModel,
     })
     .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
   if (!thread) {
@@ -114,7 +117,6 @@ async function createCanonicalAgentPhoneChatThread(
   }
   return {
     ...thread,
-    mediaModels,
     modelSettings,
     selectedModel: initialModel.selectedModel,
     serviceTier: initialModel.serviceTier,
@@ -137,7 +139,6 @@ async function appendCanonicalAgentPhoneChatThreadCreatedEvent(
     modelSettings: thread.modelSettings,
     serviceTier: thread.serviceTier,
     computerUseHostId: null,
-    ...thread.mediaModels,
     createdAt: thread.createdAt,
   });
 }

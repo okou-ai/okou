@@ -2,8 +2,8 @@
 
 VNC is an independent remote-access capability alongside SSH. The
 `VncAccess` (`vncAccess`) feature switch is disabled by default, including for
-staff. Owner configuration, legacy Agent-grant records, chat host selection,
-metadata inventory and private Runner authority are described in
+staff. Owner configuration, chat host selection, metadata inventory and
+private Runner authority are described in
 [Runner VNC authority](runner-vnc-authority.md).
 The Runner, owner configuration and Agent inventory support the exact X509Vnc,
 X509Plain, SSH-protected Apple classic password, Apple DH, Apple Direct SRP
@@ -224,12 +224,11 @@ Saving does not verify Mac VNC settings or prove the SSH server has no
 downstream proxy. A real product session must separately validate saved-host
 creation, chat host permission, screenshot and bounded input before activation.
 
-Adding the first VNC host still populates legacy grants for every Agent
-currently visible to the owner, including another workspace member's public
-Agents. The host and grants commit atomically. Adding later hosts preserves
-those records; after every host is deleted, adding one again repeats the legacy
-auto-grant. These records do not authorize Run access, and the Agent-wide access
-controls are no longer shown in the app.
+Adding or recreating a VNC host does not grant Agent-wide permission or change
+any chat's access. New hosts default off until their owner enables a host
+default or the chat explicitly overrides it. Existing grant rows remain only
+for compatibility with previously deployed APIs during their drain; they do
+not authorize Run access and the owner grant endpoints are retired.
 
 Manage VNC access with each saved host's chat default and the chat's `On`, `Off`,
 or `Use default` choice. Direct rows appear in live Run inventory when the Run's
@@ -299,9 +298,10 @@ unchanged; a future rotation must include VNC in its current inventory.
 
 The configuration tables are `vnc_credentials` and `vnc_connections`. Both use the
 organization/user pair as their owner, matching SSH configuration. The
-`agent_vnc_access` table stores explicit grants with the same composite
-organization/user/Agent key as SSH. Current
-membership authorizes access to that owner's configuration. If the user leaves
+`agent_vnc_access` table temporarily retains historical grants with the same
+composite organization/user/Agent key as SSH; current chat host permission,
+not those rows, authorizes Run access. Current membership authorizes access to
+that owner's configuration. If the user leaves
 and rejoins before cleanup removes the configuration, it remains the same
 owner's data and is accessible again. Each saved connection retains its own
 identity across membership changes.
@@ -439,7 +439,7 @@ evidence.
 
 Route integration tests exercise auth, current membership, owner isolation,
 rejoined owner access, secret-free output, validation, retained zero-to-one
-legacy Agent grants, concurrent first-host creation, live-resource retries,
+default-off first-host creation, concurrent host creation, live-resource retries,
 recreation after deletion, optimistic concurrency, rotation, inline rollback
 and scoped cleanup through production HTTP boundaries.
 Focused inventory coverage also creates direct and SSH-backed rows for a chat,

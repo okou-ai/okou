@@ -52,7 +52,6 @@ interface ChatThreadEventAppend {
   readonly serviceTier?: ChatThreadServiceTier | null;
   readonly computerUseHostId?: string | null;
   readonly cloudBrowserEnabled?: boolean;
-  readonly selectedVideoModel?: string | null;
   readonly selectedImageModel?: ImageModelId | null;
   readonly createdAt?: Date;
 }
@@ -99,7 +98,7 @@ async function insertChatThreadEvent(
       reassigned_agent_id, title,
       pin_order, selected_model, model_settings, model_settings_patch,
       service_tier, computer_use_host_id, cloud_browser_enabled,
-      selected_video_model, selected_image_model, created_at
+      selected_image_model, created_at
     ) SELECT
       ${args.eventId ?? randomUUID()}::uuid, ${args.userId}, ${orgId}, last_seq_id,
       ${args.chatThreadId}::uuid, ${args.kind}::chat_thread_event_kind,
@@ -109,8 +108,7 @@ async function insertChatThreadEvent(
       ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
       ${args.modelSettingsPatch === undefined ? null : JSON.stringify(args.modelSettingsPatch)}::jsonb,
       ${args.serviceTier ?? null}, ${args.computerUseHostId ?? null}::uuid,
-      ${args.cloudBrowserEnabled ?? false}, ${args.selectedVideoModel ?? null},
-      ${args.selectedImageModel ?? null},
+      ${args.cloudBrowserEnabled ?? false}, ${args.selectedImageModel ?? null},
       COALESCE(${args.createdAt ? args.createdAt.toISOString() : null}::timestamp, timezone('UTC', now()))
     FROM reserved
     ON CONFLICT (id) DO NOTHING
@@ -196,7 +194,6 @@ type ChatThreadEventRow = {
   readonly serviceTier: ChatThreadServiceTier | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
-  readonly selectedVideoModel: string | null;
   readonly selectedImageModel: string | null;
   readonly createdAt: Date;
 };
@@ -216,7 +213,6 @@ const chatThreadEventSelection = Object.freeze({
   serviceTier: chatThreadEvents.serviceTier,
   computerUseHostId: chatThreadEvents.computerUseHostId,
   cloudBrowserEnabled: chatThreadEvents.cloudBrowserEnabled,
-  selectedVideoModel: chatThreadEvents.selectedVideoModel,
   selectedImageModel: chatThreadEvents.selectedImageModel,
   createdAt: chatThreadEvents.createdAt,
 });
@@ -236,7 +232,6 @@ const pageChatThreadEventSelection = Object.freeze({
   serviceTier: pageChatThreadEvent.serviceTier,
   computerUseHostId: pageChatThreadEvent.computerUseHostId,
   cloudBrowserEnabled: pageChatThreadEvent.cloudBrowserEnabled,
-  selectedVideoModel: pageChatThreadEvent.selectedVideoModel,
   selectedImageModel: pageChatThreadEvent.selectedImageModel,
   createdAt: pageChatThreadEvent.createdAt,
 });
@@ -281,7 +276,6 @@ function toApiChatThreadEvent(
     serviceTier: row.serviceTier,
     computerUseHostId: row.computerUseHostId,
     cloudBrowserEnabled: row.cloudBrowserEnabled,
-    selectedVideoModel: row.selectedVideoModel,
     selectedImageModel: row.selectedImageModel,
     createdAt: row.createdAt.toISOString(),
   };

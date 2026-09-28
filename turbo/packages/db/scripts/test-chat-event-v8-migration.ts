@@ -7,7 +7,7 @@ import postgres from "postgres";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 import { applyPendingMigrations } from "./migration-runner";
 
-// Migration 1282 (Chat Event V8) converges V7 rows in committed batches and
+// Migration 1286 (Chat Event V8) converges V7 rows in committed batches and
 // must be safe to run again after an interrupted or completed attempt. Every
 // fixture write targets a fresh, test-owned database, never DATABASE_URL.
 const databaseUrl = process.env.DATABASE_URL;
@@ -18,7 +18,7 @@ const fixtureUrl = new URL(adminUrl);
 const database = `chat_event_v8_${randomUUID().replaceAll("-", "")}`;
 fixtureUrl.pathname = `/${database}`;
 
-const MIGRATION_TAG = "1282_chat_event_v8";
+const MIGRATION_TAG = "1286_chat_event_v8";
 const journal = parseJournal(
   JSON.parse(
     readFileSync(

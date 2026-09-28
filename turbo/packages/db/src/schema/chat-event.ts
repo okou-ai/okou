@@ -103,7 +103,7 @@ export const chatEvents = pgTable(
      *
      * `web` identifies a source without a context row; current rows use reserved
      * UUID sentinels for web queue launch identity, while legacy rows are null.
-     * Migration 1282 rewrote historical Goal inputs to `automation` and
+     * Migration 1286 rewrote historical Goal inputs to `automation` and
      * historical GitHub rows to `web`, both without a contextId. For other
      * values, contextId selects the row in the table named by contextType.
      * contextId is not unique: when a pending event is claimed, the revoke +

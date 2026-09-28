@@ -47,6 +47,7 @@ import {
 import { writeDb$, type Db } from "../external/db";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
+import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import {
   updateUserModelPreference$,
@@ -56,6 +57,7 @@ import { publishSlackAdminSignal$ } from "./slack-connect.service";
 import {
   admitCanonicalSlackChatEvent,
   ensureCanonicalSlackChatThreadRoute,
+  findSlackDirectMessageChatThreadId,
   findSlackChatThreadRoute,
   slackSessionThreadTs,
 } from "./slack-chat-ingress.service";
@@ -1608,6 +1610,33 @@ const handleModelPickerSubmit$ = command(
         },
       });
     }
+    const channelId = parseViewChannelId(payload.view?.private_metadata);
+    const chatThreadId = channelId
+      ? await findSlackDirectMessageChatThreadId(db, {
+          connectionId: ctx.connection.id,
+          channelId,
+          userId: ctx.connection.userId,
+        })
+      : undefined;
+    signal.throwIfAborted();
+    const threadModel = await set(
+      updateIntegrationChatThreadModel$,
+      {
+        orgId: ctx.orgId,
+        userId: ctx.connection.userId,
+        chatThreadId,
+        model: option.model,
+      },
+      signal,
+    );
+    if (threadModel.kind === "rejected") {
+      return jsonResponse({
+        response_action: "errors",
+        errors: {
+          [MODEL_PICKER_BLOCK_ID]: "You don't have access to that model.",
+        },
+      });
+    }
     await set(
       updateUserModelPreference$,
       {
@@ -1617,7 +1646,6 @@ const handleModelPickerSubmit$ = command(
       },
       signal,
     );
-    const channelId = parseViewChannelId(payload.view?.private_metadata);
     if (channelId) {
       await postEphemeralMessage({
         botToken: await get(
@@ -1628,7 +1656,10 @@ const handleModelPickerSubmit$ = command(
         ),
         channel: channelId,
         slackUserId: payload.user.id,
-        text: `Switched to *${option.label}* for new Slack threads.`,
+        text:
+          threadModel.kind === "updated"
+            ? `Switched to *${option.label}* for this conversation and new Slack threads.`
+            : `Switched to *${option.label}* for new Slack threads.`,
       });
     }
     return emptyResponse();

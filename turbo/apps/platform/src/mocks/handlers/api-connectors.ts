@@ -42,7 +42,6 @@ import { connectorOverviewContract } from "@okouai/api-contracts/contracts/conne
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { mockApi } from "../msw-contract.ts";
 import {
   testConnectorCatalogCategoryMetadata,
@@ -476,9 +475,6 @@ export const apiConnectorsHandlers = [
   }),
   mockApi(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [] });
-  }),
-  mockApi(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: false });
   }),
   mockApi(sshConnectionsContract.observations, ({ respond }) => {
     return respond(200, { observations: [] });

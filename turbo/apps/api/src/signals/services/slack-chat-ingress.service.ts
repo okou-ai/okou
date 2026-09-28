@@ -9,7 +9,6 @@ import { and, eq, sql } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import {
   INTEGRATION_DM_SESSION_KEY,
@@ -100,6 +99,31 @@ export async function findSlackChatThreadRoute(
   return await loadSlackChatThreadRoute(db, key);
 }
 
+/**
+ * Read the main DM chat thread when `channelId` is the connection's DM
+ * channel. Slash commands carry no thread timestamp, so only the main DM
+ * conversation can be identified.
+ */
+export async function findSlackDirectMessageChatThreadId(
+  db: Pick<Db, "select">,
+  key: Omit<SlackChatThreadRouteKey, "threadTs">,
+): Promise<string | undefined> {
+  const [route] = await db
+    .select({ chatThreadId: slackChatThreadRoutes.chatThreadId })
+    .from(slackChatThreadRoutes)
+    .where(
+      and(
+        slackChatThreadRouteWhere({
+          ...key,
+          threadTs: INTEGRATION_DM_SESSION_KEY,
+        }),
+        eq(slackChatThreadRoutes.channelId, key.channelId),
+      ),
+    )
+    .limit(1);
+  return route?.chatThreadId;
+}
+
 async function requireSlackChatThreadRoute(
   db: Pick<Db, "select" | "update">,
   key: SlackChatThreadRouteKey,
@@ -129,10 +153,6 @@ export async function ensureCanonicalSlackChatThreadRoute(
       tx,
       args,
     );
-    const mediaModels = await loadNewChatThreadMediaModels(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-    });
     const modelSettings = await loadNewChatThreadModelSettings(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -151,7 +171,6 @@ export async function ensureCanonicalSlackChatThreadRoute(
         lastMessageAt: args.currentTime,
         createdAt: args.currentTime,
         updatedAt: args.currentTime,
-        selectedImageModel: mediaModels.selectedImageModel,
       })
       .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
     if (!thread) {
@@ -200,7 +219,6 @@ export async function ensureCanonicalSlackChatThreadRoute(
       selectedModel: initialModel.selectedModel,
       modelSettings,
       serviceTier: initialModel.serviceTier,
-      ...mediaModels,
       createdAt: thread.createdAt,
     });
     return route;

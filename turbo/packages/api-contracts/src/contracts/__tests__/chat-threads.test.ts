@@ -210,7 +210,6 @@ describe("chat thread event sequence contract", () => {
       chatThreadId: "22222222-2222-4222-8222-222222222222",
       agentId: "33333333-3333-4333-8333-333333333333",
       title: null,
-      selectedVideoModel: null,
       selectedImageModel,
       createdAt,
     };
@@ -230,7 +229,6 @@ describe("chat thread event sequence contract", () => {
       pinnedAt: null,
       archived: false,
       renamedAt: null,
-      selectedVideoModel: null,
     };
     expect(
       chatThreadSnapshotArchiveSchema.safeParse({

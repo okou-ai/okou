@@ -98,21 +98,22 @@ remain. The dedicated billing-attribution backfill validator was also removed
 from CI; this does not certify production backfill completion or retire the
 operator tool and its two documented reader fallbacks.
 
+### Retired integration DM transition validator (2026-09-28)
+
+`scripts/test-integration-dm-single-thread.ts` protected migration
+`1279_integration_dm_single_thread_routes`. That migration shipped with release
+7 (#37200, release #37237) and the release 7 API is the rollback floor. Migration
+`1282_drop_retired_integration_agent_tables` contracts the cycle: it drops the
+Feishu/Lark `default_agent_id` column that 1279 rebinds and the self-hosted
+Telegram route owner that 1279 left in place, so 1279 can no longer replay on
+the current table shapes. The validator asserted only the one-time route
+consolidation and installation rebinding; the resulting canonical DM route keys
+are enforced by the integration ingress tests.
+
 ### Active transition validators
 
-- `scripts/test-integration-dm-single-thread.ts` protects migration
-  `1279_integration_dm_single_thread_routes`: all six integration identities
-  consolidate by last thread use and canonical-key collisions converge.
-  Retained and historical threads preserve all model/provider/tier settings;
-  thread events and sequence counters are unchanged. Feishu and Lark
-  installations retain their physical default-agent column and foreign key,
-  with the value rebound to their organization's immutable default agent.
-  Reply threads and retired Telegram routes are preserved, and replay is a
-  no-op. The validator runs from migration consistency against
-  transaction-owned clones of the migrated table shapes.
-
 - `scripts/test-chat-event-v8-migration.ts` protects migration
-  `1282_chat_event_v8`: it seeds V7 rows in the 1281 schema, runs the
+  `1286_chat_event_v8`: it seeds V7 rows in the 1285 schema, runs the
   migration after an interrupted attempt that only swapped the checks, and
   asserts the converged rows, drafts, shares, run sources, validated checks,
   committed batches and an unchanged state after a repeated run. Retain it

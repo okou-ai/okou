@@ -4,6 +4,7 @@ import {
   type DefaultModelFirstPin,
   type ModelFirstPin,
 } from "./model-selection.service";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 export function chatThreadModelPinColumns(pin: ModelFirstPin): {
   readonly modelProviderId: null;
@@ -25,8 +26,15 @@ export async function resolveRequiredDefaultChatThreadModelPin(
     readonly orgId: string;
     readonly userId: string;
   },
+  orgPlanCapabilities?: OrgPlanCapabilities | null,
 ): Promise<DefaultModelFirstPin> {
-  const pin = await resolveDefaultModelFirstPin(db, args.orgId, args.userId);
+  const pin = await resolveDefaultModelFirstPin(
+    db,
+    args.orgId,
+    args.userId,
+    "member",
+    orgPlanCapabilities,
+  );
   if (!pin.selectedModel) {
     throw new Error("A model selection is required");
   }

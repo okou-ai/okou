@@ -88,6 +88,7 @@ async function createRunningImageGeneration(
     }),
   );
 
+  await billingApi.selectImageModel(actor, "gpt-image-1");
   const queued = await billingApi.requestImageIoGenerate(
     actor,
     { prompt: "a generated status thumbnail" },

@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
-import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -134,8 +133,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
-      selectedImageModel: DEFAULT_IMAGE_MODEL,
+      selectedImageModel: null,
     });
   });
 

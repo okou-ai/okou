@@ -225,7 +225,6 @@ function sidebarThreadSnapshot(
         selectedModel: null,
         serviceTier: null,
         computerUseHostId: null,
-        selectedVideoModel: null,
       };
     }),
     latestEventId: null,

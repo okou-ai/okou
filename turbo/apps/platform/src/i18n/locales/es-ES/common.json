@@ -1790,7 +1790,6 @@
         "slideCountRange": "{{range}} diapositivas"
       },
       "createWorkflow": "Crear flujo de trabajo",
-      "imageModelForThisChat": "Modelo de imagen para este chat",
       "message": "Mensaje",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Pídeme que automatice flujos de trabajo, gestione tareas...",
@@ -5016,8 +5015,6 @@
       "picker": {
         "builtInModel": "Modelo integrado",
         "byokHelp": "Usa el proveedor que has configurado",
-        "categoryChat": "Chat",
-        "categoryImage": "Imagen",
         "chatModels": "Modelos de chat",
         "effort": "Esfuerzo",
         "effortScale": {
@@ -5042,14 +5039,9 @@
           "lowest": "Coste más bajo por generación",
           "typical": "Coste habitual por generación"
         },
-        "imageModels": "Modelos de imagen",
         "inheritDefault": "Heredar el valor predeterminado de la organización",
         "loadError": "No se pudieron cargar los modelos.",
         "loading": "Cargando modelos...",
-        "menu": {
-          "backToModels": "Volver a los modelos",
-          "changeModel": "Cambiar modelo de {{category}}, {{model}}"
-        },
         "models": "Modelos",
         "noConfiguredModels": "Sin modelos configurados",
         "priceTiers": {
@@ -5152,6 +5144,11 @@
     "paidTools": {
       "description": "Estas herramientas consumen créditos integrados y Okou las usa automáticamente mientras trabaja en tus tareas. Si desactivas una herramienta, Okou no la usará.",
       "disabledForCreation": "{{tool}} está desactivado para ti",
+      "imageModel": {
+        "description": "La generación de imágenes integrada usa este modelo para tus tareas.",
+        "label": "Modelo",
+        "saveError": "No se ha guardado tu modelo de imagen."
+      },
       "loadError": "No se pudieron cargar tus ajustes.",
       "loading": "Cargando tus ajustes…",
       "openSettings": "Abrir ajustes",
@@ -5648,7 +5645,6 @@
     "editHelp": "Seleccionar otras credenciales solo cambia este host. Los cambios del destino directo borran su clave de host guardada; los que implican Cloudflare Access la conservan.",
     "empty": "No hay hosts SSH configurados. Añade uno para que esté disponible para los Agents con acceso SSH.",
     "errors": {
-      "agentUnavailable": "Este agente ya no está disponible. Elige otro agente.",
       "configurationChanged": "Este host cambió mientras lo editabas. Se conserva tu borrador. Revisa su configuración más reciente antes de aplicar tus cambios.",
       "credentialChanged": "Esta credencial cambió mientras la editabas. Tu borrador se conserva. Revisa la configuración más reciente y los hosts afectados antes de guardar.",
       "credentialInUse": "Estas credenciales están en uso. Asigna otras a sus hosts o elimina esos hosts primero.",

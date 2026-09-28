@@ -1,4 +1,4 @@
 The first-parent main commit that adds this marker is the minimum API rollback
-version after the Chat Event V8 migration (1282). Older APIs serve V7 rows and
+version after the Chat Event V8 migration (1286). Older APIs serve V7 rows and
 snapshots, which V8 App builds cannot read. See
 docs/deployment-compatibility.md.

@@ -31,8 +31,7 @@ export const updateUserModelPreferenceRequestSchema = z.object({
   /**
    * Partial-update semantics, not a rollout fallback: absent means "leave it
    * alone" and null clears it, so a caller that only changes the run model
-   * never blanks the image default. Older App builds may still send the
-   * retired `selectedVideoModel`; the object schema strips it.
+   * never blanks the image default.
    */
   selectedImageModel: imageModelIdSchema.nullable().optional(),
 });

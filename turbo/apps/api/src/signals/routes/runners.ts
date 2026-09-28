@@ -581,10 +581,13 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         allocatedVcpu: body.data.allocatedVcpu,
         allocatedMemoryMb: body.data.allocatedMemoryMb,
         runningCount: body.data.runningCount,
-        admittableProfiles,
-        heldSandboxStates,
-        heldWorkspaceStates,
-        activeReuseProducers: body.data.activeReuseProducers,
+        // A fresh heartbeat still advances the ordered scalar state below.
+        // Reuse stored TOAST values for unchanged JSONB snapshots instead of
+        // rewriting them on every heartbeat.
+        admittableProfiles: sql`CASE WHEN ${runnerState.admittableProfiles} IS DISTINCT FROM excluded.admittable_profiles THEN excluded.admittable_profiles ELSE ${runnerState.admittableProfiles} END`,
+        heldSandboxStates: sql`CASE WHEN ${runnerState.heldSandboxStates} IS DISTINCT FROM excluded.held_sandbox_states THEN excluded.held_sandbox_states ELSE ${runnerState.heldSandboxStates} END`,
+        heldWorkspaceStates: sql`CASE WHEN ${runnerState.heldWorkspaceStates} IS DISTINCT FROM excluded.held_workspace_states THEN excluded.held_workspace_states ELSE ${runnerState.heldWorkspaceStates} END`,
+        activeReuseProducers: sql`CASE WHEN ${runnerState.activeReuseProducers} IS DISTINCT FROM excluded.active_reuse_producers THEN excluded.active_reuse_producers ELSE ${runnerState.activeReuseProducers} END`,
         mode: body.data.mode,
         wssIngressServiceActive,
         lastSeenAt: currentDate,

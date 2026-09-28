@@ -25,6 +25,7 @@ import {
 import { builtInGenerationContract } from "@okouai/api-contracts/contracts/built-in-generation";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
+import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
   mapsContract,
   type MapsSearchRequest,
@@ -34,6 +35,7 @@ import {
   usageRecordContract,
   type UsageRecordRange,
 } from "@okouai/api-contracts/contracts/usage-record";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { voiceIoSttContract } from "@okouai/api-contracts/contracts/voice-io-stt";
 
@@ -66,6 +68,7 @@ import { imageIoGenerateRoutes } from "../../image-io-generate";
 import { mapsRoutes } from "../../maps";
 import { usageMembersRoutes } from "../../usage-members";
 import { usageRecordRoutes } from "../../usage-record";
+import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { voiceIoQuotaRoutes } from "../../voice-io-quota";
 import { voiceIoSttRoutes } from "../../voice-io-stt";
 
@@ -558,6 +561,32 @@ export function createBillingMediaApi(context: TestContext) {
       return await accept(
         client.post({ headers: authenticate(actor), body: formData }),
         statuses,
+      );
+    },
+
+    /**
+     * Image generation uses the member's image model setting, never a
+     * request's `model`. Echoes the stored run preference so only the image
+     * model changes.
+     */
+    async selectImageModel(actor: ApiTestUser, model: ImageModelId) {
+      const client = setupApp({ context, routes: userModelPreferenceRoutes })(
+        userModelPreferenceContract,
+      );
+      const stored = await accept(
+        client.get({ headers: authenticate(actor) }),
+        [200],
+      );
+      return await accept(
+        client.update({
+          headers: authenticate(actor),
+          body: {
+            selectedModel: stored.body.selectedModel,
+            serviceTier: stored.body.serviceTier,
+            selectedImageModel: model,
+          },
+        }),
+        [200],
       );
     },
 

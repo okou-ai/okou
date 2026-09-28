@@ -313,12 +313,10 @@ describe("okou generate lister", () => {
     expect(text).toContain("Okou  Built-in image generation");
     expect(text).toContain("Built-in image generation");
     expect(text).toContain(
-      "Models: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1 (default), gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite",
+      "Models: Uses the image model selected in Settings › Built-in tools (default gpt-image-2.5-flare). Available: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite",
     );
     expect(text).toContain("Use: okou generate image --provider built-in -h");
-    expect(text).not.toContain(
-      "Use: okou generate image --provider built-in --model",
-    );
+    expect(text).not.toContain("--model");
     expect(text).not.toContain("Model: gpt-image-2");
     expect(text).not.toContain("Model: fal-ai/flux-pro/v1.1");
     expect(text).not.toContain("Fallback option:");

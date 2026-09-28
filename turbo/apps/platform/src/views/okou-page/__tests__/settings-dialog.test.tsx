@@ -475,7 +475,6 @@ async function setupSnapshotMeasurement() {
               selectedModel: null,
               serviceTier: null,
               computerUseHostId: null,
-              selectedVideoModel: null,
             };
           },
         ),

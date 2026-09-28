@@ -12,10 +12,7 @@ import {
   agentsMainContract,
   agentsByIdContract,
 } from "@okouai/api-contracts/contracts/agents";
-import {
-  agentSshAccessContract,
-  sshHostsContract,
-} from "@okouai/api-contracts/contracts/ssh-access";
+import { sshHostsContract } from "@okouai/api-contracts/contracts/ssh-access";
 import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
@@ -59,9 +56,6 @@ const configs = () => {
   return setupApp({ context, routes: cloudflareAccessRoutes })(
     cloudflareAccessContract,
   );
-};
-const sshGrants = () => {
-  return setupApp({ context, routes: sshAccessRoutes })(agentSshAccessContract);
 };
 const connections = () => {
   return setupApp({ context, routes: sshConnectionsRoutes })(
@@ -1281,37 +1275,18 @@ describe("Cloudflare Access owner configuration", () => {
     },
   );
 
-  it("does not configure SSH or grant it when only Access configs are created", async () => {
+  it("does not configure SSH hosts when only Access configs are created", async () => {
     const o = owner();
-    const r = await runtime(o);
     await config();
-    const params = { agentId: r.agentId };
-    expect(
-      (await accept(sshGrants().get({ headers, params }), [200])).body,
-    ).toStrictEqual({ enabled: false });
-    const later = await runtime(o);
+    await runtime(o);
     await config("Second");
-    for (const agentId of [r.agentId, later.agentId]) {
-      expect(
-        (await accept(sshGrants().get({ headers, params: { agentId } }), [200]))
-          .body,
-      ).toStrictEqual({ enabled: false });
-    }
     expect(
       (await accept(connections().list({ headers }), [200])).body.connections,
     ).toStrictEqual([]);
   });
 
-  it("preserves SSH first-host legacy grant data without removing chat host authority", async () => {
+  it("preserves chat host authority across Access config updates", async () => {
     const f = await fixture();
-    const params = { agentId: f.agentId };
-    expect(
-      (await accept(sshGrants().get({ headers, params }), [200])).body,
-    ).toStrictEqual({ enabled: true });
-    await accept(
-      sshGrants().update({ headers, params, body: { enabled: false } }),
-      [200],
-    );
     const second = await config("Second");
     await host(second.id);
     let revision = f.config.revision;
@@ -1328,9 +1303,6 @@ describe("Cloudflare Access owner configuration", () => {
         [200],
       );
       revision = updated.body.revision;
-      expect(
-        (await accept(sshGrants().get({ headers, params }), [200])).body,
-      ).toStrictEqual({ enabled: false });
       await expect(resolve(f)).resolves.toMatchObject({
         outcome: "resolved_access",
       });
@@ -1513,17 +1485,9 @@ describe("protected SSH authority", () => {
     ).toStrictEqual([h.id]);
   });
 
-  it("uses existing protected hosts after a later Agent receives SSH permission", async () => {
+  it("uses chat-enabled protected hosts for a later Agent", async () => {
     const f = await fixture();
     const later = await runtime(f);
-    const params = { agentId: later.agentId };
-    expect(
-      (await accept(sshGrants().get({ headers, params }), [200])).body,
-    ).toStrictEqual({ enabled: false });
-    await accept(
-      sshGrants().update({ headers, params, body: { enabled: true } }),
-      [200],
-    );
     expect(
       (
         await accept(
@@ -1691,7 +1655,7 @@ describe("protected SSH authority", () => {
     }
   });
 
-  it("invalidates only protected host IDs and keeps chat authority after legacy grant revocation", async () => {
+  it("invalidates only protected host IDs on Access credential rotation", async () => {
     const f = await fixture();
     const second = await host(f.config.id);
     const direct = await host();
@@ -1749,18 +1713,6 @@ describe("protected SSH authority", () => {
         }),
       ),
     );
-    context.mocks.ably.publish.mockClear();
-    await accept(
-      sshGrants().update({
-        headers,
-        params: { agentId: f.agentId },
-        body: { enabled: false },
-      }),
-      [200],
-    );
-    expect(notices()).toStrictEqual([
-      ["ssh-authority-invalidated", { runId: f.runId, connectionId: null }],
-    ]);
     await expect(resolve(f)).resolves.toMatchObject({
       outcome: "resolved_access",
     });
@@ -1996,61 +1948,53 @@ describe("protected SSH authority", () => {
     expect(resolved).toMatchObject({ outcome: "resolved_password", port: 22 });
   });
 
-  it.each([false, true])(
-    "ignores the legacy SSH grant when enabled=%s and uses chat host permission",
-    async (enabled) => {
-      const f = await fixture();
-      const params = { agentId: f.agentId };
-      await accept(
-        sshGrants().update({ headers, params, body: { enabled } }),
-        [200],
-      );
-      expect((await resolve(f)).outcome).toBe("resolved_access");
-      const inventory = setupApp({ context, routes: sshAccessRoutes })(
-        sshHostsContract,
-      );
-      const listed = await accept(
-        inventory.list({ headers: f.guestHeaders }),
-        [200],
-      );
-      if (listed.status === 200) {
-        expect(listed.body.hosts).toHaveLength(1);
-      }
-      expect(
-        (
-          await accept(
-            runner().observe({
-              headers: runnerHeaders,
-              params: f.params,
-              body: {
-                ...f.body,
-                expectedGeneration: 1,
-                observedAt: nowDate().toISOString(),
-                failureReason: "access_rejected",
-              },
-            }),
-            [200],
-          )
-        ).body.outcome,
-      ).toBe("recorded");
-      expect(
-        (
-          await accept(
-            runner().pin({
-              headers: runnerHeaders,
-              params: f.params,
-              body: {
-                ...f.body,
-                expectedGeneration: 1,
-                observedHostKey: hostKey,
-              },
-            }),
-            [200],
-          )
-        ).body.outcome,
-      ).toBe("pinned");
-    },
-  );
+  it("uses chat host permission for inventory, resolve, observe and pin", async () => {
+    const f = await fixture();
+    expect((await resolve(f)).outcome).toBe("resolved_access");
+    const inventory = setupApp({ context, routes: sshAccessRoutes })(
+      sshHostsContract,
+    );
+    const listed = await accept(
+      inventory.list({ headers: f.guestHeaders }),
+      [200],
+    );
+    if (listed.status === 200) {
+      expect(listed.body.hosts).toHaveLength(1);
+    }
+    expect(
+      (
+        await accept(
+          runner().observe({
+            headers: runnerHeaders,
+            params: f.params,
+            body: {
+              ...f.body,
+              expectedGeneration: 1,
+              observedAt: nowDate().toISOString(),
+              failureReason: "access_rejected",
+            },
+          }),
+          [200],
+        )
+      ).body.outcome,
+    ).toBe("recorded");
+    expect(
+      (
+        await accept(
+          runner().pin({
+            headers: runnerHeaders,
+            params: f.params,
+            body: {
+              ...f.body,
+              expectedGeneration: 1,
+              observedHostKey: hostKey,
+            },
+          }),
+          [200],
+        )
+      ).body.outcome,
+    ).toBe("pinned");
+  });
 
   it("allows ordinary owners to manage and execute Direct and Access hosts without feature overrides", async () => {
     const f = await fixture();

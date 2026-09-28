@@ -130,8 +130,8 @@ existing support for both key and password authority responses.
 The Agent-wide SSH authorization row and services-popover grant switch are
 retired. Configure each saved host's chat default in Remote control; choose
 `On`, `Off`, or `Use default` per host from the chat's Remote access menu.
-Creating the first host may still populate legacy Agent-grant records for
-compatibility, but these records do not authorize Run access. **Add connectors**
+Creating the first host does not write Agent-grant records or enable chat
+access by itself. Retained legacy grant tables do not authorize Run access. **Add connectors**
 continues to offer zero-host SSH setup.
 The Connectors dialog and Discover directory include this setup entry when
 no hosts are configured. In Discover, it appears after built-in shelves and
@@ -149,7 +149,7 @@ from unavailability returned by an older API during deployment. There is no
 persistent Refresh button and background
 failures do not show raw server-message toasts.
 
-Successful host and legacy grant changes publish best-effort `ssh:changed` on
+Successful host changes publish best-effort `ssh:changed` on
 the owner's user channel with only `{ orgId }`. Learning a new host key also
 refreshes the browser. Platform checks the workspace and invalidates host and
 summary reads. Initial subscription also refreshes them; reconnect and
@@ -199,8 +199,8 @@ and port 443. The origin SSH port belongs to Cloudflare, not this binding. Shari
 a configuration across hosts does not share it across users or workspaces.
 Protected execution uses the same chat SSH host permission as Direct; there is
 no separate Access grant. Creating or changing an Access configuration does
-not create a host or change chat permissions. First-SSH-host onboarding may
-still write legacy Agent grants, but these do not authorize execution. Any
+not create a host or change chat permissions. First-SSH-host onboarding does not write legacy Agent grants or authorize
+execution. Any
 visible Agent with a Run in an authorized chat can use the bound host owned by
 that Run's user. SSH username/key/password and server host-key trust remain
 independent of the Service Token.
@@ -486,9 +486,8 @@ timeout failures do not justify replay when effects are unknown.
 Inventory and owner configuration are live reads. Execution authority uses the
 existing Run-lifetime Runner cache while notifications are connected. Host
 edits, rotation, deletion, reset and chat default or override changes publish
-invalidation notices. Legacy Agent-grant edits also send Run-wide notices with
-`{ runId, connectionId: null }` for active Runs of that owner/Agent, including
-after deleting the grant, but the grant no longer governs authority.
+invalidation notices. The retired Agent-grant owner endpoints no longer issue
+Run-wide invalidations; creating a host targets its own connection ID.
 Notification failure does not roll back a committed edit. A missed notice can
 leave cached authority until the Run ends. End affected active Runs when
 immediate revocation is necessary.

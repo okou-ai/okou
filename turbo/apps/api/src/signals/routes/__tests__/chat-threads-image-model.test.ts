@@ -214,7 +214,7 @@ describe("POST /api/chat-threads/:id/image-model", () => {
     });
 
     const response = await rawImageModelRequest(fixture.threadId, token, {
-      model: "birefnet",
+      model: "not-an-image-model",
     });
 
     expect(response.status).toBe(400);

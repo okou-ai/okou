@@ -35,12 +35,18 @@ interface PresentationGenerationTemplateInput {
   };
 }
 
-// The type remains readable for selections in archived chat events and stale
-// clients. Every new selection is rejected before a run can be launched.
-interface RetiredVideoGenerationTemplateInput {
-  readonly type: "video";
-  readonly selection: { readonly stylePresetId: string };
-}
+/**
+ * Video, avatar, and Intro Video selections written before those products were
+ * retired. `chat_events` is append-only, so the contract keeps both arms
+ * readable; a selection that still reaches a send is ignored and the run
+ * proceeds without template guidance.
+ */
+type RetiredGenerationTemplateInput =
+  | {
+      readonly type: "video";
+      readonly selection: { readonly stylePresetId: string };
+    }
+  | { readonly type: "intro-video" };
 
 interface IllustrationGenerationTemplateInput {
   readonly type: "illustration";
@@ -63,17 +69,6 @@ interface WebsiteGenerationTemplateInput {
   };
 }
 
-/**
- * Intro Video selections that survive in the append-only chat event log.
- *
- * The product is gone, so this never resolves to a prompt: a selection that
- * somehow reaches a send is rejected rather than silently producing an
- * untemplated run. The arm exists so archived messages stay parseable.
- */
-interface RetiredIntroVideoGenerationTemplateInput {
-  readonly type: "intro-video";
-}
-
 interface CustomGenerationTemplateInput {
   readonly type: "custom";
   readonly selection: { readonly userTemplateId: string };
@@ -82,8 +77,7 @@ interface CustomGenerationTemplateInput {
 type GenerationTemplateInput =
   | CustomGenerationTemplateInput
   | PresentationGenerationTemplateInput
-  | RetiredVideoGenerationTemplateInput
-  | RetiredIntroVideoGenerationTemplateInput
+  | RetiredGenerationTemplateInput
   | IllustrationGenerationTemplateInput
   | WorkflowGenerationTemplateInput
   | WebsiteGenerationTemplateInput;
@@ -128,14 +122,8 @@ export function buildGenerationTemplatePrompt(
     return { status: "resolved", prompt: "" };
   }
 
-  if (generationTemplate.type === "video") {
-    return {
-      status: "invalid",
-      message: "Video and avatar templates are no longer available",
-    };
-  }
-  if (generationTemplate.type === "intro-video") {
-    return { status: "invalid", message: "Intro video is no longer available" };
+  if (isRetiredGenerationTemplate(generationTemplate)) {
+    return { status: "resolved", prompt: "" };
   }
   if (generationTemplate.type === "illustration") {
     return buildIllustrationGenerationTemplatePrompt(generationTemplate);
@@ -171,6 +159,15 @@ function stripGenerationTemplateContext(prompt: string): string {
     return index > 1 && line === "";
   });
   return lines.slice(framingEnd + 1).join("\n");
+}
+
+export function isRetiredGenerationTemplate(
+  generationTemplate: GenerationTemplateInput,
+): generationTemplate is RetiredGenerationTemplateInput {
+  return (
+    generationTemplate.type === "video" ||
+    generationTemplate.type === "intro-video"
+  );
 }
 
 export function buildGenerationTemplatesPrompt(

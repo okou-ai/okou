@@ -131,7 +131,6 @@ export function createMarkdownChatFixture(
                 serviceTier: null,
                 computerUseHostId: null,
                 cloudBrowserEnabled: false,
-                selectedVideoModel: null,
                 selectedImageModel: null,
               },
             ],
@@ -157,7 +156,6 @@ export function createMarkdownChatFixture(
             archived: false,
             computerUseHostId: null,
             cloudBrowserEnabled: false,
-            selectedVideoModel: null,
             selectedImageModel: null,
           });
         },

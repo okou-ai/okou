@@ -572,6 +572,7 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
       }),
     );
 
+    await api.selectImageModel(admin, "gpt-image-1");
     const queued = await api.requestImageIoGenerate(
       admin,
       { prompt: "a compact billing usage chart" },
@@ -672,6 +673,9 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     expectApiError(stt.body);
     expect(stt.body.error.code).toBe("AUDIO_INPUT_QUOTA_EXCEEDED");
 
+    // The validations below describe gpt-image-1, selected as the member's
+    // image model; the endpoint ignores a request's `model`.
+    await api.selectImageModel(admin, "gpt-image-1");
     const missingImageIoPrompt = await api.requestImageIoGenerate(
       admin,
       {},
@@ -680,15 +684,15 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     expectApiError(missingImageIoPrompt.body);
     expect(missingImageIoPrompt.body.error.message).toBe("prompt is required");
 
-    const unsupportedImageIoModel = await api.requestImageIoGenerate(
+    // An unknown request model is ignored rather than rejected, so the request
+    // passes validation with the member's model and reaches the credit gate.
+    const ignoredImageIoModel = await api.requestImageIoGenerate(
       admin,
       { prompt: "a concise billing usage chart", model: "not-a-model" },
-      [400],
+      [402],
     );
-    expectApiError(unsupportedImageIoModel.body);
-    expect(unsupportedImageIoModel.body.error.message).toContain(
-      "Unsupported image model: not-a-model",
-    );
+    expectApiError(ignoredImageIoModel.body);
+    expect(ignoredImageIoModel.body.error.code).toBe("INSUFFICIENT_CREDITS");
 
     const unsupportedImageSize = await api.requestImageIoGenerate(
       admin,
@@ -729,11 +733,11 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
       "Unsupported image background: magic",
     );
 
+    await api.selectImageModel(admin, "gpt-image-2");
     const transparentGptImage2 = await api.requestImageIoGenerate(
       admin,
       {
         prompt: "a concise billing usage chart",
-        model: "gpt-image-2",
         background: "transparent",
       },
       [400],
@@ -742,6 +746,7 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
     expect(transparentGptImage2.body.error.message).toBe(
       "gpt-image-2 does not support transparent backgrounds",
     );
+    await api.selectImageModel(admin, "gpt-image-1");
 
     const unsupportedImageFormat = await api.requestImageIoGenerate(
       admin,

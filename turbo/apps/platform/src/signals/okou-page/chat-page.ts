@@ -1,8 +1,4 @@
 import { command, computed, state } from "ccstate";
-import {
-  DEFAULT_IMAGE_MODEL,
-  type ImageModel,
-} from "@okouai/core/image-model-catalog";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
@@ -58,10 +54,6 @@ const internalChatPageUserOverride$ = state<
   { kind: "unset" } | { kind: "set"; value: ModelProviderSelection | null }
 >({ kind: "unset" });
 
-const internalChatPageImageModelOverride$ = state<
-  { kind: "unset" } | { kind: "set"; value: ImageModel | null }
->({ kind: "unset" });
-
 export const chatPageModelSelection$ = computed(
   async (get): Promise<ModelProviderSelection | null> => {
     const user = get(internalChatPageUserOverride$);
@@ -108,53 +100,8 @@ export const setChatPageModelSelection$ = command(
   },
 );
 
-export const chatPageImageModelSelection$ = computed(
-  async (get): Promise<ImageModel | null> => {
-    const user = get(internalChatPageImageModelOverride$);
-    if (user.kind === "set") {
-      return user.value;
-    }
-    const userPreference = await get(userModelPreference$);
-    return userPreference.selectedImageModel ?? DEFAULT_IMAGE_MODEL;
-  },
-);
-
-/** The image model a run started from the new-thread composer would use. */
-export const chatPageEffectiveImageModel$ = computed(
-  async (get): Promise<ImageModel> => {
-    return (
-      (await get(chatPageImageModelSelection$)) ??
-      (await get(userModelPreference$)).selectedImageModel ??
-      DEFAULT_IMAGE_MODEL
-    );
-  },
-);
-
-/**
- * The explicit landing-composer pin: the model the user actively chose for the
- * next new chat, or null when they never touched the picker. Unlike
- * chatPageImageModelSelection$, this does NOT fall back to the member default, so an
- * untouched new thread is created unpinned and follows the live default.
- */
-export const chatPageImageModelPin$ = computed((get): ImageModel | null => {
-  const user = get(internalChatPageImageModelOverride$);
-  return user.kind === "set" ? user.value : null;
-});
-
-export const setChatPageImageModelSelection$ = command(
-  ({ set }, value: ImageModel | null) => {
-    set(internalChatPageImageModelOverride$, { kind: "set", value });
-  },
-);
-
 export const resetChatPageModelSelection$ = command(({ get, set }) => {
   if (get(internalChatPageUserOverride$).kind === "set") {
     set(internalChatPageUserOverride$, { kind: "unset" });
-  }
-});
-
-export const resetChatPageImageModelSelection$ = command(({ get, set }) => {
-  if (get(internalChatPageImageModelOverride$).kind === "set") {
-    set(internalChatPageImageModelOverride$, { kind: "unset" });
   }
 });

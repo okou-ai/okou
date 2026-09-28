@@ -1,6 +1,7 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, eq } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { Db } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -12,15 +13,25 @@ import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
   resolveModelSelectionPin,
   resolveModelFirstProviderAdmission,
+  type ProviderModelSupport,
 } from "./model-selection.service";
+import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
-/** Revalidate only the immutable enqueue choice; pick never selects a default. */
+/**
+ * Resolve the immutable enqueue choice into the route a run launches with;
+ * pick never selects a default. The plan is read once for the route and the
+ * credit admission. A queued chat input trusts its enqueue-time model and
+ * leaves a provider that cannot run it to fail at execution; only its credit
+ * admission is checked here.
+ */
 export async function resolveRunChatThreadModelContext(params: {
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
   readonly threadId: string;
   readonly eventId: string;
+  readonly featureSwitchContext?: FeatureSwitchContext;
+  readonly providerModelSupport?: ProviderModelSupport;
 }) {
   const [event] = await params.db
     .select({ modelSelection: canonicalChatInputModelSelection() })
@@ -36,6 +47,10 @@ export async function resolveRunChatThreadModelContext(params: {
     return badRequestMessage("Queued input is missing its model selection");
   }
   const selection = event.modelSelection;
+  const orgPlanCapabilities = await loadOrgPlanCapabilities(
+    params.db,
+    params.orgId,
+  );
   const pin = await resolveModelSelectionPin({
     db: params.db,
     orgId: params.orgId,
@@ -44,6 +59,7 @@ export async function resolveRunChatThreadModelContext(params: {
       modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
       selectedModel: selection.selectedModel,
     },
+    orgPlanCapabilities,
   });
   if ("status" in pin) {
     return pin;
@@ -54,13 +70,19 @@ export async function resolveRunChatThreadModelContext(params: {
     userId: params.userId,
     modelPin: pin,
     requestedModelProvider: undefined,
-    externalPlanCapabilities: { kind: "load-current" },
+    externalPlanCapabilities: {
+      kind: "resolved",
+      capabilities: orgPlanCapabilities,
+    },
+    providerModelSupport: params.providerModelSupport ?? "validate",
   });
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    params.db,
-    params.orgId,
-    params.userId,
-  );
+  const featureSwitchContext =
+    params.featureSwitchContext ??
+    (await loadUserFeatureSwitchContext(
+      params.db,
+      params.orgId,
+      params.userId,
+    ));
   return {
     pin,
     providerAdmission,

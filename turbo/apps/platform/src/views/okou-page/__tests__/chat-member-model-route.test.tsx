@@ -8,18 +8,14 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
   context,
   findButton,
   installRunChat,
   NEW_CHAT_PATH,
-  queryButton,
 } from "./chat-run-test-fixtures.ts";
 
 const ACCOUNT_ID = "34240000-0000-4000-a000-000000000002";
@@ -50,24 +46,13 @@ function policy(
   };
 }
 
-test.each(
-  (["compact", "flyout"] as const).flatMap((layout) => {
-    return [
-      { layout, modelLabel: "GPT 5.6 Sol", source: "ChatGPT (Codex)" },
-      {
-        layout,
-        modelLabel: "Claude Sonnet 5",
-        source: "Claude Code (OAuth Token)",
-      },
-    ];
-  }),
-)(
-  "Shows $source as BYOK in the $layout picker with personal source help",
-  async ({ layout, modelLabel, source }) => {
+test.each([
+  { modelLabel: "GPT 5.6 Sol", source: "ChatGPT (Codex)" },
+  { modelLabel: "Claude Sonnet 5", source: "Claude Code (OAuth Token)" },
+])(
+  "Shows $source as BYOK in the model menu with personal source help",
+  async ({ modelLabel, source }) => {
     const user = userEvent.setup({ delay: null });
-    context.mocks.browser.matchMedia((query) => {
-      return query === "(min-width: 640px)" && layout !== "compact";
-    });
     installRunChat({ selectedModel: "gpt-5.6-sol" });
     context.mocks.data.orgModelPolicies([
       {
@@ -96,30 +81,9 @@ test.each(
       context,
       path: NEW_CHAT_PATH,
     });
-    const trigger = await waitFor(() => {
-      // Wait for the requested menu while feature switches load.
-      const button = queryButton("GPT 5.6 Sol");
-      if (button?.getAttribute("aria-haspopup") !== "menu") {
-        throw new Error("The model menu trigger is not ready");
-      }
-      return button;
-    });
+    const trigger = await composerModelTrigger("GPT 5.6 Sol");
     expect(trigger).not.toHaveTextContent("BYOK");
     click(trigger);
-    if (layout === "compact") {
-      const overview = await screen.findByRole("region", { name: "Models" });
-      const changeModel = queryAllByRoleFast("menuitem", overview).find(
-        (item) => {
-          return (
-            item.getAttribute("aria-label") === "Change Chat model, GPT 5.6 Sol"
-          );
-        },
-      );
-      if (!changeModel) {
-        throw new Error("The Models menu has no Chat model navigation");
-      }
-      click(changeModel);
-    }
 
     const option = await findModelMenuOption((name) => {
       return name.includes(modelLabel);

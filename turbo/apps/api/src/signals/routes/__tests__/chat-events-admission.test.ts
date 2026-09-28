@@ -293,6 +293,35 @@ describe("CHAT-02: web chat send and client ids", () => {
       "Only the private agent owner can run this agent",
     );
   }, 30_000);
+
+  it("rejects an existing-thread send naming another agent than the thread's", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    const threadAgent = await bdd.createAgent(actor, {
+      displayName: "Thread owner agent",
+    });
+    const otherAgent = await bdd.createAgent(actor, {
+      displayName: "Other agent in the same org",
+    });
+    const thread = await chat.createThread(actor, {
+      agentId: threadAgent.agentId,
+      title: "Agent mismatch thread",
+    });
+
+    const mismatched = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: otherAgent.agentId,
+        threadId: thread.id,
+        prompt: "send through the wrong agent",
+      },
+      [404],
+    );
+    expectApiError(mismatched.body);
+    expect(mismatched.body.error.message).toBe("Chat thread not found");
+    const events = await chat.listThreadEvents(actor, thread.id);
+    expect(events.events).toStrictEqual([]);
+  }, 30_000);
 });
 
 describe("CHAT-02: interrupting active chat runs", () => {
@@ -462,8 +491,9 @@ describe("CHAT-02: interrupting active chat runs", () => {
       "Only active chat runs can be interrupted",
     );
 
-    // The interrupt's client message id is burned for normal sends.
-    const reusedInterruptId = await chat.requestSendEvent(
+    // The interrupt's client message id is burned for normal sends: the
+    // conflicting send is accepted as a duplicate and enqueues nothing.
+    await chat.requestSendEvent(
       actor,
       {
         agentId,
@@ -471,12 +501,16 @@ describe("CHAT-02: interrupting active chat runs", () => {
         prompt: "reuse the interrupt client id",
         clientEventId: interruptId,
       },
-      [409],
+      [201],
     );
-    expectApiError(reusedInterruptId.body);
-    expect(reusedInterruptId.body.error.message).toBe(
-      "clientEventId is already in use",
-    );
+    const afterReuse = await chat.listThreadEvents(actor, first.threadId);
+    expect(
+      afterReuse.events.filter((message) => {
+        return JSON.stringify(message).includes(
+          "reuse the interrupt client id",
+        );
+      }),
+    ).toStrictEqual([]);
 
     // Neither cancelled round saved native history, so the next run replays
     // both rounds in a fresh session.
@@ -590,8 +624,24 @@ describe("CHAT-02: dispatch failure", () => {
       },
       [201],
     );
-    expect(replay.body).toStrictEqual(sent.body);
+    if (replay.status !== 201) {
+      throw new Error("Expected the replayed send to be accepted");
+    }
+    // The retry conflicts on the stored input and is accepted as a duplicate
+    // at request time without reading the original send back.
+    expect(replay.body).toStrictEqual({
+      runId: null,
+      threadId,
+      createdAt: expect.any(String),
+    });
+    expect(Date.parse(replay.body.createdAt ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(sent.body.createdAt ?? ""),
+    );
     await flushWaitUntilForTest();
+    const afterReplay = await chat.listThreadEvents(actor, threadId);
+    expect(userMessages(afterReplay.events)).toHaveLength(
+      userMessages(messages.events).length,
+    );
     await api.requestClaimRunnerJob(true, runId, [404]);
     expect(routeRequests()).toBe(0);
   }, 60_000);
@@ -722,7 +772,18 @@ describe("CHAT-02: admission without spendable credits", () => {
       { ...sendBody, threadId: sent.body.threadId },
       [201],
     );
-    expect(retry.body).toStrictEqual(sent.body);
+    if (retry.status !== 201) {
+      throw new Error("Expected the retried send to be accepted");
+    }
+    // The retry is accepted as a duplicate at request time and stores nothing.
+    expect(retry.body).toStrictEqual({
+      runId: null,
+      threadId: sent.body.threadId,
+      createdAt: expect.any(String),
+    });
+    expect(Date.parse(retry.body.createdAt ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(sent.body.createdAt ?? ""),
+    );
     const afterRetry = await chat.listThreadEvents(actor, sent.body.threadId);
     expect(afterRetry.events).toHaveLength(3);
   }, 60_000);

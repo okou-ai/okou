@@ -2473,6 +2473,7 @@ async function resolveQueuedMessageModelRoute(args: {
   readonly userId: string;
   readonly orgId: string;
   readonly contextType: QueuedUserMessageContextType;
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing?: ChatCallbackPreCreateTimingCollector;
 }): Promise<QueuedMessageModelRouteResolution> {
   const modelContext = await measureChatCallbackPreCreateTiming(
@@ -2486,6 +2487,8 @@ async function resolveQueuedMessageModelRoute(args: {
         userId: args.userId,
         threadId: args.threadId,
         eventId: args.eventId,
+        featureSwitchContext: args.featureSwitchContext,
+        providerModelSupport: "trust-enqueued",
       });
     },
   );
@@ -3083,6 +3086,7 @@ async function loadQueuedChatRunContext(
     userId: args.userId,
     orgId: args.agent.orgId,
     contextType: args.queuedMessage.contextType,
+    featureSwitchContext,
     timing: args.timing,
   });
   const userMessageProjection = queuedUserMessageProjection(

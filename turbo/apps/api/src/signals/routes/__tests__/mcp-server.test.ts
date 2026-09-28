@@ -2025,7 +2025,6 @@ describe("MCP chat discovery and creation", () => {
       serviceTier: before.serviceTier,
       computerUseHostId: before.computerUseHostId,
       cloudBrowserEnabled: before.cloudBrowserEnabled,
-      selectedVideoModel: before.selectedVideoModel,
       selectedImageModel: before.selectedImageModel,
     });
   });

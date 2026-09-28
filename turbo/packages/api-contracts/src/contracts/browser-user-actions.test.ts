@@ -6,6 +6,7 @@ import {
   browserUserActionApplyRequestSchema,
   browserUserActionCreateRequestSchema,
   browserUserActionResponseSchema,
+  browserUserActionsContract,
 } from "./browser-user-actions";
 
 const uuid = (digit: string) => {
@@ -156,7 +157,6 @@ describe("Browser user-action contracts", () => {
       name: "note.txt",
       type: "text/plain",
       size: 4,
-      sha256: "a".repeat(64),
     };
     for (const entry of [
       { ...base, operation: "replace", files: [file] },
@@ -202,7 +202,6 @@ describe("Browser user-action contracts", () => {
         operation: "replace",
         files: [{ ...file, size: 10 * 1024 * 1024 + 1 }],
       },
-      { ...base, operation: "replace", files: [{ ...file, sha256: "bad" }] },
       {
         ...base,
         operation: "replace",
@@ -215,6 +214,14 @@ describe("Browser user-action contracts", () => {
           .success,
       ).toBe(false);
     }
+  });
+
+  it("accepts a checksum-free Browser file prepare request and response", () => {
+    const endpoint = browserUserActionsContract.prepareFileUpload;
+    const input = { key: "document", index: 0, size: 4 };
+    expect(endpoint.body.parse(input)).toStrictEqual(input);
+    const output = { uploadUrl: "https://uploads.example.test/file" };
+    expect(endpoint.responses[200].parse(output)).toStrictEqual(output);
   });
 
   it("accepts a bounded radio index including explicit clear and rejects ambiguous scalar values", () => {

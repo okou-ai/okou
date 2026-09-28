@@ -68,8 +68,9 @@ async function measureEnqueueStep<T>(
  * integrations, and every workflow trigger. One transaction appends the
  * run-less input and upserts the thread's `queued_chat_threads` row, clearing
  * any lease so a picker that read the queue as empty cannot delete the row.
- * The entry captures the input's model at enqueue; the pick validates that
- * decision and performs launch admission. Enqueue adds no explicit row lock.
+ * The entry captures the input's model at enqueue; the pick resolves that
+ * decision's route and performs credit admission. Enqueue adds no explicit
+ * row lock.
  */
 export async function enqueueChatInput(
   db: Db,
@@ -280,8 +281,9 @@ export const pickQueuedChatThread$ = command(
 /**
  * After an enqueue commits: pick the thread once and notify its running run
  * in two independent background tasks. `afterPick` (an integration's wait
- * notice) runs after the pick; `publish` (the UI realtime event) runs last
- * and also when the pick fails. No entry awaits the pick.
+ * notice) runs after the pick; `touch` (a direct send's best-effort sidebar
+ * touch) and then `publish` (the UI realtime event) run last, also when the
+ * pick fails. No entry awaits the pick.
  */
 export const scheduleEnqueuedChatThreadPick$ = command(
   (
@@ -292,6 +294,7 @@ export const scheduleEnqueuedChatThreadPick$ = command(
         pick: ChatQueuePick,
         signal: AbortSignal,
       ) => Promise<void>;
+      readonly touch?: () => Promise<void>;
       readonly publish?: () => Promise<void>;
     },
   ): void => {
@@ -308,6 +311,7 @@ export const scheduleEnqueuedChatThreadPick$ = command(
             await input.afterPick?.(pick, backgroundSignal);
           })(),
         );
+        await input.touch?.();
         await input.publish?.();
         if (!picked.ok) {
           L.error("Failed to pick enqueued chat thread", {

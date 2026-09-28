@@ -2,8 +2,7 @@
  * Catalog of prompt-based built-in image generation models.
  *
  * Provider request shapes, pricing, and model-specific parameters stay in the
- * API service. Promptless transforms are deliberately excluded because they
- * cannot act as chat defaults.
+ * API service. Members choose their model in Settings > Built-in tools.
  */
 import {
   IMAGE_MODEL_IDS,
@@ -12,7 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/image-models";
 
 interface ImageModelConfig {
-  /** Value accepted by the CLI's `--model` flag. */
+  /** Short, user-facing model identifier. */
   readonly alias: string;
   /** Human-facing name for pickers. */
   readonly label: string;
@@ -89,8 +88,7 @@ export const IMAGE_MODELS: readonly ImageModel[] = IMAGE_MODEL_IDS;
  * Catalog models offered by the user-facing picker, in display order. The
  * picker presents the current entry for each family rather than every catalog
  * entry: Seedream 4, both Flux 1.1 variants, and Seedream 5 Lite are all
- * deliberately absent. Every one of them stays generatable through its alias
- * and through defaults that already point at it.
+ * deliberately absent. Stored member settings that name them remain supported.
  * Nano Banana 2 Lite is the exception: it is offered beside Nano Banana 2
  * because it is the cheaper way to reach the same family.
  */
@@ -141,4 +139,4 @@ export function resolveImageModel(model: string): ImageModel | undefined {
 }
 
 /** Global fallback when no more specific image model default exists. */
-export const DEFAULT_IMAGE_MODEL = "gpt-image-1" satisfies ImageModel;
+export const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-flare" satisfies ImageModel;

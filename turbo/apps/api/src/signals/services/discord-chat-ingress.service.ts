@@ -12,7 +12,6 @@ import { and, eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import type { Tx } from "../../lib/db-types";
 
@@ -105,6 +104,38 @@ export async function findDiscordChatThreadRoute(
   return await loadDiscordChatThreadRoute(db, key);
 }
 
+/**
+ * Read the chat thread behind the Discord channel an interaction came from:
+ * the main DM conversation for a DM, or the server thread whose route session
+ * is that thread channel. Interactions in a parent channel match no route.
+ */
+export async function findDiscordInteractionChatThreadId(
+  db: Pick<Db, "select">,
+  args: {
+    readonly connectionId: string;
+    readonly userId: string;
+    readonly channelId: string;
+    readonly isDm: boolean;
+  },
+): Promise<string | undefined> {
+  const [route] = await db
+    .select({ chatThreadId: discordChatThreadRoutes.chatThreadId })
+    .from(discordChatThreadRoutes)
+    .where(
+      and(
+        eq(discordChatThreadRoutes.connectionId, args.connectionId),
+        eq(discordChatThreadRoutes.userId, args.userId),
+        eq(
+          discordChatThreadRoutes.sessionKey,
+          args.isDm ? INTEGRATION_DM_SESSION_KEY : args.channelId,
+        ),
+        eq(discordChatThreadRoutes.destinationChannelId, args.channelId),
+      ),
+    )
+    .limit(1);
+  return route?.chatThreadId;
+}
+
 async function requireDiscordChatThreadRoute(
   db: Pick<Db, "select" | "update">,
   key: DiscordChatThreadRouteKey,
@@ -191,10 +222,6 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       tx,
       args,
     );
-    const mediaModels = await loadNewChatThreadMediaModels(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-    });
     const modelSettings = await loadNewChatThreadModelSettings(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -213,7 +240,6 @@ export async function ensureCanonicalDiscordChatThreadRoute(
         lastMessageAt: args.currentTime,
         createdAt: args.currentTime,
         updatedAt: args.currentTime,
-        selectedImageModel: mediaModels.selectedImageModel,
       })
       .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
     if (!thread) {
@@ -265,7 +291,6 @@ export async function ensureCanonicalDiscordChatThreadRoute(
       selectedModel: initialModel.selectedModel,
       modelSettings,
       serviceTier: initialModel.serviceTier,
-      ...mediaModels,
       createdAt: thread.createdAt,
     });
     await attachIngressRoute(tx, args.ingressId, route.id);

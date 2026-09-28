@@ -531,55 +531,6 @@ export const getBuiltInGenerationWebhookJob$ = command(
   },
 );
 
-export const getBuiltInGenerationWebhookJobByProviderJobId$ = command(
-  async (
-    { set },
-    args: {
-      readonly provider: NonNullable<
-        BuiltInGenerationRequestInternal["provider"]
-      >;
-      readonly providerJobId: string;
-    },
-    signal: AbortSignal,
-  ): Promise<BuiltInGenerationWebhookJob | null> => {
-    const writeDb = set(writeDb$);
-    const [job] = await writeDb
-      .select({
-        id: builtInGenerationJobs.id,
-        type: builtInGenerationJobs.type,
-        status: builtInGenerationJobs.status,
-        orgId: builtInGenerationJobs.orgId,
-        userId: builtInGenerationJobs.userId,
-        runId: builtInGenerationJobs.runId,
-        billingRunId: builtInGenerationJobs.billingRunId,
-        billingContext: builtInGenerationJobs.billingContext,
-        request: builtInGenerationJobs.request,
-      })
-      .from(builtInGenerationJobs)
-      .where(
-        and(
-          inArray(builtInGenerationJobs.status, [
-            ...ACTIVE_BUILT_IN_GENERATION_STATUSES,
-          ]),
-          eq(
-            sql`${builtInGenerationJobs.request}->${BUILT_IN_GENERATION_INTERNAL_REQUEST_KEY}->>'provider'`,
-            args.provider,
-          ),
-          eq(
-            sql`${builtInGenerationJobs.request}->${BUILT_IN_GENERATION_INTERNAL_REQUEST_KEY}->>'providerJobId'`,
-            args.providerJobId,
-          ),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!job || !isRecord(job.request)) {
-      return null;
-    }
-    return { ...job, request: job.request };
-  },
-);
-
 export const completeBuiltInGenerationJob$ = command(
   async (
     { set },

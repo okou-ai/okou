@@ -6,7 +6,7 @@ This is step 2 of the Chat Event V8 plan. `CURRENT_CHAT_EVENT_SCHEMA_VERSION`
 becomes 8; the V8 shape and the V7 to V8 upgrade rules are in
 [Chat Event schema versioning](./chat-event-schema-versioning.md#v8).
 
-Migration `1282_chat_event_v8` is non-transactional and re-runnable. It first
+Migration `1286_chat_event_v8` is non-transactional and re-runnable. It first
 replaces `chat_events_event_type_check`, `chat_events_context_type_check` and
 `chat_events_input_context_type_check` with their V8 versions as `NOT VALID`
 and drops the three Goal payload checks, so new writes are held to V8
@@ -51,6 +51,266 @@ Compatibility:
 - MCP chat history no longer returns the retired events; it has not returned
   them since #37225 projected them away.
 
+## Image model becomes a member setting (2026-09-28)
+
+Built-in image generation now uses one image model per workspace member:
+`org_members_metadata.selected_image_model`, edited in Settings › Built-in
+tools, else `DEFAULT_IMAGE_MODEL`, which changes from `gpt-image-1` to
+`gpt-image-2.5-flare`. Members without a stored value move to the new default.
+No onboarding or seed path writes the member value. Run creation snapshots the
+resolved model onto `agent_runs.selected_image_model` as before, but no longer
+reads `chat_threads.selected_image_model`. The `SettingsToolsTab` and
+`PaidToolControls` feature switches are removed, so the Tools tab is shown to
+every member. There is no migration.
+
+With video generation retired (#37242), new threads pin no media model at
+all. The composer never shows the image model: the staff `composerModelPanel`
+switch still chooses between the #37229 panel and the legacy menu with its
+effort chip, and both list only chat models. The undocumented `birefnet` and
+`clarity-upscaler` transform models are removed.
+
+Compatibility contracts kept for older Web App and iOS builds:
+
+- `POST /api/chat-threads/:id/image-model` still validates, records the value
+  and its `image_model_updated` event, and returns `204`, so older clients
+  reconcile their optimistic event. Runs ignore the value.
+- `POST /api/chat-threads` still accepts `imageModel` and returns `201`, but
+  ignores it. New threads, from every creation path, store a null image model
+  and no longer inherit the calling run's thread image model.
+- Thread responses and `created` events keep `selectedImageModel` (now null for
+  new threads), and the `image_model_updated` event kind remains readable
+  (`ios/Okou/Networking/ChatWire.swift`).
+
+Compatibility contracts kept for released CLIs and Runners:
+
+- `POST /api/image-io/generate` ignores the body `model` instead of rejecting
+  it. The model is the calling run's snapshot, else the member setting, else
+  the default. A released CLI that sends `--model` therefore gets the member's
+  model; a size valid only for the requested model can now fail validation,
+  and the agent retries without it. The undocumented transform models
+  (`birefnet` background removal and `clarity-upscaler`) are removed; a
+  released CLI that names them now gets the member's model instead. A
+  transform job still in flight across the deploy fails when its provider
+  webhook is parsed; recorded usage rows are unaffected.
+- Runs still receive `OKOU_DEFAULT_IMAGE_MODEL` with the snapshotted alias.
+  Released CLIs use it to omit `--model` and to pick `auto` as the Seedream 5
+  Lite default size. The current CLI has no `--model` option, sends no size
+  unless `--size` is given, and lets the API apply the model's default size.
+- New CLIs against an older API omit `model`, so the older API applies the
+  run snapshot or its own default, as it did for an omitted model.
+
+`PUT /api/user-model-preference` still requires the run preference. A request
+that echoes the stored `selectedModel` and `serviceTier` without a
+`modelSettingsPatch` skips org model policy admission, so a member whose stored
+chat model has left the policy can still change their image model. Older APIs
+reject that case with `400`; the new Settings dropdown then reports a save
+error until the API is promoted.
+
+Follow-up cleanup, in order:
+
+1. Raise the minimum supported app version past builds that pin a thread image
+   model, then delete the image-model route, its contract, and the create
+   body `imageModel` field.
+2. Once no supported CLI reads it, stop injecting `OKOU_DEFAULT_IMAGE_MODEL`
+   and remove the ignored `model` field from the image generation contract.
+3. Drop `chat_threads.selected_image_model` in two steps: first stop
+   declaring and emitting `selectedImageModel` on thread responses and events
+   once no supported client reads it, then drop the column in a later release
+   after the rollback floor passes the first step.
+
+## SSH/VNC Agent-grant interface contraction (#36360)
+
+The live Run and Runner authority uses exact chat host defaults/overrides (cutover
+#36440, switch graduation #37235). This step retires the old owner Agent-grant
+GET/PUT routes, public contracts and first-host auto-grant inserts. An older
+client calling those routes cannot gain new broad host authority; the new API
+has no handler for them. Current SSH/VNC host inventory and private Runner
+checks continue to require the Run's chat permission.
+
+The physical `agent_ssh_access` and `agent_vnc_access` tables remain in this
+release. Production migrations precede API promotion, so a still-serving older
+API may read or write those rows during the overlap. Existing rows never
+authorize access on the new API. The owner does not require preserving rollback
+to a pre-cutover API for this cleanup. Physical table removal (#37272) is a
+separate deployment: first confirm every serving API instance that references
+the tables has drained; do not infer drain from this PR's merge or deployment.
+
+## Video model columns and `video_model_updated` dropped (#37249)
+
+Final contract step of the video retirement (#37242, #37256).
+
+- Migration `1283_drop_retired_video_model_columns` drops
+  `selected_video_model` from `chat_threads`, `org_members_metadata`,
+  `agent_runs` and `chat_thread_events`, deletes the remaining
+  `video_model_updated` thread events (one row in production per MaskDB on
+  2026-09-28) and recreates `chat_thread_event_kind` without that value in a
+  single table rewrite of `chat_thread_events`. It re-adds
+  `agent_runs_metadata_presence_check` without the dropped column as
+  `NOT VALID`; `1284_validate_agent_runs_metadata_presence_check` validates it
+  in its own transaction, so the `agent_runs` scan does not hold the
+  `ACCESS EXCLUSIVE` lock.
+- The contract, core replay, API, Platform and CLI no longer know the
+  `video_model_updated` kind or the `selectedVideoModel` field on thread
+  metadata, thread events or snapshot projections. Historical usage and credit
+  records are unaffected: `chat_events` usage payloads never carried the field,
+  and the video model catalog stays for historical display.
+
+Release decision: the owner accepted shipping this without first raising the
+Web client floor and without waiting for #37256 to be released on its own.
+
+- App 0.981.0 (the current floor) still requires `selectedVideoModel` when it
+  parses IndexedDB thread events and snapshots and the R2 snapshot archive, so
+  its thread-list sync fails once the field is gone. This is accepted: after
+  the App from this release is promoted, a reload loads a build that does not
+  need the field. Between API and App promotion, a reload still loads 0.981.0.
+- Sandbox CLIs from before #37256 also require the field in the snapshot
+  archive; their chat thread reads fail until they drain (about two hours).
+- If #37256 ships in the same release, the previous API still reads the
+  columns explicitly as well; it falls into the same `42703` window below.
+
+Old and new versions during deploy:
+
+- Migrations run before API promotion. The previous API still declares the
+  columns, so its inserts and bare `select()`/`returning()` on those four
+  tables receive `42703` until it drains, as with `1274`. `agent_runs`,
+  `chat_threads` and `chat_thread_events` are hot tables; release this change
+  at low traffic.
+- Previous API with the new App or CLI: the previous API still sends
+  `selectedVideoModel: null`, which the object schemas strip. It writes no
+  `video_model_updated` event.
+- New API with App 0.981.0: see the release decision above; the tab recovers
+  on reload once the new App is promoted.
+- Cached state: a cached snapshot that still has `selectedVideoModel` parses
+  and the key is stripped. A browser that cached a `video_model_updated` event
+  fails its strict IndexedDB read. The existing degraded path then loads the
+  server snapshot and replaces the local snapshot and event log, with no
+  Sentry report. The CLI cache discards an unparseable file and rebuilds it
+  from the snapshot in the same way. A client whose saved cursor was a deleted
+  event receives `410` and reloads the snapshot.
+- iOS keeps its `videoModelUpdated` wire case, and its decoders do not require
+  `selectedVideoModel`. The server no longer sends either.
+
+Rollback promotes artifacts without restoring schema, so
+`resolve-production-rollback-target.sh` rejects API targets that predate the
+canonical main commit that added `1283`. Recovering past that commit requires a
+forward-fix migration that restores the columns and the enum value.
+
+## Unified chat queue final cleanup (after release 7)
+
+This change contracts what release 7 (#37200, released in #37237) retired and
+removes compatibility that no longer has a reader. It also deletes the
+one-time `019-pi-api-first-turn-cleanup` script, which was run in production on
+2026-09-28 (17 objects deleted, `pi-api-first-turn/` verified empty).
+
+**Migration 1282: retired integration agent tables.** Migration
+`1282_drop_retired_integration_agent_tables` drops
+`slack_user_agent_preferences`, `discord_user_agent_preferences`,
+`feishu_user_agent_preferences`, `feishu_platform_user_agent_preferences`,
+`teams_user_agent_preferences`, `telegram_user_agent_preferences`,
+`agentphone_user_agent_preferences`, `telegram_user_links` and
+`telegram_installations`, and the column
+`feishu_org_installations.default_agent_id`, together with their Drizzle
+declarations. It first deletes the self-hosted Telegram rows from the two
+shared tables, then drops `telegram_chat_thread_routes.telegram_user_link_id`
+and `telegram_messages.installation_id` with their partial indexes and
+one-owner checks, and makes the official owner
+(`telegram_official_user_link_id`, `official_org_id`) `NOT NULL`. The chat
+threads of the deleted self-hosted routes remain as history; self-hosted
+Telegram messages are 30-day context rows. Dropping the foreign keys briefly
+locks `agents` and `discord_org_connections`, and `SET NOT NULL` scans the two
+small Telegram tables, all under the default 1 s `lock_timeout`.
+
+Gate evidence: release 7 removed every read and write of the tables and the
+Feishu/Lark column (the runtime Feishu mapping already omitted it), and no
+fixture, cron, erasure or export list names them. Release 7 is live in
+production (`91223f52`), the last output from an earlier API (`f06f2e0f`) was at
+2026-09-28 13:25:49 UTC, and the API rollback floor is release 7. The one-time
+KMS 013 recovery manifest treats `telegram_installations.encrypted_bot_token`
+as optional, like `agent_run_queue`, so snapshots from either side of the drop
+verify. The 1279 transition validator is retired because 1279 no longer
+replays on the contracted shapes (see `turbo/packages/db/MIGRATIONS.md`).
+
+Release 7 APIs still declare `telegram_messages.installation_id` and
+`telegram_chat_thread_routes.telegram_user_link_id` and name them in Telegram
+message and route inserts. The migration runs before API promotion, so until
+the release 7 API drains its official Telegram message and route inserts
+receive `42703`. This window is accepted, as for `1274`; release at low
+traffic. The other dropped tables and the Feishu column are not named by any
+release 7 statement.
+
+**API rollback floor: this change**, resolved from the first main commit that
+adds `1282_drop_retired_integration_agent_tables.sql` in
+`resolve-production-rollback-target.sh`. Rollback promotes artifacts without
+restoring schema, and every earlier API names the dropped Telegram columns.
+
+**Integration `/model` also switches the current thread.** Integration `/model`
+commands (Slack DM picker, Discord `/okou model`, the Teams model card,
+Feishu/Lark, official Telegram and AgentPhone) now also switch the model of the
+conversation's existing chat thread. They reuse the web thread model-selection
+path, so the thread row and its `model_selection_updated` and
+`service_tier_updated` events are written exactly as a web switch writes them.
+A context without a routed chat thread changes only the member default, and the
+next new thread initializes from it. This is code-only. During the rollout an
+old API instance only updates the member default. Teams model cards now carry
+the route key of the conversation where `/model` was sent; a card posted before
+this change has none and is answered with a notice to send `/model` again,
+without changing any model.
+
+**Chat send response `status` removed.** The `POST /api/chat/events` 201
+response contract no longer declares the optional `status` field. Only APIs
+that created a run synchronously returned it, and every API at or above the
+release 7 floor returns only `runId: null`, `threadId` and `createdAt`. Nothing
+changes on the wire and no App, iOS or CLI build reads the field.
+
+Kept compatibility, with the unmet condition:
+
+- `runId: null` in the chat send response: user-installed CLIs, MCP and token
+  clients have no version floor and may still read the key.
+- `queued` run status and historical `run.queued`/`run.dequeued` rows: persisted
+  data that must still parse; no migration removes it.
+- Nullable `chat_events.model_selection` and pick rejecting inputs without it:
+  historical inputs have no captured model.
+- Legacy `direct-message:<agentId>:<model>` route keys handled by
+  `/new_session`, and the pick-time rebinding of threads bound to a former
+  per-user agent: persisted routes and thread bindings without a data migration.
+- `piInstalledCliRequirement` optional in the execution context: tightening it
+  is a separate Runner/Guest protocol change without a documented deadline.
+- `GET /api/integrations/telegram/bots` for older CLIs: deployed CLIs have no
+  version floor.
+- Official Workflow queue marker decoding (#29908): its writers still write the
+  markers.
+
+## Direct PUT checksum removal and Browser file uploads (#37241)
+
+The shared presigner no longer puts `x-amz-checksum-sha256` into a required
+request header or the signed URL. The host CLI keeps its original PUT with
+`Content-Type`; no host prepare/complete workflow changes. The same removal
+also applies to Discord canonical PUTs. This deliberately drops
+R2 enforcement of the client-declared byte hash. A holder of a hosted or
+Discord PUT URL can replace its object with different bytes while that URL is
+valid (the host URL expires after 48 hours). The request's `Content-Type` is
+also not signed, so a replay can change the object's media type. The
+client-provided SHA-256 and host manifest are not trusted proof of the
+originally intended bytes. Host
+manifests still carry `immutableContent: true` for their existing serving and
+cache policy; that marker must **not** be interpreted as an R2 overwrite
+barrier. Treat replay-versus-cache consistency as an accepted limitation until
+server-owned sealing or cache-policy changes are separately approved.
+
+Browser native file input no longer computes or transports a file SHA-256 and
+apply no longer compares a readback digest. Prepare still requires an exact
+pending request and issues a ten-minute temporary PUT URL, using the same
+shared ten-minute Browser idle-lease duration; the provider's absolute timeout
+and request/target state can still end the operation earlier. Apply still
+checks downloaded byte length and the 10 MiB aggregate / three-file limits,
+then uses the existing exact target, pending/uncertain, and 15-second CDP
+boundaries. Cancellation attempts object cleanup, but a holder of an unexpired
+PUT URL can recreate a temporary object after cleanup; the 24-hour R2
+lifecycle rule remains the eventual backstop. No production CORS or feature
+switch is changed. The non-GA Browser wire shape changes directly, with no
+legacy compatibility path. Roll out the API and Platform changes together
+while the production file-input feature remains disabled.
+
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)
 
 This is step 1 of the Chat Event V8 plan. It changes no wire protocol: the row
@@ -93,6 +353,48 @@ V8 (PR-2) deletes these rows and tightens the database checks, so it assumes
 production has no writer for them. After this change is released, raise the API
 rollback floor to its main commit so that no rollback target writes the retired
 types; that floor update is a separate follow-up and is not part of this change.
+
+## Video retirement follow-up: accepted-job paths and video model reads removed
+
+Follow-up to the retirement below, tracked in #37249.
+
+- The API no longer completes video or avatar jobs accepted by a
+  pre-retirement API. The BytePlus, MiniMax, and JoggAI webhook routes are
+  removed (callbacks now receive `404`). A fal success callback for a video job
+  is logged and acknowledged without completing the job; a fal failure
+  callback still fails it. Status reads of
+  finished jobs, existing video artifacts, and historical usage and credit
+  records are unchanged. `JOGGAI_API_KEY`, `JOGGAI_WEBHOOK_SECRET`, and the
+  API's `MINIMAX_API_KEY` are no longer read.
+- The API no longer reads or writes the `selected_video_model` columns on
+  threads, thread events, members, or runs. Thread metadata, thread events,
+  and compacted snapshots still send `selectedVideoModel: null`, because Web
+  clients at the current floor require the field. Historical
+  `video_model_updated` events stay readable and replay as no-ops.
+- The Web client floor is raised to `0.981.0`, the App build that retired
+  video generation (live in production from release #37254). Older tabs
+  receive `426` and reload, so no client still reaches the removed routes and
+  controls.
+- The production API rollback resolver now rejects targets that do not contain
+  #37242 (`VIDEO_GENERATION_RETIREMENT_COMMIT`), so a rollback cannot restore
+  an API that accepts video jobs. Before merge, a read-only MaskDB query
+  confirmed no `video` job is within its 30-minute timeout in `queued` or
+  `running`.
+
+Old and new versions during deploy:
+
+- Previous API with the new App: the new App treats `selectedVideoModel` as
+  optional and ignores it, so the historical values the previous API still
+  returns have no effect.
+- New API with the floor-level App: it receives `selectedVideoModel: null`
+  and no video model control reads it.
+- Jobs: a video or avatar job still in flight would not complete; the gate
+  above requires that none remain.
+
+No database migration is included. Dropping the columns, the
+`video_model_updated` kind, and the wire field is the next step under #37249,
+after this API is the rollback floor and this App build is the Web client
+floor.
 
 ## MCP user-message source reader preparation (#37233)
 
@@ -150,8 +452,9 @@ Old and new versions during deploy:
 
 New threads and runs no longer resolve or store a video model; the member
 default is no longer written or returned. Thread metadata and thread events
-still expose the historical `selectedVideoModel` value (null for new threads),
-and the `video_model_updated` event kind stays readable for replay.
+still expose the historical `selectedVideoModel` value (null for new threads;
+the follow-up above sends null for all threads), and the `video_model_updated`
+event kind stays readable for replay.
 
 No database migration is included. Historical usage and credit records keep
 their `video` and `audio` rows and display names. Dropping the thread, member,
@@ -359,15 +662,12 @@ preinstalled in the Runner image):
   within seconds and the pending timeout bounds the window at five minutes.
   This is accepted; release at low traffic.
 - No reader remains for handoff objects that earlier APIs wrote under
-  `pi-api-first-turn/`. The one-time
-  [`019-pi-api-first-turn-cleanup`](../turbo/packages/db/scripts/migrations/019-pi-api-first-turn-cleanup/README.md)
-  script inventories this fixed prefix in `R2_USER_STORAGES_BUCKET_NAME` by
-  default and deletes it only with `--execute`. Operations runs it after
-  release 7 promotion and old API writer drain; deployment and cron do not
-  invoke it. It paginates, stops on request or per-object errors without
-  retries, and independently verifies the prefix is empty. This PR has not
-  executed remote cleanup; canonical session history outside the prefix is
-  untouched.
+  `pi-api-first-turn/`. The one-time `019-pi-api-first-turn-cleanup` script
+  was run in production on 2026-09-28, after release 7 promotion and the old
+  API writer drain: it deleted 17 objects from that prefix in
+  `vm0-s3-user-storages-prod` and verified the prefix is empty. Canonical
+  session history outside the prefix is untouched. The script has since been
+  removed.
 
 **API rollback floor: this release**, pinned by the marker
 `.github/rollback-floors/pi-api-first-turn-retired` in
@@ -830,7 +1130,9 @@ arbitrate duplicate IDs. A losing insert rolls back the whole transaction,
 including any inline credential, before resolving an owned replay or an ID
 conflict. Only the requested table's primary-key violation is handled; unrelated
 constraint and database failures still propagate. Existing-resource VNC replays
-still skip KMS. The owner lifecycle locks and first-host Agent grants remain.
+still skip KMS. At that release, the owner lifecycle locks and first-host
+Agent grants remained; the later [grant contraction](#sshvnc-agent-grant-interface-contraction-36360)
+retired first-host writes.
 
 Banking Connect creates sessions under a short `FOR NO KEY UPDATE` lock on the
 existing connection row, retaining the partial unique index for one pending
@@ -3619,15 +3921,14 @@ the main-owned resolver before the physical drop deploys. Its API-only floor
 does not constrain the independently retained Runner tag. A migration journal
 entry cannot prove this serving/rollback boundary.
 
-New prepares bind each upload URL to its declared SHA-256 through the signed
-`x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
-`Content-Type`; identical-byte retries work, while different bytes fail R2's
-checksum validation. The root `/manifest.json` path is reserved for the server's
-delivery manifest. New database manifests carry `immutableContent: true`, which
-the API copies into its server-issued preview grants. The Worker trusts the grant
-for cache eligibility because old uploads could target `/manifest.json`. Completion of
-older drafts does not add that marker because their outstanding upload URLs
-were not checksum-bound.
+The earlier query-parameter checksum design was not deployed: development R2
+accepted different bytes under that signed URL, so it did not establish byte
+immutability. The root `/manifest.json` path is reserved for the server's
+delivery manifest. Database manifests may carry `immutableContent: true`, which
+the API copies into server-issued preview grants, but the marker does not
+prevent a holder of a still-valid direct PUT URL from replacing object bytes.
+Do not infer storage immutability from cache eligibility; see #37241 above.
+Completion of older drafts does not add the marker.
 
 The host Worker uses the shared `PRIVATE_ARTIFACT_CACHE_CONTROL` for successful
 private previews of marked deployments and immutable organization snapshots.

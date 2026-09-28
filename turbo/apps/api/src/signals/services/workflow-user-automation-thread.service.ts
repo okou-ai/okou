@@ -21,7 +21,6 @@ import {
   appendChatThreadEvent,
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import {
   readAcceptedOfficialWorkflowDefinition,
@@ -224,10 +223,6 @@ async function createAutomationChatThread(
     orgId: args.orgId,
     userId: args.userId,
   });
-  const mediaModels = await loadNewChatThreadMediaModels(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
   const modelSettings = await loadNewChatThreadModelSettings(db, {
     orgId: args.orgId,
     userId: args.userId,
@@ -248,7 +243,6 @@ async function createAutomationChatThread(
       lastMessageAt: args.currentTime,
       createdAt: args.currentTime,
       updatedAt: args.currentTime,
-      selectedImageModel: mediaModels.selectedImageModel,
     })
     .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
   if (!thread) {
@@ -264,7 +258,6 @@ async function createAutomationChatThread(
     selectedModel: pin.selectedModel,
     modelSettings,
     serviceTier: pin.serviceTier,
-    ...mediaModels,
     createdAt: thread.createdAt,
   });
   return thread.id;

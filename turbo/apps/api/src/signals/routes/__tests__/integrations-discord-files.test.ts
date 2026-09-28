@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
@@ -787,14 +788,20 @@ describe("Canonical Discord file publication and delivery", () => {
       expect.objectContaining({
         input: expect.objectContaining({
           Key: `private-artifacts/${upload.operation.assetId}/${upload.body.filename}`,
-          ChecksumSHA256: Buffer.from(
-            upload.body.checksumSha256,
-            "hex",
-          ).toString("base64"),
         }),
       }),
       expect.anything(),
     );
+    const signedPut = context.mocks.s3.getSignedUrl.mock.calls.find((call) => {
+      return (
+        call[1] instanceof PutObjectCommand &&
+        call[1].input.Key?.endsWith(`/${upload.body.filename}`)
+      );
+    });
+    if (!signedPut || !(signedPut[1] instanceof PutObjectCommand)) {
+      throw new Error("Expected a signed Discord PUT");
+    }
+    expect(signedPut[1].input.ChecksumSHA256).toBeUndefined();
     const client = fileClients();
     const materialized = await accept(
       client.materialize({ headers: fixture.headers, body: upload.operation }),

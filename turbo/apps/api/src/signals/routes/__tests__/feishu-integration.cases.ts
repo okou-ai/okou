@@ -41,6 +41,7 @@ import {
   larkConnectContract,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 
@@ -95,6 +96,7 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
+import { userModelPreferenceRoutes } from "../user-model-preference";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
@@ -6467,6 +6469,100 @@ export function registerSharedFeishuConversationTests(): void {
       );
       await runsApi.requestCancelRun(actor, run.id, [200]);
       await flushWaitUntilForTest();
+      await removeFeishuInstallation(fixture);
+    });
+
+    async function allowFeishuGptModel(actor: ApiTestUser): Promise<void> {
+      const { providerId } = await runsApi.createOrgModelProvider(actor, {
+        type: "openai-api-key",
+        secret: "feishu-model-command-openai-key",
+      });
+      await runsApi.updateOrgModelPolicies(actor, [
+        {
+          model: "gpt-6-astra",
+          isDefault: true,
+          defaultProviderType: "openai-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
+    }
+
+    async function readFeishuThreadEvents(actor: ApiTestUser) {
+      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      const threads = await accept(
+        setupApp({ context, routes: chatThreadRoutes })(
+          chatThreadsContract,
+        ).events({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {},
+        }),
+        [200],
+      );
+      return threads.body.events;
+    }
+
+    async function readFeishuMemberModel(
+      actor: ApiTestUser,
+    ): Promise<string | null> {
+      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      const preference = await accept(
+        setupApp({ context, routes: userModelPreferenceRoutes })(
+          userModelPreferenceContract,
+        ).get({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      return preference.body.selectedModel;
+    }
+
+    it("switches the main Feishu DM thread and the member default with /model", async () => {
+      const fixture = await setupFeishuRunFixture();
+      const { actor, appId, callbackUrl, defaultAgentId } = fixture;
+      await startFeishuDmSession(fixture);
+      await allowFeishuGptModel(actor);
+      const thread = requireValue(
+        (await readFeishuThreadEvents(actor)).find((event) => {
+          return event.kind === "created" && event.agentId === defaultAgentId;
+        }),
+        "Expected the main Feishu DM thread",
+      );
+
+      await postEvent(callbackUrl, directMessage(appId, "/model gpt-6-astra"), {
+        encrypted: true,
+      });
+      await flushWaitUntilForTest();
+
+      expect(
+        fixtureState.outboundMessages.some((message) => {
+          return messageContent(message).includes("Model switched");
+        }),
+      ).toBeTruthy();
+      await expect(readFeishuMemberModel(actor)).resolves.toBe("gpt-6-astra");
+      await expect(readFeishuThreadEvents(actor)).resolves.toContainEqual(
+        expect.objectContaining({
+          kind: "model_selection_updated",
+          chatThreadId: thread.chatThreadId,
+          selectedModel: "gpt-6-astra",
+        }),
+      );
+      await removeFeishuInstallation(fixture);
+    });
+
+    it("changes only the member default when /model precedes any Feishu thread", async () => {
+      const fixture = await setupFeishuRunFixture();
+      const { actor, appId, callbackUrl } = fixture;
+      await connectFixtureUser(fixture);
+      await allowFeishuGptModel(actor);
+
+      await postEvent(callbackUrl, directMessage(appId, "/model gpt-6-astra"), {
+        encrypted: true,
+      });
+      await flushWaitUntilForTest();
+
+      await expect(readFeishuMemberModel(actor)).resolves.toBe("gpt-6-astra");
+      await expect(readFeishuThreadEvents(actor)).resolves.not.toContainEqual(
+        expect.objectContaining({ kind: "model_selection_updated" }),
+      );
       await removeFeishuInstallation(fixture);
     });
 

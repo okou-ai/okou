@@ -1,5 +1,8 @@
 import { command, computed, state } from "ccstate";
-import type { ImageModel } from "@okouai/core/image-model-catalog";
+import {
+  DEFAULT_IMAGE_MODEL,
+  type ImageModel,
+} from "@okouai/core/image-model-catalog";
 import {
   type UserPreferenceChangedPayload,
   userPreferenceChangedPayloadSchema,
@@ -24,6 +27,17 @@ export const userModelPreference$ = computed(async (get) => {
   const result = await accept(client.get(), [200]);
   return result.body;
 });
+
+/**
+ * The image model built-in image generation uses for this member: their
+ * Settings choice, else the catalog default. Runs resolve the same two layers.
+ */
+export const effectiveImageModel$ = computed(
+  async (get): Promise<ImageModel> => {
+    const preference = await get(userModelPreference$);
+    return preference.selectedImageModel ?? DEFAULT_IMAGE_MODEL;
+  },
+);
 
 export const reloadUserModelPreference$ = command(({ set }) => {
   set(internalReloadUserModelPreference$, (value) => {
@@ -53,28 +67,6 @@ export const updateUserModelPreference$ = command(
     // `userPreferenceChanged` realtime topic; do not reload the local cache
     // here (the initiating session receives the push like any other).
     return result.body;
-  },
-);
-
-/** Makes an image model the member default without disturbing sibling fields. */
-export const updateDefaultImageModel$ = command(
-  async (
-    { get, set },
-    imageModel: ImageModel,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    set(reloadUserModelPreference$);
-    const preference = await get(userModelPreference$);
-    signal.throwIfAborted();
-    await set(
-      updateUserModelPreference$,
-      {
-        selectedModel: preference.selectedModel,
-        serviceTier: preference.serviceTier,
-        selectedImageModel: imageModel,
-      },
-      signal,
-    );
   },
 );
 

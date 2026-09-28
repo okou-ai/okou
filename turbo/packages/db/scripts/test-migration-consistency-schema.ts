@@ -44,7 +44,6 @@ import { validatePermanentDiscordFoundation } from "./test-discord-foundation-pe
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 import { validateGpt55Retirement } from "./test-gpt-55-retirement";
-import { validateIntegrationDmSingleThread } from "./test-integration-dm-single-thread";
 import { validateSonnet46Opus48DeepSeekV4ProRetirement } from "./test-sonnet-46-opus-48-deepseek-v4-pro-retirement";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
@@ -1089,63 +1088,15 @@ async function expectDatabaseError(
 }
 
 const INTEGRATION_USER_ID_TABLES = [
-  "agentphone_user_agent_preferences",
   "agentphone_user_links",
   "feishu_org_connections",
-  "feishu_platform_user_agent_preferences",
-  "feishu_user_agent_preferences",
   "github_user_links",
   "slack_org_connections",
-  "slack_user_agent_preferences",
   "teams_org_connections",
-  "teams_user_agent_preferences",
   "telegram_official_user_links",
-  "telegram_user_agent_preferences",
-  "telegram_user_links",
-] as const;
-
-const INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS = [
-  {
-    constraintName: "agentphone_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "agentphone_user_agent_preferences",
-  },
-  {
-    constraintName: "feishu_platform_user_agent_preferences_pk",
-    definition: "PRIMARY KEY (user_id, org_id, platform)",
-    tableName: "feishu_platform_user_agent_preferences",
-  },
-  {
-    constraintName: "feishu_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "feishu_user_agent_preferences",
-  },
-  {
-    constraintName: "slack_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "slack_user_agent_preferences",
-  },
-  {
-    constraintName: "teams_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "teams_user_agent_preferences",
-  },
-  {
-    constraintName: "telegram_user_agent_preferences_user_id_org_id_pk",
-    definition: "PRIMARY KEY (user_id, org_id)",
-    tableName: "telegram_user_agent_preferences",
-  },
 ] as const;
 
 const INTEGRATION_USER_ID_CANONICAL_INDEXES = [
-  {
-    definition:
-      "CREATE UNIQUE INDEX agentphone_user_agent_preferences_user_id_org_id_pk ON public.agentphone_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "agentphone_user_agent_preferences_user_id_org_id_pk",
-    tableName: "agentphone_user_agent_preferences",
-  },
   {
     definition:
       "CREATE UNIQUE INDEX idx_agentphone_user_links_user_org ON public.agentphone_user_links USING btree (user_id, org_id)",
@@ -1164,35 +1115,11 @@ const INTEGRATION_USER_ID_CANONICAL_INDEXES = [
   },
   {
     definition:
-      "CREATE UNIQUE INDEX feishu_platform_user_agent_preferences_pk ON public.feishu_platform_user_agent_preferences USING btree (user_id, org_id, platform)",
-    isPrimary: true,
-    isUnique: true,
-    name: "feishu_platform_user_agent_preferences_pk",
-    tableName: "feishu_platform_user_agent_preferences",
-  },
-  {
-    definition:
-      "CREATE UNIQUE INDEX feishu_user_agent_preferences_user_id_org_id_pk ON public.feishu_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "feishu_user_agent_preferences_user_id_org_id_pk",
-    tableName: "feishu_user_agent_preferences",
-  },
-  {
-    definition:
       "CREATE INDEX idx_slack_org_connections_user_id_workspace ON public.slack_org_connections USING btree (user_id, slack_workspace_id)",
     isPrimary: false,
     isUnique: false,
     name: "idx_slack_org_connections_user_id_workspace",
     tableName: "slack_org_connections",
-  },
-  {
-    definition:
-      "CREATE UNIQUE INDEX slack_user_agent_preferences_user_id_org_id_pk ON public.slack_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "slack_user_agent_preferences_user_id_org_id_pk",
-    tableName: "slack_user_agent_preferences",
   },
   {
     definition:
@@ -1204,35 +1131,11 @@ const INTEGRATION_USER_ID_CANONICAL_INDEXES = [
   },
   {
     definition:
-      "CREATE UNIQUE INDEX teams_user_agent_preferences_user_id_org_id_pk ON public.teams_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "teams_user_agent_preferences_user_id_org_id_pk",
-    tableName: "teams_user_agent_preferences",
-  },
-  {
-    definition:
       "CREATE UNIQUE INDEX idx_telegram_official_user_links_user_org ON public.telegram_official_user_links USING btree (user_id, org_id)",
     isPrimary: false,
     isUnique: true,
     name: "idx_telegram_official_user_links_user_org",
     tableName: "telegram_official_user_links",
-  },
-  {
-    definition:
-      "CREATE UNIQUE INDEX telegram_user_agent_preferences_user_id_org_id_pk ON public.telegram_user_agent_preferences USING btree (user_id, org_id)",
-    isPrimary: true,
-    isUnique: true,
-    name: "telegram_user_agent_preferences_user_id_org_id_pk",
-    tableName: "telegram_user_agent_preferences",
-  },
-  {
-    definition:
-      "CREATE UNIQUE INDEX idx_telegram_user_links_user_id_installation ON public.telegram_user_links USING btree (user_id, installation_id)",
-    isPrimary: false,
-    isUnique: true,
-    name: "idx_telegram_user_links_user_id_installation",
-    tableName: "telegram_user_links",
   },
 ] as const;
 
@@ -1262,36 +1165,6 @@ async function assertCanonicalIntegrationIdentitySchema(
     INTEGRATION_USER_ID_TABLES.map((tableName) => {
       return { columnName: "user_id", isNullable: "NO", tableName };
     }),
-  );
-
-  const primaryKeys = await client.query<{
-    constraintName: string;
-    definition: string;
-    tableName: string;
-  }>(
-    [
-      'SELECT "relation"."relname" AS "tableName",',
-      '  "constraint"."conname" AS "constraintName",',
-      '  pg_get_constraintdef("constraint"."oid", false) AS "definition"',
-      'FROM "pg_constraint" AS "constraint"',
-      'INNER JOIN "pg_class" AS "relation"',
-      '  ON "relation"."oid" = "constraint"."conrelid"',
-      'INNER JOIN "pg_namespace" AS "namespace"',
-      '  ON "namespace"."oid" = "relation"."relnamespace"',
-      'WHERE "namespace"."nspname" = \'public\'',
-      '  AND "constraint"."contype" = \'p\'',
-      '  AND "relation"."relname" = ANY($1::text[])',
-      'ORDER BY "relation"."relname"',
-    ].join("\n"),
-    [
-      INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS.map(({ tableName }) => {
-        return tableName;
-      }),
-    ],
-  );
-  assert.deepEqual(
-    primaryKeys.rows,
-    INTEGRATION_USER_ID_PREFERENCE_PRIMARY_KEYS,
   );
 
   await client.query("SET search_path TO public, pg_catalog");
@@ -1325,74 +1198,6 @@ async function assertCanonicalIntegrationIdentitySchema(
   assert.deepEqual(indexes.rows, INTEGRATION_USER_ID_CANONICAL_INDEXES);
 }
 
-async function assertFeishuPlatformPreferenceConstraints(
-  client: Client,
-): Promise<void> {
-  const agentId = "00000000-0000-4000-8000-000000116401";
-  const userId = "platform-preference-test-user";
-  const orgId = "platform-preference-test-org";
-  const insertPreference = `
-    INSERT INTO "feishu_platform_user_agent_preferences"
-      ("user_id", "org_id", "platform", "selected_agent_id")
-    VALUES ($1, $2, $3, $4)
-  `;
-
-  try {
-    await client.query(
-      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
-       VALUES ($1, $2, $3, 'platform-preference-test')`,
-      [agentId, orgId, userId],
-    );
-    for (const platform of ["feishu", "lark"]) {
-      await client.query(insertPreference, [userId, orgId, platform, agentId]);
-    }
-    await expectDatabaseError(client, {
-      code: "23505",
-      messageIncludes: "feishu_platform_user_agent_preferences_pk",
-      query: insertPreference,
-      values: [userId, orgId, "lark", agentId],
-    });
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "chk_feishu_platform_user_agent_preferences_platform",
-      query: insertPreference,
-      values: [userId, orgId, "unknown", agentId],
-    });
-    await expectDatabaseError(client, {
-      code: "23503",
-      query: insertPreference,
-      values: [
-        `${userId}-missing-agent`,
-        orgId,
-        "lark",
-        "00000000-0000-4000-8000-000000116402",
-      ],
-    });
-
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
-    const remaining = await client.query<{
-      platform: string;
-      selectedAgentId: string | null;
-    }>(
-      `SELECT "platform", "selected_agent_id" AS "selectedAgentId"
-       FROM "feishu_platform_user_agent_preferences"
-       WHERE "user_id" = $1 AND "org_id" = $2
-       ORDER BY "platform"`,
-      [userId, orgId],
-    );
-    assert.deepEqual(remaining.rows, [
-      { platform: "feishu", selectedAgentId: null },
-      { platform: "lark", selectedAgentId: null },
-    ]);
-  } finally {
-    await client.query(
-      `DELETE FROM "feishu_platform_user_agent_preferences" WHERE "org_id" = $1`,
-      [orgId],
-    );
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);
-  }
-}
-
 async function validateCanonicalIntegrationIdentitySchema(
   dbUrl: string,
 ): Promise<void> {
@@ -1404,9 +1209,8 @@ async function validateCanonicalIntegrationIdentitySchema(
 
   try {
     await assertCanonicalIntegrationIdentitySchema(client);
-    await assertFeishuPlatformPreferenceConstraints(client);
     console.log(
-      "   ✅ Canonical integration identity columns, keys, and indexes match\n",
+      "   ✅ Canonical integration identity columns and indexes match\n",
     );
   } finally {
     await client.end();
@@ -1746,7 +1550,6 @@ async function validatePermanentAgentRunMetadataState(
       "model_runtime_model",
       "built_in_model_key_id",
       "codex_service_tier",
-      "selected_video_model",
       "selected_image_model",
       "chat_thread_id",
       "api_started_at",
@@ -1764,7 +1567,7 @@ async function validatePermanentAgentRunMetadataState(
       metadataPresence.definition.includes("autonomy_budget IS NOT NULL"),
     );
 
-    assert.equal(metadataPresence.definition.match(/ IS NULL/gu)?.length, 18);
+    assert.equal(metadataPresence.definition.match(/ IS NULL/gu)?.length, 17);
     assert.equal(
       metadataPresence.definition.match(/ IS NOT NULL/gu)?.length,
       2,
@@ -1971,7 +1774,6 @@ async function validatePermanentAgentRunMetadataState(
       model_runtime_model: "'fixture'",
       built_in_model_key_id: "gen_random_uuid()",
       codex_service_tier: "'priority'",
-      selected_video_model: "'fixture'",
       selected_image_model: "'fixture'",
       chat_thread_id: "gen_random_uuid()",
       api_started_at: "now()",
@@ -3293,7 +3095,6 @@ async function main(): Promise<void> {
     await validatePermanentDiscordChat(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validateGpt55Retirement(dbUrl1);
-    await validateIntegrationDmSingleThread(dbUrl1);
     await validateSonnet46Opus48DeepSeekV4ProRetirement(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);

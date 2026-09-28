@@ -1360,14 +1360,6 @@ const prepareCanonicalUpload$ = command(
         {
           usePublicEndpoint: true,
           metadata,
-          ...(args.provider === "discord"
-            ? {
-                checksumSha256: Buffer.from(
-                  args.checksumSha256,
-                  "hex",
-                ).toString("base64"),
-              }
-            : {}),
         },
         signal,
       ),

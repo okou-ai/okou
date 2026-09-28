@@ -27,11 +27,8 @@ const mocks = createRouteMocks(context);
 const store = createStore();
 beforeEach(initializeVncRuntimeTest);
 
-test("orders member cleanup with shared-Agent deletion and permits deletion after the queued Run is revoked", async () => {
-  const creator = await api.fixture({
-    grant: false,
-    runtime: { status: "completed" },
-  });
+test("allows shared-Agent deletion while grant-free member cleanup waits on a host", async () => {
+  const creator = await api.fixture({ runtime: { status: "completed" } });
   const consumer = {
     orgId: creator.orgId,
     userId: `user_vnc_cleanup_${randomUUID()}`,
@@ -45,14 +42,13 @@ test("orders member cleanup with shared-Agent deletion and permits deletion afte
     [201],
   );
   // The fleet fixture represents an unclaimed queued Run, which Agent deletion
-  // permits. A running Run would return 409 before reaching the grant cascade.
+  // permits. A running Run would return 409 before owner cleanup can complete.
   await api.runtime(consumer, {
     agentId: creator.agentId,
     status: "queued",
     runnerId: null,
     heartbeatGeneration: null,
   });
-  await api.grant({ ...consumer, agentId: creator.agentId }, true);
   const membershipId = `orgmem_${randomUUID()}`;
   await store.set(seedOrgMembership$, creator, context.signal);
   await store.set(
@@ -120,9 +116,9 @@ test("orders member cleanup with shared-Agent deletion and permits deletion afte
           return (await lock("read-connection-lock")).body.waiting;
         })
         .toBe(true);
-      // Member cleanup must fence the shared Agent's cascade before retaining its
-      // grant rows and revoking its queued Run, avoiding grant->Run / Run->grant.
-      await accept(removeAgent(), [409]);
+      // With no first-host Agent grant, a queued Run and its shared Agent can
+      // be deleted before the waiting member cleanup finishes.
+      await accept(removeAgent(), [204]);
     })(),
     release,
   );
@@ -134,13 +130,4 @@ test("orders member cleanup with shared-Agent deletion and permits deletion afte
   expect(
     (await accept(api.connections().list({ headers }), [200])).body.connections,
   ).toStrictEqual([]);
-  expect(
-    (
-      await accept(
-        api.access().get({ headers, params: { agentId: creator.agentId } }),
-        [200],
-      )
-    ).body,
-  ).toStrictEqual({ enabled: false });
-  await accept(removeAgent(), [204]);
 });

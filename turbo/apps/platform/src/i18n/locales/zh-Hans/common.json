@@ -1758,7 +1758,6 @@
         "slideCountRange": "{{range}} 页"
       },
       "createWorkflow": "创建工作流",
-      "imageModelForThisChat": "本次对话使用的图片模型",
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
@@ -4934,8 +4933,6 @@
       "picker": {
         "builtInModel": "内置模型",
         "byokHelp": "使用你配置的服务商",
-        "categoryChat": "对话",
-        "categoryImage": "图像",
         "chatModels": "对话模型",
         "effort": "思考强度",
         "effortScale": {
@@ -4960,14 +4957,9 @@
           "lowest": "单次生成成本最低",
           "typical": "单次生成成本一般"
         },
-        "imageModels": "图像模型",
         "inheritDefault": "沿用组织默认",
         "loadError": "无法加载模型。",
         "loading": "正在加载模型…",
-        "menu": {
-          "backToModels": "返回模型列表",
-          "changeModel": "更改{{category}}模型，当前{{model}}"
-        },
         "models": "模型",
         "noConfiguredModels": "没有已配置的模型",
         "priceTiers": {
@@ -5067,6 +5059,11 @@
     "paidTools": {
       "description": "这些工具会消耗内置积分，Okou 在执行任务时会按需自动使用。关闭后，Okou 在执行过程中就不会再使用该工具。",
       "disabledForCreation": "{{tool}}已在你的内置工具设置中关闭。",
+      "imageModel": {
+        "description": "内置图片生成会在你的任务中使用这个模型。",
+        "label": "模型",
+        "saveError": "图片模型没有保存成功。"
+      },
       "loadError": "无法加载你的工具设置。",
       "loading": "正在加载你的工具设置…",
       "openSettings": "打开内置工具设置",
@@ -5556,7 +5553,6 @@
     "editHelp": "选择其他凭据只会影响该主机。修改直连地址会清除已记录的主机密钥；涉及Cloudflare Access的修改则会保留它。",
     "empty": "还没有配置SSH主机。添加主机后，拥有SSH权限的智能体就能使用它。",
     "errors": {
-      "agentUnavailable": "该智能体已不可用，请选择其他智能体。",
       "configurationChanged": "该主机在你编辑期间发生了变化。你的草稿已保留。请先查看最新设置，再应用你的更改。",
       "credentialChanged": "该凭据在你编辑期间发生了变化。你的草稿已保留。请先查看最新设置和受影响的主机，再保存你的更改。",
       "credentialInUse": "该凭据正在被主机使用。请为这些主机选择其他凭据，或先删除这些主机。",

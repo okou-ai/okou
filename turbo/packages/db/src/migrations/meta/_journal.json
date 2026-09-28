@@ -1433,8 +1433,36 @@
     {
       "idx": 1282,
       "version": "7",
-      "when": 1790602819804,
-      "tag": "1282_chat_event_v8",
+      "when": 1790604232352,
+      "tag": "1282_drop_retired_integration_agent_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 1283,
+      "version": "7",
+      "when": 1790610918908,
+      "tag": "1283_drop_retired_video_model_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1284,
+      "version": "7",
+      "when": 1790610931755,
+      "tag": "1284_validate_agent_runs_metadata_presence_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 1285,
+      "version": "7",
+      "when": 1790612570470,
+      "tag": "1285_drop_runner_state_last_seen_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1286,
+      "version": "7",
+      "when": 1790637409904,
+      "tag": "1286_chat_event_v8",
       "breakpoints": true
     }
   ]

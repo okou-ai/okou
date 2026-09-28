@@ -518,18 +518,23 @@ function withPendingOkouTokenSecret(body: CreateRunBody): CreateRunBody {
   return withOkouTokenSecret(body, "__pending_okou_token__");
 }
 
-function defaultImageModelPrompt(model: ImageModel): string {
+function builtInImageModelPrompt(model: ImageModel): string {
   const alias = IMAGE_MODEL_CONFIGS[model].alias;
   return [
-    "# Default built-in image model",
+    "# Built-in image model",
     "",
-    `This run's default built-in image model is \`${alias}\`.`,
-    "- Only when the current user request explicitly names another supported built-in image model, pass `--model <model>`.",
-    `- Otherwise omit \`--model\`; the server applies \`${alias}\`.`,
-    "- Image generation through a connected third-party service chooses its model separately; this default does not apply to that path.",
+    `Built-in image generation uses \`${alias}\`, from the user's image model setting in Settings › Built-in tools.`,
+    "- The model cannot be changed per request. Do not pass `--model` to image generation commands.",
+    "- If the user asks for a different built-in image model, tell them to change it in Settings › Built-in tools.",
+    "- Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.",
   ].join("\n");
 }
 
+/**
+ * Released CLIs read this variable to omit `--model` and pick a size default
+ * for the run's image model. The current CLI no longer reads it; keep it until
+ * no supported CLI does (see docs/deployment-compatibility.md).
+ */
 function withDefaultImageModelPlatformEnvironment(
   platformEnvironment: Record<string, string> | undefined,
   model: ImageModel | null,
@@ -570,7 +575,7 @@ function withFinalRunAppendSystemPrompt(args: {
     appendedParts.push(CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT);
   }
   if (args.selectedImageModel !== null) {
-    appendedParts.push(defaultImageModelPrompt(args.selectedImageModel));
+    appendedParts.push(builtInImageModelPrompt(args.selectedImageModel));
   }
   // Keep this policy last so custom and integration prompts cannot override it.
   appendedParts.push(RESTRICTED_EXPLICIT_CONTENT_PROMPT);
@@ -10611,7 +10616,6 @@ async function resolvePreparedMediaModels(
     db,
     orgId: args.orgId,
     userId: args.userId,
-    chatThreadId: args.chatThreadId,
   });
   signal.throwIfAborted();
   return models;

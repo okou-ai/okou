@@ -175,6 +175,7 @@ import type {
 import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
+  completeExactReconnectChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -195,6 +196,7 @@ import {
 } from "../../signals/chat-page/chat-event-group-keys.ts";
 import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
+import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 import {
   defaultBuiltinConnectorAccountOptions,
@@ -4564,14 +4566,23 @@ function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
   const runCallback = useSet(runChatActionCallback$);
+  const completeExactReconnect = useSet(completeExactReconnectChatAction$);
   const pageSignal = useGet(pageSignal$);
   const customConnectors = useLastResolved(customConnectors$);
+  const accountLabelOf = useConnectorAccountLabel();
 
   if (!active) {
     return null;
   }
 
-  const onSuccess = async () => {
+  const onSuccess = async (
+    connectionId: string | null,
+    attemptSignal: AbortSignal,
+  ) => {
+    if (active.kind === "catalog-reconnect") {
+      await completeExactReconnect(active, connectionId, attemptSignal);
+      return;
+    }
     if (active.callbackPrompt && active.threadId) {
       await runCallback(
         {
@@ -4600,6 +4611,26 @@ function ActiveChatConnectorActionConnectModal() {
         onSuccess={onSuccess}
       />
     ) : null;
+  }
+
+  if (active.kind === "catalog-reconnect") {
+    return (
+      <ConnectModal
+        item={active.catalogItem}
+        agentId={active.agentId}
+        accountLabel={accountLabelOf(active.account)}
+        accountMode={{
+          kind: "reconnect",
+          connectionId: active.account.id,
+          authMethod: active.account.authMethod,
+        }}
+        accountOptions={{
+          account: { intent: "reconnect", connectionId: active.account.id },
+        }}
+        onClose={close}
+        onSuccess={onSuccess}
+      />
+    );
   }
 
   const accountOptions = defaultBuiltinConnectorAccountOptions(

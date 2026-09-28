@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Button } from "@okouai/ui";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   disabledPaidTools$,
   paidToolDisabledMessage,
@@ -24,7 +22,7 @@ interface PaidToolNoticeRow {
   readonly discard?: { readonly label: string; readonly run: () => void };
 }
 
-/** Only called behind the rollout gate, so an unreleased member reads nothing. */
+/** Only called for a non-empty tool list, so other surfaces read nothing. */
 function usePaidToolNoticeRow(
   tools: readonly AvailablePaidToolId[],
   onDiscardImage?: () => void,
@@ -89,17 +87,6 @@ function usePaidToolNoticeRow(
   };
 }
 
-function usePaidToolNoticeEnabled(
-  tools: readonly AvailablePaidToolId[],
-): boolean {
-  const features = useGet(featureSwitch$);
-  return (
-    features[FeatureSwitchKey.SettingsToolsTab] &&
-    features[FeatureSwitchKey.PaidToolControls] &&
-    tools.length > 0
-  );
-}
-
 function PaidToolNoticeContent({
   tools,
 }: {
@@ -134,9 +121,7 @@ function PaidToolNotice({
 }: {
   readonly tools: readonly AvailablePaidToolId[];
 }) {
-  return usePaidToolNoticeEnabled(tools) ? (
-    <PaidToolNoticeContent tools={tools} />
-  ) : null;
+  return tools.length > 0 ? <PaidToolNoticeContent tools={tools} /> : null;
 }
 
 function ComposerPaidToolNoticeContent({
@@ -203,7 +188,7 @@ export function ComposerPaidToolNotice({
   readonly fallback: ReactNode;
   readonly onDiscardImage?: () => void;
 }) {
-  return usePaidToolNoticeEnabled(tools) ? (
+  return tools.length > 0 ? (
     <ComposerPaidToolNoticeContent
       tools={tools}
       fallback={fallback}

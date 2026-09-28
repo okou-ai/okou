@@ -7,19 +7,15 @@ the thread's effective access to the exact SSH host and shared Run-owned SSH aut
 chooses native shared or exclusive mode for each session; the VNC server enforces
 its connection policy.
 
-Live VNC inventory, private resolve, and check require the Run's chat thread and that thread's effective permission for the exact VNC host. SSH-backed hosts also require effective permission for the referenced SSH host. A Run without a chat thread is denied. Legacy Agent grants below remain stored for compatibility but do not authorize runtime VNC access.
+Live VNC inventory, private resolve, and check require the Run's chat thread and that thread's effective permission for the exact VNC host. SSH-backed hosts also require effective permission for the referenced SSH host. A Run without a chat thread is denied. Legacy Agent-grant rows remain stored temporarily for rolling-deployment compatibility, but do not authorize runtime VNC access.
 
-## Explicit grants and inventory
+## Inventory and retired grants
 
-Session-authenticated owners use GET/PUT `/api/agents/:agentId/vnc-access` with
-`{ enabled }`. The Agent must be visible in the same organization. Creating the
-first connection automatically grants every Agent currently visible to the owner;
-the connection and grants commit atomically. Later connections preserve manual
-revocations and do not grant later Agents. Deleting every connection makes the
-next creation repeat the onboarding grant. Grants use the composite
-`(orgId, userId, agentId)` key, matching SSH. Repeated enable is idempotent;
-revoke removes the row and regrant restores current access without a historical
-grant incarnation.
+The former owner GET/PUT `/api/agents/:agentId/vnc-access` routes and first-host
+Agent auto-grants are retired. Creating or recreating a VNC host no longer writes
+Agent-grant rows or changes chat host permissions. Old clients cannot grant broad
+access through the new API. Historical grant rows remain until older serving API
+instances have drained; #37272 tracks physical table removal.
 
 Agent tokens receive `vnc:read` and `vnc:write` only when the feature is enabled.
 These capabilities do not replace current chat host selection. GET `/api/vnc/hosts` requires
@@ -160,11 +156,12 @@ no 30-second lease or promise to disconnect an idle session within that interval
 Per-operation enforcement and real-server multi-client behavior must be verified
 before activation. This API slice alone does not enforce a live Runner socket.
 
-Owner cleanup removes connections, credentials and grants, including grants
-without connections. It locks grant-owning Agent parents in stable order before
-business rows so concurrent Agent deletion cannot invert its Run-to-grant
-cascade order. Grant/configuration writes retain the existing cleanup and
-owner admission. KMS and Clerk calls never run under these locks.
+Owner cleanup still removes retained historical grants, including rows without
+connections, while older API instances drain. It locks grant-owning Agent
+parents in stable order before business rows so concurrent Agent deletion
+cannot invert its Run-to-grant cascade order. Current host configuration writes
+retain cleanup and owner admission. KMS and Clerk calls never run under these
+locks.
 
 ## Deployment
 
@@ -200,8 +197,10 @@ support old VNC clients or Runners. `VncAccess` remains disabled; neither
 backward-compatibility nor production activation is an acceptance gate for
 this still-off profile.
 
-Before creating grants, every serving and rollback API must support grant
-cleanup. Keep the additive schema on rollback. Disable the feature to stop new
-authority, and preserve cleanup for retained data. Activation is a separate
-decision after #34780 verifies real-server sessions, current checks and socket
-teardown; #34781/#34782 own CLI, owner UI and end-to-end mode selection.
+The original grant-table rollout required serving and rollback APIs to support
+grant cleanup before grants were created. Current APIs no longer create grants;
+retain the table and cleanup until older serving instances drain, then follow
+#37272 for schema removal. Preserving pre-cutover rollback is not required by
+#36360. VNC product activation remains a separate decision after #34780
+verifies real-server sessions, current checks and socket teardown; #34781/#34782
+own CLI, owner UI and end-to-end mode selection.

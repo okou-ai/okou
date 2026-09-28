@@ -12,7 +12,6 @@ import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { insertChatEvent } from "./chat-event.service";
 import { createChatThreadInTransaction } from "./chat-thread.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { resolveDefaultModelFirstPin } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
@@ -87,8 +86,6 @@ export const createWelcomeChatThread$ = command(
 
     const pin = await resolveDefaultModelFirstPin(db, args.orgId, args.userId);
     signal.throwIfAborted();
-    const media = await loadNewChatThreadMediaModels(db, args);
-    signal.throwIfAborted();
     const preferences = await get(userPreferences(args));
     signal.throwIfAborted();
     const content = welcomeThreadContent({
@@ -104,7 +101,6 @@ export const createWelcomeChatThread$ = command(
         eventId: undefined,
         ...chatThreadModelPinColumns(pin),
         codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
-        ...media,
       });
       signal.throwIfAborted();
       if (thread.kind === "created") {

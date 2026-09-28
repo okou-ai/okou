@@ -51,11 +51,8 @@ function createPresentationSlideCountSignals() {
 export function createComposerCreateSignals(
   composer: WorkflowComposerSignals,
   ui: ComposerUiSignalGroups,
-  media: { readonly image: boolean },
 ) {
-  const modes = COMPOSER_CREATE_MODES.filter((mode) => {
-    return mode !== "image" || media.image;
-  });
+  const modes = COMPOSER_CREATE_MODES;
   const internalMode$ = state<ComposerCreateMode | null>(null);
   const { presentationSlideCount$, setPresentationSlideCount$ } =
     createPresentationSlideCountSignals();
@@ -82,7 +79,6 @@ export function createComposerCreateSignals(
     set(internalMode$, mode);
     set(composer.closeSuggestionMenu$);
     set(ui.model.setModelPickerOpen$, false);
-    set(ui.model.setMediaModelCategory$, mode === "image" ? "image" : null);
     if (mode !== "presentation") {
       set(setPresentationSlideCount$, "8-12");
     }

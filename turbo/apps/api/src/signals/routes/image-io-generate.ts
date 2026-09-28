@@ -56,6 +56,7 @@ import {
   startRunBuiltInAdmission$,
   type RunBuiltInAdmission,
 } from "../services/run-built-in-admission.service";
+import { userModelPreference } from "../services/user-data.service";
 import { resolveProviderReferenceUrls$ } from "../services/provider-reference-url.service";
 
 const L = logger("ImageGeneration");
@@ -84,7 +85,11 @@ interface ImageJobArgs {
   readonly pricing: ImagePricing;
 }
 
-async function loadRunImageModelDefault(
+/**
+ * The image model snapshotted onto the calling run, so every image in a run
+ * uses the model its system prompt announced.
+ */
+async function loadRunImageModel(
   db: ReadonlyDb,
   orgId: string,
   userId: string,
@@ -429,16 +434,27 @@ const prepareImageRequest$ = command(
       auth.tokenType === "agent" || auth.tokenType === "sandbox"
         ? auth.runId
         : undefined;
-    const runImageModelDefault = await loadRunImageModelDefault(
+    // The model is the member's image model setting, never the request's:
+    // released CLIs still send `model`, and it is ignored rather than
+    // rejected so they keep working.
+    const runImageModel = await loadRunImageModel(
       db,
       auth.orgId,
       auth.userId,
       runId,
       signal,
     );
-    const options = parseImageOptions(bodyResult.data, {
-      defaultModel: runImageModelDefault ?? DEFAULT_IMAGE_MODEL,
-    });
+    const memberImageModel =
+      runImageModel === null
+        ? (
+            await get(
+              userModelPreference({ orgId: auth.orgId, userId: auth.userId }),
+            )
+          ).selectedImageModel
+        : null;
+    signal.throwIfAborted();
+    const model = runImageModel ?? memberImageModel ?? DEFAULT_IMAGE_MODEL;
+    const options = parseImageOptions(bodyResult.data, { model });
     if ("status" in options) {
       return options;
     }

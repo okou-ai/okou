@@ -52,7 +52,11 @@ import {
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
 import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
-import { ensureAgentPhoneChatThreadRoute } from "./agentphone-chat-ingress.service";
+import {
+  ensureAgentPhoneChatThreadRoute,
+  findAgentPhoneRoutedChatThreadId,
+} from "./agentphone-chat-ingress.service";
+import { updateIntegrationChatThreadModel$ } from "./integration-chat-thread-model.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import {
   enqueueChatInput,
@@ -159,6 +163,15 @@ function agentPhoneThreadRootMessageId(event: AgentPhoneMessageEvent): string {
   return `group:${createHash("sha256")
     .update(event.conversationId)
     .digest("hex")}`;
+}
+
+/** Chat thread route key: group conversations by id, DMs share the main key. */
+function agentPhoneChatRouteRootMessageId(
+  event: AgentPhoneMessageEvent,
+): string {
+  return isAgentPhoneGroupEvent(event)
+    ? agentPhoneThreadRootMessageId(event)
+    : INTEGRATION_DM_SESSION_KEY;
 }
 
 function shouldIgnoreAgentPhoneGroupMessage(
@@ -1172,7 +1185,9 @@ const handleModelCommand$ = command(
   async (
     { get, set },
     args: {
+      readonly db: Db;
       readonly event: AgentPhoneMessageEvent;
+      readonly userLinkId: string;
       readonly orgId: string;
       readonly userId: string;
     },
@@ -1240,6 +1255,29 @@ const handleModelCommand$ = command(
       return;
     }
 
+    const chatThreadId = await findAgentPhoneRoutedChatThreadId(args.db, {
+      agentphoneUserLinkId: args.userLinkId,
+      rootMessageId: agentPhoneChatRouteRootMessageId(args.event),
+    });
+    signal.throwIfAborted();
+    const threadModel = await set(
+      updateIntegrationChatThreadModel$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        chatThreadId,
+        model: option.model,
+      },
+      signal,
+    );
+    if (threadModel.kind === "rejected") {
+      await sendAgentPhoneSlashCommandText(
+        args.event,
+        "Error: You don't have access to that model.",
+        signal,
+      );
+      return;
+    }
     await set(
       updateUserModelPreference$,
       {
@@ -1318,7 +1356,9 @@ const dispatchAgentPhoneCommand$ = command(
         await set(
           handleModelCommand$,
           {
+            db: args.db,
             event: args.event,
+            userLinkId: args.userLink.id,
             orgId: args.userLink.orgId,
             userId: args.userLink.userId,
           },
@@ -1638,9 +1678,7 @@ export const handleAgentPhoneMessage$ = command(
     signal.throwIfAborted();
 
     const isGroup = isAgentPhoneGroupEvent(params.event);
-    const rootMessageId = isGroup
-      ? agentPhoneThreadRootMessageId(params.event)
-      : INTEGRATION_DM_SESSION_KEY;
+    const rootMessageId = agentPhoneChatRouteRootMessageId(params.event);
     const userLinkId = params.userLink.id;
     const { executionContext } = await loadOptionalChatEnrichment(
       "agentphone",

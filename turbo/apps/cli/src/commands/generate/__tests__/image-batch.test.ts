@@ -45,8 +45,7 @@ const IMAGE_STATUS_URL = `http://localhost:3000/api/built-in-generations/${IMAGE
 
 interface CapturedImageRequest {
   readonly prompt: string;
-  readonly model: string;
-  readonly size: string;
+  readonly size?: string;
   readonly quality: string;
   readonly background: string;
   readonly outputFormat: string;
@@ -174,7 +173,6 @@ describe("okou generate image-batch command", () => {
     expect(attempts.get("Dog running through grass")).toBe(2);
     expect(requests.get("Dog collar detail")).toEqual({
       prompt: "Dog collar detail",
-      model: "seedream4",
       size: "1024x1024",
       quality: "low",
       background: "auto",
@@ -184,8 +182,6 @@ describe("okou generate image-batch command", () => {
     });
     expect(requests.get("Four dogs together")).toEqual({
       prompt: "Four dogs together",
-      model: "seedream4",
-      size: "816x816",
       quality: "low",
       background: "auto",
       outputFormat: "png",
@@ -194,7 +190,6 @@ describe("okou generate image-batch command", () => {
     });
     expect(requests.get("Dog asleep by a window")).toEqual({
       prompt: "Dog asleep by a window",
-      model: "seedream4",
       size: "2048x1024",
       quality: "low",
       background: "auto",

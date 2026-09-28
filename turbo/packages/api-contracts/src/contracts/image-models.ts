@@ -1,8 +1,5 @@
 /**
- * Canonical IDs for prompt-based built-in image generation.
- *
- * Promptless transforms such as background removal and upscaling are not
- * selectable defaults and remain private to the image generation service.
+ * Canonical IDs for the member's built-in image generation model setting.
  */
 import { z } from "zod";
 

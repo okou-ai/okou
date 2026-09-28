@@ -5,7 +5,7 @@ import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import {
   DEFAULT_IMAGE_MODEL,
-  IMAGE_MODEL_ALIASES as SELECTABLE_IMAGE_MODEL_ALIASES,
+  IMAGE_MODEL_ALIASES,
   type ImageModel as SelectableImageModel,
 } from "@okouai/core/image-model-catalog";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
@@ -70,8 +70,6 @@ const SEEDREAM_5_PRO_LOW_TIER_OUTPUT_COST_USD_MICROS = 45_000;
 const SEEDREAM_5_PRO_HIGH_TIER_OUTPUT_COST_USD_MICROS = 90_000;
 const SEEDREAM_5_PRO_ADDITIONAL_INPUT_COST_USD_MICROS = 3000;
 const SEEDREAM_5_LITE_OUTPUT_COST_USD_MICROS = 35_000;
-const BIREFNET_MODEL = "fal-ai/birefnet/v2";
-const CLARITY_UPSCALER_MODEL = "fal-ai/clarity-upscaler";
 
 const USAGE_KIND = "image";
 const FAL_OUTPUT_IMAGE_CATEGORY = "output_image";
@@ -144,14 +142,7 @@ const FAL_IMAGE_ASPECT_RATIOS = [
   "9:21",
 ] as const;
 
-const IMAGE_MODEL_ALIASES = {
-  ...SELECTABLE_IMAGE_MODEL_ALIASES,
-  birefnet: BIREFNET_MODEL,
-  "clarity-upscaler": CLARITY_UPSCALER_MODEL,
-} as const;
-
 const OPENAI_IMAGE_MODEL_CONFIG = {
-  promptless: false,
   sourceImageInput: "image_urls",
   provider: "openai",
   sizeMode: "flexible",
@@ -173,7 +164,7 @@ const OPENAI_IMAGE_MODEL_CONFIG = {
   supportsImagePromptStrength: false,
 } as const;
 
-const IMAGE_GENERATION_MODEL_CONFIGS = {
+const IMAGE_MODEL_CONFIGS = {
   "gpt-image-2.5-flare": {
     ...OPENAI_IMAGE_MODEL_CONFIG,
     alias: "gpt-image-2.5-flare",
@@ -188,7 +179,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "gpt-image-2": {
     alias: "gpt-image-2",
-    promptless: false,
     endpointId: "openai/gpt-image-2",
     imageToImageEndpointId: "openai/gpt-image-2/edit",
     sourceImageInput: "image_urls",
@@ -213,7 +203,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "gpt-image-1": {
     alias: "gpt-image-1",
-    promptless: false,
     endpointId: "fal-ai/gpt-image-1/text-to-image",
     imageToImageEndpointId: "fal-ai/gpt-image-1/edit-image",
     sourceImageInput: "image_urls",
@@ -238,7 +227,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "fal-ai/flux-pro/v1.1": {
     alias: "flux-pro-1.1",
-    promptless: false,
     endpointId: "fal-ai/flux-pro/v1.1",
     imageToImageEndpointId: "fal-ai/flux-pro/v1.1/redux",
     sourceImageInput: "image_url",
@@ -263,7 +251,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "fal-ai/flux-pro/v1.1-ultra": {
     alias: "flux-pro-1.1-ultra",
-    promptless: false,
     endpointId: "fal-ai/flux-pro/v1.1-ultra",
     imageToImageEndpointId: "fal-ai/flux-pro/v1.1-ultra/redux",
     sourceImageInput: "image_url",
@@ -288,7 +275,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [FLUX_2_PRO_MODEL]: {
     alias: "flux-2-pro",
-    promptless: false,
     endpointId: FLUX_2_PRO_MODEL,
     imageToImageEndpointId: `${FLUX_2_PRO_MODEL}/edit`,
     sourceImageInput: "image_urls",
@@ -313,7 +299,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [QWEN_IMAGE_3_MODEL]: {
     alias: "qwen-image-3",
-    promptless: false,
     endpointId: QWEN_IMAGE_3_MODEL,
     imageToImageEndpointId: "alibaba/qwen-image-3/edit",
     sourceImageInput: "image_urls",
@@ -338,7 +323,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [IDEOGRAM_4_MODEL]: {
     alias: "ideogram-4",
-    promptless: false,
     endpointId: IDEOGRAM_4_MODEL,
     imageToImageEndpointId: `${IDEOGRAM_4_MODEL}/image-to-image`,
     sourceImageInput: "image_url",
@@ -363,7 +347,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   "fal-ai/bytedance/seedream/v4/text-to-image": {
     alias: "seedream4",
-    promptless: false,
     endpointId: "fal-ai/bytedance/seedream/v4/text-to-image",
     imageToImageEndpointId: "fal-ai/bytedance/seedream/v4/edit",
     sourceImageInput: "image_urls",
@@ -388,7 +371,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [SEEDREAM_5_PRO_MODEL]: {
     alias: "seedream5-pro",
-    promptless: false,
     endpointId: BYTEPLUS_IMAGE_GENERATIONS_URL,
     imageToImageEndpointId: BYTEPLUS_IMAGE_GENERATIONS_URL,
     sourceImageInput: "image_urls",
@@ -413,7 +395,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [SEEDREAM_5_LITE_MODEL]: {
     alias: "seedream5-lite",
-    promptless: false,
     endpointId: BYTEPLUS_IMAGE_GENERATIONS_URL,
     imageToImageEndpointId: BYTEPLUS_IMAGE_GENERATIONS_URL,
     sourceImageInput: "image_urls",
@@ -438,7 +419,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [NANO_BANANA_2_MODEL]: {
     alias: "nano-banana-2",
-    promptless: false,
     endpointId: NANO_BANANA_2_MODEL,
     imageToImageEndpointId: "fal-ai/nano-banana-2/edit",
     sourceImageInput: "image_urls",
@@ -463,7 +443,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
   },
   [NANO_BANANA_2_LITE_MODEL]: {
     alias: "nano-banana-2-lite",
-    promptless: false,
     endpointId: NANO_BANANA_2_LITE_MODEL,
     imageToImageEndpointId: "google/nano-banana-2-lite/edit",
     sourceImageInput: "image_urls",
@@ -487,64 +466,6 @@ const IMAGE_GENERATION_MODEL_CONFIGS = {
     supportsImagePromptStrength: false,
   },
 } as const satisfies Record<SelectableImageModel, unknown>;
-
-const IMAGE_TRANSFORM_MODEL_CONFIGS = {
-  [BIREFNET_MODEL]: {
-    alias: "birefnet",
-    promptless: true,
-    endpointId: BIREFNET_MODEL,
-    imageToImageEndpointId: BIREFNET_MODEL,
-    sourceImageInput: "image_url",
-    provider: "fal",
-    sizeMode: "flexible",
-    sizeParameter: undefined,
-    outputFormats: ["png"],
-    pricingCategories: [FAL_OUTPUT_IMAGE_CATEGORY],
-    billingMode: "image",
-    supportsTransparentBackground: true,
-    supportsOutputCompression: false,
-    supportsModeration: false,
-    supportsQuality: false,
-    supportsBackground: false,
-    usesOpenAiByok: false,
-    supportsSeed: false,
-    supportsSafetyTolerance: false,
-    supportsEnhancePrompt: false,
-    supportsMaskImage: false,
-    supportsInputFidelity: false,
-    supportsImagePromptStrength: false,
-  },
-  [CLARITY_UPSCALER_MODEL]: {
-    alias: "clarity-upscaler",
-    promptless: true,
-    endpointId: CLARITY_UPSCALER_MODEL,
-    imageToImageEndpointId: CLARITY_UPSCALER_MODEL,
-    sourceImageInput: "image_url",
-    provider: "fal",
-    sizeMode: "flexible",
-    sizeParameter: undefined,
-    outputFormats: FAL_IMAGE_OUTPUT_FORMATS,
-    pricingCategories: [FAL_OUTPUT_MEGAPIXEL_CATEGORY],
-    billingMode: "megapixel",
-    supportsTransparentBackground: false,
-    supportsOutputCompression: false,
-    supportsModeration: false,
-    supportsQuality: false,
-    supportsBackground: false,
-    usesOpenAiByok: false,
-    supportsSeed: false,
-    supportsSafetyTolerance: false,
-    supportsEnhancePrompt: false,
-    supportsMaskImage: false,
-    supportsInputFidelity: false,
-    supportsImagePromptStrength: false,
-  },
-} as const;
-
-const IMAGE_MODEL_CONFIGS = {
-  ...IMAGE_GENERATION_MODEL_CONFIGS,
-  ...IMAGE_TRANSFORM_MODEL_CONFIGS,
-} as const;
 
 const IMAGE_MODELS = Object.keys(IMAGE_MODEL_CONFIGS) as ImageModel[];
 const L = logger("ImageGeneration");
@@ -1005,15 +926,9 @@ function readBoolean(
   return typeof value === "boolean" ? value : fallback;
 }
 
-function parsePrompt(
-  body: Record<string, unknown>,
-  modelConfig: ImageModelConfig,
-): string | ErrorResponse {
+function parsePrompt(body: Record<string, unknown>): string | ErrorResponse {
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (prompt.length === 0) {
-    if (modelConfig.promptless) {
-      return prompt;
-    }
     return badRequest("prompt is required");
   }
   if (prompt.length > IMAGE_IO_MAX_PROMPT_LENGTH) {
@@ -1227,9 +1142,6 @@ function parseSourceImageUrls(
   }
 
   if (sourceImageUrls.length === 0) {
-    if (modelConfig.promptless) {
-      return badRequest(`${modelConfig.alias} requires imageUrl`);
-    }
     return sourceImageUrls;
   }
   const maxSourceImageUrls =
@@ -1342,12 +1254,6 @@ function parseImagePromptStrength(
   return undefined;
 }
 
-function requestedDefaultImageModel(
-  options: { readonly defaultModel?: ImageModel } | undefined,
-): ImageModel {
-  return options?.defaultModel ?? DEFAULT_IMAGE_MODEL;
-}
-
 function requestedImageSize(
   body: Record<string, unknown>,
   model: ImageModel,
@@ -1358,21 +1264,26 @@ function requestedImageSize(
   return readString(body, "size", defaultSize);
 }
 
+/**
+ * `options.model` is the caller-resolved model; when given, the body's `model`
+ * is ignored. Without it the body's `model` is read, which is how a persisted
+ * job request (already normalized with its model) is parsed again.
+ */
 export function parseImageOptions(
   body: unknown,
-  options?: { readonly defaultModel?: ImageModel },
+  options?: { readonly model?: ImageModel },
 ): ImageOptions | ErrorResponse {
   if (!isRecord(body)) {
     return badRequest("Invalid JSON body");
   }
 
-  const model = parseImageModel(body, requestedDefaultImageModel(options));
+  const model = options?.model ?? parseImageModel(body, DEFAULT_IMAGE_MODEL);
   if (typeof model === "object") {
     return model;
   }
   const modelConfig = IMAGE_MODEL_CONFIGS[model];
 
-  const prompt = parsePrompt(body, modelConfig);
+  const prompt = parsePrompt(body);
   if (typeof prompt === "object") {
     return prompt;
   }
@@ -1736,9 +1647,6 @@ function falImageInput(
   references: ImageProviderReferences,
 ): Record<string, unknown> {
   const modelConfig = IMAGE_MODEL_CONFIGS[options.model];
-  if (modelConfig.promptless) {
-    return falSourceImageInput(modelConfig, references.sourceImageUrls);
-  }
   return {
     prompt: options.prompt,
     ...(modelConfig.sizeParameter === "aspect_ratio"

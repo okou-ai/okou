@@ -105,7 +105,6 @@ test("Preserve exact UTF-8 snapshot bytes across the worker protocol", async () 
     selectedModel: null,
     serviceTier: null,
     computerUseHostId: null,
-    selectedVideoModel: null,
   };
   const snapshot = {
     chatThreads: [snapshotThread],
@@ -512,7 +511,6 @@ test("Keep the chat list current with realtime thread changes", async () => {
     selectedModel: null,
     serviceTier: null,
     computerUseHostId: null,
-    selectedVideoModel: null,
   };
   const rename = (seqId: number, title: string): ChatThreadEvent => {
     return {
@@ -525,7 +523,6 @@ test("Keep the chat list current with realtime thread changes", async () => {
       selectedModel: null,
       serviceTier: null,
       computerUseHostId: null,
-      selectedVideoModel: null,
       createdAt: CREATED_AT,
     };
   };

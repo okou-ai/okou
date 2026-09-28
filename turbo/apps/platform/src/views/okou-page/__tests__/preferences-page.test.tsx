@@ -270,7 +270,6 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
                 effort: body.modelSettingsPatch.effort,
               },
             },
-      selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: "2026-09-06T00:00:01.000Z",
     };

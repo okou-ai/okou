@@ -1761,7 +1761,6 @@
         "slideCountRange": "{{range}} slides"
       },
       "createWorkflow": "Create workflow",
-      "imageModelForThisChat": "Image model for this chat",
       "message": "Message",
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",
@@ -4944,8 +4943,6 @@
       "picker": {
         "builtInModel": "Built-in model",
         "byokHelp": "Uses your configured provider",
-        "categoryChat": "Chat",
-        "categoryImage": "Image",
         "chatModels": "Chat models",
         "effort": "Effort",
         "effortScale": {
@@ -4970,14 +4967,9 @@
           "lowest": "Lowest cost per generation",
           "typical": "Typical cost per generation"
         },
-        "imageModels": "Image models",
         "inheritDefault": "Inherit from org default",
         "loadError": "Unable to load models.",
         "loading": "Loading models...",
-        "menu": {
-          "backToModels": "Back to models",
-          "changeModel": "Change {{category}} model, {{model}}"
-        },
         "models": "Models",
         "noConfiguredModels": "No configured models",
         "priceTiers": {
@@ -5078,6 +5070,11 @@
     "paidTools": {
       "description": "These tools use built-in credits, and Okou uses them automatically as it works on your tasks. Turn a tool off and Okou won't use it.",
       "disabledForCreation": "{{tool}} is off for you",
+      "imageModel": {
+        "description": "Built-in image generation uses this model for your tasks.",
+        "label": "Model",
+        "saveError": "Your image model was not saved."
+      },
       "loadError": "Your tool settings could not be loaded.",
       "loading": "Loading your tool settings…",
       "openSettings": "Open settings",
@@ -5570,7 +5567,6 @@
     "editHelp": "Selecting a different credential changes only this host. Direct endpoint changes clear its learned host key; changes involving Cloudflare Access keep it.",
     "empty": "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
     "errors": {
-      "agentUnavailable": "This Agent is no longer available. Choose another Agent.",
       "configurationChanged": "This host changed while you were editing. Your draft is preserved. Review its latest settings before applying your changes.",
       "credentialChanged": "This credential changed while you were editing. Your draft is preserved. Review its latest settings and affected hosts before saving your changes.",
       "credentialInUse": "This credential is used by a host. Select another credential for its hosts or delete those hosts first.",

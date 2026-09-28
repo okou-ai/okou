@@ -10,7 +10,6 @@ import {
   type Indicators,
   persistedAttachmentSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
@@ -738,7 +737,6 @@ interface CreateChatThreadArgs {
   readonly selectedModel: string | null;
   readonly modelSettings?: ModelSettings;
   readonly codexServiceTier: CodexServiceTier | null;
-  readonly selectedImageModel: ImageModelId | null;
   readonly connectorSelections?: readonly PreparedChatThreadConnectorSelection[];
   readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
 }
@@ -812,7 +810,6 @@ export async function createChatThreadInTransaction(
     selectedModel: args.selectedModel,
     modelSettings,
     codexServiceTier: args.codexServiceTier,
-    selectedImageModel: args.selectedImageModel,
   });
   // The primary key and (id, user_id) are both unique. PostgreSQL can detect
   // either first for concurrent inserts of the same client id, so an id-only
@@ -848,7 +845,6 @@ export async function createChatThreadInTransaction(
     serviceTier: chatThreadServiceTierFromCodex(args.codexServiceTier),
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedImageModel: args.selectedImageModel,
     createdAt: createdThread.createdAt,
   });
   return { kind: "created" as const, ...createdThread };

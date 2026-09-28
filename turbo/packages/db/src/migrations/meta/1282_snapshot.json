@@ -1,5 +1,5 @@
 {
-  "id": "d5748028-0d0a-420c-baaf-05645a8c3989",
+  "id": "b1ac06d0-9c50-466e-a274-99b3a2200763",
   "prevId": "b4e6e22c-1742-4315-9e90-1a73a5ea017e",
   "version": "7",
   "dialect": "postgresql",
@@ -2016,73 +2016,6 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.agentphone_user_agent_preferences": {
-      "name": "agentphone_user_agent_preferences",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selected_agent_id": {
-          "name": "selected_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "agentphone_user_agent_preferences_selected_agent_id_agents_id_fk": {
-          "name": "agentphone_user_agent_preferences_selected_agent_id_agents_id_fk",
-          "tableFrom": "agentphone_user_agent_preferences",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "selected_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "agentphone_user_agent_preferences_user_id_org_id_pk": {
-          "name": "agentphone_user_agent_preferences_user_id_org_id_pk",
-          "columns": [
-            "user_id",
-            "org_id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -6690,7 +6623,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 8
+          "default": 7
         },
         "object_key": {
           "name": "object_key",
@@ -6780,7 +6713,7 @@
       "checkConstraints": {
         "chat_event_snapshots_archive_schema_version_check": {
           "name": "chat_event_snapshots_archive_schema_version_check",
-          "value": "\"chat_event_snapshots\".\"archive_schema_version\" IN (7, 8)"
+          "value": "\"chat_event_snapshots\".\"archive_schema_version\" = 7"
         },
         "chat_event_snapshots_terminal_cursor_check": {
           "name": "chat_event_snapshots_terminal_cursor_check",
@@ -7101,7 +7034,7 @@
       "checkConstraints": {
         "chat_events_event_type_check": {
           "name": "chat_events_event_type_check",
-          "value": "\"chat_events\".\"event_type\" IN (\n          'input.prompt',\n          'input.automation',\n          'input.budget',\n          'input.rejected',\n          'output.message',\n          'output.error',\n          'output.followups',\n          'run.completed',\n          'run.failed',\n          'run.cancelled',\n          'control.interrupt',\n          'control.revoke',\n          'usage.recorded'\n        )"
+          "value": "\"chat_events\".\"event_type\" IN (\n          'input.prompt',\n          'input.automation',\n          'input.goal',\n          'input.budget',\n          'input.rejected',\n          'output.message',\n          'output.error',\n          'output.thinking',\n          'output.followups',\n          'run.queued',\n          'run.dequeued',\n          'run.completed',\n          'run.failed',\n          'run.cancelled',\n          'control.interrupt',\n          'control.revoke',\n          'browser.open',\n          'browser.close',\n          'goal.open',\n          'goal.close',\n          'usage.recorded'\n        )"
         },
         "chat_events_input_user_message_payload_check": {
           "name": "chat_events_input_user_message_payload_check",
@@ -7119,17 +7052,29 @@
           "name": "chat_events_official_workflow_queue_claim_check",
           "value": "\"chat_events\".\"required_official_workflow_ids\" IS NULL OR (\n          \"chat_events\".\"event_type\" = 'input.prompt'\n          AND cardinality(\"chat_events\".\"required_official_workflow_ids\") > 0\n        )"
         },
+        "chat_events_goal_open_payload_check": {
+          "name": "chat_events_goal_open_payload_check",
+          "value": "\"chat_events\".\"event_type\" <> 'goal.open'\n          OR (\n            \"chat_events\".\"payload\" IS NOT NULL\n            AND \"chat_events\".\"payload\" ? 'content'\n            AND jsonb_typeof(\"chat_events\".\"payload\" -> 'content') = 'string'\n            AND \"chat_events\".\"payload\" ->> 'content' = btrim(\"chat_events\".\"payload\" ->> 'content')\n            AND char_length(\"chat_events\".\"payload\" ->> 'content') > 0\n            AND \"chat_events\".\"payload\" - 'content' = '{}'::jsonb\n          )"
+        },
+        "chat_events_goal_close_payload_check": {
+          "name": "chat_events_goal_close_payload_check",
+          "value": "\"chat_events\".\"event_type\" <> 'goal.close' OR \"chat_events\".\"payload\" IS NULL"
+        },
+        "chat_events_goal_marker_payload_check": {
+          "name": "chat_events_goal_marker_payload_check",
+          "value": "\"chat_events\".\"event_type\" NOT IN ('goal.open', 'goal.close')\n          OR (\n            \"chat_events\".\"run_id\" IS NULL\n            AND \"chat_events\".\"revokes_event_id\" IS NULL\n            AND \"chat_events\".\"context_type\" IS NULL\n            AND \"chat_events\".\"context_id\" IS NULL\n            AND \"chat_events\".\"run_event_sequence_number\" IS NULL\n            AND \"chat_events\".\"run_event_id\" IS NULL\n          )"
+        },
         "chat_events_context_pair_check": {
           "name": "chat_events_context_pair_check",
           "value": "\"chat_events\".\"context_id\" IS NULL OR \"chat_events\".\"context_type\" IS NOT NULL"
         },
         "chat_events_context_type_check": {
           "name": "chat_events_context_type_check",
-          "value": "\"chat_events\".\"context_type\" IN (\n          'web',\n          'slack',\n          'discord',\n          'feishu',\n          'teams',\n          'telegram',\n          'agentphone',\n          'automation',\n          'agent_run'\n        )"
+          "value": "\"chat_events\".\"context_type\" IN (\n          'web',\n          'slack',\n          'discord',\n          'feishu',\n          'teams',\n          'telegram',\n          'github',\n          'agentphone',\n          'automation',\n          'goal',\n          'agent_run'\n        )"
         },
         "chat_events_input_context_type_check": {
           "name": "chat_events_input_context_type_check",
-          "value": "\"chat_events\".\"event_type\" NOT IN ('input.prompt', 'input.automation', 'input.budget', 'input.rejected')\n          OR \"chat_events\".\"context_type\" IS NOT NULL"
+          "value": "\"chat_events\".\"event_type\" NOT IN ('input.prompt', 'input.automation', 'input.goal', 'input.budget')\n          OR \"chat_events\".\"context_type\" IS NOT NULL"
         }
       },
       "isRLSEnabled": false
@@ -13112,110 +13057,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.discord_user_agent_preferences": {
-      "name": "discord_user_agent_preferences",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "connection_id": {
-          "name": "connection_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selected_agent_id": {
-          "name": "selected_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_discord_user_agent_preferences_connection": {
-          "name": "idx_discord_user_agent_preferences_connection",
-          "columns": [
-            {
-              "expression": "connection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "discord_user_agent_preferences_selected_agent_id_agents_id_fk": {
-          "name": "discord_user_agent_preferences_selected_agent_id_agents_id_fk",
-          "tableFrom": "discord_user_agent_preferences",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "selected_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "discord_user_agent_preferences_connection_owner_fk": {
-          "name": "discord_user_agent_preferences_connection_owner_fk",
-          "tableFrom": "discord_user_agent_preferences",
-          "tableTo": "discord_org_connections",
-          "columnsFrom": [
-            "connection_id",
-            "user_id"
-          ],
-          "columnsTo": [
-            "id",
-            "user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "discord_user_agent_preferences_user_id_org_id_pk": {
-          "name": "discord_user_agent_preferences_user_id_org_id_pk",
-          "columns": [
-            "user_id",
-            "org_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.discord_user_dm_preferences": {
       "name": "discord_user_dm_preferences",
       "schema": "",
@@ -14314,12 +14155,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "default_agent_id": {
-          "name": "default_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -14406,19 +14241,6 @@
         }
       },
       "foreignKeys": {
-        "feishu_org_installations_default_agent_id_agents_id_fk": {
-          "name": "feishu_org_installations_default_agent_id_agents_id_fk",
-          "tableFrom": "feishu_org_installations",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "default_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "fk_feishu_org_installations_custom_connector": {
           "name": "fk_feishu_org_installations_custom_connector",
           "tableFrom": "feishu_org_installations",
@@ -14436,152 +14258,6 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.feishu_platform_user_agent_preferences": {
-      "name": "feishu_platform_user_agent_preferences",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "platform": {
-          "name": "platform",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selected_agent_id": {
-          "name": "selected_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "feishu_platform_user_agent_preferences_selected_agent_id_agents_id_fk": {
-          "name": "feishu_platform_user_agent_preferences_selected_agent_id_agents_id_fk",
-          "tableFrom": "feishu_platform_user_agent_preferences",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "selected_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "feishu_platform_user_agent_preferences_pk": {
-          "name": "feishu_platform_user_agent_preferences_pk",
-          "columns": [
-            "user_id",
-            "org_id",
-            "platform"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_feishu_platform_user_agent_preferences_platform": {
-          "name": "chk_feishu_platform_user_agent_preferences_platform",
-          "value": "\"feishu_platform_user_agent_preferences\".\"platform\" IN ('feishu', 'lark')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.feishu_user_agent_preferences": {
-      "name": "feishu_user_agent_preferences",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selected_agent_id": {
-          "name": "selected_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "feishu_user_agent_preferences_selected_agent_id_agents_id_fk": {
-          "name": "feishu_user_agent_preferences_selected_agent_id_agents_id_fk",
-          "tableFrom": "feishu_user_agent_preferences",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "selected_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "feishu_user_agent_preferences_user_id_org_id_pk": {
-          "name": "feishu_user_agent_preferences_user_id_org_id_pk",
-          "columns": [
-            "user_id",
-            "org_id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -29405,73 +29081,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.slack_user_agent_preferences": {
-      "name": "slack_user_agent_preferences",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selected_agent_id": {
-          "name": "selected_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "slack_user_agent_preferences_selected_agent_id_agents_id_fk": {
-          "name": "slack_user_agent_preferences_selected_agent_id_agents_id_fk",
-          "tableFrom": "slack_user_agent_preferences",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "selected_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "slack_user_agent_preferences_user_id_org_id_pk": {
-          "name": "slack_user_agent_preferences_user_id_org_id_pk",
-          "columns": [
-            "user_id",
-            "org_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.social_data_jobs": {
       "name": "social_data_jobs",
       "schema": "",
@@ -31753,73 +31362,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.teams_user_agent_preferences": {
-      "name": "teams_user_agent_preferences",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selected_agent_id": {
-          "name": "selected_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "teams_user_agent_preferences_selected_agent_id_agents_id_fk": {
-          "name": "teams_user_agent_preferences_selected_agent_id_agents_id_fk",
-          "tableFrom": "teams_user_agent_preferences",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "selected_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "teams_user_agent_preferences_user_id_org_id_pk": {
-          "name": "teams_user_agent_preferences_user_id_org_id_pk",
-          "columns": [
-            "user_id",
-            "org_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.telegram_chat_thread_routes": {
       "name": "telegram_chat_thread_routes",
       "schema": "",
@@ -31831,17 +31373,11 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "telegram_user_link_id": {
-          "name": "telegram_user_link_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "telegram_official_user_link_id": {
           "name": "telegram_official_user_link_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "chat_id": {
           "name": "chat_id",
@@ -31885,34 +31421,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_telegram_chat_thread_routes_chat_user_link": {
-          "name": "idx_telegram_chat_thread_routes_chat_user_link",
-          "columns": [
-            {
-              "expression": "telegram_user_link_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "chat_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "root_message_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "telegram_user_link_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_telegram_chat_thread_routes_chat_official_link": {
           "name": "idx_telegram_chat_thread_routes_chat_official_link",
           "columns": [
@@ -31941,22 +31449,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_telegram_chat_thread_routes_user_link": {
-          "name": "idx_telegram_chat_thread_routes_user_link",
-          "columns": [
-            {
-              "expression": "telegram_user_link_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "telegram_user_link_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_telegram_chat_thread_routes_official_user_link": {
           "name": "idx_telegram_chat_thread_routes_official_user_link",
           "columns": [
@@ -31975,19 +31467,6 @@
         }
       },
       "foreignKeys": {
-        "telegram_chat_thread_routes_telegram_user_link_id_telegram_user_links_id_fk": {
-          "name": "telegram_chat_thread_routes_telegram_user_link_id_telegram_user_links_id_fk",
-          "tableFrom": "telegram_chat_thread_routes",
-          "tableTo": "telegram_user_links",
-          "columnsFrom": [
-            "telegram_user_link_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "telegram_chat_thread_routes_telegram_official_user_link_id_telegram_official_user_links_id_fk": {
           "name": "telegram_chat_thread_routes_telegram_official_user_link_id_telegram_official_user_links_id_fk",
           "tableFrom": "telegram_chat_thread_routes",
@@ -32018,125 +31497,6 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "chk_telegram_chat_thread_routes_one_owner": {
-          "name": "chk_telegram_chat_thread_routes_one_owner",
-          "value": "(telegram_user_link_id IS NOT NULL) <> (telegram_official_user_link_id IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.telegram_installations": {
-      "name": "telegram_installations",
-      "schema": "",
-      "columns": {
-        "telegram_bot_id": {
-          "name": "telegram_bot_id",
-          "type": "varchar(255)",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "bot_username": {
-          "name": "bot_username",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "encrypted_bot_token": {
-          "name": "encrypted_bot_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "webhook_secret": {
-          "name": "webhook_secret",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "default_agent_id": {
-          "name": "default_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_telegram_installations_owner": {
-          "name": "idx_telegram_installations_owner",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_telegram_installations_org": {
-          "name": "idx_telegram_installations_org",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "telegram_installations_default_agent_id_agents_id_fk": {
-          "name": "telegram_installations_default_agent_id_agents_id_fk",
-          "tableFrom": "telegram_installations",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "default_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
     },
@@ -32151,17 +31511,11 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "installation_id": {
-          "name": "installation_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "official_org_id": {
           "name": "official_org_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "official_user_link_id": {
           "name": "official_user_link_id",
@@ -32275,34 +31629,6 @@
         }
       },
       "indexes": {
-        "idx_telegram_messages_unique": {
-          "name": "idx_telegram_messages_unique",
-          "columns": [
-            {
-              "expression": "installation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "chat_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "message_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "installation_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_telegram_messages_official_unique": {
           "name": "idx_telegram_messages_official_unique",
           "columns": [
@@ -32327,28 +31653,6 @@
           ],
           "isUnique": true,
           "where": "official_org_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_telegram_messages_chat": {
-          "name": "idx_telegram_messages_chat",
-          "columns": [
-            {
-              "expression": "installation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "chat_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "installation_id IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -32392,19 +31696,6 @@
         }
       },
       "foreignKeys": {
-        "telegram_messages_installation_id_telegram_installations_telegram_bot_id_fk": {
-          "name": "telegram_messages_installation_id_telegram_installations_telegram_bot_id_fk",
-          "tableFrom": "telegram_messages",
-          "tableTo": "telegram_installations",
-          "columnsFrom": [
-            "installation_id"
-          ],
-          "columnsTo": [
-            "telegram_bot_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "telegram_messages_official_user_link_id_telegram_official_user_links_id_fk": {
           "name": "telegram_messages_official_user_link_id_telegram_official_user_links_id_fk",
           "tableFrom": "telegram_messages",
@@ -32422,12 +31713,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "chk_telegram_messages_one_owner": {
-          "name": "chk_telegram_messages_one_owner",
-          "value": "(installation_id IS NOT NULL) <> (official_org_id IS NOT NULL)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.telegram_official_user_links": {
@@ -32547,201 +31833,6 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.telegram_user_agent_preferences": {
-      "name": "telegram_user_agent_preferences",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selected_agent_id": {
-          "name": "selected_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "telegram_user_agent_preferences_selected_agent_id_agents_id_fk": {
-          "name": "telegram_user_agent_preferences_selected_agent_id_agents_id_fk",
-          "tableFrom": "telegram_user_agent_preferences",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "selected_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "telegram_user_agent_preferences_user_id_org_id_pk": {
-          "name": "telegram_user_agent_preferences_user_id_org_id_pk",
-          "columns": [
-            "user_id",
-            "org_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.telegram_user_links": {
-      "name": "telegram_user_links",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "telegram_user_id": {
-          "name": "telegram_user_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "telegram_username": {
-          "name": "telegram_username",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "telegram_display_name": {
-          "name": "telegram_display_name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "installation_id": {
-          "name": "installation_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "dm_welcome_sent": {
-          "name": "dm_welcome_sent",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_telegram_user_links_user_installation": {
-          "name": "idx_telegram_user_links_user_installation",
-          "columns": [
-            {
-              "expression": "telegram_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "installation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_telegram_user_links_user_id_installation": {
-          "name": "idx_telegram_user_links_user_id_installation",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "installation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "telegram_user_links_installation_id_telegram_installations_telegram_bot_id_fk": {
-          "name": "telegram_user_links_installation_id_telegram_installations_telegram_bot_id_fk",
-          "tableFrom": "telegram_user_links",
-          "tableTo": "telegram_installations",
-          "columnsFrom": [
-            "installation_id"
-          ],
-          "columnsTo": [
-            "telegram_bot_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

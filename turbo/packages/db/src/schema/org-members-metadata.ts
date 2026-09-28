@@ -49,8 +49,6 @@ export const orgMembersMetadata = pgTable(
     serviceTier: varchar("service_tier", {
       length: 32,
     }).$type<ChatThreadServiceTier>(),
-    /** Member default for built-in video generation. Seeds new chat threads. */
-    selectedVideoModel: varchar("selected_video_model", { length: 255 }),
     /** Member default for built-in image generation. Seeds new chat threads. */
     selectedImageModel: varchar("selected_image_model", { length: 255 }),
     onboardingDone: boolean("onboarding_done").notNull().default(false),

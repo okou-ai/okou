@@ -8,7 +8,6 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   readRunImageModelSnapshotFixture,
-  setRetiredChatThreadImageModelFixture,
   setRetiredOrgMemberImageModelFixture,
 } from "../../../test-fixtures/run-image-model";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -45,98 +44,89 @@ async function imageModelSnapshotActor(): Promise<{
 }
 
 describe("CHAT-02: run image model snapshot", () => {
-  it("resolves thread, member, and global image defaults into stable snapshots", async () => {
+  it("resolves the member image model, then the global default, into stable snapshots", async () => {
     const { actor, agentId, runnerGroup } = await imageModelSnapshotActor();
 
     const globalDefault = await sendChatRun(actor, {
       agentId,
       prompt: "image model comes from the global default",
     });
+    expect(DEFAULT_IMAGE_MODEL).toBe("gpt-image-2.5-flare");
     await expect(
       readRunImageModelSnapshotFixture(globalDefault.runId),
     ).resolves.toBe(DEFAULT_IMAGE_MODEL);
+    const globalDefaultPrompt =
+      (await api.readRun(actor, globalDefault.runId)).appendSystemPrompt ?? "";
+    expect(globalDefaultPrompt).toContain(
+      "Built-in image generation uses `gpt-image-2.5-flare`, from the user's image model setting in Settings › Built-in tools.",
+    );
     await cancelChatRun(actor, globalDefault.runId);
 
     await chat.updateUserModelPreference(actor, null, "fal-ai/flux-pro/v1.1");
 
-    // The thread was pinned when it was created, so the new member default
-    // does not reach back into it.
+    // The member setting is not pinned at thread creation, so an existing
+    // thread follows the change on its next run.
     const afterDefaultChanged = await sendChatRun(actor, {
       agentId,
       threadId: globalDefault.threadId,
-      prompt: "an existing thread keeps the image model it was created with",
+      prompt: "an existing thread follows the member image model",
     });
     await expect(
       readRunImageModelSnapshotFixture(afterDefaultChanged.runId),
-    ).resolves.toBe(DEFAULT_IMAGE_MODEL);
+    ).resolves.toBe("fal-ai/flux-pro/v1.1");
     await cancelChatRun(actor, afterDefaultChanged.runId);
 
-    const memberDefault = await sendChatRun(actor, {
+    // A legacy client can still record a thread image model; runs ignore it.
+    await chat.updateThreadImageModel(
+      actor,
+      globalDefault.threadId,
+      "fal-ai/bytedance/seedream/v4/text-to-image",
+    );
+    const legacyThreadPin = await sendChatRun(actor, {
       agentId,
-      prompt: "a thread created later takes the member default",
+      threadId: globalDefault.threadId,
+      prompt: "a legacy thread image model does not reach the run",
     });
     await expect(
-      readRunImageModelSnapshotFixture(memberDefault.runId),
+      readRunImageModelSnapshotFixture(legacyThreadPin.runId),
     ).resolves.toBe("fal-ai/flux-pro/v1.1");
-    await cancelChatRun(actor, memberDefault.runId);
 
-    const initialThreadPin = "fal-ai/bytedance/seedream/v4/text-to-image";
-    await chat.updateThreadImageModel(
-      actor,
-      globalDefault.threadId,
-      initialThreadPin,
+    await chat.updateUserModelPreference(actor, null, "fal-ai/nano-banana-2");
+    await expect(
+      readRunImageModelSnapshotFixture(legacyThreadPin.runId),
+    ).resolves.toBe("fal-ai/flux-pro/v1.1");
+    const legacyThreadPinPrompt =
+      (await api.readRun(actor, legacyThreadPin.runId)).appendSystemPrompt ??
+      "";
+    expect(legacyThreadPinPrompt).toContain("# Built-in image model");
+    expect(legacyThreadPinPrompt).toContain(
+      "Built-in image generation uses `flux-pro-1.1`, from the user's image model setting in Settings › Built-in tools.",
     );
-    const threadPinned = await sendChatRun(actor, {
+    expect(legacyThreadPinPrompt).toContain(
+      "The model cannot be changed per request. Do not pass `--model` to image generation commands.",
+    );
+    expect(legacyThreadPinPrompt).toContain(
+      "Image generation through a connected third-party service chooses its model separately; this setting does not apply to that path.\n\n# Restricted Explicit Content",
+    );
+    await cancelChatRun(actor, legacyThreadPin.runId);
+
+    const afterSecondChange = await sendChatRun(actor, {
       agentId,
       threadId: globalDefault.threadId,
-      prompt: "image model comes from the thread pin",
+      prompt: "the next run sees the updated member image model",
     });
     await expect(
-      readRunImageModelSnapshotFixture(threadPinned.runId),
-    ).resolves.toBe(initialThreadPin);
-
-    const nextThreadPin = "fal-ai/nano-banana-2";
-    await chat.updateThreadImageModel(
-      actor,
-      globalDefault.threadId,
-      nextThreadPin,
-    );
-    await expect(
-      readRunImageModelSnapshotFixture(threadPinned.runId),
-    ).resolves.toBe(initialThreadPin);
-    const threadPinnedPrompt =
-      (await api.readRun(actor, threadPinned.runId)).appendSystemPrompt ?? "";
-    expect(threadPinnedPrompt).toContain("# Default built-in image model");
-    expect(threadPinnedPrompt).toContain(
-      "This run's default built-in image model is `seedream4`.",
-    );
-    expect(threadPinnedPrompt).toContain(
-      "Only when the current user request explicitly names another supported built-in image model, pass `--model <model>`.",
-    );
-    expect(threadPinnedPrompt).toContain(
-      "Otherwise omit `--model`; the server applies `seedream4`.",
-    );
-    expect(threadPinnedPrompt).toContain(
-      "Image generation through a connected third-party service chooses its model separately; this default does not apply to that path.\n\n# Restricted Explicit Content",
-    );
-    await cancelChatRun(actor, threadPinned.runId);
-
-    const rePinned = await sendChatRun(actor, {
-      agentId,
-      threadId: globalDefault.threadId,
-      prompt: "the next run sees the updated image model pin",
-    });
-    await expect(
-      readRunImageModelSnapshotFixture(rePinned.runId),
-    ).resolves.toBe(nextThreadPin);
-    const { claim: rePinnedClaim } = await claimChatRun(
+      readRunImageModelSnapshotFixture(afterSecondChange.runId),
+    ).resolves.toBe("fal-ai/nano-banana-2");
+    const { claim: afterSecondChangeClaim } = await claimChatRun(
       runnerGroup,
-      rePinned.runId,
+      afterSecondChange.runId,
     );
-    expect(claimEnvironment(rePinnedClaim)[DEFAULT_IMAGE_MODEL_ENV]).toBe(
-      "nano-banana-2",
-    );
-    await cancelChatRun(actor, rePinned.runId);
+    // Released CLIs still read the run's image model from this variable.
+    expect(
+      claimEnvironment(afterSecondChangeClaim)[DEFAULT_IMAGE_MODEL_ENV],
+    ).toBe("nano-banana-2");
+    await cancelChatRun(actor, afterSecondChange.runId);
   }, 90_000);
 
   it("falls through image model IDs that the catalog no longer supports", async () => {
@@ -149,23 +139,8 @@ describe("CHAT-02: run image model snapshot", () => {
     });
     await cancelChatRun(actor, anchor.runId);
 
-    await chat.updateUserModelPreference(actor, null, "gpt-image-2");
     // Current preference routes reject retired IDs, so this test alone injects
-    // the historical stored values whose fallback behavior it exercises.
-    await setRetiredChatThreadImageModelFixture(
-      anchor.threadId,
-      retiredImageModel,
-    );
-    const retiredThreadPin = await sendChatRun(actor, {
-      agentId,
-      threadId: anchor.threadId,
-      prompt: "retired thread image model falls through to the member",
-    });
-    await expect(
-      readRunImageModelSnapshotFixture(retiredThreadPin.runId),
-    ).resolves.toBe("gpt-image-2");
-    await cancelChatRun(actor, retiredThreadPin.runId);
-
+    // the historical stored value whose fallback behavior it exercises.
     await setRetiredOrgMemberImageModelFixture({
       orgId,
       userId: actor.userId,
@@ -174,7 +149,8 @@ describe("CHAT-02: run image model snapshot", () => {
     const retiredEverywhere = await sendChatRun(actor, {
       agentId,
       threadId: anchor.threadId,
-      prompt: "retired image defaults fall through to the global default",
+      prompt:
+        "a retired member image model falls through to the global default",
     });
     await expect(
       readRunImageModelSnapshotFixture(retiredEverywhere.runId),

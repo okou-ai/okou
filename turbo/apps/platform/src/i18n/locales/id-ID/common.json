@@ -1758,7 +1758,6 @@
         "slideCountRange": "{{range}} slide"
       },
       "createWorkflow": "Buat alur kerja",
-      "imageModelForThisChat": "Model gambar untuk chat ini",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
@@ -4934,8 +4933,6 @@
       "picker": {
         "builtInModel": "Model bawaan",
         "byokHelp": "Menggunakan provider yang Anda atur",
-        "categoryChat": "Chat",
-        "categoryImage": "Gambar",
         "chatModels": "Model chat",
         "effort": "Upaya",
         "effortScale": {
@@ -4960,14 +4957,9 @@
           "lowest": "Biaya terendah per generasi",
           "typical": "Biaya umum per generasi"
         },
-        "imageModels": "Model gambar",
         "inheritDefault": "Warisi dari default organisasi",
         "loadError": "Tidak dapat memuat model.",
         "loading": "Memuat model...",
-        "menu": {
-          "backToModels": "Kembali ke model",
-          "changeModel": "Ubah model {{category}}, {{model}}"
-        },
         "models": "Model",
         "noConfiguredModels": "Tidak ada model yang dikonfigurasi",
         "priceTiers": {
@@ -5067,6 +5059,11 @@
     "paidTools": {
       "description": "Alat-alat ini menggunakan kredit bawaan, dan Okou menggunakannya secara otomatis saat mengerjakan tugas Anda. Matikan alat agar Okou tidak menggunakannya.",
       "disabledForCreation": "{{tool}} nonaktif untuk Anda",
+      "imageModel": {
+        "description": "Pembuatan gambar bawaan menggunakan model ini untuk tugas Anda.",
+        "label": "Model",
+        "saveError": "Model gambar Anda tidak tersimpan."
+      },
       "loadError": "Pengaturan alat tidak dapat dimuat.",
       "loading": "Memuat pengaturan alat…",
       "openSettings": "Buka pengaturan",
@@ -5556,7 +5553,6 @@
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
     "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host agar tersedia bagi Agent dengan akses SSH.",
     "errors": {
-      "agentUnavailable": "Agen ini tidak lagi tersedia. Pilih Agen lain.",
       "configurationChanged": "Host ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbarunya sebelum menerapkan perubahan Anda.",
       "credentialChanged": "Kredensial ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbaru dan host yang terpengaruh sebelum menyimpan.",
       "credentialInUse": "Kredensial ini sedang digunakan. Pilih kredensial lain untuk host terkait atau hapus host tersebut terlebih dahulu.",

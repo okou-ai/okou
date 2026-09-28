@@ -42,6 +42,8 @@ case "${1:-}" in
       [ "${MOCK_UNIFIED_CHAT_QUEUE_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da" ]; then
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
+      [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
       [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
@@ -62,6 +64,10 @@ case "${1:-}" in
       [ "${MOCK_PI_API_FIRST_TURN_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
       [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1212121212121212121212121212121212121212" ]; then
+      [ "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
+      [ "${MOCK_VIDEO_MODEL_COLUMNS_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -81,10 +87,14 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CHAT_EVENT_SCHEMA_HEADER_COMMIT-7777777777777777777777777777777777777777}"
     elif [[ "$*" == *1274_drop_retired_voice_reasoning_collection_columns.sql* ]]; then
       printf '%s\n' "${MOCK_RETIRED_PREFERENCE_COLUMNS_COMMIT-8888888888888888888888888888888888888888}"
+    elif [[ "$*" == *1283_drop_retired_video_model_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_VIDEO_MODEL_COLUMNS_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
     elif [[ "$*" == *pi-api-first-turn-retired* ]]; then
       printf '%s\n' "${MOCK_PI_API_FIRST_TURN_COMMIT-9999999999999999999999999999999999999999}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
+    elif [[ "$*" == *1282_drop_retired_integration_agent_tables.sql* ]]; then
+      printf '%s\n' "${MOCK_RETIRED_INTEGRATION_AGENT_TABLES_COMMIT-1212121212121212121212121212121212121212}"
     else
       exit 2
     fi
@@ -193,10 +203,13 @@ grep -Fxq "git merge-base --is-ancestor ee863a302a6c547f94e50ec4069f70910d68bee2
 grep -Fxq "git merge-base --is-ancestor 84ac71914345b8360f3df43cc2cd47f0a8af7a23 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the queued run promotion removal floor"
 grep -Fxq "git merge-base --is-ancestor 553fc566b7e9be2cd4a8c1de314d55939b99490a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the unified chat queue release floor"
 grep -Fxq "git merge-base --is-ancestor fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the runner steer endpoints floor"
+grep -Fxq "git merge-base --is-ancestor 45b537a596a153a91b76c3bc7223187840f52775 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video generation retirement floor"
 grep -Fxq "git merge-base --is-ancestor 5555555555555555555555555555555555555555 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
 grep -Fxq "git merge-base --is-ancestor 6666666666666666666666666666666666666666 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Stripe Portal purpose-only floor"
 grep -Fxq "git merge-base --is-ancestor 8888888888888888888888888888888888888888 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired preference column drop floor"
 grep -Fxq "git merge-base --is-ancestor 9999999999999999999999999999999999999999 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi API-first turn retirement floor"
+grep -Fxq "git merge-base --is-ancestor 1212121212121212121212121212121212121212 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired integration agent table drop floor"
+grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video model column drop floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -267,6 +280,15 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-#37115 API target must fail before artifact or host access"
 fi
 
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the video generation retirement" \
+  run_resolver "${tmp_dir}/video-generation-retirement-floor.output" MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID=0
+grep -Fq '45b537a596a153a91b76c3bc7223187840f52775' "${tmp_dir}/failure.err" || fail "video retirement rejection must identify the #37242 merge commit"
+[ ! -s "${tmp_dir}/video-generation-retirement-floor.output" ] || fail "pre-#37242 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-#37242 API target must fail before artifact or host access"
+fi
+
 for cutover_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
   assert_failure "Cannot resolve the merged Stripe Portal purpose-only cutover" \
@@ -309,6 +331,20 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "retired preference column drop floor must fail before artifact or host access"
 fi
 
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged video model column drop" \
+    run_resolver "${tmp_dir}/video-model-columns-history.output" "MOCK_VIDEO_MODEL_COLUMNS_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/video-model-columns-history.output" ] || fail "invalid video model column drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the video model column drop" \
+  run_resolver "${tmp_dir}/video-model-columns-floor.output" MOCK_VIDEO_MODEL_COLUMNS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/video-model-columns-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "video model column drop floor must fail before artifact or host access"
+fi
+
 for retirement_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
   assert_failure "Cannot resolve the merged Pi API-first turn retirement" \
@@ -335,6 +371,20 @@ assert_failure "Rollback target predates the Chat Event V8 migration" \
 [ ! -s "${tmp_dir}/chat-event-v8-floor.output" ] || fail "pre-V8 API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Chat Event V8 floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged retired integration agent table drop" \
+    run_resolver "${tmp_dir}/retired-integration-agent-tables-history.output" "MOCK_RETIRED_INTEGRATION_AGENT_TABLES_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/retired-integration-agent-tables-history.output" ] || fail "invalid retired integration agent table drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired integration agent table drop" \
+  run_resolver "${tmp_dir}/retired-integration-agent-tables-floor.output" MOCK_RETIRED_INTEGRATION_AGENT_TABLES_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/retired-integration-agent-tables-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "retired integration agent table drop floor must fail before artifact or host access"
 fi
 
 for retirement_commit in "" invalid; do

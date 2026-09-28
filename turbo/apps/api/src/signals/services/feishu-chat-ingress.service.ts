@@ -10,8 +10,8 @@ import { feishuOrgEvents } from "@okouai/db/schema/feishu-org-event";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { Db } from "../external/db";
+import type { FeishuInboundMessage } from "./feishu-dispatch.service";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 
 interface FeishuChatThreadRouteKey {
@@ -71,6 +71,37 @@ async function loadRoute(
   return route;
 }
 
+/** Route key of the conversation a Feishu message belongs to. */
+export function feishuRouteThreadId(
+  message: Pick<
+    FeishuInboundMessage,
+    "chatType" | "rootId" | "threadId" | "parentId" | "messageId"
+  >,
+): string {
+  const replyThreadId =
+    message.rootId ?? message.threadId ?? message.parentId ?? null;
+  if (message.chatType === "p2p") {
+    if (message.threadId) {
+      return `thread:${message.threadId}`;
+    }
+    return INTEGRATION_DM_SESSION_KEY;
+  }
+  return replyThreadId ?? message.messageId;
+}
+
+/** Read the chat thread a Feishu conversation already routes to. */
+export async function findFeishuRoutedChatThreadId(
+  db: Pick<Db, "select">,
+  key: FeishuChatThreadRouteKey,
+): Promise<string | undefined> {
+  const [route] = await db
+    .select({ chatThreadId: feishuChatThreadRoutes.chatThreadId })
+    .from(feishuChatThreadRoutes)
+    .where(routeWhere(key))
+    .limit(1);
+  return route?.chatThreadId;
+}
+
 export async function ensureFeishuChatThreadRoute(
   db: Db,
   args: FeishuChatThreadRouteKey & {
@@ -89,10 +120,6 @@ export async function ensureFeishuChatThreadRoute(
       tx,
       args,
     );
-    const mediaModels = await loadNewChatThreadMediaModels(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-    });
     const modelSettings = await loadNewChatThreadModelSettings(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -111,7 +138,6 @@ export async function ensureFeishuChatThreadRoute(
         lastMessageAt: args.currentTime,
         createdAt: args.currentTime,
         updatedAt: args.currentTime,
-        selectedImageModel: mediaModels.selectedImageModel,
       })
       .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
     if (!thread) {
@@ -166,7 +192,6 @@ export async function ensureFeishuChatThreadRoute(
       selectedModel: initialModel.selectedModel,
       modelSettings,
       serviceTier: initialModel.serviceTier,
-      ...mediaModels,
       createdAt: thread.createdAt,
     });
     return route;

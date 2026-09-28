@@ -4,7 +4,7 @@ import { resolveChatInputModelSelection } from "./chat-input-model.service";
 import { resolveRequiredDefaultChatThreadModelPin } from "./chat-thread-model.service";
 import { randomUUID } from "node:crypto";
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
-import { command } from "ccstate";
+import { command, type Computed } from "ccstate";
 import {
   chatEventsContract,
   resolveChatEventRecommendedFollowups,
@@ -58,9 +58,8 @@ import {
   type CancelRunResult,
 } from "./run-cancel.service";
 import { isCodexFastServiceTierSupported } from "./model-selection.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
-import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
+import { touchSentChatThreadSort } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import {
   revokeChatEvent,
@@ -88,6 +87,10 @@ import {
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+import {
+  organizationPlanCapabilities$,
+  type OrgPlanCapabilities,
+} from "./org-plan-entitlement-read.service";
 import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -153,6 +156,12 @@ interface NormalSendArgs {
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly getStartedWorkflowId?: string;
+  /**
+   * The request-scoped plan of the authenticated organization, supplied by a
+   * caller inside an auth route whose `orgId` is that organization, so the
+   * send and its model selection share one read.
+   */
+  readonly orgPlanCapabilities$?: Computed<Promise<OrgPlanCapabilities | null>>;
 }
 
 type NormalSendFailure =
@@ -550,12 +559,10 @@ async function loadAgentForChatSend(
   return agent;
 }
 
-async function loadAuthorizedAgent(
-  db: Db,
+function authorizeSendAgent(
   args: NormalSendArgs,
-): Promise<AgentForChatSend | NormalSendFailure> {
-  const agent =
-    args.preloadedAgent ?? (await loadAgentForChatSend(db, args.body.agentId));
+  agent: AgentForChatSend | undefined,
+): AgentForChatSend | NormalSendFailure {
   if (!agent || agent.id !== args.body.agentId || agent.orgId !== args.orgId) {
     return notFound("Agent not found");
   }
@@ -565,9 +572,73 @@ async function loadAuthorizedAgent(
   return agent;
 }
 
+async function loadAuthorizedAgent(
+  db: Db,
+  args: NormalSendArgs,
+): Promise<AgentForChatSend | NormalSendFailure> {
+  return authorizeSendAgent(
+    args,
+    args.preloadedAgent ?? (await loadAgentForChatSend(db, args.body.agentId)),
+  );
+}
+
+async function loadExistingSendThreadRow(
+  db: Db,
+  args: NormalSendArgs,
+  threadId: string,
+) {
+  const [thread] = await db
+    .select({
+      id: chatThreads.id,
+      agentId: chatThreads.agentId,
+      selectedModel: chatThreads.selectedModel,
+      modelSettings: chatThreads.modelSettings,
+      codexServiceTier: chatThreads.codexServiceTier,
+      computerUseHostId: chatThreads.computerUseHostId,
+      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+    })
+    .from(chatThreads)
+    .where(
+      and(eq(chatThreads.id, threadId), eq(chatThreads.userId, args.userId)),
+    )
+    .limit(1);
+  return thread;
+}
+
+type ExistingSendThreadRow = NonNullable<
+  Awaited<ReturnType<typeof loadExistingSendThreadRow>>
+>;
+
+/**
+ * Authorize an existing-thread send with two independent primary-key reads:
+ * the caller's thread and the requested agent. The thread's organization is
+ * its agent's, so a thread whose agent is the authorized agent is in scope.
+ */
+async function loadAuthorizedExistingSendThread(
+  db: Db,
+  args: NormalSendArgs,
+  threadId: string,
+): Promise<
+  | { readonly agent: AgentForChatSend; readonly thread: ExistingSendThreadRow }
+  | NormalSendFailure
+> {
+  const [thread, loadedAgent] = await Promise.all([
+    loadExistingSendThreadRow(db, args, threadId),
+    args.preloadedAgent ?? loadAgentForChatSend(db, args.body.agentId),
+  ]);
+  const agent = authorizeSendAgent(args, loadedAgent);
+  if ("status" in agent) {
+    return agent;
+  }
+  if (!thread || thread.agentId !== agent.id) {
+    return notFound("Chat thread not found");
+  }
+  return { agent, thread };
+}
+
 /**
  * The thread's requested settings. The input captures its effective model at
- * enqueue; provider availability and credits are rechecked when pick launches it.
+ * enqueue; the pick launches that model after its credit admission.
  */
 interface ThreadRunSettings {
   readonly selectedModel: string | null;
@@ -697,9 +768,6 @@ interface NewSendThread {
   readonly clientThreadId: string | undefined;
   readonly runSettings: ThreadRunSettings;
   readonly computerAccess: ThreadComputerAccess;
-  readonly mediaModels: Awaited<
-    ReturnType<typeof loadNewChatThreadMediaModels>
-  >;
 }
 
 type SendThread = ExistingSendThread | NewSendThread;
@@ -707,31 +775,9 @@ type SendThread = ExistingSendThread | NewSendThread;
 async function resolveExistingSendThread(
   db: Db,
   args: NormalSendArgs,
-  threadId: string,
+  thread: ExistingSendThreadRow,
+  agentId: string,
 ): Promise<ExistingSendThread | NormalSendFailure> {
-  const [thread] = await db
-    .select({
-      id: chatThreads.id,
-      agentId: chatThreads.agentId,
-      selectedModel: chatThreads.selectedModel,
-      modelSettings: chatThreads.modelSettings,
-      codexServiceTier: chatThreads.codexServiceTier,
-      computerUseHostId: chatThreads.computerUseHostId,
-      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        eq(chatThreads.id, threadId),
-        eq(chatThreads.userId, args.userId),
-        eq(agents.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  if (!thread?.agentId) {
-    return notFound("Chat thread not found");
-  }
   const current = {
     selectedModel: thread.selectedModel,
     modelSettings: modelSettingsSchema.parse(thread.modelSettings),
@@ -757,7 +803,7 @@ async function resolveExistingSendThread(
   return {
     kind: "existing",
     threadId: thread.id,
-    agentId: thread.agentId,
+    agentId,
     runSettings,
     computerAccess,
     current,
@@ -767,6 +813,7 @@ async function resolveExistingSendThread(
 async function resolveNewSendThread(
   db: Db,
   args: NormalSendArgs,
+  orgPlanCapabilities: OrgPlanCapabilities | null | undefined,
 ): Promise<NewSendThread | NormalSendFailure> {
   if (args.body.revokesEventId !== undefined) {
     return badRequestMessage("Recommended follow-up is no longer available");
@@ -774,7 +821,11 @@ async function resolveNewSendThread(
   const member = { orgId: args.orgId, userId: args.userId };
   const initialModel =
     args.body.model === undefined
-      ? await resolveRequiredDefaultChatThreadModelPin(db, member)
+      ? await resolveRequiredDefaultChatThreadModelPin(
+          db,
+          member,
+          orgPlanCapabilities,
+        )
       : null;
   const runSettings = requestedThreadRunSettings(args.body, {
     selectedModel: initialModel?.selectedModel ?? null,
@@ -799,7 +850,6 @@ async function resolveNewSendThread(
     clientThreadId: args.body.clientThreadId,
     runSettings,
     computerAccess,
-    mediaModels: await loadNewChatThreadMediaModels(db, member),
   };
 }
 
@@ -827,7 +877,6 @@ async function insertNewSendThread(
       modelSettings: thread.runSettings.modelSettings,
       computerUseHostId: thread.computerAccess.computerUseHostId,
       cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
-      selectedImageModel: thread.mediaModels.selectedImageModel,
     })
     .onConflictDoNothing({ target: chatThreads.id })
     .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
@@ -849,7 +898,6 @@ async function insertNewSendThread(
     ),
     computerUseHostId: thread.computerAccess.computerUseHostId,
     cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
-    ...thread.mediaModels,
     createdAt: created.createdAt,
   });
   return true;
@@ -900,7 +948,6 @@ async function updateExistingSendThread(
       and(
         eq(chatThreads.id, thread.threadId),
         eq(chatThreads.userId, args.userId),
-        chatThreadOrganizationCondition(tx, args.orgId),
       ),
     );
   const event = {
@@ -1176,24 +1223,26 @@ async function appendNormalSendInput(
 }
 
 /**
- * Everything a send checks before it enqueues: the agent, a retried client
- * event id, the server-owned source annotation, the thread (or the new
- * thread's selections), and a follow-up revocation.
+ * Everything a send checks before it enqueues: the agent and the thread (or
+ * the new thread's selections), the server-owned source annotation, and a
+ * follow-up revocation. A retried client event id is settled by the enqueue's
+ * own insert.
  */
 async function prepareNormalSend(
   db: Db,
   args: NormalSendArgs,
+  orgPlanCapabilities: OrgPlanCapabilities | null | undefined,
   signal: AbortSignal,
 ): Promise<
   | {
       readonly thread: SendThread;
       readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
     }
-  | CreatedChatEventResponse
   | NormalSendFailure
+  | CreatedChatEventResponse
 > {
   // MCP attribution is server-owned. Reject a forged source even on an
-  // idempotent retry, before clientEventId can return the prior event.
+  // idempotent retry.
   if (
     args.body.userMessage.parts.some((part) => {
       return part.type === "source" && part.kind === "mcp";
@@ -1201,26 +1250,14 @@ async function prepareNormalSend(
   ) {
     return badRequestMessage("MCP source annotations are server-managed");
   }
-  const agent = await loadAuthorizedAgent(db, args);
+  const existingThreadId = args.body.threadId;
+  const authorized =
+    existingThreadId === undefined
+      ? await loadAuthorizedAgent(db, args)
+      : await loadAuthorizedExistingSendThread(db, args, existingThreadId);
   signal.throwIfAborted();
-  if ("status" in agent) {
-    return agent;
-  }
-  const knownThreadId = args.body.threadId ?? args.body.clientThreadId;
-  if (knownThreadId !== undefined && args.body.clientEventId !== undefined) {
-    const prior = clientEventIdResolutionResponse(
-      await resolveClientEventId(db, {
-        clientEventId: args.body.clientEventId,
-        orgId: args.orgId,
-        threadId: knownThreadId,
-        userId: args.userId,
-      }),
-      knownThreadId,
-    );
-    signal.throwIfAborted();
-    if (prior) {
-      return prior;
-    }
+  if ("status" in authorized) {
+    return authorized;
   }
   const source = await resolveNormalSendAgentRunSource({
     db,
@@ -1239,95 +1276,90 @@ async function prepareNormalSend(
   if (invalidTemplate) {
     return invalidTemplate;
   }
-  const thread = args.body.threadId
-    ? await resolveExistingSendThread(db, args, args.body.threadId)
-    : await resolveNewSendThread(db, args);
+  const thread =
+    "thread" in authorized
+      ? await resolveExistingSendThread(
+          db,
+          args,
+          authorized.thread,
+          authorized.agent.id,
+        )
+      : await resolveNewSendThread(db, args, orgPlanCapabilities);
   signal.throwIfAborted();
   if ("status" in thread) {
     return thread;
   }
   if (thread.kind === "existing") {
-    const revocationError = await validateNormalRevocationTarget({
+    const revocation = await validateNormalRevocationTarget({
       db,
       threadId: thread.threadId,
       revokesEventId: args.body.revokesEventId,
+      clientEventId: args.body.clientEventId,
     });
     signal.throwIfAborted();
-    if (revocationError) {
-      return revocationError;
+    if (revocation) {
+      return revocation;
     }
   }
   return { thread, agentRunSource: source.source };
 }
 
-/**
- * Settle a send whose enqueue appended nothing: a retry of a stored input is
- * accepted again; otherwise the client event id or the follow-up it replaces
- * was taken concurrently.
- */
-async function resolveUnappendedNormalSend(
-  db: Db,
-  args: NormalSendArgs,
-  threadId: string,
-  eventId: string,
-): Promise<CreatedChatEventResponse | NormalSendFailure> {
-  const prior = clientEventIdResolutionResponse(
-    await resolveClientEventId(db, {
-      clientEventId: eventId,
-      orgId: args.orgId,
-      threadId,
-      userId: args.userId,
-    }),
-    threadId,
-  );
-  if (prior) {
-    return prior;
-  }
-  return args.body.revokesEventId
-    ? conflict("Recommended follow-up has already been used")
-    : duplicateClientEventIdResponse();
-}
-
-/** A direct user message moves its thread's sidebar recency. */
-async function touchNormalSendThread(
+/** A direct user message moves its thread's sidebar recency after the pick. */
+function normalSendThreadTouch(
   db: Db,
   args: NormalSendArgs,
   thread: SendThread,
-  createdAt: Date,
-): Promise<void> {
+  touchedAt: Date,
+): (() => Promise<void>) | undefined {
   if (
-    shouldTouchThreadSortFromNormalSend(
-      args.agentRunPreCreateSource,
-      thread.kind === "new",
-    )
+    thread.kind === "new" ||
+    !shouldTouchThreadSortFromNormalSend(args.agentRunPreCreateSource, false)
   ) {
+    return undefined;
+  }
+  return async () => {
     await attemptChatEventSideEffect("thread_touch", thread.threadId, () => {
-      return touchChatThreadLastMessageAtIndependently(db, thread.threadId, {
-        touchedAt: createdAt,
+      return touchSentChatThreadSort(db, {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: thread.threadId,
+        agentId: thread.agentId,
+        touchedAt,
         eventId: args.body.chatThreadSortEventId,
-        authorizedScope: { userId: args.userId, orgId: args.orgId },
       });
     });
-  }
+  };
 }
 
 /**
  * Direct send, shared by the web, the CLI, and MCP: authorize the agent and
- * thread, settle a retried client event id, validate a follow-up revocation,
- * record attachment references, then enqueue the input (creating a new
- * thread's minimal row in the same transaction) and schedule its pick without
- * waiting for it. The model is captured at enqueue. Provider and credit admission, the autonomy
- * budget, templates, session, and context are resolved by the pick; a
- * rejection appears in the thread as `input.rejected`.
+ * thread, validate a follow-up revocation, record attachment references, then
+ * enqueue the input (creating a new thread's minimal row in the same
+ * transaction) and schedule its pick without waiting for it. A retried client
+ * event id conflicts on the input's insert and is accepted again without
+ * enqueueing anything. The model is captured at enqueue. Credit admission,
+ * the autonomy budget, templates, session, and context are resolved by the
+ * pick; a rejection appears in the thread as `input.rejected`. A direct
+ * message's sidebar touch runs after the pick.
  */
 export const sendNormalEvent$ = command(
   async (
-    { set },
+    { get, set },
     args: NormalSendArgs,
     signal: AbortSignal,
   ): Promise<CreatedChatEventResponse | NormalSendFailure> => {
     const db = set(writeDb$);
-    const prepared = await prepareNormalSend(db, args, signal);
+    const orgPlanCapabilities =
+      args.orgPlanCapabilities$ === undefined
+        ? undefined
+        : await get(args.orgPlanCapabilities$);
+    signal.throwIfAborted();
+    const prepared = await prepareNormalSend(
+      db,
+      args,
+      orgPlanCapabilities,
+      signal,
+    );
     if ("status" in prepared) {
       return prepared;
     }
@@ -1346,6 +1378,7 @@ export const sendNormalEvent$ = command(
       userId: args.userId,
       ...thread.runSettings,
       reasoningEffort: args.body.runOptions?.reasoningEffort,
+      orgPlanCapabilities,
     });
     signal.throwIfAborted();
     if ("status" in modelSelection) {
@@ -1384,10 +1417,11 @@ export const sendNormalEvent$ = command(
           return null;
         }
         // Scheduled right after the commit, before the request's abort is
-        // observed. The UI realtime events go last, after the pick, whatever
-        // its outcome.
+        // observed. The sidebar touch and the UI realtime events go last,
+        // after the pick, whatever its outcome.
         set(scheduleEnqueuedChatThreadPick$, {
           chatThreadId: thread.threadId,
+          touch: normalSendThreadTouch(db, args, thread, createdAt),
           publish: async () => {
             await publishChatEventCreated({
               ...member,
@@ -1396,7 +1430,6 @@ export const sendNormalEvent$ = command(
             await publishThreadListChangedSafely(member);
           },
         });
-        await touchNormalSendThread(db, args, thread, createdAt);
         return createdAt;
       })(),
       signal,
@@ -1416,12 +1449,13 @@ export const sendNormalEvent$ = command(
       throw enqueued.error;
     }
     if (enqueued.value === null) {
-      return await resolveUnappendedNormalSend(
-        db,
-        args,
-        thread.threadId,
-        event.id,
-      );
+      // A conflict on the insert is accepted as a duplicate without a
+      // lookup. Only a follow-up with a server-generated id cannot have
+      // collided on its id, so its conflict is the revoke edge taken
+      // concurrently.
+      return args.body.revokesEventId && args.body.clientEventId === undefined
+        ? conflict("Recommended follow-up has already been used")
+        : acceptedSendResponse(thread.threadId, nowDate(), true);
     }
     return acceptedSendResponse(thread.threadId, enqueued.value, false);
   },
@@ -1545,11 +1579,17 @@ async function appendRecallChatEvent(params: {
   return { ok: true, createdAt: resolved.createdAt };
 }
 
+/**
+ * A follow-up revocation must target an available recommendation whose edge
+ * is still free. When this client event id already holds the edge, the send
+ * is a retry of that follow-up and is accepted again with its stored time.
+ */
 async function validateNormalRevocationTarget(params: {
   readonly db: Db;
   readonly threadId: string;
   readonly revokesEventId: string | undefined;
-}): Promise<NormalSendFailure | undefined> {
+  readonly clientEventId: string | undefined;
+}): Promise<NormalSendFailure | CreatedChatEventResponse | undefined> {
   if (!params.revokesEventId) {
     return undefined;
   }
@@ -1573,7 +1613,7 @@ async function validateNormalRevocationTarget(params: {
   }
 
   const [existingRevoker] = await params.db
-    .select({ id: chatEvents.id })
+    .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
     .from(chatEvents)
     .where(
       and(
@@ -1583,7 +1623,10 @@ async function validateNormalRevocationTarget(params: {
     )
     .limit(1);
   if (existingRevoker) {
-    return conflict("Recommended follow-up has already been used");
+    // Postgres returns the uuid lowercase; the request may use any case.
+    return existingRevoker.id === params.clientEventId?.toLowerCase()
+      ? acceptedSendResponse(params.threadId, existingRevoker.createdAt, true)
+      : conflict("Recommended follow-up has already been used");
   }
 
   return undefined;
@@ -1849,7 +1892,13 @@ export const handleSendChatEvent$ = command(
     }
     return await set(
       sendNormalEvent$,
-      { body, auth, userId: auth.userId, orgId: auth.orgId },
+      {
+        body,
+        auth,
+        userId: auth.userId,
+        orgId: auth.orgId,
+        orgPlanCapabilities$: organizationPlanCapabilities$,
+      },
       signal,
     );
   },

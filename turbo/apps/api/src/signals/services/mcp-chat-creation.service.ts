@@ -33,7 +33,6 @@ import {
   chatThreadModelPinColumns,
   resolveRequiredDefaultChatThreadModelPin,
 } from "./chat-thread-model.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { mcpChatThreadModels } from "./mcp-chat-thread-model.service";
@@ -308,7 +307,6 @@ async function initializeThread(
     }
     pin = resolved;
   }
-  const media = await loadNewChatThreadMediaModels(tx, principal);
   const settings = await loadNewChatThreadModelSettings(tx, principal);
   signal.throwIfAborted();
   const modelSettings =
@@ -338,7 +336,6 @@ async function initializeThread(
     ...chatThreadModelPinColumns(pin),
     modelSettings,
     codexServiceTier,
-    ...media,
     connectorSelections: [],
   });
   signal.throwIfAborted();

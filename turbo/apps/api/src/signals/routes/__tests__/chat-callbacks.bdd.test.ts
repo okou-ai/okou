@@ -1237,6 +1237,116 @@ describe("CHAT-02: completed chat callback", () => {
     expect(marker).not.toHaveProperty("recommendedFollowups");
   });
 
+  it("accepts a retried recommended follow-up send as a duplicate", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+    chatCallbacks.mockOpenRouterCompletions((body) => {
+      const systemContent = body.messages[0]?.content ?? "";
+      if (systemContent.includes("recommended follow-up messages")) {
+        return JSON.stringify([
+          { prompt: "Retry the recommended follow-up", kind: "talk" },
+        ]);
+      }
+      if (systemContent.includes("Generate a short, descriptive title")) {
+        return "Follow-up Retry";
+      }
+      return "Generated summary";
+    });
+
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "Recommend a follow-up to retry",
+    });
+    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
+    chatCallbacks.mockChatOutputEvents([
+      assistantEvent(0, "Answer with a follow-up"),
+    ]);
+    await completeChatRunOk(run.runId, sandboxHeaders, {
+      lastEventSequence: 0,
+    });
+    const withFollowup = await waitForThreadMessages(
+      actor,
+      run.threadId,
+      (messages) => {
+        return recommendedFollowupEvents(messages, run.runId).length > 0;
+      },
+    );
+    const followup = recommendedFollowupEvents(
+      withFollowup.events,
+      run.runId,
+    )[0];
+    if (!followup) {
+      throw new Error("Expected a recommended follow-up event");
+    }
+    await flushWaitUntilForTest();
+
+    const clientEventId = randomUUID();
+    const followupBody = {
+      agentId,
+      threadId: run.threadId,
+      prompt: "Retry the recommended follow-up",
+      clientEventId,
+      revokesEventId: followup.id,
+    };
+    const sent = await chat.requestSendEvent(actor, followupBody, [201]);
+    if (sent.status !== 201) {
+      throw new Error("Expected the follow-up send to be accepted");
+    }
+    await flushWaitUntilForTest();
+    const afterSend = await chat.listThreadEvents(actor, run.threadId);
+
+    // The retry finds its own input holding the follow-up edge and is
+    // accepted again with the stored input's time, storing nothing new.
+    const retry = await chat.requestSendEvent(actor, followupBody, [201]);
+    expect(retry.body).toStrictEqual(sent.body);
+    await flushWaitUntilForTest();
+    const afterRetry = await chat.listThreadEvents(actor, run.threadId);
+    expect(afterRetry.events).toHaveLength(afterSend.events.length);
+    expect(
+      afterRetry.events.filter((event) => {
+        return event.revokesEventId === followup.id;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({ id: clientEventId, eventType: "input.prompt" }),
+    ]);
+
+    // A different input for the same follow-up is still rejected.
+    const other = await chat.requestSendEvent(
+      actor,
+      {
+        ...followupBody,
+        prompt: "Another take on the follow-up",
+        clientEventId: randomUUID(),
+      },
+      [409],
+    );
+    expect(other.body).toStrictEqual({
+      error: expect.objectContaining({
+        code: "CONFLICT",
+        message: "Recommended follow-up has already been used",
+      }),
+    });
+    await flushWaitUntilForTest();
+    const afterOther = await chat.listThreadEvents(actor, run.threadId);
+    expect(afterOther.events).toHaveLength(afterSend.events.length);
+    expect(
+      afterOther.events.filter((event) => {
+        return event.revokesEventId === followup.id;
+      }),
+    ).toStrictEqual([expect.objectContaining({ id: clientEventId })]);
+
+    const runId = userMessages(afterRetry.events).find((message) => {
+      return message.revokesEventId === clientEventId;
+    })?.runId;
+    if (runId === undefined) {
+      throw new Error("Expected the follow-up input to launch one run");
+    }
+    await api.requestCancelRun(actor, runId, [200]);
+    await waitForRunStatus(actor, runId, "cancelled");
+  }, 60_000);
+
   it("silently degrades all four callback features while delivering the generic notification", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     if (!actor.orgId) {

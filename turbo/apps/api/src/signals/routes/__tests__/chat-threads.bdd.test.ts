@@ -48,7 +48,6 @@ import {
   readChatThreadEventIdsFixture,
   setChatThreadSnapshotBoundaryFixture,
   setChatThreadSnapshotObjectKeyFixture,
-  setChatThreadVideoModelFixture,
 } from "../../../test-fixtures/chat-thread-events";
 
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
@@ -2236,7 +2235,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       "claude-sonnet-5",
       { eventId: modelSelectionEventId },
     );
-    await setChatThreadVideoModelFixture(liveThread.id, "fal-ai/veo3.1/fast");
     await chat.updateThreadImageModel(
       actor,
       liveThread.id,
@@ -2285,7 +2283,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         selectedModel: "claude-sonnet-5",
         // The compaction projection is hand-written SQL, so a column missing
         // from it survives every read until compaction runs and drops it.
-        selectedVideoModel: "fal-ai/veo3.1/fast",
         selectedImageModel: "fal-ai/flux-pro/v1.1",
         archived: true,
       }),

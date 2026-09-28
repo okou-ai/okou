@@ -1174,7 +1174,7 @@ describe("POST /api/chat-threads", () => {
     );
   });
 
-  it("creates a titled thread with an Okou run token carrying chat-thread:write", async () => {
+  it("creates a titled thread with an Okou run token carrying chat-thread:write and ignores a legacy image model", async () => {
     const fixture = await seedAgent();
     const token = okouToken({
       userId: fixture.userId,
@@ -1220,14 +1220,12 @@ describe("POST /api/chat-threads", () => {
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
-      selectedImageModel: EXPLICIT_IMAGE_MODEL,
+      selectedImageModel: null,
     });
     await expect(
       readCreatedThreadEvent(response.body.id, token),
     ).resolves.toMatchObject({
-      selectedVideoModel: null,
-      selectedImageModel: EXPLICIT_IMAGE_MODEL,
+      selectedImageModel: null,
     });
   });
 
@@ -1271,7 +1269,7 @@ describe("POST /api/chat-threads", () => {
     expect(metadataResponse.body.serviceTier).toBeNull();
   });
 
-  it("inherits the image model from the run's chat thread when omitted", async () => {
+  it("does not inherit an image model from the run's chat thread", async () => {
     const fixture = await seedAgent();
     const sourceToken = okouToken({
       userId: fixture.userId,
@@ -1323,12 +1321,11 @@ describe("POST /api/chat-threads", () => {
     await expect(
       readCreatedThreadEvent(inherited.body.id, inheritedToken),
     ).resolves.toMatchObject({
-      selectedVideoModel: null,
-      selectedImageModel: INHERITED_IMAGE_MODEL,
+      selectedImageModel: null,
     });
   });
 
-  it("pins the member image default when the request omits it", async () => {
+  it("does not pin the member image default when the request omits it", async () => {
     const fixture = await seedAgent();
     await setMemberMediaDefaults(fixture);
     const token = okouToken({
@@ -1352,8 +1349,7 @@ describe("POST /api/chat-threads", () => {
     await expect(
       readCreatedThreadEvent(response.body.id, token),
     ).resolves.toMatchObject({
-      selectedVideoModel: null,
-      selectedImageModel: MEMBER_IMAGE_MODEL,
+      selectedImageModel: null,
     });
   });
 

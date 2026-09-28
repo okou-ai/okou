@@ -1018,8 +1018,6 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
     return respond(200, fileAction(true));
   });
-  const digest =
-    "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
   const uploadUrl = "https://uploads.example.test/inline-browser-file";
   context.mocks.api(
     browserUserActionsContract.prepareFileUpload,
@@ -1028,15 +1026,8 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
         key: "document",
         index: 0,
         size: 4,
-        sha256: digest,
       });
-      return respond(200, {
-        uploadUrl,
-        uploadHeaders: {
-          "x-amz-checksum-sha256":
-            "n4bQgYhMfWWaL+qgxVrQFaO/Txs7C4Is0V1sFbDwCgg=",
-        },
-      });
+      return respond(200, { uploadUrl });
     },
   );
   let directlyUploaded = false;
@@ -1056,7 +1047,6 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
             name: "note.txt",
             type: "text/plain",
             size: 4,
-            sha256: digest,
           },
         ],
       },

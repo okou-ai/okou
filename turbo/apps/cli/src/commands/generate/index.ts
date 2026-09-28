@@ -51,7 +51,7 @@ function buildGenerateHelpText(): string {
     "  Show image choices:    okou generate image",
     "  Show report choices:   okou generate report",
     "  Use a connector:       okou generate music --provider <connector>",
-    "  Force built-in:        okou generate image --provider built-in --model gpt-image-2 --raw-prompt ...",
+    "  Force built-in:        okou generate image --provider built-in --raw-prompt ...",
   ];
 
   return `

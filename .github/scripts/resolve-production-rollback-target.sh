@@ -39,6 +39,10 @@ readonly UNIFIED_CHAT_QUEUE_RELEASE_COMMIT=553fc566b7e9be2cd4a8c1de314d55939b994
 # Release 6 Runners and their Guests steer only through them, so an earlier API
 # cannot serve a draining release 6 Runner after a rollback.
 readonly RUNNER_STEER_ENDPOINTS_COMMIT=fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da
+# #37242 retired video, voice and talking-avatar generation. Later APIs remove
+# the completion paths for jobs accepted before it, so an earlier API would
+# accept video jobs that can no longer complete after rolling forward.
+readonly VIDEO_GENERATION_RETIREMENT_COMMIT=45b537a596a153a91b76c3bc7223187840f52775
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -48,6 +52,8 @@ readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-even
 readonly PI_API_FIRST_TURN_RETIRED_PATH=.github/rollback-floors/pi-api-first-turn-retired
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
+readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
+readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -113,6 +119,9 @@ if ! git merge-base --is-ancestor "$UNIFIED_CHAT_QUEUE_RELEASE_COMMIT" "$TARGET_
 fi
 if ! git merge-base --is-ancestor "$RUNNER_STEER_ENDPOINTS_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the runner steer endpoints: ${RUNNER_STEER_ENDPOINTS_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$VIDEO_GENERATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the video generation retirement: ${VIDEO_GENERATION_RETIREMENT_COMMIT}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames
@@ -204,6 +213,20 @@ if ! git merge-base --is-ancestor "$retired_preference_columns_drop_commit" "$TA
   fail "Rollback target predates the retired preference column drop: ${retired_preference_columns_drop_commit}."
 fi
 
+# Migration 1282 drops selected_video_model from chat_threads,
+# org_members_metadata, agent_runs and chat_thread_events and removes the
+# video_model_updated event kind. Earlier APIs still declare the columns, so
+# every insert, bare select and bare returning on those tables names them. This
+# floor also covers #37256, the first API that stopped reading the columns.
+video_model_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$VIDEO_MODEL_COLUMNS_DROP_PATH" | sed -n '1p')
+if [[ ! "$video_model_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged video model column drop on main."
+fi
+if ! git merge-base --is-ancestor "$video_model_columns_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the video model column drop: ${video_model_columns_drop_commit}."
+fi
+
 # Release 7 stopped writing piLaunchConfig.apiFirstTurn. Its Runners, Guests
 # and installed CLIs reject that slot, and earlier APIs write it on every Pi run
 # and reject queued contexts without it, so no earlier API serves Pi runs.
@@ -226,6 +249,20 @@ if [[ ! "$chat_event_v8_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$chat_event_v8_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Chat Event V8 migration: ${chat_event_v8_commit}."
+fi
+
+# Migration 1282 drops the retired integration agent preference and
+# self-hosted Telegram tables, feishu_org_installations.default_agent_id,
+# telegram_chat_thread_routes.telegram_user_link_id and
+# telegram_messages.installation_id. Earlier APIs still declare those columns,
+# so their Telegram message and route inserts name the dropped columns.
+retired_integration_agent_tables_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH" | sed -n '1p')
+if [[ ! "$retired_integration_agent_tables_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged retired integration agent table drop on main."
+fi
+if ! git merge-base --is-ancestor "$retired_integration_agent_tables_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired integration agent table drop: ${retired_integration_agent_tables_drop_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

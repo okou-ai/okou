@@ -117,7 +117,6 @@ function installWorkflowQueueFixture(
       archived: false,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
       selectedImageModel: null,
     });
   });
@@ -140,7 +139,6 @@ function installWorkflowQueueFixture(
             serviceTier: null,
             computerUseHostId: null,
             cloudBrowserEnabled: false,
-            selectedVideoModel: null,
             selectedImageModel: null,
           },
         ],
@@ -199,7 +197,6 @@ function installWorkflowQueueFixture(
     return respond(201, {
       runId: null,
       threadId,
-      status: "pending",
       createdAt: "2026-08-01T00:01:00.000Z",
     });
   });

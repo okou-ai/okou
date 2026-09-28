@@ -127,7 +127,6 @@ async function openUnconfirmedConversation(
     return respond(201, {
       runId: "a7000000-0000-4000-a000-000000000009",
       threadId: body.threadId ?? "b7000000-0000-4000-a000-000000000009",
-      status: "pending",
       createdAt: "2026-08-01T03:00:01.000Z",
     });
   });
@@ -293,7 +292,6 @@ test("Sending in an older conversation moves it to the top", async () => {
     return respond(201, {
       runId: "a7000000-0000-4000-a000-000000000012",
       threadId: body.threadId ?? older.id,
-      status: "pending",
       createdAt: "2026-08-01T03:00:02.000Z",
     });
   });
@@ -355,7 +353,6 @@ test("Server confirmation settles a new conversation without duplication", async
     return respond(201, {
       runId: "a7000000-0000-4000-a000-000000000013",
       threadId: body.threadId ?? "b7000000-0000-4000-a000-000000000013",
-      status: "pending",
       createdAt: "2026-08-01T03:00:04.000Z",
     });
   });

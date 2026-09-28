@@ -239,7 +239,6 @@ test("Keep successful attachments after another upload fails", async () => {
     return respond(201, {
       runId: "a8000000-0000-4000-a000-000000000011",
       threadId: body.threadId ?? thread.id,
-      status: "pending",
       createdAt: "2026-08-11T04:00:00.000Z",
     });
   });

@@ -3,7 +3,6 @@ import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-provi
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ImageModel } from "@okouai/core/image-model-catalog";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import {
   sendNewThread$,
@@ -11,10 +10,7 @@ import {
 } from "../chat-page/optimistic-chat-thread-page.ts";
 import type { ChatForwardContext } from "../chat-page/chat-forward.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import {
-  updateUserModelPreference$,
-  userModelPreference$,
-} from "../external/user-model-preference.ts";
+import { updateUserModelPreference$ } from "../external/user-model-preference.ts";
 import {
   createAgentDraftSignals,
   type EnsuredAgentDraft,
@@ -31,15 +27,10 @@ import { connectorAccountTargetKey } from "./connector-accounts.ts";
 import { createComposerConnectorSignals } from "./connectors.ts";
 import { createPendingRemoteAccessSignals } from "../remote-access.ts";
 import {
-  chatPageEffectiveImageModel$,
-  chatPageImageModelPin$,
-  chatPageImageModelSelection$,
   chatPageModelSelection$,
   chatPageSelectedModelOauthAvailable$,
   configureChatPageSelectedModel$,
-  resetChatPageImageModelSelection$,
   resetChatPageModelSelection$,
-  setChatPageImageModelSelection$,
   setChatPageModelSelection$,
 } from "./chat-page.ts";
 import {
@@ -111,34 +102,6 @@ const setModelSelection$ = command(
   },
 );
 
-const setImageModel$ = command(
-  async (
-    { get, set },
-    model: ImageModel | null,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    set(setChatPageImageModelSelection$, model);
-    const explicitDefaultActionEnabled =
-      get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false;
-    if (explicitDefaultActionEnabled) {
-      // The composer card carries an explicit "Use this for future chats" action,
-      // so picking a media model only scopes the next new chat.
-      return;
-    }
-    const userPreference = await get(userModelPreference$);
-    signal.throwIfAborted();
-    await set(
-      updateUserModelPreference$,
-      {
-        selectedModel: userPreference.selectedModel,
-        serviceTier: userPreference.serviceTier,
-        selectedImageModel: model,
-      },
-      signal,
-    );
-  },
-);
-
 const computerUseHostId$ = computed((get): string | null => {
   return get(newThreadComputerUseHostId$);
 });
@@ -193,9 +156,8 @@ function createAgentSubmitMessage(
       }
       const access = await get(newThreadComputerAccess$);
       signal.throwIfAborted();
-      const [overview, imageModelPin, connectorPreference] = await Promise.all([
+      const [overview, connectorPreference] = await Promise.all([
         get(connectorOverview$),
-        get(chatPageImageModelPin$),
         get(connector.accounts.preferenceState$),
       ]);
       signal.throwIfAborted();
@@ -246,10 +208,6 @@ function createAgentSubmitMessage(
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
           editorDocument: submission.editorDocument,
-          // Forward only an explicit per-thread pick; an untouched picker sends
-          // nothing so the new thread stays unpinned and follows the member's
-          // live default.
-          ...(imageModelPin !== null ? { imageModel: imageModelPin } : {}),
           // A forward stays on this page, so only a send that opens the new
           // thread hands the selection over to it.
           ...(options.forward
@@ -274,7 +232,6 @@ function createAgentSubmitMessage(
       );
       if (sent) {
         set(resetNewThreadComputerAccess$);
-        set(resetChatPageImageModelSelection$);
         set(resetChatPageModelSelection$);
         set(connector.accounts.resetPendingSelections$);
         set(pendingRemoteAccess.reset$);
@@ -316,11 +273,6 @@ function createAgentComposerSignalsWithDraft(
     selectedModelOauthAvailable$: chatPageSelectedModelOauthAvailable$,
     setModelSelection$,
     configureSelectedModel$: configureChatPageSelectedModel$,
-    imageModel: {
-      selectedImageModel$: chatPageImageModelSelection$,
-      effectiveImageModel$: chatPageEffectiveImageModel$,
-      setImageModel$,
-    },
     computerUseHostId$,
     cloudBrowserEnabled$,
     setComputerUseHostId$,

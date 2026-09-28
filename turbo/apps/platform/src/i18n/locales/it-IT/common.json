@@ -1790,7 +1790,6 @@
         "slideCountRange": "{{range}} diapositive"
       },
       "createWorkflow": "Crea flusso di lavoro",
-      "imageModelForThisChat": "Modello di immagini per questa chat",
       "message": "Messaggio",
       "modelForThisChat": "Modello per questa chat",
       "placeholder": "Chiedimi di automatizzare i flussi di lavoro, gestire le attività...",
@@ -5016,8 +5015,6 @@
       "picker": {
         "builtInModel": "Modello da incasso",
         "byokHelp": "Utilizza il provider configurato",
-        "categoryChat": "Chat",
-        "categoryImage": "Immagini",
         "chatModels": "Modelli chat",
         "effort": "Sforzo",
         "effortScale": {
@@ -5042,14 +5039,9 @@
           "lowest": "Costo più basso per generazione",
           "typical": "Costo tipico per generazione"
         },
-        "imageModels": "Modelli di immagini",
         "inheritDefault": "Eredita dall'impostazione predefinita dell'organizzazione",
         "loadError": "Impossibile caricare i modelli.",
         "loading": "Caricamento modelli...",
-        "menu": {
-          "backToModels": "Torna ai modelli",
-          "changeModel": "Cambia modello di {{category}}, {{model}}"
-        },
         "models": "Modelli",
         "noConfiguredModels": "Nessun modello configurato",
         "priceTiers": {
@@ -5152,6 +5144,11 @@
     "paidTools": {
       "description": "Questi strumenti consumano crediti integrati e Okou li usa automaticamente mentre lavora alle tue attività. Se disattivi uno strumento, Okou non lo userà.",
       "disabledForCreation": "{{tool}} è disattivato per te",
+      "imageModel": {
+        "description": "La generazione di immagini integrata usa questo modello per le tue attività.",
+        "label": "Modello",
+        "saveError": "Il modello di immagine non è stato salvato."
+      },
       "loadError": "Impossibile caricare le impostazioni.",
       "loading": "Caricamento delle impostazioni…",
       "openSettings": "Apri le impostazioni",
@@ -5648,7 +5645,6 @@
     "editHelp": "Scegliere credenziali diverse modifica solo questo host. I cambiamenti all’endpoint diretto cancellano la chiave host salvata; quelli che coinvolgono Cloudflare Access la conservano.",
     "empty": "Nessun host SSH configurato. Aggiungi un host per renderlo disponibile agli Agents con accesso SSH.",
     "errors": {
-      "agentUnavailable": "Questo agente non è più disponibile. Scegli un altro agente.",
       "configurationChanged": "Questo host è cambiato durante la modifica. La bozza è conservata. Controlla le impostazioni più recenti prima di applicare le modifiche.",
       "credentialChanged": "Questa credenziale è cambiata durante la modifica. La bozza è conservata. Controlla le impostazioni aggiornate e gli host interessati prima di salvare.",
       "credentialInUse": "Queste credenziali sono in uso. Assegna altre credenziali agli host o elimina prima gli host.",

@@ -13639,11 +13639,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
 
   it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
     const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PaidToolControls]: true,
-    });
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, actor, "image-generation", true);
     const queued = await api.createRun(actor, {
@@ -13685,23 +13681,20 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
 
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, actor, "video-generation", true);
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PaidToolControls]: false,
-    });
-    const rolloutOff = await api.createRun(actor, {
+    const latest = await api.createRun(actor, {
       agentId,
-      prompt: "preserve paid tool preferences while the settings UI is hidden",
+      prompt: "apply the latest paid tool preferences",
       modelProvider: "anthropic-api-key",
     });
-    const rolloutOffClaim = await api.claimRunnerJob(rolloutOff.runId);
+    const latestClaim = await api.claimRunnerJob(latest.runId);
+    expect(latestClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      '["video-generation","web-search"]',
+    );
     expect(
-      rolloutOffClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
-    ).toBe('["video-generation","web-search"]');
-    expect(
-      rolloutOffClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+      latestClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
     ).toBe("true");
-    await api.requestCancelRun(actor, rolloutOff.runId, [200]);
-    await finishCancelledRun(rolloutOff.runId, rolloutOffClaim.sandboxToken);
+    await api.requestCancelRun(actor, latest.runId, [200]);
+    await finishCancelledRun(latest.runId, latestClaim.sandboxToken);
 
     await api.createOrgModelProvider(actor, {
       type: "openai-api-key",
