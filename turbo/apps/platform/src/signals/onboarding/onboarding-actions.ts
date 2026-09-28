@@ -3,32 +3,20 @@ import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onbo
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import {
-  billingRedeemCodeContract,
-  billingUsagePackCheckoutContract,
-} from "@okouai/api-contracts/contracts/billing";
+import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { reloadAgents$ } from "../agent.ts";
 import { discardApiBootstrapResponse } from "../api-client-base.ts";
-import { authenticatedIdentity$ } from "../auth.ts";
 import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
 import { reloadUserModelPreference$ } from "../external/user-model-preference.ts";
 import { refreshOrg$ } from "../org.ts";
-import { ROUTES } from "../route-paths.ts";
-import { billingStatusAsync$ } from "../okou-page/billing.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
-import { onboardingDraft$, resetOnboardingDraft$ } from "./onboarding-state.ts";
+import { resetOnboardingDraft$ } from "./onboarding-state.ts";
 import {
   clearSourcesFirstDraft$,
   sourcesFirstDraft$,
 } from "./onboarding-sources-first-state.ts";
-import {
-  capturePaidOnboardingCheckoutCreated$,
-  capturePaidOnboardingRedirectToStripe$,
-  capturePaidOnboardingRoleConfirmed$,
-} from "../bootstrap/paid-funnel-telemetry.ts";
-import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
 
 export const completeOnboarding$ = command(
   async (
@@ -37,8 +25,6 @@ export const completeOnboarding$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const createClient = get(apiClient$);
-    const draft = get(onboardingDraft$);
-    const role = draft.choice === "workflow" ? draft.categoryId : null;
     if (redeemCode) {
       const redeemClient = createClient(billingRedeemCodeContract);
       await accept(
@@ -54,9 +40,8 @@ export const completeOnboarding$ = command(
     const onboardingClient = createClient(onboardingCompleteContract);
     const timezone =
       new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    // Only the source-first flow asks for these fields. Its industry answer can
-    // be absent after a resumed run, while its model choice still applies.
-    // The make-something flow leaves the draft empty.
+    // The industry answer can be absent after a resumed run or a prompt
+    // handoff, while the model choice still applies.
     const { industry, provider } = get(sourcesFirstDraft$);
     await accept(
       onboardingClient.complete({
@@ -80,91 +65,10 @@ export const completeOnboarding$ = command(
     set(invalidateOrgModelPolicies$);
     set(reloadUserModelPreference$);
     set(clearSourcesFirstDraft$);
-    if (role) {
-      set(capturePaidOnboardingRoleConfirmed$, role);
-    }
     // Both a prior route and the Worker's HTML prefetch can retain an empty
     // list from before the status endpoint provisioned the default agent.
     set(reloadAgents$);
     set(reloadOnboardingStatus$);
     set(resetOnboardingDraft$);
-  },
-);
-
-type OnboardingVideoRunResult = "run" | "checkout";
-
-interface OnboardingVideoCheckoutInput {
-  readonly templateId: string;
-  readonly templateSlug: string;
-}
-
-function checkoutReturnUrl(
-  input: OnboardingVideoCheckoutInput,
-  result: "pro" | "canceled",
-): string {
-  const url = new URL(ROUTES.onboardingVideoRun, window.location.origin);
-  const params = new URLSearchParams();
-  params.set("choice", "video");
-  params.set("template", input.templateId);
-  params.set("onboarding_template", input.templateSlug);
-  params.set("onboarding_billing", result);
-  if (result === "pro") {
-    params.set("onboarding_billing_session_id", "{CHECKOUT_SESSION_ID}");
-  } else {
-    params.delete("onboarding_billing_session_id");
-  }
-  url.search = params.toString();
-  return url
-    .toString()
-    .replace(
-      "onboarding_billing_session_id=%7BCHECKOUT_SESSION_ID%7D",
-      "onboarding_billing_session_id={CHECKOUT_SESSION_ID}",
-    );
-}
-
-export const prepareOnboardingVideoRun$ = command(
-  async (
-    { get, set },
-    input: OnboardingVideoCheckoutInput,
-    signal: AbortSignal,
-  ): Promise<OnboardingVideoRunResult> => {
-    const billing = await get(billingStatusAsync$);
-    signal.throwIfAborted();
-    if (billing.tier === "pro" || billing.tier === "team") {
-      return "run";
-    }
-
-    const { userId } = await get(authenticatedIdentity$);
-    signal.throwIfAborted();
-    const successUrl = checkoutReturnUrl(input, "pro");
-    const cancelUrl = checkoutReturnUrl(input, "canceled");
-    const client = get(apiClient$)(billingUsagePackCheckoutContract);
-    const result = await accept(
-      client.create({
-        body: {
-          tier: "pro",
-          memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
-          successUrl,
-          cancelUrl,
-        },
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
-    if (!("url" in result.body)) {
-      throw new Error("Onboarding checkout unexpectedly returned a preview");
-    }
-    const checkoutUrl = result.body.url;
-    set(capturePaidOnboardingCheckoutCreated$, "onboarding_video");
-    set(capturePaidOnboardingRedirectToStripe$, "onboarding_video");
-    window.location.href = checkoutUrl;
-    return "checkout";
-  },
-);
-
-export const completeOnboardingCheckoutReturn$ = command(
-  async ({ set }, sessionId: string, signal: AbortSignal): Promise<void> => {
-    await set(completePaidCheckout$, sessionId, signal);
   },
 );

@@ -20,7 +20,6 @@ import {
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
@@ -33,7 +32,6 @@ import {
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -142,25 +140,6 @@ function skillBody(
   };
 }
 
-/**
- * The import rolls out with the onboarding step and the workflows page dialog
- * it serves, so every case that exercises the service enables one of their
- * switches for its own user first.
- */
-async function setSkillImportSwitch(
-  actor: OrgActor,
-  enabled: boolean,
-  key:
-    | FeatureSwitchKey.OnboardingSourcesFirst
-    | FeatureSwitchKey.WorkflowSkillImport = FeatureSwitchKey.OnboardingSourcesFirst,
-): Promise<void> {
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-    { [key]: enabled },
-  );
-}
-
 async function bootstrapActor(): Promise<{
   readonly actor: OrgActor;
   readonly agentId: string;
@@ -189,7 +168,6 @@ async function openSession(
   readonly session: SkillImportSessionResponse;
 }> {
   const { actor, agentId } = await bootstrapActor();
-  await setSkillImportSwitch(actor, true);
 
   const response = await accept(
     sessionsClient().create({ headers: clerkHeaders(actor), body }),
@@ -213,59 +191,8 @@ describe("POST /api/skill-import/sessions", () => {
     expect(remainingMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
   });
 
-  it("refuses a caller whose onboarding and workflow import switches are off", async () => {
-    const { actor } = await bootstrapActor();
-
-    const response = await accept(
-      sessionsClient().create({
-        headers: clerkHeaders(actor),
-        body: { provider: "claudeCode" },
-      }),
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("FORBIDDEN");
-  });
-
-  it("serves a caller who only has the workflow import switch", async () => {
-    const { actor, agentId } = await bootstrapActor();
-    await setSkillImportSwitch(
-      actor,
-      true,
-      FeatureSwitchKey.WorkflowSkillImport,
-    );
-
-    const session = await accept(
-      sessionsClient().create({
-        headers: clerkHeaders(actor),
-        body: { provider: "claudeCode" },
-      }),
-      [200],
-    );
-    const created = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.body.token),
-        body: skillBody(),
-      }),
-      [201],
-    );
-
-    const listed = await accept(
-      workflowListClient().list({
-        headers: clerkHeaders(actor),
-        query: { agentId },
-      }),
-      [200],
-    );
-    expect(listed.body).toContainEqual(
-      expect.objectContaining({ id: created.body.workflowId }),
-    );
-  });
-
   it("rejects a tool the import does not write prompts for", async () => {
     const { actor } = await bootstrapActor();
-    await setSkillImportSwitch(actor, true);
     const request = setupRawAppRequest({ context, routes: skillImportRoutes });
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
@@ -285,7 +212,6 @@ describe("POST /api/skill-import/sessions", () => {
 
   it("rejects a session request that names no tool", async () => {
     const { actor } = await bootstrapActor();
-    await setSkillImportSwitch(actor, true);
     const request = setupRawAppRequest({ context, routes: skillImportRoutes });
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
@@ -504,22 +430,6 @@ describe("POST /api/skill-import/skills", () => {
     expect(response.status).toBe(400);
     expectApiError(response.body);
     expect(response.body.error.code).toBe("BINARY_FILE_UNSUPPORTED");
-  });
-
-  it("stops an open session once the switch is turned off", async () => {
-    const { actor, session } = await openSession();
-    await setSkillImportSwitch(actor, false);
-
-    const response = await accept(
-      uploadClient().upload({
-        headers: tokenHeaders(session.token),
-        body: skillBody(),
-      }),
-      [403],
-    );
-
-    expectApiError(response.body);
-    expect(response.body.error.code).toBe("FORBIDDEN");
   });
 
   it("rejects metadata that carries binary content", async () => {

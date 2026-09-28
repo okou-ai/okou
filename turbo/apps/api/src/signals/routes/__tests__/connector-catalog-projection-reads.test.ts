@@ -3,10 +3,7 @@ import { randomUUID } from "node:crypto";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
-import {
-  onboardingSourcesContract,
-  onboardingWorkflowConnectorsContract,
-} from "@okouai/api-contracts/contracts/onboarding";
+import { onboardingSourcesContract } from "@okouai/api-contracts/contracts/onboarding";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -21,7 +18,6 @@ import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorOverviewRoutes } from "../connector-overview";
 import { builtinConnectorsRoutes } from "../connectors";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
-import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
 
 const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
@@ -153,21 +149,6 @@ describe("connector catalog reads from the runtime projection", () => {
         }),
       }),
     ]);
-  });
-
-  it("lists the onboarding workflow connectors from the projection", async () => {
-    await projectionOnlyCatalog();
-    const client = setupApp({
-      context,
-      routes: onboardingWorkflowConnectorsRoutes,
-    })(onboardingWorkflowConnectorsContract);
-    const before = await accept(client.list({ headers }), [200]);
-    expect(before.body.connectors.length).toBeGreaterThan(0);
-
-    await corruptApiTestConnectorCatalogActiveSnapshotPayload();
-
-    const after = await accept(client.list({ headers }), [200]);
-    expect(after.body).toStrictEqual(before.body);
   });
 
   it("falls back to the complete catalog when a projection row is missing", async () => {

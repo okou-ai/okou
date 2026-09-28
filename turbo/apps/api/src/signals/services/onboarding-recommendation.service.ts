@@ -12,11 +12,7 @@ import {
   type OnboardingRecommendationConnectorSlug,
   type OnboardingRecommendationStatus,
 } from "@okouai/api-contracts/contracts/onboarding";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { command, computed } from "ccstate";
 import { and, eq, inArray, lt } from "drizzle-orm";
@@ -570,14 +566,6 @@ async function runJob(
     job.userId,
   );
   signal.throwIfAborted();
-  if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.OnboardingSourcesFirst,
-      featureSwitchContext,
-    )
-  ) {
-    throw new Error("Onboarding recommendations are not enabled");
-  }
   const sources = await loadConnectedSources();
   signal.throwIfAborted();
   if (sources.length === 0) {

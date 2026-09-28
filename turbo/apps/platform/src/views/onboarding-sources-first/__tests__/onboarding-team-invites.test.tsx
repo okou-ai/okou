@@ -1,5 +1,4 @@
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -19,10 +18,6 @@ import {
 } from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
-
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
 
 const TEAM_QUESTION = "Make Okou useful to your whole team";
 const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
@@ -57,7 +52,6 @@ async function openTeamStep(): Promise<void> {
     context,
     locale: "en-US",
     path: ROUTES.onboardingTeam,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(

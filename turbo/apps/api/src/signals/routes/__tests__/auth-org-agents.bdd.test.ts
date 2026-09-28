@@ -674,9 +674,10 @@ describe("ORG-03 onboarding status mapping", () => {
       defaultAgentMetadata: null,
     });
 
+    // A new member has their own source-first onboarding ahead of them.
     const memberStatus = await api.readOnboardingStatus(member);
     expect(memberStatus).toStrictEqual({
-      needsOnboarding: false,
+      needsOnboarding: true,
       onboardingComplete: false,
       isAdmin: false,
       hasOrg: true,

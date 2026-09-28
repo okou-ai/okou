@@ -7,7 +7,6 @@ import {
   teamsConnectContract,
   type TeamsConnectStatus,
 } from "@okouai/api-contracts/contracts/teams-connect";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -26,10 +25,6 @@ import {
 } from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
-
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
 
 const NOW = Date.parse("2026-09-21T10:00:00.000Z");
 const SLACK_INSTALL_URL = "https://slack.example.test/oauth/install";
@@ -79,7 +74,6 @@ function openChatChannelStep(): Promise<void> {
     context,
     locale: "en-US",
     path: ROUTES.onboardingSlack,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 }
 
@@ -203,7 +197,6 @@ test("A protected worker preview keeps access on its matching OAuth start URL", 
     locale: "en-US",
     host: "pr-431-app-okou-app-preview.vm0.workers.dev",
     path: `${ROUTES.onboardingSlack}?x-vercel-protection-bypass=preview-secret`,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await waitFor(() => {

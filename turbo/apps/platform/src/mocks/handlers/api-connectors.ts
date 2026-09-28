@@ -22,9 +22,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
-  ONBOARDING_WORKFLOW_CONNECTOR_SLUGS,
   onboardingSourcesContract,
-  onboardingWorkflowConnectorsContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import {
   builtinConnectorExternalCodeSessionContract,
@@ -522,17 +520,6 @@ export const apiConnectorsHandlers = [
           ? [connectorCatalogConnectItem(connector)]
           : [];
       }),
-    });
-  }),
-
-  mockApi(onboardingWorkflowConnectorsContract.list, ({ respond }) => {
-    const workflowSlugs = new Set<string>(ONBOARDING_WORKFLOW_CONNECTOR_SLUGS);
-    return respond(200, {
-      connectors: mockConnectorCatalogStatus().flatMap(
-        ({ slug, label, icon }) => {
-          return workflowSlugs.has(slug) ? [{ slug, label, icon }] : [];
-        },
-      ),
     });
   }),
 
