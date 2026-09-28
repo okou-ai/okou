@@ -218,7 +218,11 @@ impl R2HttpClient {
                 segments.push(segment);
             }
         }
-        if !query.is_empty() {
+        if query == [("uploads", "")] {
+            // The SDK serializes this S3 subresource as `?uploads`, not
+            // `?uploads=`. Both canonicalize as `uploads=` for SigV4.
+            url.set_query(Some("uploads"));
+        } else if !query.is_empty() {
             let mut pairs = url.query_pairs_mut();
             for (name, value) in query {
                 pairs.append_pair(name, value);
@@ -249,7 +253,10 @@ impl R2HttpClient {
             // whole-request deadline: an active transfer can take longer.
             builder = builder
                 .header("x-amz-sdk-checksum-algorithm", "CRC32")
-                .header("x-amz-checksum-crc32", checksum);
+                .header("x-amz-checksum-crc32", checksum)
+                // The generated UploadPart serializer supplies this default
+                // for the byte-stream body, unlike the other five operations.
+                .header(CONTENT_TYPE, "application/octet-stream");
         }
         if let Some(content_type) = content_type {
             builder = builder.header(CONTENT_TYPE, content_type);
@@ -577,7 +584,7 @@ impl R2HttpClient {
             .execute(
                 Method::GET,
                 key,
-                &[],
+                &[("x-id", "GetObject")],
                 Bytes::new(),
                 None,
                 ExpectedBody::GetMissingXml,
@@ -662,7 +669,11 @@ impl R2HttpClient {
             .execute(
                 Method::PUT,
                 key,
-                &[("partNumber", &pn), ("uploadId", upload_id)],
+                &[
+                    ("x-id", "UploadPart"),
+                    ("partNumber", &pn),
+                    ("uploadId", upload_id),
+                ],
                 chunk,
                 None,
                 ExpectedBody::Raw,
@@ -698,11 +709,12 @@ impl R2HttpClient {
             "<CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">",
         );
         for part in parts {
-            xml.push_str("<Part><PartNumber>");
-            xml.push_str(&part.number.to_string());
-            xml.push_str("</PartNumber><ETag>");
+            // Match the generated CompletedPart serializer's element order.
+            xml.push_str("<Part><ETag>");
             xml.push_str(&xml_escape(&part.etag));
-            xml.push_str("</ETag></Part>");
+            xml.push_str("</ETag><PartNumber>");
+            xml.push_str(&part.number.to_string());
+            xml.push_str("</PartNumber></Part>");
         }
         xml.push_str("</CompleteMultipartUpload>");
         let response = self
@@ -728,7 +740,7 @@ impl R2HttpClient {
             .execute(
                 Method::DELETE,
                 key,
-                &[("uploadId", upload_id)],
+                &[("x-id", "AbortMultipartUpload"), ("uploadId", upload_id)],
                 Bytes::new(),
                 None,
                 ExpectedBody::Raw,

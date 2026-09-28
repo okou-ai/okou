@@ -584,6 +584,126 @@ async fn unwrapped_error_metadata_retries_even_without_error_root_but_is_not_a_m
     wrong_root.assert_calls_async(1).await;
 }
 
+/// Capture every byte of each small synthetic request before replying, so
+/// PUT and Complete cannot accidentally pass by racing an early server close.
+async fn six_operation_wire_server() -> (Url, tokio::task::JoinHandle<Vec<(String, String)>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = Url::parse(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+    let replies = [
+        mock_reply("404 Not Found", "", ""),
+        mock_reply("404 Not Found", "<Error><Code>NoSuchKey</Code></Error>", ""),
+        mock_reply(
+            "200 OK",
+            "<InitiateMultipartUploadResult><UploadId>id</UploadId></InitiateMultipartUploadResult>",
+            "",
+        ),
+        mock_reply("200 OK", "", "ETag: tag\r\n"),
+        mock_reply(
+            "200 OK",
+            "<CompleteMultipartUploadResult></CompleteMultipartUploadResult>",
+            "",
+        ),
+        mock_reply("204 No Content", "", ""),
+    ];
+    let handle = tokio::spawn(async move {
+        let mut requests = Vec::new();
+        for reply in replies {
+            let (mut connection, _) =
+                tokio::time::timeout(Duration::from_secs(5), listener.accept())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            let mut received = Vec::new();
+            let header_end = loop {
+                let mut buf = [0u8; 4096];
+                let n = connection.read(&mut buf).await.unwrap();
+                assert!(n > 0);
+                received.extend_from_slice(&buf[..n]);
+                if let Some(i) = received.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break i + 4;
+                }
+            };
+            let headers = String::from_utf8(received[..header_end].to_vec()).unwrap();
+            let len = headers
+                .lines()
+                .find(|line| line.to_ascii_lowercase().starts_with("content-length:"))
+                .and_then(|line| line.split_once(':'))
+                .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            while received.len() - header_end < len {
+                let mut buf = [0u8; 4096];
+                let n = connection.read(&mut buf).await.unwrap();
+                assert!(n > 0);
+                received.extend_from_slice(&buf[..n]);
+            }
+            assert!(headers.to_ascii_lowercase().contains("authorization:"));
+            let body = String::from_utf8(received[header_end..header_end + len].to_vec()).unwrap();
+            requests.push((headers, body));
+            connection.write_all(reply.as_bytes()).await.unwrap();
+            connection.shutdown().await.unwrap();
+        }
+        requests
+    });
+    (url, handle)
+}
+
+#[tokio::test]
+async fn all_six_operations_match_pinned_sdk_request_lines_and_content_types() {
+    let (url, server) = six_operation_wire_server().await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    let key = "runner-templates/x.tar.zst";
+    assert!(!c.head(key).await.unwrap());
+    assert!(c.get(key).await.unwrap().is_none());
+    assert_eq!(c.create_multipart(key).await.unwrap(), "id");
+    assert_eq!(
+        c.upload_part(key, "id", 1, Bytes::from_static(b"abc"))
+            .await
+            .unwrap()
+            .etag,
+        "tag"
+    );
+    c.complete_multipart(
+        key,
+        "id",
+        &[Part {
+            number: 1,
+            etag: "tag".into(),
+        }],
+    )
+    .await
+    .unwrap();
+    c.abort_multipart(key, "id").await.unwrap();
+    let requests = server.await.unwrap();
+    let lines: Vec<_> = requests
+        .iter()
+        .map(|(headers, _)| headers.lines().next().unwrap())
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "HEAD /test-bucket/runner-templates/x.tar.zst HTTP/1.1",
+            "GET /test-bucket/runner-templates/x.tar.zst?x-id=GetObject HTTP/1.1",
+            "POST /test-bucket/runner-templates/x.tar.zst?uploads HTTP/1.1",
+            "PUT /test-bucket/runner-templates/x.tar.zst?x-id=UploadPart&partNumber=1&uploadId=id HTTP/1.1",
+            "POST /test-bucket/runner-templates/x.tar.zst?uploadId=id HTTP/1.1",
+            "DELETE /test-bucket/runner-templates/x.tar.zst?x-id=AbortMultipartUpload&uploadId=id HTTP/1.1",
+        ]
+    );
+    for (i, (headers, _)) in requests.iter().enumerate() {
+        let headers = headers.to_ascii_lowercase();
+        match i {
+            3 => assert!(headers.contains("\r\ncontent-type: application/octet-stream\r\n")),
+            4 => assert!(headers.contains("\r\ncontent-type: application/xml\r\n")),
+            _ => assert!(!headers.contains("\r\ncontent-type:")),
+        }
+    }
+    assert_eq!(requests[3].1, "abc");
+    assert_eq!(
+        requests[4].1,
+        "<CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Part><ETag>tag</ETag><PartNumber>1</PartNumber></Part></CompleteMultipartUpload>"
+    );
+}
+
 #[tokio::test]
 async fn multipart_wire_protocol_preserves_query_body_and_etag() {
     let server = MockServer::start_async().await;
