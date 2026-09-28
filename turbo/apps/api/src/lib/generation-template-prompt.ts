@@ -41,9 +41,12 @@ interface PresentationGenerationTemplateInput {
  * readable; a selection that still reaches a send is ignored and the run
  * proceeds without template guidance.
  */
-interface RetiredGenerationTemplateInput {
-  readonly type: "video" | "intro-video";
-}
+type RetiredGenerationTemplateInput =
+  | {
+      readonly type: "video";
+      readonly selection: { readonly stylePresetId: string };
+    }
+  | { readonly type: "intro-video" };
 
 interface IllustrationGenerationTemplateInput {
   readonly type: "illustration";
@@ -168,12 +171,9 @@ export function isRetiredGenerationTemplate(
 }
 
 export function buildGenerationTemplatesPrompt(
-  selectedTemplates: readonly GenerationTemplateInput[],
+  generationTemplates: readonly GenerationTemplateInput[],
   options: GenerationTemplatePromptOptions = {},
 ): GenerationTemplatePromptResult {
-  const generationTemplates = selectedTemplates.filter((template) => {
-    return !isRetiredGenerationTemplate(template);
-  });
   if (generationTemplates.length === 0) {
     return { status: "resolved", prompt: "" };
   }

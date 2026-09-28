@@ -564,6 +564,94 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, source.runId);
   }, 90_000);
 
+  it("ignores retired video and intro-video templates and keeps live template numbering", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
+    if (!style) {
+      throw new Error("Expected a registered illustration template");
+    }
+    const userMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Animate " },
+        {
+          type: "template",
+          titleSnapshot: "Epic grandeur",
+          template: {
+            type: "video",
+            selection: { stylePresetId: "video-template:epic-grandeur" },
+          },
+        },
+        { type: "text", text: " and introduce " },
+        {
+          type: "template",
+          titleSnapshot: "Intro video",
+          template: { type: "intro-video", selection: {} },
+        },
+        { type: "text", text: " then draw with " },
+        {
+          type: "template",
+          titleSnapshot: style.title,
+          template: {
+            type: "illustration",
+            selection: { illustrationStyleId: style.illustrationStyleId },
+          },
+        },
+      ],
+    };
+
+    const sent = await sendChatRun(actor, {
+      agentId,
+      prompt: "legacy fallback",
+      userMessage,
+    });
+    const run = await api.readRun(actor, sent.runId);
+    expect(run.prompt).toContain(
+      `Animate  and introduce  then draw with [Template #1: ${style.title} (illustration)]`,
+    );
+    expect(run.prompt).not.toContain("(video)");
+
+    const systemPrompt = run.appendSystemPrompt ?? "";
+    expect(systemPrompt).toContain("## Template #1 (illustration)");
+    expect(systemPrompt).not.toContain("## Template #2");
+    expect(systemPrompt).not.toContain("(video)");
+    expect(systemPrompt).toContain(style.illustrationStyleId);
+
+    await cancelChatRun(actor, sent.runId);
+  });
+
+  it("runs a message whose only template is retired without template guidance", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const sent = await sendChatRun(actor, {
+      agentId,
+      prompt: "legacy fallback",
+      userMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text: "Make a talking avatar " },
+          {
+            type: "template",
+            titleSnapshot: "Avatar",
+            template: {
+              type: "video",
+              selection: { stylePresetId: "avatar-template:81" },
+            },
+          },
+        ],
+      },
+    });
+    const run = await api.readRun(actor, sent.runId);
+    expect(run.prompt).toContain("Make a talking avatar");
+    expect(run.prompt).not.toContain("[Template #");
+    expect(run.appendSystemPrompt ?? "").not.toContain("# Inline Templates");
+
+    await cancelChatRun(actor, sent.runId);
+  });
+
   it("projects multiple inline templates into one ordered prompt and one shared context", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();

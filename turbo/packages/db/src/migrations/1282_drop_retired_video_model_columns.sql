@@ -1,4 +1,3 @@
-ALTER TABLE "agent_runs" DROP CONSTRAINT "agent_runs_metadata_presence_check";--> statement-breakpoint
 -- Retired video_model_updated events replay as no-ops; delete them so the
 -- enum value can be removed. Cursor clients whose last event is deleted get 410
 -- and reload the snapshot.
@@ -7,10 +6,12 @@ ALTER TYPE "public"."chat_thread_event_kind" RENAME TO "chat_thread_event_kind_r
 CREATE TYPE "public"."chat_thread_event_kind" AS ENUM('created', 'renamed', 'deleted', 'pinned', 'unpinned', 'model_selection_updated', 'service_tier_updated', 'computer_use_host_updated', 'image_model_updated', 'sort_touched', 'archived', 'unarchived');--> statement-breakpoint
 ALTER TABLE "chat_thread_events" ALTER COLUMN "kind" SET DATA TYPE "public"."chat_thread_event_kind" USING "kind"::text::"public"."chat_thread_event_kind";--> statement-breakpoint
 DROP TYPE "public"."chat_thread_event_kind_retired";--> statement-breakpoint
-ALTER TABLE "agent_runs" DROP COLUMN "selected_video_model";--> statement-breakpoint
 ALTER TABLE "chat_thread_events" DROP COLUMN "selected_video_model";--> statement-breakpoint
 ALTER TABLE "chat_threads" DROP COLUMN "selected_video_model";--> statement-breakpoint
 ALTER TABLE "org_members_metadata" DROP COLUMN "selected_video_model";--> statement-breakpoint
+-- agent_runs is changed last so its ACCESS EXCLUSIVE lock is held briefly.
+ALTER TABLE "agent_runs" DROP CONSTRAINT "agent_runs_metadata_presence_check";--> statement-breakpoint
+ALTER TABLE "agent_runs" DROP COLUMN "selected_video_model";--> statement-breakpoint
 -- Validated without an ACCESS EXCLUSIVE lock by the next migration.
 ALTER TABLE "agent_runs" ADD CONSTRAINT "agent_runs_metadata_presence_check" CHECK ((
           (

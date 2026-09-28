@@ -13,6 +13,7 @@ import {
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
+import { isRetiredGenerationTemplate } from "../../lib/generation-template-prompt";
 
 interface UserMessageProjection {
   readonly agentPrompt: string;
@@ -384,6 +385,11 @@ export function projectUserMessage(
     readonly titleSnapshot: string;
     readonly template: GenerationTemplateRequest;
   }): string => {
+    // Retired selections in stored messages are ignored: no marker, no
+    // guidance, and no usage identity.
+    if (isRetiredGenerationTemplate(part.template)) {
+      return "";
+    }
     templates.push(part.template);
     primaryTemplate ??= part.template;
     return inlineGenerationTemplatePrompt(part, templates.length);
