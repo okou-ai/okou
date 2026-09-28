@@ -1,3 +1,4 @@
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { http, HttpResponse } from "msw";
 import { promises as fs } from "node:fs";
 import { server } from "../mocks/server";
@@ -393,37 +394,6 @@ function piEnv(runIdEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 function occurrences(value: string, needle: string): number {
   return value.split(needle).length - 1;
-}
-
-function prepareDeepSeekModel(
-  session: MemoryPiSession,
-  baseUrl: string,
-  v41?: { provider: "deepseek" | "openrouter"; model: string },
-): void {
-  session.prepareModelTurn({
-    id: v41?.model ?? "deepseek-v4-flash",
-    name: "DeepSeek V4 Flash",
-    api: "openai-responses",
-    provider: v41?.provider ?? "deepseek",
-    baseUrl,
-    reasoning: true,
-    thinkingLevelMap: {
-      minimal: null,
-      low: null,
-      medium: null,
-      high: "high",
-      max: "max",
-    },
-    input: ["text"],
-    cost: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-    },
-    contextWindow: 1_000_000,
-    maxTokens: 384_000,
-  });
 }
 
 async function startSandboxHost(args: {
@@ -1405,8 +1375,9 @@ describe("sandbox Pi agent loop", () => {
     const compactionSummary = "official compacted context summary";
     const finalAnswer = "sandbox answer after compaction";
     const provider = await ProviderHarness.start();
-    const session = MemoryPiSession.create({ cwd: root, id: SESSION_ID });
-    prepareDeepSeekModel(session, provider.baseUrl);
+    const session = SessionManager.create(root, root, { id: SESSION_ID });
+    session.appendModelChange("deepseek", "deepseek-v4-flash");
+    session.appendThinkingLevelChange("high");
     session.appendMessage({ role: "user", content: priorPrompt, timestamp: 1 });
     session.appendMessage({
       role: "assistant",
@@ -1464,10 +1435,11 @@ describe("sandbox Pi agent loop", () => {
     let host: RpcHost | undefined;
 
     try {
-      const h0 = session.toJsonl();
+      const sessionFile = session.getSessionFile();
+      if (!sessionFile) throw new Error("Missing compaction session file");
       host = await startSandboxHost({
         root,
-        restoredJsonl: h0,
+        restoredJsonl: await readFile(sessionFile, "utf8"),
         providerBaseUrl: provider.baseUrl,
         model: "openrouter-terra",
         serviceTier: "priority",

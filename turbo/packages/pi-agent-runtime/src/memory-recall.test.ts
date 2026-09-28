@@ -322,7 +322,6 @@ async function readSummaryLines(
   lineCount: number,
 ): Promise<string> {
   const tool = createPiMemoryTools({
-    mode: "sandbox",
     selection: {
       status: "no-content",
       memoryStorageId: "memory-storage",
