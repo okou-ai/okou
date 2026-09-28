@@ -1976,6 +1976,20 @@ const connectedTeamsCardAction$ = command(
         replyText: "Please choose a model.",
       };
     }
+    const routeConversationId = stringValue(
+      args.activity.value,
+      TEAMS_MODEL_PICKER_CONVERSATION_KEY,
+    );
+    const routeThreadId = stringValue(
+      args.activity.value,
+      TEAMS_MODEL_PICKER_THREAD_KEY,
+    );
+    if (!routeConversationId || !routeThreadId) {
+      return {
+        kind: "notice",
+        replyText: "This model picker is out of date. Send `/model` again.",
+      };
+    }
 
     const picker = await set(
       teamsModelPickerState$,
@@ -1993,23 +2007,12 @@ const connectedTeamsCardAction$ = command(
         replyText: "You don't have access to that model.",
       };
     }
-    const routeConversationId = stringValue(
-      args.activity.value,
-      TEAMS_MODEL_PICKER_CONVERSATION_KEY,
-    );
-    const routeThreadId = stringValue(
-      args.activity.value,
-      TEAMS_MODEL_PICKER_THREAD_KEY,
-    );
-    const chatThreadId =
-      routeConversationId && routeThreadId
-        ? await findTeamsRoutedChatThreadId(args.db, {
-            connectionId: args.connection.id,
-            conversationId: routeConversationId,
-            threadId: routeThreadId,
-            userId: args.connection.userId,
-          })
-        : undefined;
+    const chatThreadId = await findTeamsRoutedChatThreadId(args.db, {
+      connectionId: args.connection.id,
+      conversationId: routeConversationId,
+      threadId: routeThreadId,
+      userId: args.connection.userId,
+    });
     signal.throwIfAborted();
     const threadModel = await set(
       updateIntegrationChatThreadModel$,

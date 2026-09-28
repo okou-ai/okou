@@ -56,9 +56,10 @@ path, so the thread row and its `model_selection_updated` and
 `service_tier_updated` events are written exactly as a web switch writes them.
 A context without a routed chat thread changes only the member default, and the
 next new thread initializes from it. This is code-only. During the rollout an
-old API instance only updates the member default. Teams model cards sent before
-this change carry no route key, so submitting them only updates the member
-default.
+old API instance only updates the member default. Teams model cards now carry
+the route key of the conversation where `/model` was sent; a card posted before
+this change has none and is answered with a notice to send `/model` again,
+without changing any model.
 
 **Chat send response `status` removed.** The `POST /api/chat/events` 201
 response contract no longer declares the optional `status` field. Only APIs

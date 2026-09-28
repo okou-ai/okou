@@ -2170,6 +2170,8 @@ describe("POST /api/webhooks/teams/bot", () => {
         value: {
           okouTeamsAction: "switch_model",
           selectedModel: "claude-fable-5-1",
+          routeConversationId: `a:personal-${fixture.teamsUserId}`,
+          routeThreadId: "direct-message:main",
         },
       }),
       token: teamsToken(),
@@ -2415,10 +2417,12 @@ describe("POST /api/webhooks/teams/bot", () => {
           id: activityIds.switchModel,
           text: "",
           value: {
-            // A card without route keys (sent before they existed)
-            // changes only the member default.
+            // A card sent from the main DM leaves this reply thread's
+            // model unchanged and only updates the member default.
             okouTeamsAction: "switch_model",
             selectedModel: "gpt-6-astra",
+            routeConversationId: `a:personal-${fixture.teamsUserId}`,
+            routeThreadId: "direct-message:main",
           },
         }),
         token: teamsToken(),
@@ -2572,6 +2576,35 @@ describe("POST /api/webhooks/teams/bot", () => {
     const switchedClaim = await runsApi.claimRunnerJob(switchedRunId);
     expect(switchedClaim.modelUsageProvider).toBe("gpt-6-astra");
     await runsApi.requestCancelRun(actor, switchedRunId, [200]);
+  });
+
+  it("asks for a new /model card when the submitted card has no route keys", async () => {
+    const { fixture, actor, outboundRequests } =
+      await setupConnectedTeamsBotActor();
+    const before = await userConfigApi.readModelPreference(actor);
+
+    const response = await postTeamsActivity({
+      activity: teamsPersonalMessageActivity({
+        fixture,
+        id: teamsFixtureExternalId(fixture, "activity-stale-model-card"),
+        text: "",
+        value: {
+          okouTeamsAction: "switch_model",
+          selectedModel: "claude-fable-5-1",
+        },
+      }),
+      token: teamsToken(),
+    });
+    expect(response.status).toBe(200);
+    await readTeamsBotResponseAndFlush(response);
+
+    expect(outboundRequests.at(-1)?.body).toMatchObject({
+      type: "message",
+      text: expect.stringContaining("This model picker is out of date"),
+    });
+    await expect(userConfigApi.readModelPreference(actor)).resolves.toEqual(
+      before,
+    );
   });
 
   describe("queued runs for a connected Teams bot", () => {
