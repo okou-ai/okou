@@ -20,21 +20,18 @@ Final contract step of the video retirement (#37242, #37256).
   records are unaffected: `chat_events` usage payloads never carried the field,
   and the video model catalog stays for historical display.
 
-Gates, all required before this change is released:
+Release decision: the owner accepted shipping this without first raising the
+Web client floor and without waiting for #37256 to be released on its own.
 
-- The #37256 API (`fbaf632f1d052fd3e956be3434b0bd472c323292`) is the first API
-  that neither reads nor writes the columns. It must be the production API,
-  and no rollback target may predate it. The migration-path floor below is
-  stricter, because the migration's main commit descends from #37256, so it
-  also enforces this.
-- The Web client floor must be raised to the first App build containing
-  #37256. App 0.981.0 still requires `selectedVideoModel` when it parses
-  IndexedDB thread events and snapshots and the R2 snapshot archive, so it
-  would fail every thread-list sync once the field is gone. That App build is
-  not live yet; the floor raise is added to this change before merge.
+- App 0.981.0 (the current floor) still requires `selectedVideoModel` when it
+  parses IndexedDB thread events and snapshots and the R2 snapshot archive, so
+  its thread-list sync fails once the field is gone. This is accepted: after
+  the App from this release is promoted, a reload loads a build that does not
+  need the field. Between API and App promotion, a reload still loads 0.981.0.
 - Sandbox CLIs from before #37256 also require the field in the snapshot
-  archive. They drain about two hours after the #37256 API is promoted, which
-  precedes this release.
+  archive; their chat thread reads fail until they drain (about two hours).
+- If #37256 ships in the same release, the previous API still reads the
+  columns explicitly as well; it falls into the same `42703` window below.
 
 Old and new versions during deploy:
 
@@ -46,8 +43,8 @@ Old and new versions during deploy:
 - Previous API with the new App or CLI: the previous API still sends
   `selectedVideoModel: null`, which the object schemas strip. It writes no
   `video_model_updated` event.
-- New API with the floor-level App: that App treats the field as optional and
-  never sees the removed kind.
+- New API with App 0.981.0: see the release decision above; the tab recovers
+  on reload once the new App is promoted.
 - Cached state: a cached snapshot that still has `selectedVideoModel` parses
   and the key is stripped. A browser that cached a `video_model_updated` event
   fails its strict IndexedDB read. The existing degraded path then loads the
