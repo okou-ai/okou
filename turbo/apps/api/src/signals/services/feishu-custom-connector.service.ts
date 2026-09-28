@@ -91,7 +91,7 @@ type FeishuCustomConnectorReconciliation =
       readonly connector: ReconciledFeishuCustomConnector;
     };
 
-const FEISHU_SKILL_MARKDOWN = `Use Feishu OpenAPI as the connected user to find coworkers, collaborate in chats, work with cloud content, manage calendars, and organize tasks.
+const FEISHU_SKILL_MARKDOWN = `Use Feishu OpenAPI as the connected user to find coworkers, work with cloud content, manage calendars, and organize tasks.
 
 ## Authentication and access
 
@@ -104,8 +104,8 @@ Every request runs with the connected user's identity. An operation succeeds onl
 ## Available capabilities
 
 - Identity and people: get the connected user's profile with \`GET /authen/v1/user_info\`; read basic contact and user information; resolve supplied email addresses or mobile numbers to user IDs; and search visible coworkers with \`GET /search/v1/user\`.
-- Chats and members: list, inspect, create, and update chats through \`/im/v1/chats\`; list chat members and add or remove members when the connected user is allowed to do so.
-- Messages: read visible direct and group messages through \`/im/v1/messages\`, send messages as the connected user, read or change message reactions, and access message images or files. A message's \`content\` field is a JSON-encoded string, not an embedded JSON object.
+- Chats and members: list and inspect chats through \`/im/v1/chats\` and list chat members.
+- Messages: this connection cannot read chat history or send messages as the connected user. For messaging, use the Feishu bot integration instead (\`okou feishu message\`, \`okou feishu upload-file\`, and \`okou feishu download-file\`), which acts as the Okou bot. The connected user can still read or change reactions on a known message and access message images or files.
 - Drive and files: inspect and manage cloud-space files and permissions, upload or download files, import local files as Feishu cloud documents, export supported cloud documents, and upload or download document media.
 - Docs: create, read, and edit Docs and document blocks under \`/docx/v1/documents\`; convert Markdown or HTML into document blocks; and read, add, reply to, update, resolve, or delete comments as allowed by the comment APIs.
 - Sheets, Base, and Wiki: read and edit spreadsheets under \`/sheets/v3/spreadsheets\`, multidimensional tables under \`/bitable/v1/apps\`, and knowledge spaces or nodes under \`/wiki/v2\`.
@@ -134,38 +134,6 @@ curl -sS -G "https://open.feishu.cn/open-apis/search/v1/user" \
 
 The user search endpoint cannot find external-tenant or departed users. Keep the returned ID type explicit when passing a result to another API.
 
-### Read chat history
-
-~~~bash
-curl -sS -G "https://open.feishu.cn/open-apis/im/v1/messages" \
-  --data-urlencode "container_id_type=chat" \
-  --data-urlencode "container_id=oc_xxx" \
-  --data-urlencode "page_size=50"
-~~~
-
-### Send a text message as the connected user
-
-Write this request to \`/tmp/feishu_message.json\`:
-
-~~~json
-{
-  "receive_id": "oc_xxx",
-  "msg_type": "text",
-  "content": "{\\"text\\":\\"Hello\\"}"
-}
-~~~
-
-Then send it:
-
-~~~bash
-curl -sS -X POST \
-  "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id" \
-  -H "Content-Type: application/json; charset=utf-8" \
-  -d @/tmp/feishu_message.json
-~~~
-
-Use \`receive_id_type=open_id\` with an \`ou_xxx\` ID for a direct message.
-
 ### Search visible cloud documents
 
 ~~~bash
@@ -182,7 +150,7 @@ curl -sS -X POST \
 3. Use \`Content-Type: application/json; charset=utf-8\` for JSON requests and multipart form data for uploads. For import and export jobs, follow the documented upload/create-job/poll/download sequence.
 4. HTTP success does not mean Feishu success. Check that the response \`code\` is \`0\` before using \`data\`; otherwise surface the Feishu \`code\` and \`msg\`.
 5. Follow \`has_more\` and \`page_token\` until enough results have been collected. Respect rate limits and use bounded retries for throttling or transient server errors.
-6. Before sending messages, inviting or removing chat members, changing permissions, modifying shared content, deleting resources, or making broad calendar/task changes, summarize the intended target and impact and obtain confirmation when the user has not already made that intent explicit.
+6. Before changing permissions, modifying shared content, deleting resources, or making broad calendar/task changes, summarize the intended target and impact and obtain confirmation when the user has not already made that intent explicit.
 7. Consult the current Feishu API reference when an endpoint, payload, supported token type, or resource-specific limitation is uncertain.
 `;
 
@@ -198,7 +166,9 @@ function feishuSkillMarkdown(platform: FeishuPlatform): string {
   return FEISHU_SKILL_MARKDOWN.replaceAll(
     "Feishu",
     FEISHU_PLATFORMS[platform].name,
-  ).replaceAll("https://open.feishu.cn", FEISHU_PLATFORMS[platform].apiOrigin);
+  )
+    .replaceAll("https://open.feishu.cn", FEISHU_PLATFORMS[platform].apiOrigin)
+    .replaceAll("okou feishu ", `okou ${platform} `);
 }
 
 function desiredConnectorDefinition(installation: FeishuConnectorInstallation) {
