@@ -224,6 +224,41 @@ test("An open artifact sidebar reuses one pane", async () => {
   expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
 });
 
+test("A public hosted site header links to its address", async () => {
+  const siteUrl = "https://reference-site.sites.vm7.io";
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`[Reference site](${siteUrl})`)],
+    artifacts: [
+      artifactFile("reference-site.html", {
+        id: "reference-site",
+        contentType: "text/html",
+        url: publicArtifactUrl("reference-site.html"),
+        aliasUrl: siteUrl,
+        artifactKind: "hosted-site",
+      }),
+    ],
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  const expectSiteLink = (surface: HTMLElement) => {
+    const link = within(surface).getByTestId("artifact-subtitle-link");
+    expect(link).toHaveTextContent("reference-site.sites.vm7.io");
+    expect(link).toHaveAttribute("href", `${siteUrl}/`);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(within(surface).getByText(/Updated at /)).toBeVisible();
+    expect(within(surface).queryByText(/Hosted site/)).toBeNull();
+    expect(within(surface).queryByText(/1 kB/)).toBeNull();
+  };
+
+  click(await findNamedLink("Reference site"));
+  expectSiteLink(await screen.findByTestId("attachment-lightbox"));
+
+  click(await findNamedButton("Open in split view"));
+  expectSiteLink(await screen.findByTestId("artifact-sidebar"));
+});
+
 test("Private attachment access stays scoped to the chat that owns it", async () => {
   const leftFileId = "left-shared-private-image";
   const rightFileId = "right-shared-private-image";

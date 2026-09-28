@@ -572,7 +572,8 @@
       "video": "Video"
     },
     "metadata": {
-      "generated": "Generated {{date}}"
+      "generated": "Generated {{date}}",
+      "updated": "Updated at {{date}}"
     },
     "preview": {
       "audioLabel": "Audio preview for {{filename}}",

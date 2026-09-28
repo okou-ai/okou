@@ -55,8 +55,11 @@ import {
 } from "./artifact-actions.tsx";
 import {
   artifactFallbackSubtitle,
+  artifactSubtitleLink,
   artifactTitleSubtitle,
+  type ArtifactSubtitleLink,
 } from "./artifact-display.ts";
+import { ArtifactSubtitle } from "./artifact-subtitle.tsx";
 import {
   currentEventImageArtifactNavigation,
   equalEventImageGroups,
@@ -287,6 +290,7 @@ function ArtifactSidebarResolvedContent({
         kind={display.kind}
         artifactKind={display.artifactKind}
         subtitle={display.subtitle}
+        subtitleLink={display.subtitleLink}
         shareAvailable={display.shareAvailable}
         syncTarget={syncTarget}
         url={display.url}
@@ -319,6 +323,7 @@ interface ArtifactDisplay {
   kind: ArtifactKindForBody;
   filename: string;
   subtitle: string;
+  subtitleLink: ArtifactSubtitleLink | null;
   shareAvailable: boolean;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
 }
@@ -389,6 +394,7 @@ function resolveArtifactDisplay(
       kind: ref.kind,
       filename: item.file.filename,
       subtitle: artifactTitleSubtitle(ref.kind, item.file),
+      subtitleLink: artifactSubtitleLink(ref.kind, item.file),
       shareAvailable: ref.shareAvailable ?? true,
       artifactKind: item.file.artifactKind,
     };
@@ -398,6 +404,7 @@ function resolveArtifactDisplay(
     kind: ref.kind,
     filename: ref.filename,
     subtitle: artifactFallbackSubtitle(ref.kind, ref.filename),
+    subtitleLink: null,
     shareAvailable: ref.shareAvailable ?? true,
   };
 }
@@ -408,6 +415,7 @@ function ArtifactSidebarHeader({
   kind,
   artifactKind,
   subtitle,
+  subtitleLink,
   shareAvailable,
   syncTarget,
   url,
@@ -421,6 +429,7 @@ function ArtifactSidebarHeader({
   kind?: ArtifactKindForBody;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   subtitle: string;
+  subtitleLink: ArtifactSubtitleLink | null;
   shareAvailable: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   url?: string;
@@ -460,7 +469,7 @@ function ArtifactSidebarHeader({
         </div>
         {subtitle && (
           <div className="mt-0.5 truncate text-xs text-muted-foreground">
-            {subtitle}
+            <ArtifactSubtitle link={subtitleLink} text={subtitle} />
           </div>
         )}
       </div>

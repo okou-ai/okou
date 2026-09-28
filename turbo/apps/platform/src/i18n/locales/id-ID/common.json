@@ -571,7 +571,8 @@
       "video": "Video"
     },
     "metadata": {
-      "generated": "Dibuat {{date}}"
+      "generated": "Dibuat {{date}}",
+      "updated": "Diperbarui {{date}}"
     },
     "preview": {
       "audioLabel": "Pratinjau audio untuk {{filename}}",

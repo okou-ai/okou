@@ -571,7 +571,8 @@
       "video": "视频"
     },
     "metadata": {
-      "generated": "生成于 {{date}}"
+      "generated": "生成于 {{date}}",
+      "updated": "更新于 {{date}}"
     },
     "preview": {
       "audioLabel": "{{filename}} 的音频预览",

@@ -571,7 +571,8 @@
       "video": "ビデオ"
     },
     "metadata": {
-      "generated": "{{date}} が生成されました"
+      "generated": "{{date}} が生成されました",
+      "updated": "{{date}} に更新"
     },
     "preview": {
       "audioLabel": "{{filename}} のオーディオ プレビュー",

@@ -571,7 +571,8 @@
       "video": "비디오"
     },
     "metadata": {
-      "generated": "생성됨 {{date}}"
+      "generated": "생성됨 {{date}}",
+      "updated": "업데이트됨 {{date}}"
     },
     "preview": {
       "audioLabel": "{{filename}} 오디오 미리보기",
