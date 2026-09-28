@@ -1034,7 +1034,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       };
     }
     const main = await completeDm("start the main DM", 3501);
-    return { sendDm, completeDm, main };
+    const member = { orgId: actor.orgId, userId: actor.userId };
+    return { member, sendDm, completeDm, main };
   }
 
   describe.each([
@@ -1103,6 +1104,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           3508,
           branch.botReplyId,
         );
+        // `/model` in the main DM switches only the main DM thread.
         expect(pinnedReply.claim.modelUsageProvider).toBe("claude-fable-5-1");
         expect(pinnedReply.chatThread.id).toBe(branch.chatThread.id);
         expect(pinnedReply.chatThread.selectedModel).toBe("claude-fable-5-1");
@@ -1118,14 +1120,19 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
 
       await sendDm("/model gpt-6-astra", 3506);
-      const alternate = await completeDm("keep the existing DM model", 3507);
-      expect(alternate.claim.modelUsageProvider).toBe("claude-fable-5-1");
-      expect(alternate.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
+      await expect(
+        postTelegramStateAction({
+          action: "get-selected-model",
+          org_id: dm.member.orgId,
+          user_id: dm.member.userId,
+        }),
+      ).resolves.toMatchObject({ selected_model: "gpt-6-astra" });
+      const alternate = await completeDm("switch the main DM model", 3507);
+      expect(alternate.claim.cliAgentType).toBe("codex");
       expect(alternate.chatThread.id).toBe(main.chatThread.id);
-      expect(alternate.chatThread.selectedModel).toBe("claude-fable-5-1");
+      expect(alternate.chatThread.selectedModel).toBe("gpt-6-astra");
       await sendDm("/model claude-fable-5-1", 3509);
       const returned = await completeDm("return to the main model", 3510);
-      expect(returned.claim.resumeSession?.sessionId).toBe(alternate.sessionId);
       expect(returned.claim.modelUsageProvider).toBe("claude-fable-5-1");
       expect(returned.chatThread.id).toBe(main.chatThread.id);
       expect(returned.chatThread.selectedModel).toBe("claude-fable-5-1");

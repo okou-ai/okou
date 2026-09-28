@@ -2244,7 +2244,11 @@ describe("POST /api/webhooks/teams/bot", () => {
               {
                 type: "Action.Submit",
                 title: "Switch",
-                data: { okouTeamsAction: "switch_model" },
+                data: {
+                  okouTeamsAction: "switch_model",
+                  routeConversationId: `a:personal-${fixture.teamsUserId}`,
+                  routeThreadId: "direct-message:main",
+                },
               },
             ],
           },

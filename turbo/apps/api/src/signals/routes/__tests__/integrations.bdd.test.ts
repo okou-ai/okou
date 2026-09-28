@@ -1344,11 +1344,9 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       challenge: "slack-bdd-challenge",
     });
 
-    const missingSignature = await integrations.requestSlackEvent(
-      body,
-      {},
-      [401],
-    );
+    const missingSignature = await integrations.requestSlackEvent(body, {}, [
+      401,
+    ]);
     expect(missingSignature.body).toStrictEqual({
       error: "Missing Slack signature headers",
     });
@@ -1619,10 +1617,9 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       error: { code: "UNAUTHORIZED" },
     });
 
-    const orgStatus = await integrations.requestSlackIntegrationStatus(
-      admin,
-      [200],
-    );
+    const orgStatus = await integrations.requestSlackIntegrationStatus(admin, [
+      200,
+    ]);
     expect(orgStatus.body).toMatchObject({
       isConnected: false,
       isInstalled: false,
@@ -1636,10 +1633,9 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
-    const connectStatus = await integrations.requestSlackConnectStatus(
-      admin,
-      [200],
-    );
+    const connectStatus = await integrations.requestSlackConnectStatus(admin, [
+      200,
+    ]);
     expect(connectStatus.body).toStrictEqual({
       isConnected: false,
       isAdmin: true,
@@ -1676,10 +1672,9 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
-    const missingChannels = await integrations.requestListSlackChannels(
-      admin,
-      [404],
-    );
+    const missingChannels = await integrations.requestListSlackChannels(admin, [
+      404,
+    ]);
     expect(missingChannels.body).toStrictEqual({
       error: {
         message: "No Slack installation found for this org",
@@ -2545,11 +2540,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
         run_session_id: slackBinding.agent_session_id,
       });
 
-      const visibleThreadEvents = await chat.requestThreadEvents(
-        actor,
-        {},
-        [200],
-      );
+      const visibleThreadEvents = await chat.requestThreadEvents(actor, {}, [
+        200,
+      ]);
       expect(visibleThreadEvents.status).toBe(200);
       if (visibleThreadEvents.status !== 200) {
         throw new Error("Expected visible thread events to load");
@@ -3596,6 +3589,91 @@ describe("INT-01: Slack app deep webhook flows", () => {
         }),
       );
     });
+
+    it("switches the main Slack DM thread model from the DM model picker", async () => {
+      const {
+        actor,
+        teamId,
+        slackUserId,
+        firstMessageTs,
+        channelId,
+        runnerGroup,
+      } = preparedScenario;
+      await integrations.postSlackEvent(teamId, {
+        type: "message",
+        channel_type: "im",
+        user: slackUserId,
+        text: "start the main Slack DM",
+        ts: firstMessageTs,
+        channel: channelId,
+      });
+      const firstRunId = await pollSlackRun(runnerGroup);
+      const firstClaim = await runs.claimRunnerJob(firstRunId);
+      expect(firstClaim.cliAgentType).toBe("claude-code");
+      await completeSlackTriggeredRun({
+        runId: firstRunId,
+        sandboxToken: firstClaim.sandboxToken,
+        cliAgentType: firstClaim.cliAgentType,
+      });
+      await flushWaitUntilForTest();
+      const chatThreadId = (
+        await integrations.readSlackTestState(teamId)
+      ).chat_thread_routes.find((route) => {
+        return route.channelId === channelId;
+      })?.chatThreadId;
+      if (!chatThreadId) {
+        throw new Error("Expected the main Slack DM thread");
+      }
+
+      const selectModel = await integrations.postSlackInteractive(
+        integrations.modelPickerSubmission({
+          workspaceId: teamId,
+          slackUserId,
+          selectedValue: "gpt-6-astra",
+          channelId,
+        }),
+      );
+      expect(selectModel).toBe("");
+      expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel: channelId,
+          user: slackUserId,
+          text: "Switched to *GPT 6 Astra* for this conversation and new Slack threads.",
+        }),
+      );
+      await expect(
+        integrations.readUserModelPreference(actor),
+      ).resolves.toMatchObject({ selectedModel: "gpt-6-astra" });
+      expect(
+        (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
+      ).toBe("gpt-6-astra");
+      const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
+      if (threadEvents.status !== 200) {
+        throw new Error("Expected Slack thread events to load");
+      }
+      expect(threadEvents.body.events).toContainEqual(
+        expect.objectContaining({
+          kind: "model_selection_updated",
+          chatThreadId,
+          selectedModel: "gpt-6-astra",
+        }),
+      );
+
+      await integrations.postSlackEvent(teamId, {
+        type: "message",
+        channel_type: "im",
+        user: slackUserId,
+        text: "continue the main Slack DM",
+        ts: "2950.000400",
+        channel: channelId,
+      });
+      const switchedRunId = await pollSlackRun(runnerGroup);
+      const switchedClaim = await runs.claimRunnerJob(switchedRunId);
+      expect(switchedClaim.cliAgentType).toBe("codex");
+      expect(switchedClaim.environment).toMatchObject({
+        OPENAI_MODEL: "gpt-6-astra",
+      });
+    });
   });
 
   it("forks Slack DM threads without replacing the main session", async () => {
@@ -4599,10 +4677,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
       expect.objectContaining({ user_id: slackUserId }),
     );
-    const connectStatus = await integrations.requestSlackConnectStatus(
-      actor,
-      [200],
-    );
+    const connectStatus = await integrations.requestSlackConnectStatus(actor, [
+      200,
+    ]);
     expect(connectStatus.body).toMatchObject({ isConnected: false });
 
     const notConnected = await integrations.postSlackCommand({
@@ -4882,17 +4959,15 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
     await expect
       .poll(async () => {
-        const status = await integrations.requestSlackIntegrationStatus(
-          actor,
-          [200],
-        );
+        const status = await integrations.requestSlackIntegrationStatus(actor, [
+          200,
+        ]);
         return "isInstalled" in status.body ? status.body.isInstalled : null;
       })
       .toBe(false);
-    const orgStatus = await integrations.requestSlackIntegrationStatus(
-      actor,
-      [200],
-    );
+    const orgStatus = await integrations.requestSlackIntegrationStatus(actor, [
+      200,
+    ]);
     expect(orgStatus.body).toMatchObject({
       isInstalled: false,
       isConnected: false,
@@ -6035,11 +6110,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     await installApiTestConnectorCatalog();
 
     const actor = integrations.user();
-    const response = await integrations.requestGithubOauthConnect(
-      actor,
-      {},
-      [307],
-    );
+    const response = await integrations.requestGithubOauthConnect(actor, {}, [
+      307,
+    ]);
     const location = response.headers.get("location");
     if (!location) {
       throw new Error("Expected GitHub authorization redirect");
@@ -6626,10 +6699,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       error: { code: "CONFLICT" },
     });
 
-    const disconnected = await integrations.requestUnlinkAgentPhone(
-      actor,
-      [204],
-    );
+    const disconnected = await integrations.requestUnlinkAgentPhone(actor, [
+      204,
+    ]);
     expect(disconnected.body).toBeUndefined();
 
     const unlinkedStatus = await integrations.getAgentPhoneLinkStatus(actor);
@@ -6639,10 +6711,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       configured: true,
     });
 
-    const missingUnlink = await integrations.requestUnlinkAgentPhone(
-      actor,
-      [404],
-    );
+    const missingUnlink = await integrations.requestUnlinkAgentPhone(actor, [
+      404,
+    ]);
     expect(missingUnlink.body).toMatchObject({
       error: { code: "NOT_FOUND" },
     });
