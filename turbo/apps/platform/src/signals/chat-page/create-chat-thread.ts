@@ -1406,12 +1406,13 @@ function createEventSemanticSignals(
   const semanticGroups$ = computed((get): SemanticChatGroups => {
     return groupSemanticChatEvents(get(semanticEvents$));
   });
-  // A failed summary request rejects, so the view keeps the last indicators.
+  // A failed summary request falls back to the default thinking label.
   const thinkingIndicators$ = computed(
     async (get): Promise<ThinkingIndicators | null> => {
       const serverRunState = get(serverRunState$);
       if (serverRunState === "running") {
-        const summaries = await get(thinkingSummaries$);
+        const settled = await settle(get(thinkingSummaries$));
+        const summaries = settled.ok ? settled.value : null;
         return summaries
           ? {
               kind: "thinking",
