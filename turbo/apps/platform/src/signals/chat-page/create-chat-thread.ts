@@ -1406,13 +1406,11 @@ function createEventSemanticSignals(
   const semanticGroups$ = computed((get): SemanticChatGroups => {
     return groupSemanticChatEvents(get(semanticEvents$));
   });
-  // A failed summary request falls back to the default thinking label.
   const thinkingIndicators$ = computed(
     async (get): Promise<ThinkingIndicators | null> => {
       const serverRunState = get(serverRunState$);
       if (serverRunState === "running") {
-        const settled = await settle(get(thinkingSummaries$));
-        const summaries = settled.ok ? settled.value : null;
+        const summaries = await get(thinkingSummaries$);
         return summaries
           ? {
               kind: "thinking",

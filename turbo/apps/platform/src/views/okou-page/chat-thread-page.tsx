@@ -3089,6 +3089,12 @@ function ChatThreadScrollCommitMarker({
   );
 }
 
+const DEFAULT_THINKING_INDICATORS: ThinkingIndicators = Object.freeze({
+  kind: "thinking",
+  runId: null,
+  messages: [],
+});
+
 type RunStatusRow =
   | {
       readonly kind: "thinking-indicators";
@@ -3159,8 +3165,15 @@ function ChatThreadRenderedEventGroups({
   );
   const toggleRunWorkExpanded = useSet(toggleRunWorkExpanded$);
   const visibleGroups = runWorkFolding?.visibleGroups ?? renderedActiveGroups;
+  // Before the first result, or when the summary request fails, show the
+  // default thinking label. A resolved null means the thread is idle.
+  const resolvedThinkingIndicators = useLastResolved(
+    thread.thinkingIndicators$,
+  );
   const thinkingIndicators =
-    useLastResolved(thread.thinkingIndicators$) ?? null;
+    resolvedThinkingIndicators === undefined
+      ? DEFAULT_THINKING_INDICATORS
+      : resolvedThinkingIndicators;
   const runFinished = useLastResolved(thread.runFinished$) ?? false;
   const statusRow = runStatusRow(
     runWorkFolding,
