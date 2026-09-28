@@ -649,7 +649,6 @@ test("Routing metadata is not shown as user text", () => {
       workflowName: "Release workflow",
       automationBrief: "Internal automation routing",
     },
-    { type: "goal", goalBrief: "Internal rollout goal" },
     {
       type: "automation",
       workflowName: "Morning Brief",

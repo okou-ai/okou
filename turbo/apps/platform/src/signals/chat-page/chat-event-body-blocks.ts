@@ -5,10 +5,7 @@ import {
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
 import {
   isFollowupsEvent,
-  isGoalMarkerEvent,
-  isGoalQueueEvent,
   isInterruptControlEvent,
-  isQueueMarkerEvent,
   isRecallControlEvent,
 } from "@okouai/api-contracts/contracts/chat-event-semantics";
 import {
@@ -27,7 +24,6 @@ function chatEventBodyContent(event: ChatEvent): string {
   if (
     event.eventType === "input.prompt" ||
     event.eventType === "input.automation" ||
-    event.eventType === "input.goal" ||
     event.eventType === "input.rejected"
   ) {
     if (event.eventType === "input.automation" && !event.userMessage) {
@@ -46,10 +42,7 @@ function skipsEventBodyRendering(event: ChatEvent): boolean {
   return (
     isInterruptControlEvent(event) ||
     isRecallControlEvent(event) ||
-    isQueueMarkerEvent(event) ||
-    isGoalQueueEvent(event) ||
-    isFollowupsEvent(event) ||
-    isGoalMarkerEvent(event)
+    isFollowupsEvent(event)
   );
 }
 

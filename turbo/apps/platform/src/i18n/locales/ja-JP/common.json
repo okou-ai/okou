@@ -2076,7 +2076,6 @@
       "cancellationRecoveryPending": "キュー内の作業を続行する前に、キャンセルされた実行の終了処理を行っています。",
       "event_one": "{{count}} イベント",
       "event_other": "{{count}} イベント",
-      "goal": "目標",
       "itemsWaiting": "{{items}} 待機中",
       "itemsWaitingTogether": "{{messages}} と {{events}} が待機中です",
       "message_one": "{{count}} メッセージ",

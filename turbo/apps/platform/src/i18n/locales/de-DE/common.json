@@ -2083,7 +2083,6 @@
       "cancellationRecoveryPending": "Die abgebrochene Ausführung wird abgeschlossen, bevor die Arbeit in der Warteschlange fortgesetzt wird.",
       "event_one": "{{count}} Ereignis",
       "event_other": "{{count}} Ereignisse",
-      "goal": "Ziel",
       "itemsWaiting": "{{items}} wartet",
       "itemsWaitingTogether": "{{messages}} und {{events}} warten",
       "message_one": "{{count}} Nachricht",

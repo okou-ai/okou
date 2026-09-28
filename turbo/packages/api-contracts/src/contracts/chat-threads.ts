@@ -6,7 +6,7 @@ import {
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { chatEventRowSchema } from "./chat-event-rows";
-import { CHAT_EVENT_TYPES } from "./chat-events";
+import { CHAT_EVENT_TYPES, V7_ONLY_CHAT_EVENT_TYPES } from "./chat-events";
 import {
   connectorAccountConnectionSchema,
   connectorAccountSelectionSchema,
@@ -777,7 +777,6 @@ const chatEventBaseSchema = z.object({
   threadId: z.string(),
   content: z.string().nullable(),
   runId: z.string().optional(),
-  runGroupId: z.string().optional(),
   runEventId: z.string().optional(),
   revokesEventId: z.string().optional(),
   /** Strictly increasing thread position; it may start above 1 and have gaps. */
@@ -857,21 +856,6 @@ const inputAutomationEventSchema = chatEventBaseSchema
   })
   .strict();
 
-const inputGoalEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: z.literal("input.goal"),
-    content: z.null(),
-    userMessage: userMessageDocumentSchema,
-    // Queue association stays server-side; the public event preserves only
-    // the user-facing document and stream ordering contract.
-    runId: z.never().optional(),
-    runGroupId: z.never().optional(),
-    runEventId: z.never().optional(),
-    revokesEventId: z.never().optional(),
-    sequenceNumber: z.never().optional(),
-  })
-  .strict();
-
 const inputBudgetEventSchema = chatEventBaseSchema
   .extend({
     eventType: z.literal("input.budget"),
@@ -903,35 +887,10 @@ const outputErrorEventSchema = chatEventBaseSchema
   })
   .strict();
 
-const outputThinkingEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: z.literal("output.thinking"),
-    content: z.null(),
-    thinking: z.string(),
-  })
-  .strict();
-
 const outputFollowupsEventSchema = chatEventBaseSchema
   .extend({
     eventType: z.literal("output.followups"),
     content: z.string(),
-  })
-  .strict();
-
-const runQueuedEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: z.literal("run.queued"),
-    runId: z.string(),
-    content: z.string(),
-  })
-  .strict();
-
-const runDequeuedEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: z.literal("run.dequeued"),
-    runId: z.string(),
-    content: z.null(),
-    revokesEventId: z.string(),
   })
   .strict();
 
@@ -978,49 +937,6 @@ const controlRevokeEventSchema = chatEventBaseSchema
   })
   .strict();
 
-const browserOpenEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: z.literal("browser.open"),
-    content: z.null(),
-  })
-  .strict();
-
-const browserCloseEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: z.literal("browser.close"),
-    content: z.null(),
-  })
-  .strict();
-
-const goalMarkerMetadataSchema = {
-  runId: z.never().optional(),
-  runGroupId: z.never().optional(),
-  runEventId: z.never().optional(),
-  revokesEventId: z.never().optional(),
-  sequenceNumber: z.never().optional(),
-};
-
-const goalOpenEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: z.literal("goal.open"),
-    content: z
-      .string()
-      .min(1)
-      .refine((content) => {
-        return content === content.trim();
-      }, "Goal title must be trimmed"),
-    ...goalMarkerMetadataSchema,
-  })
-  .strict();
-
-const goalCloseEventSchema = chatEventBaseSchema
-  .extend({
-    eventType: z.literal("goal.close"),
-    content: z.null(),
-    ...goalMarkerMetadataSchema,
-  })
-  .strict();
-
 const usageRecordedEventSchema = chatEventBaseSchema
   .extend({
     eventType: z.literal("usage.recorded"),
@@ -1032,35 +948,37 @@ const usageRecordedEventSchema = chatEventBaseSchema
 
 /**
  * Redacted public projection of the canonical thread stream.
- * Server-only payload fields are not accepted.
+ * Server-only payload fields are not accepted. The V7 row catalog still
+ * contains V7_ONLY_CHAT_EVENT_TYPES, which the projection drops; V8 (PR-2)
+ * removes them from the row schema.
  */
 const chatEventSchema = z.discriminatedUnion("eventType", [
   inputPromptEventSchema,
   inputAutomationEventSchema,
-  inputGoalEventSchema,
   inputBudgetEventSchema,
   inputRejectedEventSchema,
   outputMessageEventSchema,
   outputErrorEventSchema,
-  outputThinkingEventSchema,
   outputFollowupsEventSchema,
-  runQueuedEventSchema,
-  runDequeuedEventSchema,
   runCompletedEventSchema,
   runFailedEventSchema,
   runCancelledEventSchema,
   controlInterruptEventSchema,
   controlRevokeEventSchema,
-  browserOpenEventSchema,
-  browserCloseEventSchema,
-  goalOpenEventSchema,
-  goalCloseEventSchema,
   usageRecordedEventSchema,
 ]);
 
-if (CHAT_EVENT_TYPES.length !== chatEventSchema.options.length) {
+if (
+  CHAT_EVENT_TYPES.length - V7_ONLY_CHAT_EVENT_TYPES.length !==
+    chatEventSchema.options.length ||
+  chatEventSchema.options.some((option) => {
+    return (V7_ONLY_CHAT_EVENT_TYPES as readonly string[]).includes(
+      option.shape.eventType.value,
+    );
+  })
+) {
   throw new Error(
-    "ChatEvent schema must cover every registered event catalog leaf",
+    "ChatEvent schema must cover every projected event catalog leaf",
   );
 }
 
@@ -2227,7 +2145,6 @@ export type ChatInputEvent = Extract<
     eventType:
       | "input.prompt"
       | "input.automation"
-      | "input.goal"
       | "input.budget"
       | "input.rejected";
   }

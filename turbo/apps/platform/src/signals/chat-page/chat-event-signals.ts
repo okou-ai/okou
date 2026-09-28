@@ -87,17 +87,10 @@ export interface SendInterruptChatEvent {
   readonly interruptsRunId: string;
 }
 
-export interface SendBrowserLifecycleChatEvent {
-  readonly kind: "browser-lifecycle";
-  readonly eventId: string;
-  readonly eventType: "browser.open" | "browser.close";
-}
-
 export type SendChatEventInput =
   | SendInputChatEvent
   | SendRevokeChatEvent
-  | SendInterruptChatEvent
-  | SendBrowserLifecycleChatEvent;
+  | SendInterruptChatEvent;
 
 interface SendChatEventDependencies {
   readonly threadId: string;
@@ -291,45 +284,12 @@ function createSendInterruptChatEvent({
   );
 }
 
-function createSendBrowserLifecycleChatEvent({
-  threadId,
-  appendOptimisticEvent$,
-}: SendChatEventDependencies): Command<
-  Promise<void>,
-  [SendBrowserLifecycleChatEvent, AbortSignal]
-> {
-  return command(
-    async (
-      { set },
-      input: SendBrowserLifecycleChatEvent,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      await set(
-        appendOptimisticEvent$,
-        {
-          threadId,
-          event: {
-            id: input.eventId,
-            threadId,
-            eventType: input.eventType,
-            content: null,
-            createdAt: nowDate().toISOString(),
-          },
-        },
-        signal,
-      );
-    },
-  );
-}
-
 function createSendChatEvent(
   dependencies: SendChatEventDependencies,
 ): Command<Promise<void>, [SendChatEventInput, AbortSignal]> {
   const sendInput$ = createSendInputChatEvent(dependencies);
   const sendRevoke$ = createSendRevokeChatEvent(dependencies);
   const sendInterrupt$ = createSendInterruptChatEvent(dependencies);
-  const sendBrowserLifecycle$ =
-    createSendBrowserLifecycleChatEvent(dependencies);
   return command(
     async ({ set }, input: SendChatEventInput, signal: AbortSignal) => {
       switch (input.kind) {
@@ -341,9 +301,6 @@ function createSendChatEvent(
         }
         case "interrupt": {
           return await set(sendInterrupt$, input, signal);
-        }
-        case "browser-lifecycle": {
-          return await set(sendBrowserLifecycle$, input, signal);
         }
       }
     },

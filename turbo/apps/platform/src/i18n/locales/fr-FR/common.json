@@ -2123,7 +2123,6 @@
       "event_one": "{{count}} événement",
       "event_many": "{{count}} événements",
       "event_other": "{{count}} événements",
-      "goal": "Objectif",
       "itemsWaiting": "{{items}} en attente",
       "itemsWaitingTogether": "{{messages}} et {{events}} en attente",
       "message_one": "{{count}} message",

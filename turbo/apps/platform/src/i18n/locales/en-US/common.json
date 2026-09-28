@@ -2083,7 +2083,6 @@
       "cancellationRecoveryPending": "Finalizing the cancelled run before queued work continues.",
       "event_one": "{{count}} event",
       "event_other": "{{count}} events",
-      "goal": "Goal",
       "itemsWaiting": "{{items}} waiting",
       "itemsWaitingTogether": "{{messages}} and {{events}} waiting",
       "message_one": "{{count}} message",

@@ -87,14 +87,10 @@ describe("canonical chat event storage", () => {
       threadScopedDispatchMatchedInterrupt: false,
     });
 
-    expect(row(fixture.batch.thinkingId).payload).toStrictEqual({
-      thinking: "canonical thinking",
-    });
     expect(row(fixture.batch.runFailedId)).toMatchObject({
       payload: { content: "run failed", error: "runner error" },
       failureReason: "future_reason",
     });
-    expect(row(fixture.batch.browserCloseId).payload).toBeNull();
     const usage = row(fixture.batch.usageId);
     expect(usage.payload).toStrictEqual({
       usage: {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CHAT_EVENT_TYPES,
+  V7_ONLY_CHAT_EVENT_TYPES,
   foldChatRunStates,
   foldLatestChatUsageByRunId,
   foldPendingChatQueueEvents,
@@ -59,20 +60,8 @@ const chatEvents = [
     createdAt: "2026-07-23T00:00:01.000Z",
   },
   {
-    id: "input-goal",
-    seqId: 3,
-    threadId: THREAD_ID,
-    eventType: "input.goal",
-    content: null,
-    userMessage: {
-      version: 1,
-      parts: [{ type: "goal", goalBrief: "Finish the queued goal" }],
-    },
-    createdAt: "2026-07-23T00:00:02.000Z",
-  },
-  {
     id: "input-budget",
-    seqId: 4,
+    seqId: 3,
     threadId: THREAD_ID,
     eventType: "input.budget",
     content: null,
@@ -85,7 +74,7 @@ const chatEvents = [
   },
   {
     id: "input-rejected",
-    seqId: 5,
+    seqId: 4,
     threadId: THREAD_ID,
     eventType: "input.rejected",
     content: null,
@@ -105,7 +94,7 @@ const chatEvents = [
   },
   {
     id: "output-message",
-    seqId: 6,
+    seqId: 5,
     threadId: THREAD_ID,
     eventType: "output.message",
     content: "Done",
@@ -113,7 +102,7 @@ const chatEvents = [
   },
   {
     id: "output-error",
-    seqId: 7,
+    seqId: 6,
     threadId: THREAD_ID,
     eventType: "output.error",
     content: null,
@@ -121,17 +110,8 @@ const chatEvents = [
     createdAt: CREATED_AT,
   },
   {
-    id: "output-thinking",
-    seqId: 8,
-    threadId: THREAD_ID,
-    eventType: "output.thinking",
-    content: null,
-    thinking: "Working",
-    createdAt: CREATED_AT,
-  },
-  {
     id: "output-followups",
-    seqId: 9,
+    seqId: 7,
     threadId: THREAD_ID,
     eventType: "output.followups",
     content: JSON.stringify({
@@ -141,27 +121,8 @@ const chatEvents = [
     createdAt: CREATED_AT,
   },
   {
-    id: "run-queued",
-    seqId: 10,
-    threadId: THREAD_ID,
-    eventType: "run.queued",
-    runId: "run-1",
-    content: "Waiting in queue",
-    createdAt: CREATED_AT,
-  },
-  {
-    id: "run-dequeued",
-    seqId: 11,
-    threadId: THREAD_ID,
-    eventType: "run.dequeued",
-    runId: "run-1",
-    content: null,
-    revokesEventId: "run-queued",
-    createdAt: CREATED_AT,
-  },
-  {
     id: "run-completed",
-    seqId: 12,
+    seqId: 8,
     threadId: THREAD_ID,
     eventType: "run.completed",
     runId: "run-1",
@@ -171,7 +132,7 @@ const chatEvents = [
   },
   {
     id: "run-failed",
-    seqId: 13,
+    seqId: 9,
     threadId: THREAD_ID,
     eventType: "run.failed",
     runId: "run-2",
@@ -181,7 +142,7 @@ const chatEvents = [
   },
   {
     id: "run-cancelled",
-    seqId: 14,
+    seqId: 10,
     threadId: THREAD_ID,
     eventType: "run.cancelled",
     runId: "run-3",
@@ -191,7 +152,7 @@ const chatEvents = [
   },
   {
     id: "control-interrupt",
-    seqId: 15,
+    seqId: 11,
     threadId: THREAD_ID,
     eventType: "control.interrupt",
     content: null,
@@ -200,7 +161,7 @@ const chatEvents = [
   },
   {
     id: "control-revoke",
-    seqId: 16,
+    seqId: 12,
     threadId: THREAD_ID,
     eventType: "control.revoke",
     content: null,
@@ -208,40 +169,8 @@ const chatEvents = [
     createdAt: CREATED_AT,
   },
   {
-    id: "browser-open",
-    seqId: 17,
-    threadId: THREAD_ID,
-    eventType: "browser.open",
-    content: null,
-    createdAt: CREATED_AT,
-  },
-  {
-    id: "browser-close",
-    seqId: 18,
-    threadId: THREAD_ID,
-    eventType: "browser.close",
-    content: null,
-    createdAt: CREATED_AT,
-  },
-  {
-    id: "goal-open",
-    seqId: 19,
-    threadId: THREAD_ID,
-    eventType: "goal.open",
-    content: "Ship the refactor",
-    createdAt: CREATED_AT,
-  },
-  {
-    id: "goal-close",
-    seqId: 20,
-    threadId: THREAD_ID,
-    eventType: "goal.close",
-    content: null,
-    createdAt: CREATED_AT,
-  },
-  {
     id: "usage-recorded",
-    seqId: 21,
+    seqId: 13,
     threadId: THREAD_ID,
     eventType: "usage.recorded",
     runId: "run-1",
@@ -291,13 +220,17 @@ const queueFoldFixture = [
   },
 ] as const;
 
+const PROJECTED_CHAT_EVENT_TYPES = CHAT_EVENT_TYPES.filter((eventType) => {
+  return !(V7_ONLY_CHAT_EVENT_TYPES as readonly string[]).includes(eventType);
+});
+
 describe("ChatEvent catalog", () => {
-  it("parses exactly one canonical fixture for every registered leaf", () => {
+  it("parses exactly one canonical fixture for every projected leaf", () => {
     expect(
       chatEvents.map((event) => {
         return event.eventType;
       }),
-    ).toStrictEqual([...CHAT_EVENT_TYPES]);
+    ).toStrictEqual(PROJECTED_CHAT_EVENT_TYPES);
     for (const event of chatEvents) {
       expect(chatEventSchema.parse(event)).toStrictEqual(event);
     }
@@ -328,75 +261,25 @@ describe("ChatEvent catalog", () => {
         triggerSource: "automation-event",
       }).success,
     ).toBe(false);
-    const goal = chatEvents[2];
-    expect(
-      chatEventSchema.safeParse({
-        ...goal,
-        encryptedParams: "must-stay-server-side",
-      }).success,
-    ).toBe(false);
-    expect(
-      chatEventSchema.safeParse({
-        ...goal,
-        runGroupId: "must-stay-server-side",
-      }).success,
-    ).toBe(false);
-    expect(
-      chatEventSchema.safeParse({
-        ...goal,
-        callbackSecret: "must-stay-server-side",
-      }).success,
-    ).toBe(false);
-    const browserOpen = chatEvents.find((event) => {
-      return event.eventType === "browser.open";
-    });
-    expect(
-      chatEventSchema.safeParse({
-        ...browserOpen,
-        browserId: "must-not-exist",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("enforces payload-free goal markers with canonical titles", () => {
-    const open = chatEvents.find((event) => {
-      return event.eventType === "goal.open";
-    });
-    const close = chatEvents.find((event) => {
-      return event.eventType === "goal.close";
-    });
-    if (!open || !close) {
-      throw new Error("Missing goal marker fixtures");
-    }
-
-    expect(chatEventSchema.safeParse({ ...open, content: "" }).success).toBe(
-      false,
-    );
-    expect(
-      chatEventSchema.safeParse({ ...open, content: " untrimmed " }).success,
-    ).toBe(false);
-    expect(
-      chatEventSchema.safeParse({ ...close, content: "closed" }).success,
-    ).toBe(false);
   });
 
   it("classifies only conversation-bearing fields as text", () => {
     expect(
-      CHAT_EVENT_TYPES.filter(isChatEventUserMessageTextType),
+      PROJECTED_CHAT_EVENT_TYPES.filter(isChatEventUserMessageTextType),
     ).toStrictEqual(["input.prompt", "input.rejected"]);
-    expect(CHAT_EVENT_TYPES.filter(isChatEventContentTextType)).toStrictEqual([
+    expect(
+      PROJECTED_CHAT_EVENT_TYPES.filter(isChatEventContentTextType),
+    ).toStrictEqual([
       "output.message",
       "output.error",
-      "run.queued",
       "run.completed",
       "run.failed",
       "run.cancelled",
     ]);
     expect(isChatEventContentTextType("output.followups")).toBe(false);
-    expect(isChatEventContentTextType("goal.open")).toBe(false);
   });
 
-  it("emits canonical responses for every registered leaf", () => {
+  it("emits canonical responses for every projected leaf", () => {
     for (const event of chatEvents) {
       const response = chatEventResponse(event);
       expect(response).toStrictEqual(event);
@@ -487,23 +370,16 @@ describe("output.followups content", () => {
 });
 
 describe("ChatEvent folds", () => {
-  it("lets a terminal event end queued state without a revoke edge", () => {
-    const queued = chatEvents.find((event) => {
-      return event.eventType === "run.queued";
-    });
+  it("folds each run to its terminal lifecycle state", () => {
     const completed = chatEvents.find((event) => {
       return event.eventType === "run.completed";
     });
-    if (!queued || !completed) {
-      throw new Error("Missing run fold fixtures");
+    if (!completed) {
+      throw new Error("Missing run fold fixture");
     }
 
-    expect(foldChatRunStates([queued, completed]).get("run-1")).toBe(
-      "completed",
-    );
-    expect(terminatedChatRunIds([queued, completed])).toStrictEqual(
-      new Set(["run-1"]),
-    );
+    expect(foldChatRunStates([completed]).get("run-1")).toBe("completed");
+    expect(terminatedChatRunIds([completed])).toStrictEqual(new Set(["run-1"]));
   });
 
   it("keeps the latest settled usage snapshot for each run", () => {
@@ -540,7 +416,7 @@ describe("ChatEvent folds", () => {
 
   it("collects immutable revoke relationships without hiding source facts", () => {
     expect(revokedChatEventIds(chatEvents)).toStrictEqual(
-      new Set(["run-queued", "input-prompt"]),
+      new Set(["input-prompt"]),
     );
   });
 

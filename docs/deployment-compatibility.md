@@ -1,5 +1,46 @@
 # Deployment Compatibility
 
+## Chat Event V8 preparation: retired writers stop (2026-09-28)
+
+This is step 1 of the Chat Event V8 plan. It changes no wire protocol: the row
+schema, `CHAT_EVENT_TYPES`, the database checks and
+`CURRENT_CHAT_EVENT_SCHEMA_VERSION` stay at V7.
+
+- The API no longer writes `output.thinking` (Codex reasoning items) or
+  `browser.open` / `browser.close` (viewer open, viewer close and instance
+  suspension). The browser `open` and `close` endpoints still require the
+  request `eventId` and return it unchanged as `lifecycleEventId`. `use` and
+  `create` keep returning `lifecycleEventId: null`.
+- Shared threads no longer write `runGroupIndex`. The field stays optional in
+  the contract because saved shares may still carry it.
+- The `chatEventFromRow` projection drops the eight types in
+  `V7_ONLY_CHAT_EVENT_TYPES` (`input.goal`, `goal.open`, `goal.close`,
+  `run.queued`, `run.dequeued`, `output.thinking`, `browser.open`,
+  `browser.close`) and no longer derives `runGroupId`. `ChatEvent` is built
+  inside each artifact from raw V7 rows and is never sent over the network.
+- Platform removes run-group folding, goal cards, queue markers, the thinking
+  marker and the browser sidebar auto-open. Historical goal parts render as
+  plain text. The Platform read cursor follows raw rows, so a thread whose
+  latest rows are dropped types still catches up.
+
+Compatibility:
+
+- New Platform, old API: the old API may still return the retired rows, which
+  the new projection drops. It persists the browser lifecycle event under the
+  `eventId` the new Platform still sends, and returns that ID.
+- Old Platform, new API: the old Platform receives no new retired rows, so its
+  thinking marker and auto-open do not trigger for new activity. Its optimistic
+  `browser.open` / `browser.close` event is never confirmed by a server row; it
+  stays hidden local state until the page reloads. The echoed
+  `lifecycleEventId` matches what it sent.
+- Old and new APIs read the same V7 rows and snapshots. Historical retired
+  rows remain valid V7 data until V8.
+
+V8 (PR-2) deletes these rows and tightens the database checks, so it assumes
+production has no writer for them. After this change is released, raise the API
+rollback floor to its main commit so that no rollback target writes the retired
+types; that floor update is a separate follow-up and is not part of this change.
+
 ## Chat send diagnostics and model admission (release 5)
 
 Migration `1277_chat_network_body_captures` adds a sparse table keyed by the

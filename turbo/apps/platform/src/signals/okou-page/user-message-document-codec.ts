@@ -812,6 +812,8 @@ export function messageDocumentToPrompt(value: unknown): string | null {
     flushFeedback();
     if (part.type === "text") {
       inlineText += part.text;
+    } else if (part.type === "goal") {
+      inlineText += part.goalBrief;
     } else if (part.type === "chat_thread") {
       inlineText += serializeChatThreadMention(
         part.threadId,
@@ -863,6 +865,10 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
       inlineText += part.text;
       continue;
     }
+    if (part.type === "goal") {
+      inlineText += part.goalBrief;
+      continue;
+    }
     if (part.type === "chat_thread") {
       inlineText += i18n.t(
         ($) => {
@@ -884,7 +890,6 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
     if (
       part.type === "source" ||
       part.type === "automation" ||
-      part.type === "goal" ||
       part.type === "model" ||
       part.type === "additional_info"
     ) {

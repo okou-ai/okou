@@ -9,8 +9,6 @@ import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 
 import {
-  isGoalMarkerEvent,
-  isQueueMarkerEvent,
   isUsageEvent,
   semanticChatEventsFromChatEvents,
   type SemanticChatEventState,
@@ -82,9 +80,6 @@ function assistantRunIndicatorState(
   event: ChatEvent,
 ): ActiveRunIndicatorState | undefined {
   const runId = event.runId;
-  if (isQueueMarkerEvent(event)) {
-    return undefined;
-  }
   if (isChatRunTerminalEventType(event.eventType)) {
     return null;
   }
@@ -145,8 +140,7 @@ function laterStartedRunIndicatorState(
       runId === undefined ||
       (runStartIndexByRunId.get(runId) ?? -1) <= terminatedRunStartIndex ||
       revokedEventIds.has(event.id) ||
-      isUsageEvent(event) ||
-      isGoalMarkerEvent(event)
+      isUsageEvent(event)
     ) {
       continue;
     }
@@ -175,7 +169,7 @@ function activeRunIndicatorStateFromChatEvents(
     if (revokedEventIds.has(event.id)) {
       continue;
     }
-    if (isUsageEvent(event) || isGoalMarkerEvent(event)) {
+    if (isUsageEvent(event)) {
       continue;
     }
     if (chatEventCompatibilityRole(event.eventType) === "assistant") {
@@ -263,9 +257,7 @@ export function liveRunIdsFromChatEvents(
       runId !== undefined &&
       !revokedEventIds.has(event.id) &&
       !terminatedRunIds.has(runId) &&
-      !isQueueMarkerEvent(event) &&
       !isUsageEvent(event) &&
-      !isGoalMarkerEvent(event) &&
       !seenRunIds.has(runId)
     ) {
       liveRunIds.push(runId);

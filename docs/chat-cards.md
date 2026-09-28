@@ -662,18 +662,11 @@ replaces the thread's previous immutable preview object. Viewer lease
 heartbeats do not capture screenshots, and screenshot failure does not affect
 the browser lease.
 
-Starting or resuming appends a payload-free `browser.open` chat event; clicking
-the sidebar close button appends a payload-free `browser.close` event without
-stopping the provider instance. Automatic reclamation for an existing thread
-also appends `browser.close` without inspecting the current sidebar state. The
-frontend supplies each mutation's event UUID so it can optimistically
-project the same event without duplicating it when the server response or
-realtime delivery arrives. Folding these events in order yields the thread's
-browser sidebar state. Opening a thread waits for the authoritative initial
-event page before using that projection to auto-open the sidebar, so stale
-IndexedDB events cannot override a later server close. A `browser.open`
-projection opens the sidebar only when no other utility sidebar is already open;
-a later `browser.close` projection does not auto-open it. The browser icon in
+Browser lifecycle is not a chat event. Starting or resuming the browser changes
+only the browser session. Closing the sidebar hides it without stopping the
+provider instance, and entering a thread never opens the sidebar
+automatically. The open and close endpoints still accept an `eventId` and echo
+it as `lifecycleEventId` for clients that send it. The browser icon in
 the thread header remains available in either state, and both a never-created
 browser and a non-live browser keep the Start action. When a screenshot exists,
 the suspended sidebar reuses it at full width and top-aligns it beneath a

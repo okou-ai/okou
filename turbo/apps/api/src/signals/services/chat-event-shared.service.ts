@@ -75,12 +75,6 @@ type InsertAssistantEventItem =
       readonly runEventSequenceNumber: number;
       readonly error: string;
       readonly runEventId: string;
-    }
-  | {
-      readonly eventType: "output.thinking";
-      readonly runEventSequenceNumber: number;
-      readonly thinking: string;
-      readonly runEventId: string;
     };
 
 export interface InsertAssistantEventsInput {
@@ -341,18 +335,11 @@ export async function appendAssistantEventRows(
           content: item.content,
         };
       }
-      if (item.eventType === "output.error") {
-        return {
-          ...eventIdentity,
-          eventType: item.eventType,
-          content: null,
-          error: item.error,
-        };
-      }
       return {
         ...eventIdentity,
         eventType: item.eventType,
-        thinking: item.thinking,
+        content: null,
+        error: item.error,
       };
     }),
   );

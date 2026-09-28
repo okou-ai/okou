@@ -2076,7 +2076,6 @@
       "cancellationRecoveryPending": "正在收尾已取消的執行，之後繼續處理排隊中的任務。",
       "event_one": "{{count}}個事件",
       "event_other": "{{count}}個事件",
-      "goal": "目標",
       "itemsWaiting": "{{items}}等待中",
       "itemsWaitingTogether": "{{messages}}和{{events}}等待中",
       "message_one": "{{count}}條訊息",

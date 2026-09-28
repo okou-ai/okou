@@ -1,7 +1,5 @@
 import {
   chatEventCompatibilityRole,
-  isBrowserLifecycleEventType,
-  isChatGoalMarkerEventType,
   isChatInputEventType,
 } from "./chat-events";
 import type { ChatEvent as PersistedChatEvent } from "./chat-threads";
@@ -19,41 +17,16 @@ type ChatEvent = (
   readonly optimisticUserMessageAssociation?: "run" | "queue";
 };
 
-type RecallControlEvent = Extract<
-  ChatEvent,
-  { eventType: "control.revoke" | "run.dequeued" }
->;
-
 export function isRecallControlEvent(
   event: ChatEvent,
-): event is RecallControlEvent {
-  return (
-    event.eventType === "control.revoke" || event.eventType === "run.dequeued"
-  );
-}
-
-export function isQueueMarkerEvent(
-  event: ChatEvent,
-): event is Extract<ChatEvent, { eventType: "run.queued" }> {
-  return event.eventType === "run.queued";
-}
-
-export function isGoalMarkerEvent(
-  event: ChatEvent,
-): event is Extract<ChatEvent, { eventType: "goal.open" | "goal.close" }> {
-  return isChatGoalMarkerEventType(event.eventType);
+): event is Extract<ChatEvent, { eventType: "control.revoke" }> {
+  return event.eventType === "control.revoke";
 }
 
 export function isFollowupsEvent(
   event: ChatEvent,
 ): event is Extract<ChatEvent, { eventType: "output.followups" }> {
   return event.eventType === "output.followups";
-}
-
-export function isGoalQueueEvent(
-  event: ChatEvent,
-): event is Extract<ChatEvent, { eventType: "input.goal" }> {
-  return event.eventType === "input.goal";
 }
 
 export function isUsageEvent(
@@ -129,11 +102,7 @@ function isHiddenSemanticChatEvent(
 ): boolean {
   return (
     isRecallControlEvent(event) ||
-    isQueueMarkerEvent(event) ||
-    isGoalQueueEvent(event) ||
     event.eventType === "input.budget" ||
-    isGoalMarkerEvent(event) ||
-    isBrowserLifecycleEventType(event.eventType) ||
     isInterruptedAssistantCancellation(event, context.interruptedRunIds) ||
     (event.eventType === "input.rejected" &&
       event.revokesEventId !== undefined &&

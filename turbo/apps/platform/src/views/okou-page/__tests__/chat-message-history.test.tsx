@@ -34,14 +34,6 @@ test("A claimed queued message restores as the active run after refresh", async 
         revokesEventId: queuedEventId,
         createdAt: "2026-08-22T09:00:01.000Z",
       },
-      {
-        id: "active-run-thinking",
-        role: "assistant",
-        content: null,
-        runId: activeRunId,
-        thinking: "Working on the immediate request",
-        createdAt: "2026-08-22T09:00:02.000Z",
-      },
     ],
   });
 

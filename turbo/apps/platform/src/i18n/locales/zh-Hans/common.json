@@ -2076,7 +2076,6 @@
       "cancellationRecoveryPending": "正在收尾已取消的运行，之后继续处理排队中的任务。",
       "event_one": "{{count}}个事件",
       "event_other": "{{count}}个事件",
-      "goal": "目标",
       "itemsWaiting": "{{items}}等待中",
       "itemsWaitingTogether": "{{messages}}和{{events}}等待中",
       "message_one": "{{count}}条消息",

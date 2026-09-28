@@ -210,25 +210,6 @@ export function mockArtifactConversation(
   });
 }
 
-export function liveBrowserSession(): BrowserSession {
-  return {
-    threadId: NAVIGATION_ARTIFACT_THREAD_ID,
-    name: "background-research",
-    status: "active",
-    viewerUrl: "https://viewer.example.test/background-research",
-    liveUrl: "https://viewer.example.test/live/background-research",
-    screenshotUrl: null,
-    proxyCountryCode: null,
-    timeoutMinutes: 240,
-    screen: { width: 1440, height: 900, resizable: true },
-    idleExpiresAt: "2026-09-01T12:10:00.000Z",
-    suspendedAt: null,
-    suspensionReason: null,
-    createdAt: CREATED_AT,
-    updatedAt: UPDATED_AT,
-  };
-}
-
 export function googleDriveConnector(
   connectionStatus: BuiltinConnectorResponse["connectionStatus"],
 ): BuiltinConnectorResponse {

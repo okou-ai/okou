@@ -8,11 +8,10 @@ import {
   type ArtifactDetail,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import {
   testContext,
   warmMermaidParser,
@@ -26,7 +25,6 @@ import {
   fileArtifactDetail,
   hostedSiteArtifactDetail,
   imageArtifactDetail,
-  liveBrowserSession,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
@@ -729,76 +727,6 @@ test("Keep image preview controls usable when toggling fullscreen", async () => 
         "artifact-sidebar-image-zoom-level",
       ),
     ).toHaveTextContent("100%");
-  });
-});
-
-test("Keep the utility sidebar selected by the user", async () => {
-  useWideScreen();
-  const chatEvents: MockChatEventInput[] = [];
-  let browserStarted = false;
-  mockArtifactConversation(context, {
-    catalog: [],
-    chatEvents,
-    browserSession: () => {
-      return browserStarted ? liveBrowserSession() : null;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await waitFor(() => {
-    expect(openArtifactsControl()).toBeVisible();
-  });
-  click(openArtifactsControl());
-  await waitFor(() => {
-    expect(artifactList()).toBeVisible();
-    expect(
-      context.mocks.ably.hasSubscription("browserSessionChanged"),
-    ).toBeTruthy();
-  });
-
-  browserStarted = true;
-  context.mocks.ably.trigger("browserSessionChanged", {
-    threadId: NAVIGATION_ARTIFACT_THREAD_ID,
-  });
-  chatEvents.push(
-    {
-      id: "navigation-background-browser-open",
-      eventType: "browser.open",
-      content: null,
-      runId: undefined,
-      seqId: 1,
-      createdAt: "2026-09-01T12:02:00.000Z",
-    },
-    {
-      id: "navigation-background-browser-card",
-      role: "assistant",
-      content: `[Background research browser](/browsers/${NAVIGATION_ARTIFACT_THREAD_ID})`,
-      runId: "navigation-background-browser-run",
-      runEventId: "navigation-background-browser-card-event",
-      sequenceNumber: 1,
-      seqId: 2,
-      createdAt: "2026-09-01T12:02:01.000Z",
-    },
-  );
-  act(() => {
-    createChatEvent(NAVIGATION_ARTIFACT_THREAD_ID);
-  });
-
-  await waitFor(() => {
-    const browserCard = document.querySelector("[data-browser-session-card]");
-    expect(browserCard).toBeVisible();
-    expect(browserCard).toHaveAccessibleName(
-      "Open background-research browser",
-    );
-    expect(artifactList()).toBeVisible();
-    expect(
-      document.querySelector("[data-browser-session-sidebar]"),
-    ).not.toBeInTheDocument();
   });
 });
 

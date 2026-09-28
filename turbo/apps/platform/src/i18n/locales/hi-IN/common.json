@@ -2083,7 +2083,6 @@
       "cancellationRecoveryPending": "पंक्तिबद्ध कार्य जारी रखने से पहले रद्द किए गए रन को अंतिम रूप दिया जा रहा है।",
       "event_one": "{{count}} घटना",
       "event_other": "{{count}} घटनाएँ",
-      "goal": "लक्ष्य",
       "itemsWaiting": "{{items}} प्रतीक्षा कर रहा है",
       "itemsWaitingTogether": "{{messages}} और {{events}} प्रतीक्षारत हैं",
       "message_one": "{{count}} संदेश",

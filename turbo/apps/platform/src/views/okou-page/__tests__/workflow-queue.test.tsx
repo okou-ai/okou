@@ -254,11 +254,6 @@ test("Active-run prompts stay in the conversation while automation events wait i
         ),
       },
     }),
-    eventRow(ACTIVE_PROMPT_THREAD_ID, 5, {
-      eventType: "goal.open",
-      runId: null,
-      payload: { content: "Keep the rollout healthy" },
-    }),
   ]);
 
   await setupPage({

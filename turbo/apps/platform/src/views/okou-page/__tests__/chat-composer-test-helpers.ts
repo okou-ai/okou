@@ -351,13 +351,6 @@ export function mockActiveTemplateThread(): void {
         runId: "run-template-active",
         createdAt: "2026-06-09T10:00:00Z",
       },
-      {
-        id: "msg-template-active-assistant",
-        role: "assistant",
-        content: null,
-        runId: "run-template-active",
-        createdAt: "2026-06-09T10:00:01Z",
-      },
     ],
     activeRunIds: ["run-template-active"],
   });

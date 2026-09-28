@@ -1,6 +1,20 @@
 import type { ChatEventRow } from "./chat-event-rows";
+import {
+  V7_ONLY_CHAT_EVENT_TYPES,
+  type ChatEventType,
+  type ProjectedChatEventType,
+  type V7OnlyChatEventType,
+} from "./chat-events";
 import { chatEventSchema, type ChatEvent } from "./chat-threads";
 import { visibleChatEventRowContent } from "./retired-goal-archive";
+
+function isV7OnlyChatEventType(
+  eventType: ChatEventType,
+): eventType is V7OnlyChatEventType {
+  return (V7_ONLY_CHAT_EVENT_TYPES as readonly ChatEventType[]).includes(
+    eventType,
+  );
+}
 
 function requiredRowField<T>(
   value: T | null,
@@ -19,8 +33,15 @@ function requiredRowField<T>(
  * projection, and the contract test suite pins every supported event type. A
  * control.interrupt target is emitted as interruptsRunId, never as run
  * ownership.
+ *
+ * V7 transition: rows of V7_ONLY_CHAT_EVENT_TYPES have no ChatEvent shape and
+ * project to null, so callers drop them. V8 (PR-2) removes those types from
+ * the row schema, after which this projection no longer returns null.
  */
-export function chatEventFromRow(row: ChatEventRow): ChatEvent {
+export function chatEventFromRow(row: ChatEventRow): ChatEvent | null {
+  if (isV7OnlyChatEventType(row.eventType)) {
+    return null;
+  }
   const payload = row.payload;
   const visibleContent = visibleChatEventRowContent(row);
   const base = {
@@ -31,24 +52,13 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
       row.eventType === "control.interrupt"
         ? undefined
         : (row.runId ?? undefined),
-    runGroupId:
-      row.contextType === "goal" && row.contextId !== null
-        ? row.contextId
-        : undefined,
     runEventId: row.runEventId ?? undefined,
     revokesEventId: row.revokesEventId ?? undefined,
     seqId: row.seqId,
     sequenceNumber: row.runEventSequenceNumber,
     createdAt: row.createdAt,
   };
-  const reducedBase = {
-    id: row.id,
-    threadId: row.chatThreadId,
-    seqId: row.seqId,
-    createdAt: row.createdAt,
-  };
-
-  const candidates: Record<ChatEventRow["eventType"], () => unknown> = {
+  const candidates: Record<ProjectedChatEventType, () => unknown> = {
     "input.prompt": () => {
       return {
         ...base,
@@ -67,18 +77,6 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         eventType: "input.automation",
         content: null,
         userMessage: payload?.userMessage ?? undefined,
-      };
-    },
-    "input.goal": () => {
-      return {
-        ...reducedBase,
-        eventType: "input.goal",
-        content: null,
-        userMessage: requiredRowField(
-          payload?.userMessage ?? null,
-          row.eventType,
-          "userMessage",
-        ),
       };
     },
     "input.budget": () => {
@@ -120,48 +118,11 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
         error: requiredRowField(payload?.error ?? null, row.eventType, "error"),
       };
     },
-    "output.thinking": () => {
-      return {
-        ...base,
-        eventType: "output.thinking",
-        content: null,
-        thinking: requiredRowField(
-          payload?.thinking ?? null,
-          row.eventType,
-          "thinking",
-        ),
-      };
-    },
     "output.followups": () => {
       return {
         ...base,
         eventType: "output.followups",
         content: requiredRowField(visibleContent, row.eventType, "content"),
-      };
-    },
-    "run.queued": () => {
-      return {
-        ...base,
-        eventType: "run.queued",
-        runId: requiredRowField(row.runId, row.eventType, "runId"),
-        content: requiredRowField(
-          payload?.content ?? null,
-          row.eventType,
-          "content",
-        ),
-      };
-    },
-    "run.dequeued": () => {
-      return {
-        ...base,
-        eventType: "run.dequeued",
-        runId: requiredRowField(row.runId, row.eventType, "runId"),
-        content: null,
-        revokesEventId: requiredRowField(
-          row.revokesEventId,
-          row.eventType,
-          "revokesEventId",
-        ),
       };
     },
     "run.completed": () => {
@@ -216,26 +177,6 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
           "revokesEventId",
         ),
       };
-    },
-    "browser.open": () => {
-      return { ...base, eventType: "browser.open", content: null };
-    },
-    "browser.close": () => {
-      return { ...base, eventType: "browser.close", content: null };
-    },
-    "goal.open": () => {
-      return {
-        ...reducedBase,
-        eventType: "goal.open",
-        content: requiredRowField(
-          payload?.content ?? null,
-          row.eventType,
-          "content",
-        ),
-      };
-    },
-    "goal.close": () => {
-      return { ...reducedBase, eventType: "goal.close", content: null };
     },
     "usage.recorded": () => {
       return {

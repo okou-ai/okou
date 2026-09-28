@@ -7,6 +7,7 @@ import {
   type State,
 } from "ccstate";
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
+import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { captureTaskCompletedSuccessfully } from "../../lib/posthog.ts";
 import type { ChatEventDataKey } from "../../shared-database/data-key.ts";
@@ -147,6 +148,15 @@ function createStoredChatEventsComputed({
   });
 }
 
+function chatEventsFromRows(
+  rows: readonly ChatEventRow[],
+): PersistedChatEvent[] {
+  return rows.flatMap((row) => {
+    const event = chatEventFromRow(row);
+    return event === null ? [] : [event];
+  });
+}
+
 function createSharedDatabaseEventSignals({
   threadId,
   persistentChatEvents$,
@@ -164,6 +174,19 @@ function createSharedDatabaseEventSignals({
   const dataKey$ = computed((): ChatEventDataKey => {
     return { kind: "chat-event", threadId };
   });
+  // V7 transition: the projection drops rows of retired event types, so the
+  // read cursor follows rows rather than projected events.
+  const readRowSeqId$ = state<number | null>(null);
+  const advanceReadRowSeqId$ = command(
+    ({ set }, rows: readonly ChatEventRow[]) => {
+      const lastSeqId = rows.at(-1)?.seqId;
+      if (lastSeqId !== undefined) {
+        set(readRowSeqId$, (previous) => {
+          return Math.max(previous ?? 0, lastSeqId);
+        });
+      }
+    },
+  );
   const load$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const dataKey = await get(dataKey$);
@@ -177,9 +200,8 @@ function createSharedDatabaseEventSignals({
       if (rows.length === 0) {
         return;
       }
-      const events = rows.map((row) => {
-        return chatEventFromRow(row);
-      });
+      set(advanceReadRowSeqId$, rows);
+      const events = chatEventsFromRows(rows);
       set(persistentChatEvents$, (previous) => {
         return mergePersistentEvents([previous, events]);
       });
@@ -191,7 +213,12 @@ function createSharedDatabaseEventSignals({
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const dataKey = await get(dataKey$);
       signal.throwIfAborted();
-      const afterSeqId = get(persistentChatEvents$).at(-1)?.seqId ?? null;
+      const eventSeqId = get(persistentChatEvents$).at(-1)?.seqId ?? null;
+      const rowSeqId = get(readRowSeqId$);
+      const afterSeqId =
+        eventSeqId === null || rowSeqId === null
+          ? (eventSeqId ?? rowSeqId)
+          : Math.max(eventSeqId, rowSeqId);
       const cachedRows = await set(
         queryChatEventSharedDatabase$,
         { dataKey, afterSeqId, consistency: "cache-only" },
@@ -207,13 +234,8 @@ function createSharedDatabaseEventSignals({
               signal,
             );
       signal.throwIfAborted();
-      await set(
-        mergePersistentEvents$,
-        rows.map((row) => {
-          return chatEventFromRow(row);
-        }),
-        signal,
-      );
+      set(advanceReadRowSeqId$, rows);
+      await set(mergePersistentEvents$, chatEventsFromRows(rows), signal);
       signal.throwIfAborted();
     },
   );

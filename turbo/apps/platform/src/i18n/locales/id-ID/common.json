@@ -2076,7 +2076,6 @@
       "cancellationRecoveryPending": "Menyelesaikan eksekusi yang dibatalkan sebelum melanjutkan pekerjaan dalam antrean.",
       "event_one": "{{count}} peristiwa",
       "event_other": "{{count}} peristiwa",
-      "goal": "Tujuan",
       "itemsWaiting": "{{items}} menunggu",
       "itemsWaitingTogether": "{{messages}} dan {{events}} menunggu",
       "message_one": "{{count}} pesan",
