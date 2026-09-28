@@ -190,15 +190,21 @@ function assistantMessage(id: string, content: string) {
   };
 }
 
-function mockManualReconnect(onReconnect: (account: unknown) => void): void {
+function mockManualReconnect(
+  onReconnect: (account: unknown) => void,
+  options?: { completion?: Promise<void>; responseId?: string },
+): void {
   context.mocks.api(
     builtinConnectorManualGrantContract.connect,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond, withSignal }) => {
       expect(params.connectorSlug).toBe("github");
       expect(body.authMethod).toBe("api-token");
       onReconnect(body.account);
+      if (options?.completion) {
+        await withSignal(options.completion);
+      }
       return respond(200, {
-        id: EXACT_CONNECTION_ID,
+        id: options?.responseId ?? EXACT_CONNECTION_ID,
         slug: "github",
         authMethod: "api-token",
         externalId: null,
@@ -834,6 +840,85 @@ test("An exact reconnect card opens the non-default account dialog and continues
     expect(continuationPrompt).toBe("Continue the account-specific task");
   });
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test("A reconnect completion for another account never continues the chat", async () => {
+  mockExactReconnectAccount("reconnect-required");
+  let continuationPrompt: string | null = null;
+  let submittedAccount: unknown = null;
+  mockManualReconnect(
+    (account) => {
+      submittedAccount = account;
+    },
+    { responseId: DEFAULT_CONNECTION_ID },
+  );
+  await setupChat(exactReconnectUrl().toString(), (prompt) => {
+    continuationPrompt = prompt;
+  });
+
+  const card = await screen.findByTestId("connector-action-card");
+  click(buttonIn(card, "Reconnect"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "GitHub · Work GitHub",
+  });
+  await fill(
+    within(dialog).getByPlaceholderText("work-github-token"),
+    "synthetic-token",
+  );
+  click(buttonIn(dialog, "Save"));
+
+  await waitFor(() => {
+    expect(submittedAccount).toStrictEqual({
+      intent: "reconnect",
+      connectionId: EXACT_CONNECTION_ID,
+    });
+    expect(buttonIn(dialog, "Save")).toBeEnabled();
+  });
+  expect(dialog).toBeInTheDocument();
+  expect(continuationPrompt).toBeNull();
+});
+
+test("Closing an in-flight reconnect dialog never continues after a late success", async () => {
+  mockExactReconnectAccount("reconnect-required");
+  const gate = context.mocks.deferred<void>();
+  let submittedAccount: unknown = null;
+  let continuationPrompt: string | null = null;
+  mockManualReconnect(
+    (account) => {
+      submittedAccount = account;
+    },
+    { completion: gate.promise },
+  );
+  await setupChat(exactReconnectUrl().toString(), (prompt) => {
+    continuationPrompt = prompt;
+  });
+
+  const card = await screen.findByTestId("connector-action-card");
+  click(buttonIn(card, "Reconnect"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "GitHub · Work GitHub",
+  });
+  await fill(
+    within(dialog).getByPlaceholderText("work-github-token"),
+    "synthetic-token",
+  );
+  const save = buttonIn(dialog, "Save");
+  click(save);
+  await waitFor(() => {
+    expect(submittedAccount).toStrictEqual({
+      intent: "reconnect",
+      connectionId: EXACT_CONNECTION_ID,
+    });
+    expect(save).toBeDisabled();
+  });
+  click(buttonIn(dialog, "Close"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  gate.resolve();
+  await screen.findByText("GitHub connected successfully");
+  expect(continuationPrompt).toBeNull();
 });
 
 test("An unnamed manual reconnect account uses its account label in the card and dialog", async () => {

@@ -127,14 +127,17 @@ type ConnectorCardSignalsRegistry = CardSignalsRegistry<
   ConnectorSignals
 >;
 
+type ActiveExactReconnectConnectorAction =
+  ExactReconnectConnectorActionDescriptor & {
+    readonly catalogItem: PlatformConnectorCatalogStatusItem;
+    readonly account: ConnectorAccountConnection;
+  };
+
 type ActiveChatConnectorAction =
   | (CatalogConnectorActionDescriptor & {
       readonly catalogItem: PlatformConnectorCatalogStatusItem;
     })
-  | (ExactReconnectConnectorActionDescriptor & {
-      readonly catalogItem: PlatformConnectorCatalogStatusItem;
-      readonly account: ConnectorAccountConnection;
-    })
+  | ActiveExactReconnectConnectorAction
   | CustomConnectorActionDescriptor;
 
 const activeChatConnectorActionState$ = state<ActiveChatConnectorAction | null>(
@@ -246,6 +249,26 @@ const runConnectorActionCallback$ = command(
       },
       signal,
     );
+  },
+);
+
+export const completeExactReconnectChatAction$ = command(
+  async (
+    { get, set },
+    active: ActiveExactReconnectConnectorAction,
+    connectionId: string | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    // A late connection response must not continue a dialog the user closed
+    // or a previous attempt with the same link that they have since reopened.
+    if (get(activeChatConnectorActionState$) !== active) {
+      return;
+    }
+    if (connectionId !== active.account.id) {
+      throw new Error("Reconnected a different connector account");
+    }
+    await set(runConnectorActionCallback$, active, signal);
   },
 );
 

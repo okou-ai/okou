@@ -572,8 +572,10 @@ or unsupported-auth-method account is unavailable; other lookup errors retain a
 retry action. Clicking the card rechecks the exact account and opens the existing
 chat connection dialog, showing that account's label and restricting reconnection
 to its stored auth method and ID without a default-account projection. A callback
-runs only after that exact account reconnects successfully. The direct reconnect
-URL remains available for external navigation and older clients.
+runs only after that exact account reconnects successfully while the same dialog
+is still active; closing it or receiving a late result from an earlier attempt
+must not continue the chat. The direct reconnect URL remains available for
+external navigation and older clients.
 
 ### Complex shared data: permission card
 

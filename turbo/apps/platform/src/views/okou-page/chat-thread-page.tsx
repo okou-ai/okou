@@ -175,6 +175,7 @@ import type {
 import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
+  completeExactReconnectChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -4556,6 +4557,7 @@ function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
   const runCallback = useSet(runChatActionCallback$);
+  const completeExactReconnect = useSet(completeExactReconnectChatAction$);
   const pageSignal = useGet(pageSignal$);
   const customConnectors = useLastResolved(customConnectors$);
   const accountLabelOf = useConnectorAccountLabel();
@@ -4564,12 +4566,13 @@ function ActiveChatConnectorActionConnectModal() {
     return null;
   }
 
-  const onSuccess = async (connectionId: string | null) => {
-    if (
-      active.kind === "catalog-reconnect" &&
-      connectionId !== active.account.id
-    ) {
-      throw new Error("Reconnected a different connector account");
+  const onSuccess = async (
+    connectionId: string | null,
+    attemptSignal: AbortSignal,
+  ) => {
+    if (active.kind === "catalog-reconnect") {
+      await completeExactReconnect(active, connectionId, attemptSignal);
+      return;
     }
     if (active.callbackPrompt && active.threadId) {
       await runCallback(
