@@ -95,7 +95,7 @@ test("The subscription card leads the start cards without growing the row", asyn
   const row = screen.getByTestId("start-cards");
   expect(row.children).toHaveLength(3);
   expect(row.firstElementChild).toBe(subscriptionCard());
-  expect(subscriptionCard()).toHaveTextContent("Bring your subscription");
+  expect(subscriptionCard()).toHaveTextContent("Skip Okou credits");
 });
 
 test("The Codex button opens the Codex sign-in from the start card", async () => {

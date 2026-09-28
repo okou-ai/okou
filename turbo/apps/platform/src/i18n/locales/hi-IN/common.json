@@ -2236,9 +2236,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "अपने Claude या ChatGPT प्लान से काम चलाएँ",
+        "description": "अपने Claude Max 5x/20x या Codex प्लान से चलाएँ",
         "openSettingsAria": "मॉडल सेटिंग्स खोलें",
-        "title": "अपनी सदस्यता जोड़ें"
+        "title": "Okou क्रेडिट के बिना"
       },
       "templates": "टेम्पलेट"
     },

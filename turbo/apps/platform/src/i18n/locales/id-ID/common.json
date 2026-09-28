@@ -2227,9 +2227,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Pakai paket Claude atau ChatGPT Anda",
+        "description": "Pakai paket Claude Max 5x/20x atau Codex Anda",
         "openSettingsAria": "Buka pengaturan model",
-        "title": "Pakai langganan Anda"
+        "title": "Tanpa kredit Okou"
       },
       "templates": "Templat"
     },

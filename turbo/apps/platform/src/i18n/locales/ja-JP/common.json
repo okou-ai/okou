@@ -2227,9 +2227,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Claude や ChatGPT のプランでタスクを実行",
+        "description": "Claude Max 5x/20x や Codex のプランで実行",
         "openSettingsAria": "モデル設定を開く",
-        "title": "サブスクリプションを使う"
+        "title": "Okouクレジット不要"
       },
       "templates": "テンプレート"
     },

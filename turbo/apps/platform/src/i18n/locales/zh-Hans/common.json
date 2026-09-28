@@ -2227,9 +2227,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "用你的 Claude 或 ChatGPT 套餐运行任务",
+        "description": "直接用你的 Claude Max 5x/20x 或 Codex 额度",
         "openSettingsAria": "打开模型设置",
-        "title": "接入你的订阅"
+        "title": "不消耗 Okou 积分"
       },
       "templates": "模板"
     },

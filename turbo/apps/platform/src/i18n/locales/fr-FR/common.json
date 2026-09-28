@@ -2283,9 +2283,9 @@
       "subscription": {
         "claude": "Claude",
         "codex": "Codex",
-        "description": "Utilisez votre forfait Claude ou ChatGPT",
+        "description": "Utilisez votre forfait Claude Max 5x/20x ou Codex",
         "openSettingsAria": "Ouvrir les paramètres des modèles",
-        "title": "Utilisez votre abonnement"
+        "title": "Sans crédits Okou"
       },
       "templates": "Modèles"
     },
