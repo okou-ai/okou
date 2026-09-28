@@ -16,10 +16,7 @@ use api_contracts::generated::{
         RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
     },
     decode_paths, routes,
-    types::runners::runs::active_inputs::{
-        receipt::Response as ActiveInputReceiptResponse,
-        reserve::Response as ActiveInputReserveResponse,
-    },
+    types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
 };
 use bytes::Bytes;
 use reqwest::{Response, StatusCode};
@@ -876,19 +873,7 @@ impl JobProvider for ApiProvider {
                     response_decode_elapsed,
                     response_attribution,
                 );
-                let deferred_active_input = ctx
-                    .pi_launch_config
-                    .as_ref()
-                    .and_then(|config| config.get("apiFirstTurn"))
-                    .is_some_and(|slot| {
-                        slot.get("schemaVersion")
-                            .and_then(serde_json::Value::as_u64)
-                            == Some(2)
-                            && slot.get("activeInput").and_then(serde_json::Value::as_bool)
-                                == Some(true)
-                    });
-                let active_input_source = (supports_thread_active_input(ctx.reuse_key.as_deref())
-                    || deferred_active_input)
+                let active_input_source = supports_thread_active_input(ctx.reuse_key.as_deref())
                     .then(|| {
                         ActiveInputSource::api(
                             self.api.clone(),
@@ -1423,62 +1408,31 @@ pub struct ApiClient {
     token: String,
 }
 
-#[derive(Serialize)]
-struct EmptyRequest {}
-
 impl ApiClient {
     pub fn new(http: HttpClient, token: String) -> Self {
         Self { http, token }
     }
 
-    pub(crate) async fn reserve_active_inputs(
+    pub(crate) async fn next_steerable_input(
         &self,
         run_id: RunId,
         sandbox_token: &str,
-    ) -> ProviderResult<ActiveInputReserveResponse> {
+    ) -> ProviderResult<NextSteerableInputResponse> {
         let run_id = run_id.to_string();
         let resp = send_api(
-            self.http
-                .request_resolved_route(
-                    routes::runners::runs::by_run_id::active_inputs::reserve::route(
-                        routes::runners::runs::by_run_id::active_inputs::reserve::Params {
-                            run_id: run_id.as_str(),
-                        },
-                    ),
-                    sandbox_token,
-                )
-                .json(&EmptyRequest {}),
-            "reserve active inputs",
+            self.http.request_resolved_route(
+                routes::runners::runs::by_run_id::steerable_inputs::next::route(
+                    routes::runners::runs::by_run_id::steerable_inputs::next::Params {
+                        run_id: run_id.as_str(),
+                    },
+                ),
+                sandbox_token,
+            ),
+            "read next steerable input",
         )
         .await?;
-        let resp = check_api_status(resp, "reserve active inputs").await?;
-        decode_api_json(resp, "reserve active inputs").await
-    }
-
-    pub(crate) async fn record_active_input_delivery(
-        &self,
-        run_id: RunId,
-        sandbox_token: &str,
-        delivery_id: &str,
-    ) -> ProviderResult<ActiveInputReceiptResponse> {
-        let run_id = run_id.to_string();
-        let resp = send_api(
-            self.http
-                .request_resolved_route(
-                    routes::runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::route(
-                        routes::runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::Params {
-                            run_id: run_id.as_str(),
-                            delivery_id,
-                        },
-                    ),
-                    sandbox_token,
-                )
-                .json(&EmptyRequest {}),
-            "record active input delivery",
-        )
-        .await?;
-        let resp = check_api_status(resp, "record active input delivery").await?;
-        decode_api_json(resp, "record active input delivery").await
+        let resp = check_api_status(resp, "read next steerable input").await?;
+        decode_api_json(resp, "read next steerable input").await
     }
 
     /// Poll for a pending job. The response contains `job: None` when no work is available.
@@ -1943,14 +1897,9 @@ trait ApiDecodePath: DeserializeOwned {
     const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema;
 }
 
-impl ApiDecodePath for ActiveInputReserveResponse {
+impl ApiDecodePath for NextSteerableInputResponse {
     const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::runs::by_run_id::active_inputs::reserve::RESPONSE;
-}
-
-impl ApiDecodePath for ActiveInputReceiptResponse {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &decode_paths::runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::RESPONSE;
+        &decode_paths::runners::runs::by_run_id::steerable_inputs::next::RESPONSE;
 }
 
 impl ApiDecodePath for PollResponse {
@@ -2839,7 +2788,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             workspace_reuse_result: None,
-            active_input_delivery_ids: Vec::new(),
         }
     }
 
@@ -5578,7 +5526,6 @@ mod tests {
                     sandbox_id: None,
                     sandbox_reuse_result: None,
                     workspace_reuse_result: None,
-                    active_input_delivery_ids: Vec::new(),
                 },
             )
             .await
@@ -5623,7 +5570,6 @@ mod tests {
                 sandbox_id: None,
                 sandbox_reuse_result: Some(SandboxReuseResult::NoReuseKey),
                 workspace_reuse_result: Some(WorkspaceReuseResult::NoReuseKey),
-                active_input_delivery_ids: Vec::new(),
             },
         )
         .await

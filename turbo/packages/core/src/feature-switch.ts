@@ -443,6 +443,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.HostedSiteDelete]: {
+    maintainer: "linghan@okou.ai",
+    description:
+      "Let a hosted site's owner take the site and all of its versions offline with okou host delete; redeploying restores it.",
+    enabled: true,
+  },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
     description:

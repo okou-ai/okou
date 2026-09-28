@@ -1084,6 +1084,22 @@ export const piApiFirstTurnConfigSchema = z
   .readonly();
 
 /**
+ * Installed-CLI launch requirements the API captured for a Pi run. The guest
+ * execs the rootfs-installed CLI only when it matches the session
+ * construction (or runtime version) and meets the CLI floor; otherwise it uses
+ * the commit-addressed package. Carried in the execution context, not the
+ * launch config, because the Pi CLI parses the launch config strictly.
+ */
+export const piInstalledCliRequirementSchema = z
+  .object({
+    requiredPiAgentRuntimeVersion: releaseVersionSchema,
+    minCliVersion: releaseVersionSchema,
+    requiredPiSessionConstructionDigest: piSessionConstructionDigestSchema,
+  })
+  .strict()
+  .readonly();
+
+/**
  * Non-secret Pi model metadata forwarded to the Sandbox. `apiKeyEnv` names the
  * runtime environment entry used by the Sandbox, while `credentialSecretName`
  * names the API-owned encrypted secret that backs that entry.
@@ -1486,6 +1502,7 @@ const storedExecutionContextObjectSchema = z.object({
   piSessionId: z.uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
+  piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
 export const storedExecutionContextSchema =
@@ -1592,6 +1609,7 @@ const executionContextObjectSchema = z.object({
   piSessionId: z.uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
+  piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
 export const executionContextSchema = executionContextObjectSchema.superRefine(
@@ -1840,6 +1858,74 @@ export const runnersActiveInputsContract = c.router({
   },
 });
 
+export const STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE =
+  "INPUT_ALREADY_CONSUMED";
+export const STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE = "RUN_NOT_RUNNING";
+
+export const runnerNextSteerableInputResponseSchema = z.object({
+  input: z
+    .object({
+      eventId: z.uuid(),
+      prompt: z.string().min(1),
+    })
+    .nullable(),
+});
+
+export const runnerSteeredInputResponseSchema = z.object({
+  outcome: z.literal("steered"),
+});
+
+/**
+ * Steering without delivery IDs: read the next steerable `input.prompt` for a
+ * running run, then declare it steered, which consumes it with a replacement
+ * event carrying the run ID. Both authenticate with the run's sandbox token.
+ */
+export const runnersSteerContract = c.router({
+  next: {
+    method: "GET",
+    path: "/api/runners/runs/:runId/steerable-inputs/next",
+    headers: authHeadersSchema,
+    pathParams: z.object({
+      runId: z.uuid(),
+    }),
+    responses: {
+      200: runnerNextSteerableInputResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Read the next input prompt a running run may steer",
+  },
+  steered: {
+    method: "POST",
+    path: "/api/runners/runs/:runId/steerable-inputs/:eventId/steered",
+    headers: authHeadersSchema,
+    pathParams: z.object({
+      runId: z.uuid(),
+      eventId: z.uuid(),
+    }),
+    body: z.object({}),
+    responses: {
+      200: runnerSteeredInputResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema.extend({
+        error: apiErrorSchema.shape.error.extend({
+          code: z.enum([
+            STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
+            STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
+          ]),
+        }),
+      }),
+      500: apiErrorSchema,
+    },
+    summary: "Declare an input prompt steered into a run",
+  },
+});
+
 export const runnersConnectorRuntimeSyncContract = c.router({
   sync: {
     method: "POST",
@@ -1950,6 +2036,7 @@ export type RunnersJobClaimContract = typeof runnersJobClaimContract;
 export type RunnersModelProviderFailuresContract =
   typeof runnersModelProviderFailuresContract;
 export type RunnersActiveInputsContract = typeof runnersActiveInputsContract;
+export type RunnersSteerContract = typeof runnersSteerContract;
 export type RunnersConnectorRuntimeSyncContract =
   typeof runnersConnectorRuntimeSyncContract;
 export type RunnersHeartbeatContract = typeof runnersHeartbeatContract;
@@ -1988,6 +2075,9 @@ export type PiMemoryRecallSelection = z.infer<
   typeof piMemoryRecallSelectionSchema
 >;
 export type PiApiFirstTurnConfig = z.infer<typeof piApiFirstTurnConfigSchema>;
+export type PiInstalledCliRequirement = z.infer<
+  typeof piInstalledCliRequirementSchema
+>;
 export type PiApiFirstTurnOwnershipTransferMode = z.infer<
   typeof piApiFirstTurnOwnershipTransferModeSchema
 >;

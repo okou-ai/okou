@@ -25,8 +25,8 @@ pub const HTTP_TIMEOUT_SECS: u64 = 30;
 /// HTTP request timeout for uploads in seconds.
 pub const HTTP_UPLOAD_TIMEOUT_SECS: u64 = 60;
 
-/// HTTP request timeout for one active-input receipt attempt, including API cold starts.
-pub const ACTIVE_INPUT_RECEIPT_TIMEOUT_SECS: u64 = 10;
+/// HTTP request timeout for one steered declaration attempt, including API cold starts.
+pub const ACTIVE_INPUT_STEERED_TIMEOUT_SECS: u64 = 10;
 
 /// Maximum collected successful Okou API response body size.
 ///
@@ -38,8 +38,8 @@ pub const API_SUCCESS_RESPONSE_BODY_MAX_BYTES: usize = 5 * 1024 * 1024;
 /// Maximum collected non-retryable Okou API error response body size.
 pub const API_ERROR_RESPONSE_BODY_MAX_BYTES: usize = 64 * 1024;
 
-/// Global active-input receipt finalization budget, allowing one full HTTP attempt.
-pub const ACTIVE_INPUT_RECEIPT_FINALIZE_TIMEOUT_SECS: u64 = ACTIVE_INPUT_RECEIPT_TIMEOUT_SECS;
+/// Global steered declaration finalization budget, allowing one full HTTP attempt.
+pub const ACTIVE_INPUT_STEERED_FINALIZE_TIMEOUT_SECS: u64 = ACTIVE_INPUT_STEERED_TIMEOUT_SECS;
 
 /// Maximum wait for an in-flight delivery-identified CLI sink operation.
 pub const ACTIVE_INPUT_SINK_QUIESCENCE_TIMEOUT_SECS: u64 = 5;

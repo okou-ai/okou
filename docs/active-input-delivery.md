@@ -10,8 +10,8 @@ mutual exclusion. Steering takes no locks and writes no delivery state.
 ## Lifecycle
 
 The delivery ID that the Runner and Guest carry is the source `chat_events` ID.
-`active_input_deliveries` and `active_input_delivery_items` are no longer read
-or written; release 4 drops them.
+Steering keeps no delivery state of its own; release 4 dropped the former
+delivery tables (migration `1273_drop_active_input_delivery_tables`).
 
 - **Reserve** reads the thread's earliest run-less, unrevoked `input.prompt`,
   or an `input.budget` that targets the current run, and returns its event ID as
@@ -46,9 +46,35 @@ final recovery path. A successful receipt reuses the existing Runner
 notification channel when another prompt is queued; the 30-second poll remains
 notification-loss recovery rather than normal steering latency.
 
-Pi API-first turns do not steer. A message sent during such a turn stays queued
-and is picked after the run completes and releases its slot. A turn that needs
-tools launches a sandbox, and the Runner steers there under the rules above.
+Pi runs execute in the Sandbox from their first turn, so the Runner steers
+them under the rules above. The retired API-first turn never steered.
+
+## Steering Without Delivery IDs
+
+Two further sandbox-token endpoints steer without a delivery ID. The Runner does
+not call them yet; reserve, receipt and `activeInputDeliveryIds` stay unchanged
+until it switches.
+
+- **Next steerable input** (`GET /api/runners/runs/:runId/steerable-inputs/next`)
+  reads, within the run's thread, the first run-less, unrevoked `input.prompt`
+  positioned after the queue input the run consumed last, and returns `{ input: { eventId, prompt } }` with the prompt materialized as
+  reserve does, or `{ input: null }`. It writes nothing. Automation and budget
+  inputs are never returned. A run that is not running, a prompt whose Discord
+  binding is gone, and a prompt that exceeds the control payload all return
+  `null`; the prompt stays queued for the next pick, and later prompts do not
+  overtake it. The anchor is the run's latest `input.prompt` or
+  `input.automation` event carrying its `runId`, located at the position of the
+  source it revoked: the replacement itself is appended after prompts queued in
+  the meantime, so anchoring on it would skip them. A run's budget input is not
+  an anchor because it is appended at an arbitrary position.
+- **Declare steered**
+  (`POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`) consumes
+  the prompt exactly like receipt: one replacement insert on the revoke edge,
+  and on a conflict the revoker decides. A replacement by this run returns
+  `200 { outcome: "steered" }`, so a repeat is idempotent. Any other revoker
+  returns `409` with `INPUT_ALREADY_CONSUMED`, or `RUN_NOT_RUNNING` when the run
+  has left `running`; the Runner ignores both. An event that is missing, in
+  another thread, or not an `input.prompt` returns `404`.
 
 ## Terminal Status and Quiescence
 

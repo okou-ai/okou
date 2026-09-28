@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::error::TryRecvError;
 use tracing_subscriber::prelude::*;
 
-use super::{DELIVERY_ID, EVENT_ID, api_active_input_source};
+use super::{EVENT_ID, api_active_input_source};
 use crate::executor::agent_run::{RunControls, RunStart, run_in_sandbox};
 use crate::executor::tests::support::{
     CapturedEvents, RUN_IN_SANDBOX_TEST_TIMEOUT, create_overridden_sandbox, minimal_context,
@@ -52,15 +52,15 @@ pub(super) async fn retry_delay(captured: &CapturedEvents, count: usize) -> Dura
     .await
 }
 
-async fn take_reserve_request(server: &mut RawHttpTestServer, run_id: RunId) {
-    let request = observe("reserve request", || match server.try_next_request() {
+async fn take_next_request(server: &mut RawHttpTestServer, run_id: RunId) {
+    let request = observe("next request", || match server.try_next_request() {
         Ok(request) => Some(request),
         Err(TryRecvError::Empty) => None,
-        Err(error) => panic!("reserve server closed: {error}"),
+        Err(error) => panic!("next server closed: {error}"),
     })
     .await;
     assert!(request.starts_with(&format!(
-        "POST /api/runners/runs/{run_id}/active-inputs/reserve "
+        "GET /api/runners/runs/{run_id}/steerable-inputs/next "
     )));
 }
 
@@ -79,7 +79,7 @@ async fn advance_retry(
     );
     // Tokio timers have millisecond granularity; cross the deadline explicitly.
     tokio::time::advance(Duration::from_millis(2)).await;
-    take_reserve_request(server, run_id).await;
+    take_next_request(server, run_id).await;
 }
 
 async fn exercise_read_backoff(run_id: RunId, cancel_while_waiting: bool) -> Duration {
@@ -97,13 +97,11 @@ async fn exercise_read_backoff(run_id: RunId, cancel_while_waiting: bool) -> Dur
         .map(|_| RawHttpAction::Respond(failure.clone()))
         .collect::<Vec<_>>();
     actions.extend([
-        RawHttpAction::Respond(json_response("200 OK", r#"{"outcome":"empty"}"#)),
+        RawHttpAction::Respond(json_response("200 OK", r#"{"input":null}"#)),
         RawHttpAction::Respond(failure.clone()),
         RawHttpAction::Respond(json_response(
             "200 OK",
-            &format!(
-                r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"backoff recovered"}}"#,
-            ),
+            &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"backoff recovered"}}}}"#,),
         )),
         RawHttpAction::Respond(failure),
         // Keep the server alive to detect an unwanted retry after stop/cancel.
@@ -144,7 +142,7 @@ async fn exercise_read_backoff(run_id: RunId, cancel_while_waiting: bool) -> Dur
         )
         .await
     });
-    take_reserve_request(&mut server, run_id).await;
+    take_next_request(&mut server, run_id).await;
     let mut delay = retry_delay(&captured, 1).await;
     assert_eq!(
         tokio::time::Instant::now(),
@@ -164,7 +162,7 @@ async fn exercise_read_backoff(run_id: RunId, cancel_while_waiting: bool) -> Dur
 
     // The queued notifications trigger the next read after Empty, without
     // waiting for the safety recheck. Its failure must restart at attempt one.
-    take_reserve_request(&mut server, run_id).await;
+    take_next_request(&mut server, run_id).await;
     delay = retry_delay(&captured, 8).await;
     assert_eq!(delay, initial_delay, "empty response resets the backoff");
     advance_retry(&mut server, &notifications, run_id, delay).await;
@@ -172,13 +170,13 @@ async fn exercise_read_backoff(run_id: RunId, cancel_while_waiting: bool) -> Dur
         (overrides.process_control_calls().len() == 1).then_some(())
     })
     .await;
-    take_reserve_request(&mut server, run_id).await;
+    take_next_request(&mut server, run_id).await;
     delay = retry_delay(&captured, 9).await;
-    assert_eq!(delay, initial_delay, "reserved response resets the backoff");
+    assert_eq!(delay, initial_delay, "input response resets the backoff");
     let calls = overrides.process_control_calls();
-    assert_eq!(calls[0].message_id, DELIVERY_ID);
+    assert_eq!(calls[0].message_id, EVENT_ID);
     let payload = serde_json::from_slice::<serde_json::Value>(&calls[0].payload).unwrap();
-    assert_eq!(payload["deliveryId"], DELIVERY_ID);
+    assert_eq!(payload["eventId"], EVENT_ID);
     assert_eq!(payload["text"], "backoff recovered");
 
     if cancel_while_waiting {
@@ -252,9 +250,7 @@ async fn run_in_sandbox_spaces_failed_api_reads_on_the_wire() {
     }
     actions.push(RawHttpAction::Respond(json_response(
         "200 OK",
-        &format!(
-            r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"wire retry recovered"}}"#,
-        ),
+        &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"wire retry recovered"}}}}"#,),
     )));
     let mut server = RawHttpTestServer::spawn(actions).await;
     let notifications = ActiveInputNotifications::new();
@@ -277,9 +273,9 @@ async fn run_in_sandbox_spaces_failed_api_reads_on_the_wire() {
         .await
     });
 
-    let reserve_prefix = format!("POST /api/runners/runs/{run_id}/active-inputs/reserve ");
-    let initial = server.next_request("initial wire reserve").await;
-    assert!(initial.starts_with(&reserve_prefix));
+    let next_prefix = format!("GET /api/runners/runs/{run_id}/steerable-inputs/next ");
+    let initial = server.next_request("initial wire next").await;
+    assert!(initial.starts_with(&next_prefix));
     let mut observed_delays = Vec::new();
     for release in releases {
         // Use real time and gate the response: backoff cannot begin before
@@ -290,7 +286,7 @@ async fn run_in_sandbox_spaces_failed_api_reads_on_the_wire() {
         notifications.notify(run_id);
         let request = server.next_request("wire retry after failure").await;
         observed_delays.push(released_at.elapsed());
-        assert!(request.starts_with(&reserve_prefix));
+        assert!(request.starts_with(&next_prefix));
     }
     assert!(
         overrides
@@ -308,13 +304,13 @@ async fn run_in_sandbox_spaces_failed_api_reads_on_the_wire() {
 
     let calls = overrides.process_control_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].message_id, DELIVERY_ID);
+    assert_eq!(calls[0].message_id, EVENT_ID);
     let payload = serde_json::from_slice::<serde_json::Value>(&calls[0].payload).unwrap();
     assert_eq!(payload["text"], "wire retry recovered");
     for (elapsed, minimum_ms) in observed_delays.into_iter().zip([200, 400, 800]) {
         assert!(
             elapsed >= Duration::from_millis(minimum_ms),
-            "reserve retry arrived after {elapsed:?}, before its {minimum_ms} ms lower bound"
+            "next retry arrived after {elapsed:?}, before its {minimum_ms} ms lower bound"
         );
     }
 }

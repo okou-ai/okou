@@ -108,6 +108,7 @@ function installSearchResources() {
     createdAt: "2026-08-01T01:00:00.000Z",
     canManage: true,
     canPublish: true,
+    importSource: null,
     official: null,
   };
   context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {

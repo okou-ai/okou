@@ -50,26 +50,14 @@ const complete = {
     state: "observed",
     coverage: "complete",
     observedTokens: {
-      input: 11,
-      cacheRead: 22,
-      cacheCreation: 33,
-      output: 44,
-      total: 110,
+      input: 10,
+      cacheRead: 20,
+      cacheCreation: 30,
+      output: 40,
+      total: 100,
     },
   },
   sources: {
-    apiFirstTurn: {
-      state: "observed",
-      sampledAt: 0,
-      coverage: "complete",
-      tokens: {
-        input: 1,
-        cacheRead: 2,
-        cacheCreation: 3,
-        output: 4,
-        total: 10,
-      },
-    },
     sandboxProxy: {
       state: "observed",
       sampledAtMs: 1,
@@ -84,6 +72,35 @@ const complete = {
         cacheCreation: 30,
         output: 40,
         total: 100,
+      },
+    },
+  },
+};
+// Runners before the API-first retirement also report `apiFirstTurn`.
+const legacyComplete = {
+  ...complete,
+  combined: {
+    ...complete.combined,
+    observedTokens: {
+      input: 11,
+      cacheRead: 22,
+      cacheCreation: 33,
+      output: 44,
+      total: 110,
+    },
+  },
+  sources: {
+    ...complete.sources,
+    apiFirstTurn: {
+      state: "observed",
+      sampledAt: 0,
+      coverage: "complete",
+      tokens: {
+        input: 1,
+        cacheRead: 2,
+        cacheCreation: 3,
+        output: 4,
+        total: 10,
       },
     },
   },
@@ -173,6 +190,31 @@ describe("okou run usage", () => {
       usage: complete,
     });
     expect(spawn).toHaveBeenCalledTimes(1);
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it("prints the sandbox proxy as the only source of a current Runner", async () => {
+    await invoke(false);
+    const text = output.mock.calls
+      .map((call) => {
+        return String(call[0]);
+      })
+      .join("\n");
+    expect(text).toContain("Observed token usage (complete):");
+    expect(text).toContain("Total: 100");
+    expect(text).not.toContain("API first turn");
+    expect(text).toContain("Sandbox proxy: observed complete");
+    expect(process.exitCode).not.toBe(1);
+  });
+
+  it("accepts the retired API first-turn source from an older Runner", async () => {
+    response({ type: "result", data: legacyComplete });
+    await invoke();
+    expect(jsonOutput()).toEqual({
+      schemaVersion: 1,
+      status: "ok",
+      usage: legacyComplete,
+    });
     expect(process.exitCode).not.toBe(1);
   });
 

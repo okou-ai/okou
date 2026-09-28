@@ -196,15 +196,9 @@ pub fn pi_launch_payload_file(run_dir: impl AsRef<Path>) -> PathBuf {
         .join(crate::env::PI_LAUNCH_PAYLOAD_FILENAME)
 }
 
-/// Return the private authenticated deferred Pi handoff file.
 /// Return the private Claude appended-system-prompt file.
 pub fn claude_append_system_prompt_file(run_dir: impl AsRef<Path>) -> PathBuf {
     file(run_dir, "claude-append-system-prompt")
-}
-
-/// Return the run-root `active-input-receipts.json` file.
-pub fn active_input_receipt_journal_file(run_dir: impl AsRef<Path>) -> PathBuf {
-    file(run_dir, "active-input-receipts.json")
 }
 
 /// Return the `logs/system.log` file.

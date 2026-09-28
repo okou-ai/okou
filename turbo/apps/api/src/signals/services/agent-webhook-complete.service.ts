@@ -63,7 +63,6 @@ interface CompleteAgentRunInput {
   readonly auth: SandboxAuth;
   readonly body: WebhookCompleteBody;
   readonly allowCheckpointlessSuccess?: boolean;
-  readonly executionOwner?: "api-first";
 }
 
 export interface TerminalSideEffectsInput {
@@ -102,7 +101,7 @@ export type CompleteSideEffectsInput = (
   | CancellationRecoverySideEffectsInput
   | DeliveryFinalizationSideEffectsInput
 ) & {
-  readonly cleanupPiApiFirstTurn?: true;
+  readonly cleanupPiSandboxHandoff?: true;
 };
 
 export type DispatchCompleteSideEffectsInput = CompleteSideEffectsInput & {
@@ -198,7 +197,6 @@ function logAgentRunCompletionOutcome(
     exitCode: input.body.exitCode,
     error: commit.transitionError,
     failureReason: commit.transitionFailureReason,
-    executionOwner: input.executionOwner ?? "sandbox",
     run: commit.run,
   });
 }
@@ -447,9 +445,6 @@ async function applyTerminalCompletion(
     values: {
       status: prepared.status,
       completedAt,
-      ...(input.executionOwner === "api-first"
-        ? { runnerCancellationMode: "hard" as const }
-        : {}),
       ...(prepared.error !== undefined ? { error: prepared.error } : {}),
       failureReason: prepared.failureReason ?? null,
       ...(prepared.result !== undefined ? { result: prepared.result } : {}),
@@ -622,7 +617,7 @@ function completionResponse(
   let sideEffects: CompleteSideEffectsInput | undefined;
   const piCleanup =
     commit.run.launchSnapshot?.framework === "pi"
-      ? ({ cleanupPiApiFirstTurn: true } as const)
+      ? ({ cleanupPiSandboxHandoff: true } as const)
       : {};
   if (commit.transitioned || redriveTerminalChatCallback) {
     sideEffects = {

@@ -8,11 +8,11 @@
 //! boundary, currently 1 MiB (1,048,576 bytes); Runner and process-control
 //! enforce that boundary.
 //!
-//! Runner encodes borrowed delivery IDs and text through this module before
+//! Runner encodes borrowed event IDs and text through this module before
 //! process-control transport. Guest-agent decodes the bytes into owned,
-//! validated values before applying run-scoped queue and receipt policy. This
-//! module also owns the stable closed-lifecycle diagnostic that survives the
-//! generic process-control rejection boundary.
+//! validated values before applying run-scoped queue and steered-declaration
+//! policy. This module also owns the stable closed-lifecycle diagnostic that
+//! survives the generic process-control rejection boundary.
 
 use std::fmt;
 use std::io::{self, Write};
@@ -32,16 +32,16 @@ pub const ACTIVE_INPUT_CLOSED_DIAGNOSTIC: &str = "active input is closed";
 struct ActiveInputEncodeWire<'a> {
     #[serde(rename = "type")]
     payload_type: &'static str,
-    #[serde(rename = "deliveryId")]
-    delivery_id: &'a str,
+    #[serde(rename = "eventId")]
+    event_id: &'a str,
     text: &'a str,
 }
 
 impl<'a> ActiveInputEncodeWire<'a> {
-    fn new(delivery_id: &'a str, text: &'a str) -> Self {
+    fn new(event_id: &'a str, text: &'a str) -> Self {
         Self {
             payload_type: ACTIVE_INPUT_TYPE,
-            delivery_id,
+            event_id,
             text,
         }
     }
@@ -51,22 +51,22 @@ impl<'a> ActiveInputEncodeWire<'a> {
 struct ActiveInputDecodeWire {
     #[serde(rename = "type")]
     payload_type: String,
-    #[serde(rename = "deliveryId")]
-    delivery_id: String,
+    #[serde(rename = "eventId")]
+    event_id: String,
     text: String,
 }
 
 /// Owned active-input fields after shared wire validation.
 #[derive(Debug, PartialEq, Eq)]
 pub struct DecodedActiveInput {
-    delivery_id: String,
+    event_id: String,
     text: String,
 }
 
 impl DecodedActiveInput {
-    /// Consume the decoded payload and return its delivery ID and text.
+    /// Consume the decoded payload and return its event ID and text.
     pub fn into_parts(self) -> (String, String) {
-        (self.delivery_id, self.text)
+        (self.event_id, self.text)
     }
 }
 
@@ -79,10 +79,10 @@ pub enum ActiveInputDecodeError {
     UnsupportedType,
     /// The follow-up text is empty.
     EmptyText,
-    /// The delivery ID is not a UUID.
-    InvalidDeliveryId,
-    /// The delivery ID is a UUID but not in lowercase hyphenated form.
-    NonCanonicalDeliveryId,
+    /// The event ID is not a UUID.
+    InvalidEventId,
+    /// The event ID is a UUID but not in lowercase hyphenated form.
+    NonCanonicalEventId,
 }
 
 impl fmt::Display for ActiveInputDecodeError {
@@ -91,8 +91,8 @@ impl fmt::Display for ActiveInputDecodeError {
             Self::InvalidPayload => "active-input payload is invalid",
             Self::UnsupportedType => "active-input payload type is unsupported",
             Self::EmptyText => "active-input text is empty",
-            Self::InvalidDeliveryId => "active-input delivery ID is invalid",
-            Self::NonCanonicalDeliveryId => "active-input delivery ID is not canonical",
+            Self::InvalidEventId => "active-input event ID is invalid",
+            Self::NonCanonicalEventId => "active-input event ID is not canonical",
         })
     }
 }
@@ -110,8 +110,8 @@ impl std::error::Error for ActiveInputDecodeError {}
 /// value, currently 1 MiB (1,048,576 bytes), and Runner/process-control own
 /// its admission check. Use [`decode_active_input`] at the consumer trust
 /// boundary to validate the fields.
-pub fn encode_active_input(delivery_id: &str, text: &str) -> Result<Vec<u8>, serde_json::Error> {
-    serde_json::to_vec(&ActiveInputEncodeWire::new(delivery_id, text))
+pub fn encode_active_input(event_id: &str, text: &str) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec(&ActiveInputEncodeWire::new(event_id, text))
 }
 
 #[derive(Default)]
@@ -142,9 +142,9 @@ impl Write for CountingWriter {
 /// measures the JSON bytes and does not reject an oversized payload. Therefore,
 /// a payload of 1,048,577 encoded bytes may still be returned successfully by
 /// [`encode_active_input`], but it is not transport-admissible.
-pub fn encoded_active_input_len(delivery_id: &str, text: &str) -> Result<usize, serde_json::Error> {
+pub fn encoded_active_input_len(event_id: &str, text: &str) -> Result<usize, serde_json::Error> {
     let mut counter = CountingWriter::default();
-    serde_json::to_writer(&mut counter, &ActiveInputEncodeWire::new(delivery_id, text))?;
+    serde_json::to_writer(&mut counter, &ActiveInputEncodeWire::new(event_id, text))?;
     Ok(counter.len)
 }
 
@@ -161,13 +161,13 @@ pub fn decode_active_input(bytes: &[u8]) -> Result<DecodedActiveInput, ActiveInp
     if wire.text.is_empty() {
         return Err(ActiveInputDecodeError::EmptyText);
     }
-    let parsed = Uuid::parse_str(&wire.delivery_id)
-        .map_err(|_| ActiveInputDecodeError::InvalidDeliveryId)?;
-    if parsed.hyphenated().to_string() != wire.delivery_id {
-        return Err(ActiveInputDecodeError::NonCanonicalDeliveryId);
+    let parsed =
+        Uuid::parse_str(&wire.event_id).map_err(|_| ActiveInputDecodeError::InvalidEventId)?;
+    if parsed.hyphenated().to_string() != wire.event_id {
+        return Err(ActiveInputDecodeError::NonCanonicalEventId);
     }
     Ok(DecodedActiveInput {
-        delivery_id: wire.delivery_id,
+        event_id: wire.event_id,
         text: wire.text,
     })
 }

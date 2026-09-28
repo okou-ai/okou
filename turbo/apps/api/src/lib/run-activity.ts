@@ -40,7 +40,7 @@ function text(value: unknown): string {
   return typeof value === "string" ? activityExcerpt(value) : "";
 }
 // Accepted guest data already carries runtime masking. Select public fields only
-// and additionally omit credential-shaped argument keys, including API-first data.
+// and additionally omit credential-shaped argument keys.
 function boundedValue(value: unknown, depth = 0): unknown {
   if (typeof value === "string") {
     return text(value);

@@ -456,6 +456,14 @@ export function deleteS3Objects(
   );
 }
 
+export function deleteHostedSitesS3Objects(
+  bucket: string,
+  keys: readonly string[],
+  signal: AbortSignal,
+): Computed<Promise<void>> {
+  return deleteS3ObjectsWithClient(hostedSitesS3Client$, bucket, keys, signal);
+}
+
 export function deleteArtifactSnapshotObjects(
   bucket: string,
   keys: readonly string[],

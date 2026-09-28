@@ -11,6 +11,8 @@ import {
   piModelConfigV3Schema,
   runnersModelProviderFailuresContract,
   runnerCancellationResponseSchema,
+  runnerNextSteerableInputResponseSchema,
+  runnerSteeredInputResponseSchema,
   sessionHistoryEncodingSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
@@ -97,6 +99,18 @@ export const rustTypeModuleDocs = [
   {
     rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
     rustDoc: ["DTOs for recording active-input acceptance receipts."],
+  },
+  {
+    rustModulePath: ["runners", "runs", "steerable_inputs"],
+    rustDoc: ["DTOs for steering input prompts into a running run."],
+  },
+  {
+    rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
+    rustDoc: ["DTOs for reading the next steerable input prompt."],
+  },
+  {
+    rustModulePath: ["runners", "runs", "steerable_inputs", "steered"],
+    rustDoc: ["DTOs for declaring an input prompt steered."],
   },
   {
     rustModulePath: ["runners", "runs", "model_provider_failures"],
@@ -670,6 +684,44 @@ export const rustTypeBindings = [
         variants: {
           delivered: ["The delivery receipt was accepted idempotently."],
           rejected: ["The delivery can no longer be accepted."],
+        },
+      },
+    ],
+  },
+  {
+    schema: runnerNextSteerableInputResponseSchema,
+    rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
+    rustTypeName: "Response",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "Response",
+        rustDoc: ["Next input prompt a running run may steer."],
+        fields: {
+          input: ["Steerable input, or absent when nothing can be steered."],
+        },
+      },
+      {
+        rustTypeName: "ResponseInput",
+        rustDoc: ["Input prompt the run may steer."],
+        fields: {
+          eventId: ["Source chat-event identity to declare steered."],
+          prompt: ["Materialized prompt sent to the active Guest."],
+        },
+      },
+    ],
+  },
+  {
+    schema: runnerSteeredInputResponseSchema,
+    rustModulePath: ["runners", "runs", "steerable_inputs", "steered"],
+    rustTypeName: "Response",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "Response",
+        rustDoc: ["API outcome after declaring an input prompt steered."],
+        fields: {
+          outcome: ["The input is consumed by this run, idempotently."],
         },
       },
     ],

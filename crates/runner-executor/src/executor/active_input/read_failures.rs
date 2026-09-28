@@ -1,10 +1,7 @@
-//! Read availability is separate from Guest acceptance and delivery receipts.
+//! Read availability is separate from Guest acceptance and steered declarations.
 
 use std::time::Duration;
 
-use api_contracts::generated::types::runners::runs::active_inputs::reserve::{
-    Response, ResponseRejectedReason,
-};
 use tokio::time::Instant;
 use tracing::{Level, info};
 
@@ -98,20 +95,15 @@ impl ReadFailures {
         let ActiveInputBatch::Api(response) = batch else {
             return;
         };
-        let reserve_outcome = match response {
-            Response::Reserved { .. } => "reserved",
-            Response::Empty => "empty",
-            Response::Terminal => "terminal",
-            Response::Held { .. } => "held",
-            Response::Rejected { reason } => match reason {
-                ResponseRejectedReason::PayloadTooLarge => "rejected_payload_too_large",
-                ResponseRejectedReason::RunNotRunning => "rejected_run_not_running",
-            },
+        let next_outcome = if response.input.is_some() {
+            "input"
+        } else {
+            "empty"
         };
         info!(
             target: "runner::executor::active_input",
             run_id = %run_id,
-            reserve_outcome,
+            next_outcome,
             recovered_after_failures = episode.consecutive_failures,
             failure_elapsed_ms = episode.started_at.elapsed().as_millis() as u64,
             was_degraded = episode.warned,

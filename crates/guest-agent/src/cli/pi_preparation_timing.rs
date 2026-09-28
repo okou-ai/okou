@@ -1,10 +1,9 @@
 //! Sandbox-side Pi preparation observations recorded as sandbox operations.
 //!
-//! The Pi CLI child already measures its own session-preparation phases with
-//! `measurePiPreparation`. On the API-first path those observations are written
-//! straight to the sandbox operation log by the API. Inside the sandbox the
-//! child has no telemetry sink of its own, so it emits one bounded JSON
-//! envelope per observation on stderr and the guest converts it here.
+//! The Pi CLI child measures its own session-preparation phases with
+//! `measurePiPreparation`. The child has no telemetry sink of its own, so it
+//! emits one bounded JSON envelope per observation on stderr and the guest
+//! converts it here.
 //!
 //! ```json
 //! {"type":"pi_preparation_timing","phase":"session_services","durationMs":41.2,"outcome":"success"}

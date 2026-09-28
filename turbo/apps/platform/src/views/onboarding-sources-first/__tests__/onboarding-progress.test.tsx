@@ -73,13 +73,12 @@ test.each([ROUTES.home, ROUTES.onboarding])(
     await setupPage({
       context,
       locale: "en-US",
-      path: `${path}?prompt=Launch+plan&redeemCode=LAUNCH50`,
+      path: `${path}?redeemCode=LAUNCH50`,
       featureSwitches: SOURCES_FIRST_ON,
     });
 
     await screen.findByRole("heading", { name: "Connect a work tool" });
     expect(pathname()).toBe(ROUTES.onboardingSources);
-    expect(new URLSearchParams(search()).get("prompt")).toBe("Launch plan");
     expect(new URLSearchParams(search()).get("redeemCode")).toBe("LAUNCH50");
 
     click(getButtonByName("Back"));

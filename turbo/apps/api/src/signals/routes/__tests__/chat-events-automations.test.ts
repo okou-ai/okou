@@ -5,7 +5,7 @@ import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contrac
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
@@ -17,8 +17,8 @@ import {
   readPiMemoryStage1CandidateFixture,
   readPiMemoryStage1DayFixture,
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
+import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import { cronExtractPiMemoryStage1RoutesForTest } from "../cron-extract-pi-memory-stage1";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { readAgentRunState$ } from "./helpers/agent-run-callback";
@@ -32,10 +32,10 @@ import {
 import {
   createChatEventsFixture,
   requireOrgId,
-  expectPiApiUsage,
   expectNoBuiltInModelUsage,
-  createPiApiFirstTurnUsagePricingResolution,
+  createPiUsagePricingResolution,
   expectExactPrivatePiMemoryAdmission,
+  totalChargedCredits,
 } from "./helpers/chat-events-fixture";
 import { piResponsesTextSse } from "./helpers/pi-responses";
 
@@ -102,8 +102,8 @@ async function extractOwnedThreadPiMemory(
     ),
   );
   // A later UTC day needs its own committed startup. A real Pi launch
-  // exercises the common admission hook; its foreground API-first request is
-  // held in flight and the run is cancelled before any model answer exists.
+  // exercises the common admission hook; the run is cancelled before the
+  // sandbox produces any model answer.
   const nextDay = new Date(candidate.sourceCompletedAt);
   nextDay.setUTCHours(24, 0, 0, 0);
   mockNow(
@@ -112,31 +112,11 @@ async function extractOwnedThreadPiMemory(
       candidate.sourceCompletedAt.getTime() + 7 * 3_600_000,
     ),
   );
-  const foregroundEntered = createDeferredPromise<void>(context.signal);
-  const foregroundRelease = createDeferredPromise<void>(context.signal);
-  onTestFinished(() => {
-    if (!foregroundRelease.settled()) {
-      foregroundRelease.resolve(undefined);
-    }
-  });
-  server.use(
-    http.post("https://api.openai.com/v1/responses", async () => {
-      if (!foregroundEntered.settled()) {
-        foregroundEntered.resolve(undefined);
-      }
-      await foregroundRelease.promise;
-      return HttpResponse.json(
-        { error: "foreground turn was cancelled" },
-        { status: 500 },
-      );
-    }),
-  );
   const startup = await sendChatRun(actor, {
     agentId,
     prompt: "request the daily Pi batch",
     model: "gpt-5.6-terra",
   });
-  await foregroundEntered.promise;
   await expect(
     readPiMemoryStage1DayFixture(actor.userId),
   ).resolves.toMatchObject({
@@ -170,7 +150,6 @@ async function extractOwnedThreadPiMemory(
     rawMemory: "The owner prefers concise progress reports.",
   });
   await api.requestCancelRun(actor, startup.runId, [200]);
-  foregroundRelease.resolve(undefined);
   await flushWaitUntilForTest();
 }
 
@@ -190,7 +169,7 @@ describe("thread-bound Pi Automation execution", () => {
         await entitledChatActor({}, source === "event" ? "team" : "pro");
       const orgId = requireOrgId(actor);
       const usagePricingResolution =
-        await createPiApiFirstTurnUsagePricingResolution(selectedModel);
+        await createPiUsagePricingResolution(selectedModel);
       const workflows = createWorkflowsBddApi(context);
       const workflowId = await workflows.createWorkflow(actor, {
         agentId,
@@ -292,26 +271,6 @@ describe("thread-bound Pi Automation execution", () => {
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const requests: unknown[] = [];
-      server.use(
-        http.post(
-          selectedModel === "deepseek-v4.1-flash"
-            ? "https://api.deepseek.com/responses"
-            : "https://api.openai.com/v1/responses",
-          async ({ request }) => {
-            requests.push(await request.json());
-            return new HttpResponse(
-              piResponsesTextSse(
-                `owned ${source} answer ${requests.length}`,
-                requests.length,
-              ),
-              {
-                headers: { "content-type": "text/event-stream" },
-              },
-            );
-          },
-        ),
-      );
       if (eventRoute) {
         const event = {
           ...eventRoute,
@@ -415,12 +374,19 @@ describe("thread-bound Pi Automation execution", () => {
       expect(runState.agent_run).toMatchObject({
         triggerSource: `automation-${source}`,
       });
-      await expectPiApiUsage(piRunId, selectedModel, "", {
-        input: 0,
-        output: 3,
-        cacheRead: 0,
-        cacheCreation: 0,
-      });
+      // The duplicated sandbox usage receipt is charged exactly once.
+      const usageRows = await readRunUsageEventsFixture(piRunId);
+      expect(usageRows).toStrictEqual([
+        expect.objectContaining({
+          provider: selectedModel,
+          category: "tokens.output",
+          quantity: 3,
+          status: "processed",
+          billingError: null,
+          creditsCharged: expect.any(Number),
+        }),
+      ]);
+      expect(totalChargedCredits(usageRows)).toBeGreaterThan(0);
       await accept(
         setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
           testWorkflowAutomationExecutionContract,
@@ -430,7 +396,6 @@ describe("thread-bound Pi Automation execution", () => {
         [200],
       );
       await expectThreadPiTerminal(actor, threadId, piRunId);
-      expect(requests).toHaveLength(0);
 
       mockNow(now() + 1000);
       const user = await sendChatRun(
@@ -474,7 +439,6 @@ describe("thread-bound Pi Automation execution", () => {
         userId: actor.userId,
         runId: user.runId,
       });
-      expect(requests).toHaveLength(0);
       if (selectedModel === "gpt-5.6-terra") {
         await extractOwnedThreadPiMemory(actor, user.runId, agentId);
       }
@@ -488,8 +452,8 @@ describe("CHAT effort: automation launches", () => {
   async function startAutomation() {
     const scenario = await entitledChatActor({}, "pro");
     const { actor, agentId, runnerGroup, providerId } = scenario;
-    // Fable keeps the automation on the native Runner claim protocol; the
-    // Sonnet fixture default would run through Pi API-first instead.
+    // Fable keeps the automation on the Claude Code Runner claim protocol;
+    // the Sonnet fixture default would launch a Pi run instead.
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-fable-5-1",
@@ -651,43 +615,6 @@ describe("thread-bound Pi terminal failures", () => {
       );
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve(undefined);
-        }
-      });
-      const requests: string[] = [];
-      server.use(
-        http.post(
-          "https://chatgpt.com/backend-api/codex/responses",
-          async ({ request }) => {
-            requests.push(request.url);
-            expect(request.headers.get("chatgpt-account-id")).toBe(
-              "terminal-owner",
-            );
-            entered.resolve(undefined);
-            await release.promise;
-            return HttpResponse.json(
-              {
-                error: {
-                  code: "invalid_api_key",
-                  message: "subscription rejected",
-                },
-              },
-              { status: 401 },
-            );
-          },
-        ),
-        http.post("https://api.openai.com/v1/responses", ({ request }) => {
-          requests.push(request.url);
-          return HttpResponse.json(
-            { error: "unexpected Built-in fallback" },
-            { status: 400 },
-          );
-        }),
-      );
       let run: { readonly runId: string; readonly threadId: string };
       {
         const workflowId = await createWorkflowsBddApi(context).createWorkflow(
@@ -777,7 +704,6 @@ describe("thread-bound Pi terminal failures", () => {
             return event.eventType;
           }),
       ).toStrictEqual([`run.${status}`]);
-      expect(requests).toHaveLength(0);
     },
     90_000,
   );

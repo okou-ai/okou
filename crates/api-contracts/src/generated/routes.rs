@@ -379,6 +379,81 @@ pub mod runners {
                 }
             }
 
+            /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs`.
+            pub mod steerable_inputs {
+                /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs::by_event_id`.
+                pub mod by_event_id {
+                    /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs::by_event_id::steered`.
+                    pub mod steered {
+                        /// Declare an input prompt steered into a run.
+                        /// Route contract: `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`.
+                        pub const STEERED: crate::RouteTemplate = crate::RouteTemplate {
+                            method: crate::Method::Post,
+                            path: "/api/runners/runs/:runId/steerable-inputs/:eventId/steered",
+                        };
+
+                        /// Path parameters for `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`.
+                        #[derive(Debug, Clone, Copy)]
+                        pub struct Params<'a> {
+                            /// Value for the `:runId` path parameter.
+                            pub run_id: &'a str,
+                            /// Value for the `:eventId` path parameter.
+                            pub event_id: &'a str,
+                        }
+
+                        /// Build the concrete path for `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`.
+                        /// Percent-encodes each path parameter as a URL path segment.
+                        #[must_use]
+                        pub fn path(params: Params<'_>) -> String {
+                            format!(
+                                "/api/runners/runs/{}/steerable-inputs/{}/steered",
+                                crate::route::encode_path_segment(params.run_id),
+                                crate::route::encode_path_segment(params.event_id),
+                            )
+                        }
+
+                        /// Build a resolved route for `POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered`.
+                        #[must_use]
+                        pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                            crate::ResolvedRoute::new(STEERED.method, path(params))
+                        }
+                    }
+                }
+
+                /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs::next`.
+                pub mod next {
+                    /// Read the next input prompt a running run may steer.
+                    /// Route contract: `GET /api/runners/runs/:runId/steerable-inputs/next`.
+                    pub const NEXT: crate::RouteTemplate = crate::RouteTemplate {
+                        method: crate::Method::Get,
+                        path: "/api/runners/runs/:runId/steerable-inputs/next",
+                    };
+
+                    /// Path parameters for `GET /api/runners/runs/:runId/steerable-inputs/next`.
+                    #[derive(Debug, Clone, Copy)]
+                    pub struct Params<'a> {
+                        /// Value for the `:runId` path parameter.
+                        pub run_id: &'a str,
+                    }
+
+                    /// Build the concrete path for `GET /api/runners/runs/:runId/steerable-inputs/next`.
+                    /// Percent-encodes each path parameter as a URL path segment.
+                    #[must_use]
+                    pub fn path(params: Params<'_>) -> String {
+                        format!(
+                            "/api/runners/runs/{}/steerable-inputs/next",
+                            crate::route::encode_path_segment(params.run_id),
+                        )
+                    }
+
+                    /// Build a resolved route for `GET /api/runners/runs/:runId/steerable-inputs/next`.
+                    #[must_use]
+                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                        crate::ResolvedRoute::new(NEXT.method, path(params))
+                    }
+                }
+            }
+
             /// Generated route bindings under `runners::runs::by_run_id::vnc`.
             pub mod vnc {
                 /// Generated route bindings under `runners::runs::by_run_id::vnc::check`.

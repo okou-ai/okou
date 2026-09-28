@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.974.0](https://github.com/okou-ai/okou/compare/app-v0.973.3...app-v0.974.0) (2026-09-28)
+
+
+### Features
+
+* **web:** add inert run-scoped wss transport adapter ([#37112](https://github.com/okou-ai/okou/issues/37112)) ([f175cb4](https://github.com/okou-ai/okou/commit/f175cb40571c16f78d3bf259198926c33de80ad6))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#37127](https://github.com/okou-ai/okou/issues/37127)) ([f1563bf](https://github.com/okou-ai/okou/commit/f1563bf5c56ac171687b91a525b83f1863949e86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.518.2
+    * @okouai/core bumped to 8.713.0
+
 ## [0.973.3](https://github.com/okou-ai/okou/compare/app-v0.973.2...app-v0.973.3) (2026-09-27)
 
 

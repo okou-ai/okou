@@ -10,6 +10,9 @@ import {
   runnersJobClaimContract,
   runnersModelProviderFailuresContract,
   runnersPollContract,
+  runnersSteerContract,
+  STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
+  STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
   runnerVersionSchema,
   storedConnectorPermissionBaselineSchema,
   type ClaimCompatibleStoredExecutionContext,
@@ -106,6 +109,8 @@ import { historyGenerationRunIdForStoredExecutionContext } from "../services/his
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
 import { reportBuiltInModelProviderFailure } from "../services/built-in-model-provider-failure.service";
 import {
+  declareSteeredInput,
+  loadNextSteerableInput,
   recordActiveInputDeliveryReceipt,
   reserveActiveInputDelivery,
 } from "../services/active-input-delivery.service";
@@ -3050,6 +3055,89 @@ const recordActiveInputDeliveryReceiptInner$ = command(
   },
 );
 
+const steeredInputBody$ = bodyResultOf(runnersSteerContract.steered);
+
+const nextSteerableInputInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(authContext$);
+    const { runId } = get(pathParamsOf(runnersSteerContract.next));
+    if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
+      return forbidden("Steering is not available");
+    }
+    const result = await loadNextSteerableInput(
+      set(writeDb$),
+      { runId, userId: auth.userId, orgId: auth.orgId },
+      signal,
+    );
+    if (result.outcome === "forbidden") {
+      return forbidden("Steering is not available");
+    }
+    return { status: 200 as const, body: { input: result.input } };
+  },
+);
+
+const declareSteeredInputInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(authContext$);
+    const { runId, eventId } = get(pathParamsOf(runnersSteerContract.steered));
+    if (auth.tokenType !== "sandbox" || auth.runId !== runId) {
+      return forbidden("Steering is not available");
+    }
+    const body = await get(steeredInputBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const result = await declareSteeredInput(
+      set(writeDb$),
+      { runId, eventId, userId: auth.userId, orgId: auth.orgId },
+      signal,
+    );
+    switch (result.outcome) {
+      case "forbidden": {
+        return forbidden("Steering is not available");
+      }
+      case "not_found": {
+        return notFound("Steerable input not found");
+      }
+      case "conflict": {
+        return {
+          status: 409 as const,
+          body: {
+            error:
+              result.reason === "run_not_running"
+                ? {
+                    code: STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
+                    message: "Run is not running",
+                  }
+                : {
+                    code: STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
+                    message: "Input was already consumed",
+                  },
+          },
+        };
+      }
+      case "steered": {
+        break;
+      }
+    }
+    if (result.replacementsAppended) {
+      await publishChatThreadMessageCreatedSafely({
+        userId: auth.userId,
+        orgId: auth.orgId,
+        threadId: result.chatThreadId,
+      });
+      signal.throwIfAborted();
+      await notifyRunningChatRunOfPendingInput(
+        set(writeDb$),
+        result.chatThreadId,
+      );
+      signal.throwIfAborted();
+    }
+    return { status: 200 as const, body: { outcome: "steered" as const } };
+  },
+);
+
 const observeClaimJsonResponse: JsonResponseObserver = (
   context,
   observation,
@@ -3095,6 +3183,20 @@ export const runnersRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       { accept: ["sandbox"], acceptAnySandboxCapability: true },
       recordActiveInputDeliveryReceiptInner$,
+    ),
+  },
+  {
+    route: runnersSteerContract.next,
+    handler: authRoute(
+      { accept: ["sandbox"], acceptAnySandboxCapability: true },
+      nextSteerableInputInner$,
+    ),
+  },
+  {
+    route: runnersSteerContract.steered,
+    handler: authRoute(
+      { accept: ["sandbox"], acceptAnySandboxCapability: true },
+      declareSteeredInputInner$,
     ),
   },
   {

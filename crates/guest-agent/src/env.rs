@@ -490,6 +490,10 @@ pub struct GuestConfig {
     /// [`guest_contracts::env::PI_SESSION_ID_ENV`] environment variable and used
     /// as Pi's native session identifier and for session-history lookup.
     pub pi_session_id: String,
+    /// JSON object with the installed-CLI launch requirements from
+    /// [`guest_contracts::env::RunPayload::pi_installed_cli_requirement`].
+    /// Empty for runs created before the API wrote it.
+    pub pi_installed_cli_requirement: String,
     /// Stuck-tool timeout in seconds parsed from
     /// [`guest_contracts::env::CANONICAL_STUCK_TOOL_TIMEOUT_SECS_ENV`]. Empty
     /// or invalid input uses the 300-second compiled default; the CLI loop
@@ -603,6 +607,7 @@ impl GuestConfig {
             pi_launch_config: payload.pi_launch_config,
             pi_model_config: payload.pi_model_config,
             pi_session_id: payload.pi_session_id,
+            pi_installed_cli_requirement: payload.pi_installed_cli_requirement,
             stuck_tool_timeout_secs: u64_value_or(
                 guest_contracts::env::CANONICAL_STUCK_TOOL_TIMEOUT_SECS_ENV,
                 non_empty(&raw.stuck_tool_timeout_secs),
@@ -1239,6 +1244,7 @@ mod tests {
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
             pi_model_config: r#"{"provider":"deepseek"}"#.to_string(),
             pi_session_id: "22222222-2222-4222-8222-222222222222".to_string(),
+            pi_installed_cli_requirement: r#"{"minCliVersion":"9.352.7"}"#.to_string(),
         };
         let path = write_run_payload_fixture(&runtime_dir, &payload);
         let parent = path.parent().unwrap().to_path_buf();
@@ -1263,6 +1269,10 @@ mod tests {
         assert_eq!(config.pi_launch_config, r#"{"schemaVersion":2}"#);
         assert_eq!(config.pi_model_config, r#"{"provider":"deepseek"}"#);
         assert_eq!(config.pi_session_id, "22222222-2222-4222-8222-222222222222");
+        assert_eq!(
+            config.pi_installed_cli_requirement,
+            r#"{"minCliVersion":"9.352.7"}"#
+        );
         assert!(!path.exists());
         assert!(!parent.exists());
     }

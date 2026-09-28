@@ -162,9 +162,11 @@ function runnerStateHasFinalizingPredecessor(args: {
       .from(runnerState)
       .innerJoin(
         finalizingSourceRun,
+        // Cast the queued id rather than the key so the join stays a primary
+        // key lookup instead of scanning agent_runs for every queued job.
         eq(
-          sql`${finalizingSourceRun.id}::text`,
-          sql`cast(${args.historyGenerationRunId} as text)`,
+          finalizingSourceRun.id,
+          sql`cast(${args.historyGenerationRunId} as uuid)`,
         ),
       )
       .where(

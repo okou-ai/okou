@@ -12,7 +12,7 @@ use crate::executor::active_input::{
 use crate::executor::agent_run::{RunControls, RunStart, run_in_sandbox};
 use crate::executor::tests::support::{
     CapturedEvent, CapturedEvents, RUN_IN_SANDBOX_TEST_TIMEOUT, create_overridden_sandbox,
-    minimal_context, sandbox_read_file_error, test_executor_config, test_telemetry,
+    minimal_context, test_executor_config, test_telemetry,
 };
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
 use runner_provider::ApiClient;
@@ -21,7 +21,7 @@ use runner_provider::local_queue::{self, ActiveInputEntry, LocalQueue};
 use runner_provider::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, API_ACTIVE_INPUT_RECHECK_INTERVAL,
     ActiveInputNotifications, ActiveInputSource, identified_active_input_payload_len,
-    local_active_input_delivery_id,
+    local_active_input_event_id,
 };
 use runner_types::ids::RunId;
 use runner_types::types::SandboxReuseResult;
@@ -29,7 +29,6 @@ use runner_types::types::SandboxReuseResult;
 mod read_backoff;
 mod read_recovery;
 
-const DELIVERY_ID: &str = "b1e2ad6d-930a-4d51-aa40-7952d54f978b";
 const EVENT_ID: &str = "e6bc287d-8c08-464e-831a-cad771610157";
 
 fn local_queue_with_job(group_dir: &Path, run_id: RunId) -> LocalQueue {
@@ -274,9 +273,9 @@ async fn run_in_sandbox_forwards_local_active_inputs_in_order() {
             .map(|call| call.message_id.as_str())
             .collect::<Vec<_>>(),
         vec![
-            local_active_input_delivery_id(run_id, 1),
-            local_active_input_delivery_id(run_id, 2),
-            local_active_input_delivery_id(run_id, 3),
+            local_active_input_event_id(run_id, 1),
+            local_active_input_event_id(run_id, 2),
+            local_active_input_event_id(run_id, 3),
         ]
     );
     let payloads = calls
@@ -287,16 +286,16 @@ async fn run_in_sandbox_forwards_local_active_inputs_in_order() {
     assert_eq!(payloads[1]["text"], "duplicate");
     assert_eq!(payloads[2]["text"], "third");
     assert_eq!(
-        payloads[0]["deliveryId"],
-        local_active_input_delivery_id(run_id, 1)
+        payloads[0]["eventId"],
+        local_active_input_event_id(run_id, 1)
     );
     assert_eq!(
-        payloads[1]["deliveryId"],
-        local_active_input_delivery_id(run_id, 2)
+        payloads[1]["eventId"],
+        local_active_input_event_id(run_id, 2)
     );
     assert_eq!(
-        payloads[2]["deliveryId"],
-        local_active_input_delivery_id(run_id, 3)
+        payloads[2]["eventId"],
+        local_active_input_event_id(run_id, 3)
     );
 }
 
@@ -311,19 +310,17 @@ async fn run_in_sandbox_retries_api_active_input_after_transient_read_failure() 
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let run_id = ctx.run_id;
-    let reserve_path = format!("/api/runners/runs/{run_id}/active-inputs/reserve");
+    let next_path = format!("/api/runners/runs/{run_id}/steerable-inputs/next");
 
     let mut server = RawHttpTestServer::spawn(vec![
-        RawHttpAction::Respond(json_response("200 OK", r#"{"outcome":"empty"}"#)),
+        RawHttpAction::Respond(json_response("200 OK", r#"{"input":null}"#)),
         RawHttpAction::Respond(json_response(
             "503 Service Unavailable",
             r#"{"error":"transient"}"#,
         )),
         RawHttpAction::Respond(json_response(
             "200 OK",
-            &format!(
-                r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"retry delivered"}}"#,
-            ),
+            &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"retry delivered"}}}}"#,),
         )),
     ])
     .await;
@@ -351,10 +348,10 @@ async fn run_in_sandbox_retries_api_active_input_after_transient_read_failure() 
         .await
     });
 
-    let initial_reserve = server
-        .next_request("initial active-input reserve request")
+    let initial_next = server
+        .next_request("initial active-input next request")
         .await;
-    assert!(initial_reserve.starts_with(&format!("POST {reserve_path} ")));
+    assert!(initial_next.starts_with(&format!("GET {next_path} ")));
     notifications.notify(run_id);
 
     assert!(
@@ -373,14 +370,14 @@ async fn run_in_sandbox_retries_api_active_input_after_transient_read_failure() 
 
     let remaining_requests = server.assert_finished_with_requests().await;
     assert_eq!(remaining_requests.len(), 2);
-    assert!(remaining_requests[0].starts_with(&format!("POST {reserve_path} ")));
-    assert!(remaining_requests[1].starts_with(&format!("POST {reserve_path} ")));
+    assert!(remaining_requests[0].starts_with(&format!("GET {next_path} ")));
+    assert!(remaining_requests[1].starts_with(&format!("GET {next_path} ")));
 
     let calls = overrides.process_control_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].message_id, DELIVERY_ID);
+    assert_eq!(calls[0].message_id, EVENT_ID);
     let payload = serde_json::from_slice::<serde_json::Value>(&calls[0].payload).unwrap();
-    assert_eq!(payload["deliveryId"], DELIVERY_ID);
+    assert_eq!(payload["eventId"], EVENT_ID);
     assert_eq!(payload["text"], "retry delivered");
 }
 
@@ -395,15 +392,13 @@ async fn run_in_sandbox_rechecks_api_active_input_without_notification() {
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let run_id = ctx.run_id;
-    let reserve_path = format!("/api/runners/runs/{run_id}/active-inputs/reserve");
+    let next_path = format!("/api/runners/runs/{run_id}/steerable-inputs/next");
 
     let mut server = RawHttpTestServer::spawn(vec![
-        RawHttpAction::Respond(json_response("200 OK", r#"{"outcome":"empty"}"#)),
+        RawHttpAction::Respond(json_response("200 OK", r#"{"input":null}"#)),
         RawHttpAction::Respond(json_response(
             "200 OK",
-            &format!(
-                r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"recheck delivered"}}"#,
-            ),
+            &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"recheck delivered"}}}}"#,),
         )),
     ])
     .await;
@@ -431,10 +426,10 @@ async fn run_in_sandbox_rechecks_api_active_input_without_notification() {
         .await
     });
 
-    let initial_reserve = server
-        .next_request("initial active-input reserve request")
+    let initial_next = server
+        .next_request("initial active-input next request")
         .await;
-    assert!(initial_reserve.starts_with(&format!("POST {reserve_path} ")));
+    assert!(initial_next.starts_with(&format!("GET {next_path} ")));
 
     tokio::time::pause();
     tokio::task::yield_now().await;
@@ -457,11 +452,11 @@ async fn run_in_sandbox_rechecks_api_active_input_without_notification() {
 
     let remaining_requests = server.assert_finished_with_requests().await;
     assert_eq!(remaining_requests.len(), 1);
-    assert!(remaining_requests[0].starts_with(&format!("POST {reserve_path} ")));
+    assert!(remaining_requests[0].starts_with(&format!("GET {next_path} ")));
 
     let calls = overrides.process_control_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].message_id, DELIVERY_ID);
+    assert_eq!(calls[0].message_id, EVENT_ID);
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&calls[0].payload).unwrap()["text"],
         "recheck delivered"
@@ -540,15 +535,15 @@ async fn run_in_sandbox_retries_local_active_input_with_same_id_after_uncertain_
             .map(|call| call.message_id.as_str())
             .collect::<Vec<_>>(),
         vec![
-            local_active_input_delivery_id(run_id, 1),
-            local_active_input_delivery_id(run_id, 1),
-            local_active_input_delivery_id(run_id, 2),
+            local_active_input_event_id(run_id, 1),
+            local_active_input_event_id(run_id, 1),
+            local_active_input_event_id(run_id, 2),
         ]
     );
 }
 
 #[tokio::test]
-async fn run_in_sandbox_retries_reserve_when_first_request_is_not_found() {
+async fn run_in_sandbox_retries_next_when_first_request_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let wait_gate = Arc::new(tokio::sync::Notify::new());
@@ -558,14 +553,12 @@ async fn run_in_sandbox_retries_reserve_when_first_request_is_not_found() {
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let run_id = ctx.run_id;
-    let reserve_path = format!("/api/runners/runs/{run_id}/active-inputs/reserve");
+    let next_path = format!("/api/runners/runs/{run_id}/steerable-inputs/next");
     let server = RawHttpTestServer::spawn(vec![
         RawHttpAction::Respond(json_response("404 Not Found", r#"{"error":"not found"}"#)),
         RawHttpAction::Respond(json_response(
             "200 OK",
-            &format!(
-                r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"reserve delivered"}}"#,
-            ),
+            &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"next delivered"}}}}"#,),
         )),
     ])
     .await;
@@ -614,18 +607,18 @@ async fn run_in_sandbox_retries_reserve_when_first_request_is_not_found() {
     assert!(
         requests
             .iter()
-            .all(|request| request.starts_with(&format!("POST {reserve_path} ")))
+            .all(|request| request.starts_with(&format!("GET {next_path} ")))
     );
     let calls = overrides.process_control_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].message_id, DELIVERY_ID);
+    assert_eq!(calls[0].message_id, EVENT_ID);
     let payload = serde_json::from_slice::<serde_json::Value>(&calls[0].payload).unwrap();
-    assert_eq!(payload["deliveryId"], DELIVERY_ID);
-    assert_eq!(payload["text"], "reserve delivered");
+    assert_eq!(payload["eventId"], EVENT_ID);
+    assert_eq!(payload["text"], "next delivered");
 }
 
 #[tokio::test]
-async fn run_in_sandbox_retrieves_reservation_after_lost_first_response() {
+async fn run_in_sandbox_rereads_next_after_lost_first_response() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let wait_gate = Arc::new(tokio::sync::Notify::new());
@@ -635,16 +628,14 @@ async fn run_in_sandbox_retrieves_reservation_after_lost_first_response() {
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let run_id = ctx.run_id;
-    let reserve_path = format!("/api/runners/runs/{run_id}/active-inputs/reserve");
-    let reserved = json_response(
+    let next_path = format!("/api/runners/runs/{run_id}/steerable-inputs/next");
+    let next_input = json_response(
         "200 OK",
-        &format!(
-            r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"retrieved delivery"}}"#,
-        ),
+        &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"retrieved delivery"}}}}"#,),
     );
     let server = RawHttpTestServer::spawn(vec![
         RawHttpAction::Disconnect,
-        RawHttpAction::Respond(reserved),
+        RawHttpAction::Respond(next_input),
     ])
     .await;
     let api_url = server.url();
@@ -653,7 +644,7 @@ async fn run_in_sandbox_retrieves_reservation_after_lost_first_response() {
         api_url.clone(),
         run_id,
         &notifications,
-        "active-input-lost-reserve-response-test",
+        "active-input-lost-next-response-test",
     );
     let cancel = tokio_util::sync::CancellationToken::new();
     let mut telemetry = test_telemetry(&config, &ctx);
@@ -697,11 +688,11 @@ async fn run_in_sandbox_retrieves_reservation_after_lost_first_response() {
     assert!(
         requests
             .iter()
-            .all(|request| request.starts_with(&format!("POST {reserve_path} ")))
+            .all(|request| request.starts_with(&format!("GET {next_path} ")))
     );
     let calls = overrides.process_control_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].message_id, DELIVERY_ID);
+    assert_eq!(calls[0].message_id, EVENT_ID);
     let event = captured
         .entries()
         .into_iter()
@@ -712,7 +703,7 @@ async fn run_in_sandbox_retrieves_reservation_after_lost_first_response() {
                 .is_some_and(|message| message == "active-input source read failed; retrying")
         })
         .expect("active-input transport failure should be logged");
-    assert_eq!(event.fields["endpoint"], "reserve active inputs");
+    assert_eq!(event.fields["endpoint"], "read next steerable input");
     assert!(event.fields["error"].starts_with("api error: "));
     assert_eq!(event.fields["failure_kind"], "request");
     assert_eq!(event.fields["failure_cause"], "http_incomplete_message");
@@ -722,7 +713,7 @@ async fn run_in_sandbox_retrieves_reservation_after_lost_first_response() {
 }
 
 #[tokio::test]
-async fn run_in_sandbox_keeps_using_reserve_after_ambiguous_failure() {
+async fn run_in_sandbox_keeps_reading_next_after_ambiguous_failure() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let wait_gate = Arc::new(tokio::sync::Notify::new());
@@ -732,7 +723,7 @@ async fn run_in_sandbox_keeps_using_reserve_after_ambiguous_failure() {
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let run_id = ctx.run_id;
-    let reserve_path = format!("/api/runners/runs/{run_id}/active-inputs/reserve");
+    let next_path = format!("/api/runners/runs/{run_id}/steerable-inputs/next");
     let server = RawHttpTestServer::spawn(vec![
         RawHttpAction::Respond(json_response(
             "503 Service Unavailable",
@@ -747,7 +738,7 @@ async fn run_in_sandbox_keeps_using_reserve_after_ambiguous_failure() {
         api_url,
         run_id,
         &notifications,
-        "active-input-reserve-only-test",
+        "active-input-next-only-test",
     );
     let cancel = tokio_util::sync::CancellationToken::new();
     let mut telemetry = test_telemetry(&config, &ctx);
@@ -774,7 +765,7 @@ async fn run_in_sandbox_keeps_using_reserve_after_ambiguous_failure() {
     assert!(
         requests
             .iter()
-            .all(|request| request.starts_with(&format!("POST {reserve_path} ")))
+            .all(|request| request.starts_with(&format!("GET {next_path} ")))
     );
     wait_gate.notify_one();
     let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, run_task)
@@ -783,291 +774,6 @@ async fn run_in_sandbox_keeps_using_reserve_after_ambiguous_failure() {
         .unwrap()
         .unwrap();
     assert!(result.failure.is_none());
-    assert!(overrides.process_control_calls().is_empty());
-}
-
-#[tokio::test]
-async fn run_in_sandbox_stops_when_reserve_reports_terminal() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let wait_gate = Arc::new(tokio::sync::Notify::new());
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::with_wait_process_gate(
-        Arc::clone(&wait_gate),
-    ));
-    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let ctx = minimal_context();
-    let run_id = ctx.run_id;
-    let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
-        "200 OK",
-        r#"{"outcome":"terminal"}"#,
-    ))])
-    .await;
-    let api_url = server.url();
-    let notifications = ActiveInputNotifications::new();
-    let source = api_active_input_source(
-        api_url,
-        run_id,
-        &notifications,
-        "active-input-terminal-test",
-    );
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let mut telemetry = test_telemetry(&config, &ctx);
-
-    let run_task = tokio::spawn(async move {
-        run_in_sandbox(
-            &*sandbox,
-            &ctx,
-            &config,
-            RunStart {
-                restore_guest_state: false,
-                reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-                prev_storage: None,
-            },
-            &mut telemetry,
-            RunControls::new(cancel, Some(source)),
-        )
-        .await
-    });
-
-    server.assert_finished().await;
-    wait_gate.notify_one();
-    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, run_task)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap();
-    assert!(result.failure.is_none());
-    assert!(overrides.process_control_calls().is_empty());
-}
-
-#[tokio::test]
-async fn run_in_sandbox_stops_when_reserve_reports_held() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let wait_gate = Arc::new(tokio::sync::Notify::new());
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::with_wait_process_gate(
-        Arc::clone(&wait_gate),
-    ));
-    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let ctx = minimal_context();
-    let run_id = ctx.run_id;
-    let reserve_path = format!("/api/runners/runs/{run_id}/active-inputs/reserve");
-    let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
-        "200 OK",
-        &format!(r#"{{"outcome":"held","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"]}}"#,),
-    ))])
-    .await;
-    let api_url = server.url();
-    let notifications = ActiveInputNotifications::new();
-    let source = api_active_input_source(api_url, run_id, &notifications, "active-input-held-test");
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let mut telemetry = test_telemetry(&config, &ctx);
-
-    let run_task = tokio::spawn(async move {
-        run_in_sandbox(
-            &*sandbox,
-            &ctx,
-            &config,
-            RunStart {
-                restore_guest_state: false,
-                reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-                prev_storage: None,
-            },
-            &mut telemetry,
-            RunControls::new(cancel, Some(source)),
-        )
-        .await
-    });
-
-    let requests = server.assert_finished_with_requests().await;
-    wait_gate.notify_one();
-    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, run_task)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap();
-    assert!(result.failure.is_none());
-    assert_eq!(requests.len(), 1);
-    assert!(requests[0].starts_with(&format!("POST {reserve_path} ")));
-    assert!(overrides.process_control_calls().is_empty());
-}
-
-#[tokio::test]
-async fn run_in_sandbox_stops_when_reserve_rejects_run_not_running() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let wait_gate = Arc::new(tokio::sync::Notify::new());
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::with_wait_process_gate(
-        Arc::clone(&wait_gate),
-    ));
-    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let ctx = minimal_context();
-    let run_id = ctx.run_id;
-    let reserve_path = format!("/api/runners/runs/{run_id}/active-inputs/reserve");
-    let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
-        "200 OK",
-        r#"{"outcome":"rejected","reason":"run_not_running"}"#,
-    ))])
-    .await;
-    let api_url = server.url();
-    let notifications = ActiveInputNotifications::new();
-    let source = api_active_input_source(
-        api_url,
-        run_id,
-        &notifications,
-        "active-input-run-not-running-test",
-    );
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let mut telemetry = test_telemetry(&config, &ctx);
-
-    let run_task = tokio::spawn(async move {
-        run_in_sandbox(
-            &*sandbox,
-            &ctx,
-            &config,
-            RunStart {
-                restore_guest_state: false,
-                reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-                prev_storage: None,
-            },
-            &mut telemetry,
-            RunControls::new(cancel, Some(source)),
-        )
-        .await
-    });
-
-    let requests = server.assert_finished_with_requests().await;
-    wait_gate.notify_one();
-    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, run_task)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap();
-    assert!(result.failure.is_none());
-    assert_eq!(requests.len(), 1);
-    assert!(requests[0].starts_with(&format!("POST {reserve_path} ")));
-    assert!(overrides.process_control_calls().is_empty());
-}
-
-#[tokio::test]
-async fn run_in_sandbox_reconciles_after_payload_too_large_rejection() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let wait_gate = Arc::new(tokio::sync::Notify::new());
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::with_wait_process_gate(
-        Arc::clone(&wait_gate),
-    ));
-    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let ctx = minimal_context();
-    let run_id = ctx.run_id;
-    let reserve_path = format!("/api/runners/runs/{run_id}/active-inputs/reserve");
-    let server = RawHttpTestServer::spawn(vec![
-        RawHttpAction::Respond(json_response(
-            "200 OK",
-            r#"{"outcome":"rejected","reason":"payload_too_large"}"#,
-        )),
-        RawHttpAction::Respond(json_response("200 OK", r#"{"outcome":"terminal"}"#)),
-    ])
-    .await;
-    let api_url = server.url();
-    let notifications = ActiveInputNotifications::new();
-    let source = api_active_input_source(
-        api_url,
-        run_id,
-        &notifications,
-        "active-input-payload-too-large-test",
-    );
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let run_cancel = cancel.clone();
-    let mut telemetry = test_telemetry(&config, &ctx);
-
-    let mut run_task = Some(tokio::spawn(async move {
-        run_in_sandbox(
-            &*sandbox,
-            &ctx,
-            &config,
-            RunStart {
-                restore_guest_state: false,
-                reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-                prev_storage: None,
-            },
-            &mut telemetry,
-            RunControls::new(run_cancel, Some(source)),
-        )
-        .await
-    }));
-    let mut server = Some(server);
-    let deadline = tokio::time::Instant::now() + RUN_IN_SANDBOX_TEST_TIMEOUT;
-
-    let scenario = async {
-        let Some(server_fixture) = server.as_mut() else {
-            return Err("active-input server ownership was lost before the first request".into());
-        };
-        let first_request = receive_http_request_before(
-            deadline,
-            server_fixture,
-            "the payload-too-large reserve request",
-        )
-        .await?;
-        notifications.notify(run_id);
-        let Some(server_fixture) = server.as_mut() else {
-            return Err("active-input server ownership was lost before the second request".into());
-        };
-        let second_request = receive_http_request_before(
-            deadline,
-            server_fixture,
-            "the terminal reserve request after payload-too-large rejection",
-        )
-        .await?;
-        wait_gate.notify_one();
-
-        let Some(run_handle) = run_task.as_mut() else {
-            return Err("runner task ownership was lost before completion".into());
-        };
-        let run_outcome = tokio::time::timeout_at(deadline, run_handle)
-            .await
-            .map_err(|_| "timed out waiting for the runner task to finish".to_string())?;
-        run_task.take();
-        let result = run_outcome
-            .map_err(|error| format!("runner task failed: {error}"))?
-            .map_err(|error| format!("run_in_sandbox failed: {error}"))?;
-
-        let Some(server_fixture) = server.take() else {
-            return Err("active-input server task ownership was lost before completion".into());
-        };
-        server_fixture.assert_finished().await;
-        Ok::<_, String>((result, [first_request, second_request]))
-    }
-    .await;
-
-    let (result, requests) = match scenario {
-        Ok(result) => result,
-        Err(error) => {
-            cancel.cancel();
-            wait_gate.notify_one();
-            if let Some(server_fixture) = server.take() {
-                server_fixture.cancel_and_reap().await;
-            }
-            let cleanup_errors = reap_spawned_test_task(run_task.take(), "runner")
-                .await
-                .into_iter()
-                .collect::<Vec<_>>();
-            if cleanup_errors.is_empty() {
-                panic!("{error}");
-            }
-            panic!("{error}; cleanup errors: {}", cleanup_errors.join("; "));
-        }
-    };
-    assert!(result.failure.is_none());
-    assert!(
-        requests
-            .iter()
-            .all(|request| request.starts_with(&format!("POST {reserve_path} ")))
-    );
     assert!(overrides.process_control_calls().is_empty());
 }
 
@@ -1089,9 +795,7 @@ async fn run_in_sandbox_retries_not_written_delivery_with_same_id() {
     let run_id = ctx.run_id;
     let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
         "200 OK",
-        &format!(
-            r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"retry exact delivery"}}"#,
-        ),
+        &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"retry exact delivery"}}}}"#,),
     ))])
     .await;
     let api_url = server.url();
@@ -1137,7 +841,7 @@ async fn run_in_sandbox_retries_not_written_delivery_with_same_id() {
     server.assert_finished().await;
     let calls = overrides.process_control_calls();
     assert_eq!(calls.len(), 2);
-    assert!(calls.iter().all(|call| call.message_id == DELIVERY_ID));
+    assert!(calls.iter().all(|call| call.message_id == EVENT_ID));
     assert_eq!(calls[0].payload, calls[1].payload);
 }
 
@@ -1165,16 +869,14 @@ async fn run_in_sandbox_retries_guest_backpressure_with_same_id() {
     let run_id = ctx.run_id;
     let payload_overhead = identified_active_input_payload_len("").unwrap();
     let prompt = "x".repeat(ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES - payload_overhead);
-    let expected_payload = encode_active_input(DELIVERY_ID, &prompt).unwrap();
+    let expected_payload = encode_active_input(EVENT_ID, &prompt).unwrap();
     assert_eq!(
         expected_payload.len(),
         ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES
     );
     let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
         "200 OK",
-        &format!(
-            r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"{prompt}"}}"#,
-        ),
+        &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"{prompt}"}}}}"#,),
     ))])
     .await;
     let api_url = server.url();
@@ -1259,7 +961,7 @@ async fn run_in_sandbox_retries_guest_backpressure_with_same_id() {
     server.assert_finished().await;
     let calls = overrides.process_control_calls();
     assert_eq!(calls.len(), retry_delays.len() + 1);
-    assert!(calls.iter().all(|call| call.message_id == DELIVERY_ID));
+    assert!(calls.iter().all(|call| call.message_id == EVENT_ID));
     assert!(
         calls
             .iter()
@@ -1300,16 +1002,14 @@ async fn assert_uncertain_delivery_is_suppressed(outcome: sandbox::ProcessContro
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let run_id = ctx.run_id;
-    let reserve = json_response(
+    let next_input = json_response(
         "200 OK",
-        &format!(
-            r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"uncertain delivery"}}"#,
-        ),
+        &format!(r#"{{"input":{{"eventId":"{EVENT_ID}","prompt":"uncertain delivery"}}}}"#,),
     );
     let server = RawHttpTestServer::spawn(vec![
-        RawHttpAction::Respond(reserve.clone()),
-        RawHttpAction::Respond(reserve),
-        RawHttpAction::Respond(json_response("200 OK", r#"{"outcome":"empty"}"#)),
+        RawHttpAction::Respond(next_input.clone()),
+        RawHttpAction::Respond(next_input),
+        RawHttpAction::Respond(json_response("200 OK", r#"{"input":null}"#)),
     ])
     .await;
     let api_url = server.url();
@@ -1358,7 +1058,7 @@ async fn assert_uncertain_delivery_is_suppressed(outcome: sandbox::ProcessContro
         let Some(server_fixture) = server.as_mut() else {
             return Err("active-input server ownership was lost before the first request".into());
         };
-        receive_http_request_before(deadline, server_fixture, "the first reserve request").await?;
+        receive_http_request_before(deadline, server_fixture, "the first next request").await?;
         notifications.notify(run_id);
         let Some(server_fixture) = server.as_mut() else {
             return Err("active-input server ownership was lost before the second request".into());
@@ -1366,7 +1066,7 @@ async fn assert_uncertain_delivery_is_suppressed(outcome: sandbox::ProcessContro
         receive_http_request_before(
             deadline,
             server_fixture,
-            "the second reserve request after the first notification",
+            "the second next request after the first notification",
         )
         .await?;
         notifications.notify(run_id);
@@ -1376,7 +1076,7 @@ async fn assert_uncertain_delivery_is_suppressed(outcome: sandbox::ProcessContro
         receive_http_request_before(
             deadline,
             server_fixture,
-            "the third reserve request after the second notification",
+            "the third next request after the second notification",
         )
         .await?;
         wait_gate.notify_one();
@@ -1421,89 +1121,5 @@ async fn assert_uncertain_delivery_is_suppressed(outcome: sandbox::ProcessContro
     assert!(result.failure.is_none());
     let calls = overrides.process_control_calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].message_id, DELIVERY_ID);
-}
-
-#[tokio::test]
-async fn run_in_sandbox_carries_failed_journal_receipt_to_completion() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let wait_gate = Arc::new(tokio::sync::Notify::new());
-    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::with_wait_process_gate(
-        Arc::clone(&wait_gate),
-    ));
-    let ctx = minimal_context();
-    let run_id = ctx.run_id;
-    overrides.push_read_file_result(Err(sandbox_read_file_error(
-        "transient guest file read failure",
-    )));
-    overrides.push_read_file_result(Ok(Some(
-        format!(r#"{{"runId":"{run_id}","deliveryIds":["{DELIVERY_ID}"]}}"#).into_bytes(),
-    )));
-    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
-    let reserve_path = format!("/api/runners/runs/{run_id}/active-inputs/reserve");
-    let receipt_path =
-        format!("/api/runners/runs/{run_id}/active-inputs/deliveries/{DELIVERY_ID}/receipt");
-    let server = RawHttpTestServer::spawn(vec![
-        RawHttpAction::Respond(json_response(
-            "200 OK",
-            &format!(
-                r#"{{"outcome":"reserved","deliveryId":"{DELIVERY_ID}","eventIds":["{EVENT_ID}"],"prompt":"recover receipt"}}"#,
-            ),
-        )),
-        RawHttpAction::Respond(json_response(
-            "503 Service Unavailable",
-            r#"{"error":"transient"}"#,
-        )),
-    ])
-    .await;
-    let api_url = server.url();
-    let notifications = ActiveInputNotifications::new();
-    let source = api_active_input_source(
-        api_url,
-        run_id,
-        &notifications,
-        "active-input-journal-recovery-test",
-    );
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let mut telemetry = test_telemetry(&config, &ctx);
-
-    let run_task = tokio::spawn(async move {
-        run_in_sandbox(
-            &*sandbox,
-            &ctx,
-            &config,
-            RunStart {
-                restore_guest_state: false,
-                reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
-                prev_storage: None,
-            },
-            &mut telemetry,
-            RunControls::new(cancel, Some(source)),
-        )
-        .await
-    });
-
-    assert!(
-        overrides
-            .wait_for_process_control_calls(1, RUN_IN_SANDBOX_TEST_TIMEOUT)
-            .await
-    );
-    wait_gate.notify_one();
-    let result = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, run_task)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap();
-    assert!(result.failure.is_none());
-    assert_eq!(
-        result.active_input_delivery_ids,
-        vec![DELIVERY_ID.to_string()]
-    );
-    let requests = server.assert_finished_with_requests().await;
-    let first_request = &requests[0];
-    let second_request = &requests[1];
-    assert!(first_request.starts_with(&format!("POST {reserve_path} ")));
-    assert!(second_request.starts_with(&format!("POST {receipt_path} ")));
+    assert_eq!(calls[0].message_id, EVENT_ID);
 }

@@ -10,7 +10,7 @@ import {
   type DispatchCompleteSideEffectsInput,
 } from "./agent-webhook-complete.service";
 import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
-import { piApiFirstTurnObjectKey } from "./pi-api-first-turn-config";
+import { piSandboxHandoffObjectKey } from "./pi-sandbox-handoff.service";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
 
 const L = logger("RunLifecycle");
@@ -54,16 +54,16 @@ export const dispatchCompleteSideEffects$ = command(
   ): Promise<void> => {
     await set(dispatchCompleteSideEffectsCore$, input, signal);
     signal.throwIfAborted();
-    if (input.cleanupPiApiFirstTurn) {
+    if (input.cleanupPiSandboxHandoff) {
       await tapError(
         get(
           deleteS3Objects(env("R2_USER_STORAGES_BUCKET_NAME"), [
-            piApiFirstTurnObjectKey(input.runId, "manifest"),
-            piApiFirstTurnObjectKey(input.runId, "session"),
+            piSandboxHandoffObjectKey(input.runId, "manifest"),
+            piSandboxHandoffObjectKey(input.runId, "session"),
           ]),
         ),
         (error) => {
-          L.warn("Failed to release Pi API first-turn staging objects", {
+          L.warn("Failed to release Pi sandbox handoff objects", {
             runId: input.runId,
             error,
           });

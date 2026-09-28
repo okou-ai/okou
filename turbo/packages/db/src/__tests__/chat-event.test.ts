@@ -203,7 +203,7 @@ describe("chatEvents schema", () => {
           });
       });
 
-    expect(referencingTables).toStrictEqual(["active_input_delivery_items"]);
+    expect(referencingTables).toStrictEqual([]);
     expect(getTableConfig(chatEvents).uniqueConstraints).toStrictEqual([]);
   });
 });

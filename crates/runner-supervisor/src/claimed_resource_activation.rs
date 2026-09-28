@@ -870,26 +870,6 @@ pub async fn try_reuse_from_pool(
         job_lease,
     } = request;
 
-    if context
-        .pi_launch_config
-        .as_ref()
-        .and_then(|launch| launch.get("apiFirstTurn"))
-        .and_then(|handoff| handoff.get("schemaVersion"))
-        .and_then(serde_json::Value::as_u64)
-        == Some(2)
-    {
-        // v4 is demand-only. A blank pool entry is already activated before
-        // the normal spawn binding, so it cannot provide our release proof.
-        return Ok(ReuseFromPoolReady {
-            reuse_entry: None,
-            active_lease: job_lease,
-            reuse_result: SandboxReuseResult::NoReuseKey,
-            idle_snapshot: None,
-            needs_reuse_state_refresh: false,
-            transfer_guard: None,
-        });
-    }
-
     let reuse_key = context.reuse_key();
     let miss_result = if reuse_key.is_some() {
         SandboxReuseResult::PoolMiss

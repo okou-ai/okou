@@ -2,7 +2,6 @@ import {
   personalSubscriptionAccountAccessCondition,
   isPersonalSubscriptionProviderType,
   readPersonalSubscriptionCredentialBundle,
-  capturePiCodexCredentialCiphertexts,
 } from "./model-provider-account.service";
 import {
   publishModelPoliciesChangedForOrgSafely,
@@ -3731,50 +3730,6 @@ async function unavailableModelProviderRuntimeSecretForApi(
   };
 }
 
-export async function resolveModelProviderRuntimeSecretForApi(
-  args: ModelProviderRuntimeSecretForApiArgs,
-): Promise<string | null> {
-  const lookup = resolveModelProviderRuntimeSecretLookup(args);
-  return lookup
-    ? await readModelProviderRuntimeSecretForApi(args, lookup)
-    : null;
-}
-
-/** Observe revocation without refreshing or replacing prepared credentials. */
-export async function readModelProviderRuntimeReconnectStateForApi(
-  args: ModelProviderRuntimeSecretForApiArgs,
-): Promise<ModelProviderRuntimeReconnectState | null> {
-  const lookup = resolveModelProviderRuntimeSecretLookup(args);
-  if (!lookup) {
-    return null;
-  }
-  if (isPersonalSubscriptionProviderType(lookup.providerType)) {
-    const bundle = await readPersonalSubscriptionCredentialBundle({
-      db: args.db,
-      orgId: args.orgId,
-      userId: lookup.userId,
-      type: lookup.providerType,
-      sourceId: lookup.metadata.sourceId,
-      runId: args.runId,
-      featureSwitchContext: args.featureSwitchContext,
-    });
-    return bundle
-      ? {
-          needsReconnect: bundle.account.needsReconnect,
-          lastRefreshErrorCode: bundle.account.lastRefreshErrorCode,
-        }
-      : null;
-  }
-  return modelProviderRuntimeReconnectState(
-    await loadModelProviderRuntimeRefreshState({
-      db: args.db,
-      orgId: args.orgId,
-      runId: args.runId,
-      lookup,
-    }),
-  );
-}
-
 async function resolveCurrentModelProviderRuntimeSecretForApi(
   args: ModelProviderRuntimeSecretForApiArgs,
   signal: AbortSignal,
@@ -6545,67 +6500,6 @@ async function syncPersonalSubscriptionRuntimeBundles(
     }
   }
   return expiresAt;
-}
-
-// Only the Pi API-first Codex path can use this optimistic read. One statement
-// captures both ciphertexts of the exact account before KMS; any refresh or
-// reconnect state uses the complete bundle reader instead. Final run admission
-// and model-HTTP revalidation still own their independent authority checks.
-export async function resolvePiCodexFirstTurnSubscriptionBundleForApi(
-  args: ModelProviderRuntimeSecretForApiArgs,
-  signal: AbortSignal,
-) {
-  const lookup = resolveModelProviderRuntimeSecretLookup(args);
-  if (
-    lookup?.providerType === "codex-oauth-token" &&
-    lookup.secretName === "CHATGPT_ACCESS_TOKEN" &&
-    lookup.metadata.sourceId
-  ) {
-    const captured = await capturePiCodexCredentialCiphertexts({
-      db: args.db,
-      orgId: args.orgId,
-      userId: lookup.userId,
-      type: "codex-oauth-token",
-      sourceId: lookup.metadata.sourceId,
-      runId: args.runId,
-    });
-    signal.throwIfAborted();
-    if (captured && !tokenExpiresAtNeedsRefresh(captured.tokenExpiresAt)) {
-      // Wait for both started decryptions even on failure or cancellation.
-      const [token, accountId] = await Promise.allSettled([
-        decryptStoredSecretValue(
-          captured.accessTokenCiphertext,
-          args.featureSwitchContext,
-        ),
-        decryptStoredSecretValue(
-          captured.accountIdCiphertext,
-          args.featureSwitchContext,
-        ),
-      ]);
-      signal.throwIfAborted();
-      if (token.status === "rejected") {
-        throw token.reason;
-      }
-      if (accountId.status === "rejected") {
-        throw accountId.reason;
-      }
-      // KMS may straddle the refresh buffer even for a fresh snapshot.
-      if (
-        !tokenExpiresAtNeedsRefresh(captured.tokenExpiresAt) &&
-        token.value.trim() &&
-        accountId.value.trim()
-      ) {
-        return {
-          status: "available" as const,
-          values: new Map([
-            ["CHATGPT_ACCESS_TOKEN", token.value],
-            ["CHATGPT_ACCOUNT_ID", accountId.value],
-          ]),
-        };
-      }
-    }
-  }
-  return await resolveCurrentPersonalSubscriptionBundleForApi(args, signal);
 }
 
 /** Refresh once, then read token, account ID and ancillary credentials together.

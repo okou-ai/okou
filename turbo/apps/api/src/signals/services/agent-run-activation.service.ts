@@ -5,36 +5,12 @@ import { writeDb$ } from "../external/db";
 import { notifyRunnerJob } from "./runner-dispatch.service";
 import { recordSameThreadRunnerJobPersisted } from "./runner-job-queue-lifecycle.service";
 import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
-import { waitUntil } from "../context/wait-until";
 import type { PendingRunActivation } from "./agent-run-activation.types";
-import { dispatchConfiguredPiApiFirstTurn$ } from "./pi-api-first-turn-dispatch.service";
-
-import type { PiApiFirstTurnPreparation } from "./pi-api-first-turn-preparation";
 
 interface PendingRunActivationRequest {
   readonly activation: PendingRunActivation;
   readonly activationScheduledAt: number;
-  readonly preparation?: PiApiFirstTurnPreparation;
 }
-
-const startPiApiFirstTurn$ = command(function startPiApiFirstTurn(
-  { set },
-  activation: NonNullable<PendingRunActivation["piApiFirstTurn"]>,
-  preparation: PiApiFirstTurnPreparation | undefined,
-): void {
-  const coordinationDeadlineAt =
-    activation.executionContext.piLaunchConfig.apiFirstTurn.deadlineAt;
-  // waitUntil owns only the bounded API-to-Sandbox coordination window.
-  // A successful Sandbox transfer continues under the runner lifecycle.
-  waitUntil(
-    set(
-      dispatchConfiguredPiApiFirstTurn$,
-      activation,
-      preparation,
-      AbortSignal.timeout(Math.max(1, coordinationDeadlineAt - now())),
-    ),
-  );
-});
 
 /** Common post-commit activation for direct and promoted pending runs. */
 export const activatePendingRun$ = command(
@@ -54,11 +30,6 @@ export const activatePendingRun$ = command(
       });
     }
     const sameThreadMarkersCompletedAt = now();
-
-    const apiFirstTurn = activation.piApiFirstTurn;
-    if (apiFirstTurn) {
-      set(startPiApiFirstTurn$, apiFirstTurn, input.preparation);
-    }
 
     const db = set(writeDb$);
     const databaseReadyAt = now();

@@ -38,7 +38,8 @@ import { ArtifactDeliveryAliasConflict } from "./artifact-delivery.service";
 
 type HostedSite = typeof hostedSites.$inferSelect;
 
-function storedObject(bucket: string, key: string, signal: AbortSignal) {
+/** A strongly consistent hosted-sites object read; null when the key is absent. */
+export function storedObject(bucket: string, key: string, signal: AbortSignal) {
   return computed(async (get) => {
     const result = await settle(
       get(readArtifactSharePolicyObject(bucket, key, signal)),

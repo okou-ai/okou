@@ -197,15 +197,13 @@ async fn usage_dispatches_without_ssh_and_rejects_guest_selected_params() {
     assert_eq!(result[0]["type"], "result");
     assert_eq!(result[0]["data"]["schemaVersion"], 1);
     assert_eq!(result[0]["data"]["runId"], h.run_id.to_string());
-    assert_eq!(result[0]["data"]["combined"]["state"], "observed");
-    assert_eq!(result[0]["data"]["combined"]["coverage"], "partial");
     assert_eq!(
-        result[0]["data"]["sources"]["apiFirstTurn"]["state"],
-        "no-inference"
+        result[0]["data"]["combined"],
+        json!({"state":"unavailable","reason":"no-observation"})
     );
     assert_eq!(
-        result[0]["data"]["sources"]["sandboxProxy"],
-        json!({"state":"unavailable","reason":"launch-unavailable"})
+        result[0]["data"]["sources"],
+        json!({"sandboxProxy":{"state":"unavailable","reason":"launch-unavailable"}})
     );
 
     for params in [

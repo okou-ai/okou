@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.713.0](https://github.com/okou-ai/okou/compare/core-v8.712.7...core-v8.713.0) (2026-09-28)
+
+
+### Features
+
+* **web:** add inert run-scoped wss transport adapter ([#37112](https://github.com/okou-ai/okou/issues/37112)) ([f175cb4](https://github.com/okou-ai/okou/commit/f175cb40571c16f78d3bf259198926c33de80ad6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.518.2
+
 ## [8.712.7](https://github.com/okou-ai/okou/compare/core-v8.712.6...core-v8.712.7) (2026-09-27)
 
 

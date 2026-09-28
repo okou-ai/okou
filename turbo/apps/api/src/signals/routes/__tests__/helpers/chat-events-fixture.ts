@@ -99,11 +99,7 @@ const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 export const CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET =
   "okou web upload-file -f <path>";
 
-export const API_FIRST_TURN_OWNERSHIP_BUDGET_MS = 45_000;
-
-export const API_FIRST_TURN_COORDINATION_BUDGET_MS = 55_000;
-
-const PI_API_FIRST_TURN_BASE_USAGE_CATEGORIES = [
+const PI_BASE_USAGE_CATEGORIES = [
   "tokens.input",
   "tokens.output",
   "tokens.cache_read",
@@ -207,7 +203,7 @@ const GPT_USAGE_PRICING = [
   });
 });
 
-export type PiApiFirstTurnUsageProvider =
+export type PiUsageProvider =
   | z.infer<typeof piNativeCatalogModelSchema>
   | "deepseek-v4-flash"
   | "deepseek-v4.1-flash"
@@ -306,66 +302,6 @@ export function totalChargedCredits(
   }, 0);
 }
 
-export async function expectPiApiUsage(
-  runId: string,
-  provider: PiApiFirstTurnUsageProvider,
-  suffix: "" | ".fast" | ".long_context" | ".long_context.fast",
-  expected: {
-    readonly input: number;
-    readonly output: number;
-    readonly cacheRead: number;
-    readonly cacheCreation: number;
-  },
-): Promise<void> {
-  const usageRows = await readRunUsageEventsFixture(runId);
-  const expectedRows = [
-    ["tokens.cache_creation", expected.cacheCreation],
-    ["tokens.cache_read", expected.cacheRead],
-    ["tokens.input", expected.input],
-    ["tokens.output", expected.output],
-  ]
-    .filter((entry) => {
-      return entry[1] !== 0;
-    })
-    .map(([category, quantity]) => {
-      return expect.objectContaining({
-        provider,
-        category: `${category}${suffix}`,
-        quantity,
-        status: "processed",
-        billingError: null,
-        creditsCharged: expect.any(Number),
-      });
-    });
-  expect(usageRows).toStrictEqual(expectedRows);
-  expect(totalChargedCredits(usageRows)).toBeGreaterThan(0);
-}
-
-export async function expectTerraApiUsage(
-  runId: string,
-  suffix: "" | ".fast" | ".long_context" | ".long_context.fast",
-  expected: {
-    readonly input: number;
-    readonly output: number;
-    readonly cacheRead: number;
-    readonly cacheCreation: number;
-  },
-): Promise<void> {
-  await expectPiApiUsage(runId, "gpt-5.6-terra", suffix, expected);
-}
-
-export async function expectTerraApiFollowUpUsage(
-  runId: string,
-  suffix: "" | ".fast" = "",
-): Promise<void> {
-  await expectTerraApiUsage(runId, suffix, {
-    input: 5,
-    output: 3,
-    cacheRead: 0,
-    cacheCreation: 0,
-  });
-}
-
 export async function expectNoBuiltInModelUsage(runId: string): Promise<void> {
   // Operational usage rows have no production run-scoped read API. This
   // test-only observation is required to prove the user-owned no-charge
@@ -383,8 +319,8 @@ export async function createGptUsagePricingResolution(): Promise<
   return pricing.resolution;
 }
 
-export async function createPiApiFirstTurnUsagePricingResolution(
-  provider: PiApiFirstTurnUsageProvider,
+export async function createPiUsagePricingResolution(
+  provider: PiUsageProvider,
 ): Promise<UsagePricingFixture["resolution"]> {
   if (
     GPT_PI_USAGE_MODELS.some((model) => {
@@ -394,7 +330,7 @@ export async function createPiApiFirstTurnUsagePricingResolution(
     return await createGptUsagePricingResolution();
   }
   const pricing = await createUsagePricingFixture({
-    configured: PI_API_FIRST_TURN_BASE_USAGE_CATEGORIES.map((category) => {
+    configured: PI_BASE_USAGE_CATEGORIES.map((category) => {
       return {
         kind: "model",
         provider,
@@ -637,41 +573,6 @@ export function occurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
-export function piResponsesDeveloperPrompt(
-  rawBody: string | undefined,
-): string {
-  if (rawBody === undefined) {
-    throw new Error("Expected a Pi Responses request body");
-  }
-  const body = JSON.parse(rawBody) as unknown;
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("input" in body) ||
-    !Array.isArray(body.input)
-  ) {
-    throw new Error("Expected a Pi Responses input array");
-  }
-  const developer = body.input.find((item) => {
-    return (
-      typeof item === "object" &&
-      item !== null &&
-      "role" in item &&
-      item.role === "developer"
-    );
-  });
-  if (
-    typeof developer !== "object" ||
-    developer === null ||
-    !("content" in developer) ||
-    typeof developer.content !== "string"
-  ) {
-    throw new Error("Expected a Pi Responses developer prompt");
-  }
-  return developer.content;
-}
-
-/** Create route helpers for one test file; the caller owns testContext() and its cleanup. */
 export function createChatEventsFixture(context: TestContext) {
   const bdd = createBddApi(context);
 
@@ -746,7 +647,7 @@ export function createChatEventsFixture(context: TestContext) {
 
   async function configureBuiltInPiModel(
     actor: ApiTestUser,
-    selectedModel: PiApiFirstTurnUsageProvider,
+    selectedModel: PiUsageProvider,
   ): Promise<void> {
     if (selectedModel === "deepseek-v4.1-flash") {
       configureNativeCliArtifact();
@@ -868,7 +769,7 @@ export function createChatEventsFixture(context: TestContext) {
 
   async function configureBuiltInPiModelOnOpenRouter(
     actor: ApiTestUser,
-    selectedModel: PiApiFirstTurnUsageProvider,
+    selectedModel: PiUsageProvider,
   ): Promise<<T>(work: () => Promise<T>) => Promise<T>> {
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const primary = await resolveBuiltInModelRouteFixture(
@@ -1520,59 +1421,34 @@ export function createChatEventsFixture(context: TestContext) {
     return objects;
   }
 
-  function expectNoPiApiFirstTurnArtifacts(
+  /**
+   * Read the launch handoff the Pi CLI polls before it starts: every Pi turn
+   * is a no-inference `sandbox-first` transfer published by run creation.
+   */
+  function expectPiSandboxHandoff(
     runId: string,
     objects: ReadonlyMap<string, Buffer>,
-  ): void {
+  ) {
     const prefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${runId}/`;
-    const artifactKeys = [`${prefix}session.jsonl`, `${prefix}manifest.json`];
-    for (const key of artifactKeys) {
-      expect(objects.has(key)).toBeFalsy();
+    const manifestBytes = objects.get(`${prefix}manifest.json`);
+    if (!manifestBytes) {
+      throw new Error("Expected a published Pi sandbox handoff manifest");
     }
-    // Terminal cleanup deletes temporary objects. Inspect the external writes
-    // too, so a briefly published H1 or manifest cannot pass this assertion.
-    const writes = context.mocks.s3.send.mock.calls.flatMap(([command]) => {
-      const candidate = command as PiCheckpointS3Command;
-      const key = piS3ObjectKey(candidate);
-      return candidate.constructor?.name === "PutObjectCommand" &&
-        key !== undefined &&
-        artifactKeys.includes(key)
-        ? [key]
-        : [];
+    const manifest = piApiFirstTurnManifestSchema.parse(
+      JSON.parse(manifestBytes.toString("utf8")),
+    );
+    expect(manifest).toMatchObject({
+      outcome: "ownership-transfer",
+      mode: "sandbox-first",
+      apiUsage: { schemaVersion: 1, state: "no-inference" },
     });
-    expect(writes).toStrictEqual([]);
-  }
-
-  async function expectPiApiFirstTurnTerminalWithoutOutput(
-    actor: ApiTestUser,
-    run: { readonly runId: string; readonly threadId: string },
-    status: "failed" | "cancelled",
-    failureMessage = "[PI_API_MODEL_OUTPUT_INCOMPLETE] Pi API first-turn model output is incomplete",
-  ): Promise<void> {
-    const terminal = await api.readRun(actor, run.runId);
-    expect(terminal).toMatchObject({
-      status,
-      ...(status === "failed"
-        ? {
-            error: failureMessage,
-          }
-        : {}),
-    });
-    expect(terminal.result).toBeFalsy();
-    const events = (await chat.listThreadEvents(actor, run.threadId)).events;
-    expect(eventBackedContents(events, run.runId)).toStrictEqual([]);
-    expect(
-      events
-        .filter((event) => {
-          return (
-            event.runId === run.runId &&
-            isChatRunTerminalEventType(event.eventType)
-          );
-        })
-        .map((event) => {
-          return event.eventType;
-        }),
-    ).toStrictEqual([`run.${status}`]);
+    return {
+      manifest,
+      session:
+        manifest.schemaVersion === 4
+          ? undefined
+          : objects.get(`${prefix}session.jsonl`),
+    };
   }
 
   function uploadedPiS3Object(objectKey: string): Buffer | undefined {
@@ -1835,7 +1711,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly prompt: string;
     readonly codexServiceTier?: "fast";
     readonly gptRoute?: "openai" | "openrouter";
-    readonly selectedModel?: PiApiFirstTurnUsageProvider;
+    readonly selectedModel?: PiUsageProvider;
   }): Promise<{
     readonly anchor: { readonly runId: string; readonly threadId: string };
     readonly anchorClaim: Awaited<ReturnType<typeof claimChatRun>>;
@@ -1889,7 +1765,7 @@ export function createChatEventsFixture(context: TestContext) {
     }
 
     const usagePricingResolution =
-      await createPiApiFirstTurnUsagePricingResolution(selectedModel);
+      await createPiUsagePricingResolution(selectedModel);
     const waiting = await withModelRoute(async () => {
       return await sendWaitingChatInput(
         args.actor,
@@ -1968,8 +1844,7 @@ export function createChatEventsFixture(context: TestContext) {
     expectThreadPiTerminal,
     claimGptPiSandbox,
     mockPiCheckpointObjectStore,
-    expectNoPiApiFirstTurnArtifacts,
-    expectPiApiFirstTurnTerminalWithoutOutput,
+    expectPiSandboxHandoff,
     uploadedPiS3Object,
     piS3Object,
     publishPendingPiInstructions,

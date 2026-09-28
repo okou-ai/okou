@@ -87,7 +87,7 @@ test -n "${npm_config_cache:-}"
 printf '%s' "$OKOU_RUN_ID" > "$RUN_ID_CAPTURE_PATH"
 printf '%s' "$OKOU_PI_LAUNCH_PAYLOAD_FILE" > "$PI_PAYLOAD_CAPTURE_PATH"
 printf '%s' "$npm_config_cache" > "$NPM_CACHE_CAPTURE_PATH"
-printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":4,"ownershipTransferMode":"pending-tool-continuation"}'
+printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":4,"ownershipTransferMode":"sandbox-first"}'
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;
@@ -150,9 +150,7 @@ fi
             &guest_contracts::env::RunPayload {
                 prompt: "verify canonical Pi run identity".to_string(),
                 append_system_prompt: "Your name is Okou.".to_string(),
-                pi_launch_config:
-                    r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":4}}"#
-                        .to_string(),
+                pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
                 pi_model_config: "{}".to_string(),
                 pi_session_id: "11111111-1111-4111-8111-111111111111".to_string(),
                 ..guest_contracts::env::RunPayload::default()

@@ -5,12 +5,10 @@ import {
   LIMITED_FREE1_DEFAULT_RUN_MODEL,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import {
   readQueuedLangfuseContextFixture,
   readRunLangfuseTraceEnabledFixture,
@@ -45,14 +43,12 @@ import {
   type ChatRunSendBody,
   type PromptMessage,
   requireOrgId,
-  expectPiApiUsage,
   createGptUsagePricingResolution,
-  createPiApiFirstTurnUsagePricingResolution,
+  createPiUsagePricingResolution,
   claimEnvironment,
   userMessages,
   modelProviderSecretPlaceholder,
 } from "./helpers/chat-events-fixture";
-import { piResponsesTextSse, piResponsesToolSse } from "./helpers/pi-responses";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -69,7 +65,6 @@ const {
   expectNoThreadModelUpdateEvent,
   claimChatRun,
   waitForThreadMessages,
-  waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
   upsertOrgModelProvider,
@@ -113,8 +108,8 @@ function codexAuthJson(): string {
   });
 }
 
-// Keep Pi's API-first resource handoff deterministic for tests that inspect
-// the frozen Sandbox claim rather than executing a provider request.
+// Keep Pi's sandbox launch resource handoff deterministic for tests that
+// inspect the frozen Sandbox claim.
 async function preparePiResourceHandoff(
   actor: ApiTestUser,
   agentId: string,
@@ -679,17 +674,6 @@ describe("CHAT-02: model-first provider policies", () => {
         signal: context.signal,
       });
       onTestFinished(gate.release);
-      let calls = 0;
-      server.use(
-        ...["https://api.deepseek.com/*", "https://openrouter.ai/*"].map(
-          (url) => {
-            return http.post(url, () => {
-              calls += 1;
-              return new HttpResponse(null, { status: 500 });
-            });
-          },
-        ),
-      );
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(
         actor,
@@ -719,13 +703,12 @@ describe("CHAT-02: model-first provider policies", () => {
         eventType: "input.rejected",
         error: boundary === "deleted" ? "provider_unavailable" : "bad_request",
       });
-      expect(calls).toBe(0);
     },
     90_000,
   );
 
   it.each(["old-cli", "mutable-cli", "effort"] as const)(
-    "rejects V4.1 %s before provider I/O",
+    "rejects V4.1 %s at admission",
     async (boundary) => {
       const { actor, agentId } = await entitledChatActor();
       await configureBuiltInPiModel(actor, "deepseek-v4.1-flash");
@@ -738,19 +721,6 @@ describe("CHAT-02: model-first provider policies", () => {
             : "https://static.okou.io/okou-cli/latest/package.tgz",
         );
       }
-      let calls = 0;
-      server.use(
-        ...["https://api.deepseek.com/*", "https://openrouter.ai/*"].map(
-          (url) => {
-            return http.post(url, () => {
-              calls += 1;
-              return new HttpResponse(piResponsesTextSse("unexpected", calls), {
-                headers: { "content-type": "text/event-stream" },
-              });
-            });
-          },
-        ),
-      );
       if (boundary === "effort") {
         // An unsupported effort is still refused by the send itself.
         const response = await chat.requestSendEvent(
@@ -778,13 +748,12 @@ describe("CHAT-02: model-first provider policies", () => {
         });
       }
       await flushWaitUntilForTest();
-      expect(calls).toBe(0);
     },
     90_000,
   );
 
   it("exposes the owner's run trace URL after tracing is disabled", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     const pricing = await createGptUsagePricingResolution();
@@ -794,13 +763,6 @@ describe("CHAT-02: model-first provider policies", () => {
     mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-link");
     mockOptionalEnv("LANGFUSE_BASE_URL", undefined);
     mockOptionalEnv("LANGFUSE_PROJECT_ID", undefined);
-    server.use(
-      http.post("https://api.openai.com/v1/responses", () => {
-        return new HttpResponse(piResponsesTextSse("Completed answer", 0), {
-          headers: { "content-type": "text/event-stream" },
-        });
-      }),
-    );
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -808,19 +770,21 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.LangfuseTrace]: true,
       },
     );
-    const traced = await sendChatRun(
+    const tracedPrompt = "complete a traced run";
+    const traced = await sendChatRun(actor, {
+      agentId,
+      prompt: tracedPrompt,
+      model: "gpt-5.6-terra",
+    });
+    await completeSandboxFirstPiRun({
       actor,
-      {
-        agentId,
-        prompt: "complete a traced run",
-        model: "gpt-5.6-terra",
-      },
-      pricing,
-    );
-    // API-first execution can outlive the send response; join its owned work
-    // before asserting completion or changing the tracing configuration.
-    await flushWaitUntilForTest();
-    expect((await api.readRun(actor, traced.runId)).status).toBe("completed");
+      answer: "Completed answer",
+      checkpointObjects,
+      claim: await claimChatRun(runnerGroup, traced.runId),
+      prompt: tracedPrompt,
+      run: traced,
+      usagePricingResolution: pricing,
+    });
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -832,16 +796,12 @@ describe("CHAT-02: model-first provider policies", () => {
     expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
       traceUrl,
     );
-    const untraced = await sendChatRun(
-      actor,
-      {
-        agentId,
-        threadId: traced.threadId,
-        prompt: "continue without tracing",
-        model: "gpt-5.6-terra",
-      },
-      pricing,
-    );
+    const untraced = await sendChatRun(actor, {
+      agentId,
+      threadId: traced.threadId,
+      prompt: "continue without tracing",
+      model: "gpt-5.6-terra",
+    });
     await flushWaitUntilForTest();
     expect(
       checkpointObjects.has(
@@ -874,25 +834,11 @@ describe("CHAT-02: model-first provider policies", () => {
     const orgId = requireOrgId(actor);
     await publishPendingPiInstructions(actor, agentId);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads(true);
     const checkpointObjects = mockPiCheckpointObjectStore();
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-admission");
     mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-admission");
     mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example");
-    server.use(
-      http.post("https://api.openai.com/v1/responses", () => {
-        return new HttpResponse(
-          piResponsesToolSse({
-            callId: "call_langfuse_trace_admission",
-            name: "read",
-            arguments: { path: "/etc/os-release" },
-            sequence: 1,
-          }),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
-    );
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -902,15 +848,11 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     await api.heartbeatRunner(runnerGroup);
 
-    const run = await sendChatRun(
-      actor,
-      {
-        agentId,
-        prompt: "preserve the Langfuse trace gate through claim",
-        model: "gpt-5.6-terra",
-      },
-      usagePricingResolution,
-    );
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "preserve the Langfuse trace gate through claim",
+      model: "gpt-5.6-terra",
+    });
     await flushWaitUntilForTest();
     await expect(
       readRunLangfuseTraceEnabledFixture(run.runId),
@@ -966,15 +908,11 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
 
-    const untraced = await sendChatRun(
-      actor,
-      {
-        agentId,
-        prompt: "run without trace admission",
-        model: "gpt-5.6-terra",
-      },
-      usagePricingResolution,
-    );
+    const untraced = await sendChatRun(actor, {
+      agentId,
+      prompt: "run without trace admission",
+      model: "gpt-5.6-terra",
+    });
     await flushWaitUntilForTest();
     const untracedClaim = await claimChatRun(runnerGroup, untraced.runId);
     await relay.expectAdmissionDenied(
@@ -1020,7 +958,7 @@ describe("CHAT-02: model-first provider policies", () => {
     mockPiResourceArchiveDownloads(true);
     const checkpointObjects = mockPiCheckpointObjectStore();
     const usagePricingResolution =
-      await createPiApiFirstTurnUsagePricingResolution("deepseek-v4-flash");
+      await createPiUsagePricingResolution("deepseek-v4-flash");
     const firstPrompt = "start the DeepSeek V4 family session";
     const first = await sendChatRun(actor, {
       agentId,
@@ -2058,106 +1996,73 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it("runs built-in DeepSeek through the native Pi API credential", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    const usagePricingResolution =
-      await createPiApiFirstTurnUsagePricingResolution("deepseek-v4-flash");
+    const fw = createFirewallApi(context);
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const keyFixtureId = randomUUID();
     const requestedApiKey = `built-in-key-bdd-dev-seed-${keyFixtureId}`;
 
     // Keep a second DeepSeek fixture owner alive to cover vendor-unique row
     // arbitration instead of relying on another test file's scheduling.
     await seedBuiltInModelKey("deepseek-v4-flash");
+    let runId: string | null = null;
+    onTestFinished(async () => {
+      await Promise.all([
+        releaseBddBuiltInModelKey({ fixtureId: keyFixtureId }),
+        ...(runId ? [api.requestCancelRun(actor, runId, [200])] : []),
+      ]);
+    });
     const selectedApiKey = await acquireBddBuiltInModelKey({
       fixtureId: keyFixtureId,
       vendor: "deepseek",
       apiKey: requestedApiKey,
     });
 
-    let runId: string | null = null;
-    const cancelRunIfCreated = async () => {
-      if (runId) {
-        const status = (await api.readRun(actor, runId)).status;
-        if (status === "pending" || status === "running") {
-          await api.requestCancelRun(actor, runId, [200]);
-        }
-      }
-    };
-    const releaseBuiltInDeepSeekKey = async () => {
-      await releaseBddBuiltInModelKey({ fixtureId: keyFixtureId });
-    };
-    const cleanupRunAndKeys = async () => {
-      await Promise.all([releaseBuiltInDeepSeekKey(), cancelRunIfCreated()]);
-    };
-
-    await (async () => {
-      if (!actor.orgId) {
-        throw new Error("Expected an organization-scoped chat actor");
-      }
-
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model: "deepseek-v4-flash",
-          isDefault: true,
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-        },
-      ]);
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-      const modelRequests: {
-        readonly authorizationMatches: boolean;
-        readonly body: unknown;
-      }[] = [];
-      server.use(
-        http.post("https://api.deepseek.com/responses", async ({ request }) => {
-          modelRequests.push({
-            authorizationMatches:
-              request.headers.get("authorization") ===
-              `Bearer ${selectedApiKey}`,
-            body: await request.json(),
-          });
-          return new HttpResponse(
-            piResponsesTextSse(
-              "built-in Pi API response",
-              modelRequests.length,
-            ),
-            { headers: { "content-type": "text/event-stream" } },
-          );
-        }),
-      );
-
-      const run = await sendChatRun(
-        actor,
-        {
-          agentId,
-          prompt: "run with the selected built-in DeepSeek provider",
-          model: "deepseek-v4-flash",
-        },
-        usagePricingResolution,
-      );
-      runId = run.runId;
-      await waitForRunStatus(actor, run.runId, "completed");
-      await flushWaitUntilForTest();
-      expect(modelRequests).toHaveLength(1);
-      expect(modelRequests[0]?.authorizationMatches).toBeTruthy();
-      expect(modelRequests[0]?.body).toMatchObject({
+    await api.updateOrgModelPolicies(actor, [
+      {
         model: "deepseek-v4-flash",
-        stream: true,
-      });
-      await expectPiApiUsage(run.runId, "deepseek-v4-flash", "", {
-        input: 5,
-        output: 3,
-        cacheRead: 0,
-        cacheCreation: 0,
-      });
-      const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
-      expect(claim.status).toBe(404);
-      runId = null;
-    })().then(cleanupRunAndKeys, async (error: unknown) => {
-      await cleanupRunAndKeys();
-      throw error;
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "run with the selected built-in DeepSeek provider",
+      model: "deepseek-v4-flash",
     });
+    runId = run.runId;
+
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim.cliAgentType).toBe("pi");
+    expect(claim.piModelConfig).toMatchObject({
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+    });
+    if (!claim.encryptedSecrets) {
+      throw new Error("Expected the built-in claim to carry encrypted secrets");
+    }
+    const resolved = await fw.requestFirewallAuth(
+      sandboxHeaders,
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("DEEPSEEK_API_KEY")}`,
+        },
+      },
+      [200],
+    );
+    if (resolved.status !== 200) {
+      throw new Error("Expected built-in DeepSeek firewall auth to resolve");
+    }
+    expect(
+      resolved.body.headers.Authorization === `Bearer ${selectedApiKey}`,
+    ).toBeTruthy();
   }, 90_000);
 
   it("selects a built-in model key from a canonical policy without switching the run writer", async () => {

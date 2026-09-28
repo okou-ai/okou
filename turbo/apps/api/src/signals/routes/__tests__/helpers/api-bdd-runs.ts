@@ -34,6 +34,7 @@ import {
   runnersJobClaimContract,
   runnersModelProviderFailuresContract,
   runnersPollContract,
+  runnersSteerContract,
   type CanonicalStorageManifest,
   type StorageManifest,
 } from "@okouai/api-contracts/contracts/runners";
@@ -118,6 +119,7 @@ type RunnerConnectorRuntimeSyncRequest = z.input<
 >;
 type RunnerConnectorRuntimeSyncStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
 type RunnerActiveInputDeliveryStatus = 200 | 400 | 401 | 403 | 500;
+type RunnerSteeredInputStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
 type OrgModelPolicyRequest = z.infer<
   (typeof modelPoliciesMainContract.update)["body"]
 >;
@@ -699,6 +701,51 @@ export function createRunsApi(
         [200],
       );
       return response.body;
+    },
+
+    async requestNextSteerableInputAs<
+      TStatus extends RunnerActiveInputDeliveryStatus,
+    >(
+      authorization: string | undefined,
+      runId: string,
+      statuses: readonly TStatus[],
+    ) {
+      return await accept(
+        runApp(context)(runnersSteerContract).next({
+          headers: authorization === undefined ? {} : { authorization },
+          params: { runId },
+        }),
+        statuses,
+      );
+    },
+
+    async nextSteerableInput(sandboxToken: string, runId: string) {
+      const response = await accept(
+        runApp(context)(runnersSteerContract).next({
+          headers: { authorization: `Bearer ${sandboxToken}` },
+          params: { runId },
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async requestDeclareSteeredInputAs<
+      TStatus extends RunnerSteeredInputStatus,
+    >(
+      authorization: string | undefined,
+      runId: string,
+      eventId: string,
+      statuses: readonly TStatus[],
+    ) {
+      return await accept(
+        runApp(context)(runnersSteerContract).steered({
+          headers: authorization === undefined ? {} : { authorization },
+          params: { runId, eventId },
+          body: {},
+        }),
+        statuses,
+      );
     },
 
     async requestSyncConnectorRuntimeAs<

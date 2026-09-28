@@ -38,6 +38,10 @@ case "${1:-}" in
       [ "${MOCK_ADVISORY_LOCK_PREPARATION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "84ac71914345b8360f3df43cc2cd47f0a8af7a23" ]; then
       [ "${MOCK_QUEUED_RUN_PROMOTION_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "553fc566b7e9be2cd4a8c1de314d55939b99490a" ]; then
+      [ "${MOCK_UNIFIED_CHAT_QUEUE_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da" ]; then
+      [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
       [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
@@ -52,6 +56,8 @@ case "${1:-}" in
       [ "${MOCK_STRIPE_PORTAL_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7777777777777777777777777777777777777777" ]; then
       [ "${MOCK_CHAT_EVENT_SCHEMA_HEADER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "8888888888888888888888888888888888888888" ]; then
+      [ "${MOCK_RETIRED_PREFERENCE_COLUMNS_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -69,6 +75,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_STRIPE_PORTAL_COMMIT-6666666666666666666666666666666666666666}"
     elif [[ "$*" == *chat-event-schema-header-retired* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_SCHEMA_HEADER_COMMIT-7777777777777777777777777777777777777777}"
+    elif [[ "$*" == *1274_drop_retired_voice_reasoning_collection_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_RETIRED_PREFERENCE_COLUMNS_COMMIT-8888888888888888888888888888888888888888}"
     else
       exit 2
     fi
@@ -175,8 +183,11 @@ grep -Fxq "git merge-base --is-ancestor cdeec36c168636b1a2e510e660eb6139c9c4e07a
 grep -Fxq "git merge-base --is-ancestor 98b5515ae2874128734b19a17b96dc8c6c7afe47 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat search GIN maintenance removal floor"
 grep -Fxq "git merge-base --is-ancestor ee863a302a6c547f94e50ec4069f70910d68bee2 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the advisory replacement protocol floor"
 grep -Fxq "git merge-base --is-ancestor 84ac71914345b8360f3df43cc2cd47f0a8af7a23 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the queued run promotion removal floor"
+grep -Fxq "git merge-base --is-ancestor 553fc566b7e9be2cd4a8c1de314d55939b99490a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the unified chat queue release floor"
+grep -Fxq "git merge-base --is-ancestor fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the runner steer endpoints floor"
 grep -Fxq "git merge-base --is-ancestor 5555555555555555555555555555555555555555 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
 grep -Fxq "git merge-base --is-ancestor 6666666666666666666666666666666666666666 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Stripe Portal purpose-only floor"
+grep -Fxq "git merge-base --is-ancestor 8888888888888888888888888888888888888888 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired preference column drop floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -229,6 +240,24 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-#37063 API target must fail before artifact or host access"
 fi
 
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the unified chat queue release" \
+  run_resolver "${tmp_dir}/unified-chat-queue-floor.output" MOCK_UNIFIED_CHAT_QUEUE_FLOOR_VALID=0
+grep -Fq '553fc566b7e9be2cd4a8c1de314d55939b99490a' "${tmp_dir}/failure.err" || fail "active input delivery drop rejection must identify the release 3 merge commit"
+[ ! -s "${tmp_dir}/unified-chat-queue-floor.output" ] || fail "pre-#37082 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-#37082 API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the runner steer endpoints" \
+  run_resolver "${tmp_dir}/runner-steer-endpoints-floor.output" MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID=0
+grep -Fq 'fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da' "${tmp_dir}/failure.err" || fail "steer endpoint rejection must identify the release 4 merge commit"
+[ ! -s "${tmp_dir}/runner-steer-endpoints-floor.output" ] || fail "pre-#37115 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-#37115 API target must fail before artifact or host access"
+fi
+
 for cutover_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
   assert_failure "Cannot resolve the merged Stripe Portal purpose-only cutover" \
@@ -255,6 +284,20 @@ assert_failure "Rollback target predates the Chat Event schema header retirement
 [ ! -s "${tmp_dir}/chat-event-schema-header-floor.output" ] || fail "pre-retirement API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Chat Event schema header floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged retired preference column drop" \
+    run_resolver "${tmp_dir}/retired-preference-columns-history.output" "MOCK_RETIRED_PREFERENCE_COLUMNS_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/retired-preference-columns-history.output" ] || fail "invalid retired preference column drop history must not publish outputs"
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired preference column drop" \
+  run_resolver "${tmp_dir}/retired-preference-columns-floor.output" MOCK_RETIRED_PREFERENCE_COLUMNS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/retired-preference-columns-floor.output" ] || fail "pre-drop API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "retired preference column drop floor must fail before artifact or host access"
 fi
 
 for retirement_commit in "" invalid; do

@@ -9,6 +9,7 @@ import {
   hostedSiteAssetNameError,
   isMutableHostedSitePath,
   type HostedArtifactKind,
+  type HostedSiteDeleteResponse,
   type HostedSiteFilesResponse,
   type HostedSiteDeploymentsResponse,
   type HostedSitePrepareRequest,
@@ -21,14 +22,28 @@ import {
   linkLayoutSegment,
   type LinkLayout,
 } from "@okouai/api-contracts/contracts/link-layout";
+import {
+  artifactDeliveryKey,
+  artifactDeliveryRecordSchema,
+} from "@okouai/api-contracts/contracts/artifact-delivery";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { artifactShares } from "@okouai/db/schema/artifact-share";
 import {
   hostedDeployments,
   privateHostedDeployments,
   hostedSites,
 } from "@okouai/db/runtime/hosted-site";
 import type { HostedDeploymentStatus } from "@okouai/db/schema/hosted-site";
-import { and, desc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { env } from "../../lib/env";
 import { hostedLinkDomain, hostedLinkOrigin } from "../../lib/link-layout";
 import { publicSlugCandidate } from "../../lib/hosted-site-slug";
@@ -46,6 +61,7 @@ import { type Db, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import type { Tx } from "../../lib/db-types";
 import {
+  deleteHostedSitesS3Objects,
   generateHostedSitesPresignedPutUrl,
   hostedSitesS3ObjectExists,
   putHostedSitesS3Object,
@@ -55,7 +71,10 @@ import {
   ArtifactDeliveryAliasConflict,
   registerLegacyHostedSite$,
 } from "./artifact-delivery.service";
-import { publishHostedSitePointer$ } from "./hosted-site-publication-migration.service";
+import {
+  publishHostedSitePointer$,
+  storedObject,
+} from "./hosted-site-publication-migration.service";
 import {
   scheduleArtifactPreviewRender$,
   type RenderArtifactPreviewArgs,
@@ -75,6 +94,7 @@ import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import {
   resolveArtifactShareDownload$,
   resolveHostedSitePublicationDownload$,
+  updateArtifactShare$,
 } from "./artifact-shares.service";
 const MAX_HOSTED_SITE_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_HOSTED_SITE_FILE_BYTES = 100 * 1024 * 1024;
@@ -1099,7 +1119,7 @@ async function loadActiveHostedDeploymentVersion(
 
 const bindHostedSiteDeployment$ = command(
   (
-    { set },
+    { get, set },
     args: {
       readonly bucket: string;
       readonly deployment: HostedDeploymentRow;
@@ -1135,6 +1155,35 @@ const bindHostedSiteDeployment$ = command(
           "Hosted deployment no longer matches its owned site",
         );
       }
+      const deploymentTable = args.deployment.manifest.access
+        ? privateHostedDeployments
+        : hostedDeployments;
+      // Deleting the site under this lock outranks a completion already past
+      // its status check. That completion published the version's own URL
+      // before locking, so withdraw it; a deleted version never serves again.
+      const [current] = await tx
+        .select({ status: deploymentTable.status })
+        .from(deploymentTable)
+        .where(eq(deploymentTable.id, args.deployment.id))
+        .limit(1);
+      if (current?.status === "deleted") {
+        const layout = rowLinkLayout(args.deployment);
+        await get(
+          deleteHostedSitesS3Objects(
+            args.bucket,
+            [
+              immutableDeploymentPointerKey(layout, args.deployment.id),
+              artifactDeliveryKey(
+                linkLayoutSegment(layout),
+                "html",
+                `dpl-${args.deployment.id}`,
+              ),
+            ],
+            signal,
+          ),
+        );
+        throw new ArtifactDeliveryAliasConflict("Hosted deployment is deleted");
+      }
 
       const activeDeploymentVersion = await loadActiveHostedDeploymentVersion(
         tx,
@@ -1161,9 +1210,6 @@ const bindHostedSiteDeployment$ = command(
         : null;
       signal.throwIfAborted();
 
-      const deploymentTable = args.deployment.manifest.access
-        ? privateHostedDeployments
-        : hostedDeployments;
       await tx
         .update(deploymentTable)
         .set({
@@ -1912,6 +1958,265 @@ export const getHostedSiteDeployments$ = command(
               readyAt: deployment.readyAt?.toISOString() ?? null,
             };
           }),
+      },
+    };
+  },
+);
+
+interface DeleteHostedSiteArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly publicSlug: string;
+}
+
+type DeleteHostedSiteResult =
+  | { readonly status: "ok"; readonly body: HostedSiteDeleteResponse }
+  | { readonly status: "not_found"; readonly message: string }
+  | { readonly status: "bad_request"; readonly message: string }
+  | { readonly status: "config_error"; readonly message: string };
+
+/** Only the creator may take a site offline, as only the creator may redeploy it. */
+async function findOwnedHostedSite(
+  db: Db | Tx,
+  args: DeleteHostedSiteArgs,
+  lock: boolean,
+): Promise<HostedSiteRow | undefined> {
+  const query = db
+    .select()
+    .from(hostedSites)
+    .where(
+      and(
+        eq(hostedSites.publicSlug, args.publicSlug),
+        eq(hostedSites.orgId, args.orgId),
+        eq(hostedSites.userId, args.userId),
+        isNull(hostedSites.deletedAt),
+      ),
+    );
+  const [site] = lock
+    ? await query.for("update").limit(1)
+    : await query.limit(1);
+  return site;
+}
+
+/**
+ * Historical private publications may carry a share link served from its own
+ * snapshot. Revoke it before the private versions stop being share targets.
+ */
+const revokeHostedSiteShare$ = command(
+  async ({ set }, site: HostedSiteRow, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const [share] = await db
+      .select({ id: artifactShares.id })
+      .from(artifactShares)
+      .where(
+        and(
+          eq(artifactShares.targetKind, "html"),
+          eq(artifactShares.targetId, site.id),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!share) {
+      return;
+    }
+    const [privateDeployment] = await db
+      .select({ id: privateHostedDeployments.id })
+      .from(privateHostedDeployments)
+      .where(
+        and(
+          eq(privateHostedDeployments.siteId, site.id),
+          eq(privateHostedDeployments.userId, site.userId),
+          eq(privateHostedDeployments.status, "ready"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    // Without a ready private version, an earlier deletion already revoked it.
+    if (!privateDeployment) {
+      return;
+    }
+    const revoked = await set(
+      updateArtifactShare$,
+      {
+        target: { kind: "html", id: privateDeployment.id },
+        userId: site.userId,
+        orgId: site.orgId,
+        audience: "private",
+      },
+      signal,
+    );
+    if (!revoked) {
+      throw new Error("Hosted site share could not be revoked");
+    }
+  },
+);
+
+/** Delivery records are removed only when they still route to this site. */
+const ownedDeliveryRecordKeys$ = command(
+  async (
+    { get },
+    args: {
+      readonly bucket: string;
+      readonly layout: LinkLayout;
+      readonly aliases: readonly {
+        readonly alias: string;
+        readonly pointerKey: string;
+      }[];
+    },
+    signal: AbortSignal,
+  ): Promise<string[]> => {
+    const segment = linkLayoutSegment(args.layout);
+    const owned = await Promise.all(
+      args.aliases.map(async ({ alias, pointerKey }) => {
+        const key = artifactDeliveryKey(segment, "html", alias);
+        const stored = await get(storedObject(args.bucket, key, signal));
+        if (!stored) {
+          return null;
+        }
+        const record = artifactDeliveryRecordSchema.parse(
+          JSON.parse(stored.buffer.toString("utf8")),
+        );
+        return record.kind === "legacy-site" && record.pointerKey === pointerKey
+          ? key
+          : null;
+      }),
+    );
+    signal.throwIfAborted();
+    return owned.filter((key): key is string => {
+      return key !== null;
+    });
+  },
+);
+
+/**
+ * Soft-delete a site: every version stops serving while its rows and bytes are
+ * kept. The site keeps its name, so redeploying it publishes a new active
+ * version at the same address. Deleted versions never serve again.
+ */
+export const deleteHostedSite$ = command(
+  async (
+    { get, set },
+    args: DeleteHostedSiteArgs,
+    signal: AbortSignal,
+  ): Promise<DeleteHostedSiteResult> => {
+    const hostedR2 = hostedR2Config();
+    if (hostedR2.status === "config_error") {
+      return hostedR2;
+    }
+    const writeDb = set(writeDb$);
+    const notFound = {
+      status: "not_found",
+      message: "Hosted site not found",
+    } as const;
+    const candidate = await findOwnedHostedSite(writeDb, args, false);
+    signal.throwIfAborted();
+    if (!candidate) {
+      return notFound;
+    }
+    // Legacy-layout sites are never redeployed, so deletion could not be undone.
+    if (rowLinkLayout(candidate) !== CURRENT_LINK_LAYOUT) {
+      return {
+        status: "bad_request",
+        message:
+          "Hosted sites on the legacy domain cannot be redeployed, so they cannot be deleted",
+      };
+    }
+    await set(revokeHostedSiteShare$, candidate, signal);
+    signal.throwIfAborted();
+
+    const deleted = await writeDb.transaction(async (tx) => {
+      // The publisher binds under this lock, so a completion cannot reactivate
+      // a version after deletion commits.
+      const site = await findOwnedHostedSite(tx, args, true);
+      if (!site) {
+        return null;
+      }
+      const layout = rowLinkLayout(site);
+      const deployments = await tx
+        .select({
+          id: hostedDeployments.id,
+          artifactUrl: hostedDeployments.artifactUrl,
+          readyAt: hostedDeployments.readyAt,
+        })
+        .from(hostedDeployments)
+        .where(eq(hostedDeployments.siteId, site.id))
+        .orderBy(desc(hostedDeployments.createdAt));
+      signal.throwIfAborted();
+      const aliases = [
+        {
+          alias: site.publicSlug,
+          pointerKey: `${hostedSitePointerNamespace(layout)}/${site.publicSlug}/active.json`,
+        },
+        ...deployments.map((deployment) => {
+          return {
+            alias: `dpl-${deployment.id}`,
+            pointerKey: immutableDeploymentPointerKey(layout, deployment.id),
+          };
+        }),
+      ];
+      const recordKeys = await set(
+        ownedDeliveryRecordKeys$,
+        { bucket: hostedR2.config.bucket, layout, aliases },
+        signal,
+      );
+      // Pointers decide what serves; registry records only route to them.
+      // Repeating the delete after a partial failure is safe.
+      await get(
+        deleteHostedSitesS3Objects(
+          hostedR2.config.bucket,
+          [
+            ...aliases.map(({ pointerKey }) => {
+              return pointerKey;
+            }),
+            ...recordKeys,
+          ],
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+
+      const now = nowDate();
+      for (const table of [hostedDeployments, privateHostedDeployments]) {
+        await tx
+          .update(table)
+          .set({ status: "deleted", updatedAt: now })
+          .where(
+            and(
+              eq(table.siteId, site.id),
+              inArray(table.status, ["uploading", "ready"]),
+            ),
+          );
+      }
+      await tx
+        .update(hostedSites)
+        .set({ activeDeploymentId: null, updatedAt: now })
+        .where(eq(hostedSites.id, site.id));
+      return { site, layout, deployments };
+    });
+    signal.throwIfAborted();
+    if (!deleted) {
+      return notFound;
+    }
+
+    const { site, layout, deployments } = deleted;
+    const aliasUrl = hostedLinkOrigin(layout, site.publicSlug);
+    return {
+      status: "ok",
+      body: {
+        siteId: site.id,
+        site: hostedSiteRequestedSlug(site),
+        publicSlug: site.publicSlug,
+        aliasUrl,
+        offlineUrls: [
+          aliasUrl,
+          ...deployments.flatMap((deployment) => {
+            // Uploads that never completed never served a URL.
+            return deployment.artifactUrl !== null &&
+              deployment.readyAt !== null
+              ? [deployment.artifactUrl]
+              : [];
+          }),
+        ],
       },
     };
   },

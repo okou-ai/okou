@@ -1,7 +1,9 @@
 import { Readable } from "node:stream";
+import { z } from "zod";
 import {
   hostContract,
   type HostedSiteCompleteResponse,
+  type HostedSiteDeleteResponse,
   type HostedSiteDeploymentsResponse,
   type HostedSiteFilesResponse,
   type HostedSitePrepareRequest,
@@ -38,12 +40,16 @@ type HostPrepareStatus = 200 | 400 | 401 | 402 | 403 | 409 | 500;
 type HostCompleteStatus = 200 | 400 | 401 | 402 | 403 | 404 | 409 | 500;
 type HostFilesStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
 type HostDeploymentsStatus = 200 | 400 | 401 | 403 | 404 | 500;
+type HostDeleteStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
 type MapsStatus = 200 | 400 | 401 | 402 | 403 | 502 | 503;
 
 interface HostedSitesS3Capture {
   readonly puts: { readonly key: string; readonly body: string }[];
   readonly copies: { readonly key: string; readonly copySource: string }[];
+  readonly deletes: string[];
   readonly missingKeys: Set<string>;
+  /** Stored hosted-sites objects; seed or inspect them by key. */
+  readonly objects: Map<string, string>;
 }
 
 function isBearerActor(actor: HostActor): actor is BearerActor {
@@ -131,17 +137,20 @@ export function createHostMapsBddApi(context: TestContext) {
     /**
      * Install an explicit hosted-sites S3 boundary: presigned upload URLs
      * resolve, HeadObject reports every key uploaded except `missingKeys`,
-     * and Put/Copy commands are recorded for boundary-contract assertions.
+     * and Put/Copy/Delete commands are recorded for boundary-contract
+     * assertions.
      * Context mocks are reset in the global afterEach, so no teardown is
      * needed.
      */
     captureHostedSitesS3(): HostedSitesS3Capture {
+      const objects = new Map<string, string>();
       const capture: HostedSitesS3Capture = {
         puts: [],
         copies: [],
+        deletes: [],
         missingKeys: new Set<string>(),
+        objects,
       };
-      const objects = new Map<string, string>();
       context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
         const input = commandInput(command);
         if (
@@ -184,6 +193,15 @@ export function createHostMapsBddApi(context: TestContext) {
           const body = bodyText(input.Body);
           objects.set(key, body);
           capture.puts.push({ key, body });
+        }
+        if (name === "DeleteObjectsCommand") {
+          const deleted = z
+            .object({ Objects: z.array(z.object({ Key: z.string() })) })
+            .parse(input.Delete);
+          for (const { Key } of deleted.Objects) {
+            objects.delete(Key);
+            capture.deletes.push(Key);
+          }
         }
         if (name === "CopyObjectCommand") {
           capture.copies.push({
@@ -310,6 +328,34 @@ export function createHostMapsBddApi(context: TestContext) {
         hostClient().deployments({
           headers: authenticate(context, actor),
           params: { site },
+        }),
+        statuses,
+      );
+    },
+
+    async deleteHostedSite(
+      actor: ApiTestUser,
+      publicSlug: string,
+    ): Promise<HostedSiteDeleteResponse> {
+      const response = await accept(
+        hostClient().deleteSite({
+          headers: authenticate(context, actor),
+          params: { publicSlug },
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async requestDeleteHostedSite(
+      actor: ApiTestUser | null,
+      publicSlug: string,
+      statuses: readonly HostDeleteStatus[],
+    ) {
+      return await accept(
+        hostClient().deleteSite({
+          headers: authenticate(context, actor),
+          params: { publicSlug },
         }),
         statuses,
       );

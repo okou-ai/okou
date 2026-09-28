@@ -211,7 +211,6 @@
 //! references in sync with the shared contract when changing this protocol.
 
 pub mod active_input;
-mod active_input_receipts;
 mod artifact;
 pub mod checkpoint;
 pub mod cli;
@@ -238,6 +237,7 @@ pub mod run_context;
 pub mod session_history;
 pub mod session_history_identity;
 pub mod session_metadata;
+mod steered_inputs;
 pub mod telemetry;
 pub mod timing;
 mod upstream_error_text;

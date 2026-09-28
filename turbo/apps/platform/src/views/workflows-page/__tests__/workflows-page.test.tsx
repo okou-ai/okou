@@ -628,6 +628,7 @@ function salesResearch(): WorkflowDetailResponse {
     ownerUserId: CURRENT_USER_ID,
     canManage: true,
     canPublish: false,
+    importSource: null,
     createdByUserId: CURRENT_USER_ID,
     updatedByUserId: UPDATED_USER_ID,
     createdAt: "2026-06-17T13:52:00.000Z",
@@ -726,6 +727,7 @@ function officialSalesResearch(
     visibility: "private",
     canManage: false,
     canPublish: false,
+    importSource: null,
     instruction: "Use the accepted Official instructions.",
     files: [{ path: "references/playbook.md", size: 17 }],
     fileContents: [
@@ -788,6 +790,7 @@ function opsPlaybook(): WorkflowDetailResponse {
     ownerUserId: CURRENT_USER_ID,
     canManage: true,
     canPublish: true,
+    importSource: null,
     createdByUserId: CURRENT_USER_ID,
     updatedByUserId: CURRENT_USER_ID,
     createdAt: "2026-06-15T12:00:00.000Z",
@@ -813,6 +816,7 @@ function launchChecklistWorkflow(): WorkflowDetailResponse {
     ownerUserId: CURRENT_USER_ID,
     canManage: true,
     canPublish: true,
+    importSource: null,
     createdByUserId: CURRENT_USER_ID,
     updatedByUserId: CURRENT_USER_ID,
     createdAt: "2026-06-18T12:00:00.000Z",
@@ -838,6 +842,7 @@ function otherAgentWorkflow(): WorkflowDetailResponse {
     ownerUserId: CURRENT_USER_ID,
     canManage: true,
     canPublish: false,
+    importSource: null,
     createdByUserId: CURRENT_USER_ID,
     updatedByUserId: CURRENT_USER_ID,
     createdAt: "2026-06-16T12:00:00.000Z",
@@ -880,6 +885,7 @@ function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
     canManage: workflow.canManage,
     canPublish: workflow.canPublish,
     official: workflow.official,
+    importSource: workflow.importSource,
   };
 }
 
@@ -2097,6 +2103,7 @@ test("Block workflow publishing without permission on the owning agent", async (
     ...opsPlaybook(),
     canManage: true,
     canPublish: false,
+    importSource: null,
   };
   mockWorkflowApis([workflow]);
 

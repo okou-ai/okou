@@ -41,8 +41,8 @@ async function deductOrgCredits(
   tx: WriteTx,
   orgId: string,
   amount: number,
-): Promise<void> {
-  await writeOrgMetadataWithDefaultPlanEntitlement(
+): Promise<number> {
+  const [debit] = await writeOrgMetadataWithDefaultPlanEntitlement(
     tx,
     orgId,
     async (writeTx) => {
@@ -61,9 +61,17 @@ async function deductOrgCredits(
             updatedAt: sql`now()`,
           },
         })
-        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+        .returning({
+          orgId: orgMetadata.orgId,
+          tier: orgMetadata.tier,
+          credits: orgMetadata.credits,
+        });
     },
   );
+  if (!debit) {
+    throw new Error("Organization debit returned no metadata row");
+  }
+  return debit.credits;
 }
 
 async function getOrgCredits(tx: WriteTx, orgId: string): Promise<number> {
@@ -221,9 +229,20 @@ interface SettlementWorkObservation {
   readonly pricingReadMs: number;
   readonly pricingCalculationMs: number;
   readonly allowanceMs: number;
+  readonly allowanceAllocationReadMs: number;
+  readonly allowanceAnchorMs: number;
+  readonly allowanceWindowLockMs: number;
+  readonly allowanceWindowIssueMs: number;
+  readonly allowanceAllocateMs: number;
+  readonly allowanceWindowWriteMs: number;
+  readonly allowanceAllocationWriteMs: number;
   readonly eventWriteMs: number;
   readonly grantDeductionMs: number;
   readonly orgCreditMs: number;
+  readonly orgBalanceReadMs: number;
+  readonly orgExpireCreditsMs: number;
+  readonly orgDebitMs: number;
+  readonly orgExpiryLotDeductionMs: number;
   // Standalone settlement only; inline managed callers own a larger transaction.
   readonly transactionDurationMs?: number;
   readonly pendingEvents: number;
@@ -510,9 +529,20 @@ function initialSettlementWork(observation: SettlementLockObservation) {
     pricingReadMs: 0,
     pricingCalculationMs: 0,
     allowanceMs: 0,
+    allowanceAllocationReadMs: 0,
+    allowanceAnchorMs: 0,
+    allowanceWindowLockMs: 0,
+    allowanceWindowIssueMs: 0,
+    allowanceAllocateMs: 0,
+    allowanceWindowWriteMs: 0,
+    allowanceAllocationWriteMs: 0,
     eventWriteMs: 0,
     grantDeductionMs: 0,
     orgCreditMs: 0,
+    orgBalanceReadMs: 0,
+    orgExpireCreditsMs: 0,
+    orgDebitMs: 0,
+    orgExpiryLotDeductionMs: 0,
     pendingEvents: 0,
     pricingRows: 0,
     affectedUsers: 0,
@@ -520,6 +550,47 @@ function initialSettlementWork(observation: SettlementLockObservation) {
     expiredRows: 0,
     expiryRows: 0,
   };
+}
+
+async function settleOrgCreditsWithTiming(
+  tx: WriteTx,
+  orgId: string,
+  amount: number,
+  at: Date,
+  work: ReturnType<typeof initialSettlementWork>,
+): Promise<CreditLowBalanceAlertArgs | null> {
+  const orgCreditStartedAt = performance.now();
+  // Order matters: settle expired credits BEFORE the new deduction.
+  const balanceReadStartedAt = performance.now();
+  const beforeCredits = await getOrgCredits(tx, orgId);
+  work.orgBalanceReadMs = elapsedSettlementPhaseMs(balanceReadStartedAt);
+
+  const expireCreditsStartedAt = performance.now();
+  const expired = await expireCredits(tx, orgId, at);
+  work.orgExpireCreditsMs = elapsedSettlementPhaseMs(expireCreditsStartedAt);
+  work.expiredRows = expired.rows;
+  const effectiveBeforeCredits = Math.max(beforeCredits - expired.credits, 0);
+
+  const debitStartedAt = performance.now();
+  const afterCredits = await deductOrgCredits(tx, orgId, amount);
+  work.orgDebitMs = elapsedSettlementPhaseMs(debitStartedAt);
+
+  const expiryLotDeductionStartedAt = performance.now();
+  work.expiryRows = await deductFromExpiresRecords(tx, orgId, amount, at);
+  work.orgExpiryLotDeductionMs = elapsedSettlementPhaseMs(
+    expiryLotDeductionStartedAt,
+  );
+  const lowBalanceAlert =
+    effectiveBeforeCredits > LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS &&
+    afterCredits <= LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS
+      ? {
+          orgId,
+          remainingCredits: afterCredits,
+          thresholdCredits: LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS,
+        }
+      : null;
+  work.orgCreditMs = elapsedSettlementPhaseMs(orgCreditStartedAt);
+  return lowBalanceAlert;
 }
 
 // The caller must already hold shared compaction and organization credit locks
@@ -572,8 +643,9 @@ export async function processOrgUsageEventsInLockedTransaction(
   );
 
   const allowanceStartedAt = performance.now();
-  const allowanceByUsageEvent =
-    await applyUsageAllowanceToUsageEventsInLockedTransaction(tx, {
+  const allowance = await applyUsageAllowanceToUsageEventsInLockedTransaction(
+    tx,
+    {
       orgId,
       events: pricedEvents.map((event) => {
         return {
@@ -584,8 +656,17 @@ export async function processOrgUsageEventsInLockedTransaction(
           occurredAt: event.record.createdAt,
         };
       }),
-    });
+    },
+  );
+  const { allowanceByUsageEvent, timings: allowanceTimings } = allowance;
   work.allowanceMs = elapsedSettlementPhaseMs(allowanceStartedAt);
+  work.allowanceAllocationReadMs = allowanceTimings.allocationReadMs;
+  work.allowanceAnchorMs = allowanceTimings.anchorMs;
+  work.allowanceWindowLockMs = allowanceTimings.windowLockMs;
+  work.allowanceWindowIssueMs = allowanceTimings.windowIssueMs;
+  work.allowanceAllocateMs = allowanceTimings.allocateMs;
+  work.allowanceWindowWriteMs = allowanceTimings.windowWriteMs;
+  work.allowanceAllocationWriteMs = allowanceTimings.allocationWriteMs;
   const billableCreditsByUser = new Map<string, number>();
   const settlementOutcomes = pricedEvents.map((event) => {
     const allowanceUnits = allowanceByUsageEvent.get(event.record.id) ?? 0;
@@ -619,34 +700,16 @@ export async function processOrgUsageEventsInLockedTransaction(
   work.grantRows = grantDeduction.grantRows;
   signal.throwIfAborted();
 
-  let lowBalanceAlert: CreditLowBalanceAlertArgs | null = null;
-  if (sharedCreditsCharged > 0) {
-    const orgCreditStartedAt = performance.now();
-    // Order matters: settle expired credits BEFORE the new deduction.
-    const beforeCredits = await getOrgCredits(tx, orgId);
-    const expired = await expireCredits(tx, orgId, settlementTime);
-    work.expiredRows = expired.rows;
-    const effectiveBeforeCredits = Math.max(beforeCredits - expired.credits, 0);
-    await deductOrgCredits(tx, orgId, sharedCreditsCharged);
-    const afterCredits = await getOrgCredits(tx, orgId);
-    work.expiryRows = await deductFromExpiresRecords(
-      tx,
-      orgId,
-      sharedCreditsCharged,
-      settlementTime,
-    );
-    if (
-      effectiveBeforeCredits > LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS &&
-      afterCredits <= LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS
-    ) {
-      lowBalanceAlert = {
-        orgId,
-        remainingCredits: afterCredits,
-        thresholdCredits: LOW_CREDIT_EMAIL_ALERT_THRESHOLD_CREDITS,
-      };
-    }
-    work.orgCreditMs = elapsedSettlementPhaseMs(orgCreditStartedAt);
-  }
+  const lowBalanceAlert =
+    sharedCreditsCharged > 0
+      ? await settleOrgCreditsWithTiming(
+          tx,
+          orgId,
+          sharedCreditsCharged,
+          settlementTime,
+          work,
+        )
+      : null;
   signal.throwIfAborted();
   return {
     sharedCreditsCharged,
@@ -686,13 +749,26 @@ export const completeProcessedOrgUsage$ = command(
               timing_scope: timingScope,
               pending_events: work.pendingEvents,
               pricing_rows: work.pricingRows,
+              compaction_lock_wait_ms: work.lockWaitMs,
+              org_lock_wait_ms: work.orgLockWaitMs,
               pending_read_ms: work.pendingReadMs,
               pricing_read_ms: work.pricingReadMs,
               pricing_calculation_ms: work.pricingCalculationMs,
               allowance_ms: work.allowanceMs,
+              allowance_allocation_read_ms: work.allowanceAllocationReadMs,
+              allowance_anchor_ms: work.allowanceAnchorMs,
+              allowance_window_lock_ms: work.allowanceWindowLockMs,
+              allowance_window_issue_ms: work.allowanceWindowIssueMs,
+              allowance_allocate_ms: work.allowanceAllocateMs,
+              allowance_window_write_ms: work.allowanceWindowWriteMs,
+              allowance_allocation_write_ms: work.allowanceAllocationWriteMs,
               event_write_ms: work.eventWriteMs,
               grant_deduction_ms: work.grantDeductionMs,
               org_credit_ms: work.orgCreditMs,
+              org_balance_read_ms: work.orgBalanceReadMs,
+              org_expire_credits_ms: work.orgExpireCreditsMs,
+              org_debit_ms: work.orgDebitMs,
+              org_expiry_lot_deduction_ms: work.orgExpiryLotDeductionMs,
               affected_users: work.affectedUsers,
               grant_rows: work.grantRows,
               expired_rows: work.expiredRows,

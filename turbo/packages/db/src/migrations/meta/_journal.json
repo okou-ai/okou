@@ -1366,6 +1366,20 @@
       "when": 1790513014211,
       "tag": "1272_drop_agent_run_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 1273,
+      "version": "7",
+      "when": 1790517814920,
+      "tag": "1273_drop_active_input_delivery_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 1274,
+      "version": "7",
+      "when": 1790554702266,
+      "tag": "1274_drop_retired_voice_reasoning_collection_columns",
+      "breakpoints": true
     }
   ]
 }

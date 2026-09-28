@@ -566,6 +566,58 @@ describe("POST /api/test/usage-settlement/process", () => {
     expect(afterBonusFefo.body.org_credits).toBe(98);
   });
 
+  it("preserves exact shared-credit threshold balances and grant-funded zero debit", async () => {
+    const fixture = await setupSettlementFixture(5003);
+    const provider = await seedSettlementPricing();
+
+    for (const { amount, remaining } of [
+      { amount: 1, remaining: 5002 },
+      { amount: 2, remaining: 5000 },
+    ]) {
+      const eventKey = await insertCharge({ fixture, provider, amount });
+      await processSettlement(fixture.orgId);
+      expect((await readSettlementState(fixture.orgId)).body.org_credits).toBe(
+        remaining,
+      );
+      await expect(
+        store.set(readUsageEventState$, eventKey, context.signal),
+      ).resolves.toMatchObject({ status: "processed", creditsCharged: amount });
+    }
+
+    await createGrant({
+      fixture,
+      grantType: "purchased",
+      idempotencyKey: `threshold-${randomUUID()}`,
+      amount: 2,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    const memberFundedEvent = await insertCharge({
+      fixture,
+      provider,
+      amount: 2,
+    });
+    await processSettlement(fixture.orgId);
+    expect((await readSettlementState(fixture.orgId)).body.org_credits).toBe(
+      5000,
+    );
+    await expect(
+      store.set(readUsageEventState$, memberFundedEvent, context.signal),
+    ).resolves.toMatchObject({ status: "processed", creditsCharged: 2 });
+
+    const belowThresholdEvent = await insertCharge({
+      fixture,
+      provider,
+      amount: 1,
+    });
+    await processSettlement(fixture.orgId);
+    expect((await readSettlementState(fixture.orgId)).body.org_credits).toBe(
+      4999,
+    );
+    await expect(
+      store.set(readUsageEventState$, belowThresholdEvent, context.signal),
+    ).resolves.toMatchObject({ status: "processed", creditsCharged: 1 });
+  });
+
   it("isolates member grants and excludes expired grants", async () => {
     const fixture = await setupSettlementFixture(100);
     const provider = await seedSettlementPricing();

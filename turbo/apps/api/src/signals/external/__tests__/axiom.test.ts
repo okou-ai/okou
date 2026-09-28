@@ -92,20 +92,38 @@ describe("shared SDK ingestion", () => {
         durationMs: 39,
         success: true,
         dimensions: {
-          timing_scope: "standalone",
+          timing_scope: "inline",
           pending_events: 3,
+          compaction_lock_wait_ms: 0,
+          org_lock_wait_ms: 0,
           pending_read_ms: 4.2,
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
           allowance_ms: 7.4,
+          allowance_allocation_read_ms: 1.1,
+          allowance_anchor_ms: 0.8,
+          allowance_window_lock_ms: 2.3,
+          allowance_window_issue_ms: 0,
+          allowance_allocate_ms: 0.1,
+          allowance_window_write_ms: 2.1,
+          allowance_allocation_write_ms: 0.6,
           event_write_ms: 5.3,
           grant_deduction_ms: 10.5,
           org_credit_ms: 0,
+          org_balance_read_ms: 0,
+          org_expire_credits_ms: 0,
+          org_debit_ms: 0,
+          org_expiry_lot_deduction_ms: 0,
         },
       },
       {
+        actionType: "api_billing_settlement_compaction_lock_wait",
+        durationMs: 0,
+        success: true,
+      },
+      {
         actionType: "api_billing_settlement_org_lock_wait",
-        durationMs: 7,
+        durationMs: 0,
         success: true,
       },
     ]);
@@ -119,22 +137,43 @@ describe("shared SDK ingestion", () => {
           operation_domain: "billing",
           duration_ms: 39,
           success: true,
-          timing_scope: "standalone",
+          timing_scope: "inline",
           pending_events: 3,
+          compaction_lock_wait_ms: 0,
+          org_lock_wait_ms: 0,
           pending_read_ms: 4.2,
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
           allowance_ms: 7.4,
+          allowance_allocation_read_ms: 1.1,
+          allowance_anchor_ms: 0.8,
+          allowance_window_lock_ms: 2.3,
+          allowance_window_issue_ms: 0,
+          allowance_allocate_ms: 0.1,
+          allowance_window_write_ms: 2.1,
+          allowance_allocation_write_ms: 0.6,
           event_write_ms: 5.3,
           grant_deduction_ms: 10.5,
           org_credit_ms: 0,
+          org_balance_read_ms: 0,
+          org_expire_credits_ms: 0,
+          org_debit_ms: 0,
+          org_expiry_lot_deduction_ms: 0,
+        },
+        {
+          _time: expect.any(String),
+          source: "api",
+          op_type: "api_billing_settlement_compaction_lock_wait",
+          operation_domain: "billing",
+          duration_ms: 0,
+          success: true,
         },
         {
           _time: expect.any(String),
           source: "api",
           op_type: "api_billing_settlement_org_lock_wait",
           operation_domain: "billing",
-          duration_ms: 7,
+          duration_ms: 0,
           success: true,
         },
       ],
@@ -230,18 +269,81 @@ describe("shared SDK ingestion", () => {
       expect.objectContaining({
         timing_scope: "standalone",
         pending_events: 1,
+        compaction_lock_wait_ms: expect.any(Number),
+        org_lock_wait_ms: expect.any(Number),
         pending_read_ms: expect.any(Number),
         pricing_read_ms: expect.any(Number),
         pricing_calculation_ms: expect.any(Number),
         allowance_ms: expect.any(Number),
+        allowance_allocation_read_ms: expect.any(Number),
+        allowance_anchor_ms: expect.any(Number),
+        allowance_window_lock_ms: expect.any(Number),
+        allowance_window_issue_ms: expect.any(Number),
+        allowance_allocate_ms: expect.any(Number),
+        allowance_window_write_ms: expect.any(Number),
+        allowance_allocation_write_ms: expect.any(Number),
         event_write_ms: expect.any(Number),
         grant_deduction_ms: expect.any(Number),
         org_credit_ms: expect.any(Number),
+        org_balance_read_ms: expect.any(Number),
+        org_expire_credits_ms: expect.any(Number),
+        org_debit_ms: expect.any(Number),
+        org_expiry_lot_deduction_ms: expect.any(Number),
       }),
     ]);
     expect(settlementTimings()[0]).not.toHaveProperty("org_id");
     expect(settlementTimings()[0]).not.toHaveProperty("user_id");
     expect(settlementTimings()[0]).not.toHaveProperty("run_id");
+
+    const committedBatch: unknown = context.mocks.axiom.sdkIngest.mock.calls
+      .map(([, events]) => {
+        return events;
+      })
+      .find((events) => {
+        return (
+          Array.isArray(events) &&
+          events.some((event: unknown) => {
+            return (
+              typeof event === "object" &&
+              event !== null &&
+              "op_type" in event &&
+              event.op_type === "api_billing_settlement_work"
+            );
+          })
+        );
+      });
+    if (!Array.isArray(committedBatch)) {
+      throw new Error("Expected a committed settlement timing batch");
+    }
+    expect(committedBatch).toHaveLength(4);
+    for (const [dimension, opType] of [
+      [
+        "compaction_lock_wait_ms",
+        "api_billing_settlement_compaction_lock_wait",
+      ],
+      ["org_lock_wait_ms", "api_billing_settlement_org_lock_wait"],
+    ] as const) {
+      const lockEvent: unknown = committedBatch.find((event: unknown) => {
+        return (
+          typeof event === "object" &&
+          event !== null &&
+          "op_type" in event &&
+          event.op_type === opType
+        );
+      });
+      if (
+        typeof lockEvent !== "object" ||
+        lockEvent === null ||
+        !("duration_ms" in lockEvent) ||
+        typeof lockEvent.duration_ms !== "number"
+      ) {
+        throw new Error(`Expected ${opType} in the same timing batch`);
+      }
+      expect(settlementTimings()[0]).toHaveProperty(
+        dimension,
+        lockEvent.duration_ms,
+      );
+    }
 
     await accept(
       api.createGrant({
@@ -271,7 +373,14 @@ describe("shared SDK ingestion", () => {
     await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
     expect(settlementTimings()).toHaveLength(2);
     expect(settlementTimings()[1]).toStrictEqual(
-      expect.objectContaining({ org_credit_ms: 0, grant_rows: 1 }),
+      expect.objectContaining({
+        org_credit_ms: 0,
+        org_balance_read_ms: 0,
+        org_expire_credits_ms: 0,
+        org_debit_ms: 0,
+        org_expiry_lot_deduction_ms: 0,
+        grant_rows: 1,
+      }),
     );
     await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
     expect(settlementTimings()).toHaveLength(2);

@@ -757,6 +757,47 @@ describe("Social data jobs", () => {
     await readJob(actor, accepted.body.jobId);
   });
 
+  it("settles a billable Social result inline against issued allowance windows", async () => {
+    const actor = await seedActor();
+    const before = await credits(actor);
+    await grantAllowance(actor, new Date(nowDate().getTime() + 86_400_000));
+    const observed = source({ start: "async", actualCostMicros: 10_000 });
+    const created = await accept(
+      client(actor)(socialDataContract).create({
+        headers: authenticate(actor),
+        body: createBody({ maxCredits: before + 50 }),
+      }),
+      [202],
+    );
+    await readJob(actor, created.body.jobId);
+    observed.pollStatus = "completed";
+
+    const completed = await readJob(actor, created.body.jobId);
+
+    expect(completed.body.billing).toMatchObject({
+      state: "settled",
+      creditsCharged: 0,
+      reservedCredits: 0,
+    });
+    const status = await accept(
+      client(actor)(billingStatusContract).get({
+        headers: authenticate(actor),
+      }),
+      [200],
+    );
+    if (!status.body.usageAllowance) {
+      throw new Error("Expected issued windows after inline settlement");
+    }
+    expect(
+      Object.fromEntries(
+        status.body.usageAllowance.windows.map((window) => {
+          return [window.kind, window.consumedUnits];
+        }),
+      ),
+    ).toStrictEqual({ short: 70, weekly: 70 });
+    await expect(credits(actor)).resolves.toBe(before);
+  });
+
   it("uses remaining allowance when credits cannot cover the reserved budget", async () => {
     const actor = await seedActor();
     const before = await credits(actor);

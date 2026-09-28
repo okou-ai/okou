@@ -89,8 +89,7 @@ type AgentCheckpointPreparation =
 
 type AgentCheckpointPersistenceSource =
   | "standalone-webhook"
-  | "combined-completion"
-  | "pi-api-first-turn";
+  | "combined-completion";
 
 interface CheckpointRunContext {
   readonly agentSessionConversationId: string | null;
@@ -1310,29 +1309,6 @@ export const createAgentCheckpoint$ = command(
       preparation.prepared,
       signal,
       "standalone-webhook",
-    );
-  },
-);
-
-export const createPiApiFirstTurnCheckpoint$ = command(
-  async ({ set }, input: AgentCheckpointInput, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const preparation = await set(
-      prepareAgentCheckpointPersistence$,
-      input,
-      { source: "pi-api-first-turn" },
-      signal,
-    );
-    if (!preparation.ok) {
-      return preparation.response;
-    }
-
-    return await commitAgentCheckpoint(
-      db,
-      input,
-      preparation.prepared,
-      signal,
-      "pi-api-first-turn",
     );
   },
 );

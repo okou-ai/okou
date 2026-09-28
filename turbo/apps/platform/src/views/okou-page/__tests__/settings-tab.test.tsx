@@ -758,6 +758,7 @@ function prepareDeleteWorkflow(): WorkflowSummary {
     createdAt: "2026-09-10T00:00:00.000Z",
     canManage: true,
     canPublish: true,
+    importSource: null,
     official: null,
   };
   context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {

@@ -55,7 +55,7 @@ import {
   deleteClerkAgentLifecycleData,
   deleteClerkStableContextLifecycleData,
 } from "../agent-lifecycle.service";
-import { deleteExpiredPiStableContextArtifacts } from "../pi-api-first-turn-cleanup.service";
+import { deleteExpiredPiStableContextArtifacts } from "../pi-launch-artifacts-cleanup.service";
 import { enqueuePiResourceVersionIndexes } from "../pi-resource-version-index.service";
 import {
   executePiStableContextWork,

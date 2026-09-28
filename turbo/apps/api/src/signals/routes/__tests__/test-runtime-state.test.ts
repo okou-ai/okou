@@ -238,11 +238,10 @@ describe("POST /api/test/runtime-state/action", () => {
           model: selectedModel,
         });
       });
-      // Pi-admitted DeepSeek models can complete or fail in API-first execution
-      // before a Runner claim exists. Verify the committed route on the run
-      // itself rather than asserting a retired Codex-specific claim shape.
+      // Verify the committed route on the run itself rather than asserting a
+      // retired Codex-specific claim shape.
       onTestFinished(async () => {
-        await runs.requestCancelRun(actor, runId, [200, 400]);
+        await runs.requestCancelRun(actor, runId, [200]);
       });
       const detail = await reads.requestReadLogById(actor, runId, [200]);
       expect(detail.body).toMatchObject({

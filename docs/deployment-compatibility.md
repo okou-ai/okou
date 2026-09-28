@@ -1,5 +1,40 @@
 # Deployment Compatibility
 
+## Retired preference and occurrence columns dropped (2026-09-28)
+
+Migration `1274_drop_retired_voice_reasoning_collection_columns` drops
+`org_members_metadata.voice_input_model`,
+`morning_brief_native_occurrences.collection_facts` and
+`chat_threads.reasoning_effort`, and removes their Drizzle declarations. This
+is the contract step for the voice input model retirement (#36561), the Morning
+Brief collection account retirement (#36719) and the pre-GA thread reasoning
+effort column, whose effort now lives in `model_settings`. No current API reads
+or writes any of the three columns.
+
+Gate evidence: both retirements are ancestors of the current API rollback floor
+(`08c7ad2455c8fcd2b043ba8fe3639b558cb98b48`, #37110) and of the production API
+(`api-v1.686.2`, `218ac4f621983bc708209505bd5f20df3ccda064`). No supported
+rollback target reads or writes the values.
+
+Every API before this change still declares the columns, so Drizzle names them
+in `insert` column lists and in bare `select()`/`returning()` on those three
+tables. As with `1228`, `test:migration-consistency` requires the declaration
+and the physical schema to agree, so declaration removal and the drop ship in
+one release. Migrations run before API promotion. Until the previous API drains,
+its chat thread, member preference and Morning Brief occurrence statements
+receive `42703`. That window (about 20 seconds in the `1228` release) is
+accepted; release this change at low traffic.
+
+Rollback promotes artifacts without restoring schema, so
+`resolve-production-rollback-target.sh` rejects API targets that predate the
+canonical main commit that added `1274`. Recovering past that commit requires a
+forward-fix migration that restores the columns.
+
+The migration replay tests for `1156` (GPT 5.5 retirement) and `1213` clone the
+current schema. The `1156` replay restores `chat_threads.reasoning_effort` in its
+clone because that historical migration still clears the column; the `1213`
+fixture no longer inserts it.
+
 ## Custom API request headers retired (2026-09-27)
 
 The API no longer reads, echoes, or allows these request headers in first-party
@@ -74,6 +109,150 @@ Old and new versions during deploy:
 
 No API rollback floor is needed.
 
+## Unified chat queue (release 6): Runner, Guest and Sandbox CLI
+
+The Runner reads steerable input from
+`GET /api/runners/runs/:runId/steerable-inputs/next` instead of reserve, and
+the Guest declares each input the CLI backend accepted through
+`POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered` instead of
+receipt. The process-control payload carries the source chat-event ID
+(`eventId`); delivery IDs, the Guest receipt journal, Runner journal recovery
+and `activeInputDeliveryIds` in completion requests are gone. A `409` from the
+steered endpoint is final, and a failed declaration is not retried: the input
+stays queued for the next pick.
+
+The Sandbox Pi CLI no longer waits for the per-run handoff manifest. It opens
+the session the Runner restored from `resumeSession` (inline `sessionHistory`
+or blob `historyRef`) as `restored-<sessionId>.jsonl`, or the file a reused
+sandbox's previous run appended to, and starts a fresh session on a first
+turn. It still writes the private `vm0_pi_api_first_turn_boundary` startup
+record (`sandboxEventSequenceStart: 1`, `sandbox-first`) because pre-release-6
+Guests require it. The release 6 Guest accepts the record when present and
+otherwise starts at sequence 1 on the first official RPC record; it rejects
+the retired continuation modes. The Runner validates the launch config
+without `apiFirstTurn` and `run.usage` no longer reports the always-unavailable
+`apiFirstTurn` source.
+
+The installed-CLI launch requirements (`requiredPiAgentRuntimeVersion`,
+`minCliVersion`, `requiredPiSessionConstructionDigest`) move to the execution
+context as `piInstalledCliRequirement`, forwarded by the Runner to the Guest in
+the run payload. They are not added to `piLaunchConfig`, because the Pi CLI
+parses the launch config strictly and an older installed CLI would reject an
+unknown key. The API writes both the new field and the old `apiFirstTurn`
+copy. The Guest reads the new field and falls back to `apiFirstTurn` only for
+runs created before this API release. An older API that reads a queued context
+strips the unknown top-level field, so rollback is unaffected.
+
+Guest binaries ship inside the Runner binary, so Runner and Guest never skew.
+Mixed versions during rollout:
+
+- New Runner with an API below release 4: unsupported. **API rollback floor:
+  release 4**, main commit `fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da`, pinned in
+  `resolve-production-rollback-target.sh`, because a draining release 6 Runner
+  only calls the steer endpoints.
+- Old Runner with this API: unchanged; release 4 and later still serve reserve,
+  receipt and `activeInputDeliveryIds`, and the old Guest keeps reading the
+  requirement from `apiFirstTurn`.
+- Old Sandbox CLI (commit-addressed `CLI_PKG_URL` of a run created before this
+  release) with a new Guest: it still waits for the manifest the API keeps
+  publishing and writes the startup record. Its `okou run usage` rejects the
+  new result without `apiFirstTurn` as `invalid-response`.
+- New Sandbox CLI with an old Guest (a run created after API promotion that an
+  old Runner claims): the CLI writes the startup record the old Guest requires
+  and reads the session the old Runner restored the same way. `okou run usage`
+  accepts results with or without `apiFirstTurn`.
+
+Accepted in this release:
+
+- The old-CLI `okou run usage` break above is accepted rather than staged. It
+  reaches only runs created before this release that the installed-CLI parity
+  check sends to `npx`, and the removed source was always `unavailable` since
+  release 4.
+- The staff-only Pi Langfuse relay no longer parents Sandbox observations under
+  the Run End-to-End span, and no longer emits Sandbox Wait. The parent and
+  `sandboxWaitStartedAt` came from the handoff manifest, and the API-first
+  phases they linked no longer exist. Sandbox traces become root traces.
+- A steered declaration that fails without a `409` is not retried. That input
+  stays the run's steer anchor, so later inputs wait for the next pick after
+  the run ends, and the model sees that input again.
+
+**Release 7 deletion order.** Release 7 only deletes. It may merge once every
+release 6 Runner is live and every earlier Runner has drained:
+
+1. The Sandbox CLI stops writing the startup record; release 6 Guests already
+   start without it.
+2. The API stops writing and the contract drops `piLaunchConfig.apiFirstTurn`,
+   together with `pi-sandbox-handoff.service.ts`, the `pi-api-first-turn/`
+   cleanup cron, the reserve and receipt endpoints, and the steer settlement of
+   `activeInputDeliveryIds` in completion requests; Rust bindings follow.
+3. The Guest drops the `apiFirstTurn` fallback for the installed-CLI
+   requirement and the startup-record parser, and the Runner stops tolerating
+   the slot. Runs queued before release 7 still carry
+   `piInstalledCliRequirement`, so the fallback has no remaining reader.
+4. The CLI drops its tolerance for `sources.apiFirstTurn` in `okou run usage`;
+   no Runner reports it after the pre-release-6 Runners drain.
+
+Release 6 installed CLIs parse `piLaunchConfig` strictly and require
+`apiFirstTurn`. The release 7 API must therefore raise
+`PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` to the release 7 CLI in the same change
+that stops writing the slot. Release 6 Guests then launch the commit-addressed
+CLI instead of an installed release 6 CLI.
+
+## Unified chat queue (release 4)
+
+Migration `1273_drop_active_input_delivery_tables` drops
+`active_input_delivery_items`, then `active_input_deliveries`, and their schema.
+Release 3 (#37082) removed every read and write of both tables. Dropping them
+removes their foreign keys to `chat_events`, `agent_runs` and `chat_threads`,
+which takes a brief `ACCESS EXCLUSIVE` lock on each referenced table under the
+default 1 s `lock_timeout`.
+
+**Merge gate:** merge only after release 3 (#37082) is released to production
+and every earlier API instance has drained (no Axiom output from an earlier API
+commit).
+
+**API rollback floor: release 3**, main commit
+`553fc566b7e9be2cd4a8c1de314d55939b99490a`, pinned in
+`resolve-production-rollback-target.sh`. Release 2 APIs reserve steered input by
+writing the dropped tables. Rolling back to release 3 is safe: it never names
+the dropped tables and understands every replacement event this release writes.
+
+Release 4 also adds two runner steer endpoints next to the unchanged reserve
+and receipt endpoints: `GET /api/runners/runs/:runId/steerable-inputs/next`
+returns the next run-less, unrevoked `input.prompt` after the queue input the
+run consumed last, without writing, and
+`POST /api/runners/runs/:runId/steerable-inputs/:eventId/steered` consumes it
+with the same replacement event as receipt. No Runner calls them yet; the
+current Runner keeps using reserve, receipt and `activeInputDeliveryIds`, so the
+additive endpoints need no deploy order. A later Runner that calls them
+requires an API at or above this release.
+
+## Pi API-first retirement (release 4, API side)
+
+The API no longer runs Pi first turns in-process. Every Pi run goes to the
+Sandbox. Run creation publishes the no-inference `sandbox-first` handoff under
+`pi-api-first-turn/<runId>/` (v3 manifest plus session object, or a v4 manifest
+referencing blob-backed history) before the run and its runner job commit.
+`piLaunchConfig.apiFirstTurn` stays populated because the Runner validator and
+the CLI handoff resolver still require it; the contract, Runner, Guest and CLI
+are unchanged and are cleaned up in a later release. The `pi_api_first_turn`
+advisory lock is gone. No database migration.
+
+Old and new instances during deploy:
+
+- An old API instance still runs its in-flight API-first attempts in its own
+  process and completes, fails or hands them off itself; new instances need no
+  state from it. Cancellation handled by a new instance no longer takes the
+  lock or aborts the old process's provider call; the status-guarded terminal
+  transition still decides the winner, and a losing attempt stops at its own
+  deadline.
+- Completion deletes the handoff objects of every Pi run, and the sandbox
+  cleanup cron still sweeps the unchanged `pi-api-first-turn/` prefix after the
+  presigned URL TTL, so objects written by old instances are not orphaned.
+
+**Rollback:** safe down to the release 3 floor; an earlier API resumes API-first
+for new runs and reads nothing this release writes differently.
+
 ## Unified chat queue (release 3)
 
 Every input, from web sends and MCP to integrations and automations, enters
@@ -92,7 +271,7 @@ an input waiting; every other launch failure appends `input.rejected`.
 Steering no longer reads or writes `active_input_deliveries` or
 `active_input_delivery_items`. Reserve returns the source `chat_events` id as
 the delivery ID without writing; receipt and completion insert the run's
-replacement on the revoke edge. The tables stay until release 4 drops them. See
+replacement on the revoke edge. Release 4 drops the tables. See
 [active input delivery](./active-input-delivery.md). Runner and Guest do not
 change: they treat the delivery ID as an opaque UUID.
 
@@ -2124,6 +2303,9 @@ Two-release Contract": first remove the Drizzle declaration in its own release,
 then drop the column in a later migration once every API that declares it has
 drained.
 
+Migration `1274` later dropped the column; see
+[Retired preference and occurrence columns dropped](#retired-preference-and-occurrence-columns-dropped-2026-09-28).
+
 ## Discord verified foundation (2026-09-24)
 
 The Discord foundation adds seven new relations, their ownership constraints,
@@ -2261,6 +2443,8 @@ update that carries nothing but this field is rejected as empty. The
 `org_members_metadata.voice_input_model` column is left in place: the new API
 neither reads nor writes it while an older API may still do so. Drop it in a
 separate migration after older API deployments drain.
+Migration `1274` later dropped it; see
+[Retired preference and occurrence columns dropped](#retired-preference-and-occurrence-columns-dropped-2026-09-28).
 
 ## Guest storage batch timing attribution (2026-09-24)
 
@@ -3717,7 +3901,24 @@ provider ownership, a larger saved checkpoint selects sandbox-first execution
 from blob metadata. A V4 ownership-transfer manifest carries a presigned history
 reference; only the sandbox downloads and decompresses H0 for the next turn. The
 API still validates complete H2 history at checkpoint time, so its peak memory
-and validation work can exceed the raw file size.
+and validation work can exceed the raw file size. Like Claude and Codex, a
+Guest with Pi compact-generation selection attempts to select a 64 MiB-or-less
+native JSONL generation when the source exceeds 64 MiB, preserving the session
+ID, active context and latest native session name (including an optional name
+that clears an earlier title). A compact with no kept pre-compact entries can
+start that selected path itself. The Guest replaces its live file only after the
+API accepts the checkpoint. If selection or replacement staging fails while the
+original still fits within the 128 MiB upload bound, the Guest uploads the
+original instead. When the original exceeds that bound, selection
+failures (including unknown native record kinds, unsafe opaque extension state,
+globally visible labels or retained references) and replacement staging
+failures cause the new Guest to fail explicitly rather than send a missing H2
+hash. A late bounded-read size failure during a success checkpoint likewise
+fails locally. An older Guest can still fail the existing H2 hash check on
+oversized Pi files until its running jobs drain. New and old APIs read the
+selected native v3 H2 through the existing blob/hash contract; no wire change or
+migration is introduced. Rolling back the Guest restores the old oversized-file
+failure for new runs, but committed bounded native histories remain readable.
 
 V3 manifests remain the active format for API-produced H1 and small
 sandbox-first H0. The CLI accepts both formats and retains the same V2 Guest
@@ -3729,7 +3930,7 @@ contexts select the new reader. Old Runners already support 128 MiB history.
 Eligible routes use Pi. Rolling the API back below this change
 restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
-There is no history truncation, migration, or alternate reader for that rollback.
+That API rollback adds no stored-history rewrite, migration, or alternate reader.
 
 ### Pi Langfuse trace relay
 

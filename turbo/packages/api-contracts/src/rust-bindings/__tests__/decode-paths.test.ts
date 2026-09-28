@@ -14,10 +14,9 @@ const expectedBindings = [
   "runners::jobs::by_id::claim::RESPONSE",
   "runners::poll::RESPONSE",
   "runners::realtime::token::RESPONSE",
-  "runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::RESPONSE",
-  "runners::runs::by_run_id::active_inputs::reserve::RESPONSE",
   "runners::runs::by_run_id::cancellation::RESPONSE",
   "runners::runs::by_run_id::connector_runtime::sync::RESPONSE",
+  "runners::runs::by_run_id::steerable_inputs::next::RESPONSE",
 ] as const;
 
 function binding(
@@ -64,7 +63,7 @@ describe("Rust decode-path bindings", () => {
     expect(first).toContain('DecodePathField::new("modelCatalog"');
     expect(first).toContain('DecodePathField::new("catalogDigest"');
     expect(first).toContain('DecodePathField::new("keyName"');
-    expect(first).toContain('DecodePathField::new("outcome"');
+    expect(first).toContain('DecodePathField::new("eventId"');
   });
 
   it("normalizes fixed objects, arrays, nullable objects, and unions", () => {

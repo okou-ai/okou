@@ -80,6 +80,20 @@ const sourcesFirstEnabled$ = command(
 );
 
 /**
+ * A visitor who brings a `prompt` (every Marketing "try it" link does) keeps
+ * the make-something flow's prompt handoff, whatever the switch says: the
+ * source-first flow ends on its own recommended request and would drop theirs.
+ * Only an admin runs that flow, so an invited member stays in the source-first
+ * flow either way.
+ */
+function hasPromptHandoff(
+  searchParams: URLSearchParams,
+  status: { readonly isAdmin: boolean },
+): boolean {
+  return Boolean(searchParams.get("prompt")?.trim()) && status.isAdmin;
+}
+
+/**
  * A redirect inside the flow keeps the query it arrived with: the Marketing
  * `prompt` handoff and a `redeemCode` have to survive until the last step
  * completes onboarding and opens the first request.
@@ -131,6 +145,12 @@ function createSourcesFirstPageSetup(
     if (!status.needsOnboarding) {
       set(clearSourcesFirstDraft$);
       set(forwardOnboardedVisitor$);
+      return;
+    }
+    if (hasPromptHandoff(get(searchParams$), status)) {
+      // A later step opened with a prompt, for example a shared
+      // `/onboarding/sources?prompt=…`: the entry hands it to the prompt page.
+      set(redirectTo$, ROUTES.onboarding);
       return;
     }
     if (
@@ -214,12 +234,33 @@ const setupOnboardingIndustryEntryPage$ = createSourcesFirstPageSetup({
 });
 
 /**
- * `/onboarding` keeps its public path: the switch decides whether it opens the
- * source-first flow's first question or the make-something page.
+ * Whether `/onboarding` opens the source-first flow: the switch is on and the
+ * visitor did not bring a prompt of their own to try.
+ */
+const sourcesFirstEntry$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+    if (!(await set(sourcesFirstEnabled$, signal))) {
+      return false;
+    }
+    signal.throwIfAborted();
+    const searchParams = get(searchParams$);
+    if (!searchParams.get("prompt")?.trim()) {
+      return true;
+    }
+    const status = await get(onboardingStatus$);
+    signal.throwIfAborted();
+    return !hasPromptHandoff(searchParams, status);
+  },
+);
+
+/**
+ * `/onboarding` keeps its public path: the switch and the visitor's own prompt
+ * decide whether it opens the source-first flow's first question or the
+ * make-something page.
  */
 export const setupOnboardingEntryPage$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
-    if (await set(sourcesFirstEnabled$, signal)) {
+    if (await set(sourcesFirstEntry$, signal)) {
       signal.throwIfAborted();
       await set(setupOnboardingIndustryEntryPage$, signal);
       return;

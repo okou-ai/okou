@@ -9,7 +9,6 @@ import {
   setupPage,
   startPage,
 } from "./page-helper.ts";
-import frFRCommon from "../i18n/locales/fr-FR/common.json";
 import frFRCommonUrl from "../i18n/locales/fr-FR/common.json?url";
 import { testContext } from "../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../signals/utils.ts";
@@ -171,7 +170,7 @@ test("Cancelled locale startup does not adopt a replacement lifetime", async () 
   context.mocks.http.get(frFRCommonUrl, async ({ request }) => {
     localeRequested.resolve(request);
     await localeResponse.promise;
-    return HttpResponse.json(frFRCommon);
+    return HttpResponse.json({});
   });
   let currentSignal = pageSignal;
   const startup = startPage({

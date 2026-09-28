@@ -1,5 +1,9 @@
 # API-first run usage handoff
 
+The API no longer executes Pi turns. Every manifest it now publishes is a
+pre-provider `sandbox-first` transfer marked `no-inference`; the observed-usage
+paths below describe the retired API-first producer and its tolerant readers.
+
 API-first Pi inference does not traverse the Runner MITM addon. When API-first
 execution transfers ownership to a Sandbox, the API therefore includes the
 usage it has observed in the existing handoff payload:

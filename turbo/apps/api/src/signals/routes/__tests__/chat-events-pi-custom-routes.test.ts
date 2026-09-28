@@ -1,27 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
-import { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS } from "@okouai/api-contracts/contracts/model-price-tiers";
 import { modelProviderConnectionsByIdContract } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import {
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   getProviderRuntimeModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  DEFAULT_PROFILE,
-  piApiFirstTurnManifestSchema,
-} from "@okouai/api-contracts/contracts/runners";
+import { DEFAULT_PROFILE } from "@okouai/api-contracts/contracts/runners";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
-import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
-import { server } from "../../../mocks/server";
 import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/thread-bound-run-admission";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
-import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
+import type { ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import {
   readRunLaunchSnapshotFixture,
@@ -31,25 +24,14 @@ import {
   createChatEventsFixture,
   configureNativeCliArtifact,
   GPT_PI_BDD_MODELS,
-  USER_OWNED_GPT_FAST_BDD_ROUTES,
-  type PiApiFirstTurnUsageProvider,
   requireOrgId,
-  expectPiApiUsage,
   expectNoBuiltInModelUsage,
   createGptUsagePricingResolution,
-  createPiApiFirstTurnUsagePricingResolution,
+  createPiUsagePricingResolution,
   claimEnvironment,
   userMessages,
   assistantMessages,
-  PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
-  occurrences,
 } from "./helpers/chat-events-fixture";
-import {
-  piResponsesTextSse,
-  piResponsesContentSse,
-  nativeCodexSseResponse,
-  readCodexRequestJson,
-} from "./helpers/pi-responses";
 
 const context = testContext({ connectorCatalog: true });
 const {
@@ -59,50 +41,19 @@ const {
   chatCallbacks,
   entitledChatActor,
   configureBuiltInPiModel,
-  configureBuiltInPiModelOnOpenRouter,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
   waitForRunStatus,
   completeChatRunOk,
-  failChatRun,
   cancelChatRun,
   modelProviderConnectionsClient,
   sessionHeaders,
   mockPiCheckpointObjectStore,
-  expectNoPiApiFirstTurnArtifacts,
-  piS3Object,
-  publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
+  expectPiSandboxHandoff,
 } = createChatEventsFixture(context);
-
-async function expectPiApiFirstTurnUsage(
-  runId: string,
-  sessionBytes: Buffer,
-  provider: PiApiFirstTurnUsageProvider,
-): Promise<void> {
-  const firstSession = MemoryPiSession.fromJsonl(sessionBytes.toString("utf8"));
-  const firstAssistant = [...firstSession.buildSessionContext().messages]
-    .reverse()
-    .find((message) => {
-      return message.role === "assistant";
-    });
-  expect(
-    firstAssistant?.role === "assistant" ? firstAssistant.usage : null,
-  ).toMatchObject({
-    input: 5,
-    output: 3,
-    cacheRead: 3,
-    cacheWrite: 2,
-  });
-  await expectPiApiUsage(runId, provider, "", {
-    input: 5,
-    output: 3,
-    cacheRead: 3,
-    cacheCreation: 2,
-  });
-}
 
 async function configureCustomPiModel(
   actor: ApiTestUser,
@@ -156,7 +107,7 @@ async function configureCustomPiModel(
   };
 }
 
-/** S3 reads issued so far, used to prove the API never downloads an archive. */
+/** S3 reads issued so far, used to prove resume transfers history by reference. */
 function s3GetObjectCommandCalls(): readonly unknown[] {
   return context.mocks.s3.send.mock.calls.filter(([command]) => {
     return (
@@ -167,179 +118,22 @@ function s3GetObjectCommandCalls(): readonly unknown[] {
 }
 
 describe("CHAT-02: model-first provider policies", () => {
-  it.each(
-    GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
-      return (["openai", "openrouter"] as const).map((provider) => {
-        return {
-          selectedModel,
-          provider,
-        };
-      });
-    }),
-  )(
-    "bills built-in $selectedModel on $provider at both canonical input boundaries and tiers",
-    async ({ selectedModel, provider }) => {
-      const { actor, agentId } = await entitledChatActor();
-      const usagePricingResolution = await createGptUsagePricingResolution();
-      const threshold =
-        MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS[selectedModel];
-      if (threshold === undefined) {
-        throw new Error(
-          `Expected a long-context threshold for ${selectedModel}`,
-        );
-      }
-      let withRoute = async <T>(work: () => Promise<T>): Promise<T> => {
-        return await work();
-      };
-      if (provider === "openrouter") {
-        withRoute = await configureBuiltInPiModelOnOpenRouter(
-          actor,
-          selectedModel,
-        );
-      } else {
-        await configureBuiltInPiModel(actor, selectedModel);
-      }
-
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-      const endpoint =
-        provider === "openai"
-          ? "https://api.openai.com/v1/responses"
-          : "https://openrouter.ai/api/v1/responses";
-      const upstreamModel =
-        provider === "openai" ? selectedModel : `openai/${selectedModel}`;
-      const requests: unknown[] = [];
-      for (const tier of [undefined, "fast"] as const) {
-        for (const totalInput of [threshold - 1, threshold]) {
-          server.use(
-            http.post(endpoint, async ({ request }) => {
-              requests.push(await request.json());
-              return nativeCodexSseResponse(
-                piResponsesTextSse(
-                  "accounted response",
-                  requests.length,
-                  {
-                    input_tokens: totalInput,
-                    output_tokens: 3,
-                    total_tokens: totalInput + 3,
-                    input_tokens_details: {
-                      cached_tokens: 3,
-                      cache_write_tokens: 2,
-                    },
-                  },
-                  tier === "fast" ? "priority" : "default",
-                ),
-              );
-            }),
-          );
-          const run = await withRoute(async () => {
-            return await sendChatRun(
-              actor,
-              {
-                agentId,
-                prompt: `bill ${selectedModel} at ${totalInput} total input`,
-                model: selectedModel,
-                runOptions: { codexServiceTier: tier },
-              },
-              usagePricingResolution,
-            );
-          });
-          await waitForRunStatus(actor, run.runId, "completed");
-          await flushWaitUntilForTest();
-          const longContext = totalInput === threshold;
-          const suffix = longContext
-            ? tier === "fast"
-              ? ".long_context.fast"
-              : ".long_context"
-            : tier === "fast"
-              ? ".fast"
-              : "";
-          await expectPiApiUsage(run.runId, selectedModel, suffix, {
-            input: totalInput - 5,
-            output: 3,
-            cacheRead: 3,
-            cacheCreation: 2,
-          });
-          expect(requests.at(-1)).toMatchObject({
-            model: upstreamModel,
-            reasoning: { effort: "max" },
-            store: false,
-          });
-          if (tier === undefined) {
-            expect(requests.at(-1)).not.toHaveProperty("service_tier");
-          } else {
-            expect(requests.at(-1)).toMatchObject({ service_tier: "priority" });
-          }
-          await expect(
-            readRunLaunchSnapshotFixture(context, run.runId),
-          ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
-        }
-      }
-      expect(requests).toHaveLength(4);
-    },
-    90_000,
-  );
-
   it.each([
     "deepseek-v4-flash",
     "deepseek-v4.1-flash",
     ...GPT_PI_BDD_MODELS,
   ] as const)(
-    "runs the Pi API first turn once for %s and resumes canonical JSONL",
+    "hands the first %s Pi turn to the Sandbox and resumes canonical JSONL by reference",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
+      // Generic usage pricing for the Sandbox completion webhook.
       const usagePricingResolution =
-        await createPiApiFirstTurnUsagePricingResolution(selectedModel);
-      const orgId = actor.orgId;
-      if (!orgId) {
-        throw new Error("Expected entitled chat actor to have an org");
-      }
+        await createPiUsagePricingResolution(selectedModel);
       await configureBuiltInPiModel(actor, selectedModel);
 
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const modelRequests: {
-        readonly body: unknown;
-      }[] = [];
-      const modelAnswers = [`first API answer for ${selectedModel}`];
-      const providerUrl = selectedModel.startsWith("gpt-")
-        ? "https://api.openai.com/v1/responses"
-        : "https://api.deepseek.com/responses";
-      server.use(
-        http.post(providerUrl, async ({ request }) => {
-          const sequence = modelRequests.length;
-          modelRequests.push({
-            body: await request.json(),
-          });
-          const answer = modelAnswers[sequence];
-          if (!answer) {
-            return HttpResponse.json(
-              { error: "unexpected duplicate Pi model request" },
-              { status: 500 },
-            );
-          }
-          const usage =
-            sequence === 0
-              ? {
-                  input_tokens: 10,
-                  output_tokens: 3,
-                  total_tokens: 13,
-                  input_tokens_details: {
-                    cached_tokens: 3,
-                    cache_write_tokens: 2,
-                  },
-                }
-              : undefined;
-          return new HttpResponse(
-            usage
-              ? piResponsesTextSse(answer, sequence, usage)
-              : piResponsesTextSse(answer, sequence),
-            {
-              headers: { "content-type": "text/event-stream" },
-            },
-          );
-        }),
-      );
+      const runtimeModel = getProviderRuntimeModel("built-in", selectedModel);
       const firstPrompt = "persist this turn in the native Pi session";
       const first = await sendChatRun(
         actor,
@@ -353,8 +147,34 @@ describe("CHAT-02: model-first provider policies", () => {
         },
         usagePricingResolution,
       );
-      await waitForRunStatus(actor, first.runId, "completed");
-      await flushWaitUntilForTest();
+      const firstHandoff = expectPiSandboxHandoff(
+        first.runId,
+        checkpointObjects,
+      );
+      expect(firstHandoff.manifest.schemaVersion).toBe(3);
+      expect(firstHandoff.session).toBeDefined();
+      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      expect(firstClaim.claim).toMatchObject({
+        cliAgentType: "pi",
+        piSessionId: first.threadId,
+        piModelConfig: {
+          model: runtimeModel,
+          ...(selectedModel.startsWith("gpt-") ? { thinkingLevel: "max" } : {}),
+        },
+      });
+      await completeSandboxFirstPiRun({
+        actor,
+        run: first,
+        claim: firstClaim,
+        checkpointObjects,
+        prompt: firstPrompt,
+        answer: `first Sandbox answer for ${selectedModel}`,
+        responsesModel: {
+          provider: selectedModel.startsWith("gpt-") ? "openai" : "deepseek",
+          model: runtimeModel,
+        },
+        usagePricingResolution,
+      });
       await expect(
         readRunLaunchSnapshotFixture(context, first.runId),
       ).resolves.toStrictEqual({
@@ -365,51 +185,6 @@ describe("CHAT-02: model-first provider policies", () => {
           runnerProfile: DEFAULT_PROFILE,
         },
       });
-      expect(modelRequests).toHaveLength(1);
-      expect(modelRequests[0]?.body).toMatchObject({
-        model: getProviderRuntimeModel("built-in", selectedModel),
-        reasoning: {
-          effort: selectedModel === "deepseek-v4.1-flash" ? "high" : "max",
-        },
-      });
-      const firstModelInput = JSON.stringify(modelRequests[0]?.body);
-      expect(occurrences(firstModelInput, firstPrompt)).toBe(1);
-      expect(occurrences(firstModelInput, modelAnswers[0] ?? "")).toBe(0);
-      // The first GET validates the just-written native H1 before canonical
-      // checkpoint promotion; there is no H0 to download on a new thread.
-      expect(s3GetObjectCommandCalls()).toHaveLength(1);
-      const firstManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${first.runId}/manifest.json`;
-      const firstSessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${first.runId}/session.jsonl`;
-      const firstSessionEntry = [...checkpointObjects.entries()].find(
-        ([key]) => {
-          return key.includes("/blobs/");
-        },
-      );
-      const firstSessionBytes = firstSessionEntry?.[1];
-      expect(checkpointObjects.has(firstManifestKey)).toBeFalsy();
-      expect(checkpointObjects.has(firstSessionKey)).toBeFalsy();
-      if (!firstSessionBytes) {
-        throw new Error("Expected the first Pi run to persist native H1");
-      }
-      await expectPiApiFirstTurnUsage(
-        first.runId,
-        firstSessionBytes,
-        selectedModel,
-      );
-      expect(firstSessionBytes.toString("utf8")).toContain(first.threadId);
-      expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
-        `runner-group:${runnerGroup}`,
-      );
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
-        runId: first.runId,
-        mode: "hard",
-      });
-      const firstClaim = await api.requestClaimRunnerJob(
-        true,
-        first.runId,
-        [404],
-      );
-      expect(firstClaim.status).toBe(404);
 
       await chat.updateThreadModelSelection(
         actor,
@@ -419,18 +194,17 @@ describe("CHAT-02: model-first provider policies", () => {
           ? {}
           : { reasoningEffort: "high" },
       );
-      const secondPrompt = "continue the same Pi session";
+      const readsBeforeResume = s3GetObjectCommandCalls().length;
       const second = await sendChatRun(
         actor,
         {
           agentId,
           threadId: first.threadId,
-          prompt: secondPrompt,
+          prompt: "continue the same Pi session",
         },
         usagePricingResolution,
       );
       await flushWaitUntilForTest();
-      expect(modelRequests).toHaveLength(1);
       const metadata = await chat.readThreadMetadata(actor, first.threadId);
       if (selectedModel === "deepseek-v4.1-flash") {
         expect(metadata.modelSettings).not.toHaveProperty(selectedModel);
@@ -440,30 +214,29 @@ describe("CHAT-02: model-first provider policies", () => {
         });
       }
       // Blob-backed continuation transfers by reference without API H0 reads.
-      expect(s3GetObjectCommandCalls()).toHaveLength(1);
-      const secondManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`;
-      const secondManifestBytes = checkpointObjects.get(secondManifestKey);
-      if (!secondManifestBytes) {
-        throw new Error("Expected referenced Pi resume manifest");
-      }
-      expect(
-        piApiFirstTurnManifestSchema.parse(
-          JSON.parse(secondManifestBytes.toString("utf8")),
-        ),
-      ).toMatchObject({
+      expect(s3GetObjectCommandCalls()).toHaveLength(readsBeforeResume);
+      const secondHandoff = expectPiSandboxHandoff(
+        second.runId,
+        checkpointObjects,
+      );
+      expect(secondHandoff.manifest).toMatchObject({
         schemaVersion: 4,
-        mode: "sandbox-first",
-        baseSession: {
-          sessionId: first.threadId,
-          sha256: createHash("sha256").update(firstSessionBytes).digest("hex"),
-        },
+        baseSession: { sessionId: first.threadId },
       });
+      const storedHistoryHashes = [...checkpointObjects.entries()]
+        .filter(([key]) => {
+          return key.includes("/blobs/");
+        })
+        .map(([, bytes]) => {
+          return createHash("sha256").update(bytes).digest("hex");
+        });
+      expect(storedHistoryHashes).toContain(
+        secondHandoff.manifest.baseSession.sha256,
+      );
       const secondClaim = await claimChatRun(runnerGroup, second.runId);
       expect(secondClaim.claim).toMatchObject({
         piSessionId: first.threadId,
-        piModelConfig: {
-          model: getProviderRuntimeModel("built-in", selectedModel),
-        },
+        piModelConfig: { model: runtimeModel },
       });
       await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
     },
@@ -486,86 +259,46 @@ describe("CHAT-02: model-first provider policies", () => {
       };
     }),
   ] as const)(
-    "runs custom Responses gateway $selectedModel through Pi without built-in model billing",
+    "runs custom Responses gateway $selectedModel through the Pi Sandbox without built-in model billing",
     async ({ selectedModel, upstreamModel }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       await configureCustomPiModel(actor, selectedModel, upstreamModel);
-      if (selectedModel === "deepseek-v4-flash") {
-        // Snapshot availability must not block an admitted Pi provider request.
-        context.mocks.axiom.ingest.mockImplementation((dataset) => {
-          if (dataset === "run-context") {
-            throw new Error("run-context ingest failed");
-          }
-          return true;
-        });
-      }
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
-      const modelRequests: {
-        readonly body: unknown;
-        readonly authorization: string | null;
-        readonly apiKey: string | null;
-      }[] = [];
-      server.use(
-        http.post(
-          "https://pi-custom-gateway.example.com/openai/v1/responses",
-          async ({ request }) => {
-            modelRequests.push({
-              body: await request.json(),
-              authorization: request.headers.get("authorization"),
-              apiKey: request.headers.get("x-api-key"),
-            });
-            return new HttpResponse(
-              piResponsesTextSse(
-                `custom gateway answer for ${selectedModel}`,
-                modelRequests.length - 1,
-                {
-                  input_tokens: 10,
-                  output_tokens: 3,
-                  total_tokens: 13,
-                  input_tokens_details: {
-                    cached_tokens: 3,
-                    cache_write_tokens: 2,
-                  },
-                },
-              ),
-              { headers: { "content-type": "text/event-stream" } },
-            );
-          },
-        ),
-      );
 
+      const prompt = `route ${selectedModel} through the custom Pi gateway`;
       const run = await sendChatRun(
         actor,
         {
           agentId,
-          prompt: `route ${selectedModel} through the custom Pi gateway`,
+          prompt,
           model: selectedModel,
         },
         usagePricingResolution,
       );
-      await flushWaitUntilForTest();
-      await waitForRunStatus(actor, run.runId, "completed");
+      const firstClaim = await claimChatRun(runnerGroup, run.runId);
+      expect(firstClaim.claim.piModelConfig).toMatchObject({
+        model: upstreamModel,
+        ...(selectedModel.startsWith("gpt-") ? { thinkingLevel: "max" } : {}),
+      });
+      expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
+      await completeSandboxFirstPiRun({
+        actor,
+        run,
+        claim: firstClaim,
+        checkpointObjects,
+        prompt,
+        answer: `custom gateway sandbox answer for ${selectedModel}`,
+        responsesModel: { provider: "openai", model: upstreamModel },
+        usagePricingResolution,
+      });
 
       await expect(
         readRunLaunchSnapshotFixture(context, run.runId),
       ).resolves.toMatchObject({
         launch_snapshot: { framework: "pi" },
       });
-      expect(modelRequests).toStrictEqual([
-        {
-          body: expect.objectContaining({
-            model: upstreamModel,
-            ...(selectedModel.startsWith("gpt-")
-              ? { reasoning: expect.objectContaining({ effort: "max" }) }
-              : {}),
-          }),
-          authorization: null,
-          apiKey: "Key custom-pi-gateway-secret",
-        },
-      ]);
-      expect(modelRequests[0]?.body).not.toHaveProperty("service_tier");
       await expectNoBuiltInModelUsage(run.runId);
       if (selectedModel.startsWith("gpt-")) {
         const firstSession = await readThreadSessionConversation(
@@ -593,7 +326,6 @@ describe("CHAT-02: model-first provider policies", () => {
             usagePricingResolution,
           );
           await flushWaitUntilForTest();
-          expect(modelRequests).toHaveLength(1);
           const claim = await claimChatRun(runnerGroup, continuation.runId);
           expect(claim.claim.piModelConfig).toMatchObject({
             model: upstreamModel,
@@ -624,7 +356,6 @@ describe("CHAT-02: model-first provider policies", () => {
           });
           await expectNoBuiltInModelUsage(continuation.runId);
         }
-        expect(modelRequests).toHaveLength(1);
       }
     },
     90_000,
@@ -649,7 +380,7 @@ describe("CHAT-02: model-first provider policies", () => {
       });
     }),
   )(
-    "keeps custom $selectedModel $tier legacy handoff, captured policy, and $outcome settlement unbilled",
+    "keeps custom $selectedModel $tier captured policy and $outcome Sandbox settlement unbilled",
     async ({ selectedModel, tier, outcome }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const gateway = await configureCustomPiModel(actor, selectedModel);
@@ -657,65 +388,25 @@ describe("CHAT-02: model-first provider policies", () => {
       const firewall = createFirewallApi(context);
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
-      const requests: {
-        body: unknown;
-        authorization: string | null;
-        apiKey: string | null;
-      }[] = [];
-      server.use(
-        http.post(gateway.endpoint, async ({ request }) => {
-          requests.push({
-            body: await request.json(),
-            authorization: request.headers.get("authorization"),
-            apiKey: request.headers.get("x-api-key"),
-          });
-          return nativeCodexSseResponse(
-            piResponsesContentSse({
-              blocks: [
-                {
-                  type: "toolCall",
-                  callId: "call_custom",
-                  name: "read",
-                  arguments: { path: "/home/user/workspace/AGENTS.md" },
-                },
-              ],
-              sequence: requests.length,
-            }),
-          );
-        }),
-      );
+      const prompt = "hand off the custom gateway run exactly once";
       const run = await sendChatRun(
         actor,
         {
           agentId,
           model: selectedModel,
-          prompt: "hand off custom gateway tools exactly once",
+          prompt,
           runOptions: { codexServiceTier: tier },
         },
         usagePricingResolution,
       );
-      const prefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}`;
-      await expect
-        .poll(() => {
-          return objects.has(`${prefix}/manifest.json`);
-        })
-        .toBe(true);
-      await flushWaitUntilForTest();
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({
-        authorization: null,
-        apiKey: `Key ${gateway.secret}`,
-        body: {
-          model: gateway.upstreamModel,
-          reasoning: { effort: "max" },
-          store: false,
-        },
-      });
-      if (tier === "fast") {
-        expect(requests[0]?.body).toMatchObject({ service_tier: "priority" });
-      } else {
-        expect(requests[0]?.body).not.toHaveProperty("service_tier");
+      const { manifest, session: h0 } = expectPiSandboxHandoff(
+        run.runId,
+        objects,
+      );
+      if (!h0) {
+        throw new Error("Expected the synthesized first-turn Pi session");
       }
+      expect(h0.toString("utf8")).not.toMatch(/serviceTier|service_tier/);
       await expectNoBuiltInModelUsage(run.runId);
 
       await accept(
@@ -740,7 +431,7 @@ describe("CHAT-02: model-first provider policies", () => {
         }),
         [200],
       );
-      // Mutating current settings after API ownership cannot rewrite the captured claim.
+      // Mutating current settings after run admission cannot rewrite the captured claim.
 
       await chat.updateThreadModelSelection(
         actor,
@@ -822,38 +513,24 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       expect(resolved.body).not.toHaveProperty("headers.Authorization");
 
-      const h1 = objects.get(`${prefix}/session.jsonl`);
-      const manifestBytes = objects.get(`${prefix}/manifest.json`);
-      if (!h1 || !manifestBytes) {
-        throw new Error("Expected custom handoff artifacts");
-      }
-      const manifest = piApiFirstTurnManifestSchema.parse(
-        JSON.parse(manifestBytes.toString("utf8")),
-      );
-      const history = MemoryPiSession.fromJsonl(h1.toString("utf8"));
-      const assistant = history.buildSessionContext().messages.at(-1);
-      if (assistant?.role !== "assistant") {
-        throw new Error("Expected pending custom assistant");
-      }
-      const tool = assistant.content.find((block) => {
-        return block.type === "toolCall";
-      });
-      if (tool?.type !== "toolCall") {
-        throw new Error("Expected pending custom tool");
-      }
+      const history = MemoryPiSession.fromJsonl(h0.toString("utf8"));
+      history.appendMessage({ role: "user", content: prompt, timestamp: 1 });
       history.appendMessage({
-        role: "toolResult",
-        toolCallId: tool.id,
-        toolName: tool.name,
-        content: [{ type: "text", text: "custom tool output" }],
-        isError: false,
-        timestamp: 2,
-      });
-      history.appendMessage({
-        ...assistant,
+        role: "assistant",
         content: [{ type: "text", text: "custom Sandbox completion" }],
+        api: "openai-responses",
+        provider: "openai",
+        model: gateway.upstreamModel,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
         stopReason: "stop",
-        timestamp: 3,
+        timestamp: 2,
       });
       const h2 = history.toJsonl();
       const h2Hash = createHash("sha256").update(h2).digest("hex");
@@ -927,139 +604,10 @@ describe("CHAT-02: model-first provider policies", () => {
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: outcome,
       });
-      expect(requests).toHaveLength(1);
       await expectNoBuiltInModelUsage(run.runId);
-      expect(h2).not.toMatch(/serviceTier|service_tier/);
       expect(
         JSON.stringify({
           h2,
-          events: (await chat.listThreadEvents(actor, run.threadId)).events,
-        }),
-      ).not.toContain(gateway.secret);
-    },
-    90_000,
-  );
-
-  it.each(
-    GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
-      return [400, 401]
-        .filter((status) => {
-          return (
-            selectedModel === "gpt-5.6-terra" ||
-            (selectedModel === "gpt-5.6-sol" && status === 400) ||
-            (selectedModel === "gpt-5.6-luna" && status === 401)
-          );
-        })
-        .map((status) => {
-          return { selectedModel, status };
-        });
-    }),
-  )(
-    "preserves custom $selectedModel Fast rejection $status without downgrade or an API retry",
-    async ({ selectedModel, status }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const gateway = await configureCustomPiModel(actor, selectedModel);
-      mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
-      const requests: {
-        url: string;
-        body: unknown;
-        apiKey: string | null;
-        authorization: string | null;
-      }[] = [];
-      server.use(
-        ...[
-          gateway.endpoint,
-          ...new Set(
-            USER_OWNED_GPT_FAST_BDD_ROUTES.map((route) => {
-              return route.endpoint;
-            }),
-          ),
-        ].map((endpoint) => {
-          return http.post(endpoint, async ({ request }) => {
-            requests.push({
-              url: request.url,
-              body: await readCodexRequestJson(request),
-              apiKey: request.headers.get("x-api-key"),
-              authorization: request.headers.get("authorization"),
-            });
-            return HttpResponse.json(
-              {
-                error: {
-                  code:
-                    status === 400
-                      ? "unsupported_service_tier"
-                      : "invalid_api_key",
-                  message: `gateway rejected priority: ${gateway.secret}`,
-                },
-              },
-              { status },
-            );
-          });
-        }),
-      );
-      const run = await sendChatRun(actor, {
-        agentId,
-        model: selectedModel,
-        prompt: "surface the custom Fast rejection",
-        runOptions: { codexServiceTier: "fast" },
-      });
-      if (status === 400) {
-        await flushWaitUntilForTest();
-        const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-        const manifest = piApiFirstTurnManifestSchema.parse(
-          JSON.parse(objects.get(manifestKey)?.toString("utf8") ?? "{}"),
-        );
-        expect(manifest).toMatchObject({
-          outcome: "ownership-transfer",
-          mode: "sandbox-first",
-        });
-        const claimed = await api.claimRunnerJob(run.runId, {
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        });
-        expect(claimed.piModelConfig).toMatchObject({
-          serviceTier: "priority",
-          model: gateway.upstreamModel,
-        });
-        await failChatRun(
-          run.runId,
-          { authorization: `Bearer ${claimed.sandboxToken}` },
-          "Sandbox rejected priority",
-        );
-      }
-      await waitForRunStatus(actor, run.runId, "failed");
-      await flushWaitUntilForTest();
-      expect(requests).toStrictEqual([
-        {
-          url: gateway.endpoint,
-          apiKey: `Key ${gateway.secret}`,
-          authorization: null,
-          body: expect.objectContaining({
-            model: gateway.upstreamModel,
-            service_tier: "priority",
-            reasoning: expect.objectContaining({ effort: "max" }),
-          }),
-        },
-      ]);
-      const failed = await api.readRun(actor, run.runId);
-      expect(failed).toMatchObject({
-        status: "failed",
-        error: expect.stringContaining(
-          status === 401
-            ? "[PI_API_MODEL_FAILED]"
-            : "Sandbox rejected priority",
-        ),
-      });
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
-      expectApiError(claim.body);
-      await expectNoBuiltInModelUsage(run.runId);
-      if (status === 401) {
-        expectNoPiApiFirstTurnArtifacts(run.runId, objects);
-      }
-      expect(
-        JSON.stringify({
-          failed,
           events: (await chat.listThreadEvents(actor, run.threadId)).events,
         }),
       ).not.toContain(gateway.secret);
@@ -1084,24 +632,6 @@ describe("CHAT-02: model-first provider policies", () => {
         signal: context.signal,
       });
       onTestFinished(gate.release);
-      const requests: string[] = [];
-      server.use(
-        ...[
-          gateway.endpoint,
-          ...new Set(
-            USER_OWNED_GPT_FAST_BDD_ROUTES.map((route) => {
-              return route.endpoint;
-            }),
-          ),
-        ].map((endpoint) => {
-          return http.post(endpoint, ({ request }) => {
-            requests.push(request.url);
-            return nativeCodexSseResponse(
-              piResponsesTextSse("unexpected substituted request", 0),
-            );
-          });
-        }),
-      );
       const clientEventId = randomUUID();
       const sent = await chat.requestSendEvent(
         actor,
@@ -1187,7 +717,6 @@ describe("CHAT-02: model-first provider policies", () => {
       ).toStrictEqual([
         expect.objectContaining({ error: "provider_unavailable" }),
       ]);
-      expect(requests).toStrictEqual([]);
     },
     90_000,
   );
@@ -1196,66 +725,24 @@ describe("CHAT-02: model-first provider policies", () => {
     "preserves captured custom %s credentials after gateway removal without substitution",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await publishPendingPiInstructions(actor, agentId);
       const gateway = await configureCustomPiModel(actor, selectedModel);
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve(undefined);
-        }
-      });
+      const usagePricingResolution = await createGptUsagePricingResolution();
+      const firewall = createFirewallApi(context);
+      mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
-      const requests: {
-        url: string;
-        body: unknown;
-        apiKey: string | null;
-        authorization: string | null;
-      }[] = [];
-      server.use(
-        http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, async ({ request }) => {
-          if (!entered.settled()) {
-            entered.resolve(undefined);
-          }
-          await release.promise;
-          const objectKey = new URL(request.url).searchParams.get("object");
-          if (!objectKey) {
-            throw new Error("Expected Pi archive identity");
-          }
-          return new HttpResponse(piS3Object(objectKey), {
-            headers: { "content-type": "application/gzip" },
-          });
-        }),
-        ...[
-          gateway.endpoint,
-          ...new Set(
-            USER_OWNED_GPT_FAST_BDD_ROUTES.map((route) => {
-              return route.endpoint;
-            }),
-          ),
-        ].map((endpoint) => {
-          return http.post(endpoint, async ({ request }) => {
-            requests.push({
-              url: request.url,
-              body: await readCodexRequestJson(request),
-              apiKey: request.headers.get("x-api-key"),
-              authorization: request.headers.get("authorization"),
-            });
-            return nativeCodexSseResponse(
-              piResponsesTextSse("captured custom credential", requests.length),
-            );
-          });
-        }),
+      const prompt = "retain the captured custom credential authority";
+      const run = await sendChatRun(
+        actor,
+        {
+          agentId,
+          model: selectedModel,
+          prompt,
+          ...(selectedModel === "deepseek-v4.1-flash"
+            ? {}
+            : { runOptions: { codexServiceTier: "fast" as const } }),
+        },
+        usagePricingResolution,
       );
-      const run = await sendChatRun(actor, {
-        agentId,
-        model: selectedModel,
-        prompt: "retain the captured custom credential authority",
-        ...(selectedModel === "deepseek-v4.1-flash"
-          ? {}
-          : { runOptions: { codexServiceTier: "fast" as const } }),
-      });
-      await entered.promise;
       await accept(
         setupApp({ context, routes: modelProviderGatewayRoutes })(
           modelProviderConnectionsByIdContract,
@@ -1265,32 +752,47 @@ describe("CHAT-02: model-first provider policies", () => {
         }),
         [204],
       );
-      release.resolve(undefined);
-      await waitForRunStatus(actor, run.runId, "completed");
-      await flushWaitUntilForTest();
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "completed",
+      const claim = await claimChatRun(runnerGroup, run.runId);
+      expect(claim.claim.piModelConfig).toMatchObject({
+        model: gateway.upstreamModel,
+        ...(selectedModel === "deepseek-v4.1-flash"
+          ? {}
+          : { serviceTier: "priority" }),
       });
-      expect(requests).toStrictEqual([
+      expect(JSON.stringify(claim.claim)).not.toContain(gateway.secret);
+      if (!claim.claim.encryptedSecrets) {
+        throw new Error("Expected captured custom credentials");
+      }
+      const resolved = await firewall.requestFirewallAuth(
+        claim.sandboxHeaders,
         {
-          url: gateway.endpoint,
-          body: expect.objectContaining({
-            model: gateway.upstreamModel,
-            ...(selectedModel === "deepseek-v4.1-flash"
-              ? {}
-              : { service_tier: "priority" }),
-          }),
-          apiKey: `Key ${gateway.secret}`,
-          authorization: null,
+          encryptedSecrets: claim.claim.encryptedSecrets,
+          authHeaders: {
+            "x-api-key": `Key ${secretTemplate("OKOU_MODEL_PROVIDER_API_KEY")}`,
+          },
+          secretConnectorMap: claim.claim.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            claim.claim.secretConnectorMetadataMap ?? undefined,
         },
-      ]);
+        [200],
+      );
+      expect(resolved.body).toMatchObject({
+        headers: { "x-api-key": `Key ${gateway.secret}` },
+      });
+      await completeSandboxFirstPiRun({
+        actor,
+        run,
+        claim,
+        checkpointObjects: objects,
+        prompt,
+        answer: "captured custom credential",
+        responsesModel: { provider: "openai", model: gateway.upstreamModel },
+        usagePricingResolution,
+      });
       await expectNoBuiltInModelUsage(run.runId);
       for (const bytes of objects.values()) {
         expect(bytes.toString("utf8")).not.toContain(gateway.secret);
       }
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
-      expectApiError(claim.body);
     },
     90_000,
   );
@@ -1320,19 +822,6 @@ describe("CHAT-02: model-first provider policies", () => {
       const gateway = await configureCustomPiModel(actor, selectedModel);
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
-      const requests: unknown[] = [];
-      server.use(
-        http.post(gateway.endpoint, async ({ request }) => {
-          expect(request.headers.get("x-api-key")).toBe(
-            `Key ${gateway.secret}`,
-          );
-          expect(request.headers.get("authorization")).toBeNull();
-          requests.push(await request.json());
-          return nativeCodexSseResponse(
-            piResponsesTextSse("queued custom answer", requests.length),
-          );
-        }),
-      );
       const queuedId = randomUUID();
       const queued = await chat.requestSendEvent(
         actor,
@@ -1394,27 +883,18 @@ describe("CHAT-02: model-first provider policies", () => {
       if (!promoted?.runId) {
         throw new Error("Expected a promoted custom run");
       }
-      await waitForRunStatus(actor, promoted.runId, "completed");
-      await flushWaitUntilForTest();
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({
+      const claim = await claimChatRun(runnerGroup, promoted.runId);
+      expect(claim.claim.cliAgentType).toBe("pi");
+      expect(claim.claim.piModelConfig).toMatchObject({
         model: gateway.upstreamModel,
-        service_tier: "priority",
-        reasoning: { effort: "max" },
+        serviceTier: "priority",
+        thinkingLevel: "max",
       });
-      expect(
-        occurrences(JSON.stringify(requests[0]), "queued custom Fast"),
-      ).toBe(1);
-      await expectNoBuiltInModelUsage(promoted.runId);
       await expect(
         readRunLaunchSnapshotFixture(context, promoted.runId),
       ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
-      const claim = await api.requestClaimRunnerJob(
-        true,
-        promoted.runId,
-        [404],
-      );
-      expectApiError(claim.body);
+      await cancelChatRun(actor, promoted.runId, claim.sandboxHeaders);
+      await expectNoBuiltInModelUsage(promoted.runId);
     },
     90_000,
   );

@@ -197,7 +197,8 @@ export interface PendingChatInput {
  * (chat_thread_id, seq_id) index, then the revocations of exactly those rows
  * through the revokes_event_id index. The revoked rows are dropped here, so
  * the read needs no transaction, CTE or subquery. `budgetForRunId` adds the
- * budget input that targets that run.
+ * budget input that targets that run; `afterSeqId` keeps only input positioned
+ * after that thread sequence.
  */
 export async function listPendingChatInputs(
   db: ChatQueueReadDb,
@@ -205,6 +206,7 @@ export async function listPendingChatInputs(
     readonly chatThreadId: string;
     readonly eventTypes: readonly ("input.prompt" | "input.automation")[];
     readonly budgetForRunId?: string;
+    readonly afterSeqId?: number;
   },
 ): Promise<readonly PendingChatInput[]> {
   const startedAt = performance.now();
@@ -220,6 +222,9 @@ export async function listPendingChatInputs(
     .where(
       and(
         eq(chatEvents.chatThreadId, args.chatThreadId),
+        args.afterSeqId === undefined
+          ? undefined
+          : gt(chatEvents.seqId, args.afterSeqId),
         isNull(chatEvents.runId),
         or(
           inArray(chatEvents.eventType, [...args.eventTypes]),

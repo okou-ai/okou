@@ -150,10 +150,13 @@ function configureQuestPage(
   {
     claimedToday = true,
     imessage = false,
+    slackClaimed = true,
   }: {
     claimedToday?: boolean;
     /** Whether the status lists the iMessage quest. */
     imessage?: boolean;
+    /** Whether the org already holds a claim for the Slack quest. */
+    slackClaimed?: boolean;
   } = {},
 ): GetStartedStatus {
   context.mocks.data.org({
@@ -202,7 +205,8 @@ function configureQuestPage(
       const claimedCount =
         key === "connector"
           ? 3
-          : key === "slack" || (key === "checkin" && claimedToday)
+          : (key === "slack" && slackClaimed) ||
+              (key === "checkin" && claimedToday)
             ? 1
             : 0;
       return {
@@ -213,7 +217,8 @@ function configureQuestPage(
         limit: reward.limit,
         earnedCredits: claimedCount * reward.amount,
         pendingCount: 0,
-        canEarnMore: key !== "slack" && (key !== "checkin" || !claimedToday),
+        canEarnMore:
+          key === "slack" ? !slackClaimed : key !== "checkin" || !claimedToday,
       };
     }),
     shareClaim: null,
@@ -641,6 +646,84 @@ test("A phone linked before the quest existed reads as done, without credits", a
   expect(within(row).queryByText("Add")).not.toBeInTheDocument();
   // No claim was ever granted, so the earned total is unchanged.
   expect(within(panel).getByText("400 earned")).toBeInTheDocument();
+});
+
+test("Slack installed before the quest existed reads as done, without credits", async () => {
+  configureQuestPage(context, "admin", { slackClaimed: false });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  // The installed Slack counts toward the finished steps.
+  expect(normalizedText(entry)).toBe("Get more credits3/6");
+  const panel = await openQuestPanel();
+  // The Slack reward is not among what is still claimable.
+  expect(within(panel).getByText("3,200 to go")).toBeInTheDocument();
+  const row = screen.getByTestId("get-started-quest-slack");
+  expect(row.getAttribute("role")).not.toBe("menuitem");
+  expect(within(row).queryByText("Add")).not.toBeInTheDocument();
+  // No claim was ever granted, so the earned total is unchanged.
+  expect(within(panel).getByText("400 earned")).toBeInTheDocument();
+});
+
+test("Slack not yet installed keeps the step and its reward on offer", async () => {
+  configureQuestPage(context, "admin", { slackClaimed: false });
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      ...slackInstalled(),
+      isConnected: false,
+      isInstalled: false,
+      workspaceName: null,
+      installUrl: "https://slack.com/oauth/v2/authorize?client_id=quest",
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  expect(normalizedText(entry)).toBe("Get more credits2/6");
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("5,200 to go")).toBeInTheDocument();
+  const row = screen.getByTestId("get-started-quest-slack");
+  expect(row.getAttribute("role")).toBe("menuitem");
+  expect(within(row).getByText("+2,000")).toBeInTheDocument();
+});
+
+test("A failed Slack status read leaves the Slack step as the rewards report it", async () => {
+  configureQuestPage(context, "admin", { slackClaimed: false });
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Slack status is temporarily unavailable.",
+      },
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  const entry = await waitFor(() => {
+    return screen.getByTestId("get-started-entry");
+  });
+  expect(normalizedText(entry)).toBe("Get more credits2/6");
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("5,200 to go")).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("get-started-quest-slack")).getByText("+2,000"),
+  ).toBeInTheDocument();
 });
 
 test("The entry stays hidden while the switch is off", async () => {

@@ -416,6 +416,48 @@ describe("CHAT-02: queued chat thread picks", () => {
     await cancelChatRun(actor, takeover.runId);
   }, 90_000);
 
+  it("leaves a queued automation event for the pick while steering later prompts", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor(
+      {},
+      "team",
+    );
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const automation = await createWebhookAutomation(actor, agentId);
+    const running = await sendChatRun(actor, {
+      agentId,
+      threadId: automation.threadId,
+      prompt: "the automation thread's running run",
+    });
+    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    await waitForRunStatus(actor, running.runId, "running");
+
+    await postWorkflowWebhook(automation, "automation while the run runs");
+    const pending = await chat.listThreadEvents(actor, automation.threadId);
+    expect(
+      pending.events.filter((event) => {
+        return event.eventType === "input.automation" && !event.runId;
+      }),
+    ).toHaveLength(1);
+    const promptEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: automation.threadId,
+        prompt: "steer past the automation",
+        clientEventId: promptEventId,
+      },
+      [201],
+    );
+
+    await expect(
+      api.nextSteerableInput(runningClaim.claim.sandboxToken, running.runId),
+    ).resolves.toStrictEqual({
+      input: { eventId: promptEventId, prompt: "steer past the automation" },
+    });
+    await cancelChatRun(actor, running.runId);
+  }, 90_000);
+
   it("keeps a waiting thread pickable after the cron sweep finds the organization full", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();

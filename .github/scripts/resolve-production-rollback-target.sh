@@ -31,12 +31,21 @@ readonly CHAT_THREAD_SNAPSHOT_R2_ONLY_COMMIT=3d93ff8d4b4a07a5888e3030e69b340f40d
 # #37063 removed the last reader of agent_run_queue, which migration 1272
 # drops. Earlier APIs still read it while promoting queued runs.
 readonly QUEUED_RUN_PROMOTION_REMOVAL_COMMIT=84ac71914345b8360f3df43cc2cd47f0a8af7a23
+# #37082 (release 3) moved steering onto chat events and stopped reading and
+# writing active_input_deliveries and active_input_delivery_items, which
+# migration 1273 drops. Earlier APIs reserve steered input in those tables.
+readonly UNIFIED_CHAT_QUEUE_RELEASE_COMMIT=553fc566b7e9be2cd4a8c1de314d55939b99490a
+# #37115 (release 4) added the steerable-inputs next and steered endpoints.
+# Release 6 Runners and their Guests steer only through them, so an earlier API
+# cannot serve a draining release 6 Runner after a rollback.
+readonly RUNNER_STEER_ENDPOINTS_COMMIT=fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
 readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1261_drop_chat_thread_snapshot_jsonb.sql
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
+readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -96,6 +105,12 @@ if ! git merge-base --is-ancestor "$ADVISORY_LOCK_PREPARATION_COMMIT" "$TARGET_C
 fi
 if ! git merge-base --is-ancestor "$QUEUED_RUN_PROMOTION_REMOVAL_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the queued run promotion removal: ${QUEUED_RUN_PROMOTION_REMOVAL_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$UNIFIED_CHAT_QUEUE_RELEASE_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the unified chat queue release: ${UNIFIED_CHAT_QUEUE_RELEASE_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$RUNNER_STEER_ENDPOINTS_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the runner steer endpoints: ${RUNNER_STEER_ENDPOINTS_COMMIT}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames
@@ -171,6 +186,20 @@ if [[ ! "$chat_event_schema_header_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$chat_event_schema_header_retired_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Chat Event schema header retirement: ${chat_event_schema_header_retired_commit}."
+fi
+
+# Migration 1274 drops chat_threads.reasoning_effort,
+# org_members_metadata.voice_input_model and
+# morning_brief_native_occurrences.collection_facts. Earlier APIs still declare
+# them, so every insert, bare select and bare returning on those tables names
+# the dropped columns.
+retired_preference_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$RETIRED_PREFERENCE_COLUMNS_DROP_PATH" | sed -n '1p')
+if [[ ! "$retired_preference_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged retired preference column drop on main."
+fi
+if ! git merge-base --is-ancestor "$retired_preference_columns_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired preference column drop: ${retired_preference_columns_drop_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

@@ -77,30 +77,6 @@ async function configureOrganizationApi(
   return provider;
 }
 
-function holdAnthropicInference() {
-  const entered = createDeferredPromise<void>(context.signal);
-  const released = createDeferredPromise<void>(context.signal);
-  const release = () => {
-    if (!released.settled()) {
-      released.resolve();
-    }
-  };
-  onTestFinished(async () => {
-    release();
-    await flushWaitUntilForTest();
-  });
-  server.use(
-    http.post("https://api.anthropic.com/v1/messages", async () => {
-      entered.resolve();
-      await released.promise;
-      return new HttpResponse(null, {
-        headers: { "content-type": "text/event-stream" },
-      });
-    }),
-  );
-  return { entered: entered.promise, release };
-}
-
 type Claim = Awaited<ReturnType<typeof runs.claimRunnerJob>>;
 
 /**
@@ -1386,9 +1362,7 @@ describe("member-effective model policy contract", () => {
       displayName: "Other member",
       visibility: "private",
     });
-    // Keep the API-first provider pending while inspecting route attribution;
-    // explicit cancellation owns the run's terminal state in this case.
-    const inference = holdAnthropicInference();
+    // Explicit cancellation owns the run's terminal state in this case.
     const chat = createChatFilesBddApi(context);
     const clientEventId = randomUUID();
     const sent = await chat.requestSendEvent(
@@ -1404,8 +1378,8 @@ describe("member-effective model policy contract", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the member send to be accepted");
     }
-    // The background pick launches the run before its held inference starts.
-    await inference.entered;
+    // The background pick launches the run.
+    await flushWaitUntilForTest();
     const runId = (
       await chat.listThreadEvents(member, sent.body.threadId)
     ).events.find((event) => {
@@ -1423,7 +1397,6 @@ describe("member-effective model policy contract", () => {
       selectedModel: f.model,
     });
     await runs.requestCancelRun(member, runId, [200]);
-    inference.release();
     await flushWaitUntilForTest();
     await expect(runs.readRun(member, runId)).resolves.toMatchObject({
       status: "cancelled",
