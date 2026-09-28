@@ -149,6 +149,7 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_workflow_enqueue_display_name"
   | "api_dispatch_workflow_enqueue_transaction"
   | "api_dispatch_workflow_enqueue_transaction_callback"
+  | "api_dispatch_workflow_enqueue_model_selection"
   | "api_dispatch_workflow_enqueue_event_context_insert"
   | "api_dispatch_workflow_enqueue_event_insert"
   | "api_dispatch_workflow_enqueue_queue_upsert"
