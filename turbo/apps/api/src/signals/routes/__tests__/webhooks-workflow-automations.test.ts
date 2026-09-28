@@ -258,14 +258,14 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     const runnerGroup = runsApi.configureRunnerGroup();
     const webhook = await createWebhookAutomation(workflowId);
     const timestamp = Math.floor(now() / 1000);
-    expect(
-      await postWorkflowWebhook({
+    await expect(
+      postWorkflowWebhook({
         token: webhook.token,
         rawBody: JSON.stringify({ event: "occupy-thread" }),
         secret: webhook.secret,
         timestamp,
       }),
-    ).toStrictEqual({
+    ).resolves.toStrictEqual({
       status: 200,
       body: { success: true, duplicate: false },
     });
@@ -355,7 +355,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       }),
       [204],
     );
-    expect(await postWorkflowWebhook(delivery)).toStrictEqual({
+    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
       status: 500,
       body: { error: "Internal server error" },
     });
@@ -369,7 +369,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     await runsApi.ensureOrgModelProvider(actor, {
       model: "claude-fable-5-1",
     });
-    expect(await postWorkflowWebhook(delivery)).toStrictEqual({
+    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
       status: 200,
       body: { success: true, duplicate: false },
     });
@@ -380,7 +380,7 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
         runId: expect.any(String),
       }),
     );
-    expect(await postWorkflowWebhook(delivery)).toStrictEqual({
+    await expect(postWorkflowWebhook(delivery)).resolves.toStrictEqual({
       status: 200,
       body: { success: true, duplicate: true },
     });
