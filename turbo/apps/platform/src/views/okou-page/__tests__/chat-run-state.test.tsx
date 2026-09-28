@@ -30,6 +30,23 @@ function requiredButton(name: string, container: ParentNode): HTMLElement {
   return button;
 }
 
+function userMessageInHistory(text: string): HTMLElement | null {
+  return (
+    screen
+      .queryAllByText(text)
+      .map((element) => {
+        return element.closest<HTMLElement>('[data-role="user"]');
+      })
+      .find((element) => {
+        return element !== null;
+      }) ?? null
+  );
+}
+
+function queuedMessageRow(): HTMLElement | null {
+  return screen.queryByRole("listitem", { name: "Queued message" });
+}
+
 function queuedEvent(
   id: string,
   runId: string,
@@ -168,9 +185,9 @@ test("Manage work waiting in the queue", async () => {
   await expect(
     screen.findByText("The queued report is ready."),
   ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(screen.queryByText("Waiting in queue...")).not.toBeInTheDocument();
-  });
+  // The follow-up still has no run, so the thread keeps waiting in the queue.
+  expect(screen.getByText("Waiting in queue...")).toBeInTheDocument();
+  expect(userMessageInHistory("Add the appendix")).not.toBeNull();
 
   events.push(
     promptEvent({
@@ -218,47 +235,48 @@ test("Manage work waiting in the queue", async () => {
   });
 });
 
-test("Show a sending prompt without thinking until its run starts", async () => {
+test("Show thinking as soon as a new prompt is sent", async () => {
   const runAccepted = context.mocks.deferred<void>();
   const lifecycle = installRunChat({ sendGate: runAccepted.promise });
 
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  await sendText("Start the pending analysis");
-  await expect(
-    screen.findByText("Start the pending analysis"),
-  ).resolves.toBeVisible();
-  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
-  expect(queryButton("Stop")).toBeNull();
+  await sendText("Summarize the launch risks");
+
+  await waitFor(() => {
+    expect(userMessageInHistory("Summarize the launch risks")).not.toBeNull();
+    expect(screen.getByText("Thinking...")).toBeInTheDocument();
+  });
+  expect(queuedMessageRow()).toBeNull();
 
   runAccepted.resolve(undefined);
   await waitFor(() => {
     expect(queryButton("Stop")).toBeVisible();
-    expect(screen.getByText("Thinking...")).toBeInTheDocument();
   });
-  expect(screen.getAllByText("Start the pending analysis")).toHaveLength(1);
+  expect(screen.getByText("Thinking...")).toBeInTheDocument();
+  expect(screen.getAllByText("Summarize the launch risks")).toHaveLength(1);
 
-  lifecycle.completeRun("The pending analysis is complete.");
+  lifecycle.completeRun("The launch risks are summarized.");
   await expect(
-    screen.findByText("The pending analysis is complete."),
+    screen.findByText("The launch risks are summarized."),
   ).resolves.toBeVisible();
   await expect(findButton("Send")).resolves.toBeVisible();
   expect(queryButton("Stop")).toBeNull();
 });
 
-test("Show a prompt queued behind the running run in the queue bar", async () => {
+test("Keep a prompt waiting for steer delivery in the message history", async () => {
   installRunChat({
     activeRunIds: [RUN_A],
     chatEvents: [
       promptEvent({
-        id: "behind-running-user",
+        id: "steer-running-user",
         runId: RUN_A,
         seqId: 1,
         text: "Draft the rollout",
       }),
       promptEvent({
-        id: "behind-queued-user",
+        id: "steer-waiting-user",
         seqId: 2,
         text: "Add the appendix",
       }),
@@ -268,32 +286,29 @@ test("Show a prompt queued behind the running run in the queue bar", async () =>
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  const queued = await screen.findByRole("listitem", {
-    name: "Queued message",
-  });
-  expect(within(queued).getByText("Add the appendix")).toBeInTheDocument();
   await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
-  await expect(findButton("Stop")).resolves.toBeVisible();
+  expect(userMessageInHistory("Add the appendix")).not.toBeNull();
+  expect(queuedMessageRow()).toBeNull();
 });
 
-test("Show a prompt waiting for a slot without thinking or Stop", async () => {
+test("Show waiting in queue for a persisted prompt without a run", async () => {
   installRunChat({
     chatEvents: [
       promptEvent({
-        id: "slot-finished-user",
+        id: "org-full-finished-user",
         runId: RUN_A,
         seqId: 1,
         text: "Draft the rollout",
       }),
       assistantEvent({
-        id: "slot-finished-result",
+        id: "org-full-finished-result",
         runId: RUN_A,
         seqId: 2,
         text: "The rollout draft is ready.",
       }),
-      completedEvent({ id: "slot-finished-done", runId: RUN_A, seqId: 3 }),
+      completedEvent({ id: "org-full-finished-done", runId: RUN_A, seqId: 3 }),
       promptEvent({
-        id: "slot-queued-user",
+        id: "org-full-waiting-user",
         seqId: 4,
         text: "Add the appendix",
       }),
@@ -303,12 +318,47 @@ test("Show a prompt waiting for a slot without thinking or Stop", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  const queued = await screen.findByRole("listitem", {
-    name: "Queued message",
-  });
-  expect(within(queued).getByText("Add the appendix")).toBeInTheDocument();
+  await expect(
+    screen.findByText("Waiting in queue..."),
+  ).resolves.toBeInTheDocument();
+  expect(userMessageInHistory("Add the appendix")).not.toBeNull();
+  expect(queuedMessageRow()).toBeNull();
   expect(screen.getByText("The rollout draft is ready.")).toBeInTheDocument();
   expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
   expect(queryButton("Stop")).toBeNull();
   expect(queryButton("Send")).not.toBeNull();
+});
+
+test("Show waiting in queue for a persisted automation event without a run", async () => {
+  installRunChat({
+    chatEvents: [
+      {
+        id: "org-full-waiting-automation",
+        eventType: "input.automation",
+        role: "user",
+        runId: undefined,
+        content: null,
+        seqId: 1,
+        createdAt: "2026-08-01T10:00:01.000Z",
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "automation",
+              workflowName: "Release watcher",
+              automationBrief: "Check rollout health",
+            },
+          ],
+        },
+      },
+    ],
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await expect(
+    screen.findByText("Waiting in queue..."),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
 });

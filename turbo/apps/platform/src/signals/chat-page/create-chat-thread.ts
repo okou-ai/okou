@@ -105,7 +105,6 @@ import type {
 } from "./chat-event.ts";
 import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
 import {
-  deriveRunIndicatorStateFromChatEvents,
   liveRunIdsFromChatEvents,
   queuedEventsFromChatEvents,
   type RunIndicatorState,
@@ -1333,7 +1332,8 @@ function thinkingIndicatorProjectionFromGroups(
   const { activeGroups } = groups;
   const lastGroup = activeGroups.at(-1);
   if (!lastGroup) {
-    return { mode: null };
+    // Automation input waiting in the queue bar is the only content.
+    return { mode: runState === "queued" ? "waiting-queued" : null };
   }
   const lastIsAssistant = lastGroup.role === "assistant";
   const lastAssistantEvent = lastIsAssistant
@@ -2199,11 +2199,15 @@ interface BrowserLifecycleOptimisticEvent {
 
 function createPagedEventProjections({
   chatEvents$,
+  serverRunState$,
+  hasOptimisticUserMessage$,
   registeredEvents$,
   eventTrees$,
   eventTreeErrors$,
 }: {
   chatEvents$: Computed<ChatEvent[]>;
+  serverRunState$: Computed<RunIndicatorState>;
+  hasOptimisticUserMessage$: Computed<boolean>;
   registeredEvents$: State<RegisteredChatEvent[]>;
   eventTrees$: Computed<ReadonlyMap<string, Root>>;
   eventTreeErrors$: Computed<ReadonlySet<string>>;
@@ -2217,7 +2221,10 @@ function createPagedEventProjections({
       get(eventTreeErrors$),
     );
   });
-  const eventRunIndicatorState$ = createEventRunIndicatorState(chatEvents$);
+  const eventRunIndicatorState$ = createEventRunIndicatorState({
+    serverRunState$,
+    hasOptimisticUserMessage$,
+  });
   return {
     rawEvents$,
     chatEvents$,
@@ -2536,6 +2543,8 @@ function createChatThreadMessagePipeline({
   });
   const projections = createPagedEventProjections({
     chatEvents$: chatEvents.chatEvents$,
+    serverRunState$: chatEvents.serverRunState$,
+    hasOptimisticUserMessage$: chatEvents.hasOptimisticUserMessage$,
     registeredEvents$: resources.registeredEvents$,
     eventTrees$: resources.eventTrees$,
     eventTreeErrors$: resources.eventTreeErrors$,
@@ -2655,10 +2664,18 @@ export const ensureDraft$ = command(
   },
 );
 
-function createEventRunIndicatorState(chatEvents$: Computed<ChatEvent[]>) {
+function createEventRunIndicatorState({
+  serverRunState$,
+  hasOptimisticUserMessage$,
+}: {
+  serverRunState$: Computed<RunIndicatorState>;
+  hasOptimisticUserMessage$: Computed<boolean>;
+}) {
   return computed((get): Promise<RunIndicatorState> => {
+    // A prompt still being sent is about to start or steer a run, so it shows
+    // Thinking before the server has persisted anything.
     return Promise.resolve(
-      deriveRunIndicatorStateFromChatEvents(get(chatEvents$)),
+      get(hasOptimisticUserMessage$) ? "running" : get(serverRunState$),
     );
   });
 }

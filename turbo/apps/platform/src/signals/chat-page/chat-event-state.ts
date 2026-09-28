@@ -58,9 +58,9 @@ export function lastAssistantCancelledFromGroups(
   return lastEvent ? isCancelledRunEvent(lastEvent) : false;
 }
 
-// Only a run makes the thread active. An input without a run is either still
-// being sent (optimistic) or waiting in the queue; neither shows "Thinking…".
-// "queued" is kept for historical `run.queued` markers.
+// "running" means a run is live or a sent prompt is still optimistic; "queued"
+// means the server holds input without a run, or a historical `run.queued`
+// marker is open.
 export type RunIndicatorState = "running" | "queued" | null;
 type ActiveRunIndicatorState = "running" | null;
 
@@ -238,6 +238,32 @@ export function deriveRunIndicatorStateFromChatEvents(
     return activeRunState;
   }
   return queuedRunIds.size > 0 ? "queued" : activeRunState;
+}
+
+function hasRunlessInput(events: readonly ChatEvent[]): boolean {
+  const revokedEventIds = revokedChatEventIds(events);
+  return events.some((event) => {
+    return (
+      isQueuedChatEvent(event) &&
+      event.runId === undefined &&
+      !revokedEventIds.has(event.id)
+    );
+  });
+}
+
+/**
+ * Run state of the thread as the server has persisted it. Pass only persisted
+ * events: optimistic input has not reached the server queue yet. Input that no
+ * run has consumed while no run is live waits in the server queue.
+ */
+export function deriveServerRunStateFromChatEvents(
+  events: readonly ChatEvent[],
+): RunIndicatorState {
+  const state = deriveRunIndicatorStateFromChatEvents(events);
+  if (state !== null) {
+    return state;
+  }
+  return hasRunlessInput(events) ? "queued" : null;
 }
 
 export function liveRunIdsFromChatEvents(

@@ -164,7 +164,7 @@ async function sendAfterPreviousFailure() {
 
   await expect(screen.findByText("Continue checking")).resolves.toBeVisible();
   await waitFor(() => {
-    expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
+    expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
     expect(screen.queryByText(OLD_ERROR)).toBeNull();
   });
   await expectRetainedResult();
@@ -302,7 +302,7 @@ test("Retire completion and followups while retaining the result actions", async
 
   await expect(screen.findByText("Start another check")).resolves.toBeVisible();
   await waitFor(() => {
-    expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
+    expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
     expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
   });
   await expectRetainedResult();

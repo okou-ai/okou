@@ -172,13 +172,15 @@ test("Do not show user run logs before a run ID is assigned", async () => {
   });
   await readyChat();
 
-  // A persisted message without a run waits in the queue bar until a run
-  // consumes it, so it has no run to link to yet.
-  const queued = await screen.findByRole("listitem", {
-    name: "Queued message",
-  });
-  expect(queued).toHaveTextContent("Wait for run creation");
-  expect(findLink(queued, "View run logs")).toBeUndefined();
+  const actions = screen
+    .getByText("Wait for run creation")
+    .closest('[data-role="user"]')
+    ?.querySelector("[data-chat-user-message-actions]");
+  if (!actions) {
+    throw new Error("User message action row was not available");
+  }
+  expect(findLink(actions, "View run logs")).toBeUndefined();
+  expect(buttonIn(actions, "Copy message")).toBeInTheDocument();
 });
 
 test("Copy workflow trigger bubbles and inspect their associated runs", async () => {

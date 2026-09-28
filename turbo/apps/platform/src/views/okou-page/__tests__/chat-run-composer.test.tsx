@@ -299,11 +299,13 @@ test("Show follow-up instructions in the active conversation", async () => {
   await waitFor(() => {
     expect(queuedMessages).toHaveLength(1);
   });
-  // The persisted follow-up has no run yet, so it waits in the queue bar
-  // behind the running run.
-  const queued = await screen.findByRole("listitem", {
-    name: "Queued message",
-  });
-  expect(queued).toHaveTextContent("Keep the owner names in the plan");
+  await expect(
+    screen.findByText("Keep the owner names in the plan"),
+  ).resolves.toBeVisible();
+  expectTextOrder(
+    "I have mapped the launch risks.",
+    "Prioritize the reversible steps",
+    "Keep the owner names in the plan",
+  );
   await expect(findButton("Stop")).resolves.toBeVisible();
 });

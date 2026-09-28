@@ -4332,7 +4332,7 @@ function ThinkingLabel({
 }) {
   const { t } = useTranslation();
 
-  // Only historical `run.queued` markers reach this state.
+  // The server holds input without a run, or a historical `run.queued` marker.
   if (isQueued) {
     const waitingIn = t(($) => {
       return $.chat.run.waitingIn;

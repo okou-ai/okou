@@ -15,6 +15,10 @@ import { reloadBillingStatus$ } from "../okou-page/billing.ts";
 import { notifyChatEventsChanged$ } from "./chat-event-change-registry.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import {
+  deriveServerRunStateFromChatEvents,
+  type RunIndicatorState,
+} from "./chat-event-state.ts";
+import {
   appendOptimisticChatEvent$,
   createOptimisticChatEventEntry,
   createOptimisticChatEventsForThread,
@@ -228,6 +232,9 @@ export function createChatEventStorageSignals({
       return entry.optimisticUserMessageAssociation !== undefined;
     });
   });
+  const serverRunState$ = computed((get): RunIndicatorState => {
+    return deriveServerRunStateFromChatEvents(get(persistentChatEvents$));
+  });
   const chatEvents$ = createStoredChatEventsComputed({
     persistentEvents$: persistentChatEvents$,
     optimisticEvents$,
@@ -294,6 +301,7 @@ export function createChatEventStorageSignals({
   return {
     chatEvents$,
     hasOptimisticUserMessage$,
+    serverRunState$,
     initializeIndexedDbEvents$,
     appendOptimisticEvent$,
     syncRemoteEvents$,

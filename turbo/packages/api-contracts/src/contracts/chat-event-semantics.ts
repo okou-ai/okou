@@ -213,13 +213,12 @@ export function semanticChatEventsFromChatEvents(
       ];
     }
 
-    // A persisted input without a run waits in the queue until a replacement
-    // carrying the run revokes it. An optimistic input is still being sent.
+    // User prompts always stay in the conversation, even before a run picks
+    // them up. Only automation events without a run wait in the queue bar.
     const isQueued =
-      (event.eventType === "input.prompt" ||
-        event.eventType === "input.automation") &&
+      event.eventType === "input.automation" &&
       event.runId === undefined &&
-      event.seqId !== undefined;
+      event.optimisticUserMessageAssociation !== "run";
     return [
       { event, isQueued, inputCreatedAt: inputCreatedAtById.get(event.id) },
     ];
