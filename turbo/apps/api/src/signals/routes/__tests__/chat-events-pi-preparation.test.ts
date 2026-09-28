@@ -204,13 +204,27 @@ describe("CHAT-02: model-first provider policies", () => {
     await flushWaitUntilForTest();
     preparation.releaseAll();
     const events = await chat.listThreadEvents(actor, thread.id);
+    // An unexpected pick failure rejects the input without launching a run.
     expect(events.events).toStrictEqual([
       expect.objectContaining({
         eventType: "input.prompt",
         id: clientEventId,
       }),
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "internal_error",
+      }),
+      expect.objectContaining({
+        eventType: "output.error",
+        error: "internal_error",
+      }),
     ]);
-    expect(events.events[0]?.runId).toBeUndefined();
+    expect(
+      events.events.filter((event) => {
+        return event.runId !== undefined;
+      }),
+    ).toStrictEqual([]);
   });
 
   it.each(["pending", "cancelled"] as const)(

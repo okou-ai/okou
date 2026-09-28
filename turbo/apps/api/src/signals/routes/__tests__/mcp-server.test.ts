@@ -932,28 +932,13 @@ async function messageFixture() {
     if (response.status !== 201) {
       throw new Error("Expected an accepted canonical message");
     }
-    await waitForRejection(response.body.threadId, clientEventId);
+    // A send only enqueues; the background pick rejects this no-credit input
+    // without a run. Finish it so later reads, including reads after the
+    // history moves into a snapshot, see the rejection.
+    await flushWaitUntilForTest();
     return response.body;
   }
-  /**
-   * A send only enqueues; the background pick rejects this no-credit input
-   * without a run. Wait for that rejection so later reads are stable.
-   */
-  async function waitForRejection(threadId: string, clientEventId: string) {
-    await expect
-      .poll(async () => {
-        return (await f.chat.listThreadEvents(f.actor, threadId)).events.some(
-          (event) => {
-            return (
-              event.eventType === "input.rejected" &&
-              event.revokesEventId === clientEventId
-            );
-          },
-        );
-      })
-      .toBe(true);
-  }
-  return { ...f, send, waitForRejection };
+  return { ...f, send };
 }
 
 async function snapshotMessages(threadId: string) {
@@ -3432,7 +3417,7 @@ describe("MCP chat mutations", () => {
       },
       [201],
     );
-    await f.waitForRejection(thread.id, requestId);
+    await flushWaitUntilForTest();
     const before = await f.chat.listThreadEvents(f.actor, thread.id);
     const original = before.events.find((event) => {
       return event.id === requestId;
@@ -3499,7 +3484,7 @@ describe("MCP chat mutations", () => {
         },
         [201],
       );
-      await f.waitForRejection(thread.id, requestId);
+      await flushWaitUntilForTest();
       const before = await f.chat.listThreadEvents(f.actor, thread.id);
       const failed = await callTool(
         f.auth.token({ scope: defaultScopes }),

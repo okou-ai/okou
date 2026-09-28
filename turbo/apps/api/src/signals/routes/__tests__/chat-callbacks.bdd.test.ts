@@ -3662,9 +3662,8 @@ describe("CHAT-02: drain-time admission failure", () => {
       );
     });
     expect(errors).toHaveLength(1);
-    expect(errors[0]?.content).toContain("Add credits");
     expect(errors[0]?.content).toContain(
-      "https://app.okou.ai/?settings=billing&billingView=credits",
+      "Buy more credits or adjust auto-recharge: https://app.okou.ai/?settings=usage",
     );
     expect(
       (await api.listAgentRuns(actor, { limit: 20 })).runs.filter((run) => {

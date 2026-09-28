@@ -4,6 +4,7 @@ import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/c
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import {
   createChatFilesBddApi,
@@ -361,6 +362,8 @@ describe("CHAT-02 chat messages and visible validation", () => {
     }
     expect(sent.body.runId).toBeNull();
     expect(sent.body.threadId).toStrictEqual(expect.any(String));
+    // The background pick rejects the input for missing credits.
+    await flushWaitUntilForTest();
 
     const threadId = sent.body.threadId;
     await expect(api.readThreadDraft(actor, threadId)).resolves.toStrictEqual({
@@ -589,18 +592,28 @@ describe("CHAT-02 chat messages and visible validation", () => {
     }
     expect(first.body.threadId).toBe(clientThreadId);
 
+    // A retried first send without a client event id settles on the
+    // thread's first input instead of enqueuing a second one.
     const retry = await api.requestSendEvent(
       actor,
       {
         agentId: agent.agentId,
-        prompt: "Retry without an associated run",
+        prompt: "Retry the first client-thread send",
         clientThreadId,
       },
-      [400],
+      [201],
     );
-    expectApiError(retry.body);
-    expect(retry.body.error.code).toBe("BAD_REQUEST");
-    expect(retry.body.error.message).toBe("Client thread id is already in use");
+    expect(retry.body).toStrictEqual(first.body);
+    await flushWaitUntilForTest();
+    const retriedEvents = await api.listThreadEvents(actor, clientThreadId);
+    expect(
+      retriedEvents.events.filter((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.revokesEventId === undefined
+        );
+      }),
+    ).toHaveLength(1);
 
     const otherAgent = await bdd.createAgent(actor, {
       displayName: "Client-thread mismatch branch agent",

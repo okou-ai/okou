@@ -1094,6 +1094,7 @@ describe("CHAT-02: run-level model overrides", () => {
       createdAt: expect.any(String),
     });
     await expectThreadCreatedModelEvent(actor, threadId, "gpt-5.6-terra");
+    await flushWaitUntilForTest();
 
     const messages = await waitForThreadMessages(actor, threadId, (items) => {
       return assistantMessages(items).some((message) => {
