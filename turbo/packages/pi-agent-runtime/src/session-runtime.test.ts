@@ -10,6 +10,7 @@ import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
+import { inspectPiSessionJsonl } from "./api";
 import { piMemorySummaryTokenCount } from "./memory-recall";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
@@ -444,6 +445,147 @@ async function startResponsesProvider(
 }
 
 describe("official Pi AgentSession runtime", () => {
+  it("resumes pre-migration OpenRouter Chat JSONL through full-context Responses", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-openrouter-history-"));
+    onTestFinished(async () => {
+      await rm(cwd, { recursive: true, force: true });
+    });
+    const provider = await startResponsesProvider((response) => {
+      responsesTextSse(response, "post-migration answer");
+    });
+    onTestFinished(async () => {
+      await provider.close();
+    });
+    const legacy = SessionManager.create(cwd, cwd, { id: randomUUID() });
+    legacy.appendMessage({
+      role: "user",
+      content: "legacy user context",
+      timestamp: 1,
+    });
+    legacy.appendMessage({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "legacy reasoning context" },
+        { type: "text", text: "legacy answer context" },
+        {
+          type: "toolCall",
+          id: "legacy_tool_call",
+          name: "read",
+          arguments: { path: "/home/user/workspace/AGENTS.md" },
+        },
+      ],
+      api: "openai-completions",
+      provider: "openrouter",
+      model: "openai/gpt-5.6-terra",
+      usage: {
+        input: 4,
+        output: 3,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 7,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0,
+        },
+      },
+      stopReason: "toolUse",
+      timestamp: 2,
+    });
+    legacy.appendMessage({
+      role: "toolResult",
+      toolCallId: "legacy_tool_call",
+      toolName: "read",
+      content: [{ type: "text", text: "legacy tool output" }],
+      isError: false,
+      timestamp: 3,
+    });
+    legacy.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "legacy tool conclusion" }],
+      api: "openai-completions",
+      provider: "openrouter",
+      model: "openai/gpt-5.6-terra",
+      usage: {
+        input: 2,
+        output: 2,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 4,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0,
+        },
+      },
+      stopReason: "stop",
+      timestamp: 4,
+    });
+    const sessionFile = legacy.getSessionFile();
+    if (!sessionFile) throw new Error("Missing legacy session file");
+    const created = await createPiAgentSessionForRuntime({
+      cwd,
+      agentDir: join(cwd, ".pi"),
+      sessionManager: SessionManager.open(sessionFile),
+      model: {
+        provider: "openrouter",
+        baseUrl: provider.baseUrl,
+        apiKey: "test-key",
+        model: "openai/gpt-5.6-terra",
+        dialect: "openai-responses",
+        transport: "sse",
+        thinkingLevel: "low",
+      },
+      appendSystemPrompt: null,
+      resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
+    });
+    try {
+      await created.session.prompt("post-migration prompt");
+      expect(provider.requests).toHaveLength(1);
+      expect(provider.requests[0]?.url).toBe("/v1/responses");
+      expect(provider.requests[0]?.body).toMatchObject({ store: false });
+      expect(provider.requests[0]?.body).not.toHaveProperty(
+        "previous_response_id",
+      );
+      const requestJson = JSON.stringify(provider.requests[0]?.body);
+      for (const marker of [
+        "legacy user context",
+        "legacy reasoning context",
+        "legacy answer context",
+        "legacy tool output",
+        "legacy tool conclusion",
+        "post-migration prompt",
+      ]) {
+        expect(requestJson.split(marker)).toHaveLength(2);
+      }
+      expect(created.session.messages.at(-1)).toMatchObject({
+        role: "assistant",
+        content: [{ type: "text", text: "post-migration answer" }],
+        stopReason: "stop",
+      });
+      const sessionJsonl = await readFile(sessionFile, "utf8");
+      expect(inspectPiSessionJsonl(sessionJsonl)).toMatchObject({
+        messageCount: 6,
+        hasPendingToolCalls: false,
+        isSettledCheckpoint: true,
+      });
+      for (const marker of [
+        "legacy reasoning context",
+        "legacy tool output",
+        "post-migration prompt",
+        "post-migration answer",
+      ]) {
+        expect(sessionJsonl.split(marker)).toHaveLength(2);
+      }
+    } finally {
+      created.session.dispose();
+    }
+  });
+
   it.each(["preheated", "sandbox"] as const)(
     "appends intermediate commentary guidance in %s sessions",
     async (mode) => {
