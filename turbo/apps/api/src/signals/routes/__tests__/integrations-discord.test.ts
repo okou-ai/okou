@@ -621,11 +621,10 @@ describe("verified Discord integration settings", () => {
     const ownerProfile = api.user(owner);
     const defaultAgentId = await api.bootstrapLimitedFreeOnboarding(
       ownerProfile,
-      { displayName: "Workspace default" },
+      {
+        displayName: "Okou",
+      },
     );
-    await api.updateAgentMetadata(ownerProfile, defaultAgentId, {
-      displayName: "Workspace default",
-    });
     await fixture(owner);
     const ownAgent = await api.createAgent(ownerProfile, {
       visibility: "private",
@@ -634,7 +633,7 @@ describe("verified Discord integration settings", () => {
 
     await expect(status(owner)).resolves.toMatchObject({
       defaultAgentId,
-      defaultAgentName: "Workspace default",
+      defaultAgentName: "Okou",
     });
 
     await api.deleteAgent(ownerProfile, ownAgent.agentId);
