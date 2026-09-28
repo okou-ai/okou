@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import type { AgentPhoneLinkStatusResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import type { SlackOrgStatus } from "@okouai/api-contracts/contracts/integrations-slack";
 import {
   GET_STARTED_REWARDS_CHANGED_EVENT,
   getStartedContract,
@@ -11,10 +12,17 @@ import { apiClient$ } from "../api-client.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
-import { detach, Reason, resetSignal, waitForOperation } from "../utils.ts";
+import {
+  detach,
+  Reason,
+  resetSignal,
+  settle,
+  waitForOperation,
+} from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { agentPhoneLinkStatus$ } from "./agentphone.ts";
+import { slackOrgData$ } from "./slack.ts";
 
 export type GetStartedQuestStatus = "todo" | "inReview" | "done" | "rejected";
 export interface GetStartedQuest {
@@ -111,6 +119,30 @@ function reconcileImessageQuest(
   return quests;
 }
 
+/**
+ * The Slack quest, reconciled with the org's Slack install.
+ *
+ * Like the iMessage quest, the reward is only granted by the install flow, so
+ * a workspace that added Slack before the quest existed holds no claim for it.
+ * The step is done all the same, and offering to install an app that is
+ * already installed leads nowhere. The row reads as finished, without the
+ * credits.
+ */
+function reconcileSlackQuest(
+  quests: readonly GetStartedQuest[],
+  slack: GetStartedQuest,
+  org: SlackOrgStatus,
+): readonly GetStartedQuest[] {
+  if (org.isInstalled !== true) {
+    return quests;
+  }
+  return quests.map((quest): GetStartedQuest => {
+    return quest === slack
+      ? { ...quest, status: "done", canEarnMore: false }
+      : quest;
+  });
+}
+
 export const getStartedQuests$ = computed(
   async (get): Promise<readonly GetStartedQuest[]> => {
     const data = await get(getStartedStatus$);
@@ -153,15 +185,28 @@ export const getStartedQuests$ = computed(
       }
       return { ...quest, status, rejectedReason };
     });
-    const imessage = quests.find((quest) => {
+    const slack = quests.find((quest) => {
+      return quest.key === "slack";
+    });
+    // Only a quest that can still be earned depends on the install. A failed
+    // Slack read leaves the quest as the API reported it instead of taking the
+    // whole list down; the Slack surfaces own reporting that failure.
+    const slackOrg = slack?.canEarnMore
+      ? await settle(get(slackOrgData$))
+      : null;
+    const withSlack =
+      slack && slackOrg?.ok
+        ? reconcileSlackQuest(quests, slack, slackOrg.value)
+        : quests;
+    const imessage = withSlack.find((quest) => {
       return quest.key === "imessage";
     });
     // Only a quest that can still be earned depends on the link.
     if (!imessage?.canEarnMore) {
-      return quests;
+      return withSlack;
     }
     return reconcileImessageQuest(
-      quests,
+      withSlack,
       imessage,
       await get(agentPhoneLinkStatus$),
     );
