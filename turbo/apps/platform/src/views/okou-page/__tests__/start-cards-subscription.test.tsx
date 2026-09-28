@@ -1,5 +1,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import {
+  billingStatusContract,
+  type BillingStatusResponse,
+} from "@okouai/api-contracts/contracts/billing";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
@@ -10,6 +14,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -56,14 +61,17 @@ function installPersonalAccounts(initial: readonly ModelProviderResponse[]): {
 async function setupStartCards(
   subscriptionPinned: boolean,
   accounts: readonly ModelProviderResponse[] = [],
+  search = "",
+  supportByok = true,
 ): Promise<{
   readonly replaceAccounts: (next: readonly ModelProviderResponse[]) => void;
 }> {
   mockTemplateChat();
+  installPlan(supportByok);
   const personalAccounts = installPersonalAccounts(accounts);
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/agents/${AGENT_ID}/chat${search}`,
     featureSwitches: {
       [FeatureSwitchKey.ComposerTaskChips]: false,
       [FeatureSwitchKey.StartCardModelSubscription]: subscriptionPinned,
@@ -71,6 +79,46 @@ async function setupStartCards(
   });
   await findComposerEditor();
   return { replaceAccounts: personalAccounts.replace };
+}
+
+/** Serves a plan whose only difference from Pro is whether BYOK is allowed. */
+function installPlan(supportByok: boolean): void {
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    const status: BillingStatusResponse = {
+      showUsagePack: false,
+      tier: "pro",
+      ...billingPlanCapabilities("pro"),
+      supportByok,
+      credits: 20_000,
+      onboardingPaymentPending: false,
+      subscriptionStatus: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      scheduledChange: null,
+      hasSubscription: false,
+      autoRecharge: { enabled: false, threshold: null, amount: null },
+      creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
+      creditBreakdown: [],
+      creditGrants: [],
+      concurrencyLimit: 0,
+      concurrencySubscriptions: [],
+    };
+    return respond(200, status);
+  });
+}
+
+/**
+ * Settings > Models renders the member's accounts from the same list the card
+ * reads, so its Codex row settling is the point the card has decided too.
+ */
+async function findSettledCodexRow(status: string): Promise<void> {
+  await waitFor(() => {
+    expect(
+      within(screen.getByTestId("oauth-card-codex-oauth-token")).getByText(
+        status,
+      ),
+    ).toBeInTheDocument();
+  });
 }
 
 function subscriptionCard(): HTMLElement {
@@ -94,7 +142,10 @@ test("The subscription card leads the start cards without growing the row", asyn
   await screen.findByTestId("start-card-subscription");
   const row = screen.getByTestId("start-cards");
   expect(row.children).toHaveLength(3);
-  expect(row.firstElementChild).toBe(subscriptionCard());
+  expect(row.firstElementChild).toHaveAttribute(
+    "data-testid",
+    "start-card-subscription",
+  );
   expect(subscriptionCard()).toHaveTextContent("Run tasks for free");
 });
 
@@ -141,19 +192,22 @@ test("The Claude button opens the Claude sign-in from the start card", async () 
 });
 
 test("The start cards stay unchanged while the subscription card is off", async () => {
-  await setupStartCards(false);
+  await setupStartCards(false, [], "?settings=model");
+  await findSettledCodexRow("Connect");
   expect(screen.getByTestId("start-cards").children).toHaveLength(3);
   expect(screen.queryByTestId("start-card-subscription")).toBeNull();
 });
 
-test("The subscription card never flashes in for a member who already has an account", async () => {
+test("The subscription card stays out while the account list is in flight", async () => {
+  const accountsRequested = context.mocks.deferred<void>();
   const accountsListed = context.mocks.deferred<void>();
   mockTemplateChat();
   context.mocks.api(
     personalModelProvidersMainContract.list,
     async ({ respond, withSignal }) => {
+      accountsRequested.resolve();
       await withSignal(accountsListed.promise);
-      return respond(200, { modelProviders: [connectedCodex()] });
+      return respond(200, { modelProviders: [] });
     },
   );
   await setupPage({
@@ -165,15 +219,17 @@ test("The subscription card never flashes in for a member who already has an acc
     },
   });
   await findComposerEditor();
+  await accountsRequested.promise;
 
-  // Still waiting on the account list: the row keeps its drawn kinds.
   expect(screen.getByTestId("start-cards").children).toHaveLength(3);
   expect(screen.queryByTestId("start-card-subscription")).toBeNull();
+});
 
-  accountsListed.resolve();
-  await waitFor(() => {
-    expect(screen.getByTestId("start-cards").children).toHaveLength(3);
-  });
+test("A member with a personal model account does not see the subscription card", async () => {
+  await setupStartCards(true, [connectedCodex()], "?settings=model");
+  await findSettledCodexRow("Connected (Pro)");
+
+  expect(screen.getByTestId("start-cards").children).toHaveLength(3);
   expect(screen.queryByTestId("start-card-subscription")).toBeNull();
 });
 
@@ -217,4 +273,35 @@ test("Connecting Codex from the card retires it for a regular start card", async
     expect(screen.queryByTestId("start-card-subscription")).toBeNull();
   });
   expect(screen.getByTestId("start-cards").children).toHaveLength(3);
+});
+
+test("A plan without BYOK sends the card's provider buttons to plan comparison", async () => {
+  await setupStartCards(true, [], "", false);
+  await screen.findByTestId("start-card-subscription");
+
+  click(subscriptionButton("Codex"));
+
+  await expect(
+    screen.findByRole("heading", { name: "Choose a plan" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Connect Codex" })).toBeNull();
+});
+
+test("The card body opens Settings on Models", async () => {
+  await setupStartCards(true);
+  await screen.findByTestId("start-card-subscription");
+
+  const openSettings = queryAllByRoleFast("button", subscriptionCard()).find(
+    (item) => {
+      return item.getAttribute("aria-label") === "Open model settings";
+    },
+  );
+  if (!openSettings) {
+    throw new Error("Expected the card's settings button");
+  }
+  click(openSettings);
+
+  await expect(
+    screen.findByTestId("oauth-card-codex-oauth-token"),
+  ).resolves.toBeInTheDocument();
 });

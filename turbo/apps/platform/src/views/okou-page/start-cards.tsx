@@ -1,26 +1,17 @@
 import type { ReactNode } from "react";
-import {
-  useGet,
-  useLastLoadable,
-  useLastResolved,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import { surfaceVariants, Button } from "@okouai/ui";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
-import { modelPlanCapabilities$ } from "../../signals/okou-page/model-plan-capabilities.ts";
-import { openClaudeCodeDeviceAuthDialogPersonal$ } from "../../signals/okou-page/settings/claude-code-device-auth.ts";
-import { openCodexDeviceAuthDialogPersonal$ } from "../../signals/okou-page/settings/codex-device-auth.ts";
-import {
-  openSettingsBillingPlansDialog$,
-  openSettingsDialogAt$,
-} from "../../signals/okou-page/settings/settings-dialog.ts";
+import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
+  connectStartCardSubscription$,
   startCardKinds$,
   startCardSubscriptionPinned$,
+  type StartCardSubscriptionProvider,
   startCardWorkflowConnectorIcons$,
   startCardWorkflowTemplate$,
   type StartCardConnectorIcon,
@@ -266,8 +257,6 @@ function SubscriptionArt() {
   );
 }
 
-type SubscriptionProviderType = "codex-oauth-token" | "claude-code-oauth-token";
-
 /**
  * Pinned ahead of the rotating kinds: it connects a personal Claude or Codex
  * subscription through the same device-auth dialogs as Settings > Models, both
@@ -275,32 +264,12 @@ type SubscriptionProviderType = "codex-oauth-token" | "claude-code-oauth-token";
  */
 function SubscriptionStartCard() {
   const { t } = useTranslation();
-  const capabilitiesLoadable = useLastLoadable(modelPlanCapabilities$);
-  const openCodexDeviceAuth = useSet(openCodexDeviceAuthDialogPersonal$);
-  const openClaudeCodeDeviceAuth = useSet(
-    openClaudeCodeDeviceAuthDialogPersonal$,
-  );
-  const openBillingPlans = useSet(openSettingsBillingPlansDialog$);
+  const connectSubscription = useSet(connectStartCardSubscription$);
   const openSettingsAt = useSet(openSettingsDialogAt$);
   const pageSignal = useGet(pageSignal$);
-  // Same fallback as Settings > Models: an unresolved plan does not hide the
-  // connect path, and the server still gates the credential it stores.
-  const supportByok =
-    capabilitiesLoadable.state !== "hasData" ||
-    capabilitiesLoadable.data.supportByok;
 
-  const connect = (type: SubscriptionProviderType) => {
-    if (!supportByok) {
-      detach(openBillingPlans(pageSignal), Reason.DomCallback);
-      return;
-    }
-    const args = { mode: "connect" as const };
-    detach(
-      type === "codex-oauth-token"
-        ? openCodexDeviceAuth(args, pageSignal)
-        : openClaudeCodeDeviceAuth(args, pageSignal),
-      Reason.DomCallback,
-    );
+  const connect = (provider: StartCardSubscriptionProvider) => {
+    detach(connectSubscription(provider, pageSignal), Reason.DomCallback);
   };
 
   const providers = [
