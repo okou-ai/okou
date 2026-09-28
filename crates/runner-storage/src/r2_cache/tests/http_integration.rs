@@ -160,6 +160,52 @@ async fn part_200_embedded_error_aborts_even_with_etag() {
 }
 
 #[tokio::test]
+async fn truncated_part_error_aborts_without_completing() {
+    let server = MockServer::start_async().await;
+    let key = "/test-bucket/runner-templates/abc.tar.zst";
+    let create = server.mock_async(|when, then| {
+        when.method("POST").path(key).query_param_exists("uploads");
+        then.status(200).body("<InitiateMultipartUploadResult><UploadId>id</UploadId></InitiateMultipartUploadResult>");
+    }).await;
+    let part = server
+        .mock_async(|when, then| {
+            when.method("PUT").path(key).query_param("uploadId", "id");
+            then.status(200)
+                .header("etag", "\"misleading\"")
+                .header("x-amz-retry-after", "0")
+                .body("<Error><Code>InvalidPart");
+        })
+        .await;
+    let complete = server
+        .mock_async(|when, then| {
+            when.method("POST").path(key).query_param("uploadId", "id");
+            then.status(200).body("<CompleteMultipartUploadResult/>");
+        })
+        .await;
+    let abort = server
+        .mock_async(|when, then| {
+            when.method("DELETE")
+                .path(key)
+                .query_param("uploadId", "id");
+            then.status(204);
+        })
+        .await;
+    let (_dir, src) = small_src_file().await;
+    let error = cache(&server)
+        .upload_template("abc", &src, true)
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("malformed embedded error"),
+        "{error}"
+    );
+    create.assert_calls_async(1).await;
+    part.assert_calls_async(3).await;
+    complete.assert_calls_async(0).await;
+    abort.assert_calls_async(1).await;
+}
+
+#[tokio::test]
 async fn duplicate_part_etag_aborts_before_complete() {
     let server = MockServer::start_async().await;
     let key = "/test-bucket/runner-templates/abc.tar.zst";

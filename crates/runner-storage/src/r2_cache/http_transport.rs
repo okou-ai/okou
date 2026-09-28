@@ -261,6 +261,11 @@ impl R2HttpClient {
         if let Some(content_type) = content_type {
             builder = builder.header(CONTENT_TYPE, content_type);
         }
+        if !body.is_empty() {
+            // The SDK signs Content-Length for known, nonempty Bytes bodies.
+            // Letting reqwest add it only after signing changes SignedHeaders.
+            builder = builder.header(reqwest::header::CONTENT_LENGTH, body.len().to_string());
+        }
         let mut request = builder
             .body(body)
             .build()
@@ -441,6 +446,18 @@ impl R2HttpClient {
                     });
                 }
                 let document = parse_xml(&body);
+                if document.is_err() && has_error_root_prefix(&body) {
+                    // Smithy recognizes the Error start element before its
+                    // full error decoder fails. That response error consumes
+                    // the transient I/O retry cost, even for HTTP 200.
+                    if attempt < MAX_ATTEMPTS && self.reserve_retry(&mut retry_permit, 10) {
+                        retry_delay(attempt, retry_after).await;
+                        continue;
+                    }
+                    return Err(R2Error::S3(format!(
+                        "R2 request: HTTP {status} malformed embedded error"
+                    )));
+                }
                 if document
                     .as_ref()
                     .is_ok_and(|doc| doc.root_element().tag_name().name() == "Error")
@@ -601,6 +618,14 @@ impl R2HttpClient {
             .get(reqwest::header::CONTENT_LENGTH)
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<i64>().ok());
+        // HTTP 204 forbids a body. The pinned SDK surfaces a read failure if
+        // a GET nevertheless advertises nonzero bytes; reqwest silently drops
+        // the body, which would misclassify the truncated archive as corrupt.
+        if response.status() == StatusCode::NO_CONTENT && content_length.is_some_and(|n| n > 0) {
+            return Err(R2Error::S3(
+                "get_object: HTTP 204 advertised a non-empty body".into(),
+            ));
+        }
         // SDK downloads fail a stalled response body independently of the
         // request's 60-second first-response timeout. Do not retry a body
         // after returning it: its consumer may already have unpacked bytes.
@@ -1123,6 +1148,40 @@ fn parse_xml(body: &[u8]) -> Result<roxmltree::Document<'_>, R2Error> {
         .map_err(|e| R2Error::S3(format!("invalid R2 XML encoding: {e}")))?;
     roxmltree::Document::parse(text)
         .map_err(|e| R2Error::S3(format!("invalid R2 XML response: {e}")))
+}
+
+// Smithy's nonstreaming UploadPart/Abort decoder can recognize a leading
+// <Error> start element even if the remainder is malformed XML. Its error
+// decoder then fails, rather than turning HTTP 200 into success. roxmltree
+// validates the whole document, so retain this narrow root-prefix check for
+// malformed bodies without changing the parser used for modeled fields.
+fn has_error_root_prefix(body: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(body) else {
+        return false;
+    };
+    let mut rest = text.trim_start_matches('\u{feff}').trim_start();
+    loop {
+        if let Some(tail) = rest.strip_prefix("<!--") {
+            let Some((_, after)) = tail.split_once("-->") else {
+                return false;
+            };
+            rest = after.trim_start();
+        } else if let Some(tail) = rest.strip_prefix("<?") {
+            let Some((_, after)) = tail.split_once("?>") else {
+                return false;
+            };
+            rest = after.trim_start();
+        } else {
+            break;
+        }
+    }
+    let Some(root) = rest.strip_prefix('<') else {
+        return false;
+    };
+    let Some(end) = root.find(|c: char| c.is_ascii_whitespace() || c == '>' || c == '/') else {
+        return false;
+    };
+    root[..end].rsplit(':').next() == Some("Error")
 }
 
 fn xml_code(body: &[u8]) -> Option<String> {

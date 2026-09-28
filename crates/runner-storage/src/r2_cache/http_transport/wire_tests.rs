@@ -697,6 +697,18 @@ async fn all_six_operations_match_pinned_sdk_request_lines_and_content_types() {
             _ => assert!(!headers.contains("\r\ncontent-type:")),
         }
     }
+    for (headers, body) in [&requests[3], &requests[4]] {
+        let headers = headers.to_ascii_lowercase();
+        let authorization = headers
+            .lines()
+            .find(|line| line.starts_with("authorization:"))
+            .unwrap();
+        assert!(
+            authorization.contains("signedheaders=content-length;content-type;host;"),
+            "{authorization}"
+        );
+        assert!(headers.contains(&format!("\r\ncontent-length: {}\r\n", body.len())));
+    }
     assert_eq!(requests[3].1, "abc");
     assert_eq!(
         requests[4].1,
@@ -1292,6 +1304,63 @@ async fn nonstreaming_200_embedded_errors_retry_across_sdk_operations() {
 }
 
 #[tokio::test]
+async fn malformed_embedded_error_retries_all_four_nonstreaming_operations() {
+    // Smithy's Error-root probe succeeds before its full XML decoder fails;
+    // that response error is transient, unlike an unrelated malformed body.
+    #[derive(Debug, Clone, Copy)]
+    enum Operation {
+        Create,
+        Part,
+        Complete,
+        Abort,
+    }
+    for operation in [
+        Operation::Create,
+        Operation::Part,
+        Operation::Complete,
+        Operation::Abort,
+    ] {
+        let successful = match operation {
+            Operation::Create => mock_reply(
+                "200 OK",
+                "<InitiateMultipartUploadResult><UploadId>id</UploadId></InitiateMultipartUploadResult>",
+                "",
+            ),
+            Operation::Part => mock_reply("200 OK", "", "ETag: tag\r\n"),
+            Operation::Complete => mock_reply("200 OK", "<CompleteMultipartUploadResult/>", ""),
+            Operation::Abort => mock_reply("200 OK", "", ""),
+        };
+        let (url, server) = scripted_server(vec![
+            mock_reply(
+                "200 OK",
+                "<Error><Code>InternalError",
+                "x-amz-retry-after: 0\r\n",
+            ),
+            successful,
+        ])
+        .await;
+        let c =
+            R2HttpClient::with_test_endpoint_retry_quota(url, "test-bucket".into(), 10).unwrap();
+        let key = "runner-templates/h.tar.zst";
+        match operation {
+            Operation::Create => assert_eq!(c.create_multipart(key).await.unwrap(), "id"),
+            Operation::Part => {
+                assert_eq!(
+                    c.upload_part(key, "id", 1, Bytes::from_static(b"part"))
+                        .await
+                        .unwrap()
+                        .etag,
+                    "tag"
+                );
+            }
+            Operation::Complete => c.complete_multipart(key, "id", &[]).await.unwrap(),
+            Operation::Abort => c.abort_multipart(key, "id").await.unwrap(),
+        }
+        assert_eq!(server.await.unwrap().len(), 2, "{operation:?}");
+    }
+}
+
+#[tokio::test]
 async fn xml_body_read_failures_retry_within_the_same_attempt_budget() {
     let (url, server) = scripted_server(vec![
         "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
@@ -1378,6 +1447,60 @@ async fn upload_part_requires_etag_and_validates_key_segments() {
     );
     assert!(c.head("runner-templates/../h.tar.zst").await.is_err());
     no_etag.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn abort_rejects_malformed_error_root_but_not_unrelated_raw_body() {
+    // The pinned SDK recognizes the Error start tag before trying to parse
+    // the full body. A truncated error must not turn Abort into success.
+    let server = MockServer::start_async().await;
+    let malformed = server
+        .mock_async(|when, then| {
+            when.method("DELETE")
+                .path("/test-bucket/runner-templates/h.tar.zst")
+                .query_param("uploadId", "malformed");
+            then.status(200)
+                .body("<?xml version=\"1.0\"?><Error><Code>InvalidPart");
+        })
+        .await;
+    let unrelated = server
+        .mock_async(|when, then| {
+            when.method("DELETE")
+                .path("/test-bucket/runner-templates/h.tar.zst")
+                .query_param("uploadId", "other");
+            then.status(200).body("<Other><broken");
+        })
+        .await;
+    let c = R2HttpClient::with_test_endpoint_retry_quota(
+        Url::parse(&server.base_url()).unwrap(),
+        "test-bucket".into(),
+        0,
+    )
+    .unwrap();
+    let error = c
+        .abort_multipart("runner-templates/h.tar.zst", "malformed")
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("embedded error"), "{error}");
+    c.abort_multipart("runner-templates/h.tar.zst", "other")
+        .await
+        .unwrap();
+    malformed.assert_calls_async(1).await;
+    unrelated.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn get_204_with_advertised_bytes_fails_as_a_request() {
+    // A contradictory 204/Content-Length makes the SDK's GET body fail on
+    // read. reqwest discards that body, so reject it before archive parsing.
+    let (url, server) = scripted_server(vec![mock_reply("204 No Content", "hello", "")]).await;
+    let c = R2HttpClient::with_test_endpoint(url, "test-bucket".into()).unwrap();
+    let error = match c.get("runner-templates/h.tar.zst").await {
+        Ok(_) => panic!("204 with a nonzero body length must fail"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("204 advertised"), "{error}");
+    assert_eq!(server.await.unwrap().len(), 1);
 }
 
 #[tokio::test]
