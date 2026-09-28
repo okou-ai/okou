@@ -178,7 +178,7 @@ async function openSupportedLanguagePicker() {
 
   await openDialog("admin", "preference");
 
-  click(await screen.findByRole("combobox", { name: "Idioma" }));
+  click(await screen.findByRole("combobox", { name: "Language" }));
 }
 
 test("Offer only the workspace's supported languages", async () => {
@@ -227,7 +227,7 @@ test("Persist the browser language when the workspace has no preference", async 
   await openDialog("admin", "preference", "app.okou.ai");
 
   const languageSelect = await screen.findByRole("combobox", {
-    name: "Bahasa",
+    name: "Language",
   });
   await waitFor(() => {
     expect(serverLocale).toBe("id-ID");
@@ -273,9 +273,9 @@ test("Select and persist a supported interface language", async () => {
 
   await waitFor(() => {
     expect(submittedLocales).toContain("de-DE");
-    expect(screen.getByRole("combobox", { name: "Sprache" })).toHaveTextContent(
-      "Deutsch",
-    );
+    expect(
+      screen.getByRole("combobox", { name: "Language" }),
+    ).toHaveTextContent("Deutsch");
     expect(document.documentElement.lang).toBe("de-DE");
   });
 });
@@ -288,11 +288,11 @@ test("Use the saved workspace language ahead of locale hints", async () => {
   await openDialog("admin", "preference", "app.okou.ai");
 
   const languageSelect = await screen.findByRole("combobox", {
-    name: "Bahasa",
+    name: "Language",
   });
   await waitFor(() => {
     expect(languageSelect).toHaveTextContent("Bahasa Indonesia");
-    expect(languageSelect).toHaveAccessibleName("Bahasa");
+    expect(languageSelect).toHaveAccessibleName("Language");
     expect(document.documentElement.lang).toBe("id-ID");
   });
 

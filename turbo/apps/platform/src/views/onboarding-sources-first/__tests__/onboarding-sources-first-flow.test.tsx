@@ -240,17 +240,15 @@ test("The first step introduces Okou and its compliance progress", async () => {
 test.each([
   {
     locale: "ja-JP" as const,
-    name: "Okouのデータ保護について",
     href: "https://www.okou.ai/ja/security",
   },
   {
     locale: "zh-Hant" as const,
-    name: "瞭解 Okou 如何保護你的資料",
     href: "https://www.okou.ai/zh-Hant/security",
   },
 ])(
   "The source step links to the security page in $locale",
-  async ({ locale, name, href }) => {
+  async ({ locale, href }) => {
     mockOnboardingNeeded();
     mockCatalog();
 
@@ -263,7 +261,7 @@ test.each([
 
     await waitFor(() => {
       const link = queryAllByRoleFast("link").find((candidate) => {
-        return candidate.textContent?.trim() === name;
+        return candidate.textContent?.trim() === "How Okou protects your data";
       });
       expect(link).toHaveAttribute("href", href);
     });

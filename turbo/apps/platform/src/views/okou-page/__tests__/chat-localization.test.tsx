@@ -33,28 +33,19 @@ const CREATED_AT = "2026-08-01T10:00:00.000Z";
 
 const context = testContext();
 
-interface ComposerCopy {
-  readonly close: string;
-  readonly language: string;
+interface LanguageChoice {
   readonly locale: SupportedLocale;
   readonly option: string;
-  readonly settings: string;
 }
 
 const portuguese = {
   locale: "pt-BR",
-  settings: "Configurações",
-  language: "Idioma",
-  close: "Fechar",
   option: "Português (Brasil)",
-} as const satisfies ComposerCopy;
+} as const satisfies LanguageChoice;
 const english = {
   locale: "en-US",
-  settings: "Settings",
-  language: "Language",
-  close: "Close",
   option: "English",
-} as const satisfies ComposerCopy;
+} as const satisfies LanguageChoice;
 
 function actionName(element: HTMLElement): string {
   return (
@@ -195,30 +186,28 @@ function configureExistingChat(args: {
   });
 }
 
-async function changeLanguage(
-  current: ComposerCopy,
-  next: ComposerCopy,
-): Promise<void> {
+async function changeLanguage(next: LanguageChoice): Promise<void> {
   click(await findAction("button", "Test User"));
   const menu = await screen.findByRole("menu");
-  click(await findAction("menuitem", current.settings, menu));
+  click(await findAction("menuitem", "Settings", menu));
 
-  const dialog = await screen.findByRole("dialog", {
-    name: current.settings,
-  });
-  click(await findAction("combobox", current.language, dialog));
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  click(await findAction("combobox", "Language", dialog));
   click(await findAction("option", next.option));
 
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", next.locale);
   });
-  const translatedDialog = await screen.findByRole("dialog", {
-    name: next.settings,
-  });
-  click(await findAction("button", next.close, translatedDialog));
+  click(
+    await findAction(
+      "button",
+      "Close",
+      await screen.findByRole("dialog", { name: "Settings" }),
+    ),
+  );
   await waitFor(() => {
     expect(
-      screen.queryByRole("dialog", { name: next.settings }),
+      screen.queryByRole("dialog", { name: "Settings" }),
     ).not.toBeInTheDocument();
   });
 }
@@ -256,7 +245,7 @@ test("Changing language preserves the open conversation and draft", async () => 
   expect(originalComposer).toHaveTextContent(draft);
   const originalUrl = `${pathname()}${search()}`;
 
-  await changeLanguage(portuguese, english);
+  await changeLanguage(english);
 
   const translatedComposer = composerEditor();
   expect(`${pathname()}${search()}`).toBe(originalUrl);

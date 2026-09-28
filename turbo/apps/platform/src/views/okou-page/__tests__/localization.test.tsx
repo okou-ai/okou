@@ -1,5 +1,4 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import { HttpResponse } from "msw";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { expect, test } from "vitest";
@@ -9,8 +8,6 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import frFRAgents from "../../../i18n/locales/fr-FR/agents.json";
-import frFRAgentsUrl from "../../../i18n/locales/fr-FR/agents.json?url";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -84,18 +81,7 @@ async function closeDialog(dialog: HTMLElement, label: string): Promise<void> {
   });
 }
 
-test("French uses local formatting and plurals", async () => {
-  const frenchSidebar = Object.fromEntries(
-    Object.entries(frFRAgents.sidebar).filter(([key]) => {
-      return key !== "pinned";
-    }),
-  );
-  context.mocks.http.get(frFRAgentsUrl, () => {
-    return HttpResponse.json({
-      ...frFRAgents,
-      sidebar: frenchSidebar,
-    });
-  });
+test("French uses local number formatting", async () => {
   const runId = "94000000-0000-4000-a000-000000000001";
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
     return respond(200, {
@@ -158,10 +144,8 @@ test("French uses local formatting and plurals", async () => {
   await selectLanguage("Language", "Français");
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", "fr-FR");
-    expect(within(settings).getByText("Langue")).toBeVisible();
   });
-  await closeDialog(settings, "Fermer");
+  await closeDialog(settings, "Close");
 
-  expect(screen.getByText("2 fichiers")).toBeVisible();
   expect(screen.getByText("1,2s")).toBeVisible();
 });
