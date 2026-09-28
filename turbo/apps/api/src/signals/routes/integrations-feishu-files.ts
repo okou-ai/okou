@@ -20,7 +20,7 @@ import {
 } from "@okouai/api-contracts/contracts/integrations";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
 import { sanitizeArtifactFilename } from "../../lib/file-url";
 import { inferMimetype } from "../../lib/mimetype";

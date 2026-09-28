@@ -1,7 +1,7 @@
 import { text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
 
-/** Installation fields; the runtime mapping re-exports the physical table. */
+/** Feishu/Lark installation fields. */
 export function feishuOrgInstallationColumns() {
   return {
     id: uuid("id").defaultRandom().primaryKey(),

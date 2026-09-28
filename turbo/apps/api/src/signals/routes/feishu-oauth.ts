@@ -10,7 +10,7 @@ import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oaut
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { connectors } from "@okouai/db/schema/connector";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
-import { feishuOrgInstallations } from "@okouai/db/runtime/feishu-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { env } from "../../lib/env";
