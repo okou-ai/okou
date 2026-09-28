@@ -109,6 +109,72 @@ Old and new versions during deploy:
 
 No API rollback floor is needed.
 
+## Unified chat queue (release 7): legacy steer and Pi API-first removal
+
+Release 7 only deletes compatibility code that release 6 made unreachable:
+
+- The reserve and receipt endpoints
+  (`POST /api/runners/runs/:runId/active-inputs/reserve` and
+  `.../active-inputs/deliveries/:deliveryId/receipt`), their contracts and Rust
+  bindings, and `activeInputDeliveryIds` with its completion-time settlement.
+  Only `steerable-inputs/next` and `steerable-inputs/:eventId/steered` remain.
+  The completion body is not strict, so a stray `activeInputDeliveryIds` is
+  stripped.
+- The four API-first steps listed under release 6: the Sandbox CLI no longer
+  writes the `vm0_pi_api_first_turn_boundary` startup record; the API no longer
+  writes `piLaunchConfig.apiFirstTurn` (removed from the strict contract),
+  `pi-sandbox-handoff.service.ts`, the completion-time handoff object deletion
+  and the `pi-api-first-turn/` sweep in the sandbox cleanup cron; the Guest
+  reads the installed-CLI requirement only from `piInstalledCliRequirement` and
+  no longer parses the startup record, and the Runner validates the launch
+  config against the generated type without the slot; `okou run usage` accepts
+  only the `sandboxProxy` source.
+- `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` rises to the first CLI release without
+  the slot, because release 6 installed CLIs parse the launch config strictly
+  and require `apiFirstTurn`. The value is the last released CLI version plus
+  one patch; if another release ships before this change merges, raise it
+  again so it stays above every release 6 CLI.
+
+**Merge gate:** every release 6 Runner is live and earlier Runners have drained
+(no reserve or receipt calls in production since 2026-09-28 05:30 UTC).
+
+Mixed versions during rollout (API first, then Runner with its Guest; old
+Runners drain for up to about two hours; the Sandbox CLI is either the
+commit-addressed `CLI_PKG_URL` of the API that created the run or the CLI
+preinstalled in the Runner image):
+
+- New API with a release 6 Runner and Guest: the API writes no slot and the new
+  CLI floor, so the release 6 Guest rejects its installed release 6 CLI and
+  launches the new commit-addressed CLI. That CLI accepts the slot-free launch
+  config and writes no startup record, which release 6 Guests tolerate. The
+  release 6 Runner validates the launch config without the slot, steers only
+  through the remaining endpoints and reports no `apiFirstTurn` usage source.
+- New Guest with an old CLI that still writes the startup record: reachable only
+  when a new Guest launches a release 6 CLI, which needs a launch context
+  written by a release 6 API. The Guest treats the record as an unknown JSON
+  record: it is written to the local transcript only, takes no event sequence,
+  and public events still start at 1.
+- Old Guest with the new CLI: release 6 Guests start at sequence 1 without the
+  startup record.
+- Pi runs queued by a release 6 API and claimed after the new API is promoted:
+  their stored `piLaunchConfig` still carries `apiFirstTurn`, which the strict
+  claim reader rejects, so the claim fails the run. This affects only Pi runs
+  created before promotion and not yet claimed; runs are normally claimed
+  within seconds and the pending timeout bounds the window at five minutes.
+  This is accepted; release at low traffic.
+- No reader remains for handoff objects that release 6 APIs wrote under
+  `pi-api-first-turn/`; objects that the removed sweep had not yet deleted stay
+  in the bucket until removed separately.
+
+**API rollback floor: this release**, pinned by the marker
+`.github/rollback-floors/pi-api-first-turn-retired` in
+`resolve-production-rollback-target.sh`. Earlier APIs write `apiFirstTurn` and
+the old CLI floor on every Pi run: a release 7 Guest would launch its
+preinstalled release 7 CLI, which rejects the slot, so every Pi run fails until
+the Runners are rolled back as well. Earlier APIs also require the slot when
+they decode contexts queued by this release. The release 4 floor for the steer
+endpoints is subsumed.
+
 ## Unified chat queue (release 6): Runner, Guest and Sandbox CLI
 
 The Runner reads steerable input from

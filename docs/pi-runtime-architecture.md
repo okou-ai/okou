@@ -8,19 +8,15 @@ behavior; the detailed contracts below own their respective implementation and
 rollout rules.
 
 > **API-first retired.** The API no longer executes Pi model turns. Every Pi
-> run, including the first turn of a new thread, executes in the Sandbox. Run
-> creation publishes a no-inference `sandbox-first` handoff (v3 manifest plus
-> session object, or a v4 manifest referencing blob-backed history) before the
-> run and its runner job are committed, because the current Runner/CLI launch
-> contract (`piLaunchConfig.apiFirstTurn`) still requires one. See
-> [pi-sandbox-handoff.service.ts](../turbo/apps/api/src/signals/services/pi-sandbox-handoff.service.ts).
-> Sections below that describe API-first preparation, H1, recovery, billing,
-> durable producer mode, or API-first telemetry are historical.
+> run, including the first turn of a new thread, executes in the Sandbox. The
+> Sandbox CLI starts a fresh session on a first turn or opens the session the
+> Runner restored from `resumeSession`; no handoff manifest or startup record
+> exists any more. Sections below that describe API-first preparation, H1,
+> recovery, billing, durable producer mode, handoff manifests, or API-first
+> telemetry are historical.
 
 ## Authorities and dependencies
 
-- [Sandbox launch handoff](../turbo/apps/api/src/signals/services/pi-sandbox-handoff.service.ts):
-  the no-inference `sandbox-first` manifest and session object the CLI waits for.
 - [Pinned SDK integration](../turbo/patches/pi-pending-tools.md): Pi **0.87.1**,
   pending tools, cancellation, next-response preparation, and session fixtures.
 - [Bash spool contract](../turbo/packages/pi-agent-runtime/bash-spool-backpressure.md):
@@ -63,7 +59,6 @@ services or a command accessor.
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Admission and captured identity     | [pi-sandbox-config.ts](../turbo/apps/api/src/signals/services/pi-sandbox-config.ts), [agent-run-create.service.ts](../turbo/apps/api/src/signals/services/agent-run-create.service.ts), fence eligible sources and capture `piModelConfig`; every start uses the complete legacy launch. Authorization, queue-first input, account, credit, catalog and original API-clock owners are shared.                                                                                                                                                                                                                                                                                                |
 | Route normalization and credentials | [execution-route.ts](../turbo/packages/pi-agent-runtime/src/execution-route.ts) normalizes supported carriers into the in-process `PiExecutionRoute`; [credential.ts](../turbo/packages/pi-agent-runtime/src/credential.ts) snapshots it before asynchronous materialization. The original wire remains authoritative for claim capability and telemetry. Credential references are captured; secrets are materialized only at the API or firewall execution edge.                                                                                                                                                                                                                           |
-| Sandbox launch handoff              | [pi-sandbox-handoff.service.ts](../turbo/apps/api/src/signals/services/pi-sandbox-handoff.service.ts) publishes the no-inference `sandbox-first` manifest and H0 before the run commit; completion and the sandbox cleanup cron delete the `pi-api-first-turn/` objects.                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | SDK model boundary                  | [session-model.ts](../turbo/packages/pi-agent-runtime/src/session-model.ts) owns explicit resource-registry initialization, registered model description, and fixed `ModelRuntime` bootstrap. [model.ts](../turbo/packages/pi-agent-runtime/src/model.ts), [native-stream.ts](../turbo/packages/pi-agent-runtime/src/native-stream.ts), and [native-http.ts](../turbo/packages/pi-agent-runtime/src/native-http.ts) own catalog/transport adaptation and request guards.                                                                                                                                                                                                                     |
 | Session shells                      | [session-runtime.ts](../turbo/packages/pi-agent-runtime/src/session-runtime.ts) owns foreground settings, resources, tools, harness prompt, and captured run effort precedence. [phase2-memory.ts](../turbo/packages/pi-agent-runtime/src/phase2-memory.ts) owns the separate restricted session, caller/model arbitration, validation, and cleanup.                                                                                                                                                                                                                                                                                                                                         |
 | API history and one response        | [session-memory.ts](../turbo/packages/pi-agent-runtime/src/session-memory.ts) adapts byte-backed history through official parser/context helpers. [api-turn.ts](../turbo/packages/pi-agent-runtime/src/api-turn.ts) borrows the foreground shell's prompt/tool schemas, makes one model response, and disposes the shell. It never executes the returned tools.                                                                                                                                                                                                                                                                                                                              |
