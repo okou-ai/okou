@@ -1,4 +1,13 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
+import { z } from "zod";
+import {
+  connectorAccountsContract,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import { accept } from "../../lib/accept.ts";
+import { apiClient$ } from "../api-client.ts";
+import { detachedNavigateTo$ } from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
 import { withConnectorConnectionProgress } from "../connector-connection-progress.ts";
 import {
   connectorSlugSchema,
@@ -55,6 +64,12 @@ export interface CatalogConnectorActionDescriptor extends ConnectorActionDescrip
   readonly connectorSlug: ConnectorSlug;
 }
 
+export interface ExactReconnectConnectorActionDescriptor extends ConnectorActionDescriptorBase {
+  readonly kind: "catalog-reconnect";
+  readonly connectorSlug: ConnectorSlug;
+  readonly connectionId: string;
+}
+
 export interface CustomConnectorActionDescriptor extends ConnectorActionDescriptorBase {
   readonly kind: "custom";
   readonly connectorSlug: CustomConnectorSlug;
@@ -62,6 +77,7 @@ export interface CustomConnectorActionDescriptor extends ConnectorActionDescript
 
 export type ConnectorActionDescriptor =
   | CatalogConnectorActionDescriptor
+  | ExactReconnectConnectorActionDescriptor
   | CustomConnectorActionDescriptor;
 
 interface ConnectorSignalState {
@@ -79,12 +95,32 @@ export type CatalogConnectorSignals = CatalogConnectorActionDescriptor &
     >;
   };
 
+export type ExactReconnectConnectorSignals =
+  ExactReconnectConnectorActionDescriptor & {
+    readonly status$: Computed<
+      Promise<
+        | { readonly kind: "unavailable" }
+        | {
+            readonly kind: "ready";
+            readonly account: ConnectorAccountConnection;
+            readonly catalogItem: PlatformConnectorCatalogStatusItem;
+            readonly authorized: boolean;
+          }
+      >
+    >;
+    readonly activate$: Command<Promise<void>, [AbortSignal]>;
+    readonly refresh$: Command<void, []>;
+  };
+
 export type CustomConnectorSignals = CustomConnectorActionDescriptor &
   ConnectorSignalState & {
     readonly connector$: Computed<Promise<CustomConnectorResponse | null>>;
   };
 
-export type ConnectorSignals = CatalogConnectorSignals | CustomConnectorSignals;
+export type ConnectorSignals =
+  | CatalogConnectorSignals
+  | ExactReconnectConnectorSignals
+  | CustomConnectorSignals;
 
 type ConnectorCardSignalsRegistry = CardSignalsRegistry<
   ConnectorActionDescriptor,
@@ -124,7 +160,7 @@ export function parseConnectorAuthorizeUrl(
   }
 
   const match = url.pathname.match(
-    /^\/connectors\/([^/]+)\/(authorize|connect)$/u,
+    /^\/connectors\/([^/]+)\/(authorize|connect|reconnect\/([^/]+))$/u,
   );
   if (!match) {
     return { status: "unrelated" };
@@ -141,6 +177,24 @@ export function parseConnectorAuthorizeUrl(
     return { status: "invalid", originalUrl: value };
   }
   const parsedCatalogSlug = connectorSlugSchema.safeParse(connectorSlug);
+  const connectionId = match[3];
+  if (connectionId !== undefined) {
+    const parsedConnectionId = z.uuid().safeParse(connectionId);
+    if (!parsedCatalogSlug.success || !parsedConnectionId.success) {
+      return { status: "invalid", originalUrl: value };
+    }
+    return {
+      status: "valid",
+      descriptor: {
+        kind: "catalog-reconnect",
+        connectorSlug: parsedCatalogSlug.data,
+        connectionId: parsedConnectionId.data,
+        agentId: context.agentId,
+        originalUrl: value,
+        ...callback,
+      },
+    };
+  }
   if (parsedCatalogSlug.success) {
     return {
       status: "valid",
@@ -339,6 +393,68 @@ function createCatalogConnectorSignals(
   };
 }
 
+function createExactReconnectConnectorSignals(
+  descriptor: ExactReconnectConnectorActionDescriptor,
+): ExactReconnectConnectorSignals {
+  const catalogItem$ = connectorCatalogItemBySlug(descriptor.connectorSlug);
+  const reload$ = state(0);
+  const status$ = computed(async (get) => {
+    get(reload$);
+    const catalogItem = await get(catalogItem$);
+    if (!catalogItem) {
+      return { kind: "unavailable" as const };
+    }
+    const result = await accept(
+      get(apiClient$)(connectorAccountsContract).connection({
+        params: { connectionId: descriptor.connectionId },
+        query: { kind: "builtin", connectorSlug: descriptor.connectorSlug },
+      }),
+      [200, 404],
+    );
+    if (result.status === 404) {
+      return { kind: "unavailable" as const };
+    }
+    const authorized = await get(
+      isAgentConnectorAuthorized({
+        agentId: descriptor.agentId,
+        connectorSlug: descriptor.connectorSlug,
+      }),
+    );
+    return {
+      kind: "ready" as const,
+      account: result.body,
+      catalogItem,
+      authorized,
+    };
+  });
+
+  const activate$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const status = await get(status$);
+    signal.throwIfAborted();
+    if (
+      status.kind !== "ready" ||
+      (status.account.connectionStatus === "connected" && status.authorized)
+    ) {
+      return;
+    }
+    set(detachedNavigateTo$, ROUTES.directedReconnect, {
+      pathParams: {
+        connectorSlug: descriptor.connectorSlug,
+        connectionId: descriptor.connectionId,
+      },
+      searchParams: new URL(descriptor.originalUrl).searchParams,
+    });
+  });
+
+  const refresh$ = command(({ set }) => {
+    set(reload$, (version) => {
+      return version + 1;
+    });
+  });
+
+  return { ...descriptor, status$, activate$, refresh$ };
+}
+
 function createCustomConnectorSignals(
   descriptor: CustomConnectorActionDescriptor,
 ): CustomConnectorSignals {
@@ -433,9 +549,17 @@ function createCustomConnectorSignals(
 function createConnectorSignals(
   descriptor: ConnectorActionDescriptor,
 ): ConnectorSignals {
-  return descriptor.kind === "catalog"
-    ? createCatalogConnectorSignals(descriptor)
-    : createCustomConnectorSignals(descriptor);
+  switch (descriptor.kind) {
+    case "catalog": {
+      return createCatalogConnectorSignals(descriptor);
+    }
+    case "catalog-reconnect": {
+      return createExactReconnectConnectorSignals(descriptor);
+    }
+    case "custom": {
+      return createCustomConnectorSignals(descriptor);
+    }
+  }
 }
 
 export function createConnectorCardSignalsRegistry(): ConnectorCardSignalsRegistry {

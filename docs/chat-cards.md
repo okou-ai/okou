@@ -278,8 +278,9 @@ unavailable card instead of a link or command.
 
 Current link-backed card patterns include:
 
-- `/connectors/:connectorSlug/connect` and
-  `/connectors/:connectorSlug/authorize`
+- `/connectors/:connectorSlug/connect`,
+  `/connectors/:connectorSlug/authorize`, and
+  `/connectors/:connectorSlug/reconnect/:connectionId` for an exact builtin account
 - `/connectors/custom/proposal?p=...`
 - `/agents/:agentId/permissions?...`
 - `/agents/:agentId/connector-accounts/:connectionId/select?...`
@@ -558,6 +559,15 @@ interface ConnectorSignals extends ConnectorActionDescriptor {
 The React card can show whether the connector is available, connected, and
 authorized, then invoke `activate$` from a user action. All occurrences of that
 connector `resourceKey` in the thread observe the same computed graph.
+
+An exact-account reconnect URL reuses the connector card appearance but not the
+catalog default-account activation. It validates the account ID and chat claims,
+reads the account scoped to the builtin connector, and displays that account's
+identity and connection status. A missing or wrong-target account is unavailable;
+other lookup errors retain a retry action. Activating it navigates to the existing
+exact-account directed reconnect route, which revalidates the target, uses its
+auth method, and runs any callback only after successful reconnection. The card
+never substitutes another account or starts the callback during navigation.
 
 ### Complex shared data: permission card
 
