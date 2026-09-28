@@ -34,7 +34,7 @@ rollout rules.
 
 ```mermaid
 flowchart TD
-    Launch[API admission and captured launch] --> First[Sandbox-first H0 handoff]
+    Launch[API admission and captured launch] --> First[Sandbox launch with captured history]
     Launch --> Platform[Runner and Guest preheat]
     First --> Platform
     Platform --> CLI[CLI validates launch and opens official RPC]
@@ -492,9 +492,9 @@ remain distinct. Claude's `extra` product label maps to Pi's `xhigh` level.
 The effective preference is captured in `agent_runs.reasoning_effort` and applied
 to the existing `piModelConfig.thinkingLevel` field before the execution context
 is persisted. The Sandbox consumes the captured configuration.
-When starting a new run from prior JSONL, both session owners append a thinking
-change if the captured level differs. Historical entries remain intact, and a
-handoff within one run keeps the same level. Launches without a configured level
+When starting a new run from prior JSONL, the Sandbox appends a thinking
+change if the captured level differs. Historical entries remain intact, and the
+run keeps its captured level. Launches without a configured level
 retain the SDK session/default behavior. Memory learning and consolidation keep
 their own model policies.
 

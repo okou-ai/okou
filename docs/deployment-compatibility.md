@@ -150,6 +150,10 @@ unreachable by release 6:
   `.../active-inputs/deliveries/:deliveryId/receipt`), their contracts and Rust
   bindings, and `activeInputDeliveryIds` with its completion-time settlement.
   Only `steerable-inputs/next` and `steerable-inputs/:eventId/steered` remain.
+  They also steer run-targeted `input.budget` events: a replacement retains
+  its type and gains the current `runId`, with the revoke edge providing
+  idempotence. Completion revokes any unconsumed warning. The Runner/Guest
+  response shape remains the existing event ID and prompt.
   The completion body is not strict, so a stray `activeInputDeliveryIds` is
   stripped.
 - The four API-first steps listed under release 6: the Sandbox CLI no longer
