@@ -5,9 +5,7 @@ import {
 } from "@okouai/core/workflow-template-items";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { personalModelProviders$ } from "../external/personal-model-providers.ts";
 import { modelPlanCapabilities$ } from "./model-plan-capabilities.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "./settings/claude-code-device-auth.ts";
@@ -101,9 +99,6 @@ export const startCardKinds$ = computed((get): readonly StartCardKind[] => {
  */
 export const startCardSubscriptionPinned$ = computed(
   async (get): Promise<boolean> => {
-    if (!get(featureSwitch$)[FeatureSwitchKey.StartCardModelSubscription]) {
-      return false;
-    }
     const { modelProviders } = await get(personalModelProviders$);
     return modelProviders.length === 0;
   },

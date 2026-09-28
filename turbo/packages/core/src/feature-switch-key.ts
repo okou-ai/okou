@@ -53,7 +53,7 @@ export enum FeatureSwitchKey {
   PersonalModelProviderAccounts = "multipleSubscriptions",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
-  DiscordIntegration = "_discordIntegration",
+  DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
   ThreadRemoteAccess = "threadRemoteAccess",
   PiMemory = "piMemory",
@@ -87,5 +87,4 @@ export enum FeatureSwitchKey {
   AgentResponsibilitySetup = "agentResponsibilitySetup",
   ChatThreadLinkChips = "chatThreadLinkChips",
   HostedSiteDelete = "hostedSiteDelete",
-  StartCardModelSubscription = "startCardModelSubscription",
 }

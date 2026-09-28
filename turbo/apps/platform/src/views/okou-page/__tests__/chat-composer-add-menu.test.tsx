@@ -119,9 +119,14 @@ test("adds import skills after create workflow and opens its dialog", async () =
   const dialog = await screen.findByRole("dialog", {
     name: "Import your skills",
   });
-  await expect(
-    within(dialog).findByRole("region", { name: "Skill import prompt" }),
-  ).resolves.toBeVisible();
+  // The dialog is ready once its prompt can be copied.
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast("button", dialog).find((button) => {
+        return button.textContent?.trim() === "Copy prompt";
+      }),
+    ).toBeVisible();
+  });
 
   const viewWorkflows = queryAllByRoleFast("link", dialog).find((link) => {
     return link.textContent?.trim() === "View workflows";

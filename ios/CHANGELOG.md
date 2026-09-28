@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/okou-ai/okou/compare/ios-v0.3.1...ios-v0.4.0) (2026-09-28)
+
+
+### Features
+
+* **api:** enqueue once and pick in the background for every chat input ([#37116](https://github.com/okou-ai/okou/issues/37116)) ([a4aaee6](https://github.com/okou-ai/okou/commit/a4aaee679a34922e1069146d265190e43a627b31))
+
 ## [0.3.1](https://github.com/okou-ai/okou/compare/ios-v0.3.0...ios-v0.3.1) (2026-09-26)
 
 

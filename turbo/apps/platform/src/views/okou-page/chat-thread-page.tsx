@@ -189,6 +189,10 @@ import {
   type RunWorkFolding,
   type RunWorkSection,
 } from "../../signals/chat-page/run-work-folding.ts";
+import {
+  chatEventGroupKeys,
+  chatEventRenderKey,
+} from "../../signals/chat-page/chat-event-group-keys.ts";
 import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
@@ -3401,10 +3405,11 @@ function ChatThreadEventGroups({
   // between. Tracking the last group that actually put something on screen
   // keeps the stack from springing open the moment a run finishes.
   let previousVisibleGroup: ChatEventGroup | undefined;
+  const groupKeys = chatEventGroupKeys(groups, runWorkFolding);
 
   return (
     <>
-      {groups.map((group) => {
+      {groups.map((group, index) => {
         const runWorkSection = runWorkSectionForGroup(runWorkFolding, group);
         const stackFirstOnPrevious =
           previousVisibleGroup !== undefined &&
@@ -3416,10 +3421,7 @@ function ChatThreadEventGroups({
         const groupStatusRow =
           group.beginEventId === statusRowGroupId ? statusRow : undefined;
         return (
-          <div
-            key={runWorkSection?.key ?? group.beginEventId}
-            className="contents"
-          >
+          <div key={groupKeys[index]} className="contents">
             <SelectablePagedGroupRow
               group={group}
               thread={thread}
@@ -6293,7 +6295,7 @@ function PagedUserGroup({
             ? rendersUserBubble(previousEvent)
             : stackFirstOnPrevious);
         return (
-          <div key={event.id} className="contents">
+          <div key={chatEventRenderKey(event)} className="contents">
             {modelChange === undefined ? null : (
               <ModelChangeDividerRow change={modelChange} />
             )}

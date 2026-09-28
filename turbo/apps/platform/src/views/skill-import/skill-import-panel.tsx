@@ -3,14 +3,17 @@
 import type { Command } from "ccstate";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Check, Copy, FileText, Loader2 } from "lucide-react";
-import { Button } from "@okouai/ui";
+import { Check, ChevronDown, Copy, FileText, Loader2 } from "lucide-react";
+import { Button, cn } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import type { SkillImportSignals } from "../../signals/skill-import/skill-import.ts";
+import type {
+  SkillImportProvider,
+  SkillImportSignals,
+} from "../../signals/skill-import/skill-import.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { OnboardingIllustration } from "../onboarding-sources-first/onboarding-step-parts.tsx";
+import { SkillImportGuide } from "./skill-import-guide.tsx";
 
 /** The prompt itself: long, read in full, and selectable where it stands. */
 function SkillImportPromptBody({ prompt }: { readonly prompt: string }) {
@@ -91,9 +94,12 @@ function SkillImportPromptFailed({
 function SkillImportCopyButton({
   copied,
   copyPrompt$,
+  primary = false,
 }: {
   readonly copied: boolean;
   readonly copyPrompt$: Command<Promise<boolean>, [AbortSignal]>;
+  /** Where copying is the one thing to do, it is the primary action. */
+  readonly primary?: boolean;
 }) {
   const { t } = useTranslation();
   const copyPrompt = useSet(copyPrompt$);
@@ -102,7 +108,7 @@ function SkillImportCopyButton({
   return (
     <Button
       type="button"
-      variant="outline"
+      variant={primary ? "default" : "outline"}
       size="sm"
       className="shrink-0 gap-1.5"
       onClick={() => {
@@ -142,12 +148,12 @@ function ImportedSkillRow({ skill }: { readonly skill: WorkflowSummary }) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex w-full items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
+    <div className="flex w-full items-center gap-3 px-3 py-2.5 text-left">
       <span
-        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground"
+        className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"
         aria-hidden="true"
       >
-        <FileText size={18} />
+        <FileText size={16} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">
@@ -170,8 +176,11 @@ function ImportedSkillRow({ skill }: { readonly skill: WorkflowSummary }) {
  */
 export function ImportedSkillList({
   skills,
+  scroll = false,
 }: {
   readonly skills: readonly WorkflowSummary[];
+  /** Keeps a long import to a few rows, scrolling within the list. */
+  readonly scroll?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -181,43 +190,166 @@ export function ImportedSkillList({
         {t(($) => {
           return $.onboarding.sourcesFirst.skills.importedLabel;
         })}
+        {skills.length > 0 ? (
+          <span className="ml-1.5 font-normal text-muted-foreground">
+            {skills.length}
+          </span>
+        ) : null}
       </p>
-      <div className="mt-2 flex flex-col gap-2">
-        {skills.length === 0 ? (
-          <div className="flex items-center gap-3 rounded-xl border border-dashed border-border/70 px-4 py-3">
-            <OnboardingIllustration name="skill-import" alt="" />
-            <span className="text-sm text-muted-foreground">
-              {t(($) => {
-                return $.onboarding.sourcesFirst.skills.waiting;
-              })}
-            </span>
-          </div>
-        ) : (
-          skills.map((skill) => {
+      {skills.length === 0 ? (
+        <p className="mt-2 rounded-xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.onboarding.sourcesFirst.skills.waiting;
+          })}
+        </p>
+      ) : (
+        <div
+          className={cn(
+            "mt-2 divide-y divide-border/60 rounded-xl border border-border/60",
+            scroll && "max-h-[228px] overflow-y-auto",
+          )}
+        >
+          {skills.map((skill) => {
             return <ImportedSkillRow key={skill.id} skill={skill} />;
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 /**
- * The prompt for one tool, with its copy button, or where it will be while the
- * session opens or after it could not.
+ * Where the import stands, in one line: waiting for the first skill, then how
+ * many have arrived while it keeps listening for more.
+ */
+export function SkillImportStatus({ count }: { readonly count: number }) {
+  const { t } = useTranslation();
+
+  return (
+    <p
+      role="status"
+      className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground"
+    >
+      <Loader2 size={14} className="shrink-0 animate-spin" aria-hidden="true" />
+      <span className="truncate">
+        {count === 0
+          ? t(($) => {
+              return $.onboarding.sourcesFirst.skills.waiting;
+            })
+          : t(
+              ($) => {
+                return $.onboarding.sourcesFirst.skills.importedCount;
+              },
+              { count },
+            )}
+      </span>
+    </p>
+  );
+}
+
+/** Whether the full prompt is shown under the copy step. */
+export interface SkillImportPromptToggle {
+  readonly shown: boolean;
+  readonly setShown: (shown: boolean) => void;
+}
+
+/** Copying is all most people need; the full text stays one click away. */
+function SkillImportFullPromptToggle({
+  toggle,
+}: {
+  readonly toggle: SkillImportPromptToggle;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      size="xs"
+      className="-ml-2.5 gap-1 text-xs"
+      aria-expanded={toggle.shown}
+      onClick={() => {
+        toggle.setShown(!toggle.shown);
+      }}
+    >
+      <ChevronDown
+        size={14}
+        aria-hidden="true"
+        className={cn("transition-transform", toggle.shown && "rotate-180")}
+      />
+      {toggle.shown
+        ? t(($) => {
+            return $.onboarding.sourcesFirst.skills.hideFullPrompt;
+          })
+        : t(($) => {
+            return $.onboarding.sourcesFirst.skills.showFullPrompt;
+          })}
+    </Button>
+  );
+}
+
+/**
+ * The prompt for one tool, with its copy button and where in the tool to run
+ * it, or where it will be while the session opens or after it could not.
+ * Given a prompt toggle, the panel is compact: the tool's window leads, and
+ * the steps start with copying, the full prompt folded beneath that step.
  */
 export function SkillImportPanel({
   signals,
+  provider,
   providerName,
   retry$,
+  promptToggle,
 }: {
   readonly signals: SkillImportSignals;
+  readonly provider: SkillImportProvider;
   readonly providerName: string;
   /** Opens the session again, under whatever owns this import's lifetime. */
   readonly retry$: Command<Promise<void>, [AbortSignal]>;
+  readonly promptToggle?: SkillImportPromptToggle;
 }) {
   const state = useGet(signals.state$);
   const { t } = useTranslation();
+  const pending =
+    state.status === "failed" ? (
+      <SkillImportPromptFailed retry$={retry$} />
+    ) : (
+      <SkillImportPromptPending />
+    );
+
+  if (promptToggle) {
+    // Until a skill arrives, copying is the one thing to do; after that,
+    // viewing the workflows takes over as the primary action.
+    return (
+      <SkillImportGuide
+        provider={provider}
+        stacked
+        copyStep={{
+          action:
+            state.prompt === null ? null : (
+              <SkillImportCopyButton
+                copied={state.copied}
+                copyPrompt$={signals.copyPrompt$}
+                primary={state.imported.length === 0}
+              />
+            ),
+          detail:
+            state.prompt === null ? (
+              <div className="mt-2">{pending}</div>
+            ) : (
+              <>
+                <SkillImportFullPromptToggle toggle={promptToggle} />
+                {promptToggle.shown ? (
+                  <div className="mt-2">
+                    <SkillImportPromptBody prompt={state.prompt} />
+                  </div>
+                ) : null}
+              </>
+            ),
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -244,12 +376,12 @@ export function SkillImportPanel({
           />
         )}
       </div>
+      <SkillImportGuide
+        provider={provider}
+        className="rounded-xl border border-border/60 bg-muted/30 p-4"
+      />
       {state.prompt === null ? (
-        state.status === "failed" ? (
-          <SkillImportPromptFailed retry$={retry$} />
-        ) : (
-          <SkillImportPromptPending />
-        )
+        pending
       ) : (
         <SkillImportPromptBody prompt={state.prompt} />
       )}

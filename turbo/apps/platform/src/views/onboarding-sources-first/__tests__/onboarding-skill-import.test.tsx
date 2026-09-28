@@ -48,6 +48,7 @@ const SKILLS_ARRIVED_TITLE = "Your skills are in Okou";
 const SLACK_QUESTION = "Keep work moving in Slack";
 const CODEX_CARD = "Codex";
 const PROMPT_LABEL = "Skill import prompt";
+const GUIDE_LABEL = "Where to run the prompt";
 /** The prompt's own opening line, as the user's agent would read it. */
 const PROMPT_OPENING = "Import my local personal skills into Okou.";
 const WAITING_FOR_SKILLS = "Imported skills appear here as they arrive.";
@@ -387,6 +388,15 @@ test("The step hands over the prompt its session produced, and copies it whole",
     ),
   ).toBeInTheDocument();
 
+  // Codex also runs in the cloud, so the step says where the prompt can read
+  // this machine's skills.
+  const guide = screen.getByRole("list", { name: GUIDE_LABEL });
+  expect(guide).toHaveTextContent("Open the Codex app and start a New chat");
+  expect(guide).toHaveTextContent("Paste the prompt and send it");
+  expect(guide).toHaveTextContent(
+    "Keep it open until your skills appear below",
+  );
+
   const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
   expect(prompt).toHaveTextContent(PROMPT_OPENING);
   // The prompt is what carries the session, so the token is in it and the
@@ -430,6 +440,13 @@ test("The skills step names Claude Code when it was selected", async () => {
       "Run this prompt in Claude Code to import the skills you've already built, so Okou can use them from day one.",
     ),
   ).toBeInTheDocument();
+  // The Claude app's Chat tab cannot read local files; its Code tab can.
+  const guide = screen.getByRole("list", { name: GUIDE_LABEL });
+  expect(guide).toHaveTextContent(
+    "Open the Claude app and switch to the Code tab",
+  );
+  expect(guide).toHaveTextContent("Keep the session on Local");
+  expect(guide).not.toHaveTextContent("New chat");
   const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
   expect(prompt.textContent).toContain("~/.claude/skills/");
   expect(prompt.textContent).toContain("~/.agents/skills/");

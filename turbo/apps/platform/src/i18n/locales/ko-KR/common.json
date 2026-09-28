@@ -4346,13 +4346,45 @@
         "copy": "{{provider}}에서 이 프롬프트를 실행해 이미 만든 스킬을 가져오면 Okou에서 바로 사용할 수 있습니다.",
         "copyError": "프롬프트를 복사하지 못했습니다.",
         "copyPrompt": "프롬프트 복사",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Claude 앱을 열고 {{control}} 탭으로 전환하기",
+            "openAppNote": "Code는 컴퓨터에서 실행되므로 스킬 폴더를 읽을 수 있습니다.",
+            "stayLocal": "세션을 {{control}}에 두기",
+            "stayLocalNote": "Chat과 클라우드 세션은 컴퓨터의 파일을 볼 수 없습니다."
+          },
+          "codex": {
+            "keepOpen": "아래에 스킬이 나타날 때까지 열어 두기",
+            "openApp": "Codex 앱을 열고 {{control}} 시작하기",
+            "openAppNote": "스킬 폴더를 읽을 수 있도록 컴퓨터에 설치된 앱을 사용하세요."
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "프롬프트 복사하기",
+          "label": "프롬프트를 실행할 위치",
+          "paste": "프롬프트를 붙여넣고 보내기",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "전체 프롬프트 숨기기",
         "importedCopy": "Okou 워크플로로 가져왔습니다.",
+        "importedCount_other": "{{count}}개 가져옴 · 더 기다리는 중",
         "importedLabel": "가져온 스킬",
         "importedTitle": "스킬이 Okou에 들어왔습니다",
         "preparing": "가져오기 세션을 여는 중…",
         "promptCopy": "내 컴퓨터의 스킬을 읽어 Okou에 씁니다.",
         "promptLabel": "스킬 가져오기 프롬프트",
         "promptTitle": "{{provider}}에서 실행하세요",
+        "showFullPrompt": "전체 프롬프트 보기",
         "startError": "가져오기 세션을 열지 못했습니다.",
         "title": "기존 스킬을 Okou로 가져오세요",
         "tryAgain": "다시 시도",
@@ -7910,9 +7942,7 @@
       "action": "스킬 가져오기",
       "description": "스킬이 있는 곳에서 이 프롬프트를 실행하세요. 각 스킬은 비공개 워크플로가 됩니다.",
       "emptyAction": "Claude Code 또는 Codex에서 가져오기",
-      "hidePrompt": "프롬프트 숨기기",
       "providerLabel": "가져올 곳",
-      "showPrompt": "프롬프트 보기",
       "source": {
         "claudeCode": "Claude Code에서 가져옴",
         "codex": "Codex에서 가져옴"

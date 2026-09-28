@@ -2257,7 +2257,7 @@ receipts retain no raw event, account identity, channel history or credential.
 Older strict public ChatEvent readers in the API and App do not recognize the
 new source literal. The CLI raw-history sync already preserves opaque
 `userMessage` payloads and string context types without projecting them.
-`_discordIntegration` and the Gateway remain disabled by default; no production
+`discordIntegration` and the Gateway remain disabled by default; no production
 Discord records or activation are authorized by this implementation. Fixture
 validation uses matching current readers. Enabling the integration later requires
 compatible public ChatEvent readers and a reviewed activation/rollback plan; a
@@ -2348,7 +2348,7 @@ ordinary title, draft and other non-key updates remain legal. Race tests now
 exercise owner changes before the initial pin and observed blocking after it.
 New cleanup/export readers require the migration before API promotion, following
 the existing production release order. There are no historical Discord rows to
-backfill. `_discordIntegration` remains disabled for every organization by
+backfill. `discordIntegration` remains disabled for every organization by
 default, and no Gateway or OAuth onboarding is activated by this change.
 
 Old account-erasure workers do not ignore the new relations: their catalogue
@@ -6425,7 +6425,7 @@ carries an empty classification instead of `unproven_containment`. The
 ## Discord native file delivery (#36646)
 
 Discord file commands use additive upload-init, materialize, complete, and
-identity-based download endpoints behind the default-off `_discordIntegration`
+identity-based download endpoints behind the default-off `discordIntegration`
 switch. Uploads retain one canonical asset and operation ID across provider
 retries. Native member uploads have no Run; Run-scoped uploads retain their actual
 Run source. The API validates the stored bytes before publication, then records
