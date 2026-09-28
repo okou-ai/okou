@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HTTPException } from "hono/http-exception";
@@ -7,7 +6,6 @@ import { HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { holdThreadSessionConversationClearFixture } from "../../../test-fixtures/chat-events";
 import { holdPiContextPreparationStagesFixture } from "../../../test-fixtures/pi-context-preparation";
@@ -43,7 +41,6 @@ const {
   requestSendEventWithBearer,
   mockPiCheckpointObjectStore,
   completeSandboxFirstPiRun,
-  expectPiSandboxHandoff,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
@@ -595,10 +592,9 @@ describe("CHAT-02: run-level model overrides", () => {
         model: route.selectedModel,
         prompt: "Terra standard start",
       });
-      expect(
-        expectPiSandboxHandoff(first.runId, objects).manifest,
-      ).toMatchObject({ schemaVersion: 3 });
       const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      expect(firstClaim.claim.resumeSession).toBeNull();
+      expect(firstClaim.claim.piSessionId).toBe(first.threadId);
       expect(firstClaim.claim.piModelConfig).toMatchObject({
         model: route.runtimeModel,
       });
@@ -625,25 +621,14 @@ describe("CHAT-02: run-level model overrides", () => {
         runOptions: { codexServiceTier: "fast" },
       });
       await flushWaitUntilForTest();
-      const fastManifestBytes = objects.get(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fast.runId}/manifest.json`,
-      );
-      if (!fastManifestBytes) {
-        throw new Error("Expected Fast resume handoff manifest");
-      }
-      expect(
-        piApiFirstTurnManifestSchema.parse(
-          JSON.parse(fastManifestBytes.toString("utf8")),
-        ),
-      ).toMatchObject({
-        schemaVersion: 4,
-        mode: "sandbox-first",
-        baseSession: {
-          sessionId: first.threadId,
-          sha256: expect.any(String),
+      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
+      expect(fastClaim.claim.resumeSession).toMatchObject({
+        sessionId: first.threadId,
+        historyRef: {
+          kind: "blob",
+          hash: expect.stringMatching(/^[a-f0-9]{64}$/u),
         },
       });
-      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
       expect(fastClaim.claim.piModelConfig).toMatchObject({
         model: route.runtimeModel,
         serviceTier: route.type === "codex-oauth-token" ? "fast" : "priority",

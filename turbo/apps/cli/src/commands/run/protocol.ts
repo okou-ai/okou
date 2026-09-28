@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 const safeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
-const coverage = z.enum(["complete", "partial", "unavailable"]);
 const combinedCoverage = z.enum(["complete", "partial"]);
 const totalTokens = z
   .object({
@@ -24,81 +23,6 @@ const totalTokens = z
       });
     }
   });
-const nullableQuantity = safeInteger.nullable();
-const apiTokens = z
-  .object({
-    input: nullableQuantity,
-    cacheRead: nullableQuantity,
-    cacheCreation: nullableQuantity,
-    output: nullableQuantity,
-    total: nullableQuantity,
-  })
-  .strict();
-
-/** Retired source; Runners before its removal still report it. */
-const apiFirstTurn = z
-  .discriminatedUnion("state", [
-    z
-      .object({
-        state: z.literal("unavailable"),
-        reason: z.enum(["missing-handoff", "invalid-handoff"]),
-      })
-      .strict(),
-    z
-      .object({
-        state: z.literal("no-inference"),
-        sampledAt: safeInteger,
-      })
-      .strict(),
-    z
-      .object({
-        state: z.literal("observed"),
-        sampledAt: safeInteger,
-        coverage,
-        tokens: apiTokens,
-      })
-      .strict(),
-  ])
-  .superRefine((source, context) => {
-    if (source.state !== "observed") return;
-    const categories = [
-      source.tokens.input,
-      source.tokens.cacheRead,
-      source.tokens.cacheCreation,
-      source.tokens.output,
-    ];
-    const known = categories.filter((value) => {
-      return value !== null;
-    });
-    const coverageValid =
-      (source.coverage === "complete" && known.length === categories.length) ||
-      (source.coverage === "partial" && known.length > 0) ||
-      (source.coverage === "unavailable" && known.length === 0);
-    if (!coverageValid) {
-      context.addIssue({
-        code: "custom",
-        path: ["coverage"],
-        message: "API coverage does not match its categories",
-      });
-    }
-    const sum = categories.every((value) => {
-      return value !== null;
-    })
-      ? categories.reduce<number>((total, value) => {
-          return total + (value ?? 0);
-        }, 0)
-      : null;
-    const expectedTotal =
-      sum !== null && sum <= Number.MAX_SAFE_INTEGER ? sum : null;
-    if (source.tokens.total !== expectedTotal) {
-      context.addIssue({
-        code: "custom",
-        path: ["tokens", "total"],
-        message: "API total does not match established categories",
-      });
-    }
-  });
-
 const coverageReason = z.enum([
   "history_lost",
   "retention_lost",
@@ -201,7 +125,6 @@ const runUsageResultBaseSchema = z
     combined,
     sources: z
       .object({
-        apiFirstTurn: apiFirstTurn.optional(),
         sandboxProxy,
       })
       .strict(),
@@ -210,60 +133,21 @@ const runUsageResultBaseSchema = z
 
 type RunUsageResultInput = z.infer<typeof runUsageResultBaseSchema>;
 
-function apiEstablishesObservation(
-  api: RunUsageResultInput["sources"]["apiFirstTurn"],
-): boolean {
-  if (api === undefined) return false;
-  if (api.state === "no-inference") return true;
-  if (api.state !== "observed") return false;
-  return [
-    api.tokens.input,
-    api.tokens.cacheRead,
-    api.tokens.cacheCreation,
-    api.tokens.output,
-  ].some((value) => {
-    return value !== null;
-  });
-}
-
 function sourceCategorySums(
   sources: RunUsageResultInput["sources"],
 ): readonly [number, number, number, number] {
-  const api =
-    sources.apiFirstTurn?.state === "observed"
-      ? [
-          sources.apiFirstTurn.tokens.input ?? 0,
-          sources.apiFirstTurn.tokens.cacheRead ?? 0,
-          sources.apiFirstTurn.tokens.cacheCreation ?? 0,
-          sources.apiFirstTurn.tokens.output ?? 0,
-        ]
-      : [0, 0, 0, 0];
-  const proxy =
-    sources.sandboxProxy.state === "observed"
-      ? [
-          sources.sandboxProxy.tokens.input,
-          sources.sandboxProxy.tokens.cacheRead,
-          sources.sandboxProxy.tokens.cacheCreation,
-          sources.sandboxProxy.tokens.output,
-        ]
-      : [0, 0, 0, 0];
-  return [
-    api[0]! + proxy[0]!,
-    api[1]! + proxy[1]!,
-    api[2]! + proxy[2]!,
-    api[3]! + proxy[3]!,
-  ];
+  if (sources.sandboxProxy.state !== "observed") return [0, 0, 0, 0];
+  const { tokens } = sources.sandboxProxy;
+  return [tokens.input, tokens.cacheRead, tokens.cacheCreation, tokens.output];
 }
 
 function validateCombined(
   result: RunUsageResultInput,
   context: z.RefinementCtx,
 ): void {
-  const { apiFirstTurn: api, sandboxProxy: proxy } = result.sources;
-  const apiObserved = apiEstablishesObservation(api);
-  const proxyObserved = proxy.state === "observed";
+  const proxy = result.sources.sandboxProxy;
   if (result.combined.state === "unavailable") {
-    if (apiObserved || proxyObserved) {
+    if (proxy.state === "observed") {
       context.addIssue({
         code: "custom",
         path: ["combined"],
@@ -272,7 +156,7 @@ function validateCombined(
     }
     return;
   }
-  if (!apiObserved && !proxyObserved) {
+  if (proxy.state !== "observed") {
     context.addIssue({
       code: "custom",
       path: ["combined"],
@@ -280,15 +164,7 @@ function validateCombined(
     });
     return;
   }
-  const apiComplete =
-    api === undefined ||
-    api.state === "no-inference" ||
-    (api.state === "observed" && api.coverage === "complete");
-  const proxyComplete =
-    proxy.state === "observed" && proxy.coverage === "complete";
-  const expectedCoverage =
-    apiComplete && proxyComplete ? "complete" : "partial";
-  if (result.combined.coverage !== expectedCoverage) {
+  if (result.combined.coverage !== proxy.coverage) {
     context.addIssue({
       code: "custom",
       path: ["combined", "coverage"],

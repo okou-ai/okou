@@ -45,6 +45,7 @@ readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migration
 readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1261_drop_chat_thread_snapshot_jsonb.sql
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
+readonly PI_API_FIRST_TURN_RETIRED_PATH=.github/rollback-floors/pi-api-first-turn-retired
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 
 fail() {
@@ -200,6 +201,18 @@ if [[ ! "$retired_preference_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$retired_preference_columns_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the retired preference column drop: ${retired_preference_columns_drop_commit}."
+fi
+
+# Release 7 stopped writing piLaunchConfig.apiFirstTurn. Its Runners, Guests
+# and installed CLIs reject that slot, and earlier APIs write it on every Pi run
+# and reject queued contexts without it, so no earlier API serves Pi runs.
+pi_api_first_turn_retired_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PI_API_FIRST_TURN_RETIRED_PATH" | sed -n '1p')
+if [[ ! "$pi_api_first_turn_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Pi API-first turn retirement on main."
+fi
+if ! git merge-base --is-ancestor "$pi_api_first_turn_retired_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Pi API-first turn retirement: ${pi_api_first_turn_retired_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

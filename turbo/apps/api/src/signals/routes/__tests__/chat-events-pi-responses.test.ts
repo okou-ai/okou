@@ -50,7 +50,7 @@ const {
   claimGptPiSandbox,
   mockPiCheckpointObjectStore,
   completeSandboxFirstPiRun,
-  expectPiSandboxHandoff,
+  piSandboxBaseSession,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
@@ -183,8 +183,6 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       await flushWaitUntilForTest();
 
-      const { manifest } = expectPiSandboxHandoff(run.runId, checkpointObjects);
-      expect(manifest.schemaVersion).toBe(3);
       await expect(
         readRunLaunchSnapshotFixture(context, run.runId),
       ).resolves.toMatchObject({ launch_snapshot: { framework: "pi" } });
@@ -325,26 +323,26 @@ describe("CHAT-02: model-first provider policies", () => {
       );
     });
     await flushWaitUntilForTest();
-    const { manifest } = expectPiSandboxHandoff(
-      second.runId,
-      checkpointObjects,
-    );
-    expect(manifest).toMatchObject({
-      schemaVersion: 4,
-      mode: "sandbox-first",
-      baseSession: { sessionId: first.threadId, sha256: legacyHash },
-      session: {
-        sessionId: first.threadId,
-        sha256: legacyHash,
+    const claim = await claimChatRun(runnerGroup, second.runId);
+    const resumeSession = claim.claim.resumeSession;
+    if (!resumeSession || !("historyRef" in resumeSession)) {
+      throw new Error("Expected referenced historical Pi session");
+    }
+    expect(resumeSession).toMatchObject({
+      sessionId: first.threadId,
+      historyRef: {
+        kind: "blob",
+        hash: legacyHash,
+        encoding: "identity",
         rawSize: Buffer.byteLength(legacyJsonl),
       },
     });
-    if (manifest.schemaVersion !== 4) {
-      throw new Error("Expected referenced historical Pi session");
-    }
-    expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`,
-    );
+    expect(
+      new URL(resumeSession.historyRef.url).searchParams.get("object"),
+    ).toBe(`${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`);
+    expect(
+      piSandboxBaseSession(claim.claim, checkpointObjects).toString("utf8"),
+    ).toBe(legacyJsonl);
     for (const marker of [
       "legacy API user context",
       "legacy API reasoning context",
@@ -353,7 +351,6 @@ describe("CHAT-02: model-first provider policies", () => {
     ]) {
       expect(occurrences(legacyJsonl, marker)).toBe(1);
     }
-    const claim = await claimChatRun(runnerGroup, second.runId);
     await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
   }, 90_000);
 
@@ -767,13 +764,6 @@ describe("CHAT-02: model-first provider policies", () => {
         runOptions: { codexServiceTier: route.tier },
       });
       await flushWaitUntilForTest();
-      const { manifest, session: h0Bytes } = expectPiSandboxHandoff(
-        first.runId,
-        checkpointObjects,
-      );
-      if (!h0Bytes) {
-        throw new Error("Expected API-key first-turn sandbox H0");
-      }
       await expectNoBuiltInModelUsage(first.runId);
 
       await api.heartbeatRunner(runnerGroup);
@@ -783,6 +773,7 @@ describe("CHAT-02: model-first provider policies", () => {
       };
       expect(claim.cliAgentType).toBe("pi");
       expect(claim.piSessionId).toBe(first.threadId);
+      expect(claim.resumeSession).toBeNull();
       expectApiKeyGptSandboxCarrier(claim, route, route.tier);
       expect(JSON.stringify(claim)).not.toContain(initialSecret);
       await expectApiKeyGptSandboxCredential(
@@ -792,6 +783,7 @@ describe("CHAT-02: model-first provider policies", () => {
         initialSecret,
       );
 
+      const h0Bytes = piSandboxBaseSession(claim, checkpointObjects);
       const h2Session = MemoryPiSession.fromJsonl(h0Bytes.toString("utf8"));
       const sandboxAnswer = `${route.name} Sandbox completion`;
       h2Session.appendMessage({
@@ -842,21 +834,20 @@ describe("CHAT-02: model-first provider policies", () => {
         `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
         Buffer.from(h2, "utf8"),
       );
-      const sandboxEventSequenceStart = manifest.sandboxEventSequenceStart;
       await webhooks.requestAgentEvents(
         {
           runId: first.runId,
           events: [
             {
               type: "assistant",
-              sequenceNumber: sandboxEventSequenceStart,
+              sequenceNumber: 1,
               message: {
                 content: [{ type: "text", text: sandboxAnswer }],
               },
             },
             {
               type: "result",
-              sequenceNumber: sandboxEventSequenceStart + 1,
+              sequenceNumber: 2,
               result: sandboxAnswer,
             },
           ],
@@ -874,7 +865,7 @@ describe("CHAT-02: model-first provider policies", () => {
           ...(route.outcome === "failed"
             ? { error: "API-key Sandbox failed" }
             : {}),
-          lastEventSequence: sandboxEventSequenceStart + 1,
+          lastEventSequence: 2,
           checkpoint: {
             cliAgentType: "pi",
             cliAgentSessionId: first.threadId,
@@ -919,13 +910,11 @@ describe("CHAT-02: model-first provider policies", () => {
         runOptions: { codexServiceTier: route.tier },
       });
       await flushWaitUntilForTest();
-      expect(
-        expectPiSandboxHandoff(followUp.runId, checkpointObjects).manifest,
-      ).toMatchObject({
-        schemaVersion: 4,
-        baseSession: { sessionId: first.threadId, sha256: h2Hash },
-      });
       const followUpClaim = await claimChatRun(runnerGroup, followUp.runId);
+      expect(followUpClaim.claim.resumeSession).toMatchObject({
+        sessionId: first.threadId,
+        historyRef: { kind: "blob", hash: h2Hash },
+      });
       expectApiKeyGptSandboxCarrier(followUpClaim.claim, route, route.tier);
       await completeSandboxFirstPiRun({
         actor,

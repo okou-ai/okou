@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  piApiFirstTurnConfigSchema,
   artifactMissingRootPolicySchema,
   builtInModelProviderConnectionSourceSchema,
   piLaunchConfigSchema,
@@ -221,9 +220,7 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema: piLaunchConfigSchema
-      .unwrap()
-      .safeExtend({ apiFirstTurn: piApiFirstTurnConfigSchema }),
+    schema: piLaunchConfigSchema.unwrap(),
     rustModulePath: ["runners", "runs"],
     rustTypeName: "PiLaunchConfig",
     direction: "response",
@@ -235,7 +232,6 @@ export const rustTypeBindings = [
         ],
         fields: {
           schemaVersion: ["Pi launch contract version."],
-          apiFirstTurn: ["Configuration for the API-mediated first turn."],
           memoryRecall: [
             "Optional frozen memory-summary selection for API and Sandbox parity.",
           ],
@@ -286,42 +282,6 @@ export const rustTypeBindings = [
         variants: {
           "no-content": ["The launch epoch intentionally contains no memory."],
           ready: ["The launch epoch contains an authenticated summary."],
-        },
-      },
-      {
-        rustTypeName: "PiLaunchConfigApiFirstTurn",
-        rustDoc: ["API-mediated first-turn configuration for Pi."],
-        fields: {
-          schemaVersion: ["Pi API first-turn contract version."],
-          resourceSnapshotDigest: [
-            "Digest identifying the runtime resource snapshot.",
-          ],
-          manifestUrl: ["URL of the first-turn resource manifest."],
-          sessionUrl: ["URL of the first-turn session JSONL."],
-          deadlineAt: ["Unix timestamp in milliseconds for first-turn expiry."],
-          baseSession: ["Checkpoint used as the base Pi session."],
-          sandboxEventSequenceStart: [
-            "First sandbox event sequence number for the resumed session.",
-          ],
-          requiredPiAgentRuntimeVersion: [
-            "Exact pi-agent-runtime release the API prepared this turn with;",
-            "the guest execs the rootfs-installed CLI only on an exact match.",
-          ],
-          minCliVersion: [
-            "Lowest installed Okou CLI release allowed to run this launch payload.",
-          ],
-          requiredPiSessionConstructionDigest: [
-            "Digest of the session construction the API prepared this turn with;",
-            "when present it replaces the runtime version as the parity key.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "PiLaunchConfigApiFirstTurnBaseSession",
-        rustDoc: ["Pi session checkpoint used as the first-turn base."],
-        fields: {
-          sessionId: ["Pi session identifier."],
-          sha256: ["Nullable lowercase SHA-256 of the base session JSONL."],
         },
       },
     ],

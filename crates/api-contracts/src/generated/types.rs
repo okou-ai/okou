@@ -37,47 +37,6 @@ pub mod runners {
             pub model_catalog: Option<serde_json::Value>,
         }
 
-        /// Pi session checkpoint used as the first-turn base.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiLaunchConfigApiFirstTurnBaseSession {
-            /// Pi session identifier.
-            pub session_id: String,
-            /// Nullable lowercase SHA-256 of the base session JSONL.
-            pub sha256: Option<String>,
-        }
-
-        /// API-mediated first-turn configuration for Pi.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiLaunchConfigApiFirstTurn {
-            /// Pi API first-turn contract version.
-            pub schema_version: i64,
-            /// Digest identifying the runtime resource snapshot.
-            pub resource_snapshot_digest: String,
-            /// URL of the first-turn resource manifest.
-            pub manifest_url: String,
-            /// URL of the first-turn session JSONL.
-            pub session_url: String,
-            /// Unix timestamp in milliseconds for first-turn expiry.
-            pub deadline_at: i64,
-            /// Checkpoint used as the base Pi session.
-            pub base_session: PiLaunchConfigApiFirstTurnBaseSession,
-            /// First sandbox event sequence number for the resumed session.
-            pub sandbox_event_sequence_start: u64,
-            /// Exact pi-agent-runtime release the API prepared this turn with;
-            /// the guest execs the rootfs-installed CLI only on an exact match.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub required_pi_agent_runtime_version: Option<String>,
-            /// Lowest installed Okou CLI release allowed to run this launch payload.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub min_cli_version: Option<String>,
-            /// Digest of the session construction the API prepared this turn with;
-            /// when present it replaces the runtime version as the parity key.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub required_pi_session_construction_digest: Option<String>,
-        }
-
         /// Frozen exact-version Pi memory recall selection.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "status", rename_all_fields = "camelCase")]
@@ -154,8 +113,6 @@ pub mod runners {
         pub struct PiLaunchConfig {
             /// Pi launch contract version.
             pub schema_version: i64,
-            /// Configuration for the API-mediated first turn.
-            pub api_first_turn: PiLaunchConfigApiFirstTurn,
             /// Optional frozen memory-summary selection for API and Sandbox parity.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub memory_recall: Option<PiLaunchConfigMemoryRecall>,

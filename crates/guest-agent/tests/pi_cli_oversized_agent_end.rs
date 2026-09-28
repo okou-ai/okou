@@ -79,7 +79,6 @@ async fn run_oversized_case(
         &npx,
         r#"#!/bin/sh
 set -eu
-printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":1,"ownershipTransferMode":"sandbox-first"}'
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;

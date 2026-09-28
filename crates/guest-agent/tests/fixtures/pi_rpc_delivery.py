@@ -19,8 +19,6 @@ def command(expected):
     return record
 
 
-emit({"type": "vm0_pi_api_first_turn_boundary", "schemaVersion": 2,
-      "sandboxEventSequenceStart": 1, "ownershipTransferMode": "sandbox-first"})
 state = command("get_state")
 emit({"id": state["id"], "type": "response", "command": "get_state", "success": True,
       "data": {"sessionId": os.environ["PI_SESSION_ID"], "sessionFile": os.environ["PI_SESSION_PATH"]}})

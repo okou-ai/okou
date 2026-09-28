@@ -18,8 +18,7 @@ import {
   PI_MEMORY_SUMMARY_MAX_BYTES,
   PI_MEMORY_SUMMARY_MAX_TOKENS,
   PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS,
-  piApiFirstTurnConfigSchema,
-  piApiFirstTurnManifestSchema,
+  piLangfuseParentSchema,
   piMemoryRecallSelectionSchema,
   piModelConfigLegacySchema,
   piModelConfigSchema,
@@ -51,7 +50,6 @@ import {
   workspaceReuseResultSchema,
 } from "../runner-primitives";
 import { runRunnerContract } from "../run-routes";
-import { MAX_EVENT_SEQUENCE_NUMBER } from "../runs";
 import {
   piApiHandoffUsageSchema,
   piSandboxContinuationSchema,
@@ -270,21 +268,7 @@ describe("Pi sandbox execution contract", () => {
   };
   const piStoredContext = {
     piSessionId,
-    piLaunchConfig: {
-      schemaVersion: 2 as const,
-      apiFirstTurn: {
-        schemaVersion: 1 as const,
-        resourceSnapshotDigest: "a".repeat(64),
-        manifestUrl: "https://storage.example/manifest.json",
-        sessionUrl: "https://storage.example/session.jsonl",
-        deadlineAt: 2_000_000_000_000,
-        baseSession: {
-          sessionId: piSessionId,
-          sha256: null,
-        },
-        sandboxEventSequenceStart: 1 as const,
-      },
-    },
+    piLaunchConfig: { schemaVersion: 2 as const },
     piModelConfig: {
       provider: "deepseek",
       baseUrl: "https://api.deepseek.com/",
@@ -308,12 +292,6 @@ describe("Pi sandbox execution contract", () => {
       kind: "noPreference" as const,
       reason: "noReuseKey" as const,
     },
-  };
-
-  const handoffSession = {
-    sessionId: piSessionId,
-    sha256: "b".repeat(64),
-    rawSize: 1024,
   };
 
   it("preserves canonical Gen1 request policy and custom gateway credentials", () => {
@@ -560,76 +538,17 @@ describe("Pi sandbox execution contract", () => {
     },
   );
 
-  it.each([
-    {
-      schemaVersion: 1,
-      outcome: "handoff",
-      baseSession: { sessionId: piSessionId, sha256: null },
-      session: handoffSession,
-    },
-    {
-      schemaVersion: 2,
-      outcome: "handoff",
-      baseSession: { sessionId: piSessionId, sha256: null },
-      session: handoffSession,
-      sandboxEventSequenceStart: 4,
-    },
-  ])("rejects retired manifest schema $schemaVersion", (manifest) => {
-    expect(piApiFirstTurnManifestSchema.safeParse(manifest).success).toBe(
-      false,
-    );
-  });
-
-  it.each([
-    "sandbox-first",
-    "pending-tool-continuation",
-    "settled-session-continuation",
-  ] as const)("represents %s as one ownership-transfer mode", (mode) => {
-    const manifest = piApiFirstTurnManifestSchema.parse({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode,
-      baseSession: { sessionId: piSessionId, sha256: null },
-      session: handoffSession,
-      sandboxEventSequenceStart: 4,
-    });
-
-    expect(manifest).toMatchObject({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode,
-      sandboxEventSequenceStart: 4,
-    });
-  });
-
-  it("carries additive handoff usage without requiring strict readers", () => {
+  it("bounds Sandbox continuation usage without requiring strict readers", () => {
     const apiUsage = {
       schemaVersion: 1,
       state: "observed",
       sampledAt: 1_000,
       coverage: "partial",
       tokens: { input: 3, cacheRead: 0, cacheCreation: null, output: 2 },
-      futureField: true,
     } as const;
-    const manifest = piApiFirstTurnManifestSchema.parse({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode: "pending-tool-continuation",
-      baseSession: { sessionId: piSessionId, sha256: null },
-      session: handoffSession,
-      sandboxEventSequenceStart: 4,
-      apiUsage,
-      futureManifestField: true,
-    });
-
-    expect(manifest.apiUsage).toStrictEqual({
-      schemaVersion: 1,
-      state: "observed",
-      sampledAt: 1_000,
-      coverage: "partial",
-      tokens: { input: 3, cacheRead: 0, cacheCreation: null, output: 2 },
-    });
-    expect(manifest).not.toHaveProperty("futureManifestField");
+    expect(
+      piApiHandoffUsageSchema.parse({ ...apiUsage, futureField: true }),
+    ).toStrictEqual(apiUsage);
     expect(
       piSandboxContinuationSchema.parse({
         mode: "untouched-h0",
@@ -686,7 +605,7 @@ describe("Pi sandbox execution contract", () => {
     }
   });
 
-  it("accepts one strict sampled Langfuse handoff parent", () => {
+  it("accepts one strict sampled Langfuse parent", () => {
     const langfuseParent = {
       traceId: "1".repeat(32),
       spanId: "2".repeat(16),
@@ -694,17 +613,10 @@ describe("Pi sandbox execution contract", () => {
       sessionId: piSessionId,
       sandboxWaitStartedAt: 1_000,
     } as const;
-    const manifest = piApiFirstTurnManifestSchema.parse({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode: "pending-tool-continuation",
-      baseSession: { sessionId: piSessionId, sha256: null },
-      session: handoffSession,
-      sandboxEventSequenceStart: 4,
-      langfuseParent,
-    });
 
-    expect(manifest.langfuseParent).toStrictEqual(langfuseParent);
+    expect(piLangfuseParentSchema.parse(langfuseParent)).toStrictEqual(
+      langfuseParent,
+    );
     for (const invalidParent of [
       { ...langfuseParent, traceId: "0".repeat(32) },
       { ...langfuseParent, traceId: "1".repeat(31) },
@@ -716,134 +628,10 @@ describe("Pi sandbox execution contract", () => {
       { ...langfuseParent, sandboxWaitStartedAt: 1.5 },
       { ...langfuseParent, extra: true },
     ]) {
-      expect(
-        piApiFirstTurnManifestSchema.safeParse({
-          ...manifest,
-          langfuseParent: invalidParent,
-        }).success,
-      ).toBe(false);
-    }
-  });
-
-  it("bounds referenced sandbox history at 128 MiB while retaining the V3 API budget", () => {
-    const manifest = {
-      schemaVersion: 4,
-      outcome: "ownership-transfer",
-      mode: "sandbox-first",
-      baseSession: { sessionId: piSessionId, sha256: handoffSession.sha256 },
-      session: { ...handoffSession, rawSize: RESUME_SESSION_HISTORY_MAX_BYTES },
-      history: {
-        url: "https://history.example/checkpoint",
-        encoding: "zstd",
-        encodedSize: RESUME_SESSION_HISTORY_MAX_BYTES,
-      },
-      sandboxEventSequenceStart: 1,
-    };
-    expect(piApiFirstTurnManifestSchema.safeParse(manifest).success).toBe(true);
-    for (const invalid of [
-      { ...manifest, mode: "pending-tool-continuation" },
-      {
-        ...manifest,
-        session: {
-          ...manifest.session,
-          rawSize: RESUME_SESSION_HISTORY_MAX_BYTES + 1,
-        },
-      },
-      {
-        ...manifest,
-        history: {
-          ...manifest.history,
-          encodedSize: RESUME_SESSION_HISTORY_MAX_BYTES + 1,
-        },
-      },
-      {
-        schemaVersion: 3,
-        outcome: manifest.outcome,
-        mode: manifest.mode,
-        baseSession: manifest.baseSession,
-        session: manifest.session,
-        sandboxEventSequenceStart: manifest.sandboxEventSequenceStart,
-      },
-    ]) {
-      expect(piApiFirstTurnManifestSchema.safeParse(invalid).success).toBe(
+      expect(piLangfuseParentSchema.safeParse(invalidParent).success).toBe(
         false,
       );
     }
-  });
-
-  it.each([
-    {
-      name: "legacy outcome",
-      overrides: { outcome: "handoff" },
-    },
-    {
-      name: "unknown mode",
-      overrides: { mode: "ambiguous-continuation" },
-    },
-    {
-      name: "future manifest version",
-      overrides: { schemaVersion: 5 },
-    },
-  ])("rejects a V3 manifest with $name", ({ overrides }) => {
-    expect(
-      piApiFirstTurnManifestSchema.safeParse({
-        schemaVersion: 3,
-        outcome: "ownership-transfer",
-        mode: "sandbox-first",
-        baseSession: { sessionId: piSessionId, sha256: null },
-        session: handoffSession,
-        sandboxEventSequenceStart: 1,
-        ...overrides,
-      }).success,
-    ).toBe(false);
-  });
-
-  it("ignores unknown additive manifest fields", () => {
-    const manifest = piApiFirstTurnManifestSchema.parse({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode: "sandbox-first",
-      baseSession: { sessionId: piSessionId, sha256: null },
-      session: handoffSession,
-      sandboxEventSequenceStart: 1,
-      prompt: "ignored by this reader",
-    });
-
-    expect(manifest).not.toHaveProperty("prompt");
-  });
-
-  it.each([0, -1, 1.5, MAX_EVENT_SEQUENCE_NUMBER + 1])(
-    "rejects invalid dynamic boundary %s in both manifest and launch config",
-    (sandboxEventSequenceStart) => {
-      expect(
-        piApiFirstTurnManifestSchema.safeParse({
-          schemaVersion: 3,
-          outcome: "ownership-transfer",
-          mode: "settled-session-continuation",
-          baseSession: { sessionId: piSessionId, sha256: null },
-          session: handoffSession,
-          sandboxEventSequenceStart,
-        }).success,
-      ).toBe(false);
-      expect(
-        piApiFirstTurnConfigSchema.safeParse({
-          ...piStoredContext.piLaunchConfig.apiFirstTurn,
-          sandboxEventSequenceStart,
-        }).success,
-      ).toBe(false);
-    },
-  );
-
-  it("rejects a V3 manifest without its dynamic boundary", () => {
-    expect(
-      piApiFirstTurnManifestSchema.safeParse({
-        schemaVersion: 3,
-        outcome: "ownership-transfer",
-        mode: "pending-tool-continuation",
-        baseSession: { sessionId: piSessionId, sha256: null },
-        session: handoffSession,
-      }).success,
-    ).toBe(false);
   });
 
   it("preserves the Chat Thread session across stored and Runner-facing contexts", () => {
@@ -869,15 +657,11 @@ describe("Pi sandbox execution contract", () => {
 
   it.each([
     {
-      name: "missing API first-turn slot",
-      launchConfig: { schemaVersion: 2 },
-    },
-    {
       name: "old launch config",
       launchConfig: { schemaVersion: 1 },
     },
     {
-      name: "missing H0 descriptor",
+      name: "retired API first-turn slot",
       launchConfig: {
         schemaVersion: 2,
         apiFirstTurn: {
@@ -886,6 +670,8 @@ describe("Pi sandbox execution contract", () => {
           manifestUrl: "https://storage.example/manifest.json",
           sessionUrl: "https://storage.example/session.jsonl",
           deadlineAt: 2_000_000_000_000,
+          baseSession: { sessionId: piSessionId, sha256: null },
+          sandboxEventSequenceStart: 1,
         },
       },
     },

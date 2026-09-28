@@ -11,10 +11,8 @@ import {
   rustTypeBindings,
 } from "../types";
 import { modelProviderCodexRuntimeConfigSchema } from "../../contracts/model-providers";
-import { MAX_EVENT_SEQUENCE_NUMBER } from "../../contracts/runs";
 import {
   piLaunchConfigSchema,
-  piApiFirstTurnConfigSchema,
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   sessionHistoryEncodingSchema,
@@ -411,10 +409,7 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain("pub struct StorageMountEntry {");
     expect(firstRender).toContain("pub struct CodexRuntimeConfig {");
     expect(firstRender).toContain("pub struct PiLaunchConfig {");
-    expect(firstRender).toContain("pub struct PiLaunchConfigApiFirstTurn {");
-    expect(firstRender).toContain(
-      "pub struct PiLaunchConfigApiFirstTurnBaseSession {",
-    );
+    expect(firstRender).not.toContain("PiLaunchConfigApiFirstTurn");
     expect(firstRender).toContain("pub struct PiModelConfig {");
     expect(firstRender).toContain("pub enum PiModelConfigProvider {");
     expect(firstRender).toContain("pub enum PiModelConfigThinkingLevel {");
@@ -560,44 +555,20 @@ describe("Rust type bindings", () => {
     );
 
     if (!launchBinding) {
-      throw new Error("Missing legacy Pi launch binding");
+      throw new Error("Missing Pi launch binding");
     }
-    const legacyLaunchSchema = piLaunchConfigSchema
-      .unwrap()
-      .safeExtend({ apiFirstTurn: piApiFirstTurnConfigSchema });
     expect(z.toJSONSchema(launchBinding.schema)).toEqual(
-      z.toJSONSchema(legacyLaunchSchema),
+      z.toJSONSchema(piLaunchConfigSchema.unwrap()),
     );
     expect(modelBinding?.schema).toBe(piModelConfigLegacySchema);
     expect(modelV2Binding?.schema).toBe(piModelConfigV2Schema);
-    expect(z.toJSONSchema(legacyLaunchSchema)).toMatchObject({
-      required: ["schemaVersion", "apiFirstTurn"],
-      properties: {
-        schemaVersion: { const: 2 },
-        apiFirstTurn: {
-          required: [
-            "schemaVersion",
-            "resourceSnapshotDigest",
-            "manifestUrl",
-            "sessionUrl",
-            "deadlineAt",
-            "baseSession",
-            "sandboxEventSequenceStart",
-          ],
-          properties: {
-            schemaVersion: { const: 1 },
-            sandboxEventSequenceStart: {
-              type: "integer",
-              minimum: 1,
-              maximum: MAX_EVENT_SEQUENCE_NUMBER,
-            },
-            baseSession: {
-              required: ["sessionId", "sha256"],
-            },
-          },
-        },
-      },
+    expect(z.toJSONSchema(piLaunchConfigSchema.unwrap())).toMatchObject({
+      required: ["schemaVersion"],
+      properties: { schemaVersion: { const: 2 } },
     });
+    expect(
+      z.toJSONSchema(piLaunchConfigSchema.unwrap()).properties,
+    ).not.toHaveProperty("apiFirstTurn");
     expect(z.toJSONSchema(piModelConfigLegacySchema)).toMatchObject({
       required: [
         "provider",

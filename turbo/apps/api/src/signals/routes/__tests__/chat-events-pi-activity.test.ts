@@ -49,7 +49,7 @@ const {
   sessionHeaders,
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
-  expectPiSandboxHandoff,
+  piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
 async function expectPiActivitySummary(
@@ -200,7 +200,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const adHocNote =
       "# Sandbox checkpoint\n\nPersist this staged sandbox note.\n";
     const checkpointObjects = mockPiCheckpointObjectStore();
-    const prompt = "use the Okou CLI through the Sandbox handoff";
+    const prompt = "use the Okou CLI in the Sandbox";
     const run = await withOpenRouterRoute(async () => {
       return await sendChatRun(
         actor,
@@ -213,41 +213,22 @@ describe("CHAT-02: model-first provider policies", () => {
         usagePricingResolution,
       );
     });
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-    const handoff = expectPiSandboxHandoff(run.runId, checkpointObjects);
-    expect(handoff.manifest).toMatchObject({
-      schemaVersion: 3,
-      baseSession: { sessionId: run.threadId, sha256: null },
-      session: {
-        sessionId: run.threadId,
-        sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        rawSize: expect.any(Number),
-      },
-      sandboxEventSequenceStart: 1,
-    });
-    if (!handoff.session) {
-      throw new Error("Expected the sandbox-first H0 session");
-    }
-    const h2Session = MemoryPiSession.fromJsonl(
-      handoff.session.toString("utf8"),
-    );
     await flushWaitUntilForTest();
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
+    // The first turn has no stored history, so the Sandbox starts fresh.
+    expect(claimed.claim.resumeSession).toBeNull();
+    const h2Session = MemoryPiSession.fromJsonl(
+      piSandboxBaseSession(claimed.claim, checkpointObjects).toString("utf8"),
+    );
     expect(claimed.claim.piModelConfig).toMatchObject({
       provider: "openrouter",
       serviceTier: "priority",
     });
     expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
-    expect(claimed.claim.piLaunchConfig).toMatchObject({
-      schemaVersion: 2,
-      apiFirstTurn: {
-        schemaVersion: 1,
-        baseSession: { sessionId: run.threadId, sha256: null },
-        sandboxEventSequenceStart: 1,
-      },
-    });
+    expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
+    expect(claimed.claim.piLaunchConfig).not.toHaveProperty("apiFirstTurn");
     const terraEnvironment = claimEnvironment(claimed.claim);
     expect(terraEnvironment.OKOU_TOKEN).toBeTruthy();
     expect(terraEnvironment.CLI_PKG_URL).toBeTruthy();
@@ -560,12 +541,6 @@ describe("CHAT-02: model-first provider policies", () => {
         `Expected H2 checkpoint success: ${committedH2Body.error.message}`,
       );
     }
-    expect(checkpointObjects.has(manifestKey)).toBeFalsy();
-    expect(
-      checkpointObjects.has(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
-      ),
-    ).toBeFalsy();
     const canonicalConversation = await readThreadSessionConversation(
       context,
       run.threadId,
@@ -659,25 +634,19 @@ describe("CHAT-02: model-first provider policies", () => {
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);
 
-    const failedHandoff = await withOpenRouterRoute(async () => {
+    const failedRun = await withOpenRouterRoute(async () => {
       return await sendChatRun(actor, {
         agentId,
         threadId: run.threadId,
         prompt: "reject a non-native Sandbox H2",
       });
     });
-    const failedManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${failedHandoff.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(failedManifestKey);
-      })
-      .toBe(true);
-    const failedClaim = await claimChatRun(runnerGroup, failedHandoff.runId);
+    const failedClaim = await claimChatRun(runnerGroup, failedRun.runId);
     const invalidH2 = Buffer.from(`${h2}{malformed\n`, "utf8");
     const invalidH2Hash = createHash("sha256").update(invalidH2).digest("hex");
     await webhooks.requestAgentCheckpointPrepareHistory(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         hash: invalidH2Hash,
         rawSize: invalidH2.length,
         encodedSize: invalidH2.length,
@@ -692,7 +661,7 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const invalidCheckpoint = await webhooks.requestAgentComplete(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         exitCode: 1,
         error: "reject invalid native checkpoint",
         checkpoint: {
@@ -712,19 +681,18 @@ describe("CHAT-02: model-first provider policies", () => {
     ).resolves.toStrictEqual(canonicalConversation);
     await webhooks.requestAgentComplete(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         exitCode: 1,
         error: "[PI_H2_JSONL_INVALID] rejected native checkpoint",
       },
       failedClaim.sandboxHeaders,
       [200],
     );
-    await waitForRunStatus(actor, failedHandoff.runId, "failed");
+    await waitForRunStatus(actor, failedRun.runId, "failed");
     await flushWaitUntilForTest();
-    expect(checkpointObjects.has(failedManifestKey)).toBeFalsy();
     const lateFailedH2 = await webhooks.requestAgentComplete(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         exitCode: 1,
         checkpoint: {
           cliAgentType: "pi",
@@ -738,7 +706,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(lateFailedH2.body)).toContain("[PI_H2_RUN_TERMINAL]");
     const spoofedFailedH2 = await webhooks.requestAgentCheckpoint(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         cliAgentType: "claude-code",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryHash: h2Hash,
@@ -767,31 +735,22 @@ describe("CHAT-02: model-first provider policies", () => {
     await api.requestCancelRun(actor, explicitResume.runId, [200]);
     await waitForRunStatus(actor, explicitResume.runId, "cancelled");
 
-    const cancelledHandoff = await withOpenRouterRoute(async () => {
+    const cancelledRun = await withOpenRouterRoute(async () => {
       return await sendChatRun(actor, {
         agentId,
         threadId: run.threadId,
-        prompt: "reject H2 after an explicit Pi handoff is cancelled",
+        prompt: "reject H2 after an explicit Pi run is cancelled",
       });
     });
-    const cancelledManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${cancelledHandoff.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(cancelledManifestKey);
-      })
-      .toBe(true);
-    const cancelledClaim = await claimChatRun(
-      runnerGroup,
-      cancelledHandoff.runId,
-    );
+    const cancelledClaim = await claimChatRun(runnerGroup, cancelledRun.runId);
     await cancelChatRun(
       actor,
-      cancelledHandoff.runId,
+      cancelledRun.runId,
       cancelledClaim.sandboxHeaders,
     );
     const lateCancelledH2 = await webhooks.requestAgentComplete(
       {
-        runId: cancelledHandoff.runId,
+        runId: cancelledRun.runId,
         exitCode: 1,
         checkpoint: {
           cliAgentType: "pi",
@@ -809,22 +768,16 @@ describe("CHAT-02: model-first provider policies", () => {
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);
 
-    const racedHandoff = await withOpenRouterRoute(async () => {
+    const racedRun = await withOpenRouterRoute(async () => {
       return await sendChatRun(actor, {
         agentId,
         threadId: run.threadId,
         prompt: "reject standalone H2 during an early successful completion",
       });
     });
-    const racedManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${racedHandoff.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(racedManifestKey);
-      })
-      .toBe(true);
-    const racedClaim = await claimChatRun(runnerGroup, racedHandoff.runId);
+    const racedClaim = await claimChatRun(runnerGroup, racedRun.runId);
     const lifecycleGate = await holdAgentRunRowLockFixture({
-      runId: racedHandoff.runId,
+      runId: racedRun.runId,
       signal: context.signal,
     });
     const ownedRequests: Promise<unknown>[] = [];
@@ -834,7 +787,7 @@ describe("CHAT-02: model-first provider policies", () => {
       await lifecycleGate.done;
     });
     const racedCompletion = webhooks.requestAgentComplete(
-      { runId: racedHandoff.runId, exitCode: 0 },
+      { runId: racedRun.runId, exitCode: 0 },
       racedClaim.sandboxHeaders,
       [200],
     );
@@ -842,7 +795,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect.poll(lifecycleGate.waiterCount).toBe(1);
     const racedCheckpoint = webhooks.requestAgentCheckpoint(
       {
-        runId: racedHandoff.runId,
+        runId: racedRun.runId,
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryHash: h2Hash,
@@ -863,7 +816,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(racedCompletionResult).toMatchObject({
       body: { success: true, status: "failed" },
     });
-    await waitForRunStatus(actor, racedHandoff.runId, "failed");
+    await waitForRunStatus(actor, racedRun.runId, "failed");
     await flushWaitUntilForTest();
     await expect(
       readThreadSessionConversation(context, run.threadId),
@@ -876,14 +829,11 @@ describe("CHAT-02: model-first provider policies", () => {
         prompt: "resume only the last completed Pi checkpoint",
       });
     });
-    expect(
-      expectPiSandboxHandoff(retry.runId, checkpointObjects).manifest
-        .baseSession,
-    ).toStrictEqual({
-      sessionId: run.threadId,
-      sha256: h2Hash,
-    });
     const retryClaim = await claimChatRun(runnerGroup, retry.runId);
+    expect(retryClaim.claim.resumeSession).toMatchObject({
+      sessionId: run.threadId,
+      historyRef: { kind: "blob", hash: h2Hash },
+    });
     const retryFailure = await webhooks.requestAgentComplete(
       {
         runId: retry.runId,
@@ -915,25 +865,19 @@ describe("CHAT-02: model-first provider policies", () => {
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);
 
-    const reportedFailureHandoff = await withOpenRouterRoute(async () => {
+    const reportedFailureRun = await withOpenRouterRoute(async () => {
       return await sendChatRun(actor, {
         agentId,
         threadId: run.threadId,
         prompt: "retry one atomically reported Pi failure",
       });
     });
-    const reportedFailureManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${reportedFailureHandoff.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(reportedFailureManifestKey);
-      })
-      .toBe(true);
     const reportedFailureClaim = await claimChatRun(
       runnerGroup,
-      reportedFailureHandoff.runId,
+      reportedFailureRun.runId,
     );
     const reportedFailureBody = {
-      runId: reportedFailureHandoff.runId,
+      runId: reportedFailureRun.runId,
       exitCode: 1,
       error: "guest reported Pi failure",
       checkpoint: {
@@ -951,7 +895,7 @@ describe("CHAT-02: model-first provider policies", () => {
       success: true,
       status: "failed",
     });
-    await waitForRunStatus(actor, reportedFailureHandoff.runId, "failed");
+    await waitForRunStatus(actor, reportedFailureRun.runId, "failed");
     await flushWaitUntilForTest();
     const repeatedReportedFailure = await webhooks.requestAgentComplete(
       reportedFailureBody,

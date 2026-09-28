@@ -492,7 +492,8 @@ pub struct GuestConfig {
     pub pi_session_id: String,
     /// JSON object with the installed-CLI launch requirements from
     /// [`guest_contracts::env::RunPayload::pi_installed_cli_requirement`].
-    /// Empty for runs created before the API wrote it.
+    /// Empty when the execution context carries none; the guest then launches
+    /// the commit-addressed CLI through `npx`.
     pub pi_installed_cli_requirement: String,
     /// Stuck-tool timeout in seconds parsed from
     /// [`guest_contracts::env::CANONICAL_STUCK_TOOL_TIMEOUT_SECS_ENV`]. Empty

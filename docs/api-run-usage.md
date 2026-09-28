@@ -67,32 +67,20 @@ It requires no SSH grant. The result is versioned and source preserving:
     "state": "observed",
     "coverage": "partial",
     "observedTokens": {
-      "input": 12,
+      "input": 7,
       "cacheRead": 2,
       "cacheCreation": 3,
       "output": 4,
-      "total": 21
+      "total": 16
     }
   },
   "sources": {
-    "apiFirstTurn": {
-      "state": "observed",
-      "sampledAt": 1720000000000,
-      "coverage": "partial",
-      "tokens": {
-        "input": 5,
-        "cacheRead": null,
-        "cacheCreation": null,
-        "output": null,
-        "total": null
-      }
-    },
     "sandboxProxy": {
       "state": "observed",
       "sampledAtMs": 1720000001000,
       "revision": 3,
-      "coverage": "complete",
-      "reasons": [],
+      "coverage": "partial",
+      "reasons": ["missing_usage"],
       "observedResponses": 1,
       "outstandingResponses": 0,
       "tokens": {
@@ -107,13 +95,9 @@ It requires no SSH grant. The result is versioned and source preserving:
 }
 ```
 
-`apiFirstTurn` is one of:
-
-- `unavailable` with `missing-handoff` or `invalid-handoff`;
-- `no-inference` with the non-negative safe-integer epoch-millisecond
-  `sampledAt` value, including valid zero;
-- `observed` with `complete`, `partial` or `unavailable` coverage and nullable
-  token categories. Its `total` is present only when every category is known.
+`sources` contains only `sandboxProxy`. Runners before release 6 also reported
+an always-unavailable `apiFirstTurn` source; `okou run usage` no longer accepts
+it and treats such a result as `invalid-response`.
 
 `sandboxProxy` is either an observed MITM snapshot or `unavailable` with
 `not-observed`, `launch-unavailable`, `busy`, `timed-out`, `invalid-response`
@@ -122,18 +106,14 @@ generation-local revision, coverage reasons, response counts and outstanding
 inference. Complete MITM coverage has no reasons; partial coverage retains the
 bounded sticky reasons reported by the addon.
 
-`combined` is `observed`, `unavailable` or `overflow`. An observed result adds
-each known handoff quantity once to one on-demand MITM snapshot; it never adds a
-previous query result. Complete combined coverage requires a complete or
-`no-inference` API source and a complete MITM source. All other observed values
-are lower bounds and remain partial. If neither source establishes a numeric
-observation, the reason is `no-observation`. If a category or the combined total
-would exceed JavaScript's safe-integer range, the Runner emits `overflow`
-without unsafe combined integers and retains both source records.
+`combined` is `observed`, `unavailable` or `overflow`. An observed result
+carries one on-demand MITM snapshot; it never adds a previous query result.
+Combined coverage is the MITM coverage, and partial values are lower bounds. If
+the MITM source establishes no numeric observation, the reason is
+`no-observation`. If a category or the total would exceed JavaScript's
+safe-integer range, the Runner emits `overflow` without unsafe combined
+integers.
 
-The API and MITM times are deliberately independent. A complete source cannot
-repair missing history in the other source, and the handoff remains immutable:
-provider usage first observed after ownership transfer is not backfilled.
 `okou run usage` renders these distinctions; `okou run usage --json` wraps a
 valid result as `{ "schemaVersion": 1, "status": "ok", "usage": ... }`.
 Errors use `{ "schemaVersion": 1, "status": "error", "error": { "kind":

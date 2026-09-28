@@ -1,4 +1,3 @@
-import { piApiHandoffUsageSchema } from "./pi-inference-lifecycle";
 import { z } from "zod";
 import { piCredentialHeaderSchema } from "./pi-credential";
 import { piModelConfigV4Schema } from "./pi-native";
@@ -23,7 +22,6 @@ import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
 } from "./runner-primitives";
-import { eventSequenceNumberSchema } from "./runs";
 
 export {
   PI_MODEL_CONFIG_NATIVE_GENERATION,
@@ -93,12 +91,13 @@ export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
 export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
 /**
  * Lowest `@okouai/cli` release whose `__agent-loop` understands the current
- * launch payload and API-first handoff contract. The API records it in every
- * Pi launch config; a rootfs whose installed CLI is older keeps launching the
- * commit-addressed package. Raise it whenever a launch-payload or handoff field
- * becomes required rather than optional.
+ * launch payload. The API records it in every Pi run's installed-CLI
+ * requirement; a rootfs whose installed CLI is older keeps launching the
+ * commit-addressed package. Raise it whenever the launch payload changes in a
+ * way an older CLI rejects. The first release without
+ * `piLaunchConfig.apiFirstTurn` is the floor: earlier CLIs require that slot.
  */
-export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.352.7";
+export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.368.2";
 /** Release versions are exact `MAJOR.MINOR.PATCH`; nothing here is a range. */
 export const releaseVersionSchema = z
   .string()
@@ -180,7 +179,7 @@ export const runnerClaimCapabilitiesSchema = z
 /**
  * Versions of the Okou CLI bundle installed into a runner's rootfs at build
  * time. Advertised on claim so the API can observe (and, once the npx launch
- * path is retired, gate) API-first handoff parity. `piSdk` is informational.
+ * path is retired, gate) installed-CLI parity. `piSdk` is informational.
  * `piSessionConstructionDigest` is the parity key the guest compares. It stays
  * optional for runners with an older installed CLI artifact.
  */
@@ -846,18 +845,6 @@ const PI_MEMORY_SUMMARY_MIN_TOKEN_BYTES = 1;
 export const PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS =
   PI_MEMORY_SUMMARY_MAX_BYTES / PI_MEMORY_SUMMARY_MIN_TOKEN_BYTES;
 export const PI_SKILLS_ROOT = `${PI_AGENT_DIR}/skills`;
-export const PI_API_FIRST_TURN_SESSION_MAX_BYTES = 16 * 1024 * 1024;
-
-export const piSessionCheckpointSchema = z
-  .object({
-    sessionId: z.uuid(),
-    sha256: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .nullable(),
-  })
-  .strict()
-  .readonly();
 
 const piResourceSnapshotAgentsFilesSchema = z
   .array(
@@ -959,126 +946,6 @@ export const piLangfuseParentSchema = z
     traceFlags: z.literal(1),
     sessionId: z.uuid(),
     sandboxWaitStartedAt: z.number().int().nonnegative(),
-  })
-  .strict()
-  .readonly();
-
-const piApiFirstTurnSessionSchema = z
-  .object({
-    sessionId: z.uuid(),
-    sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    rawSize: z
-      .number()
-      .int()
-      .positive()
-      .max(PI_API_FIRST_TURN_SESSION_MAX_BYTES),
-  })
-  .strict()
-  .readonly();
-
-const piSandboxEventSequenceStartSchema = eventSequenceNumberSchema.min(1);
-
-const piApiFirstTurnOwnershipTransferManifestShape = {
-  schemaVersion: z.literal(3),
-  outcome: z.literal("ownership-transfer"),
-  baseSession: piSessionCheckpointSchema,
-  session: piApiFirstTurnSessionSchema,
-  sandboxEventSequenceStart: piSandboxEventSequenceStartSchema,
-  langfuseParent: piLangfuseParentSchema.optional(),
-  apiUsage: piApiHandoffUsageSchema.optional(),
-};
-
-export const piApiFirstTurnOwnershipTransferModeSchema = z.enum([
-  "sandbox-first",
-  "pending-tool-continuation",
-  "settled-session-continuation",
-]);
-
-const piApiFirstTurnManifestV3Schema = z.discriminatedUnion("mode", [
-  z
-    .object({
-      ...piApiFirstTurnOwnershipTransferManifestShape,
-      mode: z.literal("sandbox-first"),
-    })
-    .readonly(),
-  z
-    .object({
-      ...piApiFirstTurnOwnershipTransferManifestShape,
-      mode: z.literal("pending-tool-continuation"),
-    })
-    .readonly(),
-  z
-    .object({
-      ...piApiFirstTurnOwnershipTransferManifestShape,
-      mode: z.literal("settled-session-continuation"),
-    })
-    .readonly(),
-]);
-
-// Large H0 checkpoints bypass API materialization. The sandbox verifies the
-// original blob before starting the turn; API-produced H1 stays bounded at 16 MiB.
-export const piApiFirstTurnManifestSchema = z.union([
-  piApiFirstTurnManifestV3Schema,
-  z
-    .object({
-      ...piApiFirstTurnOwnershipTransferManifestShape,
-      schemaVersion: z.literal(4),
-      mode: z.literal("sandbox-first"),
-      session: piApiFirstTurnSessionSchema
-        .unwrap()
-        .extend({
-          rawSize: z
-            .number()
-            .int()
-            .positive()
-            .max(RESUME_SESSION_HISTORY_MAX_BYTES),
-        })
-        .readonly(),
-      history: z
-        .object({
-          url: z.url(),
-          encoding: sessionHistoryEncodingSchema,
-          encodedSize: z
-            .number()
-            .int()
-            .positive()
-            .max(RESUME_SESSION_HISTORY_MAX_BYTES),
-        })
-        .strict()
-        .readonly(),
-    })
-    .readonly(),
-]);
-
-export const piApiFirstTurnConfigSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    resourceSnapshotDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    manifestUrl: z.url(),
-    sessionUrl: z.url(),
-    deadlineAt: z.number().int().positive(),
-    baseSession: piSessionCheckpointSchema,
-    sandboxEventSequenceStart: piSandboxEventSequenceStartSchema,
-    /**
-     * `@okouai/pi-agent-runtime` release the API prepared this turn with. The
-     * guest execs the rootfs-installed CLI only when its bundled runtime is
-     * exactly this version; the CLI itself restarts a pending-tool handoff
-     * from H0 as `sandbox-first` on mismatch. Absent from launch configs
-     * captured before versioned CLI artifacts existed.
-     */
-    requiredPiAgentRuntimeVersion: releaseVersionSchema.optional(),
-    /** Lowest installed CLI release allowed to run this launch payload. */
-    minCliVersion: releaseVersionSchema.optional(),
-    /**
-     * Digest of the session construction the API prepared this turn with. When
-     * present it replaces `requiredPiAgentRuntimeVersion` as the parity key:
-     * the guest execs the rootfs-installed CLI, and the CLI continues a
-     * pending-tool handoff, only when the digest bundled into that CLI is
-     * identical, so dependency-only runtime version bumps no longer force the
-     * `npx` launch. Absent from launch configs captured before the writer.
-     */
-    requiredPiSessionConstructionDigest:
-      piSessionConstructionDigestSchema.optional(),
   })
   .strict()
   .readonly();
@@ -1368,7 +1235,6 @@ export const piMemoryPhase2MaintenanceSchema = z
 export const piLaunchConfigSchema = z
   .object({
     schemaVersion: z.literal(2),
-    apiFirstTurn: piApiFirstTurnConfigSchema,
     memoryRecall: piMemoryRecallSelectionSchema.optional(),
     maintenance: piMemoryPhase2MaintenanceSchema.optional(),
   })
@@ -1497,8 +1363,7 @@ const storedExecutionContextObjectSchema = z.object({
   codexRuntimeConfig: modelProviderCodexRuntimeConfigSchema
     .nullable()
     .optional(),
-  // Pi runs use the API first-turn slot and can continue through an explicit
-  // Sandbox tool handoff. This state is a single hard-cut protocol bundle.
+  // Pi runs carry their session, launch config and model as one bundle.
   piSessionId: z.uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
@@ -2003,17 +1868,10 @@ export type PiMemoryPhase2Maintenance = z.infer<
 export type PiMemoryRecallSelection = z.infer<
   typeof piMemoryRecallSelectionSchema
 >;
-export type PiApiFirstTurnConfig = z.infer<typeof piApiFirstTurnConfigSchema>;
 export type PiInstalledCliRequirement = z.infer<
   typeof piInstalledCliRequirementSchema
 >;
-export type PiApiFirstTurnOwnershipTransferMode = z.infer<
-  typeof piApiFirstTurnOwnershipTransferModeSchema
->;
 export type PiLangfuseParent = z.infer<typeof piLangfuseParentSchema>;
-export type PiApiFirstTurnManifest = z.infer<
-  typeof piApiFirstTurnManifestSchema
->;
 export type PiResourceSnapshot = z.infer<typeof piResourceSnapshotSchema>;
 export type PiLaunchPayload = z.infer<typeof piLaunchPayloadSchema>;
 export type CompatibleStoredExecutionContext = z.infer<

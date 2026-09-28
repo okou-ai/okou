@@ -1,0 +1,5 @@
+The first-parent main commit that adds this marker is the minimum API rollback
+version after the API stopped writing piLaunchConfig.apiFirstTurn (release 7).
+Release 7 Runners, Guests and CLIs reject that slot, and older APIs write it on
+every Pi run and require it when decoding queued contexts. See
+docs/deployment-compatibility.md.

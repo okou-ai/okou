@@ -28,16 +28,6 @@ const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
 const PI_PREPARATION_TIMING_ENV = "OKOU_PI_PREPARATION_TIMING";
-/**
- * Private startup record guest-agent requires before any official RPC record.
- * The sandbox owns the whole turn and its public events start at sequence 1.
- */
-const PI_STARTUP_BOUNDARY_CONTROL = {
-  type: "vm0_pi_api_first_turn_boundary",
-  schemaVersion: 2,
-  sandboxEventSequenceStart: 1,
-  ownershipTransferMode: "sandbox-first",
-} as const;
 const PI_MEMORY_PHASE2_VALIDATION_FILENAME = "maintenance-validation.json";
 
 function recordPiMemoryRecallOutcome(
@@ -120,23 +110,6 @@ async function readLaunchPayload(
   const path = requiredEnv(env, PI_LAUNCH_PAYLOAD_FILE_ENV);
   const raw = await readFile(path, "utf8");
   return piLaunchPayloadSchema.parse(JSON.parse(raw) as unknown);
-}
-
-async function writePiStartupBoundaryControl(): Promise<void> {
-  const line = `${JSON.stringify(PI_STARTUP_BOUNDARY_CONTROL)}\n`;
-  await new Promise<void>((resolve, reject) => {
-    process.stdout.write(line, (error) => {
-      if (error) {
-        reject(
-          new Error("Pi startup boundary control could not be written", {
-            cause: error,
-          }),
-        );
-      } else {
-        resolve();
-      }
-    });
-  });
 }
 
 function isPiSessionFileName(name: string, sessionId: string): boolean {
@@ -334,7 +307,6 @@ export async function runPiSandboxAgentLoop(args: {
     sessionId: args.config.sessionId,
     cwd,
   });
-  await writePiStartupBoundaryControl();
   return await runPiOfficialRpcMode({
     sessionId: args.config.sessionId,
     sessionDir,

@@ -8,8 +8,7 @@
 //! constructed session changes), and the exact `pi-agent-runtime` version
 //! otherwise. Every other case keeps the commit-addressed `npx` launch, which
 //! is always built from the API's commit. The requirements travel in the
-//! execution context (`piInstalledCliRequirement`); runs created before that
-//! still carry them in the retired `piLaunchConfig.apiFirstTurn` slot.
+//! execution context (`piInstalledCliRequirement`).
 
 use std::path::Path;
 
@@ -52,7 +51,7 @@ impl PiCliLaunchDecision {
 
 /// Installed-CLI launch requirements the API captured for the run.
 ///
-/// Every field is absent for runs whose API predates versioned CLI artifacts;
+/// Every field is absent when the execution context carries no requirement;
 /// such runs always launch through `npx`. The session-construction digest,
 /// when present, replaces the runtime version as the parity key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,16 +62,10 @@ pub(super) struct PiRuntimeRequirement<'a> {
 }
 
 impl<'a> PiRuntimeRequirement<'a> {
-    /// Read the execution-context requirement, or the retired launch-config
-    /// `apiFirstTurn` slot for runs created before the API wrote it. The slot
-    /// fallback is removed with the slot in release 7.
-    pub(super) fn from_sources(
-        installed_cli_requirement: Option<&'a serde_json::Value>,
-        launch_config: &'a serde_json::Value,
-    ) -> Self {
-        let source = installed_cli_requirement.or_else(|| launch_config.get("apiFirstTurn"));
+    /// Read the execution-context `piInstalledCliRequirement`, if any.
+    pub(super) fn from_value(installed_cli_requirement: Option<&'a serde_json::Value>) -> Self {
         let field = |name: &str| {
-            source
+            installed_cli_requirement
                 .and_then(|source| source.get(name))
                 .and_then(serde_json::Value::as_str)
                 .filter(|value| !value.is_empty())
@@ -212,50 +205,6 @@ mod tests {
     }
 
     #[test]
-    fn requirements_fall_back_to_the_retired_launch_config_slot() {
-        let launch_config = serde_json::json!({
-            "schemaVersion": 2,
-            "apiFirstTurn": {
-                "sandboxEventSequenceStart": 1,
-                "requiredPiAgentRuntimeVersion": "1.36.0",
-                "minCliVersion": "9.352.7"
-            }
-        });
-        assert_eq!(
-            PiRuntimeRequirement::from_sources(None, &launch_config),
-            requirement(Some("1.36.0"), Some("9.352.7"))
-        );
-
-        let digest = "d".repeat(64);
-        let with_digest = serde_json::json!({
-            "schemaVersion": 2,
-            "apiFirstTurn": {
-                "sandboxEventSequenceStart": 1,
-                "requiredPiAgentRuntimeVersion": "1.36.0",
-                "minCliVersion": "9.352.7",
-                "requiredPiSessionConstructionDigest": digest
-            }
-        });
-        assert_eq!(
-            PiRuntimeRequirement::from_sources(None, &with_digest),
-            requirement_with_digest(Some("1.36.0"), Some("9.352.7"), Some(&digest))
-        );
-
-        let legacy = serde_json::json!({
-            "schemaVersion": 2,
-            "apiFirstTurn": { "sandboxEventSequenceStart": 1 }
-        });
-        assert_eq!(
-            PiRuntimeRequirement::from_sources(None, &legacy),
-            requirement(None, None)
-        );
-        assert_eq!(
-            PiRuntimeRequirement::from_sources(None, &serde_json::json!({})),
-            requirement(None, None)
-        );
-    }
-
-    #[test]
     fn execution_context_requirement_selects_the_installed_cli() {
         let digest = "d".repeat(64);
         let requirement_value = serde_json::json!({
@@ -263,10 +212,7 @@ mod tests {
             "minCliVersion": "9.352.7",
             "requiredPiSessionConstructionDigest": digest
         });
-        // The launch config carries no requirement; the new location wins.
-        let launch_config = serde_json::json!({ "schemaVersion": 2 });
-        let requirement =
-            PiRuntimeRequirement::from_sources(Some(&requirement_value), &launch_config);
+        let requirement = PiRuntimeRequirement::from_value(Some(&requirement_value));
 
         assert_eq!(
             requirement,
@@ -282,15 +228,19 @@ mod tests {
                 reason: "session_construction_match",
             }
         );
+    }
 
-        let stale_slot = serde_json::json!({
-            "schemaVersion": 2,
-            "apiFirstTurn": { "minCliVersion": "1.0.0" }
-        });
+    #[test]
+    fn missing_execution_context_requirement_keeps_npx() {
+        let absent = PiRuntimeRequirement::from_value(None);
+        assert_eq!(absent, requirement(None, None));
+        let decision = select_pi_cli_launch(&absent, Some(&installed("9.353.0", "1.36.0")));
+        assert_eq!(decision.source, PiCliLaunchSource::Npx);
+        assert_eq!(decision.reason, "launch_config_without_runtime_version");
+
         assert_eq!(
-            PiRuntimeRequirement::from_sources(Some(&requirement_value), &stale_slot),
-            requirement,
-            "the execution-context requirement takes precedence over the slot"
+            PiRuntimeRequirement::from_value(Some(&serde_json::json!({}))),
+            requirement(None, None)
         );
     }
 

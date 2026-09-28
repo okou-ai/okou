@@ -42,7 +42,7 @@ import {
   OPENROUTER_US_ORIGIN,
 } from "@okouai/api-contracts/contracts/openrouter-routing";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
 import {
   PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
@@ -55,7 +55,6 @@ import {
   type PiMemoryRecallSelection,
   type PiMemoryPhase2Maintenance,
   type PiLaunchConfig,
-  type PiApiFirstTurnConfig,
   type PiInstalledCliRequirement,
   type PiModelConfig,
   type PiModelConfigLegacy,
@@ -238,7 +237,6 @@ import {
   type SystemSkillStorageResolution,
 } from "../context/system-skill-storage-resolution";
 import { writeDb$, type Db } from "../external/db";
-import { generatePresignedGetUrl } from "../external/s3";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { now, nowDate } from "../../lib/time";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
@@ -249,7 +247,6 @@ import {
 } from "../../lib/pi-langfuse-debug";
 import { generateOkouToken } from "../auth/tokens";
 import {
-  joinAll,
   onRejection,
   safeSync,
   settle,
@@ -307,16 +304,7 @@ import { historyGenerationRunIdForStoredExecutionContext } from "./history-gener
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { resolvePiSandboxModelConfig } from "./pi-sandbox-config";
 import { PiNativeConfigurationError } from "./pi-native-model-config";
-import {
-  piResourceDiscoveryMounts,
-  piResourceSnapshotDigest,
-} from "./pi-resource-snapshot.service";
 import { readMemorySummaryProjection } from "./memory-summary-projection.service";
-import {
-  PI_SANDBOX_HANDOFF_DEADLINE_MS,
-  piSandboxHandoffObjectKey,
-  publishPiSandboxHandoff$,
-} from "./pi-sandbox-handoff.service";
 import {
   activePersonalModelProviderAccount,
   readPersonalSubscriptionAccount,
@@ -7487,34 +7475,9 @@ function withPiMemoryRecallEpoch(
   });
 }
 
-function piBaseSession(
-  resumeSession: StoredExecutionContext["resumeSession"] | undefined,
-  sessionId: string,
-): PiApiFirstTurnConfig["baseSession"] {
-  if (!resumeSession) {
-    return { sessionId, sha256: null };
-  }
-  if (resumeSession.sessionId !== sessionId) {
-    throw new Error("Pi resume session id does not match the launch session");
-  }
-  return {
-    sessionId,
-    sha256:
-      "historyRef" in resumeSession
-        ? resumeSession.historyRef.hash
-        : createHash("sha256")
-            .update(resumeSession.sessionHistory, "utf8")
-            .digest("hex"),
-  };
-}
-
 /**
  * The installed CLI must have this session construction and meet the CLI
- * floor; otherwise the guest uses the commit-addressed package. Written to the
- * execution context and, until release 7, to the launch config's
- * `apiFirstTurn` slot that pre-release-6 guests read. The queued launch config
- * is decoded by a strict API reader, so the production rollback floor
- * includes the digest reader in 322efb6d.
+ * floor; otherwise the guest uses the commit-addressed package.
  */
 const PI_INSTALLED_CLI_REQUIREMENT = {
   requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
@@ -7543,33 +7506,16 @@ function storedExecutionContextWithPiResources(
 
 function assemblePiLaunchResources(args: {
   readonly modelConfig: PiModelConfig;
-  readonly storageMounts: readonly StorageMountMetadata[];
-  readonly apiStartTime: number;
   readonly maintenance: PiMemoryPhase2Maintenance | undefined;
   readonly memoryRecall: PiMemoryRecallSelection | undefined;
   readonly resumeSession: PreparedPiLaunchResources["resumeSession"];
   readonly sessionId: string;
-  readonly manifestUrl: string;
-  readonly sessionUrl: string;
 }): PreparedPiLaunchResources {
   const { memoryRecall, resumeSession, sessionId } = args;
   return {
     modelConfig: args.modelConfig,
     launchConfig: {
       schemaVersion: 2,
-      apiFirstTurn: {
-        schemaVersion: 1,
-        resourceSnapshotDigest: piResourceSnapshotDigest(
-          piResourceDiscoveryMounts(args.storageMounts),
-          memoryRecall,
-        ),
-        manifestUrl: args.manifestUrl,
-        sessionUrl: args.sessionUrl,
-        deadlineAt: args.apiStartTime + PI_SANDBOX_HANDOFF_DEADLINE_MS,
-        baseSession: piBaseSession(resumeSession, sessionId),
-        sandboxEventSequenceStart: 1,
-        ...PI_INSTALLED_CLI_REQUIREMENT,
-      },
       ...(memoryRecall === undefined ? {} : { memoryRecall }),
       ...(args.maintenance === undefined
         ? {}
@@ -7588,7 +7534,6 @@ interface PreparePiLaunchResourcesArgs {
   readonly piMemoryEnabled: boolean;
   readonly runId: string;
   readonly agentSessionId: string;
-  readonly apiStartTime: number;
   readonly storagePlan: Promise<ResolvedAgentRunStorage>;
   readonly previousRunStorageMounts:
     | readonly PersistedStorageMount[]
@@ -7599,53 +7544,11 @@ interface PreparePiLaunchResourcesArgs {
   readonly maintenance: PiMemoryPhase2Maintenance | undefined;
 }
 
-function signPiLaunchObjectUrls(
-  runId: string,
-  observe: ReturnType<typeof piPreparationObserver>,
-  signal: AbortSignal,
-): Computed<Promise<[string, string]>> {
-  return computed(async (get) => {
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    return await joinAll([
-      measurePiPreparation(
-        observe,
-        "launch_manifest_sign",
-        () => {
-          return get(
-            generatePresignedGetUrl(
-              bucket,
-              piSandboxHandoffObjectKey(runId, "manifest"),
-              undefined,
-              true,
-            ),
-          );
-        },
-        signal,
-      ),
-      measurePiPreparation(
-        observe,
-        "launch_session_sign",
-        () => {
-          return get(
-            generatePresignedGetUrl(
-              bucket,
-              piSandboxHandoffObjectKey(runId, "session"),
-              undefined,
-              true,
-            ),
-          );
-        },
-        signal,
-      ),
-    ]);
-  });
-}
-
 function preparePiLaunchResources(
   args: PreparePiLaunchResourcesArgs,
   signal: AbortSignal,
 ): Computed<Promise<PreparedPiLaunchResources | undefined>> {
-  return computed(async (get) => {
+  return computed(async () => {
     if (args.piSandbox === undefined) {
       return undefined;
     }
@@ -7709,44 +7612,31 @@ function preparePiLaunchResources(
                   },
                   signal,
                 );
-            return { metadata, memoryRecall };
+            return { memoryRecall };
           })();
-          const urlsPromise = get(
-            signPiLaunchObjectUrls(args.runId, observe, signal),
-          );
-          const [resumeResult, memoryResult, urlsResult] =
-            await Promise.allSettled([
-              resumeSessionPromise,
-              memoryPromise,
-              urlsPromise,
-            ]);
+          const [resumeResult, memoryResult] = await Promise.allSettled([
+            resumeSessionPromise,
+            memoryPromise,
+          ]);
           if (resumeResult.status === "rejected") {
             throw resumeResult.reason;
           }
           if (memoryResult.status === "rejected") {
             throw memoryResult.reason;
           }
-          if (urlsResult.status === "rejected") {
-            throw urlsResult.reason;
-          }
           signal.throwIfAborted();
           const resumeSession = resumeResult.value;
-          const { metadata, memoryRecall } = memoryResult.value;
-          const [manifestUrl, sessionUrl] = urlsResult.value;
+          const { memoryRecall } = memoryResult.value;
           return measurePiPreparationSync(
             observe,
             "launch_identity",
             () => {
               return assemblePiLaunchResources({
                 modelConfig: piSandbox,
-                storageMounts: metadata.storageMounts,
-                apiStartTime: args.apiStartTime,
                 maintenance: args.maintenance,
                 memoryRecall,
                 resumeSession,
                 sessionId,
-                manifestUrl,
-                sessionUrl,
               });
             },
             signal,
@@ -8013,7 +7903,6 @@ function buildRunnerJobPayload(
               ),
               runId: args.run.id,
               agentSessionId: args.run.sessionId,
-              apiStartTime: args.apiStartTime,
               storagePlan: get(storagePlan$),
               previousRunStorageMounts: args.resolved.previousRunStorageMounts,
               piSandbox: args.piSandbox,
@@ -11345,32 +11234,6 @@ const createAtomicLaunchRun$ = command(
     }
 
     const launch = launchResult.value;
-    // The Pi CLI polls this handoff as soon as a runner claims the job, so it
-    // is published before the run and its job become claimable.
-    const handoff = await settle(
-      set(
-        publishPiSandboxHandoff$,
-        {
-          db: input.db,
-          runId: identity.runId,
-          apiStartTime: input.args.apiStartTime,
-          executionContext: launch.runnerJobPayload.executionContext,
-        },
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-    if (!handoff.ok) {
-      return await commitFailedLaunch({
-        db: input.db,
-        createArgs: input.args,
-        context: input.context,
-        identity,
-        callbackRows,
-        error: handoff.error,
-        timing: input.timing,
-      });
-    }
     input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
 
     return await set(

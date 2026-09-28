@@ -1,6 +1,6 @@
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { createHash, randomUUID } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync, zstdDecompressSync } from "node:zlib";
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { Header } from "tar";
 import { getInstructionsStorageName } from "@okouai/core/storage-names";
@@ -8,7 +8,7 @@ import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonic
 import { createStoragesBddApi } from "./api-bdd-storages";
 import { storageTextFile } from "./api-bdd-storage-files";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
+import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -29,6 +29,7 @@ import {
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -1413,33 +1414,46 @@ export function createChatEventsFixture(context: TestContext) {
   }
 
   /**
-   * Read the launch handoff the Pi CLI polls before it starts: every Pi turn
-   * is a no-inference `sandbox-first` transfer published by run creation.
+   * Rebuild the session a claimed Pi Sandbox starts from, as the CLI does: the
+   * claim's inline or blob-referenced resume history, else a fresh session.
    */
-  function expectPiSandboxHandoff(
-    runId: string,
+  function piSandboxBaseSession(
+    claim: RunnerClaim,
     objects: ReadonlyMap<string, Buffer>,
-  ) {
-    const prefix = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${runId}/`;
-    const manifestBytes = objects.get(`${prefix}manifest.json`);
-    if (!manifestBytes) {
-      throw new Error("Expected a published Pi sandbox handoff manifest");
+  ): Buffer {
+    const resume = claim.resumeSession;
+    if (!resume) {
+      if (!claim.piSessionId) {
+        throw new Error("Expected a claimed Pi session id");
+      }
+      return Buffer.from(
+        createPiSessionJsonl({
+          cwd: CANONICAL_WORKING_DIR,
+          sessionId: claim.piSessionId,
+          timestamp: new Date().toISOString(),
+        }),
+        "utf8",
+      );
     }
-    const manifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(manifestBytes.toString("utf8")),
-    );
-    expect(manifest).toMatchObject({
-      outcome: "ownership-transfer",
-      mode: "sandbox-first",
-      apiUsage: { schemaVersion: 1, state: "no-inference" },
-    });
-    return {
-      manifest,
-      session:
-        manifest.schemaVersion === 4
-          ? undefined
-          : objects.get(`${prefix}session.jsonl`),
-    };
+    if (!("historyRef" in resume)) {
+      return Buffer.from(resume.sessionHistory, "utf8");
+    }
+    const objectKey = new URL(resume.historyRef.url).searchParams.get("object");
+    const encoded = objectKey ? objects.get(objectKey) : undefined;
+    if (!encoded) {
+      throw new Error("Expected the referenced Pi resume history bytes");
+    }
+    switch (resume.historyRef.encoding) {
+      case "gzip": {
+        return gunzipSync(encoded);
+      }
+      case "zstd": {
+        return zstdDecompressSync(encoded);
+      }
+      case "identity": {
+        return encoded;
+      }
+    }
   }
 
   function uploadedPiS3Object(objectKey: string): Buffer | undefined {
@@ -1590,28 +1604,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly run: { readonly runId: string; readonly threadId: string };
     readonly usagePricingResolution: UsagePricingFixture["resolution"];
   }): Promise<void> {
-    const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${args.run.runId}/session.jsonl`;
-    let h0 = args.checkpointObjects.get(sessionKey);
-    if (!h0) {
-      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${args.run.runId}/manifest.json`;
-      const manifestBytes = args.checkpointObjects.get(manifestKey);
-      if (manifestBytes) {
-        const manifest = piApiFirstTurnManifestSchema.parse(
-          JSON.parse(manifestBytes.toString("utf8")),
-        );
-        if (manifest.schemaVersion === 4) {
-          const objectKey = new URL(manifest.history.url).searchParams.get(
-            "object",
-          );
-          if (objectKey) {
-            h0 = args.checkpointObjects.get(objectKey);
-          }
-        }
-      }
-    }
-    if (!h0) {
-      throw new Error("Expected authoritative sandbox-first H0");
-    }
+    const h0 = piSandboxBaseSession(args.claim.claim, args.checkpointObjects);
     const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
     session.appendMessage({
       role: "user",
@@ -1835,7 +1828,7 @@ export function createChatEventsFixture(context: TestContext) {
     expectThreadPiTerminal,
     claimGptPiSandbox,
     mockPiCheckpointObjectStore,
-    expectPiSandboxHandoff,
+    piSandboxBaseSession,
     uploadedPiS3Object,
     piS3Object,
     publishPendingPiInstructions,

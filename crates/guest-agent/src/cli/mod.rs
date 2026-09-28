@@ -557,8 +557,6 @@ fn build_pi_command_for_runtime(
             )));
         }
     }
-    let launch_config: serde_json::Value = serde_json::from_str(runtime.pi_launch_config.as_ref())
-        .map_err(|_| AgentError::Execution("Pi launch config is invalid".to_string()))?;
     let installed_cli_requirement: Option<serde_json::Value> = if runtime
         .pi_installed_cli_requirement
         .is_empty()
@@ -571,10 +569,8 @@ fn build_pi_command_for_runtime(
             })?,
         )
     };
-    let requirement = okou_cli_launch::PiRuntimeRequirement::from_sources(
-        installed_cli_requirement.as_ref(),
-        &launch_config,
-    );
+    let requirement =
+        okou_cli_launch::PiRuntimeRequirement::from_value(installed_cli_requirement.as_ref());
     let decision = okou_cli_launch::select_pi_cli_launch(&requirement, installed_okou_cli);
     record_sandbox_op_with_dimensions(
         "pi_cli_launch_select",
@@ -1544,16 +1540,13 @@ async fn execute_cli_inner(
 
                         if let Ok(mut event) = serde_json::from_str::<serde_json::Value>(stripped) {
                             if let Some(startup_boundary) = pi_rpc_startup_boundary.as_mut() {
-                                match startup_boundary.admit(&event) {
-                                    Ok(pi_rpc::PiRpcRecordAdmission::InstallBoundary {
-                                        startup,
-                                        project,
-                                    }) => {
+                                match startup_boundary.admit() {
+                                    pi_rpc::PiRpcRecordAdmission::Start => {
                                         match CliEventPipeline::start(
                                             runtime,
                                             session_metadata.clone(),
                                             &http,
-                                            startup.sandbox_event_sequence_start,
+                                            pi_rpc::PI_RPC_FIRST_EVENT_SEQUENCE,
                                             pi_startup,
                                         ) {
                                             Ok(pipeline) => {
@@ -1581,14 +1574,8 @@ async fn execute_cli_inner(
                                                 continue;
                                             }
                                         }
-                                        // The startup control is private CLI/guest state. It is
-                                        // consumed before official RPC projection and is never
-                                        // written to the agent transcript or public delivery.
-                                        if !project {
-                                            continue;
-                                        }
                                     }
-                                    Ok(pi_rpc::PiRpcRecordAdmission::Project) => {
+                                    pi_rpc::PiRpcRecordAdmission::Project => {
                                         if event_pipeline.is_none() {
                                             startup_boundary.discard_remaining();
                                             let error = AgentError::Execution(
@@ -1611,24 +1598,7 @@ async fn execute_cli_inner(
                                             continue;
                                         }
                                     }
-                                    Ok(pi_rpc::PiRpcRecordAdmission::Discard) => continue,
-                                    Err(error) => {
-                                        pi_rpc_startup_tx.take();
-                                        active_input_controller.close_terminal();
-                                        if cli_status.is_some() {
-                                            break Err(error);
-                                        }
-                                        let error_log = error.to_string();
-                                        termination_runtime.begin_control_failure(
-                                            TerminationReason::StdoutIngestion,
-                                            error,
-                                            ControlTerminationLog::StdoutIngestionFailed {
-                                                error: error_log,
-                                            },
-                                            termination_deadline.as_mut(),
-                                        );
-                                        continue;
-                                    }
+                                    pi_rpc::PiRpcRecordAdmission::Discard => continue,
                                 }
                             }
                             if let Some(projection) = pi_rpc_projection.as_mut() {
@@ -1840,10 +1810,7 @@ async fn execute_cli_inner(
                             }
                         } else if pi_rpc_startup_boundary
                             .as_ref()
-                            .is_some_and(|boundary| {
-                                boundary.requires_boundary()
-                                    || pi_rpc::PiRpcStartupBoundary::looks_like_control(stripped)
-                            })
+                            .is_some_and(pi_rpc::PiRpcStartupBoundary::requires_boundary)
                         {
                             if let Some(boundary) = pi_rpc_startup_boundary.as_mut() {
                                 boundary.discard_remaining();
@@ -2687,8 +2654,9 @@ mod tests {
         let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
         runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");
         runtime.pi_model_config = Cow::Borrowed("{}");
-        runtime.pi_launch_config = Cow::Borrowed(
-            r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1,"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}}"#,
+        runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
+        runtime.pi_installed_cli_requirement = Cow::Borrowed(
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}"#,
         );
         let npx = vec![
             "npx".to_string(),
@@ -2714,9 +2682,8 @@ mod tests {
             npx
         );
 
-        // Launch configs captured before versioned artifacts carry no requirement.
-        runtime.pi_launch_config =
-            Cow::Borrowed(r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#);
+        // An execution context without a requirement keeps the npx launch.
+        runtime.pi_installed_cli_requirement = Cow::Borrowed("");
         assert_eq!(
             build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
             npx
@@ -2727,8 +2694,9 @@ mod tests {
         let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &no_url);
         runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");
         runtime.pi_model_config = Cow::Borrowed("{}");
-        runtime.pi_launch_config = Cow::Borrowed(
-            r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1,"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}}"#,
+        runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
+        runtime.pi_installed_cli_requirement = Cow::Borrowed(
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}"#,
         );
         assert!(build_pi_command_for_runtime(&runtime, Some(&matching)).is_ok());
         assert!(build_pi_command_for_runtime(&runtime, None).is_err());

@@ -51,7 +51,7 @@ const {
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
   completeSandboxFirstPiRun,
-  expectPiSandboxHandoff,
+  piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
 async function configureCustomPiModel(
@@ -122,7 +122,7 @@ describe("CHAT-02: model-first provider policies", () => {
     "deepseek-v4.1-flash",
     ...GPT_PI_BDD_MODELS,
   ] as const)(
-    "hands the first %s Pi turn to the Sandbox and resumes canonical JSONL by reference",
+    "starts the first %s Pi turn fresh in the Sandbox and resumes canonical JSONL by reference",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       // Generic usage pricing for the Sandbox completion webhook.
@@ -146,16 +146,11 @@ describe("CHAT-02: model-first provider policies", () => {
         },
         usagePricingResolution,
       );
-      const firstHandoff = expectPiSandboxHandoff(
-        first.runId,
-        checkpointObjects,
-      );
-      expect(firstHandoff.manifest.schemaVersion).toBe(3);
-      expect(firstHandoff.session).toBeDefined();
       const firstClaim = await claimChatRun(runnerGroup, first.runId);
       expect(firstClaim.claim).toMatchObject({
         cliAgentType: "pi",
         piSessionId: first.threadId,
+        resumeSession: null,
         piModelConfig: {
           model: runtimeModel,
           ...(selectedModel.startsWith("gpt-") ? { thinkingLevel: "max" } : {}),
@@ -214,13 +209,14 @@ describe("CHAT-02: model-first provider policies", () => {
       }
       // Blob-backed continuation transfers by reference without API H0 reads.
       expect(s3GetObjectCommandCalls()).toHaveLength(readsBeforeResume);
-      const secondHandoff = expectPiSandboxHandoff(
-        second.runId,
-        checkpointObjects,
-      );
-      expect(secondHandoff.manifest).toMatchObject({
-        schemaVersion: 4,
-        baseSession: { sessionId: first.threadId },
+      const secondClaim = await claimChatRun(runnerGroup, second.runId);
+      expect(secondClaim.claim).toMatchObject({
+        piSessionId: first.threadId,
+        piModelConfig: { model: runtimeModel },
+        resumeSession: {
+          sessionId: first.threadId,
+          historyRef: { kind: "blob" },
+        },
       });
       const storedHistoryHashes = [...checkpointObjects.entries()]
         .filter(([key]) => {
@@ -229,14 +225,11 @@ describe("CHAT-02: model-first provider policies", () => {
         .map(([, bytes]) => {
           return createHash("sha256").update(bytes).digest("hex");
         });
-      expect(storedHistoryHashes).toContain(
-        secondHandoff.manifest.baseSession.sha256,
-      );
-      const secondClaim = await claimChatRun(runnerGroup, second.runId);
-      expect(secondClaim.claim).toMatchObject({
-        piSessionId: first.threadId,
-        piModelConfig: { model: runtimeModel },
-      });
+      const resumeSession = secondClaim.claim.resumeSession;
+      if (!resumeSession || !("historyRef" in resumeSession)) {
+        throw new Error("Expected a referenced resume history");
+      }
+      expect(storedHistoryHashes).toContain(resumeSession.historyRef.hash);
       await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
     },
     90_000,
@@ -398,14 +391,6 @@ describe("CHAT-02: model-first provider policies", () => {
         },
         usagePricingResolution,
       );
-      const { manifest, session: h0 } = expectPiSandboxHandoff(
-        run.runId,
-        objects,
-      );
-      if (!h0) {
-        throw new Error("Expected the synthesized first-turn Pi session");
-      }
-      expect(h0.toString("utf8")).not.toMatch(/serviceTier|service_tier/);
       await expectNoBuiltInModelUsage(run.runId);
 
       await accept(
@@ -512,6 +497,7 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       expect(resolved.body).not.toHaveProperty("headers.Authorization");
 
+      const h0 = piSandboxBaseSession(claim, objects);
       const history = MemoryPiSession.fromJsonl(h0.toString("utf8"));
       history.appendMessage({ role: "user", content: prompt, timestamp: 1 });
       history.appendMessage({
@@ -548,21 +534,20 @@ describe("CHAT-02: model-first provider policies", () => {
         `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
         Buffer.from(h2, "utf8"),
       );
-      const sequence = manifest.sandboxEventSequenceStart;
       await webhooks.requestAgentEvents(
         {
           runId: run.runId,
           events: [
             {
               type: "assistant",
-              sequenceNumber: sequence,
+              sequenceNumber: 1,
               message: {
                 content: [{ type: "text", text: "custom Sandbox completion" }],
               },
             },
             {
               type: "result",
-              sequenceNumber: sequence + 1,
+              sequenceNumber: 2,
               result: "custom Sandbox completion",
             },
           ],
@@ -578,7 +563,7 @@ describe("CHAT-02: model-first provider policies", () => {
           runId: run.runId,
           exitCode: outcome === "failed" ? 1 : 0,
           ...(outcome === "failed" ? { error: "custom Sandbox failed" } : {}),
-          lastEventSequence: sequence + 1,
+          lastEventSequence: 2,
           checkpoint: {
             cliAgentType: "pi",
             cliAgentSessionId: run.threadId,

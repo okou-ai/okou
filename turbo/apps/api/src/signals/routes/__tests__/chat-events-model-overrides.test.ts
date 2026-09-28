@@ -45,7 +45,7 @@ const {
   cancelChatRun,
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
-  expectPiSandboxHandoff,
+  piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
 function completedSubscriptionHistory(
@@ -363,13 +363,6 @@ describe("CHAT-02: run-level model overrides", () => {
         model: selectedModel,
         runOptions: { codexServiceTier: tier },
       });
-      const { session: h0 } = expectPiSandboxHandoff(
-        run.runId,
-        checkpointObjects,
-      );
-      if (!h0) {
-        throw new Error("Expected the synthesized first-turn Pi session");
-      }
       await expectNoBuiltInModelUsage(run.runId);
 
       await api.heartbeatRunner(runnerGroup);
@@ -433,6 +426,7 @@ describe("CHAT-02: run-level model overrides", () => {
       ).toMatchObject({
         sourceId: accountSourceId,
       });
+      expect(claim.resumeSession).toBeNull();
       expect(JSON.stringify(claim)).not.toContain(externalAccountId);
       expect(JSON.stringify(claim)).not.toContain(refreshToken);
 
@@ -467,12 +461,8 @@ describe("CHAT-02: run-level model overrides", () => {
         `Bearer ${refreshedAccessToken}`,
       );
 
-      const h0Text = h0.toString("utf8");
-      expect(h0Text).not.toMatch(/serviceTier|service_tier/);
-      expect(h0Text).not.toContain(externalAccountId);
-      expect(h0Text).not.toContain(refreshToken);
-      expect(h0Text).not.toContain(
-        MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_ACCESS_TOKEN,
+      const h0Text = piSandboxBaseSession(claim, checkpointObjects).toString(
+        "utf8",
       );
       const h2 = completedSubscriptionHistory(h0Text, prompt, selectedModel);
       expect(h2).not.toMatch(/serviceTier|service_tier/);
@@ -540,15 +530,13 @@ describe("CHAT-02: run-level model overrides", () => {
         runOptions: { codexServiceTier: tier },
       });
       await flushWaitUntilForTest();
-      expect(
-        expectPiSandboxHandoff(continued.runId, checkpointObjects).manifest,
-      ).toMatchObject({
-        schemaVersion: 4,
-        baseSession: { sessionId: run.threadId, sha256: h2Hash },
-      });
       const continuedClaim = await claimChatRun(runnerGroup, continued.runId);
       expect(continuedClaim.claim).toMatchObject({
         piSessionId: run.threadId,
+        resumeSession: {
+          sessionId: run.threadId,
+          historyRef: { kind: "blob", hash: h2Hash },
+        },
         piModelConfig: {
           model: selectedModel,
           ...(tier === undefined ? {} : { serviceTier: tier }),

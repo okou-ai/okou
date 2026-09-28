@@ -9,38 +9,14 @@ import { command } from "ccstate";
 import { and, asc, eq, inArray, lt, notExists } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { env } from "../../lib/env";
 import { now } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import {
-  deleteS3Objects,
-  listS3ObjectsUnderPrefix,
-  type S3Object,
-} from "../external/s3";
-import {
-  PI_SANDBOX_HANDOFF_OBJECT_PREFIX,
-  PI_SANDBOX_HANDOFF_OBJECT_TTL_SECONDS,
-} from "./pi-sandbox-handoff.service";
-
-const PI_SANDBOX_HANDOFF_RETENTION_MS =
-  PI_SANDBOX_HANDOFF_OBJECT_TTL_SECONDS * 1000;
 const PI_RESOURCE_SNAPSHOT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const PI_STABLE_CONTEXT_ARTIFACT_GC_BATCH_SIZE = 256;
 
 interface PiLaunchArtifactsCleanupResult {
-  readonly stagingObjectsDeleted: number;
   readonly resourceSnapshotsDeleted: number;
   readonly stableContextArtifactsDeleted: number;
-}
-
-function expiredPiSandboxHandoffObjectKeys(
-  objects: readonly S3Object[],
-  at: number,
-): readonly string[] {
-  const cutoff = at - PI_SANDBOX_HANDOFF_RETENTION_MS;
-  return objects.flatMap((object) => {
-    return object.lastModified.getTime() < cutoff ? [object.key] : [];
-  });
 }
 
 function piResourceSnapshotExpirationCutoff(at: number): Date {
@@ -170,30 +146,14 @@ export async function deleteExpiredPiStableContextArtifacts(
 }
 
 /**
- * The sandbox cleanup cron owns orphaned Pi sandbox handoff objects. Normal
- * run completion releases its two objects immediately; this sweep covers
- * uncommitted launches, partial writes and processes that terminate before a
- * completion side effect runs.
  * Resource snapshots are rebuildable preheat cache entries and expire weekly.
  */
 export const cleanupExpiredPiLaunchArtifacts$ = command(
   async (
-    { get, set },
+    { set },
     signal: AbortSignal,
   ): Promise<PiLaunchArtifactsCleanupResult> => {
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const currentTime = now();
-    const stagingObjects = await get(
-      listS3ObjectsUnderPrefix(bucket, PI_SANDBOX_HANDOFF_OBJECT_PREFIX),
-    );
-    signal.throwIfAborted();
-    const expiredKeys = expiredPiSandboxHandoffObjectKeys(
-      stagingObjects,
-      currentTime,
-    );
-    await get(deleteS3Objects(bucket, expiredKeys));
-    signal.throwIfAborted();
-
     const deletedSnapshots = await set(writeDb$)
       .delete(piResourceSnapshots)
       .where(
@@ -210,7 +170,6 @@ export const cleanupExpiredPiLaunchArtifacts$ = command(
     );
     signal.throwIfAborted();
     return {
-      stagingObjectsDeleted: expiredKeys.length,
       resourceSnapshotsDeleted: deletedSnapshots.length,
       stableContextArtifactsDeleted: deletedStableArtifacts.length,
     };

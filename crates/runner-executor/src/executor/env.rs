@@ -8,10 +8,7 @@ use api_contracts::generated::constants::runners::{
     PI_MODEL_CONFIG_NATIVE_GENERATION,
 };
 use api_contracts::generated::types::runners::{
-    runs::{
-        CodexRuntimeConfig, PiLaunchConfigMaintenance, PiLaunchConfigMemoryRecall, PiModelConfig,
-        PiModelConfigV2, PiModelConfigV3,
-    },
+    runs::{CodexRuntimeConfig, PiLaunchConfig, PiModelConfig, PiModelConfigV2, PiModelConfigV3},
     storage::ArtifactEntryMissingRootPolicy,
 };
 use guest_contracts::cli_agent_session_id::is_valid_cli_agent_session_id;
@@ -156,26 +153,12 @@ pub(super) fn validate_execution_context_before_sandbox_with_host_env(
     Ok(prepared_run_payload)
 }
 
-/// Runner view of the Pi launch config.
-///
-/// The API still writes the retired `apiFirstTurn` handoff slot; the original
-/// JSON is forwarded untouched and the Sandbox no longer reads it.
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PiLaunchConfigView {
-    schema_version: i64,
-    #[serde(default, rename = "memoryRecall")]
-    _memory_recall: Option<PiLaunchConfigMemoryRecall>,
-    #[serde(default, rename = "maintenance")]
-    _maintenance: Option<PiLaunchConfigMaintenance>,
-}
-
 // Generated enums and explicit versions intentionally fail closed. A future
 // enum value or schema version must reach runners before the API emits it;
 // unknown additive object fields remain safe because the original JSON is
 // forwarded after this validation view is discarded.
 fn validate_pi_launch_config(value: &serde_json::Value) -> Result<(), String> {
-    let launch: PiLaunchConfigView = serde_json::from_value(value.clone())
+    let launch: PiLaunchConfig = serde_json::from_value(value.clone())
         .map_err(|error| format!("Pi launch config v2 is invalid: {error}"))?;
     if launch.schema_version != 2 {
         return Err("Pi launch config schemaVersion must be 2".to_string());

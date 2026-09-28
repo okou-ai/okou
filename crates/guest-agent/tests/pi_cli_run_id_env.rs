@@ -87,7 +87,6 @@ test -n "${npm_config_cache:-}"
 printf '%s' "$OKOU_RUN_ID" > "$RUN_ID_CAPTURE_PATH"
 printf '%s' "$OKOU_PI_LAUNCH_PAYLOAD_FILE" > "$PI_PAYLOAD_CAPTURE_PATH"
 printf '%s' "$npm_config_cache" > "$NPM_CACHE_CAPTURE_PATH"
-printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":4,"ownershipTransferMode":"sandbox-first"}'
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;
@@ -198,7 +197,7 @@ fi
     .expect("canonical Pi CLI process should finish")?;
 
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
-    assert_eq!(result.last_event_sequence, Some(17));
+    assert_eq!(result.last_event_sequence, Some(14));
     assert_eq!(
         result.jsonl_result.map(|summary| summary.status),
         Some(guest_agent::cli::JsonlResultStatus::Success)
@@ -208,8 +207,6 @@ fi
     for request in server.requests()? {
         assert_eq!(request.path, "/api/webhooks/agent/events");
         assert_eq!(request.authorization.as_deref(), Some("Bearer test-token"));
-        assert!(!request.body.contains("vm0_pi_api_first_turn_boundary"));
-        assert!(!request.body.contains("sandboxEventSequenceStart"));
         let body: Value = serde_json::from_str(&request.body)?;
         assert_eq!(
             body.pointer("/piMemoryCitationTransport/schemaVersion"),
@@ -238,7 +235,7 @@ fi
     });
     assert_eq!(delivered_events.len(), 14);
     assert_eq!(delivered_citations.len(), 1);
-    assert_eq!(delivered_citations[0]["sequenceNumber"], 16);
+    assert_eq!(delivered_citations[0]["sequenceNumber"], 13);
     assert_eq!(
         delivered_citations[0].pointer("/citation/entries/0/path"),
         Some(&Value::String(private_path.to_string()))
@@ -256,7 +253,7 @@ fi
             .iter()
             .map(|event| event["sequenceNumber"].as_u64())
             .collect::<Vec<_>>(),
-        (4..18).map(Some).collect::<Vec<_>>()
+        (1..15).map(Some).collect::<Vec<_>>()
     );
     assert!(delivered_events.iter().all(|event| {
         let serialized = event.to_string();
@@ -459,10 +456,6 @@ fi
     assert_eq!(payload["schemaVersion"], 1);
     assert_eq!(payload["appendSystemPrompt"], "Your name is Okou.");
     assert_eq!(payload["launchConfig"]["schemaVersion"], 2);
-    let agent_log =
-        std::fs::read_to_string(guest_contracts::runtime_paths::agent_log_file(&runtime_dir))?;
-    assert!(!agent_log.contains("vm0_pi_api_first_turn_boundary"));
-    assert!(!agent_log.contains("sandboxEventSequenceStart"));
     assert_eq!(
         std::fs::metadata(&payload_path)?.permissions().mode() & 0o777,
         0o600

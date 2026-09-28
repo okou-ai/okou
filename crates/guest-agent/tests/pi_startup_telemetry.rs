@@ -134,9 +134,8 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
     Ok(())
 }
 
-/// Mock Pi host: installs the handoff boundary, answers the official RPC
-/// commands, and reports its preparation phases on stderr the way the real
-/// sandbox CLI does.
+/// Mock Pi host: answers the official RPC commands and reports its preparation
+/// phases on stderr the way the real sandbox CLI does.
 fn serving_pi_host_script() -> String {
     let mut script = String::from(
         "#!/bin/sh\nset -eu\nprintf '%s' \"${OKOU_PI_PREPARATION_TIMING:-}\" > \"$HOME/preparation-timing-env.txt\"\n",
@@ -150,8 +149,7 @@ fn serving_pi_host_script() -> String {
         "printf '%s\\n' '{\"type\":\"pi_preparation_timing\",\"runId\":\"run\",\"phase\":\"invented_phase\",\"durationMs\":1,\"outcome\":\"success\"}' >&2\n",
     );
     script.push_str(
-        r#"printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":1,"ownershipTransferMode":"sandbox-first"}'
-IFS= read -r state_command
+        r#"IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;
   *) exit 21 ;;

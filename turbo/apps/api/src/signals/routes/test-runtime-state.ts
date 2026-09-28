@@ -610,18 +610,7 @@ async function setRunnerJobPiContextAsVersionedWriter(
       : {}),
     cliAgentType: "pi",
     piSessionId: body.run_id,
-    piLaunchConfig: {
-      schemaVersion: 2,
-      apiFirstTurn: {
-        schemaVersion: 1,
-        resourceSnapshotDigest: "0".repeat(64),
-        manifestUrl: "https://example.test/pi/manifest.json",
-        sessionUrl: "https://example.test/pi/session.jsonl",
-        deadlineAt: 4_102_444_800_000,
-        baseSession: { sessionId: body.run_id, sha256: null },
-        sandboxEventSequenceStart: 1,
-      },
-    },
+    piLaunchConfig: { schemaVersion: 2 },
     piModelConfig: body.pi_model_config,
   };
   const [updated] = await db

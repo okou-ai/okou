@@ -50,18 +50,7 @@ const CONFIG: PiSandboxAgentConfig = {
   launchPayload: {
     schemaVersion: 1,
     appendSystemPrompt: "exact immutable Pi append prompt",
-    launchConfig: {
-      schemaVersion: 2,
-      apiFirstTurn: {
-        schemaVersion: 1,
-        resourceSnapshotDigest: "a".repeat(64),
-        manifestUrl: "https://handoff.example/manifest.json",
-        sessionUrl: "https://handoff.example/session.jsonl",
-        deadlineAt: 2_000_000_000_000,
-        baseSession: { sessionId: SESSION_ID, sha256: null },
-        sandboxEventSequenceStart: 1,
-      },
-    },
+    launchConfig: { schemaVersion: 2 },
   },
   model: {
     provider: "deepseek",
@@ -463,25 +452,12 @@ async function startSandboxHost(args: {
   }
   const payloadFile = join(args.root, "launch-payload.json");
   await mkdir(agentDir, { recursive: true });
-  // The API keeps writing the retired handoff slot until it is removed from
-  // the launch contract; the sandbox never reads it.
   await writeFile(
     payloadFile,
     JSON.stringify({
       schemaVersion: 1,
       appendSystemPrompt: null,
-      launchConfig: {
-        schemaVersion: 2,
-        apiFirstTurn: {
-          schemaVersion: 1,
-          resourceSnapshotDigest: "a".repeat(64),
-          manifestUrl: "http://127.0.0.1:9/manifest.json",
-          sessionUrl: "http://127.0.0.1:9/session.jsonl",
-          deadlineAt: 1,
-          baseSession: { sessionId: SESSION_ID, sha256: null },
-          sandboxEventSequenceStart: 1,
-        },
-      },
+      launchConfig: { schemaVersion: 2 },
     }),
     { mode: 0o600 },
   );
@@ -550,13 +526,6 @@ async function startSandboxHost(args: {
   };
   return new RpcHost({ cwd: args.root, agentDir, sessionDir, env });
 }
-
-const SANDBOX_STARTUP_BOUNDARY = {
-  type: "vm0_pi_api_first_turn_boundary",
-  schemaVersion: 2,
-  sandboxEventSequenceStart: 1,
-  ownershipTransferMode: "sandbox-first",
-} as const;
 
 describe("sandbox Pi agent loop", () => {
   it("writes the private maintenance attestation only after mounted validation", async () => {
@@ -1217,7 +1186,12 @@ describe("sandbox Pi agent loop", () => {
       });
 
       const state = await host.state("sandbox-first-state");
-      expect(host.records[0]).toStrictEqual(SANDBOX_STARTUP_BOUNDARY);
+      // The first stdout line is the official RPC response, with no private
+      // startup record ahead of it.
+      expect(host.records[0]).toMatchObject({
+        type: "response",
+        id: "sandbox-first-state",
+      });
       expect(state).toMatchObject({ sessionId: SESSION_ID, messageCount: 0 });
       expect(String(state.sessionFile)).toBe(
         join(
@@ -1310,7 +1284,10 @@ describe("sandbox Pi agent loop", () => {
             // user/assistant pair.
             messageCount: turn === 1 ? 0 : (turn - 1) * 2 + 1,
           });
-          expect(host.records[0]).toStrictEqual(SANDBOX_STARTUP_BOUNDARY);
+          expect(host.records[0]).toMatchObject({
+            type: "response",
+            id: `native-input-state-${turn}`,
+          });
           const installed = await readFile(String(state.sessionFile), "utf8");
           // The first turn opens a fresh session; a resumed turn opens the
           // Runner-restored H0, which must remain byte-for-byte intact.

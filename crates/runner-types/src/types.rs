@@ -1980,21 +1980,7 @@ mod tests {
             "sandboxToken": "tok",
             "cliAgentType": "pi",
             "piSessionId": "22222222-2222-4222-8222-222222222222",
-            "piLaunchConfig": {
-                "schemaVersion": 2,
-                "apiFirstTurn": {
-                    "schemaVersion": 1,
-                    "resourceSnapshotDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                    "manifestUrl": "https://storage.example/manifest.json",
-                    "sessionUrl": "https://storage.example/session.jsonl",
-                    "deadlineAt": 2000000000000_u64,
-                    "baseSession": {
-                        "sessionId": "22222222-2222-4222-8222-222222222222",
-                        "sha256": null
-                    },
-                    "sandboxEventSequenceStart": 1
-                }
-            },
+            "piLaunchConfig": { "schemaVersion": 2 },
             "piModelConfig": {
                 "provider": "deepseek",
                 "baseUrl": "https://api.deepseek.com/",

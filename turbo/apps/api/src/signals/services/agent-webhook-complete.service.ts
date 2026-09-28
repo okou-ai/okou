@@ -107,7 +107,6 @@ export type CompleteSideEffectsInput = (
   | DeliveryFinalizationSideEffectsInput
   | SlotReleaseSideEffectsInput
 ) & {
-  readonly cleanupPiSandboxHandoff?: true;
   /** The committing transaction deleted the run's active row. */
   readonly slotReleased?: true;
 };
@@ -609,10 +608,6 @@ function completionResponse(
   redriveTerminalChatCallback: boolean,
 ): CompletionResponse {
   let sideEffects: CompleteSideEffectsInput | undefined;
-  const piCleanup =
-    commit.run.launchSnapshot?.framework === "pi"
-      ? ({ cleanupPiSandboxHandoff: true } as const)
-      : {};
   if (commit.transitioned || redriveTerminalChatCallback) {
     sideEffects = {
       kind: "terminal",
@@ -631,7 +626,6 @@ function completionResponse(
             },
           }
         : {}),
-      ...piCleanup,
     };
   } else if (
     commit.run.status === "cancelled" &&
@@ -645,7 +639,6 @@ function completionResponse(
       userId: commit.run.userId,
       chatThreadId: commit.run.chatThreadId,
       chatEventsAppended: commit.finalization.chatEventsAppended,
-      ...piCleanup,
     };
   } else if (
     commit.finalization.finalized &&
@@ -658,7 +651,6 @@ function completionResponse(
       userId: commit.run.userId,
       chatThreadId: commit.run.chatThreadId,
       chatEventsAppended: commit.finalization.chatEventsAppended,
-      ...piCleanup,
     };
   } else if (commit.slotReleased) {
     sideEffects = { kind: "slot-release", runId, orgId: commit.run.orgId };

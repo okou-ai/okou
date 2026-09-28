@@ -1,10 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes } from "node:crypto";
 
-import {
-  elapsedSinceApiStartMs,
-  type PiLangfuseParent,
-} from "@okouai/api-contracts/contracts/runners";
+import { elapsedSinceApiStartMs } from "@okouai/api-contracts/contracts/runners";
 import {
   LangfuseOtelSpanAttributes,
   type LangfuseSpan,
@@ -101,29 +98,6 @@ function runEndToEndSpanContext(traceId: string): SpanContext {
     spanId: runEndToEndSpanId(traceId),
     traceFlags: TraceFlags.SAMPLED,
     isRemote: true,
-  };
-}
-
-/** Join sandbox phases to the run root and preserve the publication boundary. */
-export function piLangfuseSandboxParent(args: {
-  readonly enabled: boolean;
-  readonly runId: string;
-  readonly sessionId: string;
-  readonly sandboxWaitStartedAt: number;
-}): PiLangfuseParent | undefined {
-  if (!args.enabled) {
-    return undefined;
-  }
-  const traceId = normalizePiLangfuseTraceId(args.runId);
-  if (!traceId) {
-    return undefined;
-  }
-  return {
-    traceId,
-    spanId: runEndToEndSpanId(traceId),
-    traceFlags: 1,
-    sessionId: args.sessionId,
-    sandboxWaitStartedAt: args.sandboxWaitStartedAt,
   };
 }
 
