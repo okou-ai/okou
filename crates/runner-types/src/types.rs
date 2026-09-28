@@ -153,6 +153,9 @@ pub struct ExecutionContext {
     /// Chat Thread id used as Pi's official JSONL session id.
     #[serde(default)]
     pub pi_session_id: Option<String>,
+    /// Raw installed-CLI launch requirements, forwarded to the guest.
+    #[serde(default)]
+    pub pi_installed_cli_requirement: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

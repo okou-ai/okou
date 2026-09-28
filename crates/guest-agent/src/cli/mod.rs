@@ -385,6 +385,7 @@ pub(super) struct CliRuntimeConfig<'a> {
     pi_launch_config: Cow<'a, str>,
     pi_launch_payload_file: Cow<'a, str>,
     pi_model_config: Cow<'a, str>,
+    pi_installed_cli_requirement: Cow<'a, str>,
     user_env: &'a HashMap<String, String>,
 }
 
@@ -469,6 +470,7 @@ impl<'a> CliRuntimeConfig<'a> {
             pi_launch_config: Cow::Borrowed(&config.pi_launch_config),
             pi_launch_payload_file: Cow::Borrowed(paths.pi_launch_payload_file()),
             pi_model_config: Cow::Borrowed(&config.pi_model_config),
+            pi_installed_cli_requirement: Cow::Borrowed(&config.pi_installed_cli_requirement),
             user_env: &config.user_env,
         })
     }
@@ -557,7 +559,22 @@ fn build_pi_command_for_runtime(
     }
     let launch_config: serde_json::Value = serde_json::from_str(runtime.pi_launch_config.as_ref())
         .map_err(|_| AgentError::Execution("Pi launch config is invalid".to_string()))?;
-    let requirement = okou_cli_launch::PiRuntimeRequirement::from_launch_config(&launch_config);
+    let installed_cli_requirement: Option<serde_json::Value> = if runtime
+        .pi_installed_cli_requirement
+        .is_empty()
+    {
+        None
+    } else {
+        Some(
+            serde_json::from_str(runtime.pi_installed_cli_requirement.as_ref()).map_err(|_| {
+                AgentError::Execution("Pi installed CLI requirement is invalid".to_string())
+            })?,
+        )
+    };
+    let requirement = okou_cli_launch::PiRuntimeRequirement::from_sources(
+        installed_cli_requirement.as_ref(),
+        &launch_config,
+    );
     let decision = okou_cli_launch::select_pi_cli_launch(&requirement, installed_okou_cli);
     record_sandbox_op_with_dimensions(
         "pi_cli_launch_select",
@@ -1528,7 +1545,10 @@ async fn execute_cli_inner(
                         if let Ok(mut event) = serde_json::from_str::<serde_json::Value>(stripped) {
                             if let Some(startup_boundary) = pi_rpc_startup_boundary.as_mut() {
                                 match startup_boundary.admit(&event) {
-                                    Ok(pi_rpc::PiRpcRecordAdmission::InstallBoundary(startup)) => {
+                                    Ok(pi_rpc::PiRpcRecordAdmission::InstallBoundary {
+                                        startup,
+                                        project,
+                                    }) => {
                                         match CliEventPipeline::start(
                                             runtime,
                                             session_metadata.clone(),
@@ -1558,12 +1578,15 @@ async fn execute_cli_inner(
                                                     },
                                                     termination_deadline.as_mut(),
                                                 );
+                                                continue;
                                             }
                                         }
                                         // The startup control is private CLI/guest state. It is
                                         // consumed before official RPC projection and is never
                                         // written to the agent transcript or public delivery.
-                                        continue;
+                                        if !project {
+                                            continue;
+                                        }
                                     }
                                     Ok(pi_rpc::PiRpcRecordAdmission::Project) => {
                                         if event_pipeline.is_none() {
@@ -2515,6 +2538,7 @@ mod tests {
             pi_launch_config: String::new(),
             pi_model_config: String::new(),
             pi_session_id: String::new(),
+            pi_installed_cli_requirement: String::new(),
             stuck_tool_timeout_secs: constants::STUCK_TOOL_TIMEOUT_SECS,
             post_result_sigterm_grace: Duration::from_secs(
                 constants::POST_RESULT_SIGTERM_GRACE_SECS,
@@ -2601,6 +2625,7 @@ mod tests {
             pi_launch_config: Cow::Borrowed(""),
             pi_launch_payload_file: Cow::Borrowed("/tmp/pi-launch-payload/payload.json"),
             pi_model_config: Cow::Borrowed(""),
+            pi_installed_cli_requirement: Cow::Borrowed(""),
             user_env,
         }
     }
@@ -2620,6 +2645,37 @@ mod tests {
             entrypoint: InstalledOkouCli::entrypoint_for(cli),
             session_construction: None,
         }
+    }
+
+    #[test]
+    fn pi_command_execs_installed_cli_from_the_execution_context_requirement() {
+        let user_env = HashMap::from([(
+            "CLI_PKG_URL".to_string(),
+            "https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
+        )]);
+        let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
+        runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");
+        runtime.pi_model_config = Cow::Borrowed("{}");
+        runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
+        runtime.pi_installed_cli_requirement = Cow::Borrowed(
+            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
+        );
+        let mut installed = installed_okou_cli_for_test("9.353.0", "1.36.0");
+        installed.session_construction =
+            Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
+                digest: "d".repeat(64),
+            });
+
+        assert_eq!(
+            build_pi_command_for_runtime(&runtime, Some(&installed)).unwrap(),
+            vec![
+                OKOU_CLI_LAUNCHER_PATH.to_string(),
+                "__agent-loop".to_string()
+            ]
+        );
+
+        runtime.pi_installed_cli_requirement = Cow::Borrowed("not json");
+        assert!(build_pi_command_for_runtime(&runtime, Some(&installed)).is_err());
     }
 
     #[test]

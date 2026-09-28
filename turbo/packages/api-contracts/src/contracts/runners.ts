@@ -1084,6 +1084,22 @@ export const piApiFirstTurnConfigSchema = z
   .readonly();
 
 /**
+ * Installed-CLI launch requirements the API captured for a Pi run. The guest
+ * execs the rootfs-installed CLI only when it matches the session
+ * construction (or runtime version) and meets the CLI floor; otherwise it uses
+ * the commit-addressed package. Carried in the execution context, not the
+ * launch config, because the Pi CLI parses the launch config strictly.
+ */
+export const piInstalledCliRequirementSchema = z
+  .object({
+    requiredPiAgentRuntimeVersion: releaseVersionSchema,
+    minCliVersion: releaseVersionSchema,
+    requiredPiSessionConstructionDigest: piSessionConstructionDigestSchema,
+  })
+  .strict()
+  .readonly();
+
+/**
  * Non-secret Pi model metadata forwarded to the Sandbox. `apiKeyEnv` names the
  * runtime environment entry used by the Sandbox, while `credentialSecretName`
  * names the API-owned encrypted secret that backs that entry.
@@ -1486,6 +1502,7 @@ const storedExecutionContextObjectSchema = z.object({
   piSessionId: z.uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
+  piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
 export const storedExecutionContextSchema =
@@ -1592,6 +1609,7 @@ const executionContextObjectSchema = z.object({
   piSessionId: z.uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
+  piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
 export const executionContextSchema = executionContextObjectSchema.superRefine(
@@ -2057,6 +2075,9 @@ export type PiMemoryRecallSelection = z.infer<
   typeof piMemoryRecallSelectionSchema
 >;
 export type PiApiFirstTurnConfig = z.infer<typeof piApiFirstTurnConfigSchema>;
+export type PiInstalledCliRequirement = z.infer<
+  typeof piInstalledCliRequirementSchema
+>;
 export type PiApiFirstTurnOwnershipTransferMode = z.infer<
   typeof piApiFirstTurnOwnershipTransferModeSchema
 >;

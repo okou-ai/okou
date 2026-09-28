@@ -1051,6 +1051,7 @@ pub(super) fn prepare_run_payload_for_run(
         pi_launch_config: serialize_pi_launch_config_payload(context)?,
         pi_model_config: serialize_pi_model_config_payload(context)?,
         pi_session_id: context.pi_session_id.clone().unwrap_or_default(),
+        pi_installed_cli_requirement: serialize_pi_installed_cli_requirement_payload(context)?,
     };
 
     validate_run_payload_for_guest(&payload).map_err(RunnerError::Internal)?;
@@ -1150,6 +1151,16 @@ fn serialize_pi_model_config_payload(context: &ExecutionContext) -> RunnerResult
     };
     serde_json::to_string(config)
         .map_err(|e| RunnerError::Internal(format!("serialize Pi model config: {e}")))
+}
+
+fn serialize_pi_installed_cli_requirement_payload(
+    context: &ExecutionContext,
+) -> RunnerResult<String> {
+    let Some(requirement) = &context.pi_installed_cli_requirement else {
+        return Ok(String::new());
+    };
+    serde_json::to_string(requirement)
+        .map_err(|e| RunnerError::Internal(format!("serialize Pi installed CLI requirement: {e}")))
 }
 
 fn validate_run_payload_for_guest(

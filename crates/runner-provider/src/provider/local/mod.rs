@@ -297,6 +297,7 @@ impl JobProvider for LocalProvider {
             codex_runtime_config: None,
             pi_launch_config: None,
             pi_model_config: None,
+            pi_installed_cli_requirement: None,
             pi_session_id: None,
         };
         let active_input_source = req.active_input.unwrap_or(false).then(|| {

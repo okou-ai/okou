@@ -1,5 +1,5 @@
-//! The Pi startup boundary must be installed privately before any official
-//! RPC record enters the public event pipeline.
+//! A written Pi startup control must be valid and installed privately before
+//! any official RPC record enters the public event pipeline.
 
 mod common;
 
@@ -20,8 +20,8 @@ async fn guest_fails_closed_for_invalid_missing_conflicting_and_late_pi_boundari
 -> Result<(), Box<dyn std::error::Error>> {
     let cases = [
         BoundaryCase {
-            name: "missing",
-            script: r#"printf '%s\n' '{"type":"response"}'"#,
+            name: "closed-before-startup",
+            script: "exec >&-",
             expected_code: "PI_HANDOFF_BOUNDARY_MISSING",
         },
         BoundaryCase {

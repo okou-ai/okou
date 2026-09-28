@@ -56,6 +56,7 @@ import {
   type PiMemoryPhase2Maintenance,
   type PiLaunchConfig,
   type PiApiFirstTurnConfig,
+  type PiInstalledCliRequirement,
   type PiModelConfig,
   type PiModelConfigLegacy,
   type ConnectorRuntimeTargetRegistration,
@@ -7507,6 +7508,20 @@ function piBaseSession(
   };
 }
 
+/**
+ * The installed CLI must have this session construction and meet the CLI
+ * floor; otherwise the guest uses the commit-addressed package. Written to the
+ * execution context and, until release 7, to the launch config's
+ * `apiFirstTurn` slot that pre-release-6 guests read. The queued launch config
+ * is decoded by a strict API reader, so the production rollback floor
+ * includes the digest reader in 322efb6d.
+ */
+const PI_INSTALLED_CLI_REQUIREMENT = {
+  requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+  minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+  requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
+} as const satisfies PiInstalledCliRequirement;
+
 function storedExecutionContextWithPiResources(
   context: StoredExecutionContext,
   resources: PreparedPiLaunchResources | undefined,
@@ -7522,6 +7537,7 @@ function storedExecutionContextWithPiResources(
     piSessionId: resources.sessionId,
     piLaunchConfig: resources.launchConfig,
     piModelConfig: resources.modelConfig,
+    piInstalledCliRequirement: PI_INSTALLED_CLI_REQUIREMENT,
   };
 }
 
@@ -7552,13 +7568,7 @@ function assemblePiLaunchResources(args: {
         deadlineAt: args.apiStartTime + PI_SANDBOX_HANDOFF_DEADLINE_MS,
         baseSession: piBaseSession(resumeSession, sessionId),
         sandboxEventSequenceStart: 1,
-        // The installed CLI must have this session construction and meet the
-        // CLI floor; otherwise the guest uses the commit-addressed package.
-        // The queued launch config is decoded by a strict API reader, so the
-        // production rollback floor includes the digest reader in 322efb6d.
-        requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
-        minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-        requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
+        ...PI_INSTALLED_CLI_REQUIREMENT,
       },
       ...(memoryRecall === undefined ? {} : { memoryRecall }),
       ...(args.maintenance === undefined

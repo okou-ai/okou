@@ -449,6 +449,11 @@ describe("CHAT-02: model-first provider policies", () => {
                 PI_SESSION_CONSTRUCTION_DIGEST,
             },
           },
+          piInstalledCliRequirement: {
+            requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+            minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+            requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
+          },
         });
 
         const sandboxUsage = {

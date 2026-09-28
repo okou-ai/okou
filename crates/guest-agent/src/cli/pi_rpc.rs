@@ -30,9 +30,9 @@
 //!
 //! ## Startup boundary
 //!
-//! Every CLI release emits this private control before official RPC output.
-//! The wire type predates the retirement of the API-first turn and is kept so
-//! any CLI and Guest release pair can start a run:
+//! CLI releases up to the API-first retirement write this private control
+//! before official RPC output. The Guest accepts it and also starts without it,
+//! so a later CLI can stop writing it:
 //!
 //! ```json
 //! {
@@ -44,30 +44,30 @@
 //! ```
 //!
 //! The sandbox owns the whole turn, so `sandbox-first` is the only accepted
-//! `ownershipTransferMode`. Rust accepts a boundary only when its type and
+//! `ownershipTransferMode`. Rust accepts a control only when its type and
 //! schema version are exact, all fields are known, the mode is
 //! `sandbox-first`, and the sequence is in `1..=i32::MAX`
 //! (`1..=2,147,483,647`).
 //!
-//! `PiRpcStartupBoundary` is a fail-closed one-time gate:
+//! `PiRpcStartupBoundary` installs the startup exactly once:
 //!
-//! - Before installation, a non-control JSON record fails with
-//!   `PI_HANDOFF_BOUNDARY_MISSING`. A malformed control, invalid schema, zero,
-//!   overflowing, or otherwise invalid sequence fails with
-//!   `PI_HANDOFF_BOUNDARY_INVALID`.
-//! - The first valid control installs the boundary. A second control before an
-//!   official record is a duplicate; a different value is a conflict; and a
-//!   control after an official record is late. Each is terminal and rejects
-//!   the stream.
+//! - A valid control installs its sequence. Without one, the first official
+//!   JSON record installs sequence 1 and is then projected normally.
+//! - A malformed control, invalid schema, zero, overflowing, or otherwise
+//!   invalid sequence fails with `PI_HANDOFF_BOUNDARY_INVALID`. A second
+//!   control before an official record is a duplicate; a different value is a
+//!   conflict; and a control after an official record is late. Each is
+//!   terminal and rejects the stream.
 //! - After a rejection, `discard_remaining` makes all later records
-//!   non-projecting. Invalid non-JSON input is also fatal while the boundary is
-//!   still required, or when the raw line resembles the control type.
-//! - `cli/mod.rs` consumes the installed control before projection. It is not
+//!   non-projecting. Invalid non-JSON input is also fatal before startup, or
+//!   when the raw line resembles the control type. Stdout closing before
+//!   startup fails with `PI_HANDOFF_BOUNDARY_MISSING`.
+//! - `cli/mod.rs` consumes an installed control before projection. It is not
 //!   written to the agent transcript, assigned a public sequence, sent to the
 //!   webhook, or rendered as an agent/Chat event.
 //!
 //! No official RPC record may reach projection, masking, sequencing, or
-//! delivery until the boundary has installed the first event sequence.
+//! delivery until the startup has installed the first event sequence.
 //!
 //! ## Command and acknowledgement lifecycle
 //!
@@ -326,11 +326,23 @@ pub(super) struct PiRpcStartup {
     pub(super) sandbox_event_sequence_start: u32,
 }
 
+#[derive(Debug)]
 pub(super) enum PiRpcRecordAdmission {
-    InstallBoundary(PiRpcStartup),
+    /// Install the startup boundary; `project` also admits the record itself
+    /// when it is the first official record of a CLI that wrote no control.
+    InstallBoundary {
+        startup: PiRpcStartup,
+        project: bool,
+    },
     Project,
     Discard,
 }
+
+/// Startup installed when the CLI writes no private control record: the
+/// sandbox owns the whole turn and its public events start at sequence 1.
+const DEFAULT_PI_RPC_STARTUP: PiRpcStartup = PiRpcStartup {
+    sandbox_event_sequence_start: 1,
+};
 
 #[derive(Default)]
 pub(super) struct PiRpcStartupBoundary {
@@ -347,10 +359,14 @@ impl PiRpcStartupBoundary {
         let is_control =
             record.get("type").and_then(Value::as_str) == Some(PI_STARTUP_BOUNDARY_CONTROL_TYPE);
         if !is_control {
-            if self.installed.is_none() {
-                return self.reject(Self::missing_error());
-            }
             self.official_record_seen = true;
+            if self.installed.is_none() {
+                self.installed = Some(DEFAULT_PI_RPC_STARTUP);
+                return Ok(PiRpcRecordAdmission::InstallBoundary {
+                    startup: DEFAULT_PI_RPC_STARTUP,
+                    project: true,
+                });
+            }
             return Ok(PiRpcRecordAdmission::Project);
         }
 
@@ -360,18 +376,21 @@ impl PiRpcStartupBoundary {
         };
         let Some(installed) = self.installed else {
             self.installed = Some(candidate);
-            return Ok(PiRpcRecordAdmission::InstallBoundary(candidate));
+            return Ok(PiRpcRecordAdmission::InstallBoundary {
+                startup: candidate,
+                project: false,
+            });
         };
-        if candidate != installed {
-            return self.reject(boundary_error(
-                "PI_HANDOFF_BOUNDARY_CONFLICT",
-                "Pi startup boundary conflicts with the installed boundary",
-            ));
-        }
         if self.official_record_seen {
             return self.reject(boundary_error(
                 "PI_HANDOFF_BOUNDARY_LATE",
                 "Pi startup boundary arrived after RPC startup",
+            ));
+        }
+        if candidate != installed {
+            return self.reject(boundary_error(
+                "PI_HANDOFF_BOUNDARY_CONFLICT",
+                "Pi startup boundary conflicts with the installed boundary",
             ));
         }
         self.reject(boundary_error(
@@ -387,7 +406,7 @@ impl PiRpcStartupBoundary {
     pub(super) fn missing_error() -> AgentError {
         boundary_error(
             "PI_HANDOFF_BOUNDARY_MISSING",
-            "Pi startup boundary is required before RPC startup",
+            "Pi RPC stdout closed before RPC startup",
         )
     }
 
@@ -2027,6 +2046,66 @@ mod tests {
         .expect_err("legacy boundary should fail closed");
 
         assert!(error.to_string().contains("PI_HANDOFF_BOUNDARY_INVALID"));
+    }
+
+    #[test]
+    fn first_official_record_installs_the_default_startup_without_a_control() {
+        let mut boundary = PiRpcStartupBoundary::default();
+
+        let admission = boundary
+            .admit(&json!({ "type": "response", "command": "get_state" }))
+            .expect("an official record should start the run without a control");
+
+        assert!(matches!(
+            admission,
+            PiRpcRecordAdmission::InstallBoundary {
+                startup: PiRpcStartup {
+                    sandbox_event_sequence_start: 1
+                },
+                project: true,
+            }
+        ));
+        assert!(matches!(
+            boundary.admit(&json!({ "type": "agent_settled" })),
+            Ok(PiRpcRecordAdmission::Project)
+        ));
+        let late = boundary
+            .admit(&json!({
+                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
+                "schemaVersion": 2,
+                "sandboxEventSequenceStart": 1,
+                "ownershipTransferMode": "sandbox-first",
+            }))
+            .expect_err("a control after startup is late");
+        assert!(late.to_string().contains("PI_HANDOFF_BOUNDARY_LATE"));
+    }
+
+    #[test]
+    fn written_control_installs_its_startup_without_projection() {
+        let mut boundary = PiRpcStartupBoundary::default();
+
+        let admission = boundary
+            .admit(&json!({
+                "type": PI_STARTUP_BOUNDARY_CONTROL_TYPE,
+                "schemaVersion": 2,
+                "sandboxEventSequenceStart": 1,
+                "ownershipTransferMode": "sandbox-first",
+            }))
+            .expect("a valid control should install");
+
+        assert!(matches!(
+            admission,
+            PiRpcRecordAdmission::InstallBoundary {
+                startup: PiRpcStartup {
+                    sandbox_event_sequence_start: 1
+                },
+                project: false,
+            }
+        ));
+        assert!(matches!(
+            boundary.admit(&json!({ "type": "response" })),
+            Ok(PiRpcRecordAdmission::Project)
+        ));
     }
 
     #[test]

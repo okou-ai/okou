@@ -353,6 +353,9 @@ pub const PI_SESSION_ID_ENV: &str = "OKOU_PI_SESSION_ID";
 /// rather than environment keys.
 pub const PI_SESSION_ID_RUN_PAYLOAD_FIELD: &str = PI_SESSION_ID_ENV;
 
+/// Logical run-payload field name for the installed-CLI launch requirements.
+pub const PI_INSTALLED_CLI_REQUIREMENT_RUN_PAYLOAD_FIELD: &str = "piInstalledCliRequirement";
+
 /// Runner-owned variable-length run payload sent through
 /// [`CANONICAL_RUN_PAYLOAD_FILE_ENV`].
 ///
@@ -395,6 +398,9 @@ pub struct RunPayload {
     /// Chat Thread id used as Pi's native session id.
     #[serde(default)]
     pub pi_session_id: String,
+    /// JSON object with the installed-CLI launch requirements for Pi.
+    #[serde(default)]
+    pub pi_installed_cli_requirement: String,
 }
 
 /// Borrowed logical string field from [`RunPayload`].
@@ -408,7 +414,7 @@ pub struct RunPayloadField<'a> {
 
 impl RunPayload {
     /// Return all logical string fields carried by this run payload.
-    pub fn fields(&self) -> [RunPayloadField<'_>; 12] {
+    pub fn fields(&self) -> [RunPayloadField<'_>; 13] {
         let Self {
             prompt,
             append_system_prompt,
@@ -422,6 +428,7 @@ impl RunPayload {
             pi_launch_config,
             pi_model_config,
             pi_session_id,
+            pi_installed_cli_requirement,
         } = self;
 
         [
@@ -472,6 +479,10 @@ impl RunPayload {
             RunPayloadField {
                 name: PI_SESSION_ID_RUN_PAYLOAD_FIELD,
                 value: pi_session_id,
+            },
+            RunPayloadField {
+                name: PI_INSTALLED_CLI_REQUIREMENT_RUN_PAYLOAD_FIELD,
+                value: pi_installed_cli_requirement,
             },
         ]
     }
@@ -774,6 +785,7 @@ mod tests {
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
             pi_model_config: r#"{"provider":"deepseek"}"#.to_string(),
             pi_session_id: "22222222-2222-4222-8222-222222222222".to_string(),
+            pi_installed_cli_requirement: r#"{"minCliVersion":"9.352.7"}"#.to_string(),
         };
 
         let json = serde_json::to_value(&payload).unwrap();
@@ -787,6 +799,10 @@ mod tests {
         assert_eq!(json["piLaunchConfig"], r#"{"schemaVersion":2}"#);
         assert_eq!(json["piModelConfig"], r#"{"provider":"deepseek"}"#);
         assert_eq!(json["piSessionId"], "22222222-2222-4222-8222-222222222222");
+        assert_eq!(
+            json["piInstalledCliRequirement"],
+            r#"{"minCliVersion":"9.352.7"}"#
+        );
     }
 
     #[test]
@@ -804,6 +820,7 @@ mod tests {
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
             pi_model_config: r#"{"provider":"deepseek"}"#.to_string(),
             pi_session_id: "22222222-2222-4222-8222-222222222222".to_string(),
+            pi_installed_cli_requirement: r#"{"minCliVersion":"9.352.7"}"#.to_string(),
         };
 
         let fields = payload.fields();
@@ -858,6 +875,10 @@ mod tests {
                 RunPayloadField {
                     name: PI_SESSION_ID_RUN_PAYLOAD_FIELD,
                     value: "22222222-2222-4222-8222-222222222222"
+                },
+                RunPayloadField {
+                    name: PI_INSTALLED_CLI_REQUIREMENT_RUN_PAYLOAD_FIELD,
+                    value: r#"{"minCliVersion":"9.352.7"}"#
                 },
             ]
         );

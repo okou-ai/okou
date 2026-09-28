@@ -1118,6 +1118,7 @@ fn pi_execution_context_preserves_additive_fields_in_run_payload() {
         "manifestUrl": "https://storage.example/manifest.json",
         "deadlineAt": 1
     });
+    ctx.pi_installed_cli_requirement = Some(json!({ "minCliVersion": "9.352.7" }));
     ctx.pi_model_config.as_mut().unwrap()["catalogModel"] = json!("deepseek-v4-flash");
     ctx.pi_model_config.as_mut().unwrap()["credentialHeader"] = json!({
         "name": "X-Api-Key",
@@ -1143,6 +1144,9 @@ fn pi_execution_context_preserves_additive_fields_in_run_payload() {
     assert_eq!(launch["schemaVersion"], 2);
     assert_eq!(launch["futureLaunchField"], "launch-root");
     assert_eq!(launch["apiFirstTurn"]["deadlineAt"], 1);
+    let requirement: serde_json::Value =
+        serde_json::from_str(&payload.pi_installed_cli_requirement).unwrap();
+    assert_eq!(requirement["minCliVersion"], "9.352.7");
     let model: serde_json::Value = serde_json::from_str(&payload.pi_model_config).unwrap();
     assert_eq!(model["provider"], "deepseek");
     assert_eq!(model["apiKeyEnv"], "OPENAI_API_KEY");

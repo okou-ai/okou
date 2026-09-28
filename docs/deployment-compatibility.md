@@ -126,10 +126,22 @@ the session the Runner restored from `resumeSession` (inline `sessionHistory`
 or blob `historyRef`) as `restored-<sessionId>.jsonl`, or the file a reused
 sandbox's previous run appended to, and starts a fresh session on a first
 turn. It still writes the private `vm0_pi_api_first_turn_boundary` startup
-record with `sandboxEventSequenceStart: 1` and `sandbox-first`, which every
-Guest release requires; the Guest now rejects the retired continuation modes.
-The Runner validates the launch config without `apiFirstTurn` and `run.usage`
-no longer reports the always-unavailable `apiFirstTurn` source.
+record (`sandboxEventSequenceStart: 1`, `sandbox-first`) because pre-release-6
+Guests require it. The release 6 Guest accepts the record when present and
+otherwise starts at sequence 1 on the first official RPC record; it rejects
+the retired continuation modes. The Runner validates the launch config
+without `apiFirstTurn` and `run.usage` no longer reports the always-unavailable
+`apiFirstTurn` source.
+
+The installed-CLI launch requirements (`requiredPiAgentRuntimeVersion`,
+`minCliVersion`, `requiredPiSessionConstructionDigest`) move to the execution
+context as `piInstalledCliRequirement`, forwarded by the Runner to the Guest in
+the run payload. They are not added to `piLaunchConfig`, because the Pi CLI
+parses the launch config strictly and an older installed CLI would reject an
+unknown key. The API writes both the new field and the old `apiFirstTurn`
+copy. The Guest reads the new field and falls back to `apiFirstTurn` only for
+runs created before this API release. An older API that reads a queued context
+strips the unknown top-level field, so rollback is unaffected.
 
 Guest binaries ship inside the Runner binary, so Runner and Guest never skew.
 Mixed versions during rollout:
@@ -139,20 +151,30 @@ Mixed versions during rollout:
   `resolve-production-rollback-target.sh`, because a draining release 6 Runner
   only calls the steer endpoints.
 - Old Runner with this API: unchanged; release 4 and later still serve reserve,
-  receipt and `activeInputDeliveryIds` until release 7 removes them.
+  receipt and `activeInputDeliveryIds`, and the old Guest keeps reading the
+  requirement from `apiFirstTurn`.
 - Old Sandbox CLI (commit-addressed `CLI_PKG_URL` of a run created before this
   release) with a new Guest: it still waits for the manifest the API keeps
-  publishing and writes the same startup record. Its `okou run usage` rejects
-  the new result without `apiFirstTurn` as `invalid-response`.
+  publishing and writes the startup record. Its `okou run usage` rejects the
+  new result without `apiFirstTurn` as `invalid-response`.
 - New Sandbox CLI with an old Guest (a run created after API promotion that an
   old Runner claims): the CLI writes the startup record the old Guest requires
   and reads the session the old Runner restored the same way. `okou run usage`
   accepts results with or without `apiFirstTurn`.
 
-The API keeps writing the manifest and `piLaunchConfig.apiFirstTurn` until
-release 7, which also carries the installed-CLI launch requirements
-(`requiredPiAgentRuntimeVersion`, `minCliVersion`,
-`requiredPiSessionConstructionDigest`) the Guest reads from that slot.
+**Release 7 deletion order.** Release 7 only deletes. It may merge once every
+release 6 Runner is live and every earlier Runner has drained:
+
+1. The Sandbox CLI stops writing the startup record; release 6 Guests already
+   start without it.
+2. The API stops writing and the contract drops `piLaunchConfig.apiFirstTurn`,
+   together with `pi-sandbox-handoff.service.ts`, the `pi-api-first-turn/`
+   cleanup cron, the reserve and receipt endpoints, and the steer settlement of
+   `activeInputDeliveryIds` in completion requests; Rust bindings follow.
+3. The Guest drops the `apiFirstTurn` fallback for the installed-CLI
+   requirement and the startup-record parser, and the Runner stops tolerating
+   the slot. Runs queued before release 7 still carry
+   `piInstalledCliRequirement`, so the fallback has no remaining reader.
 
 ## Unified chat queue (release 4)
 
