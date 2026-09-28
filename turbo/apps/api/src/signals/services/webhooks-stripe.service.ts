@@ -17,6 +17,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
+import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
@@ -5030,12 +5031,13 @@ export const reconcilePaidStripeCheckoutSession$ = command(
     }
     await publishBillingChanges(db, orgIds, signal);
     if (result.drainOrgId) {
-      await set(
-        pickOrgQueuedChatThreads$,
-        { orgId: result.drainOrgId },
-        signal,
+      waitUntil(
+        set(
+          pickOrgQueuedChatThreads$,
+          { orgId: result.drainOrgId },
+          new AbortController().signal,
+        ),
       );
-      signal.throwIfAborted();
     }
     return [...orgIds];
   },
@@ -5058,8 +5060,9 @@ export const reconcilePaidStripeInvoice$ = command(
     }
 
     await publishBillingChanges(db, new Set([orgId]), signal);
-    await set(pickOrgQueuedChatThreads$, { orgId }, signal);
-    signal.throwIfAborted();
+    waitUntil(
+      set(pickOrgQueuedChatThreads$, { orgId }, new AbortController().signal),
+    );
     return orgId;
   },
 );
@@ -5190,8 +5193,13 @@ export const handleStripeWebhookEvent$ = command(
     await publishBillingChanges(db, billingChangedOrgIds, signal);
 
     if (drainOrgId) {
-      await set(pickOrgQueuedChatThreads$, { orgId: drainOrgId }, signal);
-      signal.throwIfAborted();
+      waitUntil(
+        set(
+          pickOrgQueuedChatThreads$,
+          { orgId: drainOrgId },
+          new AbortController().signal,
+        ),
+      );
     }
   },
 );

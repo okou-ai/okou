@@ -40,14 +40,12 @@ const PG_FOREIGN_KEY_VIOLATION = "23503";
 /**
  * How consuming one queue head ended:
  * - `launched`: the head was replaced by its run-bound copy and a run started;
- * - `waiting`: a 429 left the head queued;
- * - `passed`: the head was rejected as `input.rejected` (any failure other
- *   than a 429, including an unexpected error), or was not launched by this
- *   pick because another consumer took it or the thread became busy.
+ * - `passed`: the head was rejected as `input.rejected`, or was not launched
+ *   by this pick. The picker rejects any unchanged head unless the thread
+ *   actually has an active run.
  */
 export type ChatQueueHeadConsumption =
   | { readonly kind: "launched"; readonly runId: string }
-  | { readonly kind: "waiting" }
   | { readonly kind: "passed" };
 
 async function loadChatQueueHeadContext(
@@ -57,14 +55,14 @@ async function loadChatQueueHeadContext(
   readonly contextType: string | null;
   readonly contextId: string | null;
   readonly userId: string;
-  readonly agentId: string;
+  readonly agentId: string | null;
 } | null> {
   const [thread] = await db
     .select({ userId: chatThreads.userId, agentId: chatThreads.agentId })
     .from(chatThreads)
     .where(eq(chatThreads.id, head.chatThreadId))
     .limit(1);
-  if (!thread?.agentId) {
+  if (!thread) {
     return null;
   }
   const [event] = await db
@@ -227,7 +225,9 @@ const rejectChatQueueHead$ = command(
   async (
     { set },
     args: {
-      readonly head: ChatQueueHeadContext;
+      readonly head: Omit<ChatQueueHeadContext, "agentId"> & {
+        readonly agentId: string | null;
+      };
       readonly rejection: ChatQueueHeadRejection;
     },
     signal: AbortSignal,
@@ -235,26 +235,43 @@ const rejectChatQueueHead$ = command(
     const { head, rejection } = args;
     // An admission conflict is written for the user as is; any other error
     // is a run error the external-surface formatter explains.
-    const displayError =
-      rejection.error.code === "CONFLICT"
-        ? rejection.error.message
-        : rejection.error.code === "INSUFFICIENT_CREDITS" &&
-            isDirectSendContext(head.contextType)
-          ? await directSendInsufficientCreditsMessage(
-              set(writeDb$),
-              head.orgId,
-            )
-          : await set(
-              formatIntegrationRunError$,
-              {
-                orgId: head.orgId,
-                userId: rejection.userId,
-                code: rejection.error.code,
-                message: rejection.error.message,
-              },
-              signal,
-            );
-    signal.throwIfAborted();
+    const formatted = await settle(
+      (async () => {
+        if (rejection.error.code === "CONFLICT") {
+          return rejection.error.message;
+        }
+        if (
+          rejection.error.code === "INSUFFICIENT_CREDITS" &&
+          isDirectSendContext(head.contextType)
+        ) {
+          return await directSendInsufficientCreditsMessage(
+            set(writeDb$),
+            head.orgId,
+          );
+        }
+        return await set(
+          formatIntegrationRunError$,
+          {
+            orgId: head.orgId,
+            userId: rejection.userId,
+            code: rejection.error.code,
+            message: rejection.error.message,
+          },
+          signal,
+        );
+      })(),
+      signal,
+    );
+    if (!formatted.ok) {
+      log.error("Failed to format queued input rejection", {
+        chatThreadId: head.chatThreadId,
+        eventId: head.id,
+        error: formatted.error,
+      });
+    }
+    const displayError = formatted.ok
+      ? formatted.value
+      : "The input could not be started";
     const rejected = await appendChatQueueHeadRejection(set(writeDb$), {
       chatThreadId: head.chatThreadId,
       eventId: head.id,
@@ -288,25 +305,77 @@ const rejectChatQueueHead$ = command(
     signal.throwIfAborted();
     await publishChatQueueHeadConsumed(head);
     signal.throwIfAborted();
-    const deliver = rejection.deliver;
-    if (!deliver && rejection.error.code !== "INTERNAL_ERROR") {
+    const agentId = head.agentId;
+    const deliver =
+      rejection.deliver ??
+      (rejection.error.code === "INTERNAL_ERROR" && agentId !== null
+        ? (assistantEventId: string, deliverySignal: AbortSignal) => {
+            return set(
+              deliverUnexpectedQueuedPromptRejection$,
+              { head: { ...head, agentId }, assistantEventId },
+              deliverySignal,
+            );
+          }
+        : undefined);
+    if (!deliver) {
       return;
     }
-    await tapError(
-      deliver
-        ? deliver(rejected.assistantEventId, signal)
-        : set(
-            deliverUnexpectedQueuedPromptRejection$,
-            { head, assistantEventId: rejected.assistantEventId },
-            signal,
-          ),
-      (error) => {
-        log.warn("Failed to deliver queued input rejection", {
-          chatThreadId: head.chatThreadId,
-          eventId: head.id,
-          error,
-        });
+    await tapError(deliver(rejected.assistantEventId, signal), (error) => {
+      log.warn("Failed to deliver queued input rejection", {
+        chatThreadId: head.chatThreadId,
+        eventId: head.id,
+        error,
+      });
+    });
+  },
+);
+
+/** Reject a head left unconsumed by an idle thread's pick. */
+export const rejectUnconsumedChatQueueHead$ = command(
+  async (
+    { set },
+    input: {
+      readonly chatThreadId: string;
+      readonly orgId: string;
+      readonly eventId: string;
+      readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const loaded = await loadChatQueueHeadContext(set(writeDb$), {
+      id: input.eventId,
+      chatThreadId: input.chatThreadId,
+    });
+    signal.throwIfAborted();
+    if (!loaded) {
+      return;
+    }
+    await set(
+      rejectChatQueueHead$,
+      {
+        head: {
+          ...loaded,
+          id: input.eventId,
+          chatThreadId: input.chatThreadId,
+          orgId: input.orgId,
+          apiStartTime: now(),
+          dispatchFailedCallbacks: input.dispatchFailedCallbacks,
+        },
+        rejection: {
+          userId: loaded.userId,
+          error:
+            loaded.agentId === null
+              ? {
+                  code: "BAD_REQUEST",
+                  message: "The thread no longer has an agent",
+                }
+              : {
+                  code: "INTERNAL_ERROR",
+                  message: "The input could not be started",
+                },
+        },
       },
+      signal,
     );
   },
 );
@@ -314,8 +383,8 @@ const rejectChatQueueHead$ = command(
 /**
  * Consume one strict-FIFO queue head into a run. The head's context type
  * selects the assembler that builds the run's parameters; loading the head,
- * creating the run, and mapping its outcome are shared: 201 launched, 429
- * waits, and every other failure takes the single rejection exit.
+ * creating the run, and mapping its outcome are shared: 201 launched, and
+ * every failure takes the single rejection exit.
  */
 export const consumeChatQueueHead$ = command(
   async (
@@ -335,7 +404,7 @@ export const consumeChatQueueHead$ = command(
       chatThreadId: input.chatThreadId,
     });
     signal.throwIfAborted();
-    if (!loaded) {
+    if (!loaded || loaded.agentId === null) {
       return { kind: "passed" };
     }
     const head: ChatQueueHeadContext = {
@@ -345,6 +414,7 @@ export const consumeChatQueueHead$ = command(
       apiStartTime,
       dispatchFailedCallbacks: input.dispatchFailedCallbacks,
       ...loaded,
+      agentId: loaded.agentId,
     };
     // An unexpected failure is a failure like any other: it rejects the head
     // rather than leaving it for the cron to retry every minute.
@@ -425,9 +495,6 @@ export const consumeChatQueueHead$ = command(
       await publishChatQueueHeadConsumed(head);
       signal.throwIfAborted();
       return { kind: "launched", runId: result.body.runId };
-    }
-    if (result.status === 429) {
-      return { kind: "waiting" };
     }
     await set(
       rejectChatQueueHead$,

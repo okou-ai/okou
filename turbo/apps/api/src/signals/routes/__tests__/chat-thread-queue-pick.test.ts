@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -11,12 +10,12 @@ import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventAutomationPart } from "./helpers/chat-event";
+import { postConcurrencyEntitlementsInvoicePaid } from "./helpers/stripe-billing-webhook";
 import {
   createChatEventsFixture,
   userMessages,
@@ -26,7 +25,7 @@ import {
  * CHAT-02: at organization capacity, chat input waits in its thread without a
  * run. A pick launches the thread's FIFO head when a slot frees (the
  * organization's waiting threads oldest first, with no priority for the ending
- * run's thread) or when the cron sweep finds capacity.
+ * run's thread) or after a concurrency entitlement changes.
  */
 const context = testContext({ connectorCatalog: true });
 const {
@@ -55,16 +54,26 @@ const WEBHOOK_APP_ROUTES = Object.freeze([
   ...workflowAutomationsRoutes,
 ]);
 
-/** Run the real cron sweep scoped to the given threads. */
-async function sweepQueuedThreads(chatThreadIds: string[]): Promise<void> {
-  await accept(
-    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-      testCronCleanupSandboxesStateContract,
-    ).cleanup({
-      body: { chatThreadIds, runIds: [], exportJobIds: [] },
-    }),
-    [200],
-  );
+/** A production Stripe webhook triggers the same organization pick as cron. */
+async function refreshConcurrencyEntitlement(
+  actor: ApiTestUser,
+): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Expected an organization-scoped actor");
+  }
+  await postConcurrencyEntitlementsInvoicePaid(context.signal, {
+    orgId: actor.orgId,
+    userId: actor.userId,
+    customerId: `cus_${randomUUID()}`,
+    subscriptionId: `sub_${randomUUID()}`,
+    lines: [
+      {
+        slots: 1,
+        startsAt: new Date(now()),
+        expiresAt: new Date(now() + 86_400_000),
+      },
+    ],
+  });
   await flushWaitUntilForTest();
 }
 
@@ -458,7 +467,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     await cancelChatRun(actor, running.runId);
   }, 90_000);
 
-  it("keeps a waiting thread pickable after the cron sweep finds the organization full", async () => {
+  it("keeps a waiting thread pickable after a concurrency update finds the organization full", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -467,9 +476,13 @@ describe("CHAT-02: queued chat thread picks", () => {
       prompt: "occupy the only organization slot",
     });
     const older = await sendWaiting(actor, agentId, "oldest waiting thread");
-    const waiting = await sendWaiting(actor, agentId, "waits for the sweep");
+    const waiting = await sendWaiting(
+      actor,
+      agentId,
+      "waits after the concurrency update",
+    );
 
-    await sweepQueuedThreads([older.threadId, waiting.threadId]);
+    await refreshConcurrencyEntitlement(actor);
     await expect(
       runOfInput(actor, older.threadId, older.clientEventId),
     ).resolves.toBeUndefined();
@@ -485,9 +498,61 @@ describe("CHAT-02: queued chat thread picks", () => {
     ).resolves.toBeUndefined();
 
     await finishRun(runnerGroup, olderRun.runId);
-    await sweepQueuedThreads([waiting.threadId]);
     const launched = await waiting.launchedRun();
     await cancelChatRun(actor, launched.runId);
+  }, 90_000);
+
+  it("rejects an unavailable model and continues picking the organization's next thread", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, agentId, runnerGroup, providerId } =
+      await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const nativePolicy = {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    } as const;
+    await api.updateOrgModelPolicies(actor, [
+      nativePolicy,
+      { ...nativePolicy, model: "claude-opus-5", isDefault: false },
+    ]);
+    const blocker = await sendChatRun(actor, {
+      agentId,
+      prompt: "occupy the only organization slot",
+    });
+    const clientEventId = randomUUID();
+    const unavailable = await sendWaitingChatInput(actor, {
+      agentId,
+      prompt: "uses a model removed before admission",
+      clientEventId,
+      model: "claude-opus-5",
+    });
+    const later = await sendWaiting(actor, agentId, "uses the remaining model");
+    await api.updateOrgModelPolicies(actor, [nativePolicy]);
+
+    await finishRun(runnerGroup, blocker.runId);
+
+    const rejected = await chat.listThreadEvents(actor, unavailable.threadId);
+    expect(rejected.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "bad_request",
+      }),
+    );
+    expect(rejected.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "output.error",
+        error: "bad_request",
+      }),
+    );
+    await expect(
+      threadRunIds(actor, unavailable.threadId),
+    ).resolves.toStrictEqual([]);
+    const picked = await later.launchedRun();
+    await cancelChatRun(actor, picked.runId);
   }, 90_000);
 
   it("skips a recalled head and launches a later message on the thread", async () => {
@@ -512,7 +577,6 @@ describe("CHAT-02: queued chat thread picks", () => {
     expect(recall.status === 201 ? recall.body.runId : undefined).toBeNull();
 
     await finishRun(runnerGroup, blocker.runId);
-    await sweepQueuedThreads([recalled.threadId]);
     await expect(threadRunIds(actor, recalled.threadId)).resolves.toStrictEqual(
       [],
     );
