@@ -167,6 +167,39 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
+  it("denies new tickets on inactive Caddy without recalling an issued ticket", async () => {
+    const f = await setup();
+    const issued = await accept(bootstrap(f), [200]);
+    const before = await accept(
+      testState().action({
+        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
+      }),
+      [200],
+    );
+    expect(before.body.wss_ticket_digests).toHaveLength(1);
+
+    await f.api.requestHeartbeatRunner(true, [200], {
+      runnerId: f.runnerId,
+      group: f.group,
+      snapshotSequence: 2,
+      caddyServiceActive: false,
+    });
+    const denied = await accept(bootstrap(f), [404]);
+    expect(denied.body.error.code).toBe("NOT_FOUND");
+    expect(denied.headers.get("Cache-Control")).toBe("no-store");
+    const after = await accept(
+      testState().action({
+        body: { action: "read-runner-wss-ticket-digests", run_id: f.runId },
+      }),
+      [200],
+    );
+    expect(after.body.wss_ticket_digests).toStrictEqual(
+      before.body.wss_ticket_digests,
+    );
+    await accept(consume(f, issued.body.ticket), [200]);
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
   it("requires a Web session for issuance and official Runner auth for redemption", async () => {
     const f = await setup();
     const missingSession = await accept(

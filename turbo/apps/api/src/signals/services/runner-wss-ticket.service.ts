@@ -49,6 +49,7 @@ export async function issueRunnerWssTicket(
       runId: run.id,
       owner: args.owner,
       now: nowDate(),
+      purpose: "issue",
     });
     if (!target) {
       return null;
@@ -178,6 +179,7 @@ export async function consumeRunnerWssTicket(
       runId: stored.runId,
       owner: { orgId: stored.orgId, userId: stored.userId },
       now: nowDate(),
+      purpose: "consume",
     });
     if (
       !target ||

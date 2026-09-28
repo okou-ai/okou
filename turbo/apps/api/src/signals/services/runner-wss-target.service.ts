@@ -6,8 +6,8 @@ import { and, eq, gt, inArray, like, lte } from "drizzle-orm";
 import { wssOriginFromRunnerHostname } from "../../lib/runner-wss-target-config";
 import type { ReadonlyDb } from "../external/db";
 
-// Three missed 10-second routine heartbeats. Local Caddy-active status is only
-// a negative availability filter, NOT browser DNS/TLS/socket health proof:
+// Three missed 10-second routine heartbeats. Local Caddy-active status filters
+// only new ticket issuance, NOT browser DNS/TLS/socket health or redemption:
 // #37027 must independently check live local-run ownership.
 const WSS_RUNNER_FRESH_MS = 30_000;
 const MAX_CLOCK_LEAD_MS = 5000;
@@ -17,7 +17,7 @@ export interface RunnerWssTarget {
   readonly runId: string;
   readonly runnerId: string;
   readonly publicOrigin: string;
-  /** This service does not inspect DNS, browser TLS, Caddy or the listener. */
+  /** A local Caddy observation is not public DNS/TLS/routing verification. */
   readonly ingressVerification: "not-observed";
   readonly observedMode: "running" | "draining";
   readonly observedAt: Date;
@@ -34,8 +34,24 @@ export async function resolveRunnerWssTarget(
     readonly runId: string;
     readonly owner: { readonly orgId: string; readonly userId: string };
     readonly now: Date;
+    /** Caddy availability filters new issuance, not redemption of issued tickets. */
+    readonly purpose: "issue" | "consume";
   },
 ): Promise<RunnerWssTarget | null> {
+  const caddyAvailability =
+    args.purpose === "issue"
+      ? and(
+          eq(runnerState.caddyServiceActive, true),
+          gt(
+            runnerState.caddyServiceObservedAt,
+            new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),
+          ),
+          lte(
+            runnerState.caddyServiceObservedAt,
+            new Date(args.now.getTime() + MAX_CLOCK_LEAD_MS),
+          ),
+        )
+      : undefined;
   const [row] = await db
     .select({
       runId: agentRuns.id,
@@ -68,15 +84,7 @@ export async function resolveRunnerWssTarget(
         eq(agentRuns.status, "running"),
         like(agentRuns.runnerGroup, "vm0/%"),
         inArray(runnerState.mode, ["running", "draining"]),
-        eq(runnerState.caddyServiceActive, true),
-        gt(
-          runnerState.caddyServiceObservedAt,
-          new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),
-        ),
-        lte(
-          runnerState.caddyServiceObservedAt,
-          new Date(args.now.getTime() + MAX_CLOCK_LEAD_MS),
-        ),
+        caddyAvailability,
         gt(
           runnerState.lastSeenAt,
           new Date(args.now.getTime() - WSS_RUNNER_FRESH_MS),
