@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
+import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
@@ -832,7 +833,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       [
         "# Current Integration",
         "You are currently running inside: Telegram",
-        `Bot ID: ${fixture.telegramBotId}`,
+        "Bot ID: 987654",
         `Bot username: @${OFFICIAL_BOT_USERNAME}`,
         `Chat ID: ${chatId}`,
         "Chat type: private",
@@ -1004,9 +1005,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       if (botReplyId === undefined) {
         throw new Error("Expected a Telegram DM reply");
       }
-      const snapshot = await chatApi.getThreadSnapshot(actor);
-      let chatThread: (typeof snapshot.chatThreads)[number] | undefined;
-      for (const thread of snapshot.chatThreads) {
+      const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
+      if (lifecycle.status !== 200) {
+        throw new Error("Expected the Telegram thread event stream");
+      }
+      const threads = replayChatThreadEvents([], lifecycle.body.events);
+      let chatThread: (typeof threads)[number] | undefined;
+      for (const thread of threads) {
         const { events } = await chatApi.listThreadEvents(actor, thread.id);
         if (
           events.some((event) => {
@@ -1197,7 +1202,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       [
         "# Current Integration",
         "You are currently running inside: Telegram",
-        `Bot ID: ${fixture.telegramBotId}`,
+        "Bot ID: 987654",
         `Bot username: @${botUsername}`,
         `Chat ID: ${chatId}`,
         "Chat type: supergroup",
@@ -1333,7 +1338,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       [
         "# Current Integration",
         "You are currently running inside: Telegram",
-        `Bot ID: ${fixture.telegramBotId}`,
+        "Bot ID: 987654",
         `Bot username: @${botUsername}`,
         `Chat ID: ${chatId}`,
         "Chat type: supergroup",
@@ -1451,9 +1456,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     { timeout: 120_000 },
     async () => {
       const runnerGroup = configureCanonicalTelegramRunner();
-      const fixture = await seedTelegramPostFixture({
-        seedOfficialLink: true,
-      });
+      const fixture = await trackFixture(
+        seedTelegramPostFixture({ seedOfficialLink: true }),
+      );
       await seedNativeFablePolicies(fixture);
       const actor = actorForFixture(fixture);
       const telegramMocks = telegramApiMocks();
@@ -1679,7 +1684,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       [
         "# Current Integration",
         "You are currently running inside: Telegram",
-        `Bot ID: ${fixture.telegramBotId}`,
+        "Bot ID: 987654",
         `Bot username: @${botUsername}`,
         "Chat ID: -10099002",
         "Chat type: supergroup",
