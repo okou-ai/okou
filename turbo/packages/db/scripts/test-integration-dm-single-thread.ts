@@ -139,6 +139,60 @@ export async function validateIntegrationDmSingleThread(
       [null, null, false],
       ["gpt-6-sol", "fast", true],
     ] as const;
+    async function seedThreadWithModelPin(args: {
+      readonly routeIndex: number;
+      readonly routeTable: string;
+      readonly threadIndex: number;
+      readonly lastMessageAt: string;
+    }) {
+      const { routeIndex, routeTable, threadIndex, lastMessageAt } = args;
+      const threadId = randomUUID();
+      const scope =
+        threadIndex !== 4 ? scopes[0] : scopes[routeIndex % 2 === 0 ? 2 : 1];
+      const pins = secondaryPins[threadIndex === 4 ? routeIndex : 0];
+      assert.ok(pins);
+      const [selectedModel, serviceTier, hasProvider] = pins;
+      const agentId =
+        threadIndex === 4 && routeTable === "agentphone_chat_thread_routes"
+          ? null
+          : scope.agentId;
+      await client.query(
+        `INSERT INTO chat_threads (
+         id, user_id, agent_id, selected_model, codex_service_tier,
+         model_provider_id, model_provider_type,
+         model_provider_credential_scope, last_message_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          threadId,
+          scope.userId,
+          agentId,
+          selectedModel,
+          serviceTier,
+          hasProvider ? randomUUID() : null,
+          hasProvider ? "openai-api-key" : null,
+          hasProvider ? "org" : null,
+          lastMessageAt,
+        ],
+      );
+      if (routeIndex === 0 && (threadIndex === 0 || threadIndex === 3)) {
+        await client.query(
+          `INSERT INTO chat_thread_events (
+           user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
+           selected_model, service_tier, created_at
+         ) VALUES ($1, $2, $3, $4, 'created', $5,
+           'gpt-6-sol', 'priority', '2026-09-01')`,
+          [
+            scope.userId,
+            scope.orgId,
+            threadIndex === 0 ? 6 : 7,
+            threadId,
+            agentId,
+          ],
+        );
+      }
+      return { threadId, scope, agentId, selectedModel, serviceTier };
+    }
+
     for (const [routeIndex, route] of routeTables.entries()) {
       const identity = randomUUID();
       for (const [index, key, lastMessageAt, createdAt] of [
@@ -151,45 +205,14 @@ export async function validateIntegrationDmSingleThread(
         // A different connection owns an independent main conversation.
         [4, "direct-message:other-agent:gpt-6-sol", "2026-09-25", "2026-09-25"],
       ] as const) {
-        const threadId = randomUUID();
         const routeId = randomUUID();
-        const scope =
-          index !== 4 ? scopes[0] : scopes[routeIndex % 2 === 0 ? 2 : 1];
-        const pins = secondaryPins[index === 4 ? routeIndex : 0];
-        assert.ok(pins);
-        const [selectedModel, serviceTier, hasProvider] = pins;
-        const agentId =
-          index === 4 && route.table === "agentphone_chat_thread_routes"
-            ? null
-            : scope.agentId;
-        await client.query(
-          `INSERT INTO chat_threads (
-             id, user_id, agent_id, selected_model, codex_service_tier,
-             model_provider_id, model_provider_type,
-             model_provider_credential_scope, last_message_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [
-            threadId,
-            scope.userId,
-            agentId,
-            selectedModel,
-            serviceTier,
-            hasProvider ? randomUUID() : null,
-            hasProvider ? "openai-api-key" : null,
-            hasProvider ? "org" : null,
+        const { threadId, scope, agentId, selectedModel, serviceTier } =
+          await seedThreadWithModelPin({
+            routeIndex,
+            routeTable: route.table,
+            threadIndex: index,
             lastMessageAt,
-          ],
-        );
-        if (routeIndex === 0 && (index === 0 || index === 3)) {
-          await client.query(
-            `INSERT INTO chat_thread_events (
-               user_id, org_id, seq_id, chat_thread_id, kind, agent_id,
-               selected_model, service_tier, created_at
-             ) VALUES ($1, $2, $3, $4, 'created', $5,
-               'gpt-6-sol', 'priority', '2026-09-01')`,
-            [scope.userId, scope.orgId, index === 0 ? 6 : 7, threadId, agentId],
-          );
-        }
+          });
         const columns = [
           "id",
           route.identity,
