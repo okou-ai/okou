@@ -52,7 +52,7 @@ export enum FeatureSwitchKey {
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "multipleSubscriptions",
   FeishuIntegration = "_feishuIntegration",
-  LarkIntegration = "_larkIntegration",
+  LarkIntegration = "larkIntegration",
   DiscordIntegration = "_discordIntegration",
   VncAccess = "vncAccess",
   ThreadRemoteAccess = "threadRemoteAccess",

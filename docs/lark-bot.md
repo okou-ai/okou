@@ -12,7 +12,7 @@ API requests, OAuth endpoints, and deep links always use that provider.
   Native commands require `lark:write`; a `feishu:write` token cannot call them.
 - CLI: `okou lark message send`, `okou lark upload-file`, and
   `okou lark download-file`, with the same options as Feishu.
-- Gate: `_larkIntegration`, disabled by default and scoped to the organization.
+- Gate: `larkIntegration`, beta (enabled for the staff organization), disabled by default elsewhere and scoped to the organization.
   It controls settings and issuance of the `lark:write` token capability for
   members. Installed bot callbacks, OAuth, queued launch, and provider requests
   also check the installation owner's feature context.

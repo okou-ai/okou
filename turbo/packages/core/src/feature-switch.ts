@@ -460,6 +460,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "linghan@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.DiscordIntegration]: {
     maintainer: "linghan@okou.ai",
