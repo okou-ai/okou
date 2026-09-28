@@ -105,11 +105,25 @@ test("MCP messages show the saved client name or generic marker with a local ico
       { type: "source", kind: "mcp", clientId: "client_public" },
     ],
   } satisfies UserMessageDocument;
+  const longName = "Long MCP Client ".repeat(7).trim();
+  const longNamed = {
+    version: 1,
+    parts: [
+      { type: "text", text: "Review the long client name." },
+      {
+        type: "source",
+        kind: "mcp",
+        clientId: "client_long",
+        clientNameSnapshot: longName,
+      },
+    ],
+  } satisfies UserMessageDocument;
   installMessageExperienceChat({
     threadId: context.resourceId,
     chatEvents: [
       userEventWith(named),
       userEventWith(unnamed, "d0000000-0000-4000-a000-000000000054"),
+      userEventWith(longNamed, "d0000000-0000-4000-a000-000000000055"),
     ],
   });
 
@@ -137,6 +151,15 @@ test("MCP messages show the saved client name or generic marker with a local ico
   expect(unnamedMessage).not.toBeNull();
   const fallback = within(unnamedMessage as HTMLElement).getByText("MCP");
   expect(fallback.parentElement?.querySelector("svg")).toBeInTheDocument();
+
+  const longMessage = (
+    await screen.findByText("Review the long client name.")
+  ).closest('[data-role="user"]');
+  expect(longMessage).not.toBeNull();
+  // Even when the narrow badge truncates visually, the full name stays available.
+  expect(
+    within(longMessage as HTMLElement).getByTitle(longName),
+  ).toHaveTextContent(longName);
 });
 
 test("Delegated work links back to its source run", async () => {

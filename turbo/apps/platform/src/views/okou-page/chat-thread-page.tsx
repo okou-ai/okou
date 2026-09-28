@@ -6734,6 +6734,17 @@ function MessageAnnotation({
       </div>
     );
   }
+  if (renderPart.kind === "mcp") {
+    const label = renderPart.part.clientNameSnapshot ?? "MCP";
+    return (
+      <div className={className}>
+        <McpMark size={15} />
+        <span className="min-w-0 truncate" title={label}>
+          {label}
+        </span>
+      </div>
+    );
+  }
   return (
     <SourceMessageAnnotation renderPart={renderPart} className={className} />
   );
@@ -6747,12 +6758,9 @@ const DISCORD_MESSAGE_URL =
 function sourceMessageHref(
   part: Extract<
     UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "external" | "mcp" }
+    { type: "source"; kind: "external" }
   >["part"],
 ): string | undefined {
-  if (part.kind === "mcp") {
-    return undefined;
-  }
   if (part.kind === "discord" && !DISCORD_MESSAGE_URL.test(part.href ?? "")) {
     return undefined;
   }
@@ -6763,7 +6771,7 @@ function sourceMessageLinkText(
   t: TFunction<"common">,
   part: Extract<
     UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "external" | "mcp" }
+    { type: "source"; kind: "external" }
   >["part"],
 ) {
   const opensChat =
@@ -6792,13 +6800,10 @@ function sourceMessageLabel(
   t: TFunction<"common">,
   kind: Extract<
     UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "external" | "mcp" }
+    { type: "source"; kind: "external" }
   >["part"]["kind"],
 ): string {
   switch (kind) {
-    case "mcp": {
-      return "MCP";
-    }
     case "discord": {
       return t(($) => {
         return $.chat.origins.discord;
@@ -6846,7 +6851,10 @@ function SourceMessageAnnotation({
   renderPart,
   className,
 }: {
-  renderPart: Extract<UserMessageAnnotationRenderPart, { type: "source" }>;
+  renderPart: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "agent" | "external" }
+  >;
   className: string;
 }) {
   const { t } = useTranslation();
@@ -6867,10 +6875,7 @@ function SourceMessageAnnotation({
     part.href?.startsWith("https://applink.larksuite.com/") === true
       ? "lark"
       : part.kind;
-  const sourceLabel =
-    part.kind === "mcp"
-      ? (part.clientNameSnapshot ?? "MCP")
-      : sourceMessageLabel(t, sourceKind);
+  const sourceLabel = sourceMessageLabel(t, sourceKind);
   const href = sourceMessageHref(part);
   const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
@@ -6910,9 +6915,7 @@ function SourceMessageAnnotation({
                   : openLabel;
   const content = (
     <>
-      {sourceKind === "mcp" ? (
-        <McpMark size={15} />
-      ) : sourceKind === "slack" ? (
+      {sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
       ) : sourceKind === "discord" ? (
         <DiscordMark size={15} />
