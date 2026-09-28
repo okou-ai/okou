@@ -36,7 +36,9 @@ function exactReconnectUrl(connectionId = EXACT_CONNECTION_ID): URL {
 
 function mockExactReconnectAccount(
   accountStatus: "connected" | "reconnect-required" | "missing",
+  options?: { catalogUnavailableOnce?: boolean },
 ): void {
+  let catalogUnavailable = options?.catalogUnavailableOnce ?? false;
   const github = connectorSlugSchema.parse("github");
   const catalogItem = {
     slug: github,
@@ -72,6 +74,12 @@ function mockExactReconnectAccount(
     connectNotice: null,
   };
   context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    if (catalogUnavailable) {
+      catalogUnavailable = false;
+      return respond(503, {
+        error: { code: "PROVIDER_UNAVAILABLE", message: "Catalog unavailable" },
+      });
+    }
     return params.connectorSlug === github
       ? respond(200, { connector: catalogItem })
       : respond(404, {
@@ -770,6 +778,21 @@ test("A missing exact reconnect account never falls back to the default", async 
   expect(card).toHaveTextContent("Action unavailable");
   expect(screen.queryByTestId("connector-action-card")).toBeNull();
   expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
+});
+
+test("Retrying an exact reconnect card reloads unavailable catalog data", async () => {
+  mockExactReconnectAccount("reconnect-required", {
+    catalogUnavailableOnce: true,
+  });
+  await setupChat(exactReconnectUrl().toString());
+
+  const retry = await screen.findByText("Retry", { selector: "button" });
+  expect(screen.queryByTestId("connector-action-card")).toBeNull();
+  click(retry);
+
+  const card = await screen.findByTestId("connector-action-card");
+  expect(card).toHaveTextContent("GitHub · Work GitHub");
+  expect(card).toHaveTextContent("Reconnect");
 });
 
 test("A connector account switch shows its connector icon from that connector's catalog entry", async () => {

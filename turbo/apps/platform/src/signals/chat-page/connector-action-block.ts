@@ -19,7 +19,10 @@ import {
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
-import { connectorCatalogItemBySlug } from "../external/connectors.ts";
+import {
+  connectorCatalogItemBySlug,
+  reloadBuiltinConnectors$,
+} from "../external/connectors.ts";
 import {
   connectBuiltinConnectorNoAuth$,
   connectBuiltinConnectorOAuthAuthCode$,
@@ -447,6 +450,7 @@ function createExactReconnectConnectorSignals(
   });
 
   const refresh$ = command(({ set }) => {
+    set(reloadBuiltinConnectors$);
     set(reload$, (version) => {
       return version + 1;
     });
