@@ -1097,7 +1097,7 @@ describe("private Runner VNC authority", () => {
       generation: 3,
       transport: reboundTransport,
     });
-    await api.setDefault(f, "ssh", ssh.body.id, false);
+    await api.setDefault(f, "ssh", reboundSsh.body.id, false);
     expect(
       (await check(target, 3, { expectedTransport: reboundTransport })).body,
     ).toStrictEqual({ outcome: "unavailable" });
