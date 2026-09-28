@@ -1762,7 +1762,6 @@
         "slideCountRange": "{{range}} Folien"
       },
       "createWorkflow": "Workflow erstellen",
-      "imageModelForThisChat": "Bildmodell für diesen Chat",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
@@ -4953,8 +4952,6 @@
       "picker": {
         "builtInModel": "Einbaumodell",
         "byokHelp": "Verwendet Ihren konfigurierten Anbieter",
-        "categoryChat": "Chat",
-        "categoryImage": "Bild",
         "chatModels": "Chatmodelle",
         "effort": "Aufwand",
         "effortScale": {
@@ -4979,14 +4976,9 @@
           "lowest": "Niedrigste Kosten pro Generierung",
           "typical": "Typische Kosten pro Generierung"
         },
-        "imageModels": "Bildmodelle",
         "inheritDefault": "Von der Standardeinstellung der Organisation übernehmen",
         "loadError": "Modelle können nicht geladen werden.",
         "loading": "Modelle werden geladen...",
-        "menu": {
-          "backToModels": "Zurück zu Modellen",
-          "changeModel": "{{category}}-Modell ändern, {{model}}"
-        },
         "models": "Modelle",
         "noConfiguredModels": "Keine konfigurierten Modelle",
         "priceTiers": {
@@ -5087,6 +5079,11 @@
     "paidTools": {
       "description": "Diese Tools verbrauchen integrierte Credits, und Okou nutzt sie automatisch bei der Bearbeitung deiner Aufgaben. Wenn du ein Tool deaktivierst, verwendet Okou es nicht.",
       "disabledForCreation": "{{tool}} ist für dich deaktiviert",
+      "imageModel": {
+        "description": "Die integrierte Bildgenerierung verwendet dieses Modell für deine Aufgaben.",
+        "label": "Modell",
+        "saveError": "Dein Bildmodell wurde nicht gespeichert."
+      },
       "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
       "loading": "Deine Tool-Einstellungen werden geladen…",
       "openSettings": "Einstellungen öffnen",

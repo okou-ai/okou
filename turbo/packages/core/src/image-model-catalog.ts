@@ -12,7 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/image-models";
 
 interface ImageModelConfig {
-  /** Value accepted by the CLI's `--model` flag. */
+  /** Short, user-facing model identifier. */
   readonly alias: string;
   /** Human-facing name for pickers. */
   readonly label: string;
@@ -141,4 +141,4 @@ export function resolveImageModel(model: string): ImageModel | undefined {
 }
 
 /** Global fallback when no more specific image model default exists. */
-export const DEFAULT_IMAGE_MODEL = "gpt-image-1" satisfies ImageModel;
+export const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-flare" satisfies ImageModel;

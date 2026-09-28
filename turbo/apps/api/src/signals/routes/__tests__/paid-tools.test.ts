@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { expect, test } from "vitest";
 
@@ -13,7 +12,6 @@ import { generateOkouToken, generateSandboxToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { paidToolsRoutes } from "../paid-tools";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -43,34 +41,6 @@ async function listFor(identity: { orgId: string; userId: string }) {
   mocks.clerk.session(identity.userId, identity.orgId, "org:member");
   return (await accept(client().get({ headers }), [200])).body.disabledTools;
 }
-
-test("keeps preferences readable and writable when the settings UI is hidden", async () => {
-  const identity = await owner();
-  await updateFeatureSwitchesForUser(context, identity, {
-    [FeatureSwitchKey.PaidToolControls]: true,
-  });
-  await accept(
-    client().update({
-      headers,
-      params: { toolId: "web-search" },
-      body: { disabled: true },
-    }),
-    [200],
-  );
-  await updateFeatureSwitchesForUser(context, identity, {
-    [FeatureSwitchKey.PaidToolControls]: false,
-  });
-  await expect(listFor(identity)).resolves.toStrictEqual(["web-search"]);
-  await accept(
-    client().update({
-      headers,
-      params: { toolId: "web-search" },
-      body: { disabled: false },
-    }),
-    [200],
-  );
-  await expect(listFor(identity)).resolves.toStrictEqual([]);
-});
 
 test("lets an ordinary member disable and re-enable a tool idempotently", async () => {
   const identity = await owner();

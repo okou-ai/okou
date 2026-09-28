@@ -42,8 +42,6 @@ export enum FeatureSwitchKey {
   ZoomConnector = "zoomConnector",
   WorkdayConnector = "workdayConnector",
   ChatPreference = "chatPreference",
-  PaidToolControls = "paidToolControls",
-  SettingsToolsTab = "settingsToolsTab",
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",

@@ -6,7 +6,6 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
-import { createModelPickerMenuSignals } from "./model-picker-menu.ts";
 
 // ---------------------------------------------------------------------------
 // Composer UI state — search, dialogs, loading indicators
@@ -103,70 +102,18 @@ export type OpenTemplatePickerDialogCommand = Command<
   [OpenTemplatePickerDialogOptions]
 >;
 
-type MediaModelCategory = "image";
-
-/**
- * Tracks whether the composer is wide enough for the desktop popover layout.
- * Both layouts show the same picker; the flag only decides whether the popover
- * is modal, since a phone-sized popup covers the page behind it anyway.
- */
-function createDesktopModelPickerLayoutSignals() {
-  const internalDesktopModelPickerLayout$ = state(false);
-  const desktopModelPickerLayout$ = computed((get) => {
-    return get(internalDesktopModelPickerLayout$);
-  });
-  const desktopModelPickerLifecycleRef$ = onRef(
-    command(({ set }, _element: HTMLElement, signal: AbortSignal) => {
-      const mediaQuery = window.matchMedia("(min-width: 640px)");
-      const syncLayout = () => {
-        set(internalDesktopModelPickerLayout$, mediaQuery.matches);
-      };
-      mediaQuery.addEventListener("change", syncLayout);
-      signal.addEventListener("abort", () => {
-        mediaQuery.removeEventListener("change", syncLayout);
-      });
-      syncLayout();
-    }),
-  );
-  return { desktopModelPickerLayout$, desktopModelPickerLifecycleRef$ };
-}
-
 function createBasicComposerUiSignals() {
-  const { desktopModelPickerLayout$, desktopModelPickerLifecycleRef$ } =
-    createDesktopModelPickerLayoutSignals();
   const internalModelPickerOpen$ = state(false);
-  const menu = createModelPickerMenuSignals();
-  // Every viewport drives this from the same category strip. Null means the
-  // chat models. It survives close the way the old composer track kept its
-  // expanded category -- the temporary-model notice reads it to tell which
-  // model the composer is pointed at.
-  const internalMediaModelCategory$ = state<MediaModelCategory | null>(null);
   const modelPickerOpen$ = computed((get) => {
     return get(internalModelPickerOpen$);
   });
   const setModelPickerOpen$ = command(({ set }, open: boolean) => {
     set(internalModelPickerOpen$, open);
-    if (!open) {
-      set(menu.reset$);
-    }
   });
-  const mediaModelCategory$ = computed((get) => {
-    return get(internalMediaModelCategory$);
-  });
-  const setMediaModelCategory$ = command(
-    ({ set }, category: MediaModelCategory | null) => {
-      set(internalMediaModelCategory$, category);
-    },
-  );
   return {
     model: {
-      menu,
       modelPickerOpen$,
       setModelPickerOpen$,
-      mediaModelCategory$,
-      setMediaModelCategory$,
-      desktopModelPickerLayout$,
-      desktopModelPickerLifecycleRef$,
     },
   };
 }

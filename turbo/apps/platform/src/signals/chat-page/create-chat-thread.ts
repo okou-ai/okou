@@ -11,12 +11,7 @@ import {
   type State,
 } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  DEFAULT_IMAGE_MODEL,
-  type ImageModel,
-} from "@okouai/core/image-model-catalog";
 import { i18n } from "../../i18n/index.ts";
 import { onRejection, resetSignal, settle } from "../utils.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
@@ -79,7 +74,6 @@ import { artifactReferenceLookupKey } from "../attachment-resource-url.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
   writeChatMessageToClipboard,
   type ChatClipboardPayload,
@@ -112,7 +106,6 @@ import {
   createRemoteChatThreadDraft,
   patchChatThreadComputerUseHost$,
   patchChatThreadDraft$,
-  patchChatThreadImageModel$,
   patchChatThreadModelSelection$,
   subscribeChatThreadRealtime$,
 } from "./chat-thread-remote-signals.ts";
@@ -447,49 +440,6 @@ function createModelSelectionForSend({
         : { selectedModel };
     },
   );
-}
-
-// ---------------------------------------------------------------------------
-// Sub-factory: composer image model pin
-// ---------------------------------------------------------------------------
-
-/**
- * Thread-level image model pin. `null` means the thread follows the member's
- * personal default, so the picker still resolves and displays an effective
- * model in that state.
- */
-function createImageModelSelection(
-  threadId: string,
-  threadMeta$: Computed<ThreadMeta | null>,
-) {
-  const selectedImageModel$ = computed((get): ImageModel | null => {
-    const selected = get(threadMeta$)?.selectedImageModel ?? null;
-    return isImageModelId(selected) ? selected : null;
-  });
-
-  const effectiveImageModel$ = computed(async (get): Promise<ImageModel> => {
-    const pinned = get(selectedImageModel$);
-    if (pinned !== null) {
-      return pinned;
-    }
-    return (
-      (await get(userModelPreference$)).selectedImageModel ??
-      DEFAULT_IMAGE_MODEL
-    );
-  });
-
-  const setImageModelSelection$ = command(
-    async ({ set }, value: ImageModel | null, signal: AbortSignal) => {
-      await set(
-        patchChatThreadImageModel$,
-        { threadId, imageModel: value },
-        signal,
-      );
-      signal.throwIfAborted();
-    },
-  );
-
-  return { selectedImageModel$, effectiveImageModel$, setImageModelSelection$ };
 }
 
 // ---------------------------------------------------------------------------
@@ -3558,7 +3508,6 @@ interface CreateChatThreadComposerSignalsOptions {
   readonly loadDraft$: Command<Promise<void>, [AbortSignal]>;
   readonly queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
   readonly modelSelection: ReturnType<typeof createModelSelection>;
-  readonly imageModelSelection: ReturnType<typeof createImageModelSelection>;
   readonly computerUseHostSelection: ReturnType<
     typeof createComputerUseHostSelection
   >;
@@ -3696,11 +3645,6 @@ function createChatThreadComposerSignals(
     selectedModelOauthAvailable$: modelSelection.selectedModelOauthAvailable$,
     setModelSelection$: modelSelection.setModelSelection$,
     configureSelectedModel$: modelSelection.configureSelectedModel$,
-    imageModel: {
-      selectedImageModel$: options.imageModelSelection.selectedImageModel$,
-      effectiveImageModel$: options.imageModelSelection.effectiveImageModel$,
-      setImageModel$: options.imageModelSelection.setImageModelSelection$,
-    },
     computerUseHostId$: computerUseHostSelection.computerUseHostId$,
     cloudBrowserEnabled$: computerUseHostSelection.cloudBrowserEnabled$,
     setComputerUseHostId$: computerUseHostSelection.setComputerUseHostId$,
@@ -3721,10 +3665,6 @@ function createThreadComposerSignalsWithContext(
   const connector = createComposerConnectorSignals(context.agentId, threadId);
   const modelSelection = createModelSelection(threadId, context.threadMeta$);
   const modelSelectionForSend$ = createModelSelectionForSend(modelSelection);
-  const imageModelSelection = createImageModelSelection(
-    threadId,
-    context.threadMeta$,
-  );
   const computerUseHostSelection = createComputerUseHostSelection(
     threadId,
     context.threadMeta$,
@@ -3754,7 +3694,6 @@ function createThreadComposerSignalsWithContext(
     loadDraft$,
     queueDraftSync$,
     modelSelection,
-    imageModelSelection,
     computerUseHostSelection,
     messageActions,
     cancellationRecoveryPending$: context.cancellationRecoveryPending$,

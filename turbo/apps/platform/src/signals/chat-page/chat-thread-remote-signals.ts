@@ -4,12 +4,10 @@ import {
   chatThreadDraftContract,
   chatThreadDraftSchema,
   chatThreadComputerUseHostContract,
-  chatThreadImageModelContract,
   chatThreadModelSelectionContract,
   type PersistedAttachment,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ImageModel } from "@okouai/core/image-model-catalog";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
@@ -62,11 +60,6 @@ interface PatchComputerUseHostArgs {
   readonly threadId: string;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
-}
-
-interface PatchImageModelArgs {
-  readonly threadId: string;
-  readonly imageModel: ImageModel | null;
 }
 
 interface SubscribeRealtimeArgs {
@@ -223,35 +216,6 @@ export const patchChatThreadComputerUseHost$ = command(
       client.update({
         params: { id: threadId },
         body: { computerUseHostId, cloudBrowserEnabled, eventId },
-        fetchOptions: { signal },
-      }),
-      [204],
-    );
-  },
-);
-
-export const patchChatThreadImageModel$ = command(
-  async (
-    { get, set },
-    { threadId, imageModel }: PatchImageModelArgs,
-    signal: AbortSignal,
-  ) => {
-    const eventId = crypto.randomUUID();
-    const threadMeta = get(chatThreadMetaMap$).get(threadId);
-    if (threadMeta) {
-      set(registerOptimisticChatThreadEvent$, {
-        id: eventId,
-        kind: "image_model_updated",
-        chatThreadId: threadId,
-        agentId: threadMeta.agentId,
-        selectedImageModel: imageModel,
-      });
-    }
-    const client = get(apiClient$)(chatThreadImageModelContract);
-    await accept(
-      client.update({
-        params: { id: threadId },
-        body: { model: imageModel, eventId },
         fetchOptions: { signal },
       }),
       [204],

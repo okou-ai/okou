@@ -58,7 +58,6 @@ import {
   type CancelRunResult,
 } from "./run-cancel.service";
 import { isCodexFastServiceTierSupported } from "./model-selection.service";
-import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import { touchChatThreadLastMessageAtIndependently } from "./chat-event-shared.service";
 import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
@@ -697,9 +696,6 @@ interface NewSendThread {
   readonly clientThreadId: string | undefined;
   readonly runSettings: ThreadRunSettings;
   readonly computerAccess: ThreadComputerAccess;
-  readonly mediaModels: Awaited<
-    ReturnType<typeof loadNewChatThreadMediaModels>
-  >;
 }
 
 type SendThread = ExistingSendThread | NewSendThread;
@@ -799,7 +795,6 @@ async function resolveNewSendThread(
     clientThreadId: args.body.clientThreadId,
     runSettings,
     computerAccess,
-    mediaModels: await loadNewChatThreadMediaModels(db, member),
   };
 }
 
@@ -827,7 +822,6 @@ async function insertNewSendThread(
       modelSettings: thread.runSettings.modelSettings,
       computerUseHostId: thread.computerAccess.computerUseHostId,
       cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
-      selectedImageModel: thread.mediaModels.selectedImageModel,
     })
     .onConflictDoNothing({ target: chatThreads.id })
     .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
@@ -849,7 +843,6 @@ async function insertNewSendThread(
     ),
     computerUseHostId: thread.computerAccess.computerUseHostId,
     cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
-    ...thread.mediaModels,
     createdAt: created.createdAt,
   });
   return true;

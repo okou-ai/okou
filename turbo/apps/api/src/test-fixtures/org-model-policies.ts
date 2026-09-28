@@ -187,3 +187,27 @@ export async function readUnrepairedOrgModelPolicyFixture(orgId: string) {
     .orderBy(orgMembersMetadata.userId);
   return { policies, preferences };
 }
+
+/**
+ * Stage a member run preference outside the organization's policy. Policy
+ * writes migrate member preferences, and the preference route rejects models
+ * outside the policy, so neither can construct this state; it proves that a
+ * media-only preference write still succeeds while it persists.
+ */
+export async function setOrgMemberRunModelOutsidePolicyFixture(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly selectedModel: SupportedRunModel;
+}): Promise<void> {
+  await db()
+    .insert(orgMembersMetadata)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      selectedModel: args.selectedModel,
+    })
+    .onConflictDoUpdate({
+      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+      set: { selectedModel: args.selectedModel, updatedAt: sql`now()` },
+    });
+}

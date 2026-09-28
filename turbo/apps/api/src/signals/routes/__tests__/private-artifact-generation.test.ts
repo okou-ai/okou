@@ -11,6 +11,8 @@ import {
   imageIoGenerateContract,
   imageIoGenerateResponseSchema,
 } from "@okouai/api-contracts/contracts/image-io-generate";
+import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import {
   webhookBuiltInGenerationBytePlusContract,
@@ -31,6 +33,7 @@ import { seedPreviouslyAcceptedVideoJob } from "../../../test-fixtures/previousl
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { builtInGenerationRoutes } from "../built-in-generation";
 import { imageIoGenerateRoutes } from "../image-io-generate";
+import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webFileUrlRoutes } from "../web-file-url";
 import { webDownloadRoutes } from "../web-download";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
@@ -140,6 +143,7 @@ async function createFixture(privateArtifacts: boolean) {
     usagePricingResolution: pricing.resolution,
     routes: [
       ...imageIoGenerateRoutes,
+      ...userModelPreferenceRoutes,
       ...builtInGenerationRoutes,
       ...webhooksBuiltInGenerationRoutes,
       ...webFileUrlRoutes,
@@ -155,12 +159,28 @@ async function createFixture(privateArtifacts: boolean) {
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
+/** Image generation uses the session member's image model setting. */
+async function useImageModel(fixture: Fixture, model: ImageModelId) {
+  await accept(
+    fixture.api(userModelPreferenceContract).update({
+      headers,
+      body: {
+        selectedModel: null,
+        serviceTier: null,
+        selectedImageModel: model,
+      },
+    }),
+    [200],
+  );
+}
+
 async function queueImage(
   fixture: Fixture,
   imageUrls?: readonly string[],
   requirePrivateArtifact = false,
 ) {
   mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+  await useImageModel(fixture, "fal-ai/flux-pro/v1.1");
   const client = fixture.api(imageIoGenerateContract);
   const create = requirePrivateArtifact ? client.postPrivate : client.post;
   const response = await accept(
@@ -168,7 +188,6 @@ async function queueImage(
       headers,
       body: {
         prompt: "A private landscape",
-        model: "flux-pro-1.1",
         imageUrls,
         ...(requirePrivateArtifact ? { requirePrivateArtifact: true } : {}),
       },
@@ -439,10 +458,10 @@ describe("managed artifact privacy", () => {
     const requestCount = providerInputs.length;
     const signatureCount = context.mocks.s3.getSignedUrl.mock.calls.length;
     mocks.clerk.session(`user_${randomUUID()}`, fixture.actor.orgId);
+    await useImageModel(fixture, "fal-ai/flux-pro/v1.1");
     const response = await fixture.api(imageIoGenerateContract).post({
       headers,
       body: {
-        model: "flux-pro-1.1",
         prompt: "Use reference",
         imageUrls: [image.url],
       },
@@ -604,10 +623,11 @@ describe("managed artifact privacy", () => {
       ),
     );
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+    await useImageModel(fixture, "seedream-5-0-lite-260128");
     const queued = await accept(
       fixture.api(imageIoGenerateContract).post({
         headers,
-        body: { model: "seedream5-lite", prompt: "Private landscape" },
+        body: { prompt: "Private landscape" },
       }),
       [202],
     );

@@ -1759,7 +1759,6 @@
         "slideCountRange": "{{range}}枚"
       },
       "createWorkflow": "ワークフローの作成",
-      "imageModelForThisChat": "このチャットの画像モデル",
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
@@ -4935,8 +4934,6 @@
       "picker": {
         "builtInModel": "内蔵モデル",
         "byokHelp": "設定されたプロバイダーを使用します",
-        "categoryChat": "チャット",
-        "categoryImage": "画像",
         "chatModels": "チャットモデル",
         "effort": "強度",
         "effortScale": {
@@ -4961,14 +4958,9 @@
           "lowest": "1 回の生成あたりのコストが最も低い",
           "typical": "1 回の生成あたりの標準的なコスト"
         },
-        "imageModels": "画像モデル",
         "inheritDefault": "組織のデフォルトから継承",
         "loadError": "モデルをロードできません。",
         "loading": "モデルをロード中...",
-        "menu": {
-          "backToModels": "モデルに戻る",
-          "changeModel": "{{category}}モデルを変更、{{model}}"
-        },
         "models": "モデル",
         "noConfiguredModels": "設定されたモデルはありません",
         "priceTiers": {
@@ -5068,6 +5060,11 @@
     "paidTools": {
       "description": "これらのツールは組み込みクレジットを消費し、Okou はタスクの実行中に必要に応じて自動で使用します。オフにしたツールは使用されません。",
       "disabledForCreation": "{{tool}}はあなたの設定でオフです",
+      "imageModel": {
+        "description": "組み込みの画像生成は、あなたのタスクでこのモデルを使用します。",
+        "label": "モデル",
+        "saveError": "画像モデルを保存できませんでした。"
+      },
       "loadError": "ツールの設定を読み込めませんでした。",
       "loading": "ツールの設定を読み込み中…",
       "openSettings": "設定を開く",

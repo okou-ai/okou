@@ -1759,7 +1759,6 @@
         "slideCountRange": "{{range}}장"
       },
       "createWorkflow": "워크플로 생성",
-      "imageModelForThisChat": "이 채팅의 이미지 모델",
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
@@ -4935,8 +4934,6 @@
       "picker": {
         "builtInModel": "내장 모델",
         "byokHelp": "구성된 공급자 사용",
-        "categoryChat": "채팅",
-        "categoryImage": "이미지",
         "chatModels": "채팅 모델",
         "effort": "강도",
         "effortScale": {
@@ -4961,14 +4958,9 @@
           "lowest": "생성당 비용 가장 낮음",
           "typical": "생성당 일반적인 비용"
         },
-        "imageModels": "이미지 모델",
         "inheritDefault": "조직 기본값 상속",
         "loadError": "모델을 불러올 수 없습니다.",
         "loading": "모델 불러오는 중...",
-        "menu": {
-          "backToModels": "모델로 돌아가기",
-          "changeModel": "{{category}} 모델 변경, {{model}}"
-        },
         "models": "모델",
         "noConfiguredModels": "구성된 모델 없음",
         "priceTiers": {
@@ -5068,6 +5060,11 @@
     "paidTools": {
       "description": "이 도구들은 기본 제공 크레딧을 사용하며, Okou가 작업 중 필요에 따라 자동으로 사용합니다. 도구를 끄면 Okou가 해당 도구를 사용하지 않습니다.",
       "disabledForCreation": "{{tool}} 기능이 내 설정에서 꺼져 있습니다",
+      "imageModel": {
+        "description": "내장 이미지 생성은 내 작업에 이 모델을 사용합니다.",
+        "label": "모델",
+        "saveError": "이미지 모델이 저장되지 않았습니다."
+      },
       "loadError": "도구 설정을 불러올 수 없습니다.",
       "loading": "도구 설정을 불러오는 중…",
       "openSettings": "설정 열기",

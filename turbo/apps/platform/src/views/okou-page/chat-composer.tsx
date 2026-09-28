@@ -16,10 +16,7 @@ import {
   useComposerActions,
   type ComposerActions,
 } from "./composer-actions.ts";
-import {
-  ComposerCreateImageModelPicker,
-  ComposerTaskControls,
-} from "./composer-create.tsx";
+import { ComposerTaskControls } from "./composer-create.tsx";
 import {
   ComposerAddMenu,
   type ComposerAddMenuGroup,
@@ -251,10 +248,7 @@ import {
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { getModelDisplayName } from "@okouai/core/model-display-name";
 import {
-  ImageModelBrandIcon,
   ModelProviderPicker,
-  type MediaModelPanelCategory,
-  type MediaModelPanelState,
   type ModelProviderSelection,
 } from "./components/model-provider-picker.tsx";
 import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
@@ -301,7 +295,6 @@ import { ThreadRemoteAccessSection } from "./remote-access-controls.tsx";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { orgModelPolicies$ } from "../../signals/external/org-model-policies.ts";
 import {
-  updateDefaultImageModel$,
   updateUserModelPreference$,
   userModelPreference$,
 } from "../../signals/external/user-model-preference.ts";
@@ -332,7 +325,6 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import type {
   ComposerPendingEvent,
   ComposerPrimaryAction,
-  ComposerImageModelSignals,
   ComposerSignals,
 } from "../../signals/okou-page/composer-signals.ts";
 import {
@@ -347,13 +339,6 @@ import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
 } from "./workflow-template-copy.ts";
-import {
-  DEFAULT_IMAGE_MODEL,
-  IMAGE_MODEL_CONFIGS,
-  PUBLIC_IMAGE_MODELS,
-  type ImageModel,
-} from "@okouai/core/image-model-catalog";
-import { IMAGE_MODEL_PRICE_TIER } from "@okouai/api-contracts/contracts/media-model-price-tiers";
 import { resolveModelFirstUserDefaultSelection } from "../../signals/okou-page/model-default-selection.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
@@ -8878,24 +8863,8 @@ function ComposerModelConfigurationWarning({
   );
 }
 
-interface ComposerMediaModelPickerState<Model extends string> {
-  readonly value: Model | null;
-  readonly onChange: (next: Model | null) => void;
-}
-
-interface ComposerResolvedMediaModelPickerState<
-  Model extends string,
-> extends ComposerMediaModelPickerState<Model> {
-  readonly selectedModel: Model;
-}
-
-type ComposerImageModelPickerState = ComposerMediaModelPickerState<ImageModel>;
-type ComposerResolvedImageModelPickerState =
-  ComposerResolvedMediaModelPickerState<ImageModel>;
-
-// One quiet trigger for every model category. It carries no fill of its own --
-// the composer's control row is a row of quiet controls, and a filled track
-// holding three of them read as the heaviest thing in the composer.
+// One quiet trigger for the model. It carries no fill of its own -- the
+// composer's control row is a row of quiet controls.
 function composerModelPickerTriggerClassName(): string {
   return cn(
     "h-8 w-8 max-w-none justify-center gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors composer-wide:w-auto composer-wide:max-w-[14rem] composer-wide:justify-start composer-wide:gap-1 composer-wide:px-2",
@@ -8906,101 +8875,21 @@ function composerModelPickerTriggerClassName(): string {
   );
 }
 
-function ComposerRunModelPickerControl({
-  signals,
-  value,
-  onChange,
-  desktopLayout,
-  mediaModelPanel,
-}: {
-  signals: ComposerSignals;
-  value: ModelProviderSelection;
-  onChange: (selection: ModelProviderSelection | null) => void;
-  desktopLayout: boolean;
-  mediaModelPanel: MediaModelPanelState | undefined;
-}) {
-  const { t } = useTranslation();
-  const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
-  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
-  const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
-  return (
-    <div
-      ref={setLifecycleRef}
-      className="contents composer-wide:relative composer-wide:flex"
-    >
-      <ModelProviderPicker
-        value={value}
-        onChange={onChange}
-        placeholder={t(($) => {
-          return $.chat.composer.selectModel;
-        })}
-        triggerClassName={composerModelPickerTriggerClassName()}
-        menuSignals={signals.model.menu}
-        // The effort control beside it carries the bolt when Fast is on, so the
-        // model keeps its own name.
-        fastShownByCaller
-        // The flyout needs the room a phone does not have; narrow viewports keep
-        // the menu's pages until the sheet layout lands.
-        flyoutLayout={desktopLayout}
-        compactTrigger
-        mobileIconTrigger
-        open={modelPickerOpen}
-        modal={mediaModelPanel ? !desktopLayout : undefined}
-        onOpenChange={(open) => {
-          setModelPickerOpen(open);
-        }}
-        {...(mediaModelPanel ? { mediaModelPanel } : {})}
-      />
-    </div>
-  );
-}
-
-function composerImageModelPanelCategory({
-  selectedModel,
-  onChange,
-  label,
-  tabLabel,
-}: {
-  selectedModel: ImageModel;
-  onChange: (next: ImageModel | null) => void;
-  label: string;
-  tabLabel: string;
-}): MediaModelPanelCategory {
-  return {
-    id: "image",
-    label,
-    tabLabel,
-    options: PUBLIC_IMAGE_MODELS.map((candidate) => {
-      return {
-        key: candidate,
-        label: IMAGE_MODEL_CONFIGS[candidate].label,
-        icon: <ImageModelBrandIcon model={candidate} />,
-        priceTier: IMAGE_MODEL_PRICE_TIER[candidate],
-        selected: selectedModel === candidate,
-        onSelect: () => {
-          onChange(candidate);
-        },
-      };
-    }),
-  };
-}
-
 interface ComposerModelPickerControlsProps {
   signals: ComposerSignals;
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
-  imageModel: ComposerResolvedImageModelPickerState | undefined;
 }
 
+/**
+ * The composer chooses only the chat model and how it runs. Images follow the
+ * member's settings, so neither control offers a media model.
+ */
 function ComposerModelPickerControls(props: ComposerModelPickerControlsProps) {
   const modelPanel =
     useGet(featureSwitch$)[FeatureSwitchKey.ComposerModelPanel] === true;
   return modelPanel ? (
-    <ComposerModelPanelControls
-      signals={props.signals}
-      value={props.value}
-      onChange={props.onChange}
-    />
+    <ComposerModelPanelControls {...props} />
   ) : (
     <ComposerModelMenuControls {...props} />
   );
@@ -9008,13 +8897,13 @@ function ComposerModelPickerControls(props: ComposerModelPickerControlsProps) {
 
 /**
  * The model panel only switches the chat model; it carries effort and Fast
- * itself, so the effort chip and the media categories have no place beside it.
+ * itself, so the effort chip has no place beside it.
  */
 function ComposerModelPanelControls({
   signals,
   value,
   onChange,
-}: Pick<ComposerModelPickerControlsProps, "signals" | "value" | "onChange">) {
+}: ComposerModelPickerControlsProps) {
   const { t } = useTranslation();
   const open = useGet(signals.model.modelPickerOpen$);
   const setOpen = useSet(signals.model.setModelPickerOpen$);
@@ -9039,40 +8928,10 @@ function ComposerModelMenuControls({
   signals,
   value,
   onChange,
-  imageModel,
 }: ComposerModelPickerControlsProps) {
   const { t } = useTranslation();
-  const desktopLayout = useGet(signals.model.desktopModelPickerLayout$);
-  const category = useGet(signals.model.mediaModelCategory$);
-  const setCategory = useSet(signals.model.setMediaModelCategory$);
-  const categories: MediaModelPanelCategory[] = [];
-  if (imageModel) {
-    categories.push(
-      composerImageModelPanelCategory({
-        selectedModel: imageModel.selectedModel,
-        onChange: imageModel.onChange,
-        label: t(($) => {
-          return $.settings.models.picker.imageModels;
-        }),
-        tabLabel: t(($) => {
-          return $.settings.models.picker.categoryImage;
-        }),
-      }),
-    );
-  }
-  const activeCategory = categories.some((candidate) => {
-    return candidate.id === category;
-  })
-    ? category
-    : null;
-  const mediaModelPanel: MediaModelPanelState | undefined =
-    categories.length > 0
-      ? {
-          activeCategory,
-          categories,
-          onActiveCategoryChange: setCategory,
-        }
-      : undefined;
+  const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
+  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   return (
     <>
       {/* Effort and the model are one choice about the next message, so they sit
@@ -9081,9 +8940,9 @@ function ComposerModelMenuControls({
           from the controls that do something else.
 
           Effort sits level with the model rather than behind it. It is the only
-          way to reach effort and Fast now that the picker's settings page is
-          gone, so it shows at every width; the level's name is one short word,
-          which the row can afford even on a phone. */}
+          way to reach effort and Fast from the menu layout, so it shows at every
+          width; the level's name is one short word, which the row can afford
+          even on a phone. */}
       <div className="flex items-center">
         <ChatEffortTrigger
           value={value}
@@ -9093,12 +8952,23 @@ function ComposerModelMenuControls({
             COMPOSER_CONTROL_FOCUS_CLASS,
           )}
         />
-        <ComposerRunModelPickerControl
-          signals={signals}
+        <ModelProviderPicker
           value={value}
           onChange={onChange}
-          desktopLayout={desktopLayout}
-          mediaModelPanel={mediaModelPanel}
+          placeholder={t(($) => {
+            return $.chat.composer.selectModel;
+          })}
+          triggerClassName={composerModelPickerTriggerClassName()}
+          nativeMenu
+          // The effort control beside it carries the bolt when Fast is on, so
+          // the model keeps its own name.
+          fastShownByCaller
+          compactTrigger
+          mobileIconTrigger
+          open={modelPickerOpen}
+          onOpenChange={(open) => {
+            setModelPickerOpen(open);
+          }}
         />
       </div>
       <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
@@ -9106,44 +8976,7 @@ function ComposerModelMenuControls({
   );
 }
 
-function ComposerMediaModelPickerControls({
-  signals,
-  value,
-  onChange,
-  imageModel,
-}: {
-  signals: ComposerSignals;
-  value: ModelProviderSelection;
-  onChange: (selection: ModelProviderSelection | null) => void;
-  imageModel: ComposerImageModelPickerState | undefined;
-}) {
-  const userPreference = useLastResolved(userModelPreference$);
-  const resolvedImageModel = imageModel
-    ? {
-        ...imageModel,
-        selectedModel:
-          imageModel.value ??
-          userPreference?.selectedImageModel ??
-          DEFAULT_IMAGE_MODEL,
-      }
-    : undefined;
-  return (
-    <ComposerModelPickerControls
-      signals={signals}
-      value={value}
-      onChange={onChange}
-      imageModel={resolvedImageModel}
-    />
-  );
-}
-
-function ComposerModelPickerSlotBase({
-  signals,
-  imageModel,
-}: {
-  signals: ComposerSignals;
-  imageModel: ComposerImageModelPickerState | undefined;
-}) {
+function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const modelSelection = useLastLoadable(signals.model.modelSelection$);
   const selectedModelOauthAvailable =
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
@@ -9165,64 +8998,12 @@ function ComposerModelPickerSlotBase({
         selection={value}
         oauthAvailable={selectedModelOauthAvailable}
       />
-      {imageModel ? (
-        <ComposerMediaModelPickerControls
-          signals={signals}
-          value={value}
-          onChange={onModelPickerChange}
-          imageModel={imageModel}
-        />
-      ) : (
-        <ComposerModelPickerControls
-          signals={signals}
-          value={value}
-          onChange={onModelPickerChange}
-          imageModel={undefined}
-        />
-      )}
-    </>
-  );
-}
-
-/** Media callbacks write their pins; each native menu item owns dismissal. */
-function ComposerExistingMediaModelPickerSlot({
-  signals,
-  imageModelSignals,
-}: {
-  signals: ComposerSignals;
-  imageModelSignals: ComposerImageModelSignals;
-}) {
-  const selectedImageModel =
-    useLastResolved(imageModelSignals.selectedImageModel$) ?? null;
-  const setImageModel = useSet(imageModelSignals.setImageModel$);
-  const pageSignal = useGet(pageSignal$);
-  const imageModel: ComposerImageModelPickerState = {
-    value: selectedImageModel,
-    onChange: (next) => {
-      detach(setImageModel(next, pageSignal), Reason.DomCallback);
-    },
-  };
-  return (
-    <ComposerModelPickerSlotBase signals={signals} imageModel={imageModel} />
-  );
-}
-
-function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
-  const createMode = useGet(signals.create.mode$);
-  if (createMode === "image" && signals.imageModel) {
-    return <ComposerCreateImageModelPicker model={signals.imageModel} />;
-  }
-  const imageModelSignals = signals.imageModel;
-  if (imageModelSignals) {
-    return (
-      <ComposerExistingMediaModelPickerSlot
+      <ComposerModelPickerControls
         signals={signals}
-        imageModelSignals={imageModelSignals}
+        value={value}
+        onChange={onModelPickerChange}
       />
-    );
-  }
-  return (
-    <ComposerModelPickerSlotBase signals={signals} imageModel={undefined} />
+    </>
   );
 }
 
@@ -9351,64 +9132,14 @@ function ComposerTemporaryModelNotice({
   );
 }
 
-function ComposerTemporaryImageModelNotice({
-  imageModelSignals,
-}: {
-  imageModelSignals: ComposerImageModelSignals;
-}) {
-  const { t } = useTranslation();
-  const selection = useLastResolved(imageModelSignals.effectiveImageModel$);
-  const userPreference = useLastResolved(userModelPreference$);
-  const [updateLoadable, updateDefaultImageModel] = useLoadableSet(
-    updateDefaultImageModel$,
-  );
-  const pageSignal = useGet(pageSignal$);
-  if (!userPreference) {
-    return withChatScrollLayout(null);
-  }
-  const defaultImageModel =
-    userPreference.selectedImageModel ?? DEFAULT_IMAGE_MODEL;
-  if (!selection || selection === defaultImageModel) {
-    return withChatScrollLayout(null);
-  }
-  const updating = updateLoadable.state === "loading";
-  const useForFutureChats = () => {
-    if (updating) {
-      return;
-    }
-    detach(updateDefaultImageModel(selection, pageSignal), Reason.DomCallback);
-  };
-  return withChatScrollLayout(
-    <ComposerModelScopeCard
-      label={t(($) => {
-        return $.chat.composer.imageModelForThisChat;
-      })}
-      model={IMAGE_MODEL_CONFIGS[selection].label}
-      updating={updating}
-      onUseForFutureChats={useForFutureChats}
-    />,
-  );
-}
-
 function ComposerTemporaryModelNoticeSlot({
   signals,
 }: {
   signals: ComposerSignals;
 }) {
   const enabled = useGet(signals.model.temporaryModelNoticeEnabled$);
-  const mediaModelCategory = useGet(signals.model.mediaModelCategory$);
-  const imageModelSignals = signals.imageModel;
   if (!enabled) {
     return withChatScrollLayout(null);
-  }
-  // One card at a time: it belongs to whichever model the composer is
-  // currently pointed at.
-  if (imageModelSignals && mediaModelCategory === "image") {
-    return withChatScrollLayout(
-      <ComposerTemporaryImageModelNotice
-        imageModelSignals={imageModelSignals}
-      />,
-    );
   }
   return withChatScrollLayout(
     <ComposerTemporaryModelNotice signals={signals} />,
@@ -9419,18 +9150,12 @@ function ComposerTemporaryModelNoticeSlot({
 function ComposerNoticeSlot({ signals }: { signals: ComposerSignals }) {
   const paidToolHints = useGet(signals.paidToolHints$);
   const imageMode = useGet(signals.create.mode$) === "image";
-  const imageCategory = useGet(signals.model.mediaModelCategory$) === "image";
   const clearTask = useSet(signals.taskChips.selectTask$);
-  const clearCategory = useSet(signals.model.setMediaModelCategory$);
   const onDiscardImage = imageMode
     ? () => {
         clearTask(null);
       }
-    : imageCategory
-      ? () => {
-          clearCategory(null);
-        }
-      : undefined;
+    : undefined;
   return (
     <ComposerPaidToolNotice
       tools={paidToolHints}

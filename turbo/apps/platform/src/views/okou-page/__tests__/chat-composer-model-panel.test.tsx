@@ -94,9 +94,12 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
   });
   expect(modelRadio(models, "GPT 5.6 Sol")).toBeChecked();
   expect(modelRadio(models, "Claude Sonnet 5")).not.toBeChecked();
-  // The panel switches the chat model only: no media categories and no
-  // separate effort control beside it.
+  // The panel switches the chat model only: no media categories, no image
+  // model row and no separate effort control beside it.
   expect(within(panel).queryByText("Image")).toBeNull();
+  expect(within(panel).queryByText("Video")).toBeNull();
+  expect(panel).not.toHaveTextContent("Images use");
+  expect(panel).not.toHaveTextContent("GPT Image");
   expect(
     queryAllByRoleFast("button").some((button) => {
       return button.getAttribute("aria-label")?.startsWith("Effort, ");
@@ -145,7 +148,12 @@ test("Keep the panel open while changing effort, Fast and model", async () => {
 
 test("Send with the model and effort chosen in the panel", async () => {
   const user = userEvent.setup({ delay: null });
-  const creates: { model?: SupportedRunModel; reasoningEffort?: string }[] = [];
+  const creates: {
+    model?: SupportedRunModel;
+    reasoningEffort?: string;
+    imageModel?: string;
+    videoModel?: string;
+  }[] = [];
   const composer = await setupPanel(
     ["gpt-5.6-sol", "claude-sonnet-5"],
     (body) => {
@@ -175,4 +183,20 @@ test("Send with the model and effort chosen in the panel", async () => {
       }),
     );
   });
+  // Media models are a member setting; a new thread carries no pin.
+  expect(creates[0]?.imageModel).toBeUndefined();
+  expect(creates[0]?.videoModel).toBeUndefined();
+});
+
+test("Name the model and its effort on the trigger, with a bolt for Fast", async () => {
+  await setupPanel(["gpt-5.6-sol"]);
+  const trigger = await findButton("GPT 5.6 Sol, Max");
+  expect(trigger).toHaveTextContent(/^GPT 5\.6 Sol\s*· Max$/u);
+  // The bolt is the Fast state rather than decoration.
+  expect(trigger.querySelector("svg.lucide-zap")).toBeNull();
+  const panel = await openPanel("GPT 5.6 Sol, Max");
+  click(within(panel).getByRole("switch", { name: "Fast" }));
+  const fastTrigger = await findButton("GPT 5.6 Sol, Max, Fast");
+  expect(fastTrigger).toHaveTextContent(/^GPT 5\.6 Sol\s*· Max$/u);
+  expect(fastTrigger.querySelector("svg.lucide-zap")).toBeInTheDocument();
 });

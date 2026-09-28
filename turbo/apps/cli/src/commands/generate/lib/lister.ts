@@ -20,6 +20,12 @@ import {
   resolveRunConnectorAccountLookups,
   type RunConnectorAccountLookup,
 } from "../../connector/run-account-context";
+import {
+  DEFAULT_IMAGE_MODEL,
+  IMAGE_MODEL_CONFIGS,
+} from "@okouai/core/image-model-catalog";
+const IMAGE_MODEL_SETTING_SUMMARY = `the image model selected in Settings › Built-in tools (default ${IMAGE_MODEL_CONFIGS[DEFAULT_IMAGE_MODEL].alias})`;
+
 type ConnectorGenerationType = "audio" | "code" | "document" | "image" | "text";
 
 type BuiltInGenerationType =
@@ -54,103 +60,7 @@ interface GenerationContext {
 
 const BUILT_IN_GENERATION_PROVIDERS: Partial<
   Record<GenerationType, readonly BuiltInGenerationProvider[]>
-> = {
-  image: [
-    {
-      label: "Built-in fal.ai",
-      model: "gpt-image-1",
-      command: "okou generate image --provider built-in --model gpt-image-1 -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "gpt-image-2",
-      command: "okou generate image --provider built-in --model gpt-image-2 -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in OpenAI",
-      model: "gpt-image-2.5-flare",
-      command:
-        "okou generate image --provider built-in --model gpt-image-2.5-flare -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in OpenAI",
-      model: "gpt-image-2.5-sunburst",
-      command:
-        "okou generate image --provider built-in --model gpt-image-2.5-sunburst -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "fal-ai/flux-pro/v1.1",
-      command:
-        "okou generate image --provider built-in --model flux-pro-1.1 -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "fal-ai/flux-pro/v1.1-ultra",
-      command:
-        "okou generate image --provider built-in --model flux-pro-1.1-ultra -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "fal-ai/flux-2-pro",
-      command: "okou generate image --provider built-in --model flux-2-pro -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "alibaba/qwen-image-3/text-to-image",
-      command:
-        "okou generate image --provider built-in --model qwen-image-3 -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "ideogram/v4",
-      command: "okou generate image --provider built-in --model ideogram-4 -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "fal-ai/bytedance/seedream/v4/text-to-image",
-      command: "okou generate image --provider built-in --model seedream4 -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in BytePlus",
-      model: "dola-seedream-5-0-pro-260628",
-      command:
-        "okou generate image --provider built-in --model seedream5-pro -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in BytePlus",
-      model: "seedream-5-0-lite-260128",
-      command:
-        "okou generate image --provider built-in --model seedream5-lite -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "fal-ai/nano-banana-2",
-      command:
-        "okou generate image --provider built-in --model nano-banana-2 -h",
-      reason: "available without connector setup",
-    },
-    {
-      label: "Built-in fal.ai",
-      model: "google/nano-banana-2-lite",
-      command:
-        "okou generate image --provider built-in --model nano-banana-2-lite -h",
-      reason: "available without connector setup",
-    },
-  ],
-};
+> = {};
 
 const BUILT_IN_GENERATION_COMMANDS: Partial<
   Record<GenerationType, BuiltInGenerationCommand>
@@ -158,8 +68,7 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
   image: {
     label: "Built-in image generation",
     command: "okou generate image --provider built-in -h",
-    models:
-      "OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1 (default), gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite",
+    models: `Uses ${IMAGE_MODEL_SETTING_SUMMARY}. Available: OpenAI: gpt-image-2.5-flare, gpt-image-2.5-sunburst; fal.ai: gpt-image-1, gpt-image-2, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image-3, seedream4, nano-banana-2, nano-banana-2-lite; BytePlus: seedream5-pro, seedream5-lite`,
   },
   presentation: {
     label: "Built-in presentation generation",
@@ -199,7 +108,7 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
   sprite: {
     label: "Built-in sprite asset generation",
     command: "okou generate sprite -h",
-    models: "gpt-image-2 (recommended) via built-in image generation",
+    models: `Built-in image generation with ${IMAGE_MODEL_SETTING_SUMMARY}`,
   },
 };
 

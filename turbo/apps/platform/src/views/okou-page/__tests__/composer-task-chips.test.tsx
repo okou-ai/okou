@@ -301,8 +301,10 @@ async function setupTaskChangesWithUpload() {
   await screen.findByText("brief.txt");
   const tasks = screen.getByRole("group", { name: "Choose a task" });
   click(button("Image", tasks));
-  await screen.findByRole("combobox", { name: "Image models" });
-  click(selectedTask(editor, "Image"));
+  const imageTask = await waitFor(() => {
+    return selectedTask(editor, "Image");
+  });
+  click(imageTask);
   const restoredTasks = await screen.findByRole("group", {
     name: "Choose a task",
   });

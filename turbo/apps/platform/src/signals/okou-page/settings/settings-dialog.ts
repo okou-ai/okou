@@ -68,13 +68,11 @@ export function resolveAvailableSettingsSection(
   options: {
     readonly isAdmin: boolean;
     readonly chatPreferenceEnabled: boolean;
-    readonly toolsTabEnabled: boolean;
   },
 ): SettingsSection {
   if (
     (!options.isAdmin && isAdminOnlySettingsSection(section)) ||
-    (!options.chatPreferenceEnabled && section === "chat") ||
-    (!options.toolsTabEnabled && section === "tools")
+    (!options.chatPreferenceEnabled && section === "chat")
   ) {
     return "preference";
   }
@@ -371,9 +369,6 @@ export const checkUnifiedSettingsParam$ = command(
       isAdmin,
       chatPreferenceEnabled:
         get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false,
-      toolsTabEnabled:
-        (get(featureSwitch$)[FeatureSwitchKey.SettingsToolsTab] ?? false) &&
-        (get(featureSwitch$)[FeatureSwitchKey.PaidToolControls] ?? false),
     });
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");

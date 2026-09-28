@@ -1791,7 +1791,6 @@
         "slideCountRange": "{{range}} diapositivas"
       },
       "createWorkflow": "Crear flujo de trabajo",
-      "imageModelForThisChat": "Modelo de imagen para este chat",
       "message": "Mensaje",
       "modelForThisChat": "Modelo para este chat",
       "placeholder": "Pídeme que automatice flujos de trabajo, gestione tareas...",
@@ -5017,8 +5016,6 @@
       "picker": {
         "builtInModel": "Modelo integrado",
         "byokHelp": "Usa el proveedor que has configurado",
-        "categoryChat": "Chat",
-        "categoryImage": "Imagen",
         "chatModels": "Modelos de chat",
         "effort": "Esfuerzo",
         "effortScale": {
@@ -5043,14 +5040,9 @@
           "lowest": "Coste más bajo por generación",
           "typical": "Coste habitual por generación"
         },
-        "imageModels": "Modelos de imagen",
         "inheritDefault": "Heredar el valor predeterminado de la organización",
         "loadError": "No se pudieron cargar los modelos.",
         "loading": "Cargando modelos...",
-        "menu": {
-          "backToModels": "Volver a los modelos",
-          "changeModel": "Cambiar modelo de {{category}}, {{model}}"
-        },
         "models": "Modelos",
         "noConfiguredModels": "Sin modelos configurados",
         "priceTiers": {
@@ -5153,6 +5145,11 @@
     "paidTools": {
       "description": "Estas herramientas consumen créditos integrados y Okou las usa automáticamente mientras trabaja en tus tareas. Si desactivas una herramienta, Okou no la usará.",
       "disabledForCreation": "{{tool}} está desactivado para ti",
+      "imageModel": {
+        "description": "La generación de imágenes integrada usa este modelo para tus tareas.",
+        "label": "Modelo",
+        "saveError": "No se ha guardado tu modelo de imagen."
+      },
       "loadError": "No se pudieron cargar tus ajustes.",
       "loading": "Cargando tus ajustes…",
       "openSettings": "Abrir ajustes",

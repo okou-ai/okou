@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import {
@@ -24,50 +25,10 @@ import {
   sidebarThreadLinks,
   sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
-import {
-  composerModelTrigger,
-  composerModelTriggerIn,
-} from "./chat-composer-test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
 const HOST_ID = "a7000000-0000-4000-a000-000000000001";
-
-async function openMediaCategory(name: "Image"): Promise<HTMLElement> {
-  if (!screen.queryByRole("menu", { name: "Models" })) {
-    click(await waitFor(composerModelTriggerOrThrow));
-  }
-  const types = await screen.findByRole("menu", { name: "Models" });
-  const type = queryAllByRoleFast("menuitem", types).find((candidate) => {
-    return candidate.textContent?.startsWith(name);
-  });
-  if (!type) {
-    throw new Error(`${name} models are not on the flyout's type rail`);
-  }
-  click(type);
-  return await screen.findByRole("menu", { name: `${name} models` });
-}
-
-/**
- * A row reads as its model followed by a price tier. Compare the complete model
- * name so models with a shared prefix remain distinct.
- */
-function expectSelectedMediaModel(panel: HTMLElement, label: string): void {
-  const row = queryAllByRoleFast("menuitemradio", panel).find((option) => {
-    return option.textContent?.replace(/\$+$/u, "").trim() === label;
-  });
-  if (!row) {
-    throw new Error(`Expected a ${label} row in the open model panel`);
-  }
-  expect(row).toHaveAttribute("aria-checked", "true");
-}
-
-function composerModelTriggerOrThrow(): HTMLElement {
-  const trigger = composerModelTriggerIn(document);
-  if (!trigger) {
-    throw new Error("The composer model trigger is not visible");
-  }
-  return trigger;
-}
 
 function computerMenuIsOpen(): boolean {
   return queryAllByRoleFast("button", document).some((candidate) => {
@@ -220,42 +181,55 @@ test("Conversation configuration arriving before creation is retained", async ()
     checked: true,
   });
   expect(configuredHost).toBeChecked();
-
-  expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
 });
 
-test("The image model does not overwrite the run model", async () => {
-  const auth = chatListAuth(6);
-  const thread = chatListThread(38, "Independent media models", {
-    selectedModel: "claude-sonnet-5",
-    selectedVideoModel: "MiniMax-H3",
-    selectedImageModel: "gpt-image-1",
-  });
-  installChatListAgent(context);
-  installChatListModelPolicies(context);
-  installChatListStream(context, {
-    caseId: 6,
-    snapshot: [thread],
-    events: [
-      chatListEvent(6, 2, "image_model_updated", thread.id, {
-        selectedImageModel: "gpt-image-2",
-      }),
-    ],
-  });
-  installActiveChatBoundaries(context, { metadata: thread });
+test.each([
+  { control: "model menu", panel: false, surface: "menu" as const },
+  { control: "model panel", panel: true, surface: "dialog" as const },
+])(
+  "A thread's stored media models never appear in the $control",
+  async ({ panel, surface }) => {
+    const auth = chatListAuth(6);
+    const thread = chatListThread(38, "Pinned media models", {
+      selectedModel: "claude-sonnet-5",
+      selectedVideoModel: "MiniMax-H3",
+      selectedImageModel: "gpt-image-1",
+    });
+    installChatListAgent(context);
+    installChatListModelPolicies(context);
+    installChatListStream(context, { caseId: 6, snapshot: [thread] });
+    installActiveChatBoundaries(context, { metadata: thread });
 
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(6, [thread]),
-  });
+    await setupPage({
+      context,
+      path: `/chats/${thread.id}`,
+      auth,
+      cachedChatThreadEvents: cachedChatListEvents(6, [thread]),
+      featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: panel },
+    });
 
-  await expectSelectedModel("Claude Sonnet 5");
-  expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
-  // Picking the image model must leave the run model where it was.
-  await expect(composerModelTrigger("Claude Sonnet 5")).resolves.toBeVisible();
-});
+    // The menu's trigger names the model; the panel's adds the effort.
+    const trigger = await waitFor(() => {
+      const button = queryAllByRoleFast("button").find((candidate) => {
+        return candidate
+          .getAttribute("aria-label")
+          ?.startsWith("Claude Sonnet 5");
+      });
+      if (!button) {
+        throw new Error("The composer model trigger is not visible");
+      }
+      return button;
+    });
+    click(trigger);
+    const models = await screen.findByRole(surface, { name: "Chat models" });
+    // Images follow the member's settings: the control lists chat models only
+    // and never names the thread's stored media models.
+    expect(queryAllByRoleFast("menuitem", models)).toHaveLength(0);
+    expect(document.body).not.toHaveTextContent("GPT Image");
+    expect(document.body).not.toHaveTextContent("MiniMax H3");
+    expect(document.body).not.toHaveTextContent("Images use");
+  },
+);
 
 test("Service tier and Computer Use settings update independently", async () => {
   const auth = chatListAuth(14);

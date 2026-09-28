@@ -27,6 +27,7 @@ import {
   stageUnrepairedOrgModelPolicyFixture,
   readUnrepairedOrgModelPolicyFixture,
   removeRunModelCatalogEntryFixture,
+  setOrgMemberRunModelOutsidePolicyFixture,
   setOrgModelPolicyProviderTypeFixture,
   stagePreAddabilityModelPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
@@ -1871,6 +1872,94 @@ describe("GET/PUT /api/model-policies", () => {
     );
   });
 
+  it("stores an image default while the stored run model is outside the policy", async () => {
+    const fixture = await seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const preferenceClient = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const listResponse = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    const removedModel = DEFAULT_ORG_MODEL_POLICY_MODELS.find((model) => {
+      return model !== DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+    });
+    if (!removedModel) {
+      throw new Error("Default policy seed must include a non-default model");
+    }
+    await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: toUpdate(listResponse.body).filter((policy) => {
+            return policy.model !== removedModel;
+          }),
+        },
+      }),
+      [200],
+    );
+    await setOrgMemberRunModelOutsidePolicyFixture({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      selectedModel: removedModel,
+    });
+    const stored = await accept(
+      preferenceClient.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(stored.body.selectedModel).toBe(removedModel);
+
+    // Settings echoes the stored run preference with the new image model.
+    const updated = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: {
+          selectedModel: stored.body.selectedModel,
+          serviceTier: stored.body.serviceTier,
+          selectedImageModel: "gpt-image-2",
+        },
+      }),
+      [200],
+    );
+    expect(updated.body).toMatchObject({
+      selectedModel: removedModel,
+      selectedImageModel: "gpt-image-2",
+    });
+
+    // Anything that changes the run preference is still admitted by policy.
+    await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: {
+          selectedModel: removedModel,
+          serviceTier: "priority",
+          selectedImageModel: "gpt-image-1",
+        },
+      }),
+      [400],
+    );
+    await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: {
+          selectedModel: removedModel,
+          serviceTier: null,
+          modelSettingsPatch: { model: removedModel, effort: "high" },
+        },
+      }),
+      [400],
+    );
+    const unchanged = await accept(
+      preferenceClient.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(unchanged.body.selectedImageModel).toBe("gpt-image-2");
+  });
+
   it("rejects an image default outside the selectable catalog", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
@@ -1878,7 +1967,7 @@ describe("GET/PUT /api/model-policies", () => {
       context,
       routes: userModelPreferenceRoutes,
     })(userModelPreferenceContract);
-    const outsideCatalog = "birefnet" as unknown as ImageModelId;
+    const outsideCatalog = "not-an-image-model" as unknown as ImageModelId;
 
     const response = await accept(
       preferenceClient.update({

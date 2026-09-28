@@ -31,13 +31,11 @@ function button(name: string, root: ParentNode = document.body) {
   return element;
 }
 
-async function setupComposer(enabled = true, taskChips = false) {
+async function setupComposer(taskChips = false) {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.PaidToolControls]: enabled,
-      [FeatureSwitchKey.SettingsToolsTab]: true,
       [FeatureSwitchKey.ChatPreference]: true,
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: taskChips,
@@ -61,17 +59,22 @@ async function selectCreation() {
   await screen.findByLabelText("Remove Image");
 }
 
-test("Explicit image creation remains blocked when the settings rollout is off", async () => {
+test("Explicit image creation shows the notice and stays blocked while image generation is off", async () => {
   const capture = mockTemplateChat();
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
     return respond(200, { disabledTools: ["image-generation"] });
   });
-  const editor = await setupComposer(false);
+  const editor = await setupComposer();
   await selectCreation();
-  await fill(editor, "Create a launch scene");
-  expect(screen.queryByText("Open settings")).not.toBeInTheDocument();
-  click(button("Send"));
   await screen.findByText("Image generation is off for you");
+  expect(button("Open settings")).toBeInTheDocument();
+  await fill(editor, "Create a launch scene");
+  click(button("Send"));
+  await waitFor(() => {
+    return expect(
+      screen.getAllByText("Image generation is off for you"),
+    ).toHaveLength(2);
+  });
   expect(capture.runPrompts).toStrictEqual([]);
   expect(editor).toHaveTextContent("Create a launch scene");
 });
@@ -90,7 +93,7 @@ test("An image creation notice opens settings and a confirmed save restores crea
     }
     return respond(200, { toolId: params.toolId, disabled: body.disabled });
   });
-  const editor = await setupComposer(true, true);
+  const editor = await setupComposer(true);
   click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
   await screen.findByText("Image generation is off for you");
   click(button("Open settings"));
@@ -134,7 +137,7 @@ test("A failed preference read blocks explicit creation but ordinary chat remain
       },
     });
   });
-  const editor = await setupComposer(false);
+  const editor = await setupComposer();
   await selectCreation();
   await fill(editor, "Explain the launch plan");
   click(button("Send"));
@@ -147,12 +150,13 @@ test("A failed preference read blocks explicit creation but ordinary chat remain
   });
 });
 
-test("Gallery notices follow each paid branch without blocking unrelated previews", async () => {
+test("Gallery notices follow each paid branch for a member without feature switches", async () => {
   mockTemplateChat();
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
     return respond(200, { disabledTools: ["image-generation"] });
   });
-  await setupComposer();
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await findComposerEditor();
   const dialog = await openTemplatePicker(
     userEvent.setup({ delay: null }),
     "Illustration",

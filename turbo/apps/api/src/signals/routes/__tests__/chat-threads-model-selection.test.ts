@@ -5,7 +5,6 @@ import {
   chatThreadModelSelectionContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 
@@ -298,7 +297,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       computerUseHostId: null,
       cloudBrowserEnabled: false,
       selectedVideoModel: null,
-      selectedImageModel: DEFAULT_IMAGE_MODEL,
+      selectedImageModel: null,
     });
   });
 

@@ -695,12 +695,6 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup("image", "google/nano-banana-2-lite", [
     ["output_image", usd(0.042), 1],
   ]),
-  // Background removal transform (fal cost is $0).
-  ...usageGroup("image", "fal-ai/birefnet/v2", [["output_image", usd(0), 1]]),
-  // Upscale/HD transform, billed per output megapixel.
-  ...usageGroup("image", "fal-ai/clarity-upscaler", [
-    ["output_megapixel", usd(0.03), 1],
-  ]),
 
   // Video generation uses a 25% markup (20% gross margin): cost / 0.8.
   ...usageGroup("video", "dreamina-seedance-2-5-260628", [

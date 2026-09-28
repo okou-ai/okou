@@ -1,5 +1,72 @@
 # Deployment Compatibility
 
+## Image model becomes a member setting (2026-09-28)
+
+Built-in image generation now uses one image model per workspace member:
+`org_members_metadata.selected_image_model`, edited in Settings › Built-in
+tools, else `DEFAULT_IMAGE_MODEL`, which changes from `gpt-image-1` to
+`gpt-image-2.5-flare`. Members without a stored value move to the new default.
+No onboarding or seed path writes the member value. Run creation snapshots the
+resolved model onto `agent_runs.selected_image_model` as before, but no longer
+reads `chat_threads.selected_image_model`. The `SettingsToolsTab` and
+`PaidToolControls` feature switches are removed, so the Tools tab is shown to
+every member. There is no migration.
+
+With video generation retired (#37242), new threads pin no media model at
+all. The composer never shows the image model: the staff `composerModelPanel`
+switch still chooses between the #37229 panel and the legacy menu with its
+effort chip, and both list only chat models. The undocumented `birefnet` and
+`clarity-upscaler` transform models are removed.
+
+Compatibility contracts kept for older Web App and iOS builds:
+
+- `POST /api/chat-threads/:id/image-model` still validates, records the value
+  and its `image_model_updated` event, and returns `204`, so older clients
+  reconcile their optimistic event. Runs ignore the value.
+- `POST /api/chat-threads` still accepts `imageModel` and returns `201`, but
+  ignores it. New threads, from every creation path, store a null image model
+  and no longer inherit the calling run's thread image model.
+- Thread responses and `created` events keep `selectedImageModel` (now null for
+  new threads), and the `image_model_updated` event kind remains readable
+  (`ios/Okou/Networking/ChatWire.swift`).
+
+Compatibility contracts kept for released CLIs and Runners:
+
+- `POST /api/image-io/generate` ignores the body `model` instead of rejecting
+  it. The model is the calling run's snapshot, else the member setting, else
+  the default. A released CLI that sends `--model` therefore gets the member's
+  model; a size valid only for the requested model can now fail validation,
+  and the agent retries without it. The undocumented transform models
+  (`birefnet` background removal and `clarity-upscaler`) are removed; a
+  released CLI that names them now gets the member's model instead. A
+  transform job still in flight across the deploy fails when its provider
+  webhook is parsed; recorded usage rows are unaffected.
+- Runs still receive `OKOU_DEFAULT_IMAGE_MODEL` with the snapshotted alias.
+  Released CLIs use it to omit `--model` and to pick `auto` as the Seedream 5
+  Lite default size. The current CLI has no `--model` option, sends no size
+  unless `--size` is given, and lets the API apply the model's default size.
+- New CLIs against an older API omit `model`, so the older API applies the
+  run snapshot or its own default, as it did for an omitted model.
+
+`PUT /api/user-model-preference` still requires the run preference. A request
+that echoes the stored `selectedModel` and `serviceTier` without a
+`modelSettingsPatch` skips org model policy admission, so a member whose stored
+chat model has left the policy can still change their image model. Older APIs
+reject that case with `400`; the new Settings dropdown then reports a save
+error until the API is promoted.
+
+Follow-up cleanup, in order:
+
+1. Raise the minimum supported app version past builds that pin a thread image
+   model, then delete the image-model route, its contract, and the create
+   body `imageModel` field.
+2. Once no supported CLI reads it, stop injecting `OKOU_DEFAULT_IMAGE_MODEL`
+   and remove the ignored `model` field from the image generation contract.
+3. Drop `chat_threads.selected_image_model` in two steps: first stop
+   declaring and emitting `selectedImageModel` on thread responses and events
+   once no supported client reads it, then drop the column in a later release
+   after the rollback floor passes the first step.
+
 ## Chat Event V8 preparation: retired writers stop (2026-09-28)
 
 This is step 1 of the Chat Event V8 plan. It changes no wire protocol: the row

@@ -4,10 +4,6 @@ import { expect, test } from "vitest";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
-import {
-  IMAGE_MODEL_CONFIGS,
-  PUBLIC_IMAGE_MODELS,
-} from "@okouai/core/image-model-catalog";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   click,
@@ -258,31 +254,32 @@ test("A queued Create message keeps its intent separate from user-authored text"
   await expect(screen.findByText(prompt)).resolves.toBeVisible();
 });
 
-test("Image mode combines styles and image models while preserving the prompt", async () => {
+test("Image mode keeps the chat model and sends no image model", async () => {
   setupModels();
+  const creates: { imageModel?: string; videoModel?: string }[] = [];
+  mockChatLifecycle(context, {
+    onThreadCreate: (body) => {
+      creates.push(body);
+    },
+  });
   const editor = await setupComposer();
   await chooseCommand(editor, "A quiet garden /", "image");
   expect(button("Add style")).toBeInTheDocument();
-  const picker = await screen.findByRole("combobox", { name: "Image models" });
-  click(picker);
-  const model = PUBLIC_IMAGE_MODELS.find((candidate) => {
-    return candidate !== "gpt-image-2";
-  });
-  if (!model) {
-    throw new Error("Expected another public image model");
-  }
-  click(
-    await screen.findByRole("option", {
-      name: IMAGE_MODEL_CONFIGS[model].label,
-    }),
-  );
-  await waitFor(() => {
-    expect(picker).toHaveTextContent(IMAGE_MODEL_CONFIGS[model].label);
-  });
-  click(taskChip("Image"));
+  // Images follow the member setting, so Create offers no image model of its
+  // own and the composer keeps naming the chat model.
   await composerModelTrigger("Claude Fable 5.1");
-  expect(screen.queryByLabelText("Remove Image")).toBeNull();
-  expect(editor).toHaveTextContent("A quiet garden");
+  expect(
+    screen.queryByRole("combobox", { name: "Image models" }),
+  ).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  click(button("Send"));
+  await waitFor(() => {
+    expect(creates).toHaveLength(1);
+  });
+  expect(creates[0]?.imageModel).toBeUndefined();
+  expect(creates[0]?.videoModel).toBeUndefined();
 });
 
 const createTemplateScenarios = [

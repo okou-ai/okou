@@ -13,6 +13,14 @@ import type { RouteEntry } from "../route-entry";
 
 const imageModelBody$ = bodyResultOf(chatThreadImageModelContract.update);
 
+/**
+ * Compatibility endpoint for web and app builds that still pin an image model
+ * per thread. The value and its `image_model_updated` event are still recorded
+ * so those clients reconcile their optimistic event, but run resolution only
+ * reads the member's image model setting (`run-media-model.service`). Remove
+ * this route once the minimum supported app version no longer calls it; see
+ * docs/deployment-compatibility.md.
+ */
 const updateImageModelInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);

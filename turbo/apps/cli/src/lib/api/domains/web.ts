@@ -289,7 +289,6 @@ interface UploadWebFileResult {
 interface GenerateWebImageOptions {
   requirePrivateArtifact?: boolean;
   prompt: string;
-  model?: string;
   size?: string;
   quality?: string;
   background?: string;
@@ -859,7 +858,6 @@ export async function generateWebImage(
       body: JSON.stringify({
         prompt: options.prompt,
         requirePrivateArtifact: options.requirePrivateArtifact,
-        ...(options.model ? { model: options.model } : {}),
         ...(options.size ? { size: options.size } : {}),
         ...(options.quality ? { quality: options.quality } : {}),
         ...(options.background ? { background: options.background } : {}),

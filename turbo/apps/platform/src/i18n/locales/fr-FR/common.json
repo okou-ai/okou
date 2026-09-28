@@ -1791,7 +1791,6 @@
         "slideCountRange": "{{range}} diapositives"
       },
       "createWorkflow": "Créer un workflow",
-      "imageModelForThisChat": "Modèle d’image pour cette discussion",
       "message": "Message",
       "modelForThisChat": "Modèle pour cette discussion",
       "placeholder": "Demandez-moi d’automatiser des workflows, de gérer des tâches...",
@@ -5017,8 +5016,6 @@
       "picker": {
         "builtInModel": "Modèle intégré",
         "byokHelp": "Utilise votre fournisseur configuré",
-        "categoryChat": "Chat",
-        "categoryImage": "Image",
         "chatModels": "Modèles de chat",
         "effort": "Effort",
         "effortScale": {
@@ -5043,14 +5040,9 @@
           "lowest": "Coût le plus bas par génération",
           "typical": "Coût habituel par génération"
         },
-        "imageModels": "Modèles d’image",
         "inheritDefault": "Hériter des paramètres par défaut de l'organisation",
         "loadError": "Impossible de charger les modèles.",
         "loading": "Chargement des modèles...",
-        "menu": {
-          "backToModels": "Retour aux modèles",
-          "changeModel": "Changer le modèle {{category}}, {{model}}"
-        },
         "models": "Modèles",
         "noConfiguredModels": "Aucun modèle configuré",
         "priceTiers": {
@@ -5153,6 +5145,11 @@
     "paidTools": {
       "description": "Ces outils consomment des crédits intégrés, et Okou les utilise automatiquement pendant qu'il travaille sur vos tâches. Désactivez un outil pour qu'Okou ne l'utilise pas.",
       "disabledForCreation": "{{tool}} est désactivé pour vous",
+      "imageModel": {
+        "description": "La génération d’images intégrée utilise ce modèle pour vos tâches.",
+        "label": "Modèle",
+        "saveError": "Votre modèle d’image n’a pas été enregistré."
+      },
       "loadError": "Impossible de charger vos paramètres.",
       "loading": "Chargement de vos paramètres…",
       "openSettings": "Ouvrir les paramètres",

@@ -1002,6 +1002,10 @@ const chatThreadMetadataSchema = z.object({
   computerUseHostId: z.string().uuid().nullable(),
   cloudBrowserEnabled: z.boolean(),
   selectedVideoModel: z.string().nullable(),
+  /**
+   * Legacy thread image model, read by older web and app builds. Runs use the
+   * member's image model setting instead; new threads store null.
+   */
   selectedImageModel: z.string().nullable(),
 });
 
@@ -1048,8 +1052,10 @@ const chatThreadCreateBodySchema = z.object({
    */
   serviceTier: chatThreadServiceTierSchema.nullable().optional(),
   /**
-   * Image model for the new thread. Omit it to inherit the calling run's chat
-   * thread image model.
+   * Accepted and ignored. Runs use the member's image model setting, so a
+   * thread no longer pins one. Kept so web and app builds that still send it
+   * are not rejected; remove it once the minimum supported app version no
+   * longer sends it (see docs/deployment-compatibility.md).
    */
   imageModel: imageModelIdSchema.optional(),
   /** Concrete override for the selected model; omission keeps its default. */
@@ -1058,7 +1064,7 @@ const chatThreadCreateBodySchema = z.object({
 });
 
 const chatThreadImageModelUpdateBodySchema = z.object({
-  /** Image model id, or null to fall back to the member and system defaults. */
+  /** Image model id, or null. Recorded on the thread; runs ignore it. */
   model: imageModelIdSchema.nullable(),
   eventId: chatThreadEventIdSchema.optional(),
 });
@@ -1637,8 +1643,10 @@ export const chatThreadConnectorSelectionContract = c.router({
 });
 
 /**
- * Update a chat thread's image model pin. Separate from model-selection
- * because it has its own catalog and default resolution.
+ * Legacy: records an image model on a chat thread. Runs no longer read it;
+ * they use the member's image model setting. Kept so web and app builds that
+ * still call it keep succeeding; remove it once the minimum supported app
+ * version no longer calls it (see docs/deployment-compatibility.md).
  */
 export const chatThreadImageModelContract = c.router({
   update: {

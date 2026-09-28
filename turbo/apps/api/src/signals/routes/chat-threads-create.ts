@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
 import {
   type CodexServiceTier,
   type ChatThreadServiceTier,
@@ -7,12 +6,6 @@ import {
   MODEL_FIRST_SELECTION_PROVIDER_ID,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
-import {
-  isImageModelId,
-  type ImageModelId,
-} from "@okouai/api-contracts/contracts/image-models";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -33,7 +26,6 @@ import {
   type ExistingChatThread,
 } from "../services/chat-thread.service";
 import { agentExistsInOrg } from "../services/agent-deletion.service";
-import { loadNewChatThreadMediaModels } from "../services/chat-thread-media-model.service";
 import {
   resolveDefaultModelFirstPin,
   resolveModelSelectionPin,
@@ -46,7 +38,6 @@ import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service
 import { loadNewChatThreadModelSettings } from "../services/chat-thread-model-settings.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import type { RouteEntry } from "../route-entry";
-import type { AuthContext } from "../../types/auth";
 
 const createBody$ = bodyResultOf(chatThreadsContract.create);
 
@@ -102,34 +93,6 @@ function chatThreadCreateResponse(
   });
 }
 
-/** Image model inherited from the caller run's chat thread. */
-async function inheritedRunChatSettings(
-  db: Db,
-  runId: string | undefined,
-): Promise<{
-  readonly selectedImageModel: ImageModelId | null;
-}> {
-  if (!runId) {
-    return {
-      selectedImageModel: null,
-    };
-  }
-
-  const [run] = await db
-    .select({
-      selectedImageModel: chatThreads.selectedImageModel,
-    })
-    .from(agentRuns)
-    .leftJoin(chatThreads, eq(agentRuns.chatThreadId, chatThreads.id))
-    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-    .limit(1);
-  return {
-    selectedImageModel: isImageModelId(run?.selectedImageModel)
-      ? run.selectedImageModel
-      : null,
-  };
-}
-
 const validateInitialRemoteAccess$ = command(
   async (
     { get },
@@ -167,12 +130,6 @@ const validateInitialRemoteAccess$ = command(
     return null;
   },
 );
-
-function inheritedRunId(auth: AuthContext): string | undefined {
-  return auth.tokenType === "sandbox" || auth.tokenType === "agent"
-    ? auth.runId
-    : undefined;
-}
 
 async function initialThreadModel(
   db: Db,
@@ -235,11 +192,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const writeDb = set(writeDb$);
   const connectorSelections = body.data.connectorSelections ?? [];
-  const inherited = await inheritedRunChatSettings(
-    writeDb,
-    inheritedRunId(auth),
-  );
-  signal.throwIfAborted();
   const { selectedModel, codexServiceTier } = await initialThreadModel(
     writeDb,
     auth,
@@ -249,19 +201,8 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!selectedModel) {
     return badRequestMessage("A model selection is required");
   }
-  // Explicit request, then what the caller's own thread pinned, then the
-  // member and catalog defaults. The last step is what keeps a thread from
-  // following a default the member changes after this thread exists.
-  const mediaDefaults = await loadNewChatThreadMediaModels(writeDb, {
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
-  signal.throwIfAborted();
-  const selectedImageModel =
-    body.data.imageModel ??
-    inherited.selectedImageModel ??
-    mediaDefaults.selectedImageModel;
-
+  // `body.data.imageModel` is accepted and ignored: runs use the member's
+  // image model. See `chatThreadCreateBodySchema` for when it can be removed.
   const pin = await resolveModelSelectionPin({
     db: writeDb,
     orgId: auth.orgId,
@@ -306,7 +247,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       ...chatThreadModelPinColumns(pin),
       modelSettings: effort.modelSettings,
       codexServiceTier,
-      selectedImageModel,
       connectorSelections,
       initialRemoteAccessOverrides,
     },

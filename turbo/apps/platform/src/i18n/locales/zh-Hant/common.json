@@ -1759,7 +1759,6 @@
         "slideCountRange": "{{range}} 頁"
       },
       "createWorkflow": "建立工作流",
-      "imageModelForThisChat": "本次對話使用的圖片模型",
       "message": "訊息",
       "modelForThisChat": "本次對話使用的模型",
       "placeholder": "讓我自動化工作流、管理任務…",
@@ -4935,8 +4934,6 @@
       "picker": {
         "builtInModel": "內建模型",
         "byokHelp": "使用你配置的服務商",
-        "categoryChat": "對話",
-        "categoryImage": "影像",
         "chatModels": "對話模型",
         "effort": "思考強度",
         "effortScale": {
@@ -4961,14 +4958,9 @@
           "lowest": "單次生成成本最低",
           "typical": "單次生成成本一般"
         },
-        "imageModels": "影像模型",
         "inheritDefault": "沿用組織預設",
         "loadError": "無法載入模型。",
         "loading": "正在載入模型…",
-        "menu": {
-          "backToModels": "返回模型列表",
-          "changeModel": "更改{{category}}模型，當前{{model}}"
-        },
         "models": "模型",
         "noConfiguredModels": "沒有已配置的模型",
         "priceTiers": {
@@ -5068,6 +5060,11 @@
     "paidTools": {
       "description": "這些工具會消耗內建積分，Okou 在執行任務時會依需要自動使用。關閉後，Okou 在執行過程中就不會再使用該工具。",
       "disabledForCreation": "{{tool}}已在你的內建工具設定中關閉。",
+      "imageModel": {
+        "description": "內建圖片生成會在你的任務中使用這個模型。",
+        "label": "模型",
+        "saveError": "圖片模型沒有儲存成功。"
+      },
       "loadError": "無法載入你的工具設定。",
       "loading": "正在載入你的工具設定…",
       "openSettings": "開啟內建工具設定",

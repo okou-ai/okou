@@ -1,29 +1,11 @@
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
-import type { ReactNode } from "react";
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChartNoAxesCombined, Globe, Route, X } from "lucide-react";
 import { Button } from "@okouai/ui";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@okouai/ui/components/ui/select";
-import {
-  IMAGE_MODEL_CONFIGS,
-  PUBLIC_IMAGE_MODELS,
-} from "@okouai/core/image-model-catalog";
-import type {
-  ComposerSignals,
-  ComposerImageModelSignals,
-} from "../../signals/okou-page/composer-signals.ts";
+import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { cn } from "@okouai/ui/lib/utils";
-import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
 import { COMPOSER_CREATE_ICONS } from "./slash-workflow.tsx";
-import { ImageModelBrandIcon } from "./components/model-provider-picker.tsx";
 
 const CREATE_CONTROL_FOCUS =
   "focus-visible:bg-state-hover focus-visible:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
@@ -140,99 +122,5 @@ export function ComposerTaskControls({
       <ComposerSelectedTask signals={signals} />
       <ComposerPresentationOptions signals={signals} />
     </>
-  );
-}
-
-function MediaModelSelect<Model extends string>({
-  value,
-  models,
-  label,
-  modelLabel,
-  modelIcon,
-  onChange,
-}: {
-  readonly value: Model;
-  readonly models: readonly Model[];
-  readonly label: string;
-  readonly modelLabel: (model: Model) => string;
-  readonly modelIcon: (model: Model) => ReactNode;
-  readonly onChange: (model: Model) => void;
-}) {
-  return (
-    // Keep adjacent composer actions tappable while the model menu is open.
-    <Select
-      value={value}
-      onValueChange={(next, details) => {
-        if (next === null || !models.includes(next)) {
-          details.cancel();
-          return;
-        }
-        // A replay of the effective display value must not create a thread pin.
-        // Explicit item presses still reach persistence, including save retries.
-        if (next === value && details.reason === "none") {
-          return;
-        }
-        onChange(next);
-      }}
-      modal={false}
-    >
-      <SelectTrigger
-        aria-label={label}
-        className="h-8 w-8 shrink-0 gap-1 border-transparent bg-transparent px-0 text-sm text-muted-foreground hover:bg-state-hover composer-wide:w-auto composer-wide:max-w-[11rem] composer-wide:px-2 [&>[data-slot=select-icon]]:hidden composer-wide:[&>[data-slot=select-icon]]:block"
-      >
-        <SelectValue>
-          <span className="flex min-w-0 items-center justify-center gap-1.5 composer-wide:justify-start">
-            {modelIcon(value)}
-            <span className="hidden truncate composer-wide:block">
-              {modelLabel(value)}
-            </span>
-          </span>
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent side="top" align="end">
-        {models.map((model) => {
-          return (
-            <SelectItem key={model} value={model}>
-              <span className="flex items-center gap-2">
-                {modelIcon(model)}
-                {modelLabel(model)}
-              </span>
-            </SelectItem>
-          );
-        })}
-      </SelectContent>
-    </Select>
-  );
-}
-
-export function ComposerCreateImageModelPicker({
-  model,
-}: {
-  readonly model: ComposerImageModelSignals;
-}) {
-  const { t } = useTranslation();
-  const value = useLastResolved(model.effectiveImageModel$);
-  const setModel = useSet(model.setImageModel$);
-  const signal = useGet(pageSignal$);
-  if (!value) {
-    return null;
-  }
-  return (
-    <MediaModelSelect
-      value={value}
-      models={PUBLIC_IMAGE_MODELS}
-      label={t(($) => {
-        return $.settings.models.picker.imageModels;
-      })}
-      modelLabel={(item) => {
-        return IMAGE_MODEL_CONFIGS[item].label;
-      }}
-      modelIcon={(item) => {
-        return <ImageModelBrandIcon model={item} />;
-      }}
-      onChange={(next) => {
-        detach(setModel(next, signal), Reason.DomCallback);
-      }}
-    />
   );
 }

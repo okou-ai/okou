@@ -19,7 +19,6 @@ import {
 } from "./paid-tools.ts";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -193,18 +192,6 @@ interface ComposerModelSignals extends ComposerModelUiSignals {
   readonly configureSelectedModel$: Command<Promise<void>, [AbortSignal]>;
 }
 
-/** Image model selected for a composer that supports image generation. */
-export interface ComposerImageModelSignals {
-  readonly selectedImageModel$: Computed<
-    ImageModel | null | Promise<ImageModel | null>
-  >;
-  readonly effectiveImageModel$: Computed<ImageModel | Promise<ImageModel>>;
-  readonly setImageModel$: Command<
-    Promise<void>,
-    [ImageModel | null, AbortSignal]
-  >;
-}
-
 interface ComposerComputerSignals {
   readonly computerUseHostId$: Computed<string | null>;
   readonly cloudBrowserEnabled$: Computed<boolean | Promise<boolean>>;
@@ -278,7 +265,6 @@ export interface ComposerSignals {
   readonly connector: ComposerConnectorSignals;
   readonly draft: ComposerDraftSignals;
   readonly model: ComposerModelSignals;
-  readonly imageModel?: ComposerImageModelSignals;
   readonly computer: ComposerComputerSignals;
   readonly submission: ComposerSubmissionSignals;
   readonly queue: ComposerQueueSignals;
@@ -310,7 +296,6 @@ interface CreateComposerSignalsOptions {
   readonly selectedModelOauthAvailable$: ComposerModelSignals["selectedModelOauthAvailable$"];
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
   readonly configureSelectedModel$: ComposerModelSignals["configureSelectedModel$"];
-  readonly imageModel?: ComposerImageModelSignals;
   readonly computerUseHostId$: ComposerComputerSignals["computerUseHostId$"];
   readonly cloudBrowserEnabled$: ComposerComputerSignals["cloudBrowserEnabled$"];
   readonly setComputerUseHostId$: ComposerComputerSignals["setComputerUseHostId$"];
@@ -560,12 +545,11 @@ function createPaidToolHints(
   create: ComposerCreateSignals,
   draft: DraftSignals,
   composer: WorkflowComposerSignals,
-  ui: ComposerUiSignalGroups,
 ) {
   return computed((get) => {
     const mode = get(create.mode$);
     const tools = new Set<AvailablePaidToolId>();
-    if (mode === "image" || get(ui.model.mediaModelCategory$) === "image") {
+    if (mode === "image") {
       tools.add("image-generation");
     }
     const selectedTemplate = get(draft.generationTemplate$);
@@ -613,9 +597,7 @@ export function createComposerSignals(
     },
     createComposerFeedbackModel(),
   );
-  const create = createComposerCreateSignals(workflowComposer, ui, {
-    image: options.imageModel !== undefined,
-  });
+  const create = createComposerCreateSignals(workflowComposer, ui);
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
     insertPrompt$: workflowComposer.replacePromptText$,
@@ -672,7 +654,7 @@ export function createComposerSignals(
     agentId: options.agentId,
     threadId: options.threadId,
     ...composerRemoteAccessSignals(options),
-    paidToolHints$: createPaidToolHints(create, draft, workflowComposer, ui),
+    paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
     editor: composerEditorSignals(workflowComposer, options),
@@ -696,7 +678,6 @@ export function createComposerSignals(
       setModelSelection$: options.setModelSelection$,
       configureSelectedModel$: options.configureSelectedModel$,
     },
-    ...(options.imageModel ? { imageModel: options.imageModel } : {}),
     computer: {
       ...createComputerUseUiSignals(),
       computerUseHostId$: options.computerUseHostId$,

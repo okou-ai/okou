@@ -1,7 +1,6 @@
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { ImageModel } from "@okouai/core/image-model-catalog";
 import {
   chatThreadsContract,
   type GenerationTemplateRequest,
@@ -79,7 +78,6 @@ interface SendNewThreadMessageRequest {
   editorDocument?: EditorDocumentSnapshot;
   computerUseHostId?: string | null;
   cloudBrowserEnabled?: boolean;
-  imageModel?: ImageModel;
   /** What the composer was set to make, for the thread this send creates. */
   composerTask?: ComposerTaskSelection;
   routeSearchParams?: URLSearchParams;
@@ -327,7 +325,6 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly modelSettings: ModelSettings;
       readonly computerUseHostId: string | null;
       readonly cloudBrowserEnabled: boolean;
-      readonly selectedImageModel: ImageModel | null;
     },
     signal: AbortSignal,
   ): void => {
@@ -346,8 +343,9 @@ const mintOptimisticThreadWithEvent$ = command(
       serviceTier: args.serviceTier,
       computerUseHostId: args.computerUseHostId,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
+      // Media models are a member setting; new threads never carry a pin.
       selectedVideoModel: null,
-      selectedImageModel: args.selectedImageModel,
+      selectedImageModel: null,
     });
   },
 );
@@ -360,7 +358,6 @@ async function createChatThread(
     readonly clientThreadId: string;
     readonly eventId: string;
     readonly modelSelection: ModelProviderSelection;
-    readonly imageModel?: ImageModel;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
     readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   },
@@ -382,7 +379,6 @@ async function createChatThread(
         ...(selectedEffort === undefined
           ? {}
           : { reasoningEffort: selectedEffort }),
-        ...(args.imageModel ? { imageModel: args.imageModel } : {}),
         ...(args.title ? { title: args.title } : {}),
         ...(args.connectorSelections?.length
           ? { connectorSelections: [...args.connectorSelections] }
@@ -424,9 +420,6 @@ const startNewChatThreadCreate$ = command(
     if (!modelSelection) {
       throw new Error("A model selection is required");
     }
-    // A blank thread carries no image model pin, so it follows the
-    // member's live default: changing that default later updates every thread
-    // that was never explicitly repinned, matching the run-model behavior.
     signal.throwIfAborted();
     await set(
       mintOptimisticThreadWithEvent$,
@@ -440,7 +433,6 @@ const startNewChatThreadCreate$ = command(
           modelSelection.codexServiceTier === "fast" ? "priority" : null,
         computerUseHostId: null,
         cloudBrowserEnabled: false,
-        selectedImageModel: null,
       },
       signal,
     );
@@ -528,9 +520,6 @@ const sendNewThreadMessage$ = command(
       return null;
     }
     const features = get(featureSwitch$);
-    // Pin only an explicit per-thread pick; an unpinned (null) thread follows
-    // the member's live default, so changing the default later updates it.
-    const imageModel = request.imageModel;
     const { annotatedUserMessage, optimisticUserMessage } =
       annotatedMessagesForNewThread(
         request,
@@ -564,7 +553,6 @@ const sendNewThreadMessage$ = command(
             : null,
         computerUseHostId: computerUseHostId ?? null,
         cloudBrowserEnabled: cloudBrowserEnabled ?? false,
-        selectedImageModel: imageModel ?? null,
       },
       signal,
     );
@@ -587,7 +575,6 @@ const sendNewThreadMessage$ = command(
         clientThreadId: threadId,
         eventId: chatThreadEventId,
         modelSelection: resolvedModelSelection,
-        imageModel,
         connectorSelections: request.connectorSelections,
         initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
       },
