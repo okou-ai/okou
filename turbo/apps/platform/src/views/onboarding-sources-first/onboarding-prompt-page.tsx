@@ -5,6 +5,7 @@ import { usePromptOnboarding } from "../onboarding/onboarding-make-page.tsx";
 import { ONBOARDING_TEXTAREA_CLASS } from "../onboarding/onboarding-shell.tsx";
 import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
+import { OnboardingCelebration } from "./onboarding-step-parts.tsx";
 
 /**
  * The prompt handoff in the source-first flow's look. A visitor who brings a
@@ -41,6 +42,7 @@ export function OnboardingSourcesFirstPromptPage() {
       primaryBusy={busy}
     >
       <div className="mx-auto flex w-full max-w-[520px] flex-col gap-3">
+        <OnboardingCelebration />
         <OnboardingConnectorSetup
           connectorSlugs={connectorSlugs}
           variant="sheet"
