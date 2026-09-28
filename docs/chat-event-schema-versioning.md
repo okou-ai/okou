@@ -38,8 +38,9 @@ from a matching HTTPS CIMD document; the document is self-asserted display
 metadata, not proof of which software is running. Invalid or unavailable
 metadata leaves the name absent and the authorized send succeeds. Replays
 preserve the original name and source; pre-cutover text-only input replays
-remain text-only for their 24-hour retry window. Existing messages are never
-inferred or retroactively labeled.
+remain text-only for their 24-hour retry window (remove the temporary retry
+branch after the last old-writer acceptance plus drain; #37276). Existing
+messages are never inferred or retroactively labeled.
 
 Before activating the writer, verify that the prepared reader is serving from
 every current API/App and history/snapshot path, enforce the Web client floor at

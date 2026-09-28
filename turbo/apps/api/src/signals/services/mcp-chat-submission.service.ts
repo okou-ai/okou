@@ -62,7 +62,8 @@ export async function resolveMcpSubmission(
     source.clientId === identity.clientId;
   // A text-only MCP input accepted by the old writer remains replayable for
   // its existing 24-hour window. It has no client identity to reconstruct;
-  // never add a source to it on a retry.
+  // never add a source to it on a retry. Remove after the last old-writer
+  // acceptance plus the retry window and bounded drain (see #37276).
   const legacyInput = isDeepStrictEqual(event.userMessage, {
     version: 1,
     parts: [{ type: "text", text: identity.text }],
