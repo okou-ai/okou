@@ -212,6 +212,7 @@ import {
   type BrowserLifecycleOptimisticEvents,
 } from "./browser-session-block.ts";
 import { createChatThreadContainerSignals } from "./chat-thread-container.ts";
+import { replyTurnKey } from "./chat-event-group-keys.ts";
 import {
   createThreadActivitySummarySignals,
   type ThinkingSummaries,
@@ -986,12 +987,10 @@ function withPendingAssistantGroup(
   if (lastActive !== undefined && lastActive.role !== "user") {
     return groups;
   }
-  const lastUserEventId =
-    lastActive?.events.at(-1)?.id ?? lastActive?.beginEventId ?? "thread";
   return [
     ...groups.slice(0, lastActiveIndex + 1),
     {
-      beginEventId: `pending-assistant:${lastUserEventId}`,
+      beginEventId: replyTurnKey(lastActive),
       role: "assistant",
       events: [],
     },
@@ -1233,14 +1232,20 @@ function enrichedChatEventsFromSemantic(
   entries: readonly SemanticChatEvent[],
 ): EnrichedChatEvent[] {
   return entries.map((entry) => {
-    const { event, isQueued, inputCreatedAt, userMessageRenderDocument } =
-      entry;
+    const {
+      event,
+      isQueued,
+      inputCreatedAt,
+      inputOriginId,
+      userMessageRenderDocument,
+    } = entry;
     return {
       ...event,
       tree: entry.tree,
       richContentError: entry.richContentError,
       isQueued,
       inputCreatedAt,
+      inputOriginId,
       userMessageRenderDocument,
     };
   });

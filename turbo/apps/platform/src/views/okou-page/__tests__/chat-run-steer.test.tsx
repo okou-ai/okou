@@ -263,6 +263,91 @@ test("Keep separate histories, artifacts and actions on both sides of a steer in
   expectTextOrder(RESULT, STEER, NEXT_RESULT);
 });
 
+function userBubble(text: string): HTMLElement {
+  const bubble = screen
+    .getByText(text)
+    .closest<HTMLElement>('[data-role="user"]');
+  if (!bubble) {
+    throw new Error(`Expected a user message for ${text}`);
+  }
+  return bubble;
+}
+
+function statusRow(): HTMLElement {
+  const row = document.querySelector<HTMLElement>(
+    '[data-role="assistant-thinking"]',
+  );
+  if (!row) {
+    throw new Error("Expected a run status row");
+  }
+  return row;
+}
+
+test("Keep the prompt and its status row mounted when a run claims the prompt", async () => {
+  const events: MockChatEventInput[] = [
+    promptEvent({
+      id: "queued-request",
+      seqId: 1,
+      text: "Review the API",
+      createdAt: createdAt(0),
+    }),
+  ];
+  installRunChat({ chatEvents: events });
+  await openChat(1);
+  await expect(screen.findByText("Waiting in queue...")).resolves.toBeVisible();
+  const prompt = userBubble("Review the API");
+  const row = statusRow();
+
+  events.push({
+    ...promptEvent({
+      id: RUN_A,
+      runId: RUN_A,
+      seqId: 2,
+      text: "Review the API",
+      createdAt: createdAt(1),
+    }),
+    revokesEventId: "queued-request",
+  });
+  publishRunUpdate();
+
+  await waitFor(() => {
+    expect(document.querySelector("[data-thinking-indicator]")).toBe(row);
+  });
+  expect(screen.queryByText("Waiting in queue...")).toBeNull();
+  expect(userBubble("Review the API")).toBe(prompt);
+  expect(screen.getAllByText("Review the API")).toHaveLength(1);
+});
+
+test("Keep the steer and its reply turn mounted through steer delivery and the first result", async () => {
+  const events = [...resultEvents(), pendingSteer()];
+  installRunChat({ chatEvents: events, activeRunIds: [RUN_A] });
+  await openChat(12);
+  expectWaitingAfter(STEER);
+  const steer = userBubble(STEER);
+  const row = statusRow();
+  const replyTurn = row.closest<HTMLElement>('[data-role="assistant"]');
+  expect(replyTurn).not.toBeNull();
+
+  mockNow(new Date(createdAt(20)), context.signal);
+  events.push(
+    deliveredSteer(),
+    assistantEvent({
+      id: "result-after-steer",
+      runId: RUN_A,
+      seqId: 6,
+      text: NEXT_RESULT,
+      createdAt: createdAt(18),
+    }),
+  );
+  publishRunUpdate();
+
+  await expect(screen.findByText(NEXT_RESULT)).resolves.toBeVisible();
+  expect(userBubble(STEER)).toBe(steer);
+  expect(assistantGroup(NEXT_RESULT)).toBe(replyTurn);
+  expect(statusRow()).toBe(row);
+  expectWaitingAfter(NEXT_RESULT);
+});
+
 test("Stop interrupts the live run and keeps the queued follow-up", async () => {
   const interrupted: string[] = [];
   const recalled: string[] = [];
