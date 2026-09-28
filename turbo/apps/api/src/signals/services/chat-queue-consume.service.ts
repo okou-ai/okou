@@ -1,7 +1,8 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -60,8 +61,7 @@ async function loadChatQueueHeadContext(
   const [thread] = await db
     .select({
       userId: chatThreads.userId,
-      // Every queue ingress requires an agent; deleting it cascades the thread.
-      agentId: sql<string>`${chatThreads.agentId}`,
+      agentId: chatThreads.agentId,
     })
     .from(chatThreads)
     .where(eq(chatThreads.id, head.chatThreadId))
@@ -85,7 +85,12 @@ async function loadChatQueueHeadContext(
   if (!event) {
     return null;
   }
-  return { ...event, userId: thread.userId, agentId: thread.agentId };
+  return {
+    ...event,
+    userId: thread.userId,
+    // Every queue ingress requires an agent; deleting it cascades the thread.
+    agentId: z.string().parse(thread.agentId),
+  };
 }
 
 function isForeignKeyViolation(error: unknown): boolean {
