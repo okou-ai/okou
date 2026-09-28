@@ -808,8 +808,8 @@ describe("CHAT-02: run-level model overrides", () => {
     await conversationChanges.done;
     await flushWaitUntilForTest();
 
-    // The failed preparation launched no run: the input still waits
-    // unconsumed in the thread.
+    // The failed preparation launched no run: the pick rejects the input
+    // like any other unexpected failure instead of leaving it queued.
     const events = await chat.listThreadEvents(actor, first.threadId);
     expect(
       userMessages(events.events).filter((message) => {
@@ -822,12 +822,21 @@ describe("CHAT-02: run-level model overrides", () => {
         id: retryEventId,
         eventType: "input.prompt",
       }),
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: retryEventId,
+        error: "internal_error",
+      }),
     ]);
     expect(
-      userMessages(events.events).find((message) => {
-        return message.id === retryEventId;
-      })?.runId,
-    ).toBeUndefined();
+      userMessages(events.events).some((message) => {
+        return (
+          (message.id === retryEventId ||
+            message.revokesEventId === retryEventId) &&
+          message.runId !== undefined
+        );
+      }),
+    ).toBeFalsy();
     await expect(
       readThreadSessionBinding(context, first.threadId),
     ).resolves.toStrictEqual(firstBinding);
@@ -1048,12 +1057,19 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 60_000);
 
   it("rejects a model outside workspace policy when the input is picked", async () => {
-    const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    await api.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Unavailable model selection agent",
-    });
+    // An entitled workspace, so the pick reaches the model policy check
+    // rather than stopping at credit admission. Its policy admits only
+    // Sonnet.
+    const { actor, agentId, providerId } = await entitledChatActor();
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
 
     // The send stores the selection as sent; the pick resolves its route.
     const threadId = randomUUID();
@@ -1061,7 +1077,7 @@ describe("CHAT-02: run-level model overrides", () => {
     const sent = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         prompt: "use a supported model outside workspace policy",
         clientThreadId: threadId,
         clientEventId,

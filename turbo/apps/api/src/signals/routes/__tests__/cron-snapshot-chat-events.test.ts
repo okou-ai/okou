@@ -103,6 +103,7 @@ async function sendNoCreditMessage(
   if (sent.status !== 201 || sent.body.runId !== null) {
     throw new Error("Expected a no-credit send without a run");
   }
+  await flushWaitUntilForTest();
   return sent.body.threadId;
 }
 
@@ -461,20 +462,11 @@ describe("cron snapshot chat events", () => {
     const agent = await bdd.createAgent(owner, {
       displayName: "Failure reason snapshot agent",
     });
-    const sent = await chat.requestSendEvent(
-      owner,
-      {
-        agentId: agent.agentId,
-        prompt: "Archive a structured failure reason",
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected a failure-reason chat run");
-    }
-    const { runId, threadId } = sent.body;
     await api.heartbeatRunner(runnerGroup);
+    const { runId, threadId } = await chat.sendAndLaunch(owner, {
+      agentId: agent.agentId,
+      prompt: "Archive a structured failure reason",
+    });
     let claim:
       | Awaited<ReturnType<typeof api.requestClaimRunnerJob>>
       | undefined;

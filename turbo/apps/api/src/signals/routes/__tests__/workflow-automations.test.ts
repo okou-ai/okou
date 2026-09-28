@@ -2813,6 +2813,8 @@ describe("okou workflow automations", () => {
       { syncToken: null },
       { syncToken: "calendar-sync-baseline" },
     ]);
+    // The dispatch only enqueues; its background pick launches the run.
+    await flushWaitUntilForTest();
     await runs.heartbeatRunner(runnerGroup);
     const job = await runs.pollRunner(runnerGroup);
     expect(job.body.job?.runId).toStrictEqual(expect.any(String));

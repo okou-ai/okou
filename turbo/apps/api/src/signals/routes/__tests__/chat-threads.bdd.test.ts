@@ -461,6 +461,8 @@ async function sendNoCreditMessageResult(
   if (!Number.isFinite(createdAt)) {
     throw new Error("Expected the no-credit send to return a timestamp");
   }
+  // The background pick rejects the input for insufficient credits.
+  await flushWaitUntilForTest();
   return { threadId: sent.body.threadId, createdAt };
 }
 

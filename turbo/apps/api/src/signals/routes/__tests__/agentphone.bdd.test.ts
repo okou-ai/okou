@@ -1196,20 +1196,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       }),
     ).toBeTruthy();
 
-    const webSend = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: thread.agentId,
-        threadId: thread.chatThreadId,
-        prompt: "continue from the web",
-      },
-      [201],
-    );
-    if (webSend.status !== 201 || !webSend.body.runId) {
-      throw new Error("Expected the web message to create a run");
-    }
+    const webSend = await chat.sendAndLaunch(actor, {
+      agentId: thread.agentId,
+      threadId: thread.chatThreadId,
+      prompt: "continue from the web",
+    });
     const webRun = await claimDispatchedRun(runnerGroup);
-    expect(webRun.runId).toBe(webSend.body.runId);
+    expect(webRun.runId).toBe(webSend.runId);
     const sendsBeforeWebCompletion = sends.messages.length;
     await completeSandboxRun(webRun.sandboxToken, webRun.runId, 0);
     expect(sends.messages).toHaveLength(sendsBeforeWebCompletion);

@@ -801,6 +801,9 @@ describe("CHAT-02: model-first provider policies", () => {
 
     releaseProvider.resolve(undefined);
     await waitForRunStatus(actor, run.runId, "completed");
+    // The completed run's slot release picks the waiting input in the
+    // background.
+    await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
       run.threadId,

@@ -1265,7 +1265,8 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(claims[0]).toMatchObject({
       runId: null,
       queueDisposition: "queued",
-      settlement: "unsettled",
+      settlement: "pre_run_failure",
+      settledAt: expect.any(Date),
     });
     const threadId = await briefThreadId(brief.actor, brief.workflowId);
     // The scoped fault raises after the real atomic persistence statement, so
@@ -1273,18 +1274,24 @@ describe("Morning Brief legacy schedule claim journal", () => {
     // binding rolled back with the launch transaction.
     await expect(briefRunIds(threadId)).resolves.toHaveLength(0);
 
-    // A failed launch is not a rejection: the occurrence stays queued, and
-    // once the failed pick's lease lapses the cron sweep launches it and binds
-    // the occurrence to its Run.
+    // A pick that fails unexpectedly rejects the occurrence's input, so a
+    // later cron sweep has nothing left to launch.
+    const queueEventId = claims[0]?.queueEventId;
+    const events = await workflowBdd.readThreadEvents(threadId);
+    expect(
+      events.filter((event) => {
+        return (
+          event.eventType === "input.rejected" &&
+          event.revokesEventId === queueEventId
+        );
+      }),
+    ).toHaveLength(1);
     mockNow(firedAt + 61_000);
     await sweepQueuedThread(threadId);
-    const [runId] = await briefRunIds(threadId);
-    expect(runId).toStrictEqual(expect.any(String));
+    await expect(briefRunIds(threadId)).resolves.toHaveLength(0);
     await expect(
       readMorningBriefScheduleClaimsFixture(brief.automationId),
-    ).resolves.toMatchObject([
-      { runId, queueDisposition: "claimed", settlement: "unsettled" },
-    ]);
+    ).resolves.toMatchObject([{ runId: null, settlement: "pre_run_failure" }]);
   });
 
   it("settles an occurrence whose Run fails in the same launch that created it", async () => {

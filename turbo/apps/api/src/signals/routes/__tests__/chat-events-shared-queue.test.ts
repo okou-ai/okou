@@ -1375,7 +1375,9 @@ describe("CHAT-02: shared user message queue", () => {
         return topic === "threadListChanged";
       },
     );
-    expect(threadListPublishes).toHaveLength(1);
+    // One publication for the enqueued input and one for the background pick
+    // that launched it; neither pending publication gated the other.
+    expect(threadListPublishes).toHaveLength(2);
     releasePublication.resolve(undefined);
     await cancelChatRun(actor, runId);
   }, 90_000);

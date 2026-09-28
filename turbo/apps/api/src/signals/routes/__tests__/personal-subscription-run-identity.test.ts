@@ -12,14 +12,13 @@ import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
-import { chatEventsRoutes } from "../chat-events";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import {
   modelProviderConnectionsMainContract,
@@ -103,6 +102,49 @@ function holdAnthropicInference() {
 }
 
 type Claim = Awaited<ReturnType<typeof runs.claimRunnerJob>>;
+
+/**
+ * Sends a prompt, lets the background pick run, and returns the rejection the
+ * pick appended in place of a run.
+ */
+async function sendRejectedAtPick(
+  actor: ApiTestUser,
+  body: {
+    readonly agentId: string;
+    readonly model: SupportedRunModel;
+    readonly prompt: string;
+  },
+) {
+  const chat = createChatFilesBddApi(context);
+  const clientEventId = randomUUID();
+  const sent = await chat.requestSendEvent(
+    actor,
+    { ...body, clientEventId },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected the chat send to be queued");
+  }
+  expect(sent.body.runId).toBeNull();
+  await flushWaitUntilForTest();
+  const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+  expect(
+    events.filter((event) => {
+      return event.runId !== undefined;
+    }),
+  ).toStrictEqual([]);
+  return {
+    rejected: events.find((event) => {
+      return (
+        event.eventType === "input.rejected" &&
+        event.revokesEventId === clientEventId
+      );
+    }),
+    guidance: events.find((event) => {
+      return event.eventType === "output.error";
+    }),
+  };
+}
 
 async function connect(
   actor: ApiTestUser,
@@ -190,15 +232,12 @@ async function fixture(type: SubscriptionType, accountsEnabled = true) {
     visibility: "private",
   });
   const start = async () => {
-    const sent = await createChatFilesBddApi(context).requestSendEvent(
-      actor,
-      { agentId: agent.agentId, prompt: "use my selected subscription", model },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected an admitted subscription run");
-    }
-    return sent.body.runId;
+    const sent = await createChatFilesBddApi(context).sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "use my selected subscription",
+      model,
+    });
+    return sent.runId;
   };
   const claim = async (runId: string) => {
     const state = await runs.readRun(actor, runId);
@@ -1020,15 +1059,10 @@ describe("exact subscription selection", () => {
           modelProviderId: null,
         },
       ]);
-      const sent = await createChatFilesBddApi(context).requestSendEvent(
+      const { runId } = await createChatFilesBddApi(context).sendAndLaunch(
         f.actor,
         { agentId: f.agentId, model, prompt: "use the requested model" },
-        [201],
       );
-      if (sent.status !== 201 || sent.body.runId === null) {
-        throw new Error("Expected an admitted subscription run");
-      }
-      const runId = sent.body.runId;
       onTestFinished(async () => {
         await runs.requestCancelRun(f.actor, runId, [200]);
       });
@@ -1280,16 +1314,12 @@ describe("personal priority connection boundaries", () => {
       });
       await runs.requestCancelRun(f.actor, runId, [200]);
       await support.deletePersonalModelProvider(f.actor, type, [204]);
-      const rejected = await createChatFilesBddApi(context).requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          model: f.model,
-          prompt: "missing organization API",
-        },
-        [400],
-      );
-      expect(rejected.status).toBe(400);
+      const { rejected } = await sendRejectedAtPick(f.actor, {
+        agentId: f.agentId,
+        model: f.model,
+        prompt: "missing organization API",
+      });
+      expect(rejected).toMatchObject({ error: "bad_request" });
     },
   );
 });
@@ -1359,30 +1389,43 @@ describe("member-effective model policy contract", () => {
     // Keep the API-first provider pending while inspecting route attribution;
     // explicit cancellation owns the run's terminal state in this case.
     const inference = holdAnthropicInference();
-    const sent = await createChatFilesBddApi(context).requestSendEvent(
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
       member,
       {
         agentId: otherAgent.agentId,
         model: f.model,
         prompt: "use my configured org API",
+        clientEventId,
       },
       [201],
     );
-    if (sent.status !== 201 || !sent.body.runId) {
+    if (sent.status !== 201) {
+      throw new Error("Expected the member send to be accepted");
+    }
+    // The background pick launches the run before its held inference starts.
+    await inference.entered;
+    const runId = (
+      await chat.listThreadEvents(member, sent.body.threadId)
+    ).events.find((event) => {
+      return (
+        event.eventType === "input.prompt" &&
+        event.revokesEventId === clientEventId
+      );
+    })?.runId;
+    if (runId === undefined) {
       throw new Error("Expected a member run");
     }
-    await inference.entered;
-    await expect(
-      readRunModelSourceFixture(sent.body.runId),
-    ).resolves.toMatchObject({
+    await expect(readRunModelSourceFixture(runId)).resolves.toMatchObject({
       modelProvider: "anthropic-api-key",
       modelProviderCredentialScope: "org",
       selectedModel: f.model,
     });
-    await runs.requestCancelRun(member, sent.body.runId, [200]);
+    await runs.requestCancelRun(member, runId, [200]);
     inference.release();
     await flushWaitUntilForTest();
-    await expect(runs.readRun(member, sent.body.runId)).resolves.toMatchObject({
+    await expect(runs.readRun(member, runId)).resolves.toMatchObject({
       status: "cancelled",
     });
   });
@@ -1402,27 +1445,18 @@ describe("member-effective model policy contract", () => {
         modelProviderId: configured.providerId,
       },
     ]);
-    const sent = await createChatFilesBddApi(context).requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agentId,
-        model: "gpt-5.6-luna",
-        prompt: "Claude cannot authorize this model",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected an organization run");
-    }
-    await expect(
-      readRunModelSourceFixture(sent.body.runId),
-    ).resolves.toMatchObject({
+    const sent = await createChatFilesBddApi(context).sendAndLaunch(f.actor, {
+      agentId: f.agentId,
+      model: "gpt-5.6-luna",
+      prompt: "Claude cannot authorize this model",
+    });
+    await expect(readRunModelSourceFixture(sent.runId)).resolves.toMatchObject({
       modelProvider: "openai-api-key",
       modelProviderId: configured.providerId,
       modelProviderCredentialScope: "org",
       selectedModel: "gpt-5.6-luna",
     });
-    await runs.requestCancelRun(f.actor, sent.body.runId, [200]);
+    await runs.requestCancelRun(f.actor, sent.runId, [200]);
   });
 
   it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
@@ -1430,19 +1464,13 @@ describe("member-effective model policy contract", () => {
     async (type) => {
       const f = await fixture(type, false);
       await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-      const sent = await createChatFilesBddApi(context).requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          model: f.model,
-          prompt: "organization policy requires my subscription",
-        },
-        [409],
-      );
-      expect(sent.status).toBe(409);
-      expect(sent.body).toMatchObject({
-        error: { message: expect.stringContaining("subscription") },
+      const { rejected, guidance } = await sendRejectedAtPick(f.actor, {
+        agentId: f.agentId,
+        model: f.model,
+        prompt: "organization policy requires my subscription",
       });
+      expect(rejected).toMatchObject({ error: "conflict" });
+      expect(guidance?.content).toContain("subscription");
       const policies = await createMiscRoutesApi(context).listModelPolicies(
         f.actor,
       );
@@ -1470,16 +1498,12 @@ describe("personal effective provider entitlement", () => {
         supportByok: state !== "byok-disabled",
         restrictedBuiltInModels: false,
       });
-      const sent = await createChatFilesBddApi(context).requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          model: f.model,
-          prompt: "personal requires plan authority",
-        },
-        [201],
-      );
-      expect(sent.body).toMatchObject({ runId: null });
+      const restricted = await sendRejectedAtPick(f.actor, {
+        agentId: f.agentId,
+        model: f.model,
+        prompt: "personal requires plan authority",
+      });
+      expect(restricted.rejected).toBeDefined();
       const policies = await createMiscRoutesApi(context).listModelPolicies(
         f.actor,
       );
@@ -1493,30 +1517,14 @@ describe("personal effective provider entitlement", () => {
         availability: "plan_restricted",
       });
       await deleteOrgPlanEntitlementFixture(f.actor.orgId);
-      // Missing canonical entitlement is an invariant error, not permission to run.
-      createRouteMocks(context).clerk.session(f.actor.userId, f.actor.orgId);
-      const missing = await createApp({
-        routes: chatEventsRoutes,
-        signal: context.signal,
-      }).request("/api/chat/events", {
-        method: "POST",
-        headers: {
-          authorization: "Bearer clerk-session",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          agentId: f.agentId,
-          model: f.model,
-          prompt: "missing plan authority",
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: "missing plan authority" }],
-          },
-          hasTextContent: true,
-          clientEventId: randomUUID(),
-        }),
+      // Missing canonical entitlement is an invariant error, not permission to
+      // run: the pick fails before consuming, so the input stays queued.
+      const missing = await sendRejectedAtPick(f.actor, {
+        agentId: f.agentId,
+        model: f.model,
+        prompt: "missing plan authority",
       });
-      expect(missing.status).toBe(500);
+      expect(missing.rejected).toBeUndefined();
     },
   );
 });
@@ -1787,16 +1795,12 @@ describe("personal priority gateway and session boundaries", () => {
         `Bearer ${f.connected.token}`,
       );
       await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-      const failed = await createChatFilesBddApi(context).requestSendEvent(
-        f.actor,
-        {
-          agentId: f.agentId,
-          model: f.model,
-          prompt: "the selected organization route must be valid",
-        },
-        [400],
-      );
-      expect(failed.status).toBe(400);
+      const { rejected } = await sendRejectedAtPick(f.actor, {
+        agentId: f.agentId,
+        model: f.model,
+        prompt: "the selected organization route must be valid",
+      });
+      expect(rejected).toMatchObject({ error: "bad_request" });
     },
   );
 
@@ -1804,20 +1808,17 @@ describe("personal priority gateway and session boundaries", () => {
     const f = await fixture("codex-oauth-token");
     await configureOrganizationApi(f, "custom");
     const chat = createChatFilesBddApi(context);
-    const sent = await chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agentId, model: f.model, prompt: "first account" },
-      [201],
-    );
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected the first run");
-    }
-    const first = await f.claim(sent.body.runId);
+    const sent = await chat.sendAndLaunch(f.actor, {
+      agentId: f.agentId,
+      model: f.model,
+      prompt: "first account",
+    });
+    const first = await f.claim(sent.runId);
     const queued = await chat.requestSendEvent(
       f.actor,
       {
         agentId: f.agentId,
-        threadId: sent.body.threadId,
+        threadId: sent.threadId,
         clientEventId: randomUUID(),
         prompt: "resolve my next account when the queued message becomes a run",
       },
@@ -1825,14 +1826,14 @@ describe("personal priority gateway and session boundaries", () => {
     );
     expect(queued.body).toMatchObject({ runId: null });
     const replacement = await connect(f.actor, f.type, "identity-b");
-    const history = Buffer.from(`subscription history ${sent.body.runId}`);
+    const history = Buffer.from(`subscription history ${sent.runId}`);
     const hash = createHash("sha256").update(history).digest("hex");
     context.sessionHistoryBlobs.set(hash, history);
     await createWebhookCallbackApi(
       context,
     ).requestAgentCheckpointPrepareHistory(
       {
-        runId: sent.body.runId,
+        runId: sent.runId,
         hash,
         rawSize: history.length,
         encodedSize: history.length,
@@ -1841,16 +1842,16 @@ describe("personal priority gateway and session boundaries", () => {
       { authorization: `Bearer ${first.sandboxToken}` },
       [200],
     );
-    await finish(f.actor, sent.body.runId, first, "completed");
+    await finish(f.actor, sent.runId, first, "completed");
     let nextRunId: string | undefined;
     await expect
       .poll(async () => {
-        const events = await chat.listThreadEvents(f.actor, sent.body.threadId);
+        const events = await chat.listThreadEvents(f.actor, sent.threadId);
         nextRunId = events.events.find((event) => {
           return (
             event.eventType === "input.prompt" &&
             event.runId &&
-            event.runId !== sent.body.runId
+            event.runId !== sent.runId
           );
         })?.runId;
         return nextRunId;
@@ -1871,10 +1872,8 @@ describe("personal priority gateway and session boundaries", () => {
       `Bearer ${replacement.token}`,
     );
     expect(second.cliAgentType).toBe("codex");
-    expect(second.resumeSession?.sessionId).toBe(
-      `subscription-${sent.body.runId}`,
-    );
-    const thread = await chat.readThread(f.actor, sent.body.threadId);
+    expect(second.resumeSession?.sessionId).toBe(`subscription-${sent.runId}`);
+    const thread = await chat.readThread(f.actor, sent.threadId);
     expect(thread).not.toHaveProperty("modelProviderId");
     expect(thread).not.toHaveProperty("modelProviderType");
   });

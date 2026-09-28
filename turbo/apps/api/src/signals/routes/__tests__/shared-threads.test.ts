@@ -265,22 +265,12 @@ describe("optional shared-thread titles", () => {
     const agent = await bdd.createAgent(actor, {
       displayName: "Forwarded share test",
     });
-    const source = await accept(
-      chat.requestSendEvent(
-        actor,
-        {
-          agentId: agent.agentId,
-          prompt: "Source message",
-        },
-        [201],
-      ),
-      [201],
-    );
-    if (!source.body.runId) {
-      throw new Error("Expected a source run");
-    }
+    const source = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "Source message",
+    });
     const sourceTitle = "Private source thread title";
-    await chat.renameThread(actor, source.body.threadId, sourceTitle);
+    await chat.renameThread(actor, source.threadId, sourceTitle);
     const targetThread = await chat.createThread(actor, {
       agentId: agent.agentId,
     });
@@ -298,29 +288,17 @@ describe("optional shared-thread titles", () => {
         },
       ],
     };
-    const forwarded = await accept(
-      chat.requestSendEvent(
-        actor,
-        {
-          agentId: agent.agentId,
-          threadId: targetThread.id,
-          prompt: "legacy fallback",
-          userMessage,
-          sourceRunId: source.body.runId,
-        },
-        [201],
-      ),
-      [201],
-    );
-    if (!forwarded.body.runId) {
-      throw new Error("Expected a forwarded run");
-    }
-    await flushWaitUntilForTest();
+    const forwarded = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      threadId: targetThread.id,
+      prompt: "legacy fallback",
+      userMessage,
+      sourceRunId: source.runId,
+    });
     const { events } = await chat.listThreadEvents(actor, targetThread.id);
     const eventId = events.find((event) => {
       return (
-        event.eventType === "input.prompt" &&
-        event.runId === forwarded.body.runId
+        event.eventType === "input.prompt" && event.runId === forwarded.runId
       );
     })?.id;
     if (!eventId) {
@@ -351,8 +329,8 @@ describe("optional shared-thread titles", () => {
     const publicData = JSON.stringify(shared.body);
     for (const privateValue of [
       sourceTitle,
-      source.body.runId,
-      source.body.threadId,
+      source.runId,
+      source.threadId,
       agent.agentId,
       mailId,
       sentId,

@@ -8101,10 +8101,14 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    if (!direct.body.runId) {
+    expect(direct.body.runId).toBeNull();
+    const firstRunId = await launchedAutomationRunId(
+      actor,
+      direct.body.chatThreadId,
+    );
+    if (!firstRunId) {
       throw new Error("Expected direct Official Workflow Run");
     }
-    const firstRunId = direct.body.runId;
     const firstState = await readOfficialWorkflowRunStateFixture(
       context,
       firstRunId,
@@ -9164,20 +9168,11 @@ describe("Official Workflow Run admission", () => {
     runs.acceptStorageDownloads();
 
     const sourceThread = await chat.createThread(actor, { agentId });
-    const source = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: sourceThread.id,
-        prompt: "source for idle Official launch",
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    if (source.status !== 201 || !source.body.runId) {
-      throw new Error("Expected a source Run on a separate chat thread");
-    }
-    const sourceRunId = source.body.runId;
+    const { runId: sourceRunId } = await chat.sendAndLaunch(actor, {
+      agentId,
+      threadId: sourceThread.id,
+      prompt: "source for idle Official launch",
+    });
     await runs.claimRunnerJob(sourceRunId);
     // No production endpoint mutates an existing Run's budget. Set up one
     // remaining hop; assert its effect through the real delegation route below.
@@ -9193,11 +9188,16 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    if (!launched.body.runId) {
+    expect(launched.body.runId).toBeNull();
+    const launchedRunId = await launchedAutomationRunId(
+      actor,
+      launched.body.chatThreadId,
+    );
+    if (!launchedRunId) {
       throw new Error("Expected the idle Official input to dispatch itself");
     }
     expect(launched.body.chatThreadId).not.toBe(sourceThread.id);
-    const claim = await runs.claimRunnerJob(launched.body.runId);
+    const claim = await runs.claimRunnerJob(launchedRunId);
     expect(claim.prompt).toBe(`/${installation.body.workflow.name}`);
     expect(claim.appendSystemPrompt).toContain(`SOURCE_RUN_ID: ${sourceRunId}`);
     expect(claim.appendSystemPrompt).toContain(
@@ -9206,16 +9206,31 @@ describe("Official Workflow Run admission", () => {
 
     const denied = await accept(
       workflowClient().run({
-        headers: officialQueueHeaders(actor, launched.body.runId, {
+        headers: officialQueueHeaders(actor, launchedRunId, {
           origin: "agent_run",
         }),
         extraHeaders: { origin: "https://app.okou.ai" },
         params: { workflowId: installation.body.workflow.id },
       }),
-      [409],
+      [200],
     );
-    expect(denied.body).toMatchObject({
-      error: { code: "AUTONOMY_BUDGET_EXHAUSTED" },
+    expect(denied.body.runId).toBeNull();
+    // The exhausted hop is rejected by the pick once the thread is idle.
+    await webhooks.requestAgentComplete(
+      { runId: launchedRunId, exitCode: 1 },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const rejections = (
+      await chat.listThreadEventRows(actor, denied.body.chatThreadId)
+    ).filter((event) => {
+      return event.eventType === "input.rejected";
+    });
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]).toMatchObject({
+      runId: null,
+      payload: { error: "autonomy_budget_exhausted" },
     });
   });
 
@@ -9267,10 +9282,14 @@ describe("Official Workflow Run admission", () => {
         }),
         [200],
       );
-      if (!first.body.runId) {
+      expect(first.body.runId).toBeNull();
+      const firstRunId = await launchedAutomationRunId(
+        actor,
+        first.body.chatThreadId,
+      );
+      if (!firstRunId) {
         throw new Error("Expected first Official Workflow Run");
       }
-      const firstRunId = first.body.runId;
       const firstClaim = await runs.claimRunnerJob(firstRunId);
       await setRunAutonomyBudgetFixture(context, firstRunId, 4);
       const beforeQueued = await chat.listThreadEvents(
@@ -9446,10 +9465,14 @@ describe("Official Workflow Run admission", () => {
         }),
         [200],
       );
-      if (!first.body.runId) {
+      expect(first.body.runId).toBeNull();
+      const firstRunId = await launchedAutomationRunId(
+        actor,
+        first.body.chatThreadId,
+      );
+      if (!firstRunId) {
         throw new Error("Expected first Official Workflow Run");
       }
-      const firstRunId = first.body.runId;
       await expect(runs.readRun(actor, firstRunId)).resolves.toMatchObject({
         status: "pending",
       });
@@ -9837,7 +9860,10 @@ describe("Official Workflow Run admission", () => {
       }),
       [200],
     );
-    const firstRunId = first.body.runId;
+    const firstRunId = await launchedAutomationRunId(
+      actor,
+      first.body.chatThreadId,
+    );
     if (!firstRunId) {
       throw new Error("Expected active queue blocker");
     }
@@ -9932,21 +9958,21 @@ describe("Official Workflow Run admission", () => {
     const replacements = after.filter((event) => {
       return event.revokesEventId === invalid.id;
     });
-    if (queueCase.outcome === "invariant") {
-      expect(replacements).toHaveLength(0);
-    } else {
-      expect(replacements).toHaveLength(1);
-      expect(replacements[0]).toMatchObject({
-        eventType: "input.rejected",
-        runId: null,
-        payload: {
-          error:
-            queueCase.outcome === "exhausted"
+    // A pick that cannot launch rejects the input instead of leaving it
+    // queued; an invariant failure surfaces as an internal error.
+    expect(replacements).toHaveLength(1);
+    expect(replacements[0]).toMatchObject({
+      eventType: "input.rejected",
+      runId: null,
+      payload: {
+        error:
+          queueCase.outcome === "invariant"
+            ? "internal_error"
+            : queueCase.outcome === "exhausted"
               ? "autonomy_budget_exhausted"
               : "autonomy_source_unavailable",
-        },
-      });
-    }
+      },
+    });
     await expect(
       readAgentRunFamilyCountsFixture(context, agentId),
     ).resolves.toStrictEqual(counts);

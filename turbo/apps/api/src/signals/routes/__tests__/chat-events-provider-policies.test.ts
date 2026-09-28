@@ -133,6 +133,7 @@ async function waitForPickedInput(
   threadId: string,
   clientEventId: string,
 ) {
+  await flushWaitUntilForTest();
   const messages = await waitForThreadMessages(actor, threadId, (items) => {
     return userMessages(items).some((message) => {
       return (

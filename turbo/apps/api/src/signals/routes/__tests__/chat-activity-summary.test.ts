@@ -103,20 +103,13 @@ async function fixture(prompt = "Prepare a launch checklist") {
       modelProviderId: providerId,
     },
   ]);
-  const sent = await chat.requestSendEvent(
-    actor,
-    {
-      agentId: agent.agentId,
-      model: "claude-fable-5-1",
-      prompt,
-      clientEventId: randomUUID(),
-    },
-    [201],
-  );
-  if (sent.status !== 201 || !sent.body.runId) {
-    throw new Error("Expected active run");
-  }
-  const run = { runId: sent.body.runId, threadId: sent.body.threadId };
+  const sent = await chat.sendAndLaunch(actor, {
+    agentId: agent.agentId,
+    model: "claude-fable-5-1",
+    prompt,
+    clientEventId: randomUUID(),
+  });
+  const run = { runId: sent.runId, threadId: sent.threadId };
   await flushWaitUntilForTest();
   await runs.heartbeatRunner(group);
   const claimed = await runs.claimRunnerJob(run.runId);
@@ -319,29 +312,21 @@ describe("thread activity summary", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    const next = await chat.requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agentId,
-        threadId: f.run.threadId,
-        prompt: "Prepare the next checklist",
-      },
-      [201],
-    );
-    if (next.status !== 201 || !next.body.runId) {
-      throw new Error("Expected replacement run identity");
-    }
-    await flushWaitUntilForTest();
+    const next = await chat.sendAndLaunch(f.actor, {
+      agentId: f.agentId,
+      threadId: f.run.threadId,
+      prompt: "Prepare the next checklist",
+    });
     await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
       status: "ineligible",
       messages: [],
     });
     await expect(
       summarize(f.actor, {
-        runId: next.body.runId,
-        threadId: next.body.threadId,
+        runId: next.runId,
+        threadId: next.threadId,
       }),
-    ).resolves.toMatchObject({ status: "available", runId: next.body.runId });
+    ).resolves.toMatchObject({ status: "available", runId: next.runId });
     expect(inputs).toHaveLength(2);
   });
 

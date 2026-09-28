@@ -7,11 +7,15 @@ import {
   SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
   SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
 } from "@okouai/api-contracts/contracts/runners";
+import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { readCanonicalAgentNameFixture } from "../../../test-fixtures/canonical-agent-authority";
 import { clearRunLaunchSnapshotFixture } from "../../../test-fixtures/agent-runs";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
@@ -20,6 +24,7 @@ import {
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import {
   createRunsApi,
@@ -57,6 +62,7 @@ const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const reads = createRunReadsApi(context);
+const chat = createChatFilesBddApi(context);
 const store = createStore();
 
 function mustOk<TResponse extends { readonly status: number }>(
@@ -92,6 +98,70 @@ async function createClaudeAgent(
       },
     },
   });
+}
+
+type ChatInputOutcome =
+  | { readonly kind: "launched"; readonly runId: string }
+  | { readonly kind: "queued" }
+  | { readonly kind: "rejected" };
+
+/** Send a chat prompt; the send only enqueues it for a background pick. */
+async function sendChatPrompt(
+  actor: ApiTestUser,
+  agentId: string,
+  prompt: string,
+): Promise<{ readonly threadId: string; readonly clientEventId: string }> {
+  const clientEventId = randomUUID();
+  const sent = await chat.requestSendEvent(
+    actor,
+    { agentId, prompt, clientEventId },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected the chat send to be accepted");
+  }
+  return { threadId: sent.body.threadId, clientEventId };
+}
+
+/** Finish background picks, then read what became of one chat input. */
+async function readChatInputOutcome(
+  actor: ApiTestUser,
+  input: { readonly threadId: string; readonly clientEventId: string },
+): Promise<ChatInputOutcome> {
+  await flushWaitUntilForTest();
+  const { events } = await chat.listThreadEvents(actor, input.threadId);
+  const successor = events.find((event) => {
+    return event.revokesEventId === input.clientEventId;
+  });
+  if (successor === undefined) {
+    return { kind: "queued" };
+  }
+  if (successor.eventType === "input.prompt" && successor.runId) {
+    return { kind: "launched", runId: successor.runId };
+  }
+  return { kind: "rejected" };
+}
+
+/** Run the real cron pick sweep scoped to one thread. */
+async function sweepQueuedThread(threadId: string): Promise<void> {
+  await accept(
+    setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
+      testCronCleanupSandboxesStateContract,
+    ).cleanup({
+      body: { chatThreadIds: [threadId], runIds: [], exportJobIds: [] },
+    }),
+    [200],
+  );
+}
+
+async function createChatAgent(actor: ApiTestUser): Promise<string> {
+  await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
+  const agent = await bdd.createAgent(actor, {
+    displayName: "BDD chat admission agent",
+    description: "Chat input picked at the concurrency limit.",
+    visibility: "private",
+  });
+  return agent.agentId;
 }
 
 function sandboxHeaders(token: string): { readonly authorization: string } {
@@ -413,7 +483,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     const other = await createClaudeAgent(actor, "bdd-other");
     const memberCompose = await createClaudeAgent(member, "bdd-member");
 
-    await api.ensureOrgModelProvider(actor);
+    await api.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD run reads agent",
       description: "Direct create at the concurrency limit.",
@@ -593,25 +663,32 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       isOwner: false,
     });
 
-    const rejected = await api.requestCreateRun(
+    // A full org keeps new chat input queued instead of launching it.
+    const overLimit = await sendChatPrompt(
       actor,
-      {
-        agentId: agent.agentId,
-        prompt: "run over the concurrency limit",
-        modelProvider: "anthropic-api-key",
-      },
-      [429],
+      agent.agentId,
+      "run over the concurrency limit",
     );
-    expect(rejected.body).toMatchObject({
-      error: { code: "CONCURRENT_RUN_LIMIT" },
-    });
+    await expect(readChatInputOutcome(actor, overLimit)).resolves.toStrictEqual(
+      { kind: "queued" },
+    );
     await api.requestCancelRun(actor, runA.runId, [200]);
     await api.requestCancelRun(member, runM.runId, [200]);
     // Started runs still occupy capacity until the runner reports completion.
     expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(2);
+    await expect(readChatInputOutcome(actor, overLimit)).resolves.toStrictEqual(
+      { kind: "queued" },
+    );
     await finishCancelledRun(runA.runId, claimA.sandboxToken);
     await finishCancelledRun(runM.runId, claimM.sandboxToken);
 
+    // Released slots pick the queued input.
+    const picked = await readChatInputOutcome(actor, overLimit);
+    if (picked.kind !== "launched") {
+      throw new Error("Expected released capacity to launch the queued input");
+    }
+    expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
+    await api.requestCancelRun(actor, picked.runId, [200]);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
@@ -1373,43 +1450,32 @@ describe("RUN-01: direct run admission boundaries", () => {
     );
   });
 
-  it("treats the one-run limit as soft for concurrent direct runs and enforces it afterwards", async () => {
+  it("treats the one-run limit as soft for concurrent chat picks and enforces it afterwards", async () => {
     const actor = await entitledActor();
-    const compose = await createClaudeAgent(actor, "bdd-admission-race");
+    const agentId = await createChatAgent(actor);
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
 
-    const attempts = await Promise.all([
-      reads.requestCreateDirectRun(
-        actor,
-        {
-          agentId: compose.agentId,
-          prompt: "concurrent admission candidate one",
-        },
-        [201, 429],
-      ),
-      reads.requestCreateDirectRun(
-        actor,
-        {
-          agentId: compose.agentId,
-          prompt: "concurrent admission candidate two",
-        },
-        [201, 429],
-      ),
+    const inputs = await Promise.all([
+      sendChatPrompt(actor, agentId, "concurrent admission candidate one"),
+      sendChatPrompt(actor, agentId, "concurrent admission candidate two"),
     ]);
 
-    // Admission counts active runs without an org lock, so simultaneous
-    // launches may both be admitted. At least one always is, a rejection is
-    // the documented limit error, and no run is queued.
-    const acceptedRunIds: string[] = [];
-    for (const attempt of attempts) {
-      if (attempt.status === 201) {
-        acceptedRunIds.push(attempt.body.runId);
-      } else {
-        expectApiError(attempt.body);
-        expect(attempt.body.error.code).toBe("CONCURRENT_RUN_LIMIT");
-      }
+    // Picks count active runs without an org lock, so simultaneous picks may
+    // both launch. At least one always does, and the limit only keeps the
+    // other queued; it never rejects the input.
+    const outcomes: ChatInputOutcome[] = [];
+    for (const input of inputs) {
+      outcomes.push(await readChatInputOutcome(actor, input));
     }
-    expect(acceptedRunIds.length).toBeGreaterThanOrEqual(1);
+    const launchedRunIds = outcomes.flatMap((outcome) => {
+      return outcome.kind === "launched" ? [outcome.runId] : [];
+    });
+    expect(launchedRunIds.length).toBeGreaterThanOrEqual(1);
+    expect(
+      outcomes.every((outcome) => {
+        return outcome.kind !== "rejected";
+      }),
+    ).toBeTruthy();
     const pending = await reads.requestListAgentRuns(
       actor,
       { status: "pending" },
@@ -1421,31 +1487,28 @@ describe("RUN-01: direct run admission boundaries", () => {
           return run.id;
         })
         .sort(),
-    ).toStrictEqual([...acceptedRunIds].sort());
-    const queued = await reads.requestListAgentRuns(
-      actor,
-      { status: "queued" },
-      [200],
-    );
-    expect(queued.body.runs).toStrictEqual([]);
+    ).toStrictEqual([...launchedRunIds].sort());
 
-    // A later launch observes the admitted runs and is rejected.
-    const limited = await reads.requestCreateDirectRun(
+    // A later input observes the launched runs and stays queued.
+    const limited = await sendChatPrompt(
       actor,
-      { agentId: compose.agentId, prompt: "sequential admission after race" },
-      [429],
+      agentId,
+      "sequential admission after race",
     );
-    expectApiError(limited.body);
-    expect(limited.body.error.code).toBe("CONCURRENT_RUN_LIMIT");
+    await expect(readChatInputOutcome(actor, limited)).resolves.toStrictEqual({
+      kind: "queued",
+    });
 
-    for (const runId of acceptedRunIds) {
+    for (const runId of launchedRunIds) {
       await api.requestCancelRun(actor, runId, [200]);
     }
+    await flushWaitUntilForTest();
   });
 
-  it("enforces direct-run concurrency until the cap is disabled", async () => {
+  it("enforces chat pick concurrency until the cap is disabled", async () => {
     const actor = await entitledActor();
     const compose = await createClaudeAgent(actor, "bdd-admission");
+    const agentId = await createChatAgent(actor);
 
     const first = await api.createDirectRun(actor, {
       agentId: compose.agentId,
@@ -1459,24 +1522,22 @@ describe("RUN-01: direct run admission boundaries", () => {
       agentId: compose.agentId,
       prompt: "third concurrent run",
     });
-    const limited = await reads.requestCreateDirectRun(
+    const limited = await sendChatPrompt(
       actor,
-      { agentId: compose.agentId, prompt: "fourth concurrent run" },
-      [429],
+      agentId,
+      "fourth concurrent run",
     );
-    expectApiError(limited.body);
-    expect(limited.body.error.code).toBe("CONCURRENT_RUN_LIMIT");
+    await expect(readChatInputOutcome(actor, limited)).resolves.toStrictEqual({
+      kind: "queued",
+    });
 
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
-    const uncapped = await reads.requestCreateDirectRun(
-      actor,
-      { agentId: compose.agentId, prompt: "uncapped fourth run" },
-      [201],
-    );
-    if (uncapped.status !== 201) {
-      throw new Error("Expected the uncapped run create to succeed");
+    await sweepQueuedThread(limited.threadId);
+    const uncapped = await readChatInputOutcome(actor, limited);
+    if (uncapped.kind !== "launched") {
+      throw new Error("Expected the uncapped pick to launch the queued input");
     }
-    await api.requestCancelRun(actor, uncapped.body.runId, [200]);
+    await api.requestCancelRun(actor, uncapped.runId, [200]);
     await api.requestCancelRun(actor, first.runId, [200]);
     await api.requestCancelRun(actor, second.runId, [200]);
     await api.requestCancelRun(actor, third.runId, [200]);

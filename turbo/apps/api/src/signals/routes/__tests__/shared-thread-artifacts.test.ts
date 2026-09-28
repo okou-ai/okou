@@ -328,16 +328,10 @@ async function fixture() {
     content: string,
     omitted = "Unselected private information",
   ) {
-    const sent = await accept(
-      chat.requestSendEvent(
-        actor,
-        { agentId: agent.agentId, prompt: content },
-        [201],
-      ),
-      [201],
-    );
-    await flushWaitUntilForTest();
-    const { threadId, runId } = sent.body;
+    const { threadId, runId } = await chat.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: content,
+    });
     await chat.requestSendEvent(
       actor,
       { agentId: agent.agentId, threadId, prompt: omitted },
@@ -350,9 +344,6 @@ async function fixture() {
     });
     if (!event) {
       throw new Error("Expected selected message");
-    }
-    if (!runId) {
-      throw new Error("Expected a run for the selected message");
     }
     return { threadId, runId, eventId: event.id, content };
   }

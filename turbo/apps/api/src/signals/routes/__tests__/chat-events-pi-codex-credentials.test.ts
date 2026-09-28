@@ -264,7 +264,7 @@ describe("Pi Codex credential ciphertext snapshot", () => {
       expect.objectContaining({
         error: "conflict",
         content:
-          "The selected subscription account was disconnected. Reconnect it before starting another run.",
+          "The selected subscription account is unavailable. Reconnect it before starting another run.",
       }),
     ]);
     expect(JSON.stringify(messages.events)).not.toContain(f.identity);
