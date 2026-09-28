@@ -1509,6 +1509,9 @@
         "pendingState": "{{amount}} pendientes",
         "rejected": {
           "alreadyRedeemed": "Publicación ya usada",
+          "authorAlreadyRewarded": "Cuenta ya recompensada",
+          "authorUnavailable": "No se pudo verificar el autor",
+          "officialAccount": "Las publicaciones oficiales de {{assistantName}} no cuentan",
           "postMustMention": "Debe mencionar a {{assistantName}}"
         },
         "rewardsNote": "Las recompensas caducan 7 días después de recibirlas. El registro diario se reinicia a las 00:00 UTC. Las de Slack van a la organización; las demás, a tu saldo personal.",

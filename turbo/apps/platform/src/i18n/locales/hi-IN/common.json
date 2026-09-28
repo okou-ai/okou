@@ -1485,6 +1485,9 @@
         "pendingState": "{{amount}} लंबित",
         "rejected": {
           "alreadyRedeemed": "पोस्ट पहले इस्तेमाल हो चुकी",
+          "authorAlreadyRewarded": "खाते को पहले ही इनाम मिल चुका",
+          "authorUnavailable": "लेखक की पुष्टि नहीं हो सकी",
+          "officialAccount": "{{assistantName}} की आधिकारिक पोस्ट मान्य नहीं",
           "postMustMention": "{{assistantName}} का ज़िक्र ज़रूरी"
         },
         "rewardsNote": "इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। चेक इन 00:00 UTC पर रीसेट होता है। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",

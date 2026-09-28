@@ -1509,6 +1509,9 @@
         "pendingState": "{{amount}} pendentes",
         "rejected": {
           "alreadyRedeemed": "Publicação já usada",
+          "authorAlreadyRewarded": "Conta já recompensada",
+          "authorUnavailable": "Não foi possível verificar o autor",
+          "officialAccount": "Publicações oficiais do {{assistantName}} não contam",
           "postMustMention": "Precisa mencionar o {{assistantName}}"
         },
         "rewardsNote": "As recompensas expiram 7 dias após a concessão. O check-in reinicia às 00:00 UTC. As do Slack vão para a organização; as demais, para seu saldo pessoal.",

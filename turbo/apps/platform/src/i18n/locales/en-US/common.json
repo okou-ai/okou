@@ -1485,6 +1485,9 @@
         "pendingState": "{{amount}} pending",
         "rejected": {
           "alreadyRedeemed": "Post already used",
+          "authorAlreadyRewarded": "Account already rewarded",
+          "authorUnavailable": "Couldn't verify the author",
+          "officialAccount": "Official {{assistantName}} posts don't count",
           "postMustMention": "Must mention {{assistantName}}"
         },
         "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",

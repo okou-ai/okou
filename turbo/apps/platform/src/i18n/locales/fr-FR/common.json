@@ -1509,6 +1509,9 @@
         "pendingState": "{{amount}} en attente",
         "rejected": {
           "alreadyRedeemed": "Publication déjà utilisée",
+          "authorAlreadyRewarded": "Compte déjà récompensé",
+          "authorUnavailable": "Auteur non vérifiable",
+          "officialAccount": "Les publications officielles de {{assistantName}} ne comptent pas",
           "postMustMention": "Doit mentionner {{assistantName}}"
         },
         "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",

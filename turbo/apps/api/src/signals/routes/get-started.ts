@@ -129,6 +129,8 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (!pending || pending.status !== "pending") {
       return pending;
     }
+    // Grants made before author reward keys were keyed by post. Newer grants
+    // are keyed by author, which the review rejects as author_already_rewarded.
     const [used] = await tx
       .select({ id: getStartedClaims.id })
       .from(getStartedClaims)

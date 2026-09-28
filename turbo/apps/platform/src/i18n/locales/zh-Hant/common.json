@@ -1484,6 +1484,9 @@
         "pendingState": "{{amount}} 待發放",
         "rejected": {
           "alreadyRedeemed": "貼文已被使用",
+          "authorAlreadyRewarded": "該帳號已領取過獎勵",
+          "authorUnavailable": "無法確認作者",
+          "officialAccount": "{{assistantName}}官方貼文不計入",
           "postMustMention": "需要提到{{assistantName}}"
         },
         "rewardsNote": "獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",

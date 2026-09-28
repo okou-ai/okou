@@ -1485,6 +1485,9 @@
         "pendingState": "{{amount}} ausstehend",
         "rejected": {
           "alreadyRedeemed": "Post bereits verwendet",
+          "authorAlreadyRewarded": "Konto bereits belohnt",
+          "authorUnavailable": "Autor nicht überprüfbar",
+          "officialAccount": "Offizielle {{assistantName}}-Posts zählen nicht",
           "postMustMention": "Muss {{assistantName}} erwähnen"
         },
         "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",

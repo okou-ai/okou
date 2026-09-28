@@ -1484,6 +1484,9 @@
         "pendingState": "{{amount}} tertunda",
         "rejected": {
           "alreadyRedeemed": "Postingan sudah dipakai",
+          "authorAlreadyRewarded": "Akun sudah diberi hadiah",
+          "authorUnavailable": "Penulis tidak dapat diverifikasi",
+          "officialAccount": "Postingan resmi {{assistantName}} tidak dihitung",
           "postMustMention": "Harus menyebut {{assistantName}}"
         },
         "rewardsNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",

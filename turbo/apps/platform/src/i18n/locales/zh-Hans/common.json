@@ -1484,6 +1484,9 @@
         "pendingState": "{{amount}} 待发放",
         "rejected": {
           "alreadyRedeemed": "帖子已被使用",
+          "authorAlreadyRewarded": "该账号已领取过奖励",
+          "authorUnavailable": "无法确认作者",
+          "officialAccount": "{{assistantName}}官方帖子不计入",
           "postMustMention": "需要提到{{assistantName}}"
         },
         "rewardsNote": "奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
