@@ -6731,19 +6731,15 @@ export function registerSharedFeishuConversationTests(): void {
         "second concurrent Feishu task",
         "queued Feishu task",
       ] as const;
-      const queuedMessageId = `om_${randomUUID()}`;
-      for (const [index, prompt] of prompts.entries()) {
+      // A connection has one main DM thread; independent reply threads are
+      // needed here to exercise organization capacity instead of thread FIFO.
+      for (const prompt of prompts) {
         await postEvent(
           callbackUrl,
           directMessage(appId, prompt, "ou_feishu_user", {
-            chatId: `oc_feishu_concurrent_${index}`,
-            ...(index === 2
-              ? {
-                  messageId: queuedMessageId,
-                  rootId: `om_${randomUUID()}`,
-                  threadId: `omt_${randomUUID()}`,
-                }
-              : {}),
+            chatId: "oc_feishu_concurrent",
+            rootId: `om_${randomUUID()}`,
+            threadId: `omt_${randomUUID()}`,
           }),
           {
             encrypted: true,
