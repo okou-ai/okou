@@ -5,10 +5,7 @@ import { getBillingStatus } from "../../lib/api/domains/billing";
 import { getOrg } from "../../lib/api/domains/orgs";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getPlatformOrigin } from "../../lib/platform-url";
-import {
-  currentPlanAllowsVideo,
-  currentPlanCanBuyCredits,
-} from "../shared/billing-capabilities";
+import { currentPlanCanBuyCredits } from "../shared/billing-capabilities";
 import { planUpgradeUrl } from "../shared/billing-links";
 
 export const creditCommand = new Command()
@@ -32,13 +29,6 @@ export const creditCommand = new Command()
       console.log(
         `  Plan can purchase credits: ${
           planCanBuyCredits ? chalk.green("yes") : chalk.yellow("no")
-        }`,
-      );
-      console.log(
-        `  Built-in video generation: ${
-          currentPlanAllowsVideo(billing)
-            ? chalk.green("available")
-            : chalk.yellow("unavailable")
         }`,
       );
       console.log(

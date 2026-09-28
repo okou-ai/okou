@@ -2,7 +2,6 @@ import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reason
 import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
-import type { VideoModel } from "@okouai/core/video-model-catalog";
 import {
   chatThreadsContract,
   type GenerationTemplateRequest,
@@ -81,7 +80,6 @@ interface SendNewThreadMessageRequest {
   computerUseHostId?: string | null;
   cloudBrowserEnabled?: boolean;
   imageModel?: ImageModel;
-  videoModel?: VideoModel;
   /** What the composer was set to make, for the thread this send creates. */
   composerTask?: ComposerTaskSelection;
   routeSearchParams?: URLSearchParams;
@@ -330,7 +328,6 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly computerUseHostId: string | null;
       readonly cloudBrowserEnabled: boolean;
       readonly selectedImageModel: ImageModel | null;
-      readonly selectedVideoModel: VideoModel | null;
     },
     signal: AbortSignal,
   ): void => {
@@ -349,7 +346,7 @@ const mintOptimisticThreadWithEvent$ = command(
       serviceTier: args.serviceTier,
       computerUseHostId: args.computerUseHostId,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
-      selectedVideoModel: args.selectedVideoModel,
+      selectedVideoModel: null,
       selectedImageModel: args.selectedImageModel,
     });
   },
@@ -364,7 +361,6 @@ async function createChatThread(
     readonly eventId: string;
     readonly modelSelection: ModelProviderSelection;
     readonly imageModel?: ImageModel;
-    readonly videoModel?: VideoModel;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
     readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   },
@@ -387,7 +383,6 @@ async function createChatThread(
           ? {}
           : { reasoningEffort: selectedEffort }),
         ...(args.imageModel ? { imageModel: args.imageModel } : {}),
-        ...(args.videoModel ? { videoModel: args.videoModel } : {}),
         ...(args.title ? { title: args.title } : {}),
         ...(args.connectorSelections?.length
           ? { connectorSelections: [...args.connectorSelections] }
@@ -429,7 +424,7 @@ const startNewChatThreadCreate$ = command(
     if (!modelSelection) {
       throw new Error("A model selection is required");
     }
-    // A blank thread carries no image or video model pin, so it follows the
+    // A blank thread carries no image model pin, so it follows the
     // member's live default: changing that default later updates every thread
     // that was never explicitly repinned, matching the run-model behavior.
     signal.throwIfAborted();
@@ -446,7 +441,6 @@ const startNewChatThreadCreate$ = command(
         computerUseHostId: null,
         cloudBrowserEnabled: false,
         selectedImageModel: null,
-        selectedVideoModel: null,
       },
       signal,
     );
@@ -537,7 +531,6 @@ const sendNewThreadMessage$ = command(
     // Pin only an explicit per-thread pick; an unpinned (null) thread follows
     // the member's live default, so changing the default later updates it.
     const imageModel = request.imageModel;
-    const videoModel = request.videoModel;
     const { annotatedUserMessage, optimisticUserMessage } =
       annotatedMessagesForNewThread(
         request,
@@ -572,7 +565,6 @@ const sendNewThreadMessage$ = command(
         computerUseHostId: computerUseHostId ?? null,
         cloudBrowserEnabled: cloudBrowserEnabled ?? false,
         selectedImageModel: imageModel ?? null,
-        selectedVideoModel: videoModel ?? null,
       },
       signal,
     );
@@ -596,7 +588,6 @@ const sendNewThreadMessage$ = command(
         eventId: chatThreadEventId,
         modelSelection: resolvedModelSelection,
         imageModel,
-        videoModel,
         connectorSelections: request.connectorSelections,
         initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
       },

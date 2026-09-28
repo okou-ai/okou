@@ -102,21 +102,9 @@
             "description": "Optimieren und transformieren Sie Bilder in großen Mengen",
             "title": "Cloudinary-Medienoptimierer"
           },
-          "elevenlabs-audio-content": {
-            "description": "Sprachkommentar aus in Drive gespeicherten Notion-Artikeln",
-            "title": "Audioinhalte von ElevenLabs"
-          },
           "fal-ai-image-generation": {
             "description": "Generieren Sie Produktbilder aus Beschreibungen in Notion",
             "title": "Fal AI-Bilderstellung"
-          },
-          "heygen-video-from-script": {
-            "description": "Das Notion-Skript wird mit einem Team-Ping zu einem HeyGen-Video",
-            "title": "HeyGen-Video aus dem Drehbuch"
-          },
-          "runway-video-from-brief": {
-            "description": "Erstellen Sie kurze Videos aus einem kreativen Briefing",
-            "title": "Runway-Video von Briefing"
           }
         },
         "title": "Kreativ"

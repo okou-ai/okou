@@ -77,7 +77,7 @@ describe("okou doctor credit command", () => {
     expect(output()).toContain("Tier: pro");
     expect(output()).toContain("Available credits: 12,345");
     expect(output()).toContain("Plan can purchase credits: yes");
-    expect(output()).toContain("Built-in video generation: available");
+    expect(output()).not.toContain("Built-in video generation:");
     expect(output()).toContain("Auto-recharge: enabled");
     expect(output()).toContain("Threshold: 5,000");
     expect(output()).toContain("Amount: 20,000");
@@ -119,7 +119,7 @@ describe("okou doctor credit command", () => {
     await runDoctorCredit();
 
     expect(output()).toContain("Plan can purchase credits: no");
-    expect(output()).toContain("Built-in video generation: unavailable");
+    expect(output()).not.toContain("Built-in video generation:");
     expect(output()).toContain("This workspace plan cannot buy credits");
     expect(output()).toContain(
       "http://localhost:3000/?settings=billing&billingView=plans",

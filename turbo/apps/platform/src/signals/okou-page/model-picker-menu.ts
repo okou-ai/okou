@@ -1,7 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { onRef } from "../utils.ts";
 
-type ModelPickerCategory = "chat" | "image" | "video";
+type ModelPickerCategory = "chat" | "image";
 
 type ModelPickerMenuPage =
   | { readonly kind: "overview" }

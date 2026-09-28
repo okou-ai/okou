@@ -1,9 +1,3 @@
-import {
-  findVideoTemplate,
-  listVideoTemplates,
-  type VideoTemplateRegistryEntry,
-} from "./resource-registry";
-
 export interface VideoTemplateItem {
   readonly id: string;
   readonly slug: string;
@@ -13,7 +7,6 @@ export interface VideoTemplateItem {
   readonly cardPreviewImage?: string;
   readonly previewVideo: string;
   readonly previewWebm: string;
-  readonly sourcePath: string;
 }
 
 const VIDEO_TEMPLATE_PREVIEW_IMAGES: Readonly<Record<string, string>> = {
@@ -108,54 +101,111 @@ const VIDEO_TEMPLATE_PREVIEW_WEBMS: Readonly<Record<string, string>> = {
     "https://static.vm0.io/vm0/artifact-templates/video/a6dab950-dddc-4116-9bc3-624265b35c12/sports-performance-ad.webm",
 };
 
-function videoTemplateSlug(entry: VideoTemplateRegistryEntry): string {
-  return entry.id.replace(/^video-template:/u, "");
-}
+// Display metadata for immutable chat history. Retired templates are never
+// offered by the resource registry, composer, onboarding, or generation API.
+const RETIRED_VIDEO_TEMPLATES = [
+  {
+    slug: "epic-grandeur",
+    title: "Epic Grandeur",
+    description:
+      "Large-format epic cinematic video style with wide framing, aerial scale, golden backlight, and awe-struck tone.",
+  },
+  {
+    slug: "gourmet-documentary",
+    title: "Gourmet Documentary",
+    description:
+      "Sensory culinary-documentary video style with macro food texture, steam, warm backlight, and artisan hands.",
+  },
+  {
+    slug: "luxury-product",
+    title: "Luxury Product Macro",
+    description:
+      "Dark luxury product macro video style with premium material detail, black studio, pinpoint highlights, and refined reveals.",
+  },
+  {
+    slug: "shortform-viral",
+    title: "Shortform Viral",
+    description:
+      "Short-form viral video style with vertical framing, fast hook, handheld creator energy, bright color, and quick rhythm.",
+  },
+  {
+    slug: "fashion-editorial",
+    title: "Fashion Editorial",
+    description:
+      "High-fashion editorial video style with cold desaturated grade, strong silhouettes, luxury texture, and deliberate pose.",
+  },
+  {
+    slug: "sports-performance-ad",
+    title: "Sports Performance Ad",
+    description:
+      "Sports performance advertising video style with athlete effort, gear close-ups, impact rhythm, and dramatic rim light.",
+  },
+  {
+    slug: "japanese-wabi-sabi",
+    title: "Japanese Wabi-Sabi",
+    description:
+      "Japanese wabi-sabi lifestyle video style with natural imperfection, warm soft light, negative space, and quiet mood.",
+  },
+  {
+    slug: "hand-drawn-fantasy-anime",
+    title: "Hand Drawn Fantasy Anime",
+    description:
+      "Hand-drawn fantasy animation video style with painterly 2D backgrounds, expressive characters, and gentle wonder.",
+  },
+  {
+    slug: "cyberpunk-anime",
+    title: "Cyberpunk Anime",
+    description:
+      "2D cyberpunk anime video style with neon megacity atmosphere, rain-slick streets, cel shading, and melancholic mood.",
+  },
+  {
+    slug: "chinese-ink-art",
+    title: "Chinese Ink Painting",
+    description:
+      "Chinese ink-wash video style with monochrome brush texture, white space, mist, and calm classical-poetry mood.",
+  },
+] as const;
 
 function toVideoTemplateItem(
-  entry: VideoTemplateRegistryEntry,
+  entry: (typeof RETIRED_VIDEO_TEMPLATES)[number],
 ): VideoTemplateItem {
-  const slug = videoTemplateSlug(entry);
+  const { slug, title, description } = entry;
+  const id = `video-template:${slug}`;
   const previewImage = VIDEO_TEMPLATE_PREVIEW_IMAGES[slug];
-  if (!previewImage) {
-    throw new Error(`Missing video template preview image: ${entry.id}`);
-  }
   const cardPreviewImage = VIDEO_TEMPLATE_CARD_PREVIEW_IMAGES[slug];
-  if (!cardPreviewImage) {
-    throw new Error(`Missing video template card preview image: ${entry.id}`);
-  }
   const previewVideo = VIDEO_TEMPLATE_PREVIEW_VIDEOS[slug];
-  if (!previewVideo) {
-    throw new Error(`Missing video template preview video: ${entry.id}`);
-  }
   const previewWebm = VIDEO_TEMPLATE_PREVIEW_WEBMS[slug];
-  if (!previewWebm) {
-    throw new Error(`Missing video template preview webm: ${entry.id}`);
+  if (!previewImage || !cardPreviewImage || !previewVideo || !previewWebm) {
+    throw new Error(`Missing historical video template preview: ${id}`);
   }
   return {
-    id: entry.id,
+    id,
     slug,
-    title: entry.name,
-    description: entry.description,
+    title,
+    description,
     previewImage,
     cardPreviewImage,
     previewVideo,
     previewWebm,
-    sourcePath: entry.source.path,
   };
 }
 
+/** Historical display metadata; not an available template catalog. */
 export const VIDEO_TEMPLATE_ITEMS: readonly VideoTemplateItem[] =
-  listVideoTemplates().map(toVideoTemplateItem);
+  RETIRED_VIDEO_TEMPLATES.map(toVideoTemplateItem);
+
+const RETIRED_VIDEO_TEMPLATE_ALIASES: Readonly<Record<string, string>> = {
+  "athletic-motivation": "sports-performance-ad",
+  "imax-epic-cinematic": "epic-grandeur",
+  "luxury-watch-product": "luxury-product",
+};
 
 export function findVideoTemplateItem(
   id: string,
 ): VideoTemplateItem | undefined {
-  const entry = findVideoTemplate(id);
-  if (!entry) {
-    return undefined;
-  }
+  const slug = id.replace(/^video-template:/u, "");
+  const canonicalSlug = RETIRED_VIDEO_TEMPLATE_ALIASES[slug] ?? slug;
   return VIDEO_TEMPLATE_ITEMS.find((item) => {
-    return item.id === entry.id;
+    return item.slug === canonicalSlug;
   });
 }

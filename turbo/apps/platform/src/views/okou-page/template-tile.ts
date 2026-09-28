@@ -1,6 +1,6 @@
 /**
  * The template gallery's tile chrome, shared by every picker that shows a wall
- * of covers: presentation, illustration, website and creative video. Keeping
+ * of covers: presentation, illustration and website. Keeping
  * the class lists in one module is what stops a new gallery from inventing a
  * parallel card with its own scrim, play affordance and caption placement.
  */

@@ -624,23 +624,8 @@
       "all": "All",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Back to avatars",
       "categories": "Template categories",
       "category": "Template category",
-      "chooseVoice": "Choose a voice for {{title}}",
-      "filters": {
-        "age": "Age",
-        "all": "All",
-        "aspectRatio": "Aspect ratio",
-        "clear": "Clear",
-        "ethnicity": "Ethnicity",
-        "gender": "Gender",
-        "language": "Language",
-        "scene": "Scene",
-        "style": "Style",
-        "title": "Filters",
-        "useCase": "Use case"
-      },
       "fullPreview": "{{title}} website full preview",
       "htmlPreview": "{{title}} HTML preview",
       "illustration": "Illustration",
@@ -651,25 +636,18 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import template",
       "multiAccent": "Multi-accent",
-      "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
       "noMatches": "No matches",
       "placeholder": "{{title}} website preview placeholder",
-      "playVideo": "Play video template preview {{title}}",
-      "previewAvatarVideo": "Preview avatar video {{title}}",
       "previewCurrentSlide": "Preview {{title}} at current slide",
       "previewSlide": "Preview slide {{slideNumber}}",
-      "previewVoice": "Preview voice {{title}}",
       "previewWebsite": "Preview website template {{title}}",
       "previousSlide": "Preview previous slide",
-      "recommended": "Recommended",
       "renameImportedTemplate": "Rename template",
       "searchConnector": "Search templates",
       "searchConnectors": "Search templates",
       "selectStyle": "Select style {{style}}",
       "selectTemplate": "Select template {{title}}",
-      "selectVideo": "Select video template {{title}}",
-      "selectVoice": "Select voice {{title}}",
       "selectWebsite": "Select website template {{title}}",
       "selectWorkflow": "Select workflow template {{title}}",
       "showVariant": "Show variant {{variantNumber}}",
@@ -702,7 +680,6 @@
       "tryDifferentSearch": "Try a different search.",
       "use": "Use",
       "useThisTemplate": "Use this template",
-      "viewVideoPlans": "View plans for video template {{title}}",
       "visibility": {
         "change": "Change",
         "changeLabel": "Change template visibility",
@@ -1189,7 +1166,6 @@
         "moreConnectorsChannels": "More custom connectors & channel integration",
         "supportEmail": "Email support",
         "supportPriority": "Priority support",
-        "videoGeneration": "Video and avatar generation",
         "voiceInput": "Voice input, {{requests}} requests and {{minutes}} minutes a day",
         "webhookAutomations": "Start a run from any system with one webhook"
       },
@@ -1782,7 +1758,6 @@
         "addTemplate": "Add template",
         "imagePlaceholder": "Describe the image you want to create…",
         "presentationPlaceholder": "What is your presentation about?",
-        "settingsAdjusted": "Some video settings were adjusted for this model",
         "slideCount": "Slide count",
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
@@ -1803,7 +1778,6 @@
       "temporarilySwitchTo": "Temporarily switch to",
       "threadSuggestions": "Chat threads",
       "useForFutureChats": "Use this for future chats",
-      "videoModelForThisChat": "Video model for this chat",
       "workflows": {
         "empty": "No matching workflows",
         "loading": "Loading workflows...",
@@ -2859,23 +2833,12 @@
       "importedLoading": "Loading uploaded templates…",
       "importedUnavailable": "Uploaded templates are temporarily unavailable.",
       "previewTemplate": "Preview template {{title}}",
-      "previewVideo": "Preview video template {{title}}",
       "previewWebsite": "Preview website template {{title}}",
       "previewWorkflow": "Preview workflow template {{title}}",
       "removeTemplate": "Remove template {{title}}",
-      "removeVideo": "Remove video template {{title}}",
       "removeWebsite": "Remove website template {{title}}",
       "removeWorkflow": "Remove workflow template {{title}}",
-      "retry": "Retry",
-      "videoOptions": "Video options",
-      "videoOptionsAudio": "Generate audio",
-      "videoOptionsAudioOff": "Audio off",
-      "videoOptionsAudioOn": "Audio on",
-      "videoOptionsDuration": "Duration",
-      "videoOptionsLabel": "Video options {{spec}}",
-      "videoOptionsModel": "Model",
-      "videoOptionsRatio": "Ratio",
-      "videoOptionsResolution": "Resolution"
+      "retry": "Retry"
     },
     "thread": {
       "ariaLabel": "Chat thread",
@@ -5065,7 +5028,6 @@
         "byokHelp": "Uses your configured provider",
         "categoryChat": "Chat",
         "categoryImage": "Image",
-        "categoryVideo": "Video",
         "chatModels": "Chat models",
         "effort": "Effort",
         "effortScale": {
@@ -5112,8 +5074,7 @@
           "claudeCodeOauth": "Claude Code (OAuth token)",
           "deepseek": "Deepseek"
         },
-        "standard": "Standard",
-        "videoModels": "Video models"
+        "standard": "Standard"
       },
       "policies": {
         "actionsFor": "Actions for {{model}}",
@@ -5209,10 +5170,6 @@
       "timing": "Changes apply to future runs. Tasks already running or prepared may keep their previous settings.",
       "title": "Built-in tools",
       "tools": {
-        "avatar-video-generation": {
-          "description": "Create talking-avatar videos.",
-          "name": "Avatar video generation"
-        },
         "finance": {
           "description": "Look up companies, quotes, and market data.",
           "name": "Financial data"
@@ -5244,14 +5201,6 @@
         "social": {
           "description": "Research public social posts and collect media.",
           "name": "Social research"
-        },
-        "video-generation": {
-          "description": "Create videos with built-in models.",
-          "name": "Video generation"
-        },
-        "voice-generation": {
-          "description": "Create speech with built-in voices.",
-          "name": "Voice generation"
         },
         "web-search": {
           "description": "Find current information on the web.",

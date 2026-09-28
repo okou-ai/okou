@@ -5,18 +5,13 @@ import type {
   GenerationTemplateRequest,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  avatarVideoContract,
-  type AvatarVideoAvatar,
-  type AvatarVideoVoice,
-} from "@okouai/api-contracts/contracts/avatar-video";
-import {
   presentationTemplatesContract,
   type PresentationTemplateCatalogEntry,
   type PresentationTemplatePreviewAsset,
   type PresentationTemplateSummary,
 } from "@okouai/api-contracts/contracts/presentation-templates";
 import { HttpResponse } from "msw";
-import { expect, vi } from "vitest";
+import { expect } from "vitest";
 
 import { click } from "../../../__tests__/page-helper.ts";
 import {
@@ -77,16 +72,6 @@ export function mockTemplateChat(options?: {
     },
   });
   mockPresentationTemplateLibrary([]);
-  context.mocks.api(avatarVideoContract.avatars, ({ respond }) => {
-    return respond(200, { avatars: [] });
-  });
-  context.mocks.api(avatarVideoContract.voices, ({ respond }) => {
-    return respond(200, {
-      voices: [],
-      hasMore: false,
-      filterOptions: { languages: [], useCases: [] },
-    });
-  });
 
   return {
     sentMessages,
@@ -100,7 +85,7 @@ export function mockTemplateChat(options?: {
 
 export async function openTemplatePicker(
   user: ReturnType<typeof userEvent.setup>,
-  category?: "Presentation" | "Website" | "Illustration" | "Video" | "Avatar",
+  category?: "Presentation" | "Website" | "Illustration",
 ): Promise<HTMLElement> {
   click(
     await waitFor(() => {
@@ -313,99 +298,6 @@ export function mockPresentationTemplateLibrary(
       templates = [...nextTemplates];
     },
   };
-}
-
-export function mockAvatarCatalog(options: {
-  readonly avatars: readonly AvatarVideoAvatar[];
-  readonly additionalAvatars?: readonly AvatarVideoAvatar[];
-  readonly voices?: readonly AvatarVideoVoice[];
-  readonly additionalVoices?: readonly AvatarVideoVoice[];
-  readonly recommendedVoiceId?: string;
-}): void {
-  context.mocks.api(avatarVideoContract.avatars, ({ query, respond }) => {
-    const source =
-      query.page === 2 ? (options.additionalAvatars ?? []) : options.avatars;
-    const avatars = source.filter((avatar) => {
-      const aspectRatioMatches =
-        query.aspectRatio === undefined ||
-        (query.aspectRatio === "portrait" && avatar.aspectRatio === 1) ||
-        (query.aspectRatio === "landscape" && avatar.aspectRatio === 2);
-      return (
-        aspectRatioMatches &&
-        (query.style === undefined || avatar.style === query.style) &&
-        (query.gender === undefined || avatar.gender === query.gender) &&
-        (query.age === undefined || avatar.age === query.age)
-      );
-    });
-    return respond(200, { avatars });
-  });
-  context.mocks.api(avatarVideoContract.voices, ({ query, respond }) => {
-    const source =
-      query.page === 2
-        ? (options.additionalVoices ?? [])
-        : (options.voices ?? []);
-    const voices = source.filter((voice) => {
-      return (
-        (query.language === undefined || voice.language === query.language) &&
-        (query.gender === undefined || voice.gender === query.gender) &&
-        (query.age === undefined || voice.age === query.age) &&
-        (query.useCase === undefined || voice.useCase === query.useCase)
-      );
-    });
-    const recommended = voices.find((voice) => {
-      return voice.id === options.recommendedVoiceId;
-    });
-    return respond(200, {
-      voices: recommended
-        ? [
-            recommended,
-            ...voices.filter((voice) => {
-              return voice !== recommended;
-            }),
-          ]
-        : voices,
-      hasMore: query.page !== 2 && (options.additionalVoices?.length ?? 0) > 0,
-      filterOptions: {
-        languages: ["English", "French"],
-        useCases: ["Narration", "Social"],
-      },
-    });
-  });
-}
-
-export function mockPlayableMedia(): {
-  readonly play: ReturnType<typeof vi.fn>;
-  readonly pause: ReturnType<typeof vi.fn>;
-} {
-  const playing = new WeakSet<HTMLMediaElement>();
-  const pausedGetter = vi
-    .spyOn(HTMLMediaElement.prototype, "paused", "get")
-    .mockImplementation(function (this: HTMLMediaElement) {
-      return !playing.has(this);
-    });
-  const play = vi
-    .spyOn(HTMLMediaElement.prototype, "play")
-    .mockImplementation(function (this: HTMLMediaElement) {
-      playing.add(this);
-      this.dispatchEvent(new Event("play"));
-      return Promise.resolve();
-    });
-  const pause = vi
-    .spyOn(HTMLMediaElement.prototype, "pause")
-    .mockImplementation(function (this: HTMLMediaElement) {
-      playing.delete(this);
-      this.dispatchEvent(new Event("pause"));
-    });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      pausedGetter.mockRestore();
-      play.mockRestore();
-      pause.mockRestore();
-    },
-    { once: true },
-  );
-  return { play, pause };
 }
 
 export async function expectInlineTemplate(

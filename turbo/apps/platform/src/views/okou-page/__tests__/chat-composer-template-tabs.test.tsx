@@ -36,16 +36,8 @@ async function openPicker({
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Test User",
-        createdAt: new Date("2026-09-22T00:00:00.000Z"),
-      },
-    },
     featureSwitches: {
       [FeatureSwitchKey.CustomTemplates]: customEnabled,
-      [FeatureSwitchKey.NewUserVideoPickers]: false,
     },
   });
   const dialog = await openTemplatePicker(user);

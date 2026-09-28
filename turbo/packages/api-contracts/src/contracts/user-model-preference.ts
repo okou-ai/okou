@@ -3,7 +3,6 @@ import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
 import { imageModelIdSchema } from "./image-models";
 import { supportedRunModelSchema } from "./model-providers";
-import { videoModelIdSchema } from "./video-models";
 import { chatThreadServiceTierSchema } from "./chat-threads";
 import {
   modelSettingsPatchSchema,
@@ -16,7 +15,6 @@ export const userModelPreferenceResponseSchema = z.object({
   selectedModel: supportedRunModelSchema.nullable(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   modelSettings: modelSettingsSchema.default({}),
-  selectedVideoModel: videoModelIdSchema.nullable(),
   selectedImageModel: imageModelIdSchema.nullable(),
   updatedAt: z.string().nullable(),
 });
@@ -31,15 +29,11 @@ export const updateUserModelPreferenceRequestSchema = z.object({
   /** Patch only the named model; omitted preserves every stored model setting. */
   modelSettingsPatch: modelSettingsPatchSchema.optional(),
   /**
-   * Partial-update semantics, not a rollout fallback: the preferences are
-   * independent, so absent means "leave it alone" and null clears it. This is
-   * permanent — a caller that only changes the run model must never blank the
-   * media defaults — and it matches how `updateUserPreferences$` already treats
-   * its own optional fields. An older bundle keeping its stored defaults falls
-   * out of the same rule rather than needing its own branch.
+   * Partial-update semantics, not a rollout fallback: absent means "leave it
+   * alone" and null clears it, so a caller that only changes the run model
+   * never blanks the image default. Older App builds may still send the
+   * retired `selectedVideoModel`; the object schema strips it.
    */
-  selectedVideoModel: videoModelIdSchema.nullable().optional(),
-  /** Omitted preserves the image default; explicit null clears it. */
   selectedImageModel: imageModelIdSchema.nullable().optional(),
 });
 

@@ -137,9 +137,6 @@ const updateUserModelPreferenceInner$ = command(
     signal.throwIfAborted();
     const kinds: UserPreferenceChangedPayload["kinds"] = [
       "defaultModel",
-      ...("selectedVideoModel" in body.data
-        ? (["defaultVideoModel"] as const)
-        : []),
       ...("selectedImageModel" in body.data
         ? (["defaultImageModel"] as const)
         : []),

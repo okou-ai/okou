@@ -49,7 +49,6 @@ test("Reconcile inline feedback when the selected model is unavailable", async (
     selectedModel: "gpt-5.6-sol",
     serviceTier: null,
     modelSettings: {},
-    selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: "2026-07-31T10:00:00.000Z",
   });

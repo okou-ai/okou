@@ -11,8 +11,6 @@ import {
   imageIoGenerateContract,
   imageIoGenerateResponseSchema,
 } from "@okouai/api-contracts/contracts/image-io-generate";
-import { voiceIoSpeechContract } from "@okouai/api-contracts/contracts/voice-io-speech";
-import { videoIoGenerateContract } from "@okouai/api-contracts/contracts/video-io-generate";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import {
   webhookBuiltInGenerationBytePlusContract,
@@ -26,14 +24,13 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+
 import { server } from "../../../mocks/server";
 import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
+import { seedPreviouslyAcceptedVideoJob } from "../../../test-fixtures/previously-accepted-video-job";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { builtInGenerationRoutes } from "../built-in-generation";
 import { imageIoGenerateRoutes } from "../image-io-generate";
-import { voiceIoSpeechRoutes } from "../voice-io-speech";
-import { videoIoGenerateRoutes } from "../video-io-generate";
 import { webFileUrlRoutes } from "../web-file-url";
 import { webDownloadRoutes } from "../web-download";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
@@ -147,8 +144,6 @@ async function createFixture(privateArtifacts: boolean) {
       ...webhooksBuiltInGenerationRoutes,
       ...webFileUrlRoutes,
       ...webDownloadRoutes,
-      ...voiceIoSpeechRoutes,
-      ...videoIoGenerateRoutes,
     ],
   });
   return {
@@ -159,51 +154,6 @@ async function createFixture(privateArtifacts: boolean) {
 }
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
-
-async function enableVideoGeneration(fixture: Fixture) {
-  webhooks.configureStripeBillingEnv();
-  context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
-  const grantedAt = now();
-  const expiresAt = new Date(grantedAt + 7 * 24 * 60 * 60 * 1000);
-  await webhooks.postStripeEvent(
-    {
-      id: `evt_${randomUUID()}`,
-      type: "invoice.paid",
-      data: {
-        object: {
-          id: `in_${randomUUID()}`,
-          customer: `cus_${randomUUID()}`,
-          metadata: {
-            type: "atom_grant",
-            purpose: "atom_grant",
-            source: "atom_entitlement",
-            orgId: fixture.actor.orgId,
-            tier: "team",
-            duration: "7d",
-            atomGrantExpiresAt: expiresAt.toISOString(),
-          },
-          parent: null,
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_${randomUUID()}`,
-                quantity: 1,
-                price: { id: "price_bdd_atom_grant" },
-                period: {
-                  start: Math.floor(grantedAt / 1000),
-                  end: Math.floor(expiresAt.getTime() / 1000),
-                },
-                parent: { type: "invoice_item_details" },
-              },
-            ],
-          },
-        },
-      },
-    },
-    [200],
-  );
-}
 
 async function queueImage(
   fixture: Fixture,
@@ -513,56 +463,33 @@ describe("managed artifact privacy", () => {
     "redacts private input signatures from $provider failure delivery (private output=$privateArtifacts)",
     async ({ provider, privateArtifacts }) => {
       const fixture = await createFixture(true);
-      await enableVideoGeneration(fixture);
       const image = await completeImage(fixture, await queueImage(fixture));
       await billing.updateFeatureSwitches(fixture.actor, {
         [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
       });
-      let providerInput: unknown;
-      server.use(
-        http.post(
-          provider === "byteplus"
-            ? "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks"
-            : "https://api.minimax.io/v2/video_generation",
-          async ({ request }) => {
-            providerInput = await request.json();
-            return HttpResponse.json(
-              provider === "byteplus"
-                ? { id: randomUUID() }
-                : { task_id: randomUUID() },
-            );
-          },
-        ),
-      );
-      const queued = await accept(
-        fixture.api(videoIoGenerateContract).post({
-          headers,
-          body: {
+      // The production API can no longer admit video generation. Recreate
+      // only the snapshot an old API already accepted to verify safe delivery.
+      const { generationId, callbackPath } =
+        await seedPreviouslyAcceptedVideoJob({
+          ...fixture.actor,
+          provider: provider === "byteplus" ? "byteplus" : "minimax",
+          providerJobId: randomUUID(),
+          privateArtifacts,
+          request: {
             prompt: "Animate the private reference",
             model:
               provider === "byteplus" ? "dreamina-seedance-2.0" : "minimax-h3",
             duration: "5s",
             imageUrls: [image.url],
           },
-        }),
-        [202],
-      );
-      expect(JSON.stringify(providerInput)).toContain(signedReference);
-      if (
-        typeof providerInput !== "object" ||
-        providerInput === null ||
-        !("callback_url" in providerInput) ||
-        typeof providerInput.callback_url !== "string"
-      ) {
-        throw new Error("Expected provider callback URL");
-      }
-      const token = new URL(providerInput.callback_url).searchParams.get(
-        "token",
-      );
+        });
+      const token = new URL(
+        callbackPath,
+        "https://example.com",
+      ).searchParams.get("token");
       if (!token) {
         throw new Error("Expected provider callback token");
       }
-      const generationId = queued.body.generationId;
       const error = {
         code: "InputDownloadFailed",
         message: `Could not download ${signedReference}`,
@@ -702,58 +629,5 @@ describe("managed artifact privacy", () => {
         return object.ContentType === "image/jpeg";
       })?.Bucket,
     ).toBe(privateBucket);
-  });
-
-  it("captures private synchronous speech before the provider completes", async () => {
-    const fixture = await createFixture(true);
-    const wav = Buffer.alloc(44 + 48_000);
-    wav.write("RIFF", 0);
-    wav.writeUInt32LE(wav.length - 8, 4);
-    wav.write("WAVEfmt ", 8);
-    wav.writeUInt32LE(16, 16);
-    wav.writeUInt16LE(1, 20);
-    wav.writeUInt16LE(1, 22);
-    wav.writeUInt32LE(24_000, 24);
-    wav.writeUInt32LE(48_000, 28);
-    wav.writeUInt16LE(2, 32);
-    wav.writeUInt16LE(16, 34);
-    wav.write("data", 36);
-    wav.writeUInt32LE(48_000, 40);
-    server.use(
-      http.post("https://api.openai.com/v1/audio/speech", async () => {
-        await billing.updateFeatureSwitches(fixture.actor, {
-          [FeatureSwitchKey.PrivateArtifacts]: false,
-        });
-        return new HttpResponse(wav, {
-          headers: { "Content-Type": "audio/wav" },
-        });
-      }),
-    );
-    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
-    const speech = await accept(
-      fixture.api(voiceIoSpeechContract).postPrivate({
-        headers,
-        body: {
-          text: "Private speech",
-          voice: "alloy",
-          requirePrivateArtifact: true,
-        },
-      }),
-      [200],
-    );
-    expect(speech.body.url).toContain("/artifacts/");
-    expect(speech.body.privateArtifacts).toBeTruthy();
-    expect(
-      [...objects.values()].find((object) => {
-        return object.ContentType === "audio/wav";
-      })?.Bucket,
-    ).toBe(privateBucket);
-    const preview = await accept(
-      fixture
-        .api(webFilesContract)
-        .fileUrl({ headers, query: { file_id: speech.body.id } }),
-      [200],
-    );
-    expect(preview.body.publicUrl).toBeNull();
   });
 });

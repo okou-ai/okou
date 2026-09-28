@@ -41,10 +41,6 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  VIDEO_MODEL_CONFIGS,
-  type VideoModel,
-} from "@okouai/core/video-model-catalog";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { useTranslation } from "react-i18next";
 import { orgModelPolicies$ } from "../../../signals/external/org-model-policies";
@@ -69,7 +65,6 @@ import {
   type ModelPriceTier,
 } from "./settings/provider-ui-config";
 import { ProviderIcon } from "./settings/provider-icons";
-import { settingsIconAssetUrl } from "./settings/settings-icon-assets";
 
 import type { ModelPickerMenuSignals } from "../../../signals/okou-page/model-picker-menu.ts";
 import { PriceTierBadge } from "./model-picker-price-tier.tsx";
@@ -97,12 +92,12 @@ export interface MediaModelPanelOption {
   readonly onSelect: () => void;
 }
 
-export type MediaModelCategoryId = "image" | "video";
+export type MediaModelCategoryId = "image";
 
 export interface MediaModelPanelCategory {
   readonly id: MediaModelCategoryId;
   readonly label: string;
-  /** Short form for the flyout's type rail, where three types share a column. */
+  /** Short form for the flyout's type rail, where the types share a column. */
   readonly tabLabel: string;
   readonly options: readonly MediaModelPanelOption[];
 }
@@ -700,8 +695,6 @@ const IDEOGRAM_ICON_PATH =
 const GEMINI_ICON_PATH =
   "M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z";
 
-const MINIMAX_ICON_URL = settingsIconAssetUrl("minimax");
-
 function ImageModelBrandSvg({ path }: { path: string }) {
   return (
     <svg
@@ -832,155 +825,6 @@ export function ImageModelBrandIcon({ model }: { model: ImageModel }) {
       return <ImageModelBrandSvg path={IDEOGRAM_ICON_PATH} />;
     }
   }
-}
-
-function VideoModelVeoIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={16}
-      height={16}
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path
-        d="M5.988 1.622A8.539 8.539 0 0 0 3.45 8.446c.349 4.408 4.506 7.995 8.276 7.995 3.507 0 4.88-3.061 4.541-5.14a4.318 4.318 0 0 0-.95-2.073c.632.34 1.244.776 1.809 1.3 1.52 1.415 2.44 3.229 2.587 5.1C20.04 19.763 16.98 24 11.863 24c-1.695 0-3.48-.432-4.98-1.143C2.816 20.937 0 16.797 0 12.002 0 7.571 2.405 3.7 5.988 1.622zM12.136 0c1.696 0 3.481.432 4.98 1.143C21.186 3.063 24 7.203 24 11.998c0 4.431-2.405 8.303-5.988 10.38a8.539 8.539 0 0 0 2.538-6.824c-.349-4.408-4.506-7.995-8.276-7.995-3.507 0-4.88 3.061-4.541 5.14a4.3 4.3 0 0 0 .953 2.073 8.723 8.723 0 0 1-1.81-1.3c-1.52-1.415-2.44-3.227-2.589-5.1C3.96 4.237 7.02 0 12.137 0z"
-        fill="url(#video-model-veo-gradient)"
-        fillRule="evenodd"
-      />
-      <defs>
-        <linearGradient
-          id="video-model-veo-gradient"
-          x1="2"
-          x2="22"
-          y1="4"
-          y2="20"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor="#78b8ff" />
-          <stop offset="1" stopColor="#8d8cff" />
-        </linearGradient>
-      </defs>
-    </svg>
-  );
-}
-
-function VideoModelKlingIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={16}
-      height={16}
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path
-        d="M5.412 13.775A23.193 23.193 0 0 1 7.41 9.32c3.17-5.492 7.795-8.757 10.33-7.294C12.038-1.266 4.598.944 1.122 6.964A13.378 13.378 0 0 0 .085 9.22c-.259.739.092 1.534.77 1.926l4.557 2.63z"
-        fill="url(#video-model-kling-outer-start)"
-      />
-      <path
-        d="M18.588 10.164a23.188 23.188 0 0 1-1.999 4.455c-3.17 5.492-7.795 8.758-10.33 7.294 5.703 3.293 13.143 1.082 16.619-4.938a13.392 13.392 0 0 0 1.037-2.255c.259-.738-.092-1.534-.77-1.925l-4.557-2.63z"
-        fill="url(#video-model-kling-outer-end)"
-      />
-      <path
-        d="M16.59 14.62c3.17-5.492 3.686-11.13 1.15-12.594C15.207.563 10.582 3.83 7.41 9.32c2.074-3.59 5.809-5.315 8.344-3.852 2.534 1.464 2.908 5.56.835 9.151z"
-        fill="url(#video-model-kling-inner-start)"
-      />
-      <path
-        d="M7.41 9.32c-3.17 5.492-3.686 11.13-1.15 12.593 2.534 1.464 7.159-1.802 10.33-7.294-2.074 3.591-5.809 5.316-8.344 3.852-2.534-1.463-2.908-5.56-.835-9.15z"
-        fill="url(#video-model-kling-inner-end)"
-      />
-      <defs>
-        <radialGradient
-          id="video-model-kling-outer-start"
-          cx="0"
-          cy="0"
-          r="1"
-          gradientTransform="matrix(7.47772 -12.51022 17.14368 10.24728 5.173 13.637)"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset=".095" stopColor="#fff959" />
-          <stop offset=".326" stopColor="#0df35e" />
-          <stop offset=".64" stopColor="#0bf2f9" />
-          <stop offset="1" stopColor="#04a6f0" />
-        </radialGradient>
-        <radialGradient
-          id="video-model-kling-outer-end"
-          cx="0"
-          cy="0"
-          r="1"
-          gradientTransform="rotate(120.868 6.491 10.491) scale(14.5747 19.9728)"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset=".095" stopColor="#fff959" />
-          <stop offset=".326" stopColor="#0df35e" />
-          <stop offset=".64" stopColor="#0bf2f9" />
-          <stop offset="1" stopColor="#04a6f0" />
-        </radialGradient>
-        <linearGradient
-          id="video-model-kling-inner-start"
-          x1="15.578"
-          x2="18.062"
-          y1="1.798"
-          y2="9.861"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor="#003eff" />
-          <stop offset="1" stopColor="#0bffe7" />
-        </linearGradient>
-        <linearGradient
-          id="video-model-kling-inner-end"
-          x1="8.422"
-          x2="5.938"
-          y1="22.142"
-          y2="14.079"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop stopColor="#003eff" />
-          <stop offset="1" stopColor="#0bffe7" />
-        </linearGradient>
-      </defs>
-    </svg>
-  );
-}
-
-export function VideoModelBrandIcon({ model }: { model: VideoModel }) {
-  const config = VIDEO_MODEL_CONFIGS[model];
-  const brand =
-    config.provider === "byteplus"
-      ? "bytedance"
-      : config.provider === "minimax"
-        ? "minimax"
-        : config.requestFormat;
-  if (brand === "minimax") {
-    return (
-      <img
-        src={MINIMAX_ICON_URL}
-        width={16}
-        height={16}
-        alt=""
-        className="shrink-0"
-      />
-    );
-  }
-  if (brand === "veo") {
-    return <VideoModelVeoIcon />;
-  }
-  if (brand === "kling") {
-    return <VideoModelKlingIcon />;
-  }
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width={16}
-      height={16}
-      fill="currentColor"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path d={BYTEDANCE_ICON_PATH} />
-    </svg>
-  );
 }
 
 interface ModelFirstModelPickerContentBaseProps {

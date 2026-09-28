@@ -24,7 +24,6 @@ import {
   VIDEO_ASPECT_RATIOS,
   VIDEO_DURATIONS,
   VIDEO_RESOLUTIONS,
-  videoModelIdSchema,
 } from "./video-models";
 import {
   avatarVideoAspectRatioSchema,
@@ -1052,11 +1051,6 @@ const chatThreadCreateBodySchema = z.object({
    */
   serviceTier: chatThreadServiceTierSchema.nullable().optional(),
   /**
-   * Video model for the new thread. Omit it to inherit the calling run's chat
-   * thread video model.
-   */
-  videoModel: videoModelIdSchema.optional(),
-  /**
    * Image model for the new thread. Omit it to inherit the calling run's chat
    * thread image model.
    */
@@ -1064,12 +1058,6 @@ const chatThreadCreateBodySchema = z.object({
   /** Concrete override for the selected model; omission keeps its default. */
   reasoningEffort: reasoningEffortSchema.optional(),
   title: z.string().optional(),
-});
-
-const chatThreadVideoModelUpdateBodySchema = z.object({
-  /** Video model id, or null to fall back to the member and system defaults. */
-  model: videoModelIdSchema.nullable(),
-  eventId: chatThreadEventIdSchema.optional(),
 });
 
 const chatThreadImageModelUpdateBodySchema = z.object({
@@ -1668,30 +1656,8 @@ export const chatThreadConnectorSelectionContract = c.router({
 });
 
 /**
- * Update a chat thread's video model pin. Separate from the model-selection
- * route because it shares none of its provider, tier, or policy resolution.
- */
-export const chatThreadVideoModelContract = c.router({
-  update: {
-    method: "POST",
-    path: "/api/chat-threads/:id/video-model",
-    headers: authHeadersSchema,
-    pathParams: chatThreadIdPathParamsSchema,
-    body: chatThreadVideoModelUpdateBodySchema,
-    responses: {
-      204: c.noBody(),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Update a chat thread video model",
-  },
-});
-
-/**
- * Update a chat thread's image model pin. Separate from model-selection and
- * video-model because it has its own catalog and default resolution.
+ * Update a chat thread's image model pin. Separate from model-selection
+ * because it has its own catalog and default resolution.
  */
 export const chatThreadImageModelContract = c.router({
   update: {

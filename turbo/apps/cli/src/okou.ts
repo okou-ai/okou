@@ -612,7 +612,6 @@ export function buildHelpText(
     "  List generators?       okou generate --help",
     '  Generate image?        okou generate image --raw-prompt "..."',
     '  Generate website?      okou generate website --prompt "..."',
-    '  Generate voice?        okou generate voice --prompt "..."',
     ...(canWriteHost
       ? ["  Host a static site?    okou host ./dist --site my-site --spa"]
       : []),

@@ -102,21 +102,9 @@
             "description": "Optimalkan dan ubah gambar secara massal",
             "title": "Optimasi media Cloudinary"
           },
-          "elevenlabs-audio-content": {
-            "description": "Narasi suara dari artikel Notion yang disimpan ke Drive",
-            "title": "Konten audio ElevenLabs"
-          },
           "fal-ai-image-generation": {
             "description": "Hasilkan gambar produk dari deskripsi di Notion",
             "title": "Pembuatan gambar Fal AI"
-          },
-          "heygen-video-from-script": {
-            "description": "Script Notion menjadi video HeyGen dengan ping tim",
-            "title": "Video HeyGen dari script"
-          },
-          "runway-video-from-brief": {
-            "description": "Hasilkan video pendek dari brief kreatif",
-            "title": "Video Runway dari brief"
           }
         },
         "title": "Kreatif"

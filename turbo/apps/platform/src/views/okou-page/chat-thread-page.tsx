@@ -3979,9 +3979,6 @@ function RecommendedFollowupIcon({
   if (followup.generationType === "image") {
     return <Image size={16} />;
   }
-  if (followup.generationType === "video") {
-    return <Video size={16} />;
-  }
   if (followup.generationType === "presentation") {
     return <ChartLine size={16} />;
   }

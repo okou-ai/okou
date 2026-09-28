@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Button } from "@okouai/ui";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -9,6 +8,7 @@ import {
   disabledPaidTools$,
   paidToolDisabledMessage,
   reloadDisabledPaidTools$,
+  type AvailablePaidToolId,
 } from "../../signals/okou-page/paid-tools.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -26,7 +26,7 @@ interface PaidToolNoticeRow {
 
 /** Only called behind the rollout gate, so an unreleased member reads nothing. */
 function usePaidToolNoticeRow(
-  tools: readonly PaidToolId[],
+  tools: readonly AvailablePaidToolId[],
   onDiscardImage?: () => void,
 ): PaidToolNoticeRow | null {
   const { t } = useTranslation();
@@ -89,7 +89,9 @@ function usePaidToolNoticeRow(
   };
 }
 
-function usePaidToolNoticeEnabled(tools: readonly PaidToolId[]): boolean {
+function usePaidToolNoticeEnabled(
+  tools: readonly AvailablePaidToolId[],
+): boolean {
   const features = useGet(featureSwitch$);
   return (
     features[FeatureSwitchKey.SettingsToolsTab] &&
@@ -101,7 +103,7 @@ function usePaidToolNoticeEnabled(tools: readonly PaidToolId[]): boolean {
 function PaidToolNoticeContent({
   tools,
 }: {
-  readonly tools: readonly PaidToolId[];
+  readonly tools: readonly AvailablePaidToolId[];
 }) {
   const row = usePaidToolNoticeRow(tools);
   if (!row) {
@@ -127,7 +129,11 @@ function PaidToolNoticeContent({
   );
 }
 
-function PaidToolNotice({ tools }: { readonly tools: readonly PaidToolId[] }) {
+function PaidToolNotice({
+  tools,
+}: {
+  readonly tools: readonly AvailablePaidToolId[];
+}) {
   return usePaidToolNoticeEnabled(tools) ? (
     <PaidToolNoticeContent tools={tools} />
   ) : null;
@@ -138,7 +144,7 @@ function ComposerPaidToolNoticeContent({
   fallback,
   onDiscardImage,
 }: {
-  readonly tools: readonly PaidToolId[];
+  readonly tools: readonly AvailablePaidToolId[];
   readonly fallback: ReactNode;
   readonly onDiscardImage?: () => void;
 }) {
@@ -193,7 +199,7 @@ export function ComposerPaidToolNotice({
   fallback,
   onDiscardImage,
 }: {
-  readonly tools: readonly PaidToolId[];
+  readonly tools: readonly AvailablePaidToolId[];
   readonly fallback: ReactNode;
   readonly onDiscardImage?: () => void;
 }) {
@@ -208,11 +214,10 @@ export function ComposerPaidToolNotice({
   );
 }
 
-const CATEGORY_TOOLS: Readonly<Record<string, readonly PaidToolId[]>> = {
-  illustration: ["image-generation"],
-  video: ["video-generation"],
-  avatar: ["avatar-video-generation"],
-};
+const CATEGORY_TOOLS: Readonly<Record<string, readonly AvailablePaidToolId[]>> =
+  {
+    illustration: ["image-generation"],
+  };
 
 export function TemplatePaidToolNotice({
   category,

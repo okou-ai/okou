@@ -102,21 +102,9 @@
             "description": "대량으로 이미지 최적화 및 변환",
             "title": "Cloudinary 미디어 최적화기"
           },
-          "elevenlabs-audio-content": {
-            "description": "Notion 기사에서 음성 내레이션을 생성하여 Drive에 저장",
-            "title": "ElevenLabs 오디오 콘텐츠"
-          },
           "fal-ai-image-generation": {
             "description": "Notion 설명에서 제품 이미지 생성",
             "title": "Fal AI 이미지 생성"
-          },
-          "heygen-video-from-script": {
-            "description": "Notion 스크립트가 팀 알림과 함께 HeyGen 영상으로 변환",
-            "title": "스크립트 기반 HeyGen 영상"
-          },
-          "runway-video-from-brief": {
-            "description": "크리에이티브 브리프에서 짧은 영상 생성",
-            "title": "브리프 기반 Runway 영상"
           }
         },
         "title": "크리에이티브"

@@ -102,21 +102,9 @@
             "description": "批次最佳化和轉換圖片",
             "title": "Cloudinary媒體最佳化"
           },
-          "elevenlabs-audio-content": {
-            "description": "把Notion文章轉成配音並存入Drive",
-            "title": "ElevenLabs音訊內容"
-          },
           "fal-ai-image-generation": {
             "description": "根據Notion裡的描述生成產品圖",
             "title": "Fal AI影像生成"
-          },
-          "heygen-video-from-script": {
-            "description": "Notion指令碼變成HeyGen影片，並通知團隊",
-            "title": "指令碼生成HeyGen影片"
-          },
-          "runway-video-from-brief": {
-            "description": "根據創意簡報生成短影片",
-            "title": "簡報生成Runway影片"
           }
         },
         "title": "創意"

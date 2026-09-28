@@ -289,7 +289,7 @@ function MediaModelList({
   mediaModelPanel,
   categoryId,
 }: Pick<ModelPickerMenuContentProps, "signals" | "mediaModelPanel"> & {
-  categoryId: "image" | "video";
+  categoryId: "image";
 }) {
   const { t } = useTranslation();
   const reset = useSet(signals.reset$);
@@ -555,14 +555,9 @@ export function ModelPickerMenuContent(props: ModelPickerMenuContentProps) {
     });
     content = <ChatModelList {...props} />;
   } else {
-    label =
-      page.category === "image"
-        ? t(($) => {
-            return $.settings.models.picker.imageModels;
-          })
-        : t(($) => {
-            return $.settings.models.picker.videoModels;
-          });
+    label = t(($) => {
+      return $.settings.models.picker.imageModels;
+    });
     content = <MediaModelList {...props} categoryId={page.category} />;
   }
   return (

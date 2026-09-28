@@ -16,7 +16,6 @@ import type {
 } from "@okouai/api-contracts/contracts/user-model-preference";
 import { isActiveRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import { isVideoModelId } from "@okouai/api-contracts/contracts/video-models";
 import {
   modelSettingsSchema,
   withModelReasoningEffort,
@@ -170,7 +169,6 @@ export function userModelPreference({
         selectedModel: orgMembersMetadata.selectedModel,
         modelSettings: orgMembersMetadata.modelSettings,
         serviceTier: orgMembersMetadata.serviceTier,
-        selectedVideoModel: orgMembersMetadata.selectedVideoModel,
         selectedImageModel: orgMembersMetadata.selectedImageModel,
         updatedAt: orgMembersMetadata.updatedAt,
       })
@@ -190,9 +188,6 @@ export function userModelPreference({
       selectedModel && row?.serviceTier === "priority" ? "priority" : null;
     // A model retired from the catalog reads as unset rather than throwing:
     // the column is not re-validated when the catalog changes.
-    const selectedVideoModel = isVideoModelId(row?.selectedVideoModel)
-      ? row.selectedVideoModel
-      : null;
     const selectedImageModel = isImageModelId(row?.selectedImageModel)
       ? row.selectedImageModel
       : null;
@@ -201,11 +196,9 @@ export function userModelPreference({
       selectedModel,
       modelSettings,
       serviceTier,
-      selectedVideoModel,
       selectedImageModel,
       updatedAt:
         selectedModel ||
-        selectedVideoModel ||
         selectedImageModel ||
         Object.keys(modelSettings).length > 0
           ? (row?.updatedAt.toISOString() ?? null)
@@ -362,11 +355,7 @@ function userModelPreferenceColumns(
             preference.modelSettingsPatch,
           ),
         }),
-    // Absent means "leave it alone", so an older bundle that knows only the run
-    // model keeps its stored media defaults. Null clears one explicitly.
-    ...("selectedVideoModel" in preference
-      ? { selectedVideoModel: preference.selectedVideoModel ?? null }
-      : {}),
+    // Absent means "leave it alone"; null clears the image default.
     ...("selectedImageModel" in preference
       ? { selectedImageModel: preference.selectedImageModel ?? null }
       : {}),

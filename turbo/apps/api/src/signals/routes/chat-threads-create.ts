@@ -102,7 +102,7 @@ function chatThreadCreateResponse(
 }
 
 /**
- * Model, priority, and media models a caller inherits when it omits them. The
+ * Model, priority, and image model a caller inherits when it omits them. The
  * model belongs to the run that owns its token; the other settings belong to
  * that run's chat thread.
  */
@@ -112,14 +112,12 @@ async function inheritedRunChatSettings(
 ): Promise<{
   readonly selectedModel: string | null;
   readonly codexServiceTier: CodexServiceTier | null;
-  readonly selectedVideoModel: string | null;
   readonly selectedImageModel: ImageModelId | null;
 }> {
   if (!runId) {
     return {
       selectedModel: null,
       codexServiceTier: null,
-      selectedVideoModel: null,
       selectedImageModel: null,
     };
   }
@@ -128,7 +126,6 @@ async function inheritedRunChatSettings(
     .select({
       selectedModel: agentRuns.selectedModel,
       codexServiceTier: chatThreads.codexServiceTier,
-      selectedVideoModel: chatThreads.selectedVideoModel,
       selectedImageModel: chatThreads.selectedImageModel,
     })
     .from(agentRuns)
@@ -138,7 +135,6 @@ async function inheritedRunChatSettings(
   return {
     selectedModel: run?.selectedModel ?? null,
     codexServiceTier: run?.codexServiceTier ?? null,
-    selectedVideoModel: run?.selectedVideoModel ?? null,
     selectedImageModel: isImageModelId(run?.selectedImageModel)
       ? run.selectedImageModel
       : null,
@@ -256,10 +252,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     userId: auth.userId,
   });
   signal.throwIfAborted();
-  const selectedVideoModel =
-    body.data.videoModel ??
-    inherited.selectedVideoModel ??
-    mediaDefaults.selectedVideoModel;
   const selectedImageModel =
     body.data.imageModel ??
     inherited.selectedImageModel ??
@@ -309,7 +301,6 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       ...chatThreadModelPinColumns(pin),
       modelSettings: effort.modelSettings,
       codexServiceTier,
-      selectedVideoModel,
       selectedImageModel,
       connectorSelections,
       initialRemoteAccessOverrides,

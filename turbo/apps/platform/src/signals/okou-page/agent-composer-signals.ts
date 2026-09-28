@@ -1,10 +1,9 @@
-import { command, computed, state, type Command } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
-import type { VideoModel } from "@okouai/core/video-model-catalog";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import {
   sendNewThread$,
@@ -33,20 +32,15 @@ import { createComposerConnectorSignals } from "./connectors.ts";
 import { createPendingRemoteAccessSignals } from "../remote-access.ts";
 import {
   chatPageEffectiveImageModel$,
-  chatPageEffectiveVideoModel$,
   chatPageImageModelPin$,
   chatPageImageModelSelection$,
   chatPageModelSelection$,
   chatPageSelectedModelOauthAvailable$,
-  chatPageVideoModelPin$,
-  chatPageVideoModelSelection$,
   configureChatPageSelectedModel$,
   resetChatPageImageModelSelection$,
   resetChatPageModelSelection$,
-  resetChatPageVideoModelSelection$,
   setChatPageImageModelSelection$,
   setChatPageModelSelection$,
-  setChatPageVideoModelSelection$,
 } from "./chat-page.ts";
 import {
   newThreadComputerAccess$,
@@ -117,54 +111,31 @@ const setModelSelection$ = command(
   },
 );
 
-function createMediaModelSetter<M extends ImageModel | VideoModel>(
-  setSelection$: Command<void, [M | null]>,
-  preference: (
-    model: M | null,
-  ) =>
-    | { selectedImageModel: ImageModel | null }
-    | { selectedVideoModel: VideoModel | null },
-) {
-  return command(
-    async (
-      { get, set },
-      model: M | null,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      set(setSelection$, model);
-      const explicitDefaultActionEnabled =
-        get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false;
-      if (explicitDefaultActionEnabled) {
-        // The composer card carries an explicit "Use this for future chats" action,
-        // so picking a media model only scopes the next new chat.
-        return;
-      }
-      const userPreference = await get(userModelPreference$);
-      signal.throwIfAborted();
-      await set(
-        updateUserModelPreference$,
-        {
-          selectedModel: userPreference.selectedModel,
-          serviceTier: userPreference.serviceTier,
-          ...preference(model),
-        },
-        signal,
-      );
-    },
-  );
-}
-
-const setVideoModel$ = createMediaModelSetter(
-  setChatPageVideoModelSelection$,
-  (selectedVideoModel) => {
-    return { selectedVideoModel };
-  },
-);
-
-const setImageModel$ = createMediaModelSetter(
-  setChatPageImageModelSelection$,
-  (selectedImageModel) => {
-    return { selectedImageModel };
+const setImageModel$ = command(
+  async (
+    { get, set },
+    model: ImageModel | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    set(setChatPageImageModelSelection$, model);
+    const explicitDefaultActionEnabled =
+      get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false;
+    if (explicitDefaultActionEnabled) {
+      // The composer card carries an explicit "Use this for future chats" action,
+      // so picking a media model only scopes the next new chat.
+      return;
+    }
+    const userPreference = await get(userModelPreference$);
+    signal.throwIfAborted();
+    await set(
+      updateUserModelPreference$,
+      {
+        selectedModel: userPreference.selectedModel,
+        serviceTier: userPreference.serviceTier,
+        selectedImageModel: model,
+      },
+      signal,
+    );
   },
 );
 
@@ -222,13 +193,11 @@ function createAgentSubmitMessage(
       }
       const access = await get(newThreadComputerAccess$);
       signal.throwIfAborted();
-      const [overview, imageModelPin, videoModelPin, connectorPreference] =
-        await Promise.all([
-          get(connectorOverview$),
-          get(chatPageImageModelPin$),
-          get(chatPageVideoModelPin$),
-          get(connector.accounts.preferenceState$),
-        ]);
+      const [overview, imageModelPin, connectorPreference] = await Promise.all([
+        get(connectorOverview$),
+        get(chatPageImageModelPin$),
+        get(connector.accounts.preferenceState$),
+      ]);
       signal.throwIfAborted();
       const hosts = overview.computerUseHosts;
       const hostId =
@@ -285,7 +254,6 @@ function createAgentSubmitMessage(
           // nothing so the new thread stays unpinned and follows the member's
           // live default.
           ...(imageModelPin !== null ? { imageModel: imageModelPin } : {}),
-          ...(videoModelPin !== null ? { videoModel: videoModelPin } : {}),
           // A forward stays on this page, so only a send that opens the new
           // thread hands the selection over to it.
           ...(options.forward
@@ -312,7 +280,6 @@ function createAgentSubmitMessage(
         set(resetNewThreadComputerAccess$);
         set(resetChatPageImageModelSelection$);
         set(resetChatPageModelSelection$);
-        set(resetChatPageVideoModelSelection$);
         set(connector.accounts.resetPendingSelections$);
         set(pendingRemoteAccess.reset$);
       }
@@ -357,11 +324,6 @@ function createAgentComposerSignalsWithDraft(
       selectedImageModel$: chatPageImageModelSelection$,
       effectiveImageModel$: chatPageEffectiveImageModel$,
       setImageModel$,
-    },
-    videoModel: {
-      selectedVideoModel$: chatPageVideoModelSelection$,
-      effectiveVideoModel$: chatPageEffectiveVideoModel$,
-      setVideoModel$,
     },
     computerUseHostId$,
     cloudBrowserEnabled$,

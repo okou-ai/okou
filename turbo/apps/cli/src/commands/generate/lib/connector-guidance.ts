@@ -6,9 +6,6 @@ function toConnectorGenerationType(
   generationType: GenerationType,
 ): string | null {
   switch (generationType) {
-    case "avatar-video":
-      return "video";
-    case "voice":
     case "music":
       return "audio";
     case "dashboard-design":
@@ -25,7 +22,6 @@ function toConnectorGenerationType(
     case "document":
     case "image":
     case "text":
-    case "video":
       return generationType;
   }
 }

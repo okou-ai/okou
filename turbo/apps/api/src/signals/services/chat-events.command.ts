@@ -824,7 +824,6 @@ async function insertNewSendThread(
       modelSettings: thread.runSettings.modelSettings,
       computerUseHostId: thread.computerAccess.computerUseHostId,
       cloudBrowserEnabled: thread.computerAccess.cloudBrowserEnabled,
-      selectedVideoModel: thread.mediaModels.selectedVideoModel,
       selectedImageModel: thread.mediaModels.selectedImageModel,
     })
     .onConflictDoNothing({ target: chatThreads.id })

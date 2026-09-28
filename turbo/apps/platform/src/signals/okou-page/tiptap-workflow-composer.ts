@@ -86,7 +86,6 @@ import {
   createEditorDocumentSnapshot,
   draftToEditorDoc,
   INLINE_TEMPLATE_NODE_NAME,
-  messageDocumentToEditorDoc,
   TEMPLATE_ATTACHMENT_NODE_NAME,
   type EditorDocumentSnapshot,
 } from "./user-message-document-codec.ts";
@@ -282,8 +281,6 @@ export type ComposerTemplateAttachmentType =
   | "custom"
   | "presentation"
   | "illustration"
-  | "video"
-  | "avatar"
   | "workflow"
   | "website";
 
@@ -855,8 +852,6 @@ function templateAttachmentNodeAttributes(
     (type !== "presentation" &&
       type !== "custom" &&
       type !== "illustration" &&
-      type !== "video" &&
-      type !== "avatar" &&
       type !== "workflow" &&
       type !== "website") ||
     typeof title !== "string" ||
@@ -876,16 +871,6 @@ function templateAttachmentNodeAttributes(
 function templateAttachmentPreviewLabel(
   attachment: ComposerTemplateAttachment,
 ): string {
-  if (attachment.type === "video") {
-    return i18n.t(
-      ($) => {
-        return $.chat.templates.previewVideo;
-      },
-      {
-        title: attachment.title,
-      },
-    );
-  }
   if (attachment.type === "workflow") {
     return i18n.t(
       ($) => {
@@ -919,16 +904,6 @@ function templateAttachmentPreviewLabel(
 function templateAttachmentRemoveLabel(
   attachment: ComposerTemplateAttachment,
 ): string {
-  if (attachment.type === "video") {
-    return i18n.t(
-      ($) => {
-        return $.chat.templates.removeVideo;
-      },
-      {
-        title: attachment.title,
-      },
-    );
-  }
   if (attachment.type === "workflow") {
     return i18n.t(
       ($) => {
@@ -970,16 +945,6 @@ function templateAttachmentTypeLabel(
   if (type === "illustration") {
     return i18n.t(($) => {
       return $.chat.templates.categories.illustration;
-    });
-  }
-  if (type === "video") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.video;
-    });
-  }
-  if (type === "avatar") {
-    return i18n.t(($) => {
-      return $.artifacts.templates.avatar;
     });
   }
   if (type === "website") {
@@ -2815,7 +2780,7 @@ function createInsertUserMessageCommand(editor: Editor) {
     if (insertableParts.length === 0) {
       return;
     }
-    const restored = messageDocumentToEditorDoc({
+    const restored = draftToEditorDoc({
       version: 1,
       parts: insertableParts,
     });

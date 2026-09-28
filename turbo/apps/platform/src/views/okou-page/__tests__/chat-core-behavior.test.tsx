@@ -112,7 +112,6 @@ test("A new message keeps its attachment, text, and selected model together", as
     serviceTier: null,
     modelSettings: {},
     selectedImageModel: null,
-    selectedVideoModel: null,
     updatedAt: "2026-08-01T09:00:00Z",
   });
   context.mocks.upload.success({

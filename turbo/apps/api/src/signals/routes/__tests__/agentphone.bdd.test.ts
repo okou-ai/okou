@@ -9,7 +9,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, beforeEach } from "vitest";
 
-import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -1165,7 +1164,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       throw new Error("Expected AgentPhone ingress to create a chat thread");
     }
     expect(thread).toMatchObject({
-      selectedVideoModel: DEFAULT_VIDEO_MODEL,
+      selectedVideoModel: null,
     });
     const phoneEvents = await chat.listThreadEvents(actor, thread.chatThreadId);
     expect(

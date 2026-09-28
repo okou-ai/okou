@@ -6500,7 +6500,6 @@ interface LaunchRunRowsArgs {
   readonly sessionStorageMounts: readonly PersistedStorageMount[] | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly agentRunModelPin: AgentRunModelPin | undefined;
-  readonly selectedVideoModel: string;
   readonly selectedImageModel: ImageModel | null;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly chatThreadId: string | undefined;
@@ -6634,7 +6633,6 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
           modelRuntimeModel: args.capturedRuntimeRoute.model,
         }
       : {}),
-    selectedVideoModel: args.selectedVideoModel,
     selectedImageModel: args.selectedImageModel,
     chatThreadId: args.chatThreadId ?? null,
     apiStartedAt: new Date(args.apiStartTime),
@@ -8049,7 +8047,6 @@ function preparedLaunchRowsArgs(args: {
     sessionStorageMounts: args.commit.launch.sessionStorageMounts,
     modelProvider: args.commit.context.modelProvider,
     agentRunModelPin: args.commit.createArgs.agentRunModelPin,
-    selectedVideoModel: args.commit.context.selectedVideoModel,
     selectedImageModel: args.commit.context.selectedImageModel,
     callbackRows: args.commit.callbackRows,
     chatThreadId: args.commit.createArgs.chatThreadId,
@@ -8500,7 +8497,6 @@ async function persistFailedLaunch(
     sessionStorageMounts: args.launch?.sessionStorageMounts,
     modelProvider: args.context.modelProvider,
     agentRunModelPin: args.createArgs.agentRunModelPin,
-    selectedVideoModel: args.context.selectedVideoModel,
     selectedImageModel: args.context.selectedImageModel,
     callbackRows: args.callbackRows,
     chatThreadId: args.createArgs.chatThreadId,
@@ -9300,8 +9296,6 @@ interface PreparedRunContext {
   readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly imageRecognitionAvailable: boolean;
-  /** Snapshotted onto the run row; see `resolveMediaModelsForRun`. */
-  readonly selectedVideoModel: string;
   /** Resolved once at run start and used as the run's built-in image default. */
   readonly selectedImageModel: ImageModel | null;
 }
@@ -10933,7 +10927,7 @@ function prepareRunContext(
       }
       const { userTimezone, mediaModels, officialWorkflowRun } =
         validationAndObservations;
-      const { selectedVideoModel, selectedImageModel } = mediaModels;
+      const { selectedImageModel } = mediaModels;
       if (isRouteError(officialWorkflowRun)) {
         return officialWorkflowRun;
       }
@@ -10979,7 +10973,6 @@ function prepareRunContext(
         officialWorkflowRun,
         userTimezone,
         featureSwitchContext: bodyContext.featureSwitchContext,
-        selectedVideoModel,
         selectedImageModel,
         imageRecognitionAvailable: isImageRecognitionAvailableForRun({
           includeOkouTokenSecret: args.includeOkouTokenSecret,

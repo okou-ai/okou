@@ -13,15 +13,10 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import { isVideoModelId } from "@okouai/api-contracts/contracts/video-models";
 import {
   DEFAULT_IMAGE_MODEL,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
-import {
-  DEFAULT_VIDEO_MODEL,
-  type VideoModel,
-} from "@okouai/core/video-model-catalog";
 import { i18n } from "../../i18n/index.ts";
 import { onRejection, resetSignal, settle } from "../utils.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
@@ -119,7 +114,6 @@ import {
   patchChatThreadDraft$,
   patchChatThreadImageModel$,
   patchChatThreadModelSelection$,
-  patchChatThreadVideoModel$,
   subscribeChatThreadRealtime$,
 } from "./chat-thread-remote-signals.ts";
 import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
@@ -453,54 +447,6 @@ function createModelSelectionForSend({
         : { selectedModel };
     },
   );
-}
-
-// ---------------------------------------------------------------------------
-// Sub-factory: composer video model pin
-// ---------------------------------------------------------------------------
-
-/**
- * Thread-level video model pin. `null` means the thread follows the member's
- * personal default, so it is a selectable state rather than the absence of one.
- */
-function createVideoModelSelection(
-  threadId: string,
-  threadMeta$: Computed<ThreadMeta | null>,
-) {
-  // Thread meta keeps the pin loose so a model that later leaves the catalog
-  // still replays; the picker only offers catalog models, so narrow here.
-  const selectedVideoModel$ = computed((get): VideoModel | null => {
-    const selected = get(threadMeta$)?.selectedVideoModel ?? null;
-    return selected !== null && isVideoModelId(selected) ? selected : null;
-  });
-
-  // Same three steps the API resolves a run's video model through, so the
-  // composer's parameter panel offers what that run would accept.
-  const effectiveVideoModel$ = computed(async (get): Promise<VideoModel> => {
-    const pinned = get(selectedVideoModel$);
-    if (pinned !== null) {
-      return pinned;
-    }
-    // The member default is contract-typed to the catalog enum, unlike the
-    // loose thread pin above, so it needs no narrowing of its own.
-    return (
-      (await get(userModelPreference$)).selectedVideoModel ??
-      DEFAULT_VIDEO_MODEL
-    );
-  });
-
-  const setVideoModelSelection$ = command(
-    async ({ set }, value: VideoModel | null, signal: AbortSignal) => {
-      await set(
-        patchChatThreadVideoModel$,
-        { threadId, videoModel: value },
-        signal,
-      );
-      signal.throwIfAborted();
-    },
-  );
-
-  return { selectedVideoModel$, effectiveVideoModel$, setVideoModelSelection$ };
 }
 
 // ---------------------------------------------------------------------------
@@ -1315,7 +1261,13 @@ function latestRecommendedFollowupsFromGroups(
         continue;
       }
       if (event.eventType === "output.followups") {
-        const followups = resolveChatEventRecommendedFollowups(event);
+        // Video generation is retired, so an older run's video suggestion is
+        // not offered as a next step.
+        const followups = resolveChatEventRecommendedFollowups(event).filter(
+          (followup) => {
+            return followup.generationType !== "video";
+          },
+        );
         if (followups.length > 0) {
           return { eventId: event.id, followups };
         }
@@ -3607,7 +3559,6 @@ interface CreateChatThreadComposerSignalsOptions {
   readonly queueDraftSync$: Command<Promise<void>, [AbortSignal]>;
   readonly modelSelection: ReturnType<typeof createModelSelection>;
   readonly imageModelSelection: ReturnType<typeof createImageModelSelection>;
-  readonly videoModelSelection: ReturnType<typeof createVideoModelSelection>;
   readonly computerUseHostSelection: ReturnType<
     typeof createComputerUseHostSelection
   >;
@@ -3750,11 +3701,6 @@ function createChatThreadComposerSignals(
       effectiveImageModel$: options.imageModelSelection.effectiveImageModel$,
       setImageModel$: options.imageModelSelection.setImageModelSelection$,
     },
-    videoModel: {
-      selectedVideoModel$: options.videoModelSelection.selectedVideoModel$,
-      effectiveVideoModel$: options.videoModelSelection.effectiveVideoModel$,
-      setVideoModel$: options.videoModelSelection.setVideoModelSelection$,
-    },
     computerUseHostId$: computerUseHostSelection.computerUseHostId$,
     cloudBrowserEnabled$: computerUseHostSelection.cloudBrowserEnabled$,
     setComputerUseHostId$: computerUseHostSelection.setComputerUseHostId$,
@@ -3776,10 +3722,6 @@ function createThreadComposerSignalsWithContext(
   const modelSelection = createModelSelection(threadId, context.threadMeta$);
   const modelSelectionForSend$ = createModelSelectionForSend(modelSelection);
   const imageModelSelection = createImageModelSelection(
-    threadId,
-    context.threadMeta$,
-  );
-  const videoModelSelection = createVideoModelSelection(
     threadId,
     context.threadMeta$,
   );
@@ -3813,7 +3755,6 @@ function createThreadComposerSignalsWithContext(
     queueDraftSync$,
     modelSelection,
     imageModelSelection,
-    videoModelSelection,
     computerUseHostSelection,
     messageActions,
     cancellationRecoveryPending$: context.cancellationRecoveryPending$,

@@ -8,17 +8,18 @@ import {
   type ComposerVoiceInputSignals,
 } from "./composer-voice-input.ts";
 import type {
-  ChatRunVideoOptionsRequest,
   GenerationTemplateRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
-import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
-import { checkPaidToolForCreation$, templatePaidTool } from "./paid-tools.ts";
+import {
+  checkPaidToolForCreation$,
+  templatePaidTool,
+  type AvailablePaidToolId,
+} from "./paid-tools.ts";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
-import type { VideoModel } from "@okouai/core/video-model-catalog";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
@@ -63,7 +64,6 @@ import {
   createComposerUiSignals,
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
-import { videoRunOptionsForSend } from "./video-run-options.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import {
@@ -127,7 +127,6 @@ type ComposerTemplateEditorSignals = Pick<
 >;
 
 type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
-type ComposerVideoOptionsSignals = ComposerUiSignalGroups["videoOptions"];
 type ComposerTemplateUiSignals = ComposerUiSignalGroups["template"];
 
 export interface ComposerSubmission {
@@ -192,25 +191,6 @@ interface ComposerModelSignals extends ComposerModelUiSignals {
     [ModelProviderSelection | null, AbortSignal]
   >;
   readonly configureSelectedModel$: Command<Promise<void>, [AbortSignal]>;
-}
-
-/** Video model selected for the composer, when that surface supports it. */
-export interface ComposerVideoModelSignals {
-  readonly selectedVideoModel$: Computed<
-    VideoModel | null | Promise<VideoModel | null>
-  >;
-  /**
-   * The model a video run started from this composer would actually use, with
-   * the thread pin, the member default and the system default already folded
-   * in. `selectedVideoModel$` is the pin alone, which is null far more often
-   * than the run is unconfigured, so it cannot answer "which values does the
-   * parameter panel offer".
-   */
-  readonly effectiveVideoModel$: Computed<VideoModel | Promise<VideoModel>>;
-  readonly setVideoModel$: Command<
-    Promise<void>,
-    [VideoModel | null, AbortSignal]
-  >;
 }
 
 /** Image model selected for a composer that supports image generation. */
@@ -281,7 +261,7 @@ interface ComposerTemplateSignals
 }
 
 export interface ComposerSignals {
-  readonly paidToolHints$: Computed<readonly PaidToolId[]>;
+  readonly paidToolHints$: Computed<readonly AvailablePaidToolId[]>;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
@@ -299,8 +279,6 @@ export interface ComposerSignals {
   readonly draft: ComposerDraftSignals;
   readonly model: ComposerModelSignals;
   readonly imageModel?: ComposerImageModelSignals;
-  readonly videoModel?: ComposerVideoModelSignals;
-  readonly videoOptions: ComposerVideoOptionsSignals;
   readonly computer: ComposerComputerSignals;
   readonly submission: ComposerSubmissionSignals;
   readonly queue: ComposerQueueSignals;
@@ -333,7 +311,6 @@ interface CreateComposerSignalsOptions {
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
   readonly configureSelectedModel$: ComposerModelSignals["configureSelectedModel$"];
   readonly imageModel?: ComposerImageModelSignals;
-  readonly videoModel?: ComposerVideoModelSignals;
   readonly computerUseHostId$: ComposerComputerSignals["computerUseHostId$"];
   readonly cloudBrowserEnabled$: ComposerComputerSignals["cloudBrowserEnabled$"];
   readonly setComputerUseHostId$: ComposerComputerSignals["setComputerUseHostId$"];
@@ -587,7 +564,7 @@ function createPaidToolHints(
 ) {
   return computed((get) => {
     const mode = get(create.mode$);
-    const tools = new Set<PaidToolId>();
+    const tools = new Set<AvailablePaidToolId>();
     if (mode === "image" || get(ui.model.mediaModelCategory$) === "image") {
       tools.add("image-generation");
     }
@@ -638,7 +615,6 @@ export function createComposerSignals(
   );
   const create = createComposerCreateSignals(workflowComposer, ui, {
     image: options.imageModel !== undefined,
-    video: options.videoModel !== undefined,
   });
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
@@ -656,7 +632,6 @@ export function createComposerSignals(
     options,
     eventSignals,
     workflowComposer,
-    ui.videoOptions,
     { voice, create, taskChips },
   );
   const fileInput = createComposerFileInputSignals();
@@ -722,8 +697,6 @@ export function createComposerSignals(
       configureSelectedModel$: options.configureSelectedModel$,
     },
     ...(options.imageModel ? { imageModel: options.imageModel } : {}),
-    ...(options.videoModel ? { videoModel: options.videoModel } : {}),
-    videoOptions: ui.videoOptions,
     computer: {
       ...createComputerUseUiSignals(),
       computerUseHostId$: options.computerUseHostId$,
@@ -857,27 +830,6 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
   };
 }
 
-/**
- * Resolved at send rather than held settled, so the parameters follow a video
- * model the user changed after setting them. Creative Video writes every
- * displayed parameter, including the model's defaults, into the additional
- * info.
- */
-function createVideoRunOptionsSignal(
-  videoModel: ComposerVideoModelSignals | undefined,
-  videoOptions: ComposerVideoOptionsSignals,
-): Command<Promise<ChatRunVideoOptionsRequest | undefined>, [AbortSignal]> {
-  return command(async ({ get }, signal: AbortSignal) => {
-    if (!videoModel) {
-      return undefined;
-    }
-    const patch = get(videoOptions.videoRunOptions$);
-    const model = await get(videoModel.effectiveVideoModel$);
-    signal.throwIfAborted();
-    return videoRunOptionsForSend(patch, model);
-  });
-}
-
 function createComposerPrimaryActionSignal(args: {
   readonly options: CreateComposerSignalsOptions;
   readonly eventSignals: ReturnType<typeof createComposerChatEventSignals>;
@@ -932,24 +884,18 @@ function joinAdditionalInfo(
 function createSubmitCurrentInput({
   options,
   workflowComposer,
-  videoOptions,
   voice,
   create,
   taskChips,
 }: {
   readonly options: CreateComposerSignalsOptions;
   readonly workflowComposer: WorkflowComposerSignals;
-  readonly videoOptions: ComposerVideoOptionsSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
 }) {
   const draft = options.draft.signals;
   const voiceState$ = voice.state$;
-  const readVideoRunOptions$ = createVideoRunOptionsSignal(
-    options.videoModel,
-    videoOptions,
-  );
   return command(
     async (
       { get, set },
@@ -983,16 +929,9 @@ function createSubmitCurrentInput({
       }
       const mode = get(create.mode$);
       // Keep the new persisted part within the existing Create rollout.
-      const createEnabled = get(create.enabled$);
-      const videoRunOptions =
-        createEnabled && get(create.creativeVideo$)
-          ? await set(readVideoRunOptions$, signal)
-          : undefined;
-      signal.throwIfAborted();
-      const composerAdditionalInfo = createEnabled
+      const composerAdditionalInfo = get(create.enabled$)
         ? buildComposerAdditionalInfo(
             mode,
-            videoRunOptions,
             get(create.presentationSlideCount$),
             get(taskChips.task$) === "visualization"
               ? get(taskChips.visualization.preferences$)
@@ -1025,16 +964,7 @@ function createSubmitCurrentInput({
         return false;
       }
       signal.throwIfAborted();
-      const submitted = await set(
-        options.submitMessage$,
-        action,
-        nextSubmission,
-        signal,
-      );
-      if (submitted) {
-        set(videoOptions.resetVideoRunOptions$);
-      }
-      return submitted;
+      return set(options.submitMessage$, action, nextSubmission, signal);
     },
   );
 }
@@ -1043,7 +973,6 @@ function createComposerSubmissionSignals(
   options: CreateComposerSignalsOptions,
   eventSignals: ReturnType<typeof createComposerChatEventSignals>,
   workflowComposer: WorkflowComposerSignals,
-  videoOptions: ComposerVideoOptionsSignals,
   {
     voice,
     create,
@@ -1072,7 +1001,6 @@ function createComposerSubmissionSignals(
   const submitCurrentInput$ = createSubmitCurrentInput({
     options,
     workflowComposer,
-    videoOptions,
     voice,
     create,
     taskChips,

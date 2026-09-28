@@ -102,21 +102,9 @@
             "description": "Optimiser et transformer des images en masse",
             "title": "Optimiseur média Cloudinary"
           },
-          "elevenlabs-audio-content": {
-            "description": "Narration vocale des articles Notion enregistrée sur Drive",
-            "title": "Contenu audio ElevenLabs"
-          },
           "fal-ai-image-generation": {
             "description": "Générer des images de produits à partir de descriptions dans Notion",
             "title": "Génération d'images Fal AI"
-          },
-          "heygen-video-from-script": {
-            "description": "Un script Notion devient une vidéo HeyGen avec un ping d'équipe",
-            "title": "Vidéo HeyGen à partir d'un script"
-          },
-          "runway-video-from-brief": {
-            "description": "Générer des vidéos courtes à partir d'un brief créatif",
-            "title": "Vidéo Runway à partir d'un brief"
           }
         },
         "title": "Créatif"

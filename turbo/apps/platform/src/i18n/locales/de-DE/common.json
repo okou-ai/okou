@@ -624,23 +624,8 @@
       "all": "Alle",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Zurück zu den Avataren",
       "categories": "Vorlagenkategorien",
       "category": "Vorlagenkategorie",
-      "chooseVoice": "Stimme für {{title}} auswählen",
-      "filters": {
-        "age": "Alter",
-        "all": "Alle",
-        "aspectRatio": "Seitenverhältnis",
-        "clear": "Zurücksetzen",
-        "ethnicity": "Ethnische Zugehörigkeit",
-        "gender": "Geschlecht",
-        "language": "Sprache",
-        "scene": "Szene",
-        "style": "Stil",
-        "title": "Filter",
-        "useCase": "Anwendungsfall"
-      },
       "fullPreview": "Vollständige Vorschau der Website {{title}}",
       "htmlPreview": "{{title}} HTML-Vorschau",
       "illustration": "Illustration",
@@ -651,25 +636,18 @@
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Vorlage importieren",
       "multiAccent": "Multi-Akzent",
-      "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",
       "noMatches": "Keine Übereinstimmungen",
       "placeholder": "{{title}} Platzhalter für die Website-Vorschau",
-      "playVideo": "Vorschau der Videovorlage abspielen {{title}}",
-      "previewAvatarVideo": "Avatar-Video {{title}} ansehen",
       "previewCurrentSlide": "Vorschau von {{title}} auf der aktuellen Folie",
       "previewSlide": "Vorschaufolie {{slideNumber}}",
-      "previewVoice": "Stimme {{title}} anhören",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previousSlide": "Vorschau der vorherigen Folie",
-      "recommended": "Empfohlen",
       "renameImportedTemplate": "Vorlage umbenennen",
       "searchConnector": "Vorlagen suchen",
       "searchConnectors": "Vorlagen suchen",
       "selectStyle": "Stil auswählen {{style}}",
       "selectTemplate": "Wählen Sie die Vorlage {{title}} aus.",
-      "selectVideo": "Wählen Sie die Videovorlage {{title}} aus.",
-      "selectVoice": "Stimme {{title}} auswählen",
       "selectWebsite": "Wählen Sie die Website-Vorlage {{title}} aus.",
       "selectWorkflow": "Wählen Sie die Workflow-Vorlage {{title}} aus.",
       "showVariant": "Variante {{variantNumber}} anzeigen",
@@ -702,7 +680,6 @@
       "tryDifferentSearch": "Versuchen Sie es mit einer anderen Suche.",
       "use": "Verwenden",
       "useThisTemplate": "Verwenden Sie diese Vorlage",
-      "viewVideoPlans": "Tarife für die Videovorlage {{title}} anzeigen",
       "visibility": {
         "change": "Ändern",
         "changeLabel": "Sichtbarkeit der Vorlage ändern",
@@ -1189,7 +1166,6 @@
         "moreConnectorsChannels": "Mehr Custom Connectors & Kanal-Integrationen",
         "supportEmail": "E-Mail-Support",
         "supportPriority": "Priorisierter Support",
-        "videoGeneration": "Video- und Avatar-Generierung",
         "voiceInput": "Spracheingabe: {{requests}} Anfragen und {{minutes}} Minuten pro Tag",
         "webhookAutomations": "Einen Run aus jedem System per Webhook starten"
       },
@@ -1782,7 +1758,6 @@
         "addTemplate": "Vorlage hinzufügen",
         "imagePlaceholder": "Beschreibe das gewünschte Bild…",
         "presentationPlaceholder": "Worum geht es in deiner Präsentation?",
-        "settingsAdjusted": "Einige Videoeinstellungen wurden an dieses Modell angepasst",
         "slideCount": "Folienanzahl",
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
@@ -1803,7 +1778,6 @@
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
       "threadSuggestions": "Chat-Threads",
       "useForFutureChats": "Dieses Modell für zukünftige Chats verwenden",
-      "videoModelForThisChat": "Videomodell für diesen Chat",
       "workflows": {
         "empty": "Keine passenden Workflows",
         "loading": "Workflows werden geladen...",
@@ -2859,23 +2833,12 @@
       "importedLoading": "Hochgeladene Vorlagen werden geladen…",
       "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
       "previewTemplate": "Vorschauvorlage {{title}}",
-      "previewVideo": "Vorschau der Videovorlage {{title}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previewWorkflow": "Vorschau der Workflow-Vorlage {{title}}",
       "removeTemplate": "Vorlage {{title}} entfernen",
-      "removeVideo": "Videovorlage {{title}} entfernen",
       "removeWebsite": "Website-Vorlage {{title}} entfernen",
       "removeWorkflow": "Workflow-Vorlage {{title}} entfernen",
-      "retry": "Erneut versuchen",
-      "videoOptions": "Videooptionen",
-      "videoOptionsAudio": "Audio erzeugen",
-      "videoOptionsAudioOff": "Audio aus",
-      "videoOptionsAudioOn": "Audio an",
-      "videoOptionsDuration": "Dauer",
-      "videoOptionsLabel": "Videooptionen {{spec}}",
-      "videoOptionsModel": "Modell",
-      "videoOptionsRatio": "Seitenverhältnis",
-      "videoOptionsResolution": "Auflösung"
+      "retry": "Erneut versuchen"
     },
     "thread": {
       "ariaLabel": "Chat-Thread",
@@ -5073,7 +5036,6 @@
         "byokHelp": "Verwendet Ihren konfigurierten Anbieter",
         "categoryChat": "Chat",
         "categoryImage": "Bild",
-        "categoryVideo": "Video",
         "chatModels": "Chatmodelle",
         "effort": "Aufwand",
         "effortScale": {
@@ -5120,8 +5082,7 @@
           "claudeCodeOauth": "Claude Code (OAuth-Token)",
           "deepseek": "Deepseek"
         },
-        "standard": "Standard",
-        "videoModels": "Videomodelle"
+        "standard": "Standard"
       },
       "policies": {
         "actionsFor": "Aktionen für {{model}}",
@@ -5217,10 +5178,6 @@
       "timing": "Änderungen gelten für zukünftige Ausführungen. Laufende oder bereits vorbereitete Aufgaben können die bisherigen Einstellungen behalten.",
       "title": "Integrierte Tools",
       "tools": {
-        "avatar-video-generation": {
-          "description": "Videos mit sprechenden Avataren erstellen.",
-          "name": "Avatar-Videoerzeugung"
-        },
         "finance": {
           "description": "Suche nach Unternehmen, Kursen und Marktdaten.",
           "name": "Finanzdaten"
@@ -5252,14 +5209,6 @@
         "social": {
           "description": "Recherchiere öffentliche Beiträge und sammle Medien.",
           "name": "Social-Media-Recherche"
-        },
-        "video-generation": {
-          "description": "Videos mit integrierten Modellen erstellen.",
-          "name": "Videoerzeugung"
-        },
-        "voice-generation": {
-          "description": "Sprache mit integrierten Stimmen erstellen.",
-          "name": "Spracherzeugung"
         },
         "web-search": {
           "description": "Finde aktuelle Informationen im Web.",

@@ -623,23 +623,8 @@
       "all": "全部",
       "avatar": "虛擬形象",
       "avatarWithId": "虛擬形象 {{id}}",
-      "backToAvatars": "返回虛擬形象",
       "categories": "模板分類",
       "category": "模板分類",
-      "chooseVoice": "為 {{title}} 選擇音色",
-      "filters": {
-        "age": "年齡",
-        "all": "全部",
-        "aspectRatio": "畫面比例",
-        "clear": "清除",
-        "ethnicity": "族裔",
-        "gender": "性別",
-        "language": "語言",
-        "scene": "場景",
-        "style": "風格",
-        "title": "篩選",
-        "useCase": "使用場景"
-      },
       "fullPreview": "{{title}} 網站完整預覽",
       "htmlPreview": "{{title}} HTML 預覽",
       "illustration": "插畫",
@@ -650,25 +635,18 @@
       "importedSlides_other": "{{count}} 頁",
       "importFile": "匯入你自己的檔案",
       "multiAccent": "多口音",
-      "needPro": "需要 Pro",
       "nextSlide": "預覽下一頁",
       "noMatches": "沒有匹配結果",
       "placeholder": "{{title}} 網站預覽佔點陣圖",
-      "playVideo": "播放影片模板預覽 {{title}}",
-      "previewAvatarVideo": "預覽虛擬形象影片 {{title}}",
       "previewCurrentSlide": "從當前頁預覽 {{title}}",
       "previewSlide": "預覽第 {{slideNumber}} 頁",
-      "previewVoice": "試聽音色 {{title}}",
       "previewWebsite": "預覽網站模板 {{title}}",
       "previousSlide": "預覽上一頁",
-      "recommended": "推薦",
       "renameImportedTemplate": "重新命名模板",
       "searchConnector": "搜尋模板",
       "searchConnectors": "搜尋模板",
       "selectStyle": "選擇風格 {{style}}",
       "selectTemplate": "選擇模板 {{title}}",
-      "selectVideo": "選擇影片模板 {{title}}",
-      "selectVoice": "選擇音色 {{title}}",
       "selectWebsite": "選擇網站模板 {{title}}",
       "selectWorkflow": "選擇工作流模板 {{title}}",
       "showVariant": "顯示變體 {{variantNumber}}",
@@ -701,7 +679,6 @@
       "tryDifferentSearch": "換個關鍵詞試試。",
       "use": "使用",
       "useThisTemplate": "使用這個模板",
-      "viewVideoPlans": "檢視影片模板 {{title}} 可用的套餐",
       "visibility": {
         "change": "修改",
         "changeLabel": "修改模板可見範圍",
@@ -1188,7 +1165,6 @@
         "moreConnectorsChannels": "更多自定義連接器和渠道整合",
         "supportEmail": "郵件支援",
         "supportPriority": "優先支援",
-        "videoGeneration": "影片和數字人生成",
         "voiceInput": "語音輸入，每天{{requests}}次請求、{{minutes}}分鐘",
         "webhookAutomations": "一個webhook就能從任何系統發起執行"
       },
@@ -1779,7 +1755,6 @@
         "addTemplate": "新增模板",
         "imagePlaceholder": "描述你想生成的圖片…",
         "presentationPlaceholder": "你的簡報要講什麼？",
-        "settingsAdjusted": "部分影片設定已針對這個模型做了調整",
         "slideCount": "投影片數量",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
@@ -1800,7 +1775,6 @@
       "temporarilySwitchTo": "臨時切換到",
       "threadSuggestions": "聊天會話",
       "useForFutureChats": "以後的對話都用這個",
-      "videoModelForThisChat": "本次對話使用的影片模型",
       "workflows": {
         "empty": "沒有匹配的工作流",
         "loading": "正在載入工作流…",
@@ -2850,23 +2824,12 @@
       "importedLoading": "正在載入已上傳的模板…",
       "importedUnavailable": "已上傳的模板暫時不可用。",
       "previewTemplate": "預覽模板 {{title}}",
-      "previewVideo": "預覽影片模板 {{title}}",
       "previewWebsite": "預覽網站模板 {{title}}",
       "previewWorkflow": "預覽工作流模板 {{title}}",
       "removeTemplate": "移除模板 {{title}}",
-      "removeVideo": "移除影片模板 {{title}}",
       "removeWebsite": "移除網站模板 {{title}}",
       "removeWorkflow": "移除工作流模板 {{title}}",
-      "retry": "重試",
-      "videoOptions": "影片選項",
-      "videoOptionsAudio": "生成音訊",
-      "videoOptionsAudioOff": "音訊已關閉",
-      "videoOptionsAudioOn": "音訊已開啟",
-      "videoOptionsDuration": "時長",
-      "videoOptionsLabel": "影片選項 {{spec}}",
-      "videoOptionsModel": "模型",
-      "videoOptionsRatio": "畫面比例",
-      "videoOptionsResolution": "解析度"
+      "retry": "重試"
     },
     "thread": {
       "ariaLabel": "聊天會話",
@@ -5055,7 +5018,6 @@
         "byokHelp": "使用你配置的服務商",
         "categoryChat": "對話",
         "categoryImage": "影像",
-        "categoryVideo": "影片",
         "chatModels": "對話模型",
         "effort": "思考強度",
         "effortScale": {
@@ -5102,8 +5064,7 @@
           "claudeCodeOauth": "Claude Code（OAuth令牌）",
           "deepseek": "Deepseek"
         },
-        "standard": "標準",
-        "videoModels": "影片模型"
+        "standard": "標準"
       },
       "policies": {
         "actionsFor": "{{model}}的操作",
@@ -5198,10 +5159,6 @@
       "timing": "修改對之後的執行生效。正在執行和已準備好的任務可能仍沿用原來的設定。",
       "title": "內建工具",
       "tools": {
-        "avatar-video-generation": {
-          "description": "生成數字人口播影片。",
-          "name": "數字人影片生成"
-        },
         "finance": {
           "description": "查詢公司、行情和市場資料。",
           "name": "金融資料"
@@ -5233,14 +5190,6 @@
         "social": {
           "description": "研究公開的社交內容並收集素材。",
           "name": "社交研究"
-        },
-        "video-generation": {
-          "description": "用內建模型生成影片。",
-          "name": "影片生成"
-        },
-        "voice-generation": {
-          "description": "用內建音色生成語音。",
-          "name": "語音生成"
         },
         "web-search": {
           "description": "在網上查詢最新資訊。",

@@ -12,7 +12,6 @@ import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/mo
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { SUPPORTED_USER_LOCALES } from "@okouai/api-contracts/contracts/user-preferences";
 import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
-import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -229,7 +228,7 @@ describe("POST /api/welcome-chat-threads", () => {
       title: "Welcome to Okou",
       selectedModel: MODEL,
       serviceTier: null,
-      selectedVideoModel: DEFAULT_VIDEO_MODEL,
+      selectedVideoModel: null,
       selectedImageModel: DEFAULT_IMAGE_MODEL,
       cloudBrowserEnabled: false,
     });
@@ -412,7 +411,6 @@ describe("POST /api/welcome-chat-threads", () => {
         body: {
           selectedModel: MODEL,
           serviceTier: null,
-          selectedVideoModel: "MiniMax-H3",
           selectedImageModel: "fal-ai/flux-pro/v1.1",
         },
       }),
@@ -428,7 +426,7 @@ describe("POST /api/welcome-chat-threads", () => {
     );
     expect(metadata.body).toMatchObject({
       selectedModel: MODEL,
-      selectedVideoModel: "MiniMax-H3",
+      selectedVideoModel: null,
       selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
   });

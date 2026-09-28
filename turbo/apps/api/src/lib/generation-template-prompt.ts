@@ -2,7 +2,6 @@ import {
   buildPresentationRunbookInstructionLines,
   findImageStyle,
   findPresentationRunbookPackage,
-  findVideoTemplate,
   findWebsiteTemplatePackage,
   resolvePresentationRunbookColorToken,
   type PresentationRunbookPackage,
@@ -18,11 +17,6 @@ import {
   parseUserPresentationTemplateId,
   userPresentationTemplateDirectory,
 } from "@okouai/core/presentation-template-selection";
-import {
-  parseAvatarTemplateStylePresetId,
-  readAvatarTemplateOptions,
-  type AvatarTemplateOptions,
-} from "@okouai/core/avatar-template";
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
@@ -41,20 +35,11 @@ interface PresentationGenerationTemplateInput {
   };
 }
 
-interface VideoGenerationTemplateInput {
+// The type remains readable for selections in archived chat events and stale
+// clients. Every new selection is rejected before a run can be launched.
+interface RetiredVideoGenerationTemplateInput {
   readonly type: "video";
-  readonly selection: {
-    readonly stylePresetId: string;
-    readonly avatarOptions?: AvatarTemplateOptions;
-    /** @deprecated Read-only fallback; see readAvatarTemplateOptions. */
-    readonly titleSnapshot?: string;
-    /** @deprecated Read-only fallback; see readAvatarTemplateOptions. */
-    readonly previewUrl?: string;
-    /** @deprecated Read-only fallback; see readAvatarTemplateOptions. */
-    readonly voiceId?: string;
-    /** @deprecated Read-only fallback; see readAvatarTemplateOptions. */
-    readonly aspectRatio?: "portrait" | "landscape" | "square";
-  };
+  readonly selection: { readonly stylePresetId: string };
 }
 
 interface IllustrationGenerationTemplateInput {
@@ -97,7 +82,7 @@ interface CustomGenerationTemplateInput {
 type GenerationTemplateInput =
   | CustomGenerationTemplateInput
   | PresentationGenerationTemplateInput
-  | VideoGenerationTemplateInput
+  | RetiredVideoGenerationTemplateInput
   | RetiredIntroVideoGenerationTemplateInput
   | IllustrationGenerationTemplateInput
   | WorkflowGenerationTemplateInput
@@ -144,7 +129,10 @@ export function buildGenerationTemplatePrompt(
   }
 
   if (generationTemplate.type === "video") {
-    return buildVideoGenerationTemplatePrompt(generationTemplate);
+    return {
+      status: "invalid",
+      message: "Video and avatar templates are no longer available",
+    };
   }
   if (generationTemplate.type === "intro-video") {
     return { status: "invalid", message: "Intro video is no longer available" };
@@ -437,92 +425,6 @@ function buildWebsiteTemplatePackagePrompt(
       "- Check the deployed page with `bash checks/verify-published.sh <url>`; a local pass is not evidence about the deployment.",
       "- Use this built-in R2-backed package; do not substitute generic Open Design website templates for the selected template.",
       "- Return the hosted website URL and keep the generated static site as the final deliverable.",
-    ].join("\n"),
-  };
-}
-
-function buildVideoGenerationTemplatePrompt(
-  generationTemplate: VideoGenerationTemplateInput,
-): GenerationTemplatePromptResult {
-  const avatarId = parseAvatarTemplateStylePresetId(
-    generationTemplate.selection.stylePresetId,
-  );
-  if (avatarId !== undefined) {
-    const avatarOptions = readAvatarTemplateOptions(
-      generationTemplate.selection,
-    );
-    return buildAvatarGenerationTemplatePrompt(
-      avatarId,
-      avatarOptions.voiceId,
-      avatarOptions.aspectRatio,
-    );
-  }
-
-  const template = findVideoTemplate(
-    generationTemplate.selection.stylePresetId,
-  );
-  if (!template) {
-    return { status: "invalid", message: "Unknown video template" };
-  }
-  const sourceRepo = template.source.repo;
-  const sourceRef = template.source.ref;
-  const sourcePath = template.source.path;
-  const templateSource = `${sourceRepo}@${sourceRef}:${sourcePath}`;
-  return {
-    status: "resolved",
-    prompt: [
-      ...templateFraming("a video"),
-      "Selected video template:",
-      "- Artifact type: video",
-      `- Template: ${template.name} (${template.id})`,
-      `- Template description: ${template.description}`,
-      `- Template source: ${templateSource}`,
-      "",
-      "When you produce a video from the user's request:",
-      `- Run once to fetch the locked video authoring packet: okou generate video --provider built-in --template ${template.id} --prompt "<user request>"`,
-      `- The packet points back to the selected template source (${templateSource}); read its SKILL.md before final generation.`,
-      "- Then run final direct video generation from the resolved prompt and parameters without `--template`.",
-      "- If a connector/provider is requested, follow connector guidance instead.",
-      "- If a flag above no longer applies, run `okou generate video -h` to discover the current flags, models, and providers.",
-    ].join("\n"),
-  };
-}
-
-function buildAvatarGenerationTemplatePrompt(
-  avatarId: number,
-  voiceId: string | undefined,
-  aspectRatio: "portrait" | "landscape" | "square" | undefined,
-): GenerationTemplatePromptResult {
-  const selectedVoiceLines = voiceId
-    ? [`- Public JoggAI voice ID: ${voiceId}`]
-    : [];
-  const voiceInstructionLines = voiceId
-    ? [
-        `- Keep voice ID ${voiceId} exactly; do not list voices or substitute a different voice.`,
-      ]
-    : [
-        "- List the available voices with `okou generate avatar-video --provider built-in --list-voices --json`, applying a voice-language filter when the user specifies a language, then choose a suitable voice.",
-      ];
-  const generationVoiceId = voiceId ?? "<voice-id>";
-  const generationAspectRatio = aspectRatio ?? "portrait";
-  return {
-    status: "resolved",
-    prompt: [
-      ...templateFraming("a talking-avatar video"),
-      "Selected talking-avatar template:",
-      "- Artifact type: talking-avatar video",
-      `- Public JoggAI avatar ID: ${avatarId}`,
-      ...selectedVoiceLines,
-      `- Aspect ratio: ${generationAspectRatio}`,
-      "",
-      "When you produce a talking-avatar video from the user's request:",
-      `- Keep avatar ID ${avatarId} exactly; do not list avatars or substitute a different avatar.`,
-      "- Run `okou generate avatar-video -h` to inspect the current supported flags.",
-      ...voiceInstructionLines,
-      `- Generate with \`okou generate avatar-video --provider built-in --avatar-id ${avatarId} --voice-id ${generationVoiceId} --aspect-ratio ${generationAspectRatio} --script "<script>"\`.`,
-      "- If the user provides a public audio URL, use `--audio-url` instead of `--script`.",
-      "- Return the generated `/f/` video URL as the final deliverable.",
-      "- Use a connector/provider only when the user explicitly requests one.",
     ].join("\n"),
   };
 }

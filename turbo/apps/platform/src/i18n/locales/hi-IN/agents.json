@@ -102,21 +102,9 @@
             "description": "छवियों को थोक में अनुकूलित और रूपांतरित करें",
             "title": "क्लाउडिनरी मीडिया ऑप्टिमाइज़र"
           },
-          "elevenlabs-audio-content": {
-            "description": "Notion लेखों से ध्वनि वर्णन ड्राइव में सहेजा गया",
-            "title": "इलेवनलैब्स ऑडियो सामग्री"
-          },
           "fal-ai-image-generation": {
             "description": "Notion में विवरण से उत्पाद छवियां बनाएं",
             "title": "फाल AI छवि निर्माण"
-          },
-          "heygen-video-from-script": {
-            "description": "Notion स्क्रिप्ट टीम पिंग के साथ हेजेन वीडियो बन जाती है",
-            "title": "स्क्रिप्ट से हेजेन वीडियो"
-          },
-          "runway-video-from-brief": {
-            "description": "एक रचनात्मक संक्षिप्त विवरण से लघु वीडियो बनाएं",
-            "title": "संक्षेप में रनवे वीडियो"
           }
         },
         "title": "रचनात्मक"

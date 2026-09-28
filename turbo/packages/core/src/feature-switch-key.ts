@@ -44,7 +44,6 @@ export enum FeatureSwitchKey {
   ChatPreference = "chatPreference",
   PaidToolControls = "paidToolControls",
   SettingsToolsTab = "settingsToolsTab",
-  NewUserVideoPickers = "newUserVideoPickers",
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",

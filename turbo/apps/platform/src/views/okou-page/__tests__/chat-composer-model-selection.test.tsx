@@ -108,7 +108,6 @@ function preference(
     selectedModel,
     serviceTier,
     modelSettings: {},
-    selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: POLICY_DATE,
   };

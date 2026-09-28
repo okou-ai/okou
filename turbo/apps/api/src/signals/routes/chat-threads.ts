@@ -51,7 +51,6 @@ import { chatThreadMarkAgentReadRoutes } from "./chat-threads-mark-agent-read";
 import { chatThreadMarkReadRoutes } from "./chat-threads-mark-read";
 import { chatThreadMarkUnreadRoutes } from "./chat-threads-mark-unread";
 import { chatThreadModelSelectionRoutes } from "./chat-threads-model-selection";
-import { chatThreadVideoModelRoutes } from "./chat-threads-video-model";
 import { chatThreadPatchRoutes } from "./chat-threads-patch";
 import { chatThreadPinRoutes } from "./chat-threads-pin";
 import { chatThreadPinOrderRoutes } from "./chat-threads-pin-order";
@@ -456,5 +455,4 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   ...chatThreadPinOrderRoutes,
   ...chatThreadRenameRoutes,
   ...chatThreadUnpinRoutes,
-  ...chatThreadVideoModelRoutes,
 ];

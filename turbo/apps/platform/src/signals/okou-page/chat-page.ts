@@ -3,10 +3,6 @@ import {
   DEFAULT_IMAGE_MODEL,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
-import {
-  DEFAULT_VIDEO_MODEL,
-  type VideoModel,
-} from "@okouai/core/video-model-catalog";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
@@ -62,10 +58,6 @@ const internalChatPageUserOverride$ = state<
   { kind: "unset" } | { kind: "set"; value: ModelProviderSelection | null }
 >({ kind: "unset" });
 
-const internalChatPageVideoModelOverride$ = state<
-  { kind: "unset" } | { kind: "set"; value: VideoModel | null }
->({ kind: "unset" });
-
 const internalChatPageImageModelOverride$ = state<
   { kind: "unset" } | { kind: "set"; value: ImageModel | null }
 >({ kind: "unset" });
@@ -116,17 +108,6 @@ export const setChatPageModelSelection$ = command(
   },
 );
 
-export const chatPageVideoModelSelection$ = computed(
-  async (get): Promise<VideoModel | null> => {
-    const user = get(internalChatPageVideoModelOverride$);
-    if (user.kind === "set") {
-      return user.value;
-    }
-    const userPreference = await get(userModelPreference$);
-    return userPreference.selectedVideoModel ?? DEFAULT_VIDEO_MODEL;
-  },
-);
-
 export const chatPageImageModelSelection$ = computed(
   async (get): Promise<ImageModel | null> => {
     const user = get(internalChatPageImageModelOverride$);
@@ -135,22 +116,6 @@ export const chatPageImageModelSelection$ = computed(
     }
     const userPreference = await get(userModelPreference$);
     return userPreference.selectedImageModel ?? DEFAULT_IMAGE_MODEL;
-  },
-);
-
-/**
- * What a video run started from the new-thread composer would use. The
- * selection above is null when the user cleared it back to "follow my
- * default", so the parameter panel resolves through the same member and system
- * defaults the API would.
- */
-export const chatPageEffectiveVideoModel$ = computed(
-  async (get): Promise<VideoModel> => {
-    return (
-      (await get(chatPageVideoModelSelection$)) ??
-      (await get(userModelPreference$)).selectedVideoModel ??
-      DEFAULT_VIDEO_MODEL
-    );
   },
 );
 
@@ -168,24 +133,13 @@ export const chatPageEffectiveImageModel$ = computed(
 /**
  * The explicit landing-composer pin: the model the user actively chose for the
  * next new chat, or null when they never touched the picker. Unlike
- * chatPage*ModelSelection$, this does NOT fall back to the member default, so an
+ * chatPageImageModelSelection$, this does NOT fall back to the member default, so an
  * untouched new thread is created unpinned and follows the live default.
  */
-export const chatPageVideoModelPin$ = computed((get): VideoModel | null => {
-  const user = get(internalChatPageVideoModelOverride$);
-  return user.kind === "set" ? user.value : null;
-});
-
 export const chatPageImageModelPin$ = computed((get): ImageModel | null => {
   const user = get(internalChatPageImageModelOverride$);
   return user.kind === "set" ? user.value : null;
 });
-
-export const setChatPageVideoModelSelection$ = command(
-  ({ set }, value: VideoModel | null) => {
-    set(internalChatPageVideoModelOverride$, { kind: "set", value });
-  },
-);
 
 export const setChatPageImageModelSelection$ = command(
   ({ set }, value: ImageModel | null) => {
@@ -196,12 +150,6 @@ export const setChatPageImageModelSelection$ = command(
 export const resetChatPageModelSelection$ = command(({ get, set }) => {
   if (get(internalChatPageUserOverride$).kind === "set") {
     set(internalChatPageUserOverride$, { kind: "unset" });
-  }
-});
-
-export const resetChatPageVideoModelSelection$ = command(({ get, set }) => {
-  if (get(internalChatPageVideoModelOverride$).kind === "set") {
-    set(internalChatPageVideoModelOverride$, { kind: "unset" });
   }
 });
 

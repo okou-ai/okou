@@ -55,11 +55,8 @@ const vnc = createVncRuntimeApi(context);
 const WORKSPACE_DEFAULT_MODEL = "claude-sonnet-5";
 const OTHER_WORKSPACE_MODEL = "claude-opus-5";
 const PRIORITY_MODEL = "gpt-5.6-sol";
-const EXPLICIT_VIDEO_MODEL = "fal-ai/veo3.1/fast";
-const INHERITED_VIDEO_MODEL = "MiniMax-H3";
 const EXPLICIT_IMAGE_MODEL = "ideogram/v4";
 const INHERITED_IMAGE_MODEL = "gpt-image-2";
-const MEMBER_VIDEO_MODEL = "seedance-1-5-pro-251215";
 const MEMBER_IMAGE_MODEL = "fal-ai/flux-pro/v1.1";
 
 interface AgentFixture {
@@ -178,7 +175,6 @@ async function setMemberMediaDefaults(fixture: AgentFixture): Promise<void> {
       body: {
         selectedModel: null,
         serviceTier: null,
-        selectedVideoModel: MEMBER_VIDEO_MODEL,
         selectedImageModel: MEMBER_IMAGE_MODEL,
       },
     }),
@@ -1197,7 +1193,6 @@ describe("POST /api/chat-threads", () => {
           agentId: fixture.agentId,
           title: "Deep dive on P2",
           model: OTHER_WORKSPACE_MODEL,
-          videoModel: EXPLICIT_VIDEO_MODEL,
           imageModel: EXPLICIT_IMAGE_MODEL,
         },
       }),
@@ -1229,13 +1224,13 @@ describe("POST /api/chat-threads", () => {
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: EXPLICIT_VIDEO_MODEL,
+      selectedVideoModel: null,
       selectedImageModel: EXPLICIT_IMAGE_MODEL,
     });
     await expect(
       readCreatedThreadEvent(response.body.id, token),
     ).resolves.toMatchObject({
-      selectedVideoModel: EXPLICIT_VIDEO_MODEL,
+      selectedVideoModel: null,
       selectedImageModel: EXPLICIT_IMAGE_MODEL,
     });
   });
@@ -1280,7 +1275,7 @@ describe("POST /api/chat-threads", () => {
     expect(metadataResponse.body.serviceTier).toBeNull();
   });
 
-  it("inherits media models from the run's chat thread when omitted", async () => {
+  it("inherits the image model from the run's chat thread when omitted", async () => {
     const fixture = await seedAgent();
     const sourceToken = okouToken({
       userId: fixture.userId,
@@ -1292,9 +1287,8 @@ describe("POST /api/chat-threads", () => {
         headers: { authorization: `Bearer ${sourceToken}` },
         body: {
           agentId: fixture.agentId,
-          title: "Video model source",
+          title: "Image model source",
           model: OTHER_WORKSPACE_MODEL,
-          videoModel: INHERITED_VIDEO_MODEL,
           imageModel: INHERITED_IMAGE_MODEL,
         },
       }),
@@ -1333,12 +1327,12 @@ describe("POST /api/chat-threads", () => {
     await expect(
       readCreatedThreadEvent(inherited.body.id, inheritedToken),
     ).resolves.toMatchObject({
-      selectedVideoModel: INHERITED_VIDEO_MODEL,
+      selectedVideoModel: null,
       selectedImageModel: INHERITED_IMAGE_MODEL,
     });
   });
 
-  it("pins the member media defaults when the request omits them", async () => {
+  it("pins the member image default when the request omits it", async () => {
     const fixture = await seedAgent();
     await setMemberMediaDefaults(fixture);
     const token = okouToken({
@@ -1362,7 +1356,7 @@ describe("POST /api/chat-threads", () => {
     await expect(
       readCreatedThreadEvent(response.body.id, token),
     ).resolves.toMatchObject({
-      selectedVideoModel: MEMBER_VIDEO_MODEL,
+      selectedVideoModel: null,
       selectedImageModel: MEMBER_IMAGE_MODEL,
     });
   });

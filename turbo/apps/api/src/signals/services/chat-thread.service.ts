@@ -738,7 +738,6 @@ interface CreateChatThreadArgs {
   readonly selectedModel: string | null;
   readonly modelSettings?: ModelSettings;
   readonly codexServiceTier: CodexServiceTier | null;
-  readonly selectedVideoModel: string | null;
   readonly selectedImageModel: ImageModelId | null;
   readonly connectorSelections?: readonly PreparedChatThreadConnectorSelection[];
   readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
@@ -813,7 +812,6 @@ export async function createChatThreadInTransaction(
     selectedModel: args.selectedModel,
     modelSettings,
     codexServiceTier: args.codexServiceTier,
-    selectedVideoModel: args.selectedVideoModel,
     selectedImageModel: args.selectedImageModel,
   });
   // The primary key and (id, user_id) are both unique. PostgreSQL can detect
@@ -850,7 +848,6 @@ export async function createChatThreadInTransaction(
     serviceTier: chatThreadServiceTierFromCodex(args.codexServiceTier),
     computerUseHostId: null,
     cloudBrowserEnabled: false,
-    selectedVideoModel: args.selectedVideoModel,
     selectedImageModel: args.selectedImageModel,
     createdAt: createdThread.createdAt,
   });

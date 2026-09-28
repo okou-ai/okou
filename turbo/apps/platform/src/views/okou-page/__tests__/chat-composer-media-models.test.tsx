@@ -4,10 +4,7 @@ import {
 } from "./chat-model-menu-test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  chatThreadImageModelContract,
-  chatThreadVideoModelContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadImageModelContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   type UpdateUserModelPreferenceRequest,
   userModelPreferenceContract,
@@ -18,11 +15,6 @@ import {
   PUBLIC_IMAGE_MODELS,
   type ImageModel,
 } from "@okouai/core/image-model-catalog";
-import {
-  PUBLIC_VIDEO_MODELS,
-  VIDEO_MODEL_CONFIGS,
-  type VideoModel,
-} from "@okouai/core/video-model-catalog";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { expect, test } from "vitest";
@@ -48,7 +40,6 @@ import {
 
 const DEFAULT_RUN_MODEL = "claude-fable-5-1";
 const DEFAULT_IMAGE_MODEL = "fal-ai/nano-banana-2";
-const DEFAULT_VIDEO_MODEL = "MiniMax-H3";
 
 function preference(
   overrides: Partial<UserModelPreferenceResponse> = {},
@@ -58,7 +49,6 @@ function preference(
     serviceTier: "priority",
     modelSettings: {},
     selectedImageModel: DEFAULT_IMAGE_MODEL,
-    selectedVideoModel: DEFAULT_VIDEO_MODEL,
     updatedAt: "2026-06-12T00:00:00.000Z",
     ...overrides,
   };
@@ -112,7 +102,7 @@ async function openPicker(
 }
 
 /** A type row in the rail, which reads as its type over its current model. */
-function category(name: "Chat" | "Image" | "Video"): HTMLElement {
+function category(name: "Chat" | "Image"): HTMLElement {
   const control = queryAllByRoleFast("menuitem").find((candidate) => {
     return candidate.textContent?.startsWith(name);
   });
@@ -161,9 +151,7 @@ async function openMenu(
   return await screen.findByRole("region", { name: "Models" });
 }
 
-async function openMenuCategory(
-  name: "Chat" | "Image" | "Video",
-): Promise<HTMLElement> {
+async function openMenuCategory(name: "Chat" | "Image"): Promise<HTMLElement> {
   if (!screen.queryByRole("region", { name: `${name} models` })) {
     const overview =
       screen.queryByRole("region", { name: "Models" }) ?? (await openMenu());
@@ -181,7 +169,7 @@ async function openMenuCategory(
 }
 
 async function chooseMenuMediaModel(
-  name: "Image" | "Video",
+  name: "Image",
   label: string,
 ): Promise<void> {
   await openMenuCategory(name);
@@ -215,7 +203,7 @@ function expectMenuSelected(label: string): void {
 }
 
 async function chooseMediaModel(
-  categoryName: "Image" | "Video",
+  categoryName: "Image",
   label: string,
   container: ParentNode = document,
 ): Promise<void> {
@@ -234,7 +222,7 @@ async function chooseMediaModel(
 }
 
 async function openCategory(
-  categoryName: "Chat" | "Image" | "Video",
+  categoryName: "Chat" | "Image",
   container: ParentNode = document,
 ) {
   const user = userEvent.setup({ delay: null });
@@ -399,19 +387,9 @@ async function browseNewChatModelCategories(): Promise<void> {
     expect(mediaModelRow("Nano Banana 2")).toBeInTheDocument();
     expect(queryModelMenuOption(/Claude Fable 5/u)).toBeNull();
   });
-  await user.click(category("Video"));
-  await waitFor(() => {
-    expect(mediaModelRow("MiniMax H3")).toBeInTheDocument();
-    expect(
-      queryAllByRoleFast("button").some((button) => {
-        return button.getAttribute("aria-label") === "Nano Banana 2";
-      }),
-    ).toBeFalsy();
-  });
 }
 
 async function selectModelsAcrossNewChatCategories(): Promise<void> {
-  await chooseMenuMediaModel("Video", "Veo 3.1 fast");
   await chooseMenuMediaModel("Image", "GPT Image 2");
   await openMenuCategory("Chat");
   click(menuRow("Claude Sonnet 5"));
@@ -419,7 +397,6 @@ async function selectModelsAcrossNewChatCategories(): Promise<void> {
   await waitFor(() => {
     expect(scopeCard("Model for this chat")).not.toBeNull();
     expect(scopeCard("Image model for this chat")).toBeNull();
-    expect(scopeCard("Video model for this chat")).toBeNull();
   });
   await openMenuCategory("Image");
   expectMenuSelected("GPT Image 2");
@@ -428,14 +405,7 @@ async function selectModelsAcrossNewChatCategories(): Promise<void> {
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).not.toBeNull();
     expect(scopeCard("Model for this chat")).toBeNull();
-    expect(scopeCard("Video model for this chat")).toBeNull();
   });
-  await openMenuCategory("Video");
-  expectMenuSelected("Veo 3.1 fast");
-  await userEvent.setup().keyboard("{Escape}");
-  await screen.findByRole("region", { name: "Models" });
-  expect(scopeCard("Video model for this chat")).not.toBeNull();
-  expect(scopeCard("Image model for this chat")).toBeNull();
 }
 
 async function openDesktopNewChatModelPicker() {
@@ -452,17 +422,17 @@ async function openDesktopNewChatModelPicker() {
   });
 }
 
-test("Browse Chat, Image, and Video catalogs in a desktop new chat", async () => {
+test("Browse Chat and Image catalogs in a desktop new chat", async () => {
   await openDesktopNewChatModelPicker();
   await browseNewChatModelCategories();
-  expect(category("Video")).toHaveAttribute("aria-expanded", "true");
+  expect(category("Image")).toHaveAttribute("aria-expanded", "true");
 });
 
 /**
  * The compact overview switches the active category while preserving each
  * category's independent model selection.
  */
-test("Retain independent Chat, Image, and Video selections in a new chat", async () => {
+test("Retain independent Chat and Image selections in a new chat", async () => {
   setMobileViewport();
   installModelEnvironment();
   mockChatLifecycle(context, { threadId: "new-model-modes" });
@@ -476,7 +446,7 @@ test("Retain independent Chat, Image, and Video selections in a new chat", async
   });
 
   await selectModelsAcrossNewChatCategories();
-  expect(scopeCard("Video model for this chat")).not.toBeNull();
+  expect(scopeCard("Image model for this chat")).not.toBeNull();
 });
 
 /**
@@ -503,7 +473,6 @@ async function openTemporaryImageModelChat(
       serviceTier: body.serviceTier,
       selectedImageModel:
         body.selectedImageModel ?? currentPreference.selectedImageModel,
-      selectedVideoModel: currentPreference.selectedVideoModel,
     });
     return respond(200, currentPreference);
   });
@@ -640,20 +609,20 @@ test("Save a temporary image model as the default for future chats", async () =>
   });
 });
 
-test("Persist a new-chat video choice when temporary choices are unavailable", async () => {
+test("Persist a new-chat image choice when temporary choices are unavailable", async () => {
   setMobileViewport();
-  const creates: ({ readonly videoModel?: string } | undefined)[] = [];
+  const creates: ({ readonly imageModel?: string } | undefined)[] = [];
   const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
   installModelEnvironment();
   context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
     preferenceUpdates.push(body);
     return respond(
       200,
-      preference({ selectedVideoModel: body.selectedVideoModel }),
+      preference({ selectedImageModel: body.selectedImageModel }),
     );
   });
   mockChatLifecycle(context, {
-    threadId: "persistent-video-choice",
+    threadId: "persistent-image-choice",
     onThreadCreate: (body) => {
       creates.push(body);
     },
@@ -667,85 +636,37 @@ test("Persist a new-chat video choice when temporary choices are unavailable", a
     },
   });
 
-  await chooseMenuMediaModel("Video", "Veo 3.1 fast");
+  await chooseMenuMediaModel("Image", "GPT Image 2");
   await waitFor(() => {
     expect(preferenceUpdates).toStrictEqual([
       {
         selectedModel: DEFAULT_RUN_MODEL,
         serviceTier: "priority",
-        selectedVideoModel: "fal-ai/veo3.1/fast",
+        selectedImageModel: "gpt-image-2",
       },
     ]);
   });
-  expect(scopeCard("Video model for this chat")).toBeNull();
-  await sendNewMessage("Create a video thread");
+  expect(scopeCard("Image model for this chat")).toBeNull();
+  await sendNewMessage("Create an image thread");
   await waitFor(() => {
-    expect(creates[0]?.videoModel).toBe("fal-ai/veo3.1/fast");
+    expect(creates[0]?.imageModel).toBe("gpt-image-2");
   });
-});
-
-test("Choose a video model for the current thread", async () => {
-  const updates: VideoModel[] = [];
-  installModelEnvironment(
-    preference({ selectedVideoModel: "dreamina-seedance-2-0-260128" }),
-  );
-  mockThread({ selectedModel: DEFAULT_RUN_MODEL, selectedVideoModel: null });
-  context.mocks.api(
-    chatThreadVideoModelContract.update,
-    ({ body, respond }) => {
-      if (body.model) {
-        updates.push(body.model);
-      }
-      return respond(204);
-    },
-  );
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  await openCategory("Video");
-  expectSelected("Seedance 2.0");
-  assertCatalogRows(
-    PUBLIC_VIDEO_MODELS.map((model) => {
-      return VIDEO_MODEL_CONFIGS[model].label;
-    }),
-    ["Seedance 2.0 fast", "Seedance 2.0 mini"],
-  );
-  click(mediaModelRow("Veo 3.1 fast"));
-  await waitFor(() => {
-    expect(updates).toStrictEqual(["fal-ai/veo3.1/fast"]);
-  });
-  await chooseMediaModel("Video", "Seedance 2.0");
-  await openCategory("Video");
-  expectSelected("Seedance 2.0");
-  expect(updates).toStrictEqual([
-    "fal-ai/veo3.1/fast",
-    "dreamina-seedance-2-0-260128",
-  ]);
 });
 
 // The overview's pages are the narrow viewport's layout; a desktop reaches the
 // same media models through the flyout, which the tests below cover.
-test("Choose image and video models from the compact overview", async () => {
+test("Choose an image model from the compact overview", async () => {
   setMobileViewport();
   installModelEnvironment();
   mockThread({
     selectedModel: DEFAULT_RUN_MODEL,
     selectedImageModel: null,
-    selectedVideoModel: null,
   });
   const images: (ImageModel | null)[] = [];
-  const videos: (VideoModel | null)[] = [];
   context.mocks.api(
     chatThreadImageModelContract.update,
     ({ body, respond }) => {
       images.push(body.model);
-      return respond(204);
-    },
-  );
-  context.mocks.api(
-    chatThreadVideoModelContract.update,
-    ({ body, respond }) => {
-      videos.push(body.model);
       return respond(204);
     },
   );
@@ -776,25 +697,5 @@ test("Choose image and video models from the compact overview", async () => {
   ).resolves.toBeVisible();
   expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
   expect(menuRow("Change Image model, GPT Image 1")).toBeVisible();
-  click(
-    menuRow(
-      `Change Video model, ${VIDEO_MODEL_CONFIGS[DEFAULT_VIDEO_MODEL].label}`,
-    ),
-  );
-  await screen.findByRole("region", { name: "Video models" });
-  await userEvent.setup({ delay: null }).click(menuRow("Seedance 2.0"));
-  await waitFor(() => {
-    expect(videos).toStrictEqual(["dreamina-seedance-2-0-260128"]);
-  });
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Video models" }),
-    ).not.toBeInTheDocument();
-  });
-  await expect(
-    screen.findByRole("region", { name: "Models" }),
-  ).resolves.toBeVisible();
-  expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
-  expect(menuRow("Change Video model, Seedance 2.0")).toBeVisible();
   expect(menuRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
 });

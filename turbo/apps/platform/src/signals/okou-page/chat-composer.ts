@@ -5,10 +5,8 @@ import { cloudBrowserEnabledByDefault$ } from "../cloud-browser-preference.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
-import { createAvatarTemplatePickerSignals } from "./avatar-template-picker.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
 import { createModelPickerMenuSignals } from "./model-picker-menu.ts";
-import type { VideoRunOptionsPatch } from "./video-run-options.ts";
 
 // ---------------------------------------------------------------------------
 // Composer UI state — search, dialogs, loading indicators
@@ -105,7 +103,7 @@ export type OpenTemplatePickerDialogCommand = Command<
   [OpenTemplatePickerDialogOptions]
 >;
 
-type MediaModelCategory = "image" | "video";
+type MediaModelCategory = "image";
 
 /**
  * Tracks whether the composer is wide enough for the desktop popover layout.
@@ -140,8 +138,8 @@ function createBasicComposerUiSignals() {
   const menu = createModelPickerMenuSignals();
   // Every viewport drives this from the same category strip. Null means the
   // chat models. It survives close the way the old composer track kept its
-  // expanded category -- the video options chip and the temporary-model notice
-  // both read it to tell which model the composer is pointed at.
+  // expanded category -- the temporary-model notice reads it to tell which
+  // model the composer is pointed at.
   const internalMediaModelCategory$ = state<MediaModelCategory | null>(null);
   const modelPickerOpen$ = computed((get) => {
     return get(internalModelPickerOpen$);
@@ -170,40 +168,6 @@ function createBasicComposerUiSignals() {
       desktopModelPickerLayout$,
       desktopModelPickerLifecycleRef$,
     },
-  };
-}
-
-/**
- * Parameters for the next video this composer generates. Run-scoped by design:
- * they travel with the message and are never written anywhere, so they start
- * over with the composer rather than following the thread.
- */
-function createVideoRunOptionsUiSignals() {
-  // Keep the summary compact until the user opens the settings panel.
-  const internalVideoOptionsOpen$ = state(false);
-  const internalVideoRunOptions$ = state<VideoRunOptionsPatch>({});
-  const videoOptionsOpen$ = computed((get) => {
-    return get(internalVideoOptionsOpen$);
-  });
-  const setVideoOptionsOpen$ = command(({ set }, open: boolean) => {
-    set(internalVideoOptionsOpen$, open);
-  });
-  const videoRunOptions$ = computed((get) => {
-    return get(internalVideoRunOptions$);
-  });
-  const setVideoRunOptions$ = command(({ set }, next: VideoRunOptionsPatch) => {
-    set(internalVideoRunOptions$, next);
-  });
-  const resetVideoRunOptions$ = command(({ set }) => {
-    set(internalVideoOptionsOpen$, false);
-    set(internalVideoRunOptions$, {});
-  });
-  return {
-    videoOptionsOpen$,
-    setVideoOptionsOpen$,
-    videoRunOptions$,
-    setVideoRunOptions$,
-    resetVideoRunOptions$,
   };
 }
 
@@ -289,7 +253,6 @@ function createTemplatePickerDialogSignals() {
 }
 
 function createTemplatePickerListSignals() {
-  const avatarTemplates = createAvatarTemplatePickerSignals();
   // Null until an entry point names a category, so the picker can open on the
   // one the member's own switches lead the nav with.
   const internalTemplatePickerCategory$ = state<string | null>(null);
@@ -362,7 +325,6 @@ function createTemplatePickerListSignals() {
       restoreTemplatePickerPresentationScrollRef$,
       illustrationVariantIndex$,
       setIllustrationVariantIndex$,
-      ...avatarTemplates,
     },
   };
 }
@@ -468,7 +430,6 @@ export function createComposerUiSignals() {
 
   return {
     model: basic.model,
-    videoOptions: createVideoRunOptionsUiSignals(),
     openTemplatePickerDialog$: createOpenTemplatePickerDialogCommand(
       dialog,
       list,

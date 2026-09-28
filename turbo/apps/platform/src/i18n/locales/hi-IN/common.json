@@ -624,23 +624,8 @@
       "all": "सभी",
       "avatar": "अवतार",
       "avatarWithId": "अवतार {{id}}",
-      "backToAvatars": "अवतार पर वापस जाएँ",
       "categories": "टेम्पलेट श्रेणियां",
       "category": "टेम्पलेट श्रेणी",
-      "chooseVoice": "{{title}} के लिए आवाज़ चुनें",
-      "filters": {
-        "age": "आयु",
-        "all": "सभी",
-        "aspectRatio": "आस्पेक्ट रेशियो",
-        "clear": "साफ़ करें",
-        "ethnicity": "जातीयता",
-        "gender": "लिंग",
-        "language": "भाषा",
-        "scene": "दृश्य",
-        "style": "शैली",
-        "title": "फ़िल्टर",
-        "useCase": "उपयोग का प्रकार"
-      },
       "fullPreview": "{{title}} वेबसाइट पूर्ण पूर्वावलोकन",
       "htmlPreview": "{{title}} HTML पूर्वावलोकन",
       "illustration": "चित्रण",
@@ -651,25 +636,18 @@
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "टेम्पलेट आयात करें",
       "multiAccent": "बहु-उच्चारण",
-      "needPro": "Pro चाहिए",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
       "noMatches": "कोई मेल नहीं",
       "placeholder": "{{title}} वेबसाइट पूर्वावलोकन प्लेसहोल्डर",
-      "playVideo": "वीडियो टेम्पलेट पूर्वावलोकन {{title}} चलाएँ",
-      "previewAvatarVideo": "अवतार वीडियो {{title}} का पूर्वावलोकन करें",
       "previewCurrentSlide": "वर्तमान स्लाइड पर {{title}} का पूर्वावलोकन करें",
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
-      "previewVoice": "आवाज़ {{title}} सुनें",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previousSlide": "पिछली स्लाइड का पूर्वावलोकन करें",
-      "recommended": "अनुशंसित",
       "renameImportedTemplate": "टेम्पलेट का नाम बदलें",
       "searchConnector": "टेम्पलेट खोजें",
       "searchConnectors": "टेम्पलेट खोजें",
       "selectStyle": "शैली {{style}} चुनें",
       "selectTemplate": "टेम्पलेट {{title}} चुनें",
-      "selectVideo": "वीडियो टेम्पलेट {{title}} चुनें",
-      "selectVoice": "आवाज़ {{title}} चुनें",
       "selectWebsite": "वेबसाइट टेम्पलेट {{title}} चुनें",
       "selectWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} चुनें",
       "showVariant": "वैरिएंट {{variantNumber}} दिखाएँ",
@@ -702,7 +680,6 @@
       "tryDifferentSearch": "भिन्न खोज का प्रयास करें.",
       "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
-      "viewVideoPlans": "वीडियो टेम्पलेट {{title}} के लिए प्लान देखें",
       "visibility": {
         "change": "बदलें",
         "changeLabel": "टेम्पलेट की दृश्यता बदलें",
@@ -1189,7 +1166,6 @@
         "moreConnectorsChannels": "ज़्यादा कस्टम कनेक्टर और चैनल इंटीग्रेशन",
         "supportEmail": "ईमेल सहायता",
         "supportPriority": "प्राथमिकता सहायता",
-        "videoGeneration": "वीडियो और अवतार जनरेशन",
         "voiceInput": "वॉइस इनपुट: रोज़ {{requests}} रिक्वेस्ट और {{minutes}} मिनट",
         "webhookAutomations": "किसी भी सिस्टम से एक webhook पर रन शुरू करें"
       },
@@ -1782,7 +1758,6 @@
         "addTemplate": "टेम्पलेट जोड़ें",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
-        "settingsAdjusted": "इस मॉडल के लिए कुछ वीडियो सेटिंग समायोजित की गई हैं",
         "slideCount": "स्लाइड की संख्या",
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
@@ -1803,7 +1778,6 @@
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
       "threadSuggestions": "चैट थ्रेड",
       "useForFutureChats": "भविष्य की चैट के लिए इस मॉडल का इस्तेमाल करें",
-      "videoModelForThisChat": "इस चैट के लिए वीडियो मॉडल",
       "workflows": {
         "empty": "कोई मेल खाता वर्कफ़्लो नहीं",
         "loading": "वर्कफ़्लो लोड हो रहा है...",
@@ -2859,23 +2833,12 @@
       "importedLoading": "अपलोड किए गए टेम्पलेट लोड हो रहे हैं…",
       "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
-      "previewVideo": "पूर्वावलोकन वीडियो टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previewWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "removeTemplate": "टेम्प्लेट {{title}} हटाएँ",
-      "removeVideo": "वीडियो टेम्प्लेट {{title}} हटाएं",
       "removeWebsite": "वेबसाइट टेम्पलेट {{title}} हटाएँ",
       "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ",
-      "retry": "फिर से कोशिश करें",
-      "videoOptions": "वीडियो विकल्प",
-      "videoOptionsAudio": "ऑडियो बनाएँ",
-      "videoOptionsAudioOff": "ऑडियो बंद",
-      "videoOptionsAudioOn": "ऑडियो चालू",
-      "videoOptionsDuration": "अवधि",
-      "videoOptionsLabel": "वीडियो विकल्प {{spec}}",
-      "videoOptionsModel": "मॉडल",
-      "videoOptionsRatio": "अनुपात",
-      "videoOptionsResolution": "रिज़ॉल्यूशन"
+      "retry": "फिर से कोशिश करें"
     },
     "thread": {
       "ariaLabel": "चैट थ्रेड",
@@ -5073,7 +5036,6 @@
         "byokHelp": "आपके कॉन्फ़िगर किए गए प्रोवाइडर का उपयोग करता है",
         "categoryChat": "चैट",
         "categoryImage": "इमेज",
-        "categoryVideo": "वीडियो",
         "chatModels": "चैट मॉडल",
         "effort": "प्रयास",
         "effortScale": {
@@ -5120,8 +5082,7 @@
           "claudeCodeOauth": "Claude Code (OAuth टोकन)",
           "deepseek": "गहन खोज"
         },
-        "standard": "मानक",
-        "videoModels": "वीडियो मॉडल"
+        "standard": "मानक"
       },
       "policies": {
         "actionsFor": "{{model}} के लिए क्रियाएँ",
@@ -5217,10 +5178,6 @@
       "timing": "बदलाव आगे के रन पर लागू होंगे। चल रहे या पहले से तैयार कार्यों में पिछली सेटिंग बनी रह सकती हैं।",
       "title": "बिल्ट-इन टूल",
       "tools": {
-        "avatar-video-generation": {
-          "description": "बोलने वाले अवतार के वीडियो बनाएँ।",
-          "name": "अवतार वीडियो जनरेशन"
-        },
         "finance": {
           "description": "कंपनियों, कीमतों और बाज़ार के डेटा की जानकारी लें।",
           "name": "वित्तीय डेटा"
@@ -5252,14 +5209,6 @@
         "social": {
           "description": "सार्वजनिक सोशल पोस्ट पर शोध करें और मीडिया इकट्ठा करें।",
           "name": "सोशल शोध"
-        },
-        "video-generation": {
-          "description": "अंतर्निहित मॉडल से वीडियो बनाएँ।",
-          "name": "वीडियो जनरेशन"
-        },
-        "voice-generation": {
-          "description": "अंतर्निहित आवाज़ों से भाषण बनाएँ।",
-          "name": "वॉइस जनरेशन"
         },
         "web-search": {
           "description": "वेब पर ताज़ा जानकारी खोजें।",

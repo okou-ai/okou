@@ -642,23 +642,8 @@
       "all": "Todos",
       "avatar": "Avatar",
       "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Volver a los avatares",
       "categories": "Categorías de plantilla",
       "category": "Categoría de plantilla",
-      "chooseVoice": "Elige una voz para {{title}}",
-      "filters": {
-        "age": "Edad",
-        "all": "Todos",
-        "aspectRatio": "Relación de aspecto",
-        "clear": "Limpiar",
-        "ethnicity": "Etnia",
-        "gender": "Género",
-        "language": "Idioma",
-        "scene": "Escena",
-        "style": "Estilo",
-        "title": "Filtros",
-        "useCase": "Caso de uso"
-      },
       "fullPreview": "Vista previa completa del sitio web {{title}}",
       "htmlPreview": "Vista previa HTML de {{title}}",
       "illustration": "Ilustración",
@@ -670,25 +655,18 @@
       "importedSlides_other": "{{count}} diapositivas",
       "importFile": "Importar plantilla",
       "multiAccent": "Multiacentos",
-      "needPro": "Necesitas Pro",
       "nextSlide": "Vista previa de la diapositiva siguiente",
       "noMatches": "Sin coincidencias",
       "placeholder": "Vista previa del sitio web {{title}}",
-      "playVideo": "Reproduce la vista previa de la plantilla de vídeo {{title}}",
-      "previewAvatarVideo": "Ver vídeo del avatar {{title}}",
       "previewCurrentSlide": "Vista previa de {{title}} en la diapositiva actual",
       "previewSlide": "Vista previa de la diapositiva {{slideNumber}}",
-      "previewVoice": "Escuchar la voz {{title}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
       "previousSlide": "Vista previa de la diapositiva anterior",
-      "recommended": "Recomendado",
       "renameImportedTemplate": "Cambiar nombre de la plantilla",
       "searchConnector": "Buscar plantillas",
       "searchConnectors": "Buscar plantillas",
       "selectStyle": "Selecciona el estilo {{style}}",
       "selectTemplate": "Seleccionar plantilla {{title}}",
-      "selectVideo": "Seleccionar plantilla de vídeo {{title}}",
-      "selectVoice": "Seleccionar la voz {{title}}",
       "selectWebsite": "Seleccionar plantilla web {{title}}",
       "selectWorkflow": "Seleccionar plantilla de flujo de trabajo {{title}}",
       "showVariant": "Mostrar variante {{variantNumber}}",
@@ -721,7 +699,6 @@
       "tryDifferentSearch": "Prueba con otra búsqueda.",
       "use": "Usar",
       "useThisTemplate": "Usa esta plantilla",
-      "viewVideoPlans": "Ver planes para la plantilla de vídeo {{title}}",
       "visibility": {
         "change": "Cambiar",
         "changeLabel": "Cambiar la visibilidad de la plantilla",
@@ -1212,7 +1189,6 @@
         "moreConnectorsChannels": "Más conectores personalizados e integraciones de canal",
         "supportEmail": "Soporte por correo",
         "supportPriority": "Soporte prioritario",
-        "videoGeneration": "Generación de vídeo y avatares",
         "voiceInput": "Entrada de voz: {{requests}} solicitudes y {{minutes}} minutos al día",
         "webhookAutomations": "Lanza una ejecución desde cualquier sistema con un webhook"
       },
@@ -1811,7 +1787,6 @@
         "addTemplate": "Añadir plantilla",
         "imagePlaceholder": "Describe la imagen que quieres crear…",
         "presentationPlaceholder": "¿De qué trata tu presentación?",
-        "settingsAdjusted": "Se han ajustado algunas opciones de vídeo para este modelo",
         "slideCount": "Número de diapositivas",
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} diapositivas"
@@ -1832,7 +1807,6 @@
       "temporarilySwitchTo": "Cambiar temporalmente a",
       "threadSuggestions": "Conversaciones",
       "useForFutureChats": "Usar este modelo en futuros chats",
-      "videoModelForThisChat": "Modelo de vídeo para este chat",
       "workflows": {
         "empty": "No hay flujos de trabajo coincidentes",
         "loading": "Cargando flujos de trabajo...",
@@ -2906,23 +2880,12 @@
       "importedLoading": "Cargando plantillas subidas…",
       "importedUnavailable": "Las plantillas subidas no están disponibles temporalmente.",
       "previewTemplate": "Plantilla de vista previa {{title}}",
-      "previewVideo": "Vista previa de la plantilla de vídeo {{title}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
       "previewWorkflow": "Vista previa de la plantilla de flujo de trabajo {{title}}",
       "removeTemplate": "Eliminar la plantilla {{title}}",
-      "removeVideo": "Eliminar la plantilla de vídeo {{title}}",
       "removeWebsite": "Eliminar la plantilla de sitio web {{title}}",
       "removeWorkflow": "Eliminar la plantilla de flujo de trabajo {{title}}",
-      "retry": "Reintentar",
-      "videoOptions": "Opciones de vídeo",
-      "videoOptionsAudio": "Generar audio",
-      "videoOptionsAudioOff": "Audio desactivado",
-      "videoOptionsAudioOn": "Audio activado",
-      "videoOptionsDuration": "Duración",
-      "videoOptionsLabel": "Opciones de vídeo {{spec}}",
-      "videoOptionsModel": "Modelo",
-      "videoOptionsRatio": "Proporción",
-      "videoOptionsResolution": "Resolución"
+      "retry": "Reintentar"
     },
     "thread": {
       "ariaLabel": "Hilo de chat",
@@ -5137,7 +5100,6 @@
         "byokHelp": "Usa el proveedor que has configurado",
         "categoryChat": "Chat",
         "categoryImage": "Imagen",
-        "categoryVideo": "Vídeo",
         "chatModels": "Modelos de chat",
         "effort": "Esfuerzo",
         "effortScale": {
@@ -5184,8 +5146,7 @@
           "claudeCodeOauth": "Claude Code (token OAuth)",
           "deepseek": "Deepseek"
         },
-        "standard": "Estándar",
-        "videoModels": "Modelos de vídeo"
+        "standard": "Estándar"
       },
       "policies": {
         "actionsFor": "Acciones para {{model}}",
@@ -5283,10 +5244,6 @@
       "timing": "Los cambios se aplican a las próximas ejecuciones. Las tareas en curso o ya preparadas pueden mantener los ajustes anteriores.",
       "title": "Herramientas integradas",
       "tools": {
-        "avatar-video-generation": {
-          "description": "Crea vídeos con avatares que hablan.",
-          "name": "Generación de vídeos con avatar"
-        },
         "finance": {
           "description": "Consulta empresas, cotizaciones y datos del mercado.",
           "name": "Datos financieros"
@@ -5318,14 +5275,6 @@
         "social": {
           "description": "Investiga publicaciones públicas y recopila contenido multimedia.",
           "name": "Investigación social"
-        },
-        "video-generation": {
-          "description": "Crea vídeos con modelos integrados.",
-          "name": "Generación de vídeos"
-        },
-        "voice-generation": {
-          "description": "Crea audio con voces integradas.",
-          "name": "Generación de voz"
         },
         "web-search": {
           "description": "Encuentra información actual en la web.",

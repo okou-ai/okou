@@ -1,12 +1,6 @@
 import { z } from "zod";
 import { artifactUrlSchema } from "./artifact-references";
 
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
-import { builtInGenerationAcceptedResponseSchema } from "./built-in-generation";
-
-const c = initContract();
-
 export const avatarVideoAspectRatioSchema = z.enum([
   "portrait",
   "landscape",
@@ -170,61 +164,3 @@ export type AvatarVideoVoicesQuery = z.infer<
 >;
 export type AvatarVideoAvatar = z.infer<typeof avatarVideoAvatarSchema>;
 export type AvatarVideoVoice = z.infer<typeof avatarVideoVoiceSchema>;
-
-const creationRoute = {
-  method: "POST",
-  path: "/api/avatar-video/generate",
-  headers: authHeadersSchema,
-  body: avatarVideoGenerateRequestSchema,
-  responses: {
-    200: avatarVideoGenerateResponseSchema,
-    202: builtInGenerationAcceptedResponseSchema,
-    400: apiErrorSchema,
-    401: apiErrorSchema,
-    402: apiErrorSchema,
-    403: apiErrorSchema,
-    500: apiErrorSchema,
-    502: apiErrorSchema,
-    503: apiErrorSchema,
-    504: apiErrorSchema,
-  },
-  summary: "Generate and persist a JoggAI talking-avatar video",
-} as const;
-
-export const avatarVideoContract = c.router({
-  generate: creationRoute,
-  generatePrivate: {
-    ...creationRoute,
-    path: "/api/avatar-video/generate/private",
-  },
-  avatars: {
-    method: "GET",
-    path: "/api/avatar-video/avatars",
-    headers: authHeadersSchema,
-    query: avatarVideoAvatarsQuerySchema,
-    responses: {
-      200: avatarVideoAvatarsResponseSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "List public JoggAI avatars",
-  },
-  voices: {
-    method: "GET",
-    path: "/api/avatar-video/voices",
-    headers: authHeadersSchema,
-    query: avatarVideoVoicesQuerySchema,
-    responses: {
-      200: avatarVideoVoicesResponseSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
-    },
-    summary: "List public JoggAI voices",
-  },
-});
-
-export type AvatarVideoContract = typeof avatarVideoContract;

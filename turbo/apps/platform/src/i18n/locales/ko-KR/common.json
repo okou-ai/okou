@@ -623,23 +623,8 @@
       "all": "전체",
       "avatar": "아바타",
       "avatarWithId": "아바타 {{id}}",
-      "backToAvatars": "아바타로 돌아가기",
       "categories": "템플릿 카테고리",
       "category": "템플릿 카테고리",
-      "chooseVoice": "{{title}}의 음성 선택",
-      "filters": {
-        "age": "연령",
-        "all": "전체",
-        "aspectRatio": "화면 비율",
-        "clear": "지우기",
-        "ethnicity": "인종",
-        "gender": "성별",
-        "language": "언어",
-        "scene": "장면",
-        "style": "스타일",
-        "title": "필터",
-        "useCase": "사용 사례"
-      },
       "fullPreview": "{{title}} 웹사이트 전체 미리보기",
       "htmlPreview": "{{title}} HTML 미리보기",
       "illustration": "일러스트레이션",
@@ -650,25 +635,18 @@
       "importedSlides_other": "{{count}}장",
       "importFile": "템플릿 가져오기",
       "multiAccent": "다중 악센트",
-      "needPro": "Pro 필요",
       "nextSlide": "다음 슬라이드 미리보기",
       "noMatches": "일치하는 항목 없음",
       "placeholder": "{{title}} 웹사이트 미리보기 자리 표시자",
-      "playVideo": "비디오 템플릿 미리보기 재생 {{title}}",
-      "previewAvatarVideo": "아바타 동영상 {{title}} 미리보기",
       "previewCurrentSlide": "현재 슬라이드에서 {{title}} 미리보기",
       "previewSlide": "슬라이드 {{slideNumber}} 미리보기",
-      "previewVoice": "음성 {{title}} 미리 듣기",
       "previewWebsite": "웹사이트 템플릿 {{title}} 미리보기",
       "previousSlide": "이전 슬라이드 미리보기",
-      "recommended": "추천",
       "renameImportedTemplate": "템플릿 이름 바꾸기",
       "searchConnector": "템플릿 검색",
       "searchConnectors": "템플릿 검색",
       "selectStyle": "스타일 선택 {{style}}",
       "selectTemplate": "템플릿 선택 {{title}}",
-      "selectVideo": "비디오 템플릿 선택 {{title}}",
-      "selectVoice": "음성 {{title}} 선택",
       "selectWebsite": "웹사이트 템플릿 선택 {{title}}",
       "selectWorkflow": "워크플로 템플릿 선택 {{title}}",
       "showVariant": "변형 보기 {{variantNumber}}",
@@ -701,7 +679,6 @@
       "tryDifferentSearch": "다른 검색어를 시도해 보세요.",
       "use": "사용",
       "useThisTemplate": "이 템플릿 사용",
-      "viewVideoPlans": "동영상 템플릿 {{title}}의 요금제 보기",
       "visibility": {
         "change": "변경",
         "changeLabel": "템플릿 공개 범위 변경",
@@ -1188,7 +1165,6 @@
         "moreConnectorsChannels": "더 많은 커스텀 커넥터와 채널 연동",
         "supportEmail": "이메일 지원",
         "supportPriority": "우선 지원",
-        "videoGeneration": "영상 및 아바타 생성",
         "voiceInput": "음성 입력, 하루 {{requests}}회 · {{minutes}}분",
         "webhookAutomations": "웹훅 하나로 어떤 시스템에서든 실행 시작"
       },
@@ -1779,7 +1755,6 @@
         "addTemplate": "템플릿 추가",
         "imagePlaceholder": "만들고 싶은 이미지를 설명하세요…",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
-        "settingsAdjusted": "이 모델에 맞게 일부 동영상 설정을 조정했습니다",
         "slideCount": "슬라이드 수",
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
@@ -1800,7 +1775,6 @@
       "temporarilySwitchTo": "임시로 전환할 모델",
       "threadSuggestions": "채팅 스레드",
       "useForFutureChats": "향후 채팅에도 사용",
-      "videoModelForThisChat": "이 채팅의 동영상 모델",
       "workflows": {
         "empty": "일치하는 워크플로가 없습니다",
         "loading": "워크플로 로딩 중...",
@@ -2850,23 +2824,12 @@
       "importedLoading": "업로드한 템플릿 로딩 중…",
       "importedUnavailable": "업로드한 템플릿을 일시적으로 사용할 수 없습니다.",
       "previewTemplate": "템플릿 미리보기 {{title}}",
-      "previewVideo": "비디오 템플릿 미리보기 {{title}}",
       "previewWebsite": "웹사이트 템플릿 미리보기 {{title}}",
       "previewWorkflow": "워크플로 템플릿 미리보기 {{title}}",
       "removeTemplate": "템플릿 삭제 {{title}}",
-      "removeVideo": "비디오 템플릿 삭제 {{title}}",
       "removeWebsite": "웹사이트 템플릿 삭제 {{title}}",
       "removeWorkflow": "워크플로 템플릿 삭제 {{title}}",
-      "retry": "다시 시도",
-      "videoOptions": "동영상 옵션",
-      "videoOptionsAudio": "오디오 생성",
-      "videoOptionsAudioOff": "오디오 꺼짐",
-      "videoOptionsAudioOn": "오디오 켜짐",
-      "videoOptionsDuration": "길이",
-      "videoOptionsLabel": "동영상 옵션 {{spec}}",
-      "videoOptionsModel": "모델",
-      "videoOptionsRatio": "비율",
-      "videoOptionsResolution": "해상도"
+      "retry": "다시 시도"
     },
     "thread": {
       "ariaLabel": "채팅 스레드",
@@ -5055,7 +5018,6 @@
         "byokHelp": "구성된 공급자 사용",
         "categoryChat": "채팅",
         "categoryImage": "이미지",
-        "categoryVideo": "동영상",
         "chatModels": "채팅 모델",
         "effort": "강도",
         "effortScale": {
@@ -5102,8 +5064,7 @@
           "claudeCodeOauth": "Claude Code (OAuth 토큰)",
           "deepseek": "Deepseek"
         },
-        "standard": "표준",
-        "videoModels": "동영상 모델"
+        "standard": "표준"
       },
       "policies": {
         "actionsFor": "{{model}}에 대한 작업",
@@ -5198,10 +5159,6 @@
       "timing": "변경 사항은 이후 실행에 적용됩니다. 실행 중이거나 이미 준비된 작업은 이전 설정을 유지할 수 있습니다.",
       "title": "기본 제공 도구",
       "tools": {
-        "avatar-video-generation": {
-          "description": "말하는 아바타 동영상을 만듭니다.",
-          "name": "아바타 동영상 생성"
-        },
         "finance": {
           "description": "기업, 시세, 시장 데이터를 조회하세요.",
           "name": "금융 데이터"
@@ -5233,14 +5190,6 @@
         "social": {
           "description": "공개 소셜 게시물을 조사하고 미디어를 수집하세요.",
           "name": "소셜 조사"
-        },
-        "video-generation": {
-          "description": "내장 모델로 동영상을 만듭니다.",
-          "name": "동영상 생성"
-        },
-        "voice-generation": {
-          "description": "내장 음성으로 말소리를 만듭니다.",
-          "name": "음성 생성"
         },
         "web-search": {
           "description": "웹에서 최신 정보를 찾으세요.",

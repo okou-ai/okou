@@ -253,7 +253,6 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
     selectedModel: "gpt-6-astra",
     serviceTier: null,
     modelSettings: {},
-    selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: "2026-09-06T00:00:00.000Z",
   });

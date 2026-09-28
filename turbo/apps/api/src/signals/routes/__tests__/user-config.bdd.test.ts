@@ -291,7 +291,6 @@ describe("AUTH-03 user model preference", () => {
       selectedModel: null,
       serviceTier: null,
       modelSettings: {},
-      selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
     });
@@ -314,7 +313,6 @@ describe("AUTH-03 user model preference", () => {
       selectedModel: null,
       serviceTier: null,
       modelSettings: {},
-      selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
     });
@@ -323,7 +321,6 @@ describe("AUTH-03 user model preference", () => {
       selectedModel: null,
       serviceTier: null,
       modelSettings: {},
-      selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
     });

@@ -43,6 +43,47 @@ production has no writer for them. After this change is released, raise the API
 rollback floor to its main commit so that no rollback target writes the retired
 types; that floor update is a separate follow-up and is not part of this change.
 
+## Video, voice, and talking-avatar generation retired
+
+Built-in video, voice (text-to-speech), and talking-avatar video generation are
+removed. The API no longer serves `/api/video-io/generate`,
+`/api/voice-io/speech`, `/api/avatar-video/generate`,
+`/api/avatar-video/avatars`, or `/api/avatar-video/voices` (each including its
+`/private` variant), and the CLI no longer has `okou generate video`,
+`okou generate voice`, or `okou generate avatar-video`. Chat sends that select a
+video or avatar template are rejected at admission. The App no longer offers
+video or avatar templates, a video model picker, the retired paid-tool
+toggles, or the `newUserVideoPickers` switch.
+
+Old and new versions during deploy:
+
+- Old Sandbox CLI with the new API: a run created before this release may still
+  call a removed route and receive `404`. This is accepted; the CLI is not kept
+  compatible with removed API routes, and commit-addressed CLI artifacts live
+  about two hours.
+- Old App with the new API: a still-open tab may still show retired controls.
+  A video or avatar template send is rejected, and its thread video model write
+  (`POST /api/chat-threads/:id/video-model`, now removed) fails. Its default
+  video model and create-thread `videoModel` fields are stripped by the request
+  schemas and ignored; paid-tool writes keep their contract. Raise the Web
+  client floor to the first App build containing this change in the same
+  release.
+- New App with the old API: the App simply stops calling the retired surfaces.
+- Jobs accepted before the deploy: provider webhooks, status reads, artifacts,
+  and billing for already accepted video and avatar jobs keep working
+  (`webhooks-built-in-generations`, `built-in-generation`). Remove those paths
+  once no accepted job can still complete.
+
+New threads and runs no longer resolve or store a video model; the member
+default is no longer written or returned. Thread metadata and thread events
+still expose the historical `selectedVideoModel` value (null for new threads),
+and the `video_model_updated` event kind stays readable for replay.
+
+No database migration is included. Historical usage and credit records keep
+their `video` and `audio` rows and display names. Dropping the thread, member,
+run, and event video model columns is left for a follow-up once the old App is
+outside the client floor.
+
 ## Chat send diagnostics and model admission (release 5)
 
 Migration `1277_chat_network_body_captures` adds a sparse table keyed by the

@@ -391,7 +391,6 @@ export function mockChatLifecycle(
       serviceTier?: ChatThreadServiceTier | null;
       reasoningEffort?: ReasoningEffort;
       imageModel?: string;
-      videoModel?: string;
       connectorSelections?: readonly ConnectorAccountSelection[];
       initialRemoteAccessOverrides?: readonly {
         protocol: "ssh" | "vnc";
@@ -865,7 +864,6 @@ export function mockChatLifecycle(
       serviceTier: body.serviceTier,
       reasoningEffort: body.reasoningEffort,
       imageModel: body.imageModel,
-      videoModel: body.videoModel,
       connectorSelections: body.connectorSelections,
       initialRemoteAccessOverrides: body.initialRemoteAccessOverrides,
     });

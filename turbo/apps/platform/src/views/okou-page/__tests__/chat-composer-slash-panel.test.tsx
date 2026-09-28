@@ -40,7 +40,6 @@ function setupModels(): void {
     serviceTier: null,
     modelSettings: {},
     selectedImageModel: "gpt-image-2",
-    selectedVideoModel: "dreamina-seedance-2-0-260128",
     updatedAt: "2026-09-07T00:00:00.000Z",
   });
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {

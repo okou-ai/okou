@@ -52,7 +52,6 @@ function configureChatPrerequisites(): void {
     selectedModel: "claude-sonnet-5",
     serviceTier: null,
     modelSettings: {},
-    selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: null,
   });

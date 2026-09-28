@@ -34,9 +34,7 @@ import {
   usageRecordContract,
   type UsageRecordRange,
 } from "@okouai/api-contracts/contracts/usage-record";
-import { videoIoGenerateContract } from "@okouai/api-contracts/contracts/video-io-generate";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { voiceIoSpeechContract } from "@okouai/api-contracts/contracts/voice-io-speech";
 import { voiceIoSttContract } from "@okouai/api-contracts/contracts/voice-io-stt";
 
 import { mockEnv } from "../../../../lib/env";
@@ -68,9 +66,7 @@ import { imageIoGenerateRoutes } from "../../image-io-generate";
 import { mapsRoutes } from "../../maps";
 import { usageMembersRoutes } from "../../usage-members";
 import { usageRecordRoutes } from "../../usage-record";
-import { videoIoGenerateRoutes } from "../../video-io-generate";
 import { voiceIoQuotaRoutes } from "../../voice-io-quota";
-import { voiceIoSpeechRoutes } from "../../voice-io-speech";
 import { voiceIoSttRoutes } from "../../voice-io-stt";
 
 type ClerkOrgRole = "org:admin" | "org:member";
@@ -132,8 +128,6 @@ interface AutoRechargeUpdateBody {
 type CheckoutStatus = 200 | 400 | 401 | 403 | 500 | 503;
 type BillingMutationStatus = 200 | 400 | 401 | 403 | 409 | 500 | 503;
 type ImageIoStatus = 200 | 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
-type VideoIoStatus = 200 | 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503 | 504;
-type VoiceSpeechStatus = 200 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
 type MapsStatus = 200 | 400 | 401 | 402 | 403 | 502 | 503;
 
 function authHeaders(actor: ApiTestUser | null): AuthHeaders {
@@ -567,24 +561,6 @@ export function createBillingMediaApi(context: TestContext) {
       );
     },
 
-    async requestVoiceSpeech(
-      actor: ApiTestUser | null,
-      body: {
-        readonly text?: string;
-        readonly voice?: string;
-        readonly instructions?: string;
-      },
-      statuses: readonly VoiceSpeechStatus[],
-    ) {
-      const client = setupApp({ context, routes: voiceIoSpeechRoutes })(
-        voiceIoSpeechContract,
-      );
-      return await accept(
-        client.post({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
     async requestImageIoGenerate(
       actor: ApiTestUser | null,
       body: {
@@ -609,36 +585,6 @@ export function createBillingMediaApi(context: TestContext) {
     ) {
       const client = setupApp({ context, routes: imageIoGenerateRoutes })(
         imageIoGenerateContract,
-      );
-      return await accept(
-        client.post({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
-    async requestVideoIoGenerate(
-      actor: ApiTestUser | null,
-      body: {
-        readonly prompt?: string;
-        readonly model?: string;
-        readonly aspectRatio?: string;
-        readonly duration?: string;
-        readonly resolution?: string;
-        readonly generateAudio?: boolean;
-        readonly negativePrompt?: string;
-        readonly seed?: number;
-        readonly autoFix?: boolean;
-        readonly safetyTolerance?: string;
-        readonly imageUrls?: readonly string[];
-        readonly videoUrls?: readonly string[];
-        readonly audioUrls?: readonly string[];
-        readonly firstFrameImageUrl?: string;
-        readonly lastFrameImageUrl?: string;
-      },
-      statuses: readonly VideoIoStatus[],
-    ) {
-      const client = setupApp({ context, routes: videoIoGenerateRoutes })(
-        videoIoGenerateContract,
       );
       return await accept(
         client.post({ headers: authenticate(actor), body }),

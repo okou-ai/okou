@@ -623,23 +623,8 @@
       "all": "すべて",
       "avatar": "アバター",
       "avatarWithId": "アバター {{id}}",
-      "backToAvatars": "アバターに戻る",
       "categories": "テンプレートのカテゴリ",
       "category": "テンプレートカテゴリ",
-      "chooseVoice": "{{title}}の音声を選択",
-      "filters": {
-        "age": "年齢",
-        "all": "すべて",
-        "aspectRatio": "アスペクト比",
-        "clear": "クリア",
-        "ethnicity": "民族",
-        "gender": "性別",
-        "language": "言語",
-        "scene": "シーン",
-        "style": "スタイル",
-        "title": "フィルター",
-        "useCase": "用途"
-      },
       "fullPreview": "{{title}} Web サイトの完全なプレビュー",
       "htmlPreview": "{{title}} HTML プレビュー",
       "illustration": "イラストレーション",
@@ -650,25 +635,18 @@
       "importedSlides_other": "{{count}} 枚",
       "importFile": "テンプレートをインポート",
       "multiAccent": "マルチアクセント",
-      "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
       "noMatches": "一致しません",
       "placeholder": "{{title}} Web サイトのプレビュー プレースホルダー",
-      "playVideo": "ビデオ テンプレートのプレビューを再生 {{title}}",
-      "previewAvatarVideo": "アバター動画{{title}}をプレビュー",
       "previewCurrentSlide": "現在のスライドで {{title}} をプレビューする",
       "previewSlide": "スライドのプレビュー {{slideNumber}}",
-      "previewVoice": "音声{{title}}を試聴",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previousSlide": "前のスライドをプレビューする",
-      "recommended": "おすすめ",
       "renameImportedTemplate": "テンプレート名を変更",
       "searchConnector": "テンプレートを検索",
       "searchConnectors": "テンプレートを検索",
       "selectStyle": "スタイル {{style}} を選択してください",
       "selectTemplate": "テンプレート {{title}} を選択します",
-      "selectVideo": "ビデオ テンプレート {{title}} を選択してください",
-      "selectVoice": "音声{{title}}を選択",
       "selectWebsite": "Web サイト テンプレート {{title}} を選択してください",
       "selectWorkflow": "ワークフロー テンプレート {{title}} を選択します",
       "showVariant": "バリアント {{variantNumber}} を表示",
@@ -701,7 +679,6 @@
       "tryDifferentSearch": "別の検索を試してください。",
       "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
-      "viewVideoPlans": "動画テンプレート {{title}} のプランを表示",
       "visibility": {
         "change": "変更",
         "changeLabel": "テンプレートの公開範囲を変更",
@@ -1188,7 +1165,6 @@
         "moreConnectorsChannels": "カスタムコネクターとチャネル連携をより多く",
         "supportEmail": "メールサポート",
         "supportPriority": "優先サポート",
-        "videoGeneration": "動画とアバターの生成",
         "voiceInput": "音声入力 1 日 {{requests}} 回・{{minutes}} 分",
         "webhookAutomations": "Webhook 一発でどのシステムからでも実行を開始"
       },
@@ -1779,7 +1755,6 @@
         "addTemplate": "テンプレートを追加",
         "imagePlaceholder": "作成したい画像を説明してください…",
         "presentationPlaceholder": "プレゼンテーションのテーマは何ですか？",
-        "settingsAdjusted": "このモデルに合わせて一部の動画設定を調整しました",
         "slideCount": "スライド数",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
@@ -1800,7 +1775,6 @@
       "temporarilySwitchTo": "一時的な切り替え先",
       "threadSuggestions": "チャットスレッド",
       "useForFutureChats": "今後のチャットでも使用",
-      "videoModelForThisChat": "このチャットの動画モデル",
       "workflows": {
         "empty": "一致するワークフローがありません",
         "loading": "ワークフローを読み込んでいます...",
@@ -2850,23 +2824,12 @@
       "importedLoading": "アップロード済みテンプレートを読み込み中…",
       "importedUnavailable": "アップロード済みテンプレートは一時的に利用できません。",
       "previewTemplate": "プレビュー テンプレート {{title}}",
-      "previewVideo": "プレビュービデオテンプレート {{title}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previewWorkflow": "ワークフロー テンプレートのプレビュー {{title}}",
       "removeTemplate": "テンプレート {{title}} を削除します",
-      "removeVideo": "ビデオ テンプレート {{title}} を削除します",
       "removeWebsite": "Web サイト テンプレート {{title}} を削除します",
       "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します",
-      "retry": "再試行",
-      "videoOptions": "動画オプション",
-      "videoOptionsAudio": "音声を生成",
-      "videoOptionsAudioOff": "音声オフ",
-      "videoOptionsAudioOn": "音声オン",
-      "videoOptionsDuration": "長さ",
-      "videoOptionsLabel": "動画オプション {{spec}}",
-      "videoOptionsModel": "モデル",
-      "videoOptionsRatio": "比率",
-      "videoOptionsResolution": "解像度"
+      "retry": "再試行"
     },
     "thread": {
       "ariaLabel": "チャットスレッド",
@@ -5055,7 +5018,6 @@
         "byokHelp": "設定されたプロバイダーを使用します",
         "categoryChat": "チャット",
         "categoryImage": "画像",
-        "categoryVideo": "動画",
         "chatModels": "チャットモデル",
         "effort": "強度",
         "effortScale": {
@@ -5102,8 +5064,7 @@
           "claudeCodeOauth": "Claude Code（OAuthトークン）",
           "deepseek": "ディープシーク"
         },
-        "standard": "標準",
-        "videoModels": "動画モデル"
+        "standard": "標準"
       },
       "policies": {
         "actionsFor": "{{model}} のアクション",
@@ -5198,10 +5159,6 @@
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
       "title": "組み込みツール",
       "tools": {
-        "avatar-video-generation": {
-          "description": "話すアバターの動画を生成します。",
-          "name": "アバター動画生成"
-        },
         "finance": {
           "description": "企業、株価、市場データを調べます。",
           "name": "金融データ"
@@ -5233,14 +5190,6 @@
         "social": {
           "description": "公開投稿を調べ、メディアを収集します。",
           "name": "ソーシャル調査"
-        },
-        "video-generation": {
-          "description": "組み込みモデルで動画を生成します。",
-          "name": "動画生成"
-        },
-        "voice-generation": {
-          "description": "組み込みの音声で読み上げを生成します。",
-          "name": "音声生成"
         },
         "web-search": {
           "description": "ウェブで最新の情報を検索します。",

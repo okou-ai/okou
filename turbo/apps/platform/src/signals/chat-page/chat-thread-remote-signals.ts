@@ -6,12 +6,10 @@ import {
   chatThreadComputerUseHostContract,
   chatThreadImageModelContract,
   chatThreadModelSelectionContract,
-  chatThreadVideoModelContract,
   type PersistedAttachment,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
-import type { VideoModel } from "@okouai/core/video-model-catalog";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
@@ -64,11 +62,6 @@ interface PatchComputerUseHostArgs {
   readonly threadId: string;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
-}
-
-interface PatchVideoModelArgs {
-  readonly threadId: string;
-  readonly videoModel: VideoModel | null;
 }
 
 interface PatchImageModelArgs {
@@ -230,35 +223,6 @@ export const patchChatThreadComputerUseHost$ = command(
       client.update({
         params: { id: threadId },
         body: { computerUseHostId, cloudBrowserEnabled, eventId },
-        fetchOptions: { signal },
-      }),
-      [204],
-    );
-  },
-);
-
-export const patchChatThreadVideoModel$ = command(
-  async (
-    { get, set },
-    { threadId, videoModel }: PatchVideoModelArgs,
-    signal: AbortSignal,
-  ) => {
-    const eventId = crypto.randomUUID();
-    const threadMeta = get(chatThreadMetaMap$).get(threadId);
-    if (threadMeta) {
-      set(registerOptimisticChatThreadEvent$, {
-        id: eventId,
-        kind: "video_model_updated",
-        chatThreadId: threadId,
-        agentId: threadMeta.agentId,
-        selectedVideoModel: videoModel,
-      });
-    }
-    const client = get(apiClient$)(chatThreadVideoModelContract);
-    await accept(
-      client.update({
-        params: { id: threadId },
-        body: { model: videoModel, eventId },
         fetchOptions: { signal },
       }),
       [204],

@@ -9,7 +9,6 @@ import {
   chatThreadDraftContract,
   chatThreadEventsContract,
   chatThreadImageModelContract,
-  chatThreadVideoModelContract,
   chatThreadMarkAgentReadContract,
   chatThreadMarkReadContract,
   chatThreadMarkUnreadContract,
@@ -37,7 +36,6 @@ import {
   type Indicators,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import type { VideoModelId } from "@okouai/api-contracts/contracts/video-models";
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
@@ -85,7 +83,6 @@ import { chatThreadComputerUseHostRoutes } from "../../chat-threads-computer-use
 import { chatThreadCreateRoutes } from "../../chat-threads-create";
 import { chatThreadDeleteRoutes } from "../../chat-threads-delete";
 import { chatThreadImageModelRoutes } from "../../chat-threads-image-model";
-import { chatThreadVideoModelRoutes } from "../../chat-threads-video-model";
 import { chatThreadMarkReadRoutes } from "../../chat-threads-mark-read";
 import { chatThreadModelSelectionRoutes } from "../../chat-threads-model-selection";
 import { chatThreadPatchRoutes } from "../../chat-threads-patch";
@@ -233,7 +230,6 @@ const chatFilesRoutes = [
   ...chatThreadArchiveRoutes,
   ...chatThreadRenameRoutes,
   ...chatThreadImageModelRoutes,
-  ...chatThreadVideoModelRoutes,
   ...chatThreadModelSelectionRoutes,
   ...chatThreadComputerUseHostRoutes,
   ...chatThreadsArtifactsSyncRoutes,
@@ -282,7 +278,7 @@ function unpinQuery(query: EventIdQuery) {
   return query.eventId === undefined ? {} : { eventId: query.eventId };
 }
 
-/** The image or video model pin body; an omitted event id stays omitted so the
+/** The image model pin body; an omitted event id stays omitted so the
  * route keeps generating one for itself. */
 function generationModelBody<TModel extends string>(
   model: TModel | null,
@@ -449,10 +445,6 @@ export function createChatFilesBddApi(context: TestContext) {
 
   function threadImageModelClient() {
     return chatFilesApp(context)(chatThreadImageModelContract);
-  }
-
-  function threadVideoModelClient() {
-    return chatFilesApp(context)(chatThreadVideoModelContract);
   }
 
   function userModelPreferenceClient() {
@@ -1196,41 +1188,8 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
-    async updateThreadVideoModel(
-      actor: ApiTestUser,
-      threadId: string,
-      videoModel: VideoModelId | null,
-      options?: EventIdQuery,
-    ): Promise<void> {
-      await accept(
-        threadVideoModelClient().update({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: generationModelBody(videoModel, options),
-        }),
-        [204],
-      );
-    },
-
-    async requestUpdateThreadVideoModel(
-      actor: ApiTestUser | null,
-      threadId: string,
-      videoModel: VideoModelId | null,
-      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
-      options?: EventIdQuery,
-    ) {
-      return await accept(
-        threadVideoModelClient().update({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-          body: generationModelBody(videoModel, options),
-        }),
-        statuses,
-      );
-    },
-
     /**
-     * The image and video model pin writers driven through an app whose
+     * The image model pin writer driven through an app whose
      * **operation** signal the caller owns, the same mechanism
      * {@link readCursorWritesWithOperationSignal} documents. The requests are
      * returned unnarrowed so a caller can assert the off-contract response a
@@ -1250,17 +1209,6 @@ export function createChatFilesBddApi(context: TestContext) {
             body: { model: imageModel },
           });
         },
-        async updateVideoModel(
-          actor: ApiTestUser,
-          threadId: string,
-          videoModel: VideoModelId | null,
-        ) {
-          return await operationApp(chatThreadVideoModelContract).update({
-            headers: authenticate(context, actor),
-            params: { id: threadId },
-            body: { model: videoModel },
-          });
-        },
       };
     },
 
@@ -1268,7 +1216,6 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       selectedModel: SupportedRunModel | null,
       selectedImageModel?: ImageModelId | null,
-      selectedVideoModel?: VideoModelId | null,
     ): Promise<void> {
       await accept(
         userModelPreferenceClient().update({
@@ -1277,7 +1224,6 @@ export function createChatFilesBddApi(context: TestContext) {
             selectedModel,
             serviceTier: null,
             ...(selectedImageModel === undefined ? {} : { selectedImageModel }),
-            ...(selectedVideoModel === undefined ? {} : { selectedVideoModel }),
           },
         }),
         [200],

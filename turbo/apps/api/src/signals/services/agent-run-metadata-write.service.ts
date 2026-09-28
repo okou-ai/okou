@@ -19,7 +19,6 @@ type StoredRunMetadataValues = Pick<
   | "builtInModelKeyId"
   | "reasoningEffort"
   | "codexServiceTier"
-  | "selectedVideoModel"
   | "selectedImageModel"
   | "chatThreadId"
   | "apiStartedAt"
@@ -97,7 +96,6 @@ export function normalizeRunMetadata(
     autonomyBudget: input.autonomyBudget ?? 10,
     workflowAutomationId: input.workflowAutomationId ?? null,
     ...normalizeRunModelMetadata(input),
-    selectedVideoModel: input.selectedVideoModel ?? null,
     selectedImageModel: input.selectedImageModel ?? null,
     chatThreadId: input.chatThreadId ?? null,
     apiStartedAt: input.apiStartedAt ?? null,

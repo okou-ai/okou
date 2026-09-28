@@ -102,21 +102,9 @@
             "description": "画像を一括で最適化および変換する",
             "title": "Cloudinary メディア オプティマイザー"
           },
-          "elevenlabs-audio-content": {
-            "description": "ドライブに保存された Notion 記事の音声ナレーション",
-            "title": "ElevenLabs オーディオ コンテンツ"
-          },
           "fal-ai-image-generation": {
             "description": "Notion の説明から製品画像を生成します",
             "title": "Fal AI イメージの生成"
-          },
-          "heygen-video-from-script": {
-            "description": "Notion スクリプトはチーム ping を使用して HeyGen ビデオになります",
-            "title": "スクリプトからの HeyGen ビデオ"
-          },
-          "runway-video-from-brief": {
-            "description": "クリエイティブなブリーフから短いビデオを生成する",
-            "title": "Runwayでブリーフから動画を生成"
           }
         },
         "title": "クリエイティブ"
