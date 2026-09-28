@@ -1419,7 +1419,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "已新增 {{amount}}",
         "checkedIn": "已簽到",
         "checkin": {
           "action": "簽到",
@@ -1433,7 +1432,6 @@
           "name": "連線一個工具",
           "unit": "每個連接器"
         },
-        "earned": "已獲得 {{amount}}",
         "howRewardsWork": "獎勵規則說明",
         "imessage": {
           "action": "新增",

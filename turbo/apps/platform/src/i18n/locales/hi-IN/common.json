@@ -1420,7 +1420,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} जोड़े गए",
         "checkedIn": "चेक इन हो गया",
         "checkin": {
           "action": "चेक इन करें",
@@ -1434,7 +1433,6 @@
           "name": "एक टूल कनेक्ट करें",
           "unit": "प्रति कनेक्टर"
         },
-        "earned": "{{amount}} अर्जित",
         "howRewardsWork": "इनाम कैसे काम करते हैं",
         "imessage": {
           "action": "जोड़ें",

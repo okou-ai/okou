@@ -1419,7 +1419,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} ditambahkan",
         "checkedIn": "Sudah check in",
         "checkin": {
           "action": "Check in",
@@ -1433,7 +1432,6 @@
           "name": "Hubungkan alat",
           "unit": "per konektor"
         },
-        "earned": "{{amount}} diperoleh",
         "howRewardsWork": "Cara kerja hadiah",
         "imessage": {
           "action": "Tambahkan",

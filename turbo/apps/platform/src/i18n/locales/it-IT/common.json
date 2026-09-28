@@ -1444,7 +1444,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} aggiunti",
         "checkedIn": "Check-in fatto",
         "checkin": {
           "action": "Fai check-in",
@@ -1458,7 +1457,6 @@
           "name": "Collega uno strumento",
           "unit": "per connettore"
         },
-        "earned": "{{amount}} ottenuti",
         "howRewardsWork": "Come funzionano i premi",
         "imessage": {
           "action": "Aggiungi",

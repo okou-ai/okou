@@ -1420,7 +1420,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} added",
         "checkedIn": "Checked in",
         "checkin": {
           "action": "Check in",
@@ -1434,7 +1433,6 @@
           "name": "Connect a tool",
           "unit": "per connector"
         },
-        "earned": "{{amount}} earned",
         "howRewardsWork": "How rewards work",
         "imessage": {
           "action": "Add",

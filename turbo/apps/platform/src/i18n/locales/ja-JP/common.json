@@ -1419,7 +1419,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} 件追加済み",
         "checkedIn": "チェックイン済み",
         "checkin": {
           "action": "チェックイン",
@@ -1433,7 +1432,6 @@
           "name": "ツールを接続",
           "unit": "コネクタごと"
         },
-        "earned": "{{amount}} 獲得",
         "howRewardsWork": "報酬の仕組み",
         "imessage": {
           "action": "追加",

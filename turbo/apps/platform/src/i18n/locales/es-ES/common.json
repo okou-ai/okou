@@ -1444,7 +1444,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} añadidos",
         "checkedIn": "Visita registrada",
         "checkin": {
           "action": "Registrar visita",
@@ -1458,7 +1457,6 @@
           "name": "Conecta una herramienta",
           "unit": "por conector"
         },
-        "earned": "{{amount}} conseguidos",
         "howRewardsWork": "Cómo funcionan las recompensas",
         "imessage": {
           "action": "Añadir",

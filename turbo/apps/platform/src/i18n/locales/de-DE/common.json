@@ -1420,7 +1420,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} hinzugefügt",
         "checkedIn": "Eingecheckt",
         "checkin": {
           "action": "Einchecken",
@@ -1434,7 +1433,6 @@
           "name": "Tool verbinden",
           "unit": "pro Connector"
         },
-        "earned": "{{amount}} erhalten",
         "howRewardsWork": "So funktionieren Prämien",
         "imessage": {
           "action": "Hinzufügen",

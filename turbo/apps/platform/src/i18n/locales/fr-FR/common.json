@@ -1444,7 +1444,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} ajoutés",
         "checkedIn": "Présence validée",
         "checkin": {
           "action": "Valider ma présence",
@@ -1458,7 +1457,6 @@
           "name": "Connecter un outil",
           "unit": "par connecteur"
         },
-        "earned": "{{amount}} obtenus",
         "howRewardsWork": "Comment fonctionnent les récompenses",
         "imessage": {
           "action": "Ajouter",

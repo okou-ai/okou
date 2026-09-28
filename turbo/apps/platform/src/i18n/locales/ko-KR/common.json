@@ -1419,7 +1419,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}}개 추가됨",
         "checkedIn": "출석 완료",
         "checkin": {
           "action": "출석하기",
@@ -1433,7 +1432,6 @@
           "name": "도구 연결하기",
           "unit": "커넥터당"
         },
-        "earned": "{{amount}} 획득",
         "howRewardsWork": "보상 안내",
         "imessage": {
           "action": "추가",
