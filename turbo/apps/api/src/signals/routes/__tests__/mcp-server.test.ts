@@ -6512,7 +6512,7 @@ describe("external MCP entry", () => {
                   {
                     name: "update_chat_thread",
                     description: expect.stringContaining(
-                      "model:null clears the pin; next run admission pins the then-current default",
+                      "model:null clears the pin; future inputs capture the organization default at enqueue without changing the pin",
                     ),
                     inputSchema: {
                       properties: {
