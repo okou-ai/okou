@@ -280,7 +280,8 @@ Current link-backed card patterns include:
 
 - `/connectors/:connectorSlug/connect`,
   `/connectors/:connectorSlug/authorize`, and
-  `/connectors/:connectorSlug/reconnect/:connectionId` for an exact builtin account
+  `/connectors/:connectorSlug/reconnect/:connectionId` for an exact builtin account.
+  Both absolute platform URLs and root-relative paths are recognized.
 - `/connectors/custom/proposal?p=...`
 - `/agents/:agentId/permissions?...`
 - `/agents/:agentId/connector-accounts/:connectionId/select?...`

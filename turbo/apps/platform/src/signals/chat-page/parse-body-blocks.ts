@@ -154,7 +154,7 @@ const PLATFORM_FILE_CDN_HOSTS = [
   "cdn.vm7.io",
 ] as const;
 const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
-const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|f|artifacts|browsers)\/|\/browser\/actions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
+const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|connectors|f|artifacts|browsers)\/|\/browser\/actions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
 const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
   /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
 const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[-./\\_*;~=&%+@#?]$/u;

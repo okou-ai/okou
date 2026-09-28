@@ -445,7 +445,8 @@ function createExactReconnectConnectorSignals(
         connectorSlug: descriptor.connectorSlug,
         connectionId: descriptor.connectionId,
       },
-      searchParams: new URL(descriptor.originalUrl).searchParams,
+      searchParams: new URL(descriptor.originalUrl, window.location.origin)
+        .searchParams,
     });
   });
 
