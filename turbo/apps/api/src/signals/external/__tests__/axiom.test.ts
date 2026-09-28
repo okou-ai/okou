@@ -100,9 +100,20 @@ describe("shared SDK ingestion", () => {
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
           allowance_ms: 7.4,
+          allowance_allocation_read_ms: 1.1,
+          allowance_anchor_ms: 0.8,
+          allowance_window_lock_ms: 2.3,
+          allowance_window_issue_ms: 0,
+          allowance_allocate_ms: 0.1,
+          allowance_window_write_ms: 2.1,
+          allowance_allocation_write_ms: 0.6,
           event_write_ms: 5.3,
           grant_deduction_ms: 10.5,
           org_credit_ms: 0,
+          org_balance_read_ms: 0,
+          org_expire_credits_ms: 0,
+          org_debit_ms: 0,
+          org_expiry_lot_deduction_ms: 0,
         },
       },
       {
@@ -134,9 +145,20 @@ describe("shared SDK ingestion", () => {
           pricing_read_ms: 1.1,
           pricing_calculation_ms: 0.08,
           allowance_ms: 7.4,
+          allowance_allocation_read_ms: 1.1,
+          allowance_anchor_ms: 0.8,
+          allowance_window_lock_ms: 2.3,
+          allowance_window_issue_ms: 0,
+          allowance_allocate_ms: 0.1,
+          allowance_window_write_ms: 2.1,
+          allowance_allocation_write_ms: 0.6,
           event_write_ms: 5.3,
           grant_deduction_ms: 10.5,
           org_credit_ms: 0,
+          org_balance_read_ms: 0,
+          org_expire_credits_ms: 0,
+          org_debit_ms: 0,
+          org_expiry_lot_deduction_ms: 0,
         },
         {
           _time: expect.any(String),
@@ -253,9 +275,20 @@ describe("shared SDK ingestion", () => {
         pricing_read_ms: expect.any(Number),
         pricing_calculation_ms: expect.any(Number),
         allowance_ms: expect.any(Number),
+        allowance_allocation_read_ms: expect.any(Number),
+        allowance_anchor_ms: expect.any(Number),
+        allowance_window_lock_ms: expect.any(Number),
+        allowance_window_issue_ms: expect.any(Number),
+        allowance_allocate_ms: expect.any(Number),
+        allowance_window_write_ms: expect.any(Number),
+        allowance_allocation_write_ms: expect.any(Number),
         event_write_ms: expect.any(Number),
         grant_deduction_ms: expect.any(Number),
         org_credit_ms: expect.any(Number),
+        org_balance_read_ms: expect.any(Number),
+        org_expire_credits_ms: expect.any(Number),
+        org_debit_ms: expect.any(Number),
+        org_expiry_lot_deduction_ms: expect.any(Number),
       }),
     ]);
     expect(settlementTimings()[0]).not.toHaveProperty("org_id");
@@ -340,7 +373,14 @@ describe("shared SDK ingestion", () => {
     await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
     expect(settlementTimings()).toHaveLength(2);
     expect(settlementTimings()[1]).toStrictEqual(
-      expect.objectContaining({ org_credit_ms: 0, grant_rows: 1 }),
+      expect.objectContaining({
+        org_credit_ms: 0,
+        org_balance_read_ms: 0,
+        org_expire_credits_ms: 0,
+        org_debit_ms: 0,
+        org_expiry_lot_deduction_ms: 0,
+        grant_rows: 1,
+      }),
     );
     await accept(api.process({ body: { org_id: fixture.orgId } }), [200]);
     expect(settlementTimings()).toHaveLength(2);

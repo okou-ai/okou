@@ -1149,13 +1149,30 @@ function allocateUsageAllowanceToCandidates(args: {
   return allocations;
 }
 
+export interface UsageAllowanceSettlementTimings {
+  readonly allocationReadMs: number;
+  readonly anchorMs: number;
+  readonly windowLockMs: number;
+  readonly windowIssueMs: number;
+  readonly allocateMs: number;
+  readonly windowWriteMs: number;
+  readonly allocationWriteMs: number;
+}
+
+function elapsedAllowancePhaseMs(startedAt: number): number {
+  return Math.round((performance.now() - startedAt) * 1000) / 1000;
+}
+
 export async function applyUsageAllowanceToUsageEventsInLockedTransaction(
   tx: UsageAllowanceStore,
   args: {
     readonly orgId: string;
     readonly events: readonly UsageAllowanceEventInput[];
   },
-): Promise<ReadonlyMap<string, number>> {
+): Promise<{
+  readonly allowanceByUsageEvent: ReadonlyMap<string, number>;
+  readonly timings: UsageAllowanceSettlementTimings;
+}> {
   const candidates: UsageAllowanceCandidate[] = [];
   for (const event of args.events) {
     if (event.grossUnits > 0) {
@@ -1169,12 +1186,16 @@ export async function applyUsageAllowanceToUsageEventsInLockedTransaction(
     }
   }
 
+  const allocationReadStartedAt = performance.now();
   const allowanceByUsageEvent = await loadExistingUsageAllowanceAllocations(
     tx,
     candidates.map((candidate) => {
       return candidate.usageEventId;
     }),
   );
+  const allocationReadMs = elapsedAllowancePhaseMs(allocationReadStartedAt);
+
+  const anchorStartedAt = performance.now();
   const unresolvedCandidates = candidates.filter((candidate) => {
     return !allowanceByUsageEvent.has(candidate.usageEventId);
   });
@@ -1185,31 +1206,54 @@ export async function applyUsageAllowanceToUsageEventsInLockedTransaction(
   const allowanceTimes = anchoredCandidates.map((candidate) => {
     return candidate.allowanceAt;
   });
+  const anchorMs = elapsedAllowancePhaseMs(anchorStartedAt);
 
+  const windowLockStartedAt = performance.now();
   const { shortWindows, weeklyWindows } = await lockIssuedWindowsForTimes(tx, {
     orgId: args.orgId,
     times: allowanceTimes,
   });
+  const windowLockMs = elapsedAllowancePhaseMs(windowLockStartedAt);
 
+  const windowIssueStartedAt = performance.now();
   await ensureIssuedWindowsForCandidates(tx, {
     orgId: args.orgId,
     candidates: anchoredCandidates,
     shortWindows,
     weeklyWindows,
   });
+  const windowIssueMs = elapsedAllowancePhaseMs(windowIssueStartedAt);
 
+  const allocateStartedAt = performance.now();
   const newAllocations = allocateUsageAllowanceToCandidates({
     candidates: anchoredCandidates,
     shortWindows,
     weeklyWindows,
     allowanceByUsageEvent,
   });
+  const allocateMs = elapsedAllowancePhaseMs(allocateStartedAt);
 
+  const windowWriteStartedAt = performance.now();
   await persistUsageAllowanceWindowConsumption(tx, [
     ...shortWindows,
     ...weeklyWindows,
   ]);
-  await insertUsageAllowanceAllocations(tx, args.orgId, newAllocations);
+  const windowWriteMs = elapsedAllowancePhaseMs(windowWriteStartedAt);
 
-  return allowanceByUsageEvent;
+  const allocationWriteStartedAt = performance.now();
+  await insertUsageAllowanceAllocations(tx, args.orgId, newAllocations);
+  const allocationWriteMs = elapsedAllowancePhaseMs(allocationWriteStartedAt);
+
+  return {
+    allowanceByUsageEvent,
+    timings: {
+      allocationReadMs,
+      anchorMs,
+      windowLockMs,
+      windowIssueMs,
+      allocateMs,
+      windowWriteMs,
+      allocationWriteMs,
+    },
+  };
 }
