@@ -242,7 +242,6 @@ async function collectThread(
           renamedAt: chatThreads.renamedAt,
           selectedModel: chatThreads.selectedModel,
           selectedImageModel: chatThreads.selectedImageModel,
-          selectedVideoModel: chatThreads.selectedVideoModel,
           modelSettings: chatThreads.modelSettings,
           codexServiceTier: chatThreads.codexServiceTier,
         })

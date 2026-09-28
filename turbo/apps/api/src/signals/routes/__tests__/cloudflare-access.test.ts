@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import {
   sshConnectionsContract,
@@ -25,6 +26,7 @@ import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { agentsRoutes } from "../agents";
 import { runnerSshRoutes } from "../runner-ssh";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -336,7 +338,7 @@ async function runtime(owner: Owner, overrides: Partial<RuntimeBody> = {}) {
         ...runnerIdentity,
         triggerSource: "web",
         status: "running",
-        chat: false,
+        chat: true,
         access: false,
         ...overrides,
       },
@@ -409,11 +411,25 @@ async function host(configId?: string) {
     )
   ).body;
 }
+async function enableHostDefault(connectionId: string) {
+  const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+    chatRemoteAccessContract,
+  );
+  await accept(
+    remote.updateHostDefault({
+      headers,
+      params: { protocol: "ssh", connectionId },
+      body: { enabled: true },
+    }),
+    [200],
+  );
+}
 async function fixture() {
   const o = owner();
   const r = await runtime(o, { runnerGroup: `access-${randomUUID()}` });
   const c = await config();
   const h = await host(c.id);
+  await enableHostDefault(h.id);
   return {
     ...o,
     ...r,
@@ -450,6 +466,7 @@ describe("organization Cloudflare Access", () => {
     const member = owner({ orgId: admin.orgId });
     const r = await runtime(member, { runnerGroup: `access-${randomUUID()}` });
     const saved = await host(shared.id);
+    await enableHostDefault(saved.id);
     const pinned = await accept(
       runner().pin({
         headers: runnerHeaders,
@@ -1285,7 +1302,7 @@ describe("Cloudflare Access owner configuration", () => {
     ).toStrictEqual([]);
   });
 
-  it("preserves SSH first-host onboarding and manual denials through Access config changes", async () => {
+  it("preserves SSH first-host legacy grant data without removing chat host authority", async () => {
     const f = await fixture();
     const params = { agentId: f.agentId };
     expect(
@@ -1314,8 +1331,8 @@ describe("Cloudflare Access owner configuration", () => {
       expect(
         (await accept(sshGrants().get({ headers, params }), [200])).body,
       ).toStrictEqual({ enabled: false });
-      await expect(resolve(f)).resolves.toStrictEqual({
-        outcome: "unavailable",
+      await expect(resolve(f)).resolves.toMatchObject({
+        outcome: "resolved_access",
       });
     }
   });
@@ -1341,6 +1358,8 @@ describe("protected SSH authority", () => {
       params: { runId: r.runId },
     };
     const readyHost = await host();
+    await enableHostDefault(protectedHost.id);
+    await enableHostDefault(readyHost.id);
     expect((await resolve(f)).outcome).toBe("resolved_access");
     const priorDecryptCalls = kms.decryptCalls;
     authenticate(admin, "org:admin");
@@ -1469,6 +1488,7 @@ describe("protected SSH authority", () => {
     const second = owner({ orgId: first.orgId });
     const r = await runtime(second);
     const h = await host(shared.id);
+    await enableHostDefault(h.id);
     const resolved = await accept(
       runner().resolve({
         headers: runnerHeaders,
@@ -1551,6 +1571,7 @@ describe("protected SSH authority", () => {
     const r = await runtime(user, { agentId: shared.body.agentId });
     const ownConfig = await config();
     const ownHost = await host(ownConfig.id);
+    await enableHostDefault(ownHost.id);
     const request = {
       headers: runnerHeaders,
       params: { runId: r.runId },
@@ -1670,10 +1691,11 @@ describe("protected SSH authority", () => {
     }
   });
 
-  it("invalidates only protected host IDs and preserves recipients after grant revocation", async () => {
+  it("invalidates only protected host IDs and keeps chat authority after legacy grant revocation", async () => {
     const f = await fixture();
     const second = await host(f.config.id);
     const direct = await host();
+    await enableHostDefault(direct.id);
     const otherAgent = await runtime(f, { runnerGroup: "other-agent" });
     const otherOwner = owner({ orgId: f.orgId });
     await runtime(otherOwner, { runnerGroup: "other-owner" });
@@ -1739,7 +1761,9 @@ describe("protected SSH authority", () => {
     expect(notices()).toStrictEqual([
       ["ssh-authority-invalidated", { runId: f.runId, connectionId: null }],
     ]);
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(resolve(f)).resolves.toMatchObject({
+      outcome: "resolved_access",
+    });
     expect(
       (
         await accept(
@@ -1751,7 +1775,7 @@ describe("protected SSH authority", () => {
           [200],
         )
       ).body,
-    ).toStrictEqual({ outcome: "unavailable" });
+    ).toMatchObject({ outcome: "resolved_password" });
   });
 
   it("commits token replacement even when realtime publication fails", async () => {
@@ -1925,6 +1949,7 @@ describe("protected SSH authority", () => {
   it("preserves an omitted transport binding and rejects a stale editor without affecting Direct hosts", async () => {
     const f = await fixture();
     const direct = await host();
+    await enableHostDefault(direct.id);
     expect(sshConnectionResponseSchema.parse(direct)).toStrictEqual(direct);
     const params = { connectionId: f.host.id };
     const renamed = await accept(
@@ -1972,7 +1997,7 @@ describe("protected SSH authority", () => {
   });
 
   it.each([false, true])(
-    "uses the SSH grant alone when enabled=%s",
+    "ignores the legacy SSH grant when enabled=%s and uses chat host permission",
     async (enabled) => {
       const f = await fixture();
       const params = { agentId: f.agentId };
@@ -1980,15 +2005,13 @@ describe("protected SSH authority", () => {
         sshGrants().update({ headers, params, body: { enabled } }),
         [200],
       );
-      expect((await resolve(f)).outcome).toBe(
-        enabled ? "resolved_access" : "unavailable",
-      );
+      expect((await resolve(f)).outcome).toBe("resolved_access");
       const inventory = setupApp({ context, routes: sshAccessRoutes })(
         sshHostsContract,
       );
       const listed = await accept(
         inventory.list({ headers: f.guestHeaders }),
-        enabled ? [200] : [404],
+        [200],
       );
       if (listed.status === 200) {
         expect(listed.body.hosts).toHaveLength(1);
@@ -2009,7 +2032,7 @@ describe("protected SSH authority", () => {
             [200],
           )
         ).body.outcome,
-      ).toBe(enabled ? "recorded" : "unavailable");
+      ).toBe("recorded");
       expect(
         (
           await accept(
@@ -2025,13 +2048,14 @@ describe("protected SSH authority", () => {
             [200],
           )
         ).body.outcome,
-      ).toBe(enabled ? "pinned" : "unavailable");
+      ).toBe("pinned");
     },
   );
 
   it("allows ordinary owners to manage and execute Direct and Access hosts without feature overrides", async () => {
     const f = await fixture();
     const direct = await host();
+    await enableHostDefault(direct.id);
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
       sshHostsContract,
     );

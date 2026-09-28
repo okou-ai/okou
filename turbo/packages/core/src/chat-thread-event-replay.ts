@@ -11,7 +11,6 @@ export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
   readonly sortAt: string;
   readonly archived: boolean;
   readonly cloudBrowserEnabled: boolean;
-  readonly selectedVideoModel: string | null;
   readonly selectedImageModel: string | null;
   readonly modelSettings: ModelSettings;
 }
@@ -92,7 +91,8 @@ function updatedThreadFields(
     };
   }
   if (event.kind === "video_model_updated") {
-    return { selectedVideoModel: event.selectedVideoModel };
+    // Retired kind that historical events still carry (#37249).
+    return {};
   }
   if (event.kind === "image_model_updated") {
     return { selectedImageModel: event.selectedImageModel ?? null };
@@ -121,7 +121,6 @@ function applyEvent(
       serviceTier: event.serviceTier,
       computerUseHostId: event.computerUseHostId,
       cloudBrowserEnabled: event.cloudBrowserEnabled ?? false,
-      selectedVideoModel: event.selectedVideoModel,
       selectedImageModel: event.selectedImageModel ?? null,
     });
     const pendingUpdates = pendingThreadUpdates.get(event.chatThreadId) ?? [];
@@ -198,7 +197,6 @@ export function replayChatThreadEvents(
       serviceTier: thread.serviceTier ?? null,
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
-      selectedVideoModel: thread.selectedVideoModel,
       selectedImageModel: thread.selectedImageModel ?? null,
     });
   }

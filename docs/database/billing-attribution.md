@@ -52,16 +52,16 @@ invented for a run that once existed.
 Foundation inventory verified on base `fa2e6e6212dee848c8d37d72551cc5d9b7887ac4`.
 The Stage 1 row is updated by #34267; the other foundation entries are unchanged:
 
-| Production writer                                                                       | Atomic capture / provenance                                                                                            |
-| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `agent-run-create.service.ts` (both insert paths)                                       | Database run INSERT trigger; includes canonical launch CTE.                                                            |
-| `managed-usage.service.ts`                                                              | Raw trigger plus supplied original run ID; explicit runless when actor has no run.                                     |
-| `openrouter-usage.service.ts`                                                           | Raw trigger; explicit runless for request-local no-run usage.                                                          |
-| `webhooks-agent-health-usage-telemetry.ts`                                              | Raw trigger, runner-supplied run ID; current idempotent INSERT unchanged.                                              |
-| `pi-memory-stage1-usage.service.ts`                                                     | Explicit `pi_memory_stage1`; existing deterministic category keys and billing semantics.                               |
-| `image-generation.service.ts`, `video-generation.service.ts`, `avatar-video.service.ts` | Raw trigger; callbacks carry original job billing identity; synchronous image requests carry request-local provenance. |
-| `voice-io-post.service.ts`                                                              | Raw trigger; explicit request-local runless classification.                                                            |
-| `built-in-generation.service.ts`                                                        | Job INSERT trigger; webhook job projections include independent identity.                                              |
+| Production writer                                 | Atomic capture / provenance                                                                                            |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `agent-run-create.service.ts` (both insert paths) | Database run INSERT trigger; includes canonical launch CTE.                                                            |
+| `managed-usage.service.ts`                        | Raw trigger plus supplied original run ID; explicit runless when actor has no run.                                     |
+| `openrouter-usage.service.ts`                     | Raw trigger; explicit runless for request-local no-run usage.                                                          |
+| `webhooks-agent-health-usage-telemetry.ts`        | Raw trigger, runner-supplied run ID; current idempotent INSERT unchanged.                                              |
+| `pi-memory-stage1-usage.service.ts`               | Explicit `pi_memory_stage1`; existing deterministic category keys and billing semantics.                               |
+| `image-generation.service.ts`                     | Raw trigger; callbacks carry original job billing identity; synchronous image requests carry request-local provenance. |
+| `voice-io-post.service.ts`                        | Raw trigger; explicit request-local runless classification.                                                            |
+| `built-in-generation.service.ts`                  | Job INSERT trigger; webhook job projections include independent identity.                                              |
 
 `src/test-fixtures`, `routes/test-*`, `__tests__`, `__benches__`, and
 `src/scripts/dev-bench-seed.ts` are fixtures/benchmarks, not production usage

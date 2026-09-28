@@ -1131,9 +1131,9 @@ describe("WHCB-02: built-in generation callback boundaries", () => {
   it("rejects malformed provider payloads after a valid token", async () => {
     const generationId = randomUUID();
 
-    const response = await api.requestBytePlusGenerationWebhook({
+    const response = await api.requestFalGenerationWebhook({
       generationId,
-      token: api.bytePlusGenerationWebhookToken(generationId),
+      token: api.falGenerationWebhookToken(generationId),
       body: "not-json",
       statuses: [400],
     });
@@ -1180,31 +1180,6 @@ describe("WHCB-02: built-in generation callback boundaries", () => {
       statuses: [200],
     });
     expect(falNestedResponse.body).toBe("OK");
-
-    const bytePlusGenerationId = randomUUID();
-    const queuedResponse = await api.requestBytePlusGenerationWebhook({
-      generationId: bytePlusGenerationId,
-      token: api.bytePlusGenerationWebhookToken(bytePlusGenerationId),
-      body: { status: "queued" },
-      statuses: [200],
-    });
-    expect(queuedResponse.body).toBe("OK");
-
-    const runningResponse = await api.requestBytePlusGenerationWebhook({
-      generationId: bytePlusGenerationId,
-      token: api.bytePlusGenerationWebhookToken(bytePlusGenerationId),
-      body: { status: "running" },
-      statuses: [200],
-    });
-    expect(runningResponse.body).toBe("OK");
-
-    const completedResponse = await api.requestBytePlusGenerationWebhook({
-      generationId: bytePlusGenerationId,
-      token: api.bytePlusGenerationWebhookToken(bytePlusGenerationId),
-      body: { status: "succeeded", content: { video: [] } },
-      statuses: [200],
-    });
-    expect(completedResponse.body).toBe("OK");
   });
 });
 

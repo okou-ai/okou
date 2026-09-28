@@ -5491,8 +5491,6 @@
     "tryItYourself": "自己試一試"
   },
   "ssh": {
-    "accessDescription": "選擇哪些智能體可以使用你的SSH主機。",
-    "accessHelp": "允許該智能體在你當前和今後配置的所有SSH主機上執行命令。這與連接器權限相互獨立。",
     "add": "新增主機",
     "cancel": "取消",
     "chooseFile": "選擇檔案",
@@ -5577,7 +5575,6 @@
     "label": "SSH",
     "loadFailed": "無法載入SSH設定，請重試。",
     "loading": "正在載入SSH主機…",
-    "loadingAccess": "正在載入智能體訪問權限…",
     "manage": "管理SSH主機",
     "notLearned": "尚未記錄主機金鑰",
     "passphrase": "金鑰口令（可選）",
@@ -5694,8 +5691,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "選擇哪些智能體可以檢視和控制你的VNC桌面。此訪問權限與SSH分開管理。",
-    "accessHelp": "允許該智能體檢視和控制你當前及今後配置的所有VNC桌面。",
     "add": "新增主機",
     "cancel": "取消",
     "close": "關閉",
@@ -5760,7 +5755,6 @@
     "label": "VNC",
     "loadFailed": "無法載入VNC配置。",
     "loading": "正在載入VNC配置…",
-    "loadingAccess": "正在載入智能體訪問權限…",
     "manage": "管理VNC",
     "port": "埠",
     "retry": "重試",

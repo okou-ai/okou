@@ -100,7 +100,7 @@ The maximum archive size is 16 MiB times 10,000 multipart parts, approximately
 
 Thread metadata preserves IDs, user and agent/organization associations, title,
 schedule origin, timestamps, pin order, composer draft and attachment metadata,
-and saved model/image/video/service-tier preferences. Attachment metadata does
+and saved model/image/service-tier preferences. Attachment metadata does
 not include attachment binaries.
 
 ### Reconstruct a conversation

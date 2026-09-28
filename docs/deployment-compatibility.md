@@ -110,6 +110,64 @@ production has no writer for them. After this change is released, raise the API
 rollback floor to its main commit so that no rollback target writes the retired
 types; that floor update is a separate follow-up and is not part of this change.
 
+## Video retirement follow-up: accepted-job paths and video model reads removed
+
+Follow-up to the retirement below, tracked in #37249.
+
+- The API no longer completes video or avatar jobs accepted by a
+  pre-retirement API. The BytePlus, MiniMax, and JoggAI webhook routes are
+  removed (callbacks now receive `404`). A fal success callback for a video job
+  is logged and acknowledged without completing the job; a fal failure
+  callback still fails it. Status reads of
+  finished jobs, existing video artifacts, and historical usage and credit
+  records are unchanged. `JOGGAI_API_KEY`, `JOGGAI_WEBHOOK_SECRET`, and the
+  API's `MINIMAX_API_KEY` are no longer read.
+- The API no longer reads or writes the `selected_video_model` columns on
+  threads, thread events, members, or runs. Thread metadata, thread events,
+  and compacted snapshots still send `selectedVideoModel: null`, because Web
+  clients at the current floor require the field. Historical
+  `video_model_updated` events stay readable and replay as no-ops.
+- The Web client floor is raised to `0.981.0`, the App build that retired
+  video generation (live in production from release #37254). Older tabs
+  receive `426` and reload, so no client still reaches the removed routes and
+  controls.
+- The production API rollback resolver now rejects targets that do not contain
+  #37242 (`VIDEO_GENERATION_RETIREMENT_COMMIT`), so a rollback cannot restore
+  an API that accepts video jobs. Before merge, a read-only MaskDB query
+  confirmed no `video` job is within its 30-minute timeout in `queued` or
+  `running`.
+
+Old and new versions during deploy:
+
+- Previous API with the new App: the new App treats `selectedVideoModel` as
+  optional and ignores it, so the historical values the previous API still
+  returns have no effect.
+- New API with the floor-level App: it receives `selectedVideoModel: null`
+  and no video model control reads it.
+- Jobs: a video or avatar job still in flight would not complete; the gate
+  above requires that none remain.
+
+No database migration is included. Dropping the columns, the
+`video_model_updated` kind, and the wire field is the next step under #37249,
+after this API is the rollback floor and this App build is the Web client
+floor.
+
+## MCP user-message source reader preparation (#37233)
+
+The API contract and App can parse and display a server-owned MCP source part
+with a bounded OAuth client ID and optional client-name snapshot. Direct chat
+sends reject caller-authored MCP parts. No production `/mcp` message writer
+emits this part in the reader-preparation release; older API/App builds continue
+to receive the previous text-only MCP input shape, and the new readers continue
+to accept historical source kinds.
+
+Strict older V7 Chat Event readers cannot parse an MCP source kind. The writer
+slice (#37234) therefore requires independently verified promotion of prepared
+API/App readers, an enforced Web client floor for older App builds, prepared or
+excluded serving/rollback API readers and persisted-history consumers, and
+completed old CLI context drain. This is a future gate, not satisfied merely by
+merging this PR. See [Chat Event schema versioning](./chat-event-schema-versioning.md).
+
 ## Video, voice, and talking-avatar generation retired
 
 Built-in video, voice (text-to-speech), and talking-avatar video generation are
@@ -150,8 +208,9 @@ Old and new versions during deploy:
 
 New threads and runs no longer resolve or store a video model; the member
 default is no longer written or returned. Thread metadata and thread events
-still expose the historical `selectedVideoModel` value (null for new threads),
-and the `video_model_updated` event kind stays readable for replay.
+still expose the historical `selectedVideoModel` value (null for new threads;
+the follow-up above sends null for all threads), and the `video_model_updated`
+event kind stays readable for replay.
 
 No database migration is included. Historical usage and credit records keep
 their `video` and `audio` rows and display names. Dropping the thread, member,
@@ -5466,9 +5525,12 @@ triggers, and views after that release drains.
 SSH, including Direct and Cloudflare Access, is generally available. The
 `sshAccess` registry entry, overrides consumer, UI gates and API/Run gates are
 retired together. Existing registered-key filtering ignores retired overrides;
-no migration, data deletion or rewrite is needed. Owner isolation, Agent grants,
-winning Run/Runner authority, credential encryption and host trust remain required.
-The existing Run-lifetime authority cache and missed-notification window are unchanged.
+no migration, data deletion or rewrite is needed. At that GA stage, owner
+isolation, Agent grants, winning Run/Runner authority, credential encryption
+and host trust remained required. The later
+[chat remote access](thread-remote-access.md) cutover replaces Agent grants
+with per-chat host permission for Run authority. The Run-lifetime authority
+cache and missed-notification window remain unchanged.
 
 Promote the API before the App. An older API can still enforce its rollout switch;
 the App retains its existing unavailable/error handling for that response, never
@@ -5484,7 +5546,9 @@ The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
 Direct and Cloudflare Access are generally available with no rollout switches;
-the SSH Agent grant still covers both. The initial delivery used the
+at the original delivery, the SSH Agent grant covered both. The later
+[chat remote access](thread-remote-access.md) cutover applies the same per-chat
+host permission to both transports. The initial delivery used the
 [pre-GA policy](fallback.md) and keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
@@ -5496,8 +5560,8 @@ acceptance and the owner-approved evidence boundaries at closure. #36038 added
 the standalone `/connectors/cloudflare-access` entry after SSH and VNC, and
 #36150 / PR #36152 removed the duplicate top-level management tab from
 `/connectors/ssh`. Access is reusable owner configuration, not a separately
-authorized Agent service. SSH remains its first consumer under the existing SSH
-Agent grant; general availability does not replace that permission.
+authorized Agent service. SSH remains its first consumer; current Run access
+requires the chat's effective permission for the exact SSH host.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 

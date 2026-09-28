@@ -5502,8 +5502,6 @@
     "tryItYourself": "Try it yourself"
   },
   "ssh": {
-    "accessDescription": "Choose which Agents can use your SSH hosts.",
-    "accessHelp": "Allow this Agent to execute commands on all your current and future configured SSH hosts. This is separate from connector permissions.",
     "add": "Add host",
     "cancel": "Cancel",
     "chooseFile": "Choose file",
@@ -5591,7 +5589,6 @@
     "label": "SSH",
     "loadFailed": "Could not load SSH settings. Try again.",
     "loading": "Loading SSH hosts…",
-    "loadingAccess": "Loading Agent access…",
     "manage": "Manage SSH hosts",
     "notLearned": "Host key not learned yet",
     "passphrase": "Passphrase (optional)",
@@ -5708,8 +5705,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "Choose which Agents can view and control your VNC desktops. Access is separate from SSH.",
-    "accessHelp": "Allow this Agent to view and control all your current and future configured VNC desktops.",
     "add": "Add host",
     "cancel": "Cancel",
     "close": "Close",
@@ -5775,7 +5770,6 @@
     "label": "VNC",
     "loadFailed": "Could not load VNC configuration.",
     "loading": "Loading VNC configuration…",
-    "loadingAccess": "Loading Agent access…",
     "manage": "Manage VNC",
     "port": "RFB destination port",
     "retry": "Retry",

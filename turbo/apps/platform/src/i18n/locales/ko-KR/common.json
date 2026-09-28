@@ -5491,8 +5491,6 @@
     "tryItYourself": "직접 사용해 보기"
   },
   "ssh": {
-    "accessDescription": "SSH 호스트를 사용할 수 있는 에이전트를 선택하세요.",
-    "accessHelp": "이 Agent가 현재 및 앞으로 구성할 모든 SSH 호스트에서 명령을 실행하도록 허용합니다. 커넥터 권한과는 별도입니다.",
     "add": "호스트 추가",
     "cancel": "취소",
     "chooseFile": "파일 선택",
@@ -5577,7 +5575,6 @@
     "label": "SSH",
     "loadFailed": "SSH 설정을 불러오지 못했습니다. 다시 시도하세요.",
     "loading": "SSH 호스트 로딩 중…",
-    "loadingAccess": "에이전트 접근 권한을 불러오는 중…",
     "manage": "SSH 호스트 관리",
     "notLearned": "아직 저장된 호스트 키 없음",
     "passphrase": "암호문구(선택 사항)",
@@ -5694,8 +5691,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "VNC 데스크톱을 보고 제어할 Agent를 선택하세요. SSH 권한과는 별개입니다.",
-    "accessHelp": "이 Agent가 현재와 앞으로 설정할 모든 VNC 데스크톱을 보고 제어하도록 허용합니다.",
     "add": "호스트 추가",
     "cancel": "취소",
     "close": "닫기",
@@ -5760,7 +5755,6 @@
     "label": "VNC",
     "loadFailed": "VNC 설정을 불러오지 못했습니다.",
     "loading": "VNC 설정을 불러오는 중…",
-    "loadingAccess": "에이전트 접근 권한을 불러오는 중…",
     "manage": "VNC 관리",
     "port": "포트",
     "retry": "다시 시도",

@@ -1,10 +1,9 @@
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -21,10 +20,6 @@ import {
   OTHER_THREAD_ID,
   OTHER_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
-
-const github = connectorSlugSchema.parse("github");
-const slack = connectorSlugSchema.parse("slack");
-const gmail = connectorSlugSchema.parse("gmail");
 
 async function chooseRemoteHost(trigger: HTMLElement, optionName: string) {
   const user = userEvent.setup({ delay: null });
@@ -96,7 +91,7 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -209,7 +204,7 @@ test("Remote access stays open while a changed chat host refreshes", async () =>
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -314,7 +309,6 @@ test("A chat can enable multiple VNC hosts independently", async () => {
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
       [FeatureSwitchKey.VncAccess]: true,
     },
   });
@@ -352,7 +346,7 @@ test("Remote access is absent when no SSH or VNC hosts are configured", async ()
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   await screen.findByText("Cloud browser");
@@ -370,7 +364,7 @@ test("A new chat has no remote access menu when no hosts are configured", async 
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   await screen.findByText("Cloud browser");
@@ -397,7 +391,7 @@ test("A new chat leaves host defaults untouched when no choice is changed", asyn
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -437,7 +431,7 @@ test("Remote access remains visible and can retry when host discovery fails", as
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -492,7 +486,7 @@ test("Remote access can retry a failed chat permission read", async () => {
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -535,7 +529,7 @@ test("A new chat applies draft host choices to the thread it creates", async () 
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -645,7 +639,7 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}?sidebar=${OTHER_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+    featureSwitches: {},
   });
   await waitFor(() => {
     expect(
@@ -687,187 +681,6 @@ test("Remote access in two chat panes reads and updates each pane's thread", asy
   expect(overrides.get(SCOUT_THREAD_ID)).toBeTruthy();
 });
 
-async function loadSshAccess(trigger: HTMLElement): Promise<void> {
-  click(trigger);
-  const toggle = await screen.findByLabelText("Remove SSH");
-  click(trigger);
-  await waitFor(() => {
-    expect(toggle).not.toBeInTheDocument();
-  });
-}
-
-test("SSH follows all builtin services in the Connectors menu", async () => {
-  const catalog = [
-    builtinConnector({ slug: github, label: "GitHub" }),
-    builtinConnector({ slug: slack, label: "Slack" }),
-    builtinConnector({ slug: gmail, label: "Gmail" }),
-  ];
-  installComposerConnectorFixture({
-    catalog,
-    builtinAuthorizations: {
-      [SCOUT_AGENT_ID]: catalog.map((connector) => {
-        return connector.slug;
-      }),
-    },
-  });
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: true });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-  });
-  click(await findFastControl("button", "Connectors"));
-  await screen.findByLabelText("Remove SSH");
-  const list = screen.getByRole("list", { name: "Connectors" });
-  expect(
-    within(list)
-      .getAllByRole("listitem")
-      .map((row) => {
-        return row.textContent;
-      }),
-  ).toStrictEqual(["GitHub", "Slack", "Gmail", "SSH"]);
-});
-
-test("Switching Agents does not retain the previous Agent's enabled SSH access", async () => {
-  installComposerConnectorFixture();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [SCOUT_AGENT_ID, OTHER_AGENT_ID],
-  });
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ params, respond }) => {
-    return respond(200, { enabled: params.agentId === SCOUT_AGENT_ID });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-  });
-  const trigger = await findFastControl("button", "Connectors");
-  await loadSshAccess(trigger);
-  click(await findFastControl("link", "Other Agent"));
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(`/agents/${OTHER_AGENT_ID}/chat`);
-  });
-  click(await findFastControl("button", "Connectors"));
-  await screen.findByLabelText("Add SSH");
-  expect(screen.queryByLabelText("Remove SSH")).toBeNull();
-});
-
-test("Changing user clears retained SSH presentation while the new owner loads", async () => {
-  installComposerConnectorFixture();
-  const clerk = context.mocks.clerk();
-  const nextOwner = context.mocks.deferred<void>();
-  let changing = false;
-  context.mocks.api(sshConnectionsContract.summary, async ({ respond }) => {
-    if (changing) {
-      await nextOwner.promise;
-    }
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: !changing });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-  });
-  click(await findFastControl("button", "Connectors"));
-  await screen.findByLabelText("Remove SSH");
-  changing = true;
-  act(() => {
-    clerk.user(
-      { id: "other-ssh-user", fullName: "Other user" },
-      { token: "other-user-token" },
-    );
-    clerk.stateChanged();
-  });
-  await waitFor(() => {
-    expect(screen.queryByLabelText("Remove SSH")).toBeNull();
-  });
-  expect(screen.queryByLabelText("Add SSH")).toBeNull();
-  nextOwner.resolve();
-  await expect(screen.findByLabelText("Add SSH")).resolves.toBeInTheDocument();
-  expect(screen.queryByLabelText("Remove SSH")).toBeNull();
-});
-
-test("Changing workspace reloads the chat page before using the new SSH owner", async () => {
-  installComposerConnectorFixture();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 1 });
-  });
-  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-    return respond(200, { enabled: true });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-  });
-  const trigger = await findFastControl("button", "Connectors");
-  await loadSshAccess(trigger);
-
-  const clerk = context.mocks.clerk();
-  act(() => {
-    clerk.organization({
-      activeOrg: { id: "org_ssh_other", name: "Other workspace" },
-      memberships: [{ id: "org_ssh_other" }],
-    });
-    clerk.stateChanged();
-  });
-
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/");
-  });
-});
-
-test.each([SCOUT_AGENT_ID, OTHER_AGENT_ID])(
-  "Chat SSH uses the composer Agent %s, not another Agent's grant",
-  async (agentId) => {
-    const fixture = installComposerConnectorFixture();
-    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-      return respond(200, { configuredCount: 2 });
-    });
-    const grants = new Set([SCOUT_AGENT_ID]);
-    const writes: unknown[] = [];
-    context.mocks.api(agentSshAccessContract.get, ({ params, respond }) => {
-      return respond(200, { enabled: grants.has(params.agentId) });
-    });
-    context.mocks.api(
-      agentSshAccessContract.update,
-      ({ params, body, respond }) => {
-        writes.push({ agentId: params.agentId, enabled: body.enabled });
-        if (body.enabled) {
-          grants.add(params.agentId);
-        } else {
-          grants.delete(params.agentId);
-        }
-        return respond(200, body);
-      },
-    );
-    await setupPage({
-      context,
-      path: `/agents/${agentId}/chat`,
-    });
-    click(await findFastControl("button", "Connectors"));
-    const enabled = agentId === SCOUT_AGENT_ID;
-    const toggle = await screen.findByLabelText(
-      enabled ? "Remove SSH" : "Add SSH",
-    );
-    expect(toggle).toHaveAttribute("aria-checked", String(enabled));
-    const row = toggle.closest('[role="listitem"]');
-    expect(row).toHaveTextContent("SSH");
-    click(toggle);
-    await screen.findByLabelText(enabled ? "Add SSH" : "Remove SSH");
-    expect(writes).toStrictEqual([{ agentId, enabled: !enabled }]);
-    expect(fixture.builtinAuthorizationUpdates).toStrictEqual([]);
-    expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
-  },
-);
-
 test.each([
   { directory: false, configuredCount: 0 },
   { directory: true, configuredCount: 1 },
@@ -877,9 +690,6 @@ test.each([
     installComposerConnectorFixture();
     context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
       return respond(200, { configuredCount });
-    });
-    context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-      return respond(200, { enabled: false });
     });
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
       return respond(200, { connections: [] });
@@ -921,34 +731,6 @@ test.each([
     );
   },
 );
-
-test("Chat SSH discovery shows a failed summary without leaking its error", async () => {
-  installComposerConnectorFixture();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_ERROR", message: "private SSH error" },
-    });
-  });
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ConnectorDirectory]: true,
-    },
-  });
-  click(await findFastControl("button", "Connectors"));
-  click(await findFastControl("button", "Add connectors"));
-  const search = await screen.findByPlaceholderText("Find connectors...");
-  const dialog = search.closest('[role="dialog"]');
-  if (!(dialog instanceof HTMLElement)) {
-    throw new Error("Missing connector dialog");
-  }
-  await fill(search, "ssh");
-  await expect(
-    within(dialog).findByText("Could not load SSH settings. Try again."),
-  ).resolves.toBeInTheDocument();
-  expect(dialog.textContent).not.toContain("private SSH error");
-});
 
 test("Directory SSH setup follows shelves and categories", async () => {
   installComposerConnectorFixture({

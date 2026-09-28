@@ -41,9 +41,10 @@ type UserMessageAgentSourcePart = Extract<
   UserMessageSourcePart,
   { kind: "agent" }
 >;
+type UserMessageMcpSourcePart = Extract<UserMessageSourcePart, { kind: "mcp" }>;
 type UserMessageExternalSourcePart = Exclude<
   UserMessageSourcePart,
-  UserMessageAgentSourcePart
+  UserMessageAgentSourcePart | UserMessageMcpSourcePart
 >;
 
 export type UserMessageFeedbackNoteRenderPart =
@@ -93,6 +94,11 @@ export type UserMessageRenderPart =
       readonly type: "source";
       readonly kind: "external";
       readonly part: UserMessageExternalSourcePart;
+    }
+  | {
+      readonly type: "source";
+      readonly kind: "mcp";
+      readonly part: UserMessageMcpSourcePart;
     }
   | {
       readonly type: "automation";

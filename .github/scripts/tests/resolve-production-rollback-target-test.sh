@@ -42,6 +42,8 @@ case "${1:-}" in
       [ "${MOCK_UNIFIED_CHAT_QUEUE_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da" ]; then
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
+      [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3d93ff8d4b4a07a5888e3030e69b340f40da0ad4" ]; then
       [ "${MOCK_CHAT_THREAD_SNAPSHOT_R2_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "2222222222222222222222222222222222222222" ]; then
@@ -189,6 +191,7 @@ grep -Fxq "git merge-base --is-ancestor ee863a302a6c547f94e50ec4069f70910d68bee2
 grep -Fxq "git merge-base --is-ancestor 84ac71914345b8360f3df43cc2cd47f0a8af7a23 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the queued run promotion removal floor"
 grep -Fxq "git merge-base --is-ancestor 553fc566b7e9be2cd4a8c1de314d55939b99490a ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the unified chat queue release floor"
 grep -Fxq "git merge-base --is-ancestor fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the runner steer endpoints floor"
+grep -Fxq "git merge-base --is-ancestor 45b537a596a153a91b76c3bc7223187840f52775 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video generation retirement floor"
 grep -Fxq "git merge-base --is-ancestor 5555555555555555555555555555555555555555 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot JSONB drop floor"
 grep -Fxq "git merge-base --is-ancestor 6666666666666666666666666666666666666666 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Stripe Portal purpose-only floor"
 grep -Fxq "git merge-base --is-ancestor 8888888888888888888888888888888888888888 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired preference column drop floor"
@@ -261,6 +264,15 @@ grep -Fq 'fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/runner-steer-endpoints-floor.output" ] || fail "pre-#37115 API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-#37115 API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the video generation retirement" \
+  run_resolver "${tmp_dir}/video-generation-retirement-floor.output" MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID=0
+grep -Fq '45b537a596a153a91b76c3bc7223187840f52775' "${tmp_dir}/failure.err" || fail "video retirement rejection must identify the #37242 merge commit"
+[ ! -s "${tmp_dir}/video-generation-retirement-floor.output" ] || fail "pre-#37242 API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-#37242 API target must fail before artifact or host access"
 fi
 
 for cutover_commit in "" invalid; do

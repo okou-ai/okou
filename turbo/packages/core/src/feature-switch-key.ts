@@ -52,7 +52,6 @@ export enum FeatureSwitchKey {
   LarkIntegration = "larkIntegration",
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
-  ThreadRemoteAccess = "threadRemoteAccess",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
   DeepSeekAlternativeRouting = "deepSeekAlternativeRouting",

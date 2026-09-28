@@ -6,20 +6,10 @@ import {
   useLoadable,
   useLastLoadable,
   useLastResolved,
-  type Loadable,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { AgentVncAccess } from "../okou-page/agent-vnc-access.tsx";
-import { VncLoadError } from "../okou-page/vnc-load-error.tsx";
-import { currentAgentVncAccess$ } from "../../signals/vnc-access.ts";
-import { vncIdentity$ } from "../../signals/vnc.ts";
-import { AgentSshAccess } from "../okou-page/agent-ssh-access.tsx";
-import { SshLoadError } from "../okou-page/ssh-load-error.tsx";
 import type { ReactNode } from "react";
-import { currentAgentSshAccess$, sshIdentity$ } from "../../signals/ssh.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   FileText,
@@ -489,8 +479,6 @@ interface ConnectedPermissionConnector extends PermissionConnectorCardItem {
 }
 
 function ConnectedConnectorPermissions({
-  sshAccess,
-  vncAccess,
   status,
   filteredConnectors,
   authorizedSet,
@@ -503,8 +491,6 @@ function ConnectedConnectorPermissions({
   onToggle,
   onManage,
 }: {
-  sshAccess: { readonly agentId: string; readonly enabled: boolean } | null;
-  vncAccess: { readonly agentId: string; readonly enabled: boolean } | null;
   status: ReactNode;
   filteredConnectors: readonly ConnectedPermissionConnector[];
   authorizedSet: ReadonlySet<string>;
@@ -518,22 +504,7 @@ function ConnectedConnectorPermissions({
   onManage: (connectorSlug: ConnectorSlug) => void;
 }) {
   const { t } = useTranslation("agents");
-  const { t: commonT } = useTranslation();
   const focusSearch = useSet(focusPermSearchRef$);
-  const showSsh =
-    sshAccess !== null &&
-    `ssh ${commonT(($) => {
-      return $.ssh.accessHelp;
-    })}`
-      .toLowerCase()
-      .includes(search.trim().toLowerCase());
-  const showVnc =
-    vncAccess !== null &&
-    `vnc ${commonT(($) => {
-      return $.vnc.accessHelp;
-    })}`
-      .toLowerCase()
-      .includes(search.trim().toLowerCase());
   return (
     <>
       <div className={surfaceVariants()}>
@@ -623,13 +594,11 @@ function ConnectedConnectorPermissions({
                   onManage={() => {
                     return onManage(c.slug);
                   }}
-                  isLast={
-                    i === filteredConnectors.length - 1 && !showSsh && !showVnc
-                  }
+                  isLast={i === filteredConnectors.length - 1}
                 />
               );
             })
-          ) : !showSsh && !showVnc ? (
+          ) : (
             <p className="px-5 py-4 text-sm text-muted-foreground">
               {t(
                 ($) => {
@@ -638,20 +607,7 @@ function ConnectedConnectorPermissions({
                 { search },
               )}
             </p>
-          ) : null)}
-        {showVnc && vncAccess ? (
-          <AgentVncAccess
-            agentId={vncAccess.agentId}
-            enabled={vncAccess.enabled}
-            isLast={!showSsh}
-          />
-        ) : null}
-        {showSsh && sshAccess ? (
-          <AgentSshAccess
-            agentId={sshAccess.agentId}
-            enabled={sshAccess.enabled}
-          />
-        ) : null}
+          ))}
       </div>
 
       <JobCustomConnectorsSection />
@@ -708,72 +664,6 @@ function AgentPermissionsDrawer({
 // Tab wrappers — resolve signals into shared component props
 // ---------------------------------------------------------------------------
 
-function remoteAccessForAgent(
-  access: Loadable<{
-    readonly identity: string;
-    readonly agentId: string;
-    readonly enabled: boolean;
-  } | null>,
-  agentId: string,
-  identity: Loadable<string | null>,
-) {
-  return identity.state === "hasData" &&
-    identity.data !== null &&
-    access.state === "hasData" &&
-    access.data?.identity === identity.data &&
-    access.data.agentId === agentId
-    ? access.data
-    : null;
-}
-
-function useJobRemoteAccess(agentId: string) {
-  const threadRemoteAccess =
-    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
-  const sshAccessLoadable = useLastLoadable(currentAgentSshAccess$);
-  const sshIdentity = useLoadable(sshIdentity$);
-  const sshAccess = remoteAccessForAgent(
-    sshAccessLoadable,
-    agentId,
-    sshIdentity,
-  );
-  const vncAccessLoadable = useLastLoadable(currentAgentVncAccess$);
-  const vncIdentity = useLoadable(vncIdentity$);
-  const vncAccess = remoteAccessForAgent(
-    vncAccessLoadable,
-    agentId,
-    vncIdentity,
-  );
-  const sshFailed = sshAccessLoadable.state === "hasError";
-  const vncFailed = vncAccessLoadable.state === "hasError";
-  if (threadRemoteAccess) {
-    return {
-      sshAccess: null,
-      vncAccess: null,
-      hasRemoteAccess: false,
-      hasRemoteLoading: false,
-      hasRemoteError: false,
-      remoteErrors: null,
-    };
-  }
-  return {
-    sshAccess,
-    vncAccess,
-    hasRemoteAccess: Boolean(sshAccess || vncAccess),
-    hasRemoteLoading:
-      sshAccessLoadable.state === "loading" ||
-      sshIdentity.state === "loading" ||
-      vncAccessLoadable.state === "loading" ||
-      vncIdentity.state === "loading",
-    hasRemoteError: sshFailed || vncFailed,
-    remoteErrors: (
-      <>
-        {sshFailed && <SshLoadError />}
-        {vncFailed && <VncLoadError />}
-      </>
-    ),
-  };
-}
-
 function connectedPermissionConnectors(
   overview: ConnectorOverview,
 ): readonly ConnectedPermissionConnector[] {
@@ -808,14 +698,6 @@ function JobPermissionsTab({
   displayName: string;
 }) {
   const { t } = useTranslation("agents");
-  const {
-    sshAccess,
-    vncAccess,
-    hasRemoteAccess,
-    hasRemoteLoading,
-    remoteErrors,
-    hasRemoteError,
-  } = useJobRemoteAccess(agentId);
   // Use useLastLoadable so the list keeps showing the previous data while the
   // signal refetches after a toggle/save or a permission-policy reload. This
   // prevents the entire list from flickering to the skeleton on each change
@@ -904,26 +786,17 @@ function JobPermissionsTab({
     ) : userGrantsLoadable.state === "hasError" ? (
       <PermissionGrantsError />
     ) : null;
-  if (status && !hasRemoteAccess && !hasRemoteError) {
+  if (status) {
     return status;
   }
 
   return (
     <div className="mx-auto w-full max-w-[900px] flex flex-col gap-4">
-      {connectedConnectors.length === 0 && !hasRemoteAccess ? (
-        hasRemoteError ? (
-          remoteErrors
-        ) : hasRemoteLoading ? (
-          <PermissionListSkeleton />
-        ) : (
-          <NoConnectedConnectors />
-        )
+      {connectedConnectors.length === 0 ? (
+        <NoConnectedConnectors />
       ) : (
         <>
-          {remoteErrors}
           <ConnectedConnectorPermissions
-            sshAccess={sshAccess}
-            vncAccess={vncAccess}
             status={status}
             filteredConnectors={filteredConnectors}
             authorizedSet={authorizedSet}

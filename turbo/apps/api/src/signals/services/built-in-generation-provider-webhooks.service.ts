@@ -5,7 +5,7 @@ import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
 import { webUrl } from "../../lib/web-url";
 
-type BuiltInGenerationProviderWebhookProvider = "fal" | "byteplus" | "minimax";
+type BuiltInGenerationProviderWebhookProvider = "fal";
 
 function webhookTokenPayload(args: {
   readonly provider: BuiltInGenerationProviderWebhookProvider;
@@ -48,18 +48,6 @@ export function verifyBuiltInGenerationProviderWebhookToken(args: {
     return false;
   }
   return timingSafeEqual(actual, expectedBuffer);
-}
-
-export function verifyJoggAiWebhookSignature(args: {
-  readonly body: string;
-  readonly secret: string;
-  readonly signature: string;
-}): boolean {
-  const expected = Buffer.from(
-    createHmac("sha256", args.secret).update(args.body).digest("hex"),
-  );
-  const actual = Buffer.from(args.signature);
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 export function falBuiltInGenerationWebhookUrl(args: {

@@ -235,7 +235,6 @@ describe("POST /api/chat-threads", () => {
     initializeVncRuntimeTest();
     const fixture = await seedAgent();
     await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
       [FeatureSwitchKey.VncAccess]: true,
     });
     vnc.authenticate({ orgId: fixture.orgId, userId: fixture.userId });
@@ -350,9 +349,6 @@ describe("POST /api/chat-threads", () => {
   it("does not let a run token choose access to a host when creating a chat", async () => {
     useSecretKmsProbe();
     const fixture = await seedAgent();
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-    });
     const ownerHeaders = { authorization: "Bearer clerk-session" };
     const hostId = randomUUID();
     await accept(

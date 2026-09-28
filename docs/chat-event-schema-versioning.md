@@ -22,6 +22,24 @@ the immutable NDJSON body.
 Raw Events are read from the current database schema and returned in V7. The
 API does not downgrade rows or Snapshot objects to retired versions.
 
+### MCP source reader preparation (#37233)
+
+V7 readers now recognize a bounded, server-owned `source.kind: "mcp"` user-message
+part with an OAuth client ID and optional client-name display snapshot. The App
+renders a local MCP mark with the saved name or a generic `MCP` label. Existing
+messages do not gain an MCP source by inference. Direct chat sends reject
+caller-authored MCP source parts; the `/mcp` writer still emits only the old
+text-only input shape in this reader-preparation release.
+
+The new kind is **not** readable by older strict V7 App/API/snapshot readers.
+Before the separate writer activation in #37234, verify that this prepared
+reader has been promoted to every serving API and App, older App builds are
+blocked by an enforced Web client floor, earlier serving/rollback APIs and
+persisted-history readers are excluded or prepared, and outstanding old CLI
+contexts have drained. A merged reader PR or newer `main` alone does not prove
+this gate. Do not let a writer emit the new kind until this compatibility
+boundary is satisfied.
+
 ### Optional V7 failure reasons
 
 V7 `run.failed` readers accept an optional `failureReason` field and continue

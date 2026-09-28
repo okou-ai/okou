@@ -1,12 +1,6 @@
 import { computed } from "ccstate";
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { accept } from "../../../lib/accept.ts";
 import { i18n } from "../../../i18n/index.ts";
-import { agents$ } from "../../agent.ts";
-import { apiClient$ } from "../../api-client.ts";
-import { sshAgentAccessRows$, sshSummary$ } from "../../ssh.ts";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { sshSummary$ } from "../../ssh.ts";
 import {
   connectorsCategoryFilter$,
   connectorsConnectionFilter$,
@@ -21,10 +15,7 @@ export const filteredSshSummary$ = computed(async (get) => {
     return null;
   }
   const filter = get(connectorsConnectionFilter$);
-  if (
-    get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] &&
-    (filter.kind === "agent" || filter.kind === "unshared")
-  ) {
+  if (filter.kind === "agent" || filter.kind === "unshared") {
     return null;
   }
   const search = get(connectorsSearch$).trim().toLowerCase();
@@ -43,38 +34,6 @@ export const filteredSshSummary$ = computed(async (get) => {
   }
   if (filter.kind === "not-connected" && summary.configuredCount > 0) {
     return null;
-  }
-  if (filter.kind === "unshared") {
-    const rows = await get(sshAgentAccessRows$);
-    if (
-      rows === null ||
-      rows.some((row) => {
-        return row.enabled;
-      })
-    ) {
-      return null;
-    }
-  }
-  if (filter.kind === "agent") {
-    const agents = await get(agents$);
-    if (
-      !agents.some((agent) => {
-        return agent.agentId === filter.agentId;
-      })
-    ) {
-      return null;
-    }
-    const result = await accept(
-      get(apiClient$)(agentSshAccessContract).get({
-        params: { agentId: filter.agentId },
-      }),
-      [200, 404],
-      undefined,
-      { showErrorToast: false },
-    );
-    if (result.status === 404 || !result.body.enabled) {
-      return null;
-    }
   }
   return summary;
 });

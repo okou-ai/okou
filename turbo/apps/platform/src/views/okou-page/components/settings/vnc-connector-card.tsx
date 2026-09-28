@@ -1,24 +1,11 @@
 import { Plus, Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useGet, useLoadable, useSet } from "ccstate-react";
-import {
-  vncAgentAccessRows$,
-  openVncAccessManagement$,
-} from "../../../../signals/vnc-access.ts";
-import { pageSignal$ } from "../../../../signals/page-signal.ts";
-import { detach, Reason } from "../../../../signals/utils.ts";
-import {
-  ConnectorAgentAccessButton,
-  connectorAgentAccessStatus,
-} from "./connector-agent-access-button.tsx";
 import { ROUTES } from "../../../../signals/route-paths.ts";
 import { Link } from "../../../router/link.tsx";
 import {
   ConnectorEntryCard,
   ConnectorEntryStatus,
 } from "./connector-entry-card.tsx";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 
 export function VncConnectorCard({
   configuredCount,
@@ -26,11 +13,6 @@ export function VncConnectorCard({
   readonly configuredCount: number;
 }) {
   const { t } = useTranslation();
-  const threadRemoteAccess =
-    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
-  const rows = useLoadable(vncAgentAccessRows$);
-  const open = useSet(openVncAccessManagement$);
-  const signal = useGet(pageSignal$);
   return (
     <ConnectorEntryCard
       icon={<Monitor size={20} aria-hidden="true" />}
@@ -78,33 +60,6 @@ export function VncConnectorCard({
             { count: configuredCount },
           )}
         />
-      }
-      trailingAction={
-        configuredCount > 0 && !threadRemoteAccess ? (
-          <div className="relative z-20 min-w-0 max-w-full">
-            <ConnectorAgentAccessButton
-              agents={
-                rows.state === "hasData"
-                  ? (rows.data ?? [])
-                      .filter((row) => {
-                        return row.enabled;
-                      })
-                      .map((row) => {
-                        return row.agent;
-                      })
-                  : []
-              }
-              status={connectorAgentAccessStatus(rows.state)}
-              allowAccessIncrease
-              connectorLabel={t(($) => {
-                return $.vnc.label;
-              })}
-              onClick={() => {
-                return detach(open(signal), Reason.DomCallback);
-              }}
-            />
-          </div>
-        ) : null
       }
     />
   );

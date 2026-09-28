@@ -165,6 +165,7 @@ import {
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
 import { DiscordMark } from "./components/discord-mark.tsx";
+import { McpMark } from "./components/mcp-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
@@ -6760,6 +6761,17 @@ function MessageAnnotation({
       </div>
     );
   }
+  if (renderPart.kind === "mcp") {
+    const label = renderPart.part.clientName ?? "MCP";
+    return (
+      <div className={className}>
+        <McpMark size={15} />
+        <span className="min-w-0 truncate" title={label}>
+          {label}
+        </span>
+      </div>
+    );
+  }
   return (
     <SourceMessageAnnotation renderPart={renderPart} className={className} />
   );
@@ -6866,7 +6878,10 @@ function SourceMessageAnnotation({
   renderPart,
   className,
 }: {
-  renderPart: Extract<UserMessageAnnotationRenderPart, { type: "source" }>;
+  renderPart: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "agent" | "external" }
+  >;
   className: string;
 }) {
   const { t } = useTranslation();

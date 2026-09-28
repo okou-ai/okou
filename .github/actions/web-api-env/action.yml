@@ -323,13 +323,10 @@ runs:
         add_secret OPENROUTER_API_KEY OPENROUTER_API_KEY
         add_secret OPENAI_API_KEY OPENAI_API_KEY
         add_secret FAL_KEY FAL_KEY
-        add_secret JOGGAI_API_KEY JOGGAI_API_KEY
         if [[ "$INPUT_APP" == "api" ]]; then
-          add_secret JOGGAI_WEBHOOK_SECRET JOGGAI_WEBHOOK_SECRET
           add_secret HEYGEN_API_KEY HEYGEN_API_KEY
         fi
         add_secret BYTEPLUS_API_KEY BYTEPLUS_API_KEY
-        add_secret MINIMAX_API_KEY MINIMAX_API_KEY
         add_secret BYTEPLUS_STT_API_KEY BYTEPLUS_STT_API_KEY
         add_var VAPID_PUBLIC_KEY VAPID_PUBLIC_KEY
         add_secret VAPID_PRIVATE_KEY VAPID_PRIVATE_KEY

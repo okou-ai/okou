@@ -5510,8 +5510,6 @@
     "tryItYourself": "Selbst ausprobieren"
   },
   "ssh": {
-    "accessDescription": "Wähle, welche Agents deine SSH-Hosts verwenden dürfen.",
-    "accessHelp": "Diesem Agent erlauben, Befehle auf allen Ihren derzeit und künftig konfigurierten SSH-Hosts auszuführen. Dies ist unabhängig von Connector-Berechtigungen.",
     "add": "Host hinzufügen",
     "cancel": "Abbrechen",
     "chooseFile": "Datei auswählen",
@@ -5599,7 +5597,6 @@
     "label": "SSH",
     "loadFailed": "SSH-Einstellungen konnten nicht geladen werden. Versuche es erneut.",
     "loading": "SSH-Hosts werden geladen…",
-    "loadingAccess": "Agent-Zugriff wird geladen…",
     "manage": "SSH-Hosts verwalten",
     "notLearned": "Noch kein Hostschlüssel gespeichert",
     "passphrase": "Passphrase (optional)",
@@ -5716,8 +5713,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "Wähle aus, welche Agents deine VNC-Desktops anzeigen und steuern dürfen. Der Zugriff ist unabhängig von SSH.",
-    "accessHelp": "Diesem Agent erlauben, alle derzeit und künftig konfigurierten VNC-Desktops anzuzeigen und zu steuern.",
     "add": "Host hinzufügen",
     "cancel": "Abbrechen",
     "close": "Schließen",
@@ -5783,7 +5778,6 @@
     "label": "VNC",
     "loadFailed": "Die VNC-Konfiguration konnte nicht geladen werden.",
     "loading": "VNC-Konfiguration wird geladen…",
-    "loadingAccess": "Agent-Zugriff wird geladen…",
     "manage": "VNC verwalten",
     "port": "Port",
     "retry": "Erneut versuchen",

@@ -61,6 +61,7 @@ describe("private Runner VNC authority", () => {
   it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
     const f = await api.fixture({
       grant: false,
+      defaultEnabled: false,
       runtime: { chat: true, access: false },
     });
     if (!f.threadId) {
@@ -69,7 +70,6 @@ describe("private Runner VNC authority", () => {
     const threadId = f.threadId;
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.VncAccess]: true,
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
     });
     api.authenticate(f);
     const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
@@ -164,14 +164,10 @@ describe("private Runner VNC authority", () => {
     expect((await check(f, 2)).body).toStrictEqual({ outcome: "unavailable" });
   });
 
-  it("requires an explicit VNC grant and preserves the exact secret only in the no-store handoff", async () => {
+  it("ignores legacy VNC Agent grants and preserves the exact secret only in the no-store handoff", async () => {
     const f = await api.fixture({ grant: false });
     const kms = useSecretKmsProbe();
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
     expect(kms.decryptCalls).toBe(0);
-    await api.grant(f, true);
     const result = await accept(
       api.runner().resolve({
         headers: vncRunnerHeaders,
@@ -202,13 +198,6 @@ describe("private Runner VNC authority", () => {
     );
     expect(JSON.stringify(listed.body)).not.toContain(vncPassword);
     await api.grant(f, false);
-    await expect(api.resolve(f)).resolves.toStrictEqual({
-      outcome: "unavailable",
-    });
-    expect((await check(f, first.generation)).body).toStrictEqual({
-      outcome: "unavailable",
-    });
-    await api.grant(f, true);
     expect((await api.resolved(f)).generation).toBe(first.generation);
     expect((await check(f, first.generation)).body).toStrictEqual({
       outcome: "valid",
@@ -443,6 +432,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "ssh", ssh.body.id);
     await accept(
       api.connections().update({
         headers: vncSessionHeaders,
@@ -454,7 +444,6 @@ describe("private Runner VNC authority", () => {
       }),
       [200],
     );
-    await api.grantSsh(f, false);
     const kms = useSecretKmsProbe();
     await expect(
       api.resolve(f, {
@@ -464,10 +453,11 @@ describe("private Runner VNC authority", () => {
       }),
     ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
     expect(kms.decryptCalls).toBe(0);
+    await api.setDefault(f, "ssh", ssh.body.id, false);
     expect((await check(f, 2)).body).toStrictEqual({
       outcome: "unavailable",
     });
-    await api.grantSsh(f, true);
+    await api.setDefault(f, "ssh", ssh.body.id, true);
     expect((await check(f, 2)).body).toStrictEqual({
       outcome: "configuration_changed",
     });
@@ -489,6 +479,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "ssh", ssh.body.id);
     await accept(
       api.connections().update({
         headers: vncSessionHeaders,
@@ -504,14 +495,14 @@ describe("private Runner VNC authority", () => {
       }),
       [200],
     );
-    await api.grantSsh(f, false);
+    await api.setDefault(f, "ssh", ssh.body.id, false);
     const kms = useSecretKmsProbe();
     await expect(
       api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
     expect(kms.decryptCalls).toBe(0);
 
-    await api.grantSsh(f, true);
+    await api.setDefault(f, "ssh", ssh.body.id, true);
     const resolved = await api.resolve(f, {
       supportedProfiles: [...vncProfiles],
     });
@@ -601,7 +592,7 @@ describe("private Runner VNC authority", () => {
       },
     });
 
-    await api.grantSsh(f, false);
+    await api.setDefault(f, "ssh", ssh.body.id, false);
     expect(
       (
         await check(f, 2, {
@@ -627,6 +618,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "ssh", ssh.body.id);
     const body = {
       id: randomUUID(),
       displayName: "Mac classic VNC password",
@@ -684,6 +676,7 @@ describe("private Runner VNC authority", () => {
     });
     expect(JSON.stringify(saved.body)).not.toContain("secret");
     const target = { ...f, connectionId: saved.body.id };
+    await api.enableDefault(f, "vnc", target.connectionId);
     const profile = [
       {
         authMethod: "vnc_password" as const,
@@ -707,14 +700,14 @@ describe("private Runner VNC authority", () => {
       }),
     ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
     expect(kms.decryptCalls).toBe(0);
-    await api.grantSsh(f, false);
+    await api.setDefault(f, "ssh", ssh.body.id, false);
     await expect(
       api.resolve(target, { supportedProfiles: profile }),
     ).resolves.toStrictEqual({
       outcome: "unavailable",
     });
     expect(kms.decryptCalls).toBe(0);
-    await api.grantSsh(f, true);
+    await api.setDefault(f, "ssh", ssh.body.id, true);
     await expect(
       api.resolve(target, { supportedProfiles: profile }),
     ).resolves.toStrictEqual({
@@ -766,7 +759,7 @@ describe("private Runner VNC authority", () => {
       [400],
     );
     expect(denied.body.error.code).toBe("VNC_INVALID_APPLE_VNC_PASSWORD_ROUTE");
-    await api.grantSsh(f, false);
+    await api.setDefault(f, "ssh", ssh.body.id, false);
     expect((await check(target, 2, { expectedTransport })).body).toStrictEqual({
       outcome: "unavailable",
     });
@@ -788,6 +781,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "ssh", ssh.body.id);
     const appleBody = {
       id: randomUUID(),
       displayName: "Mac Screen Sharing",
@@ -824,6 +818,7 @@ describe("private Runner VNC authority", () => {
     );
     expect(apple.body.security).toStrictEqual({ type: "apple_dh" });
     const target = { ...f, connectionId: apple.body.id };
+    await api.enableDefault(f, "vnc", target.connectionId);
     const profile = [
       {
         authMethod: "apple_dh_username_password" as const,
@@ -831,17 +826,17 @@ describe("private Runner VNC authority", () => {
         transportType: "ssh" as const,
       },
     ];
-    await api.grantSsh(f, false);
     const kms = useSecretKmsProbe();
     await expect(api.resolve(target)).resolves.toStrictEqual({
       outcome: "unsupported_profile",
     });
+    await api.setDefault(f, "ssh", ssh.body.id, false);
     expect(kms.decryptCalls).toBe(0);
     await expect(
       api.resolve(target, { supportedProfiles: profile }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
     expect(kms.decryptCalls).toBe(0);
-    await api.grantSsh(f, true);
+    await api.setDefault(f, "ssh", ssh.body.id, true);
     await expect(
       api.resolve(target, { supportedProfiles: profile }),
     ).resolves.toStrictEqual({
@@ -897,7 +892,7 @@ describe("private Runner VNC authority", () => {
       generation: 2,
       authentication: { password: "new-secret" },
     });
-    await api.grantSsh(f, false);
+    await api.setDefault(f, "ssh", ssh.body.id, false);
     expect((await check(target, 2, { expectedTransport })).body).toStrictEqual({
       outcome: "unavailable",
     });
@@ -919,6 +914,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "ssh", ssh.body.id);
     const body = {
       id: randomUUID(),
       displayName: "Mac Screen Sharing SRP",
@@ -964,6 +960,7 @@ describe("private Runner VNC authority", () => {
     );
     expect(saved.body.security).toStrictEqual({ type: "apple_srp" });
     const target = { ...f, connectionId: saved.body.id };
+    await api.enableDefault(f, "vnc", target.connectionId);
     const profile = [
       {
         authMethod: "apple_srp_username_password" as const,
@@ -976,12 +973,12 @@ describe("private Runner VNC authority", () => {
       outcome: "unsupported_profile",
     });
     expect(kms.decryptCalls).toBe(0);
-    await api.grantSsh(f, false);
+    await api.setDefault(f, "ssh", ssh.body.id, false);
     await expect(
       api.resolve(target, { supportedProfiles: profile }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
     expect(kms.decryptCalls).toBe(0);
-    await api.grantSsh(f, true);
+    await api.setDefault(f, "ssh", ssh.body.id, true);
     await expect(
       api.resolve(target, { supportedProfiles: profile }),
     ).resolves.toStrictEqual({
@@ -1068,6 +1065,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "ssh", reboundSsh.body.id);
     const rebound = await accept(
       api.connections().update({
         headers: vncSessionHeaders,
@@ -1099,7 +1097,7 @@ describe("private Runner VNC authority", () => {
       generation: 3,
       transport: reboundTransport,
     });
-    await api.grantSsh(f, false);
+    await api.setDefault(f, "ssh", reboundSsh.body.id, false);
     expect(
       (await check(target, 3, { expectedTransport: reboundTransport })).body,
     ).toStrictEqual({ outcome: "unavailable" });
@@ -1121,6 +1119,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "ssh", ssh.body.id);
     const body = {
       id: randomUUID(),
       displayName: "Mac Screen Sharing RSA/SRP",
@@ -1170,6 +1169,7 @@ describe("private Runner VNC authority", () => {
       [201],
     );
     const target = { ...f, connectionId: saved.body.id };
+    await api.enableDefault(f, "vnc", target.connectionId);
     const profile = [
       {
         authMethod: "apple_rsa_srp_username_password" as const,
@@ -1193,14 +1193,14 @@ describe("private Runner VNC authority", () => {
       }),
     ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
     expect(kms.decryptCalls).toBe(0);
-    await api.grantSsh(f, false);
+    await api.setDefault(f, "ssh", ssh.body.id, false);
     await expect(
       api.resolve(target, { supportedProfiles: profile }),
     ).resolves.toStrictEqual({
       outcome: "unavailable",
     });
     expect(kms.decryptCalls).toBe(0);
-    await api.grantSsh(f, true);
+    await api.setDefault(f, "ssh", ssh.body.id, true);
     await expect(
       api.resolve(target, { supportedProfiles: profile }),
     ).resolves.toStrictEqual({
@@ -1292,6 +1292,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "vnc", plain.body.id);
     await expect(
       api.resolve(f, {
         connectionId: plain.body.id,
@@ -1357,7 +1358,7 @@ describe("private Runner VNC authority", () => {
         chat: false,
       });
       expect((await api.resolve({ ...f, ...other })).outcome).toBe(
-        "resolved_transport",
+        "unavailable",
       );
     }
   });
@@ -1460,6 +1461,7 @@ describe("private Runner VNC authority", () => {
       }),
       [201],
     );
+    await api.enableDefault(f, "vnc", f.connectionId);
     const replacement = await api.resolved(f);
     expect(replacement.generation).toBe(1);
     expect(replacement.authentication).toStrictEqual({
