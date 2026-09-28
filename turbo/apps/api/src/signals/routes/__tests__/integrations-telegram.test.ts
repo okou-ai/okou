@@ -172,14 +172,6 @@ async function expectTelegramBotConnection(args: {
   readonly telegramUsername: string | null;
   readonly telegramDisplayName: string | null;
 }): Promise<void> {
-  if (args.botId !== OFFICIAL_TELEGRAM_BOT_ID) {
-    context.mocks.telegram.getMe.mockResolvedValue({
-      id: Number(args.botId),
-      is_bot: true,
-      first_name: "Bot",
-      username: `bot_${args.botId}`,
-    });
-  }
   const bots = await listTelegramBots(args.token);
   expect(bots).toContainEqual(
     expect.objectContaining({
@@ -265,7 +257,7 @@ describe("GET /api/integrations/telegram/bots", () => {
     expectUnauthorized(response.body);
   });
 
-  it("returns the official bot when the active org has no custom Telegram bots", async () => {
+  it("returns the official bot for the active organization", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
 
@@ -312,7 +304,7 @@ describe("GET /api/integrations/telegram", () => {
     }
   });
 
-  it("returns the configured official bot when the active org has no custom Telegram bots", async () => {
+  it("returns the configured official bot for the active organization", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
 
@@ -1034,7 +1026,7 @@ describe("GET /api/integrations/telegram/download-file", () => {
     expect(JSON.stringify(body)).toContain("bot_id");
   });
 
-  it("returns 404 when the custom bot id is not known in the org", async () => {
+  it("returns 404 for an unsupported bot id", async () => {
     const token = await seedReadToken();
 
     const response = await requestDownload({
