@@ -1,6 +1,5 @@
 import {
   chatEventCompatibilityRole,
-  foldChatRunStates,
   isChatRunTerminalEventType,
   revokedChatEventIds,
   terminatedChatRunIds,
@@ -59,21 +58,20 @@ export function lastAssistantCancelledFromGroups(
 }
 
 // "running" means a run is live or a sent prompt is still optimistic; "queued"
-// means the server holds input without a run, or a historical `run.queued`
-// marker is open.
+// means the server holds input without a run. Historical `run.queued` markers
+// are not supported.
 export type RunIndicatorState = "running" | "queued" | null;
 type ActiveRunIndicatorState = "running" | null;
 
 interface RunIndicatorContext {
   readonly terminatedRunIds: ReadonlySet<string>;
-  readonly queuedRunIds: ReadonlySet<string>;
 }
 
 function runActivityIndicatorState(
   context: RunIndicatorContext,
   runId: string,
 ): ActiveRunIndicatorState | undefined {
-  if (context.terminatedRunIds.has(runId) || context.queuedRunIds.has(runId)) {
+  if (context.terminatedRunIds.has(runId)) {
     return undefined;
   }
   return "running";
@@ -218,26 +216,12 @@ function activeRunIndicatorStateFromChatEvents(
 
 export function deriveRunIndicatorStateFromChatEvents(
   events: readonly ChatEvent[],
-): RunIndicatorState {
-  const revokedEventIds = revokedChatEventIds(events);
-  const terminatedRunIds = terminatedChatRunIds(events);
-  const queuedRunIds = new Set(
-    [...foldChatRunStates(events)].flatMap(([runId, state]) => {
-      return state === "queued" ? [runId] : [];
-    }),
-  );
-  const activeRunState = activeRunIndicatorStateFromChatEvents(
+): ActiveRunIndicatorState {
+  return activeRunIndicatorStateFromChatEvents(
     events,
-    revokedEventIds,
-    {
-      terminatedRunIds,
-      queuedRunIds,
-    },
+    revokedChatEventIds(events),
+    { terminatedRunIds: terminatedChatRunIds(events) },
   );
-  if (activeRunState === "running") {
-    return activeRunState;
-  }
-  return queuedRunIds.size > 0 ? "queued" : activeRunState;
 }
 
 function hasRunlessInput(events: readonly ChatEvent[]): boolean {
