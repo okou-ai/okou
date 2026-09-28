@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.716.1](https://github.com/okou-ai/okou/compare/core-v8.716.0...core-v8.716.1) (2026-09-28)
+
+
+### Refactoring
+
+* remove getStartedQuests and getStartedQuestIntro feature switches ([#37211](https://github.com/okou-ai/okou/issues/37211)) ([0185fa1](https://github.com/okou-ai/okou/commit/0185fa1a020f90a6aba1501b2d3509c233858e68))
+* remove gradientColorThemes feature switch ([#37208](https://github.com/okou-ai/okou/issues/37208)) ([2ddcdaf](https://github.com/okou-ai/okou/commit/2ddcdafcd326781f3184f7ea73dcdb8b2a5b6e8a))
+* remove startCardModelSubscription feature switch ([#37210](https://github.com/okou-ai/okou/issues/37210)) ([f0b2481](https://github.com/okou-ai/okou/commit/f0b248140c6e478648978b840066affc62a658ff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.521.0
+
 ## [8.716.0](https://github.com/okou-ai/okou/compare/core-v8.715.0...core-v8.716.0) (2026-09-28)
 
 
