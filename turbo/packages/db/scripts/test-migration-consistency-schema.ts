@@ -704,7 +704,7 @@ async function validateChatEventContextPointerConstraints(
             '00000000-0000-4000-8000-000000074515',
             $1,
             'input.rejected',
-            NULL,
+            'web',
             NULL,
             '{"userMessage":{"version":1,"parts":[{"type":"text","text":"rejected input"}]}}'::jsonb,
             4
@@ -731,7 +731,7 @@ async function validateChatEventContextPointerConstraints(
         contextType: "slack",
       },
       { contextId: null, contextType: "web" },
-      { contextId: null, contextType: null },
+      { contextId: null, contextType: "web" },
       {
         contextId: "00000000-0000-4000-8000-000000074506",
         contextType: "discord",
@@ -807,9 +807,34 @@ async function validateChatEventContextPointerConstraints(
       `,
       values: [threadId],
     });
+    await expectDatabaseError(client, {
+      code: "23514",
+      messageIncludes: "chat_events_input_context_type_check",
+      query: `
+        INSERT INTO "chat_events" (
+          "id",
+          "chat_thread_id",
+          "event_type",
+          "context_type",
+          "context_id",
+          "payload",
+          "seq_id"
+        )
+        VALUES (
+          '00000000-0000-4000-8000-000000074518',
+          $1,
+          'input.rejected',
+          NULL,
+          NULL,
+          '{"userMessage":{"version":1,"parts":[{"type":"text","text":"missing rejected discriminator"}]}}'::jsonb,
+          7
+        )
+      `,
+      values: [threadId],
+    });
 
     console.log(
-      "   ✅ Chat event contexts require input discriminators while allowing context-less rejected inputs\n",
+      "   ✅ Chat event contexts require input discriminators, including rejected inputs\n",
     );
   } finally {
     await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [agentId]);

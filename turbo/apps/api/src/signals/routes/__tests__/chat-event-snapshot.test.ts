@@ -412,7 +412,9 @@ describe("chat event snapshot read endpoints", () => {
     if (projectedPrompt?.eventType !== "input.prompt") {
       throw new Error("Expected a projected prompt for the retired fixture");
     }
-    const retiredPrompt = chatEventRowSchema.parse({
+    // Deliberately outside the current row contract: a retired context and
+    // part that no current reader can decode.
+    const retiredPrompt = {
       ...prompt,
       contextType: "morning_brief",
       contextId: prompt.id,
@@ -426,7 +428,7 @@ describe("chat event snapshot read endpoints", () => {
           ],
         },
       },
-    });
+    };
     const retiredArchive = Buffer.from(
       originalRows
         .map((row) => {
