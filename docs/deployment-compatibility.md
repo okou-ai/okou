@@ -162,6 +162,20 @@ Mixed versions during rollout:
   and reads the session the old Runner restored the same way. `okou run usage`
   accepts results with or without `apiFirstTurn`.
 
+Accepted in this release:
+
+- The old-CLI `okou run usage` break above is accepted rather than staged. It
+  reaches only runs created before this release that the installed-CLI parity
+  check sends to `npx`, and the removed source was always `unavailable` since
+  release 4.
+- The staff-only Pi Langfuse relay no longer parents Sandbox observations under
+  the Run End-to-End span, and no longer emits Sandbox Wait. The parent and
+  `sandboxWaitStartedAt` came from the handoff manifest, and the API-first
+  phases they linked no longer exist. Sandbox traces become root traces.
+- A steered declaration that fails without a `409` is not retried. That input
+  stays the run's steer anchor, so later inputs wait for the next pick after
+  the run ends, and the model sees that input again.
+
 **Release 7 deletion order.** Release 7 only deletes. It may merge once every
 release 6 Runner is live and every earlier Runner has drained:
 
@@ -175,6 +189,14 @@ release 6 Runner is live and every earlier Runner has drained:
    requirement and the startup-record parser, and the Runner stops tolerating
    the slot. Runs queued before release 7 still carry
    `piInstalledCliRequirement`, so the fallback has no remaining reader.
+4. The CLI drops its tolerance for `sources.apiFirstTurn` in `okou run usage`;
+   no Runner reports it after the pre-release-6 Runners drain.
+
+Release 6 installed CLIs parse `piLaunchConfig` strictly and require
+`apiFirstTurn`. The release 7 API must therefore raise
+`PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` to the release 7 CLI in the same change
+that stops writing the slot. Release 6 Guests then launch the commit-addressed
+CLI instead of an installed release 6 CLI.
 
 ## Unified chat queue (release 4)
 
